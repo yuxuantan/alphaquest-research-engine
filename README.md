@@ -197,6 +197,553 @@ Short:
   enter short on next bar open minus slippage
 ```
 
+## Strategy Creation And Backtest Guide
+
+Use this section when you want to create a strategy, choose one exact parameter set, run a backtest, and understand the generated report.
+
+The cleanest workflow is:
+
+```text
+1. Define the strategy idea
+2. Build or reuse entry, TP, and SL modules
+3. Wire those modules in one campaign YAML
+4. Set the exact data, costs, and risk assumptions
+5. Run the backtest
+6. Validate data and sample trades
+7. Interpret metrics, trades, daily results, and campaign metadata
+```
+
+### Step 1: Define The Strategy Idea
+
+Write the strategy as three separate decisions:
+
+```text
+entry: when does the setup trigger?
+sl:    where is the invalidation point?
+tp:    where is the profit target?
+```
+
+For example, the current PDH/PDL sweep strategy is:
+
+```text
+entry: previous day high/low sweep, then reclaim
+sl:    beyond the sweep candle extreme, offset by ticks
+tp:    fixed R multiple from entry to stop
+```
+
+Only create a new strategy file when the orchestration is different. If you are only changing entry logic, stop logic, or target logic, create or swap one module instead.
+
+### Step 2: Create Or Reuse An Entry Module
+
+Entry modules live here:
+
+```text
+src/propstack/strategy_modules/entry/
+```
+
+The current example is:
+
+```text
+src/propstack/strategy_modules/entry/pdh_pdl_sweep_reclaim.py
+```
+
+An entry module must expose:
+
+```python
+class MyEntry:
+    name = "my_entry"
+
+    def __init__(self, params: dict):
+        self.params = params
+
+    def on_bar_close(self, bar, trades_today: int = 0):
+        ...
+```
+
+When the setup triggers, it returns a `Signal`:
+
+```python
+from propstack.strategy_modules.entry import Signal
+
+return Signal(
+    direction="long",
+    level_type="pdl",
+    swept_level=previous_low,
+    sweep_timestamp=sweep_bar_timestamp,
+    sweep_high=sweep_bar_high,
+    sweep_low=sweep_bar_low,
+    reclaim_timestamp=bar["timestamp"],
+)
+```
+
+When there is no setup, return `None`.
+
+Register the module in:
+
+```text
+src/propstack/strategy_modules/entry/__init__.py
+```
+
+Add it to `ENTRY_MODULES`:
+
+```python
+ENTRY_MODULES = {
+    PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
+    MyEntry.name: MyEntry,
+}
+```
+
+### Step 3: Create Or Reuse A Stop Loss Module
+
+Stop modules live here:
+
+```text
+src/propstack/strategy_modules/sl/
+```
+
+The current example is:
+
+```text
+src/propstack/strategy_modules/sl/sweep_extreme.py
+```
+
+A stop module must expose:
+
+```python
+class MyStop:
+    name = "my_stop"
+
+    def __init__(self, params: dict):
+        self.params = params
+
+    def price(self, signal, direction: str, tick_size: float) -> float:
+        ...
+```
+
+For a long, the stop should normally be below entry. For a short, it should normally be above entry.
+
+Register the module in:
+
+```text
+src/propstack/strategy_modules/sl/__init__.py
+```
+
+Add it to `SL_MODULES`:
+
+```python
+SL_MODULES = {
+    SweepExtremeStop.name: SweepExtremeStop,
+    MyStop.name: MyStop,
+}
+```
+
+### Step 4: Create Or Reuse A Take Profit Module
+
+Take profit modules live here:
+
+```text
+src/propstack/strategy_modules/tp/
+```
+
+The current example is:
+
+```text
+src/propstack/strategy_modules/tp/fixed_r.py
+```
+
+A TP module must expose:
+
+```python
+class MyTarget:
+    name = "my_target"
+
+    def __init__(self, params: dict):
+        self.params = params
+
+    def price(self, entry_price: float, stop_price: float, direction: str) -> float:
+        ...
+```
+
+Register the module in:
+
+```text
+src/propstack/strategy_modules/tp/__init__.py
+```
+
+Add it to `TP_MODULES`:
+
+```python
+TP_MODULES = {
+    FixedRTarget.name: FixedRTarget,
+    MyTarget.name: MyTarget,
+}
+```
+
+### Step 5: Wire The Modules In A Campaign Config
+
+Campaign configs live under:
+
+```text
+configs/campaigns/
+```
+
+For a new single parameter run, copy an existing campaign and give it a unique `campaign_id`:
+
+```bash
+cp configs/campaigns/pdh_pdl_sweep/ES/sample.yaml configs/campaigns/pdh_pdl_sweep/ES/es_5y_my_params.yaml
+```
+
+Set the campaign identity:
+
+```yaml
+campaign_id: es_5y_my_params
+strategy_name: pdh_pdl_sweep
+symbol: ES
+```
+
+Use a new `campaign_id` for every result set you want to preserve. If you reuse the same campaign id, the latest run writes to the same report folder.
+
+Then wire the modules and parameters:
+
+```yaml
+strategy:
+  strategy_name: pdh_pdl_sweep
+  entry:
+    module: pdh_pdl_sweep_reclaim
+    params:
+      reclaim_window_bars: 3
+      min_volume_ratio: 0.0
+      start_time: "08:30:00"
+      end_time: "14:45:00"
+      max_trades_per_day: 3
+      allow_long: true
+      allow_short: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 1
+  flatten_time: "14:55:00"
+```
+
+The important pattern is:
+
+```text
+strategy.{entry|tp|sl}.module = module name registered in __init__.py
+strategy.{entry|tp|sl}.params = parameters passed into that module
+```
+
+Grid, monkey, and WFA use dotted paths to override the same values:
+
+```yaml
+grid:
+  parameters:
+    entry.params.reclaim_window_bars: [2, 3, 5]
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
+    sl.params.stop_offset_ticks: [1, 2]
+```
+
+### Step 6: Set The Exact Data And Backtest Assumptions
+
+The `data` section records exactly which raw CSV is used:
+
+```yaml
+data:
+  raw_csv: data/raw/ES/es_1m_20221201-20260529.csv
+  csv_format: yyyymmdd_hhmmss_ohlcv
+  has_header: false
+  timestamp_format: "%Y%m%d %H%M%S"
+  symbol: ES
+  timezone: America/Chicago
+  exchange_timezone: America/Chicago
+  rth_start: "08:30:00"
+  rth_end: "15:00:00"
+  eth_start: "17:00:00"
+  eth_end: "08:29:00"
+  rolling_volume_window: 3
+```
+
+The `backtest` section records execution costs and account assumptions:
+
+```yaml
+backtest:
+  initial_balance: 50000
+  tick_size: 0.25
+  tick_value: 12.50
+  commission_per_contract: 2.50
+  slippage_ticks: 1
+  contracts: 1
+  daily_loss_limit: 1000
+  daily_profit_stop: 1000
+  flatten_time: "14:55:00"
+```
+
+Do not compare campaigns unless these assumptions are intentionally identical or intentionally part of the test.
+
+### Step 7: Run The Backtest
+
+Run one exact campaign config:
+
+```bash
+CAMPAIGN_CONFIG=configs/campaigns/pdh_pdl_sweep/ES/es_5y_my_params.yaml
+PYTHONPATH=src python3 -m propstack.run_backtest --config "$CAMPAIGN_CONFIG"
+```
+
+The command prints the output folder. It will follow this layout:
+
+```text
+data/reports/strategies/{strategy_name}/{symbol}/{campaign_id}/
+```
+
+For the example above:
+
+```text
+data/reports/strategies/pdh_pdl_sweep/ES/es_5y_my_params/
+```
+
+### Step 8: Validate Before Interpreting Performance
+
+The backtest run also writes validation files:
+
+```text
+validation/
+  cleaned_data.csv
+  features_data.csv
+  data_quality_report.csv
+  missing_bars.csv
+  tradingview_comparison.csv
+```
+
+Check these first:
+
+```text
+data_quality_report.csv
+  Confirms row counts, date range, duplicate timestamps, missing values, and basic OHLCV checks.
+
+missing_bars.csv
+  Shows expected minute bars that are missing from the cleaned data.
+
+tradingview_comparison.csv
+  Gives sample session values to compare against TradingView or your charting platform.
+```
+
+Do not trust the backtest if previous day high/low, RTH boundaries, or timestamps are wrong.
+
+### Step 9: Read The Backtest Report Files
+
+Backtest outputs live here:
+
+```text
+backtest/
+  trade_log.csv
+  daily_results.csv
+  metrics.json
+  sample_trades_for_tv_validation.csv
+```
+
+Use them in this order:
+
+```text
+1. sample_trades_for_tv_validation.csv
+2. trade_log.csv
+3. daily_results.csv
+4. metrics.json
+```
+
+`sample_trades_for_tv_validation.csv` is for manual chart validation. Confirm:
+
+```text
+signal bar
+next-bar entry
+entry price after slippage
+stop price
+target price
+exit bar
+exit reason
+```
+
+`trade_log.csv` is one row per trade. Important columns:
+
+```text
+entry_timestamp / exit_timestamp
+  When the trade opened and closed.
+
+direction
+  long or short.
+
+level_type / swept_level
+  Which reference level triggered the setup.
+
+entry_price / stop_price / target_price / exit_price
+  The simulated prices after configured slippage rules.
+
+exit_reason
+  Usually stop, target, or eod_flatten.
+
+gross_pnl
+  PnL after slippage-adjusted entry/exit prices, before commission.
+
+net_pnl
+  PnL after commission.
+
+slippage_cost
+  Estimated cost of the configured entry and exit slippage.
+
+r_multiple
+  Trade result divided by initial risk.
+
+max_favorable_excursion / max_adverse_excursion
+  How far the trade moved in favor or against before exit.
+```
+
+`daily_results.csv` groups trades by session:
+
+```text
+session_date
+net_pnl
+gross_pnl
+trades
+wins
+losses
+```
+
+Use it to check prop-firm style behavior:
+
+```text
+large losing days
+days with too many trades
+profit concentration in one or two sessions
+whether daily loss limits are realistic
+```
+
+`metrics.json` is the main performance summary:
+
+```text
+total_trades
+  Number of closed trades. Low trade count means weak statistical confidence.
+
+trades_per_year
+  Annualized trade frequency across the tested date range.
+
+net_profit
+  Sum of all net trade PnL after commission.
+
+profit_factor
+  Sum of positive net_pnl divided by absolute sum of negative net_pnl. Above 1.30 is your current minimum target.
+
+expectancy_r
+  Average trade result in R. Positive means the average trade makes more than it risks.
+
+win_rate
+  Percentage of trades with net_pnl > 0.
+
+max_drawdown
+  Worst peak-to-trough equity drawdown in account currency.
+
+max_drawdown_pct
+  Worst percentage drawdown from the equity curve all-time high. 0.20 means 20%.
+
+cagr
+  Annualized account growth based on initial_balance and ending balance.
+
+mar
+  cagr divided by max_drawdown_pct. Higher means better return per drawdown.
+
+worst_day / best_day
+  Worst and best session PnL.
+
+best_day_concentration
+  best_day divided by total net_profit. High values mean one day dominates results.
+
+max_consecutive_losses
+  Longest losing streak.
+
+positive_month_rate
+  Fraction of profitable months.
+
+average_trade
+  Mean net PnL per trade.
+```
+
+### Step 10: Interpret The Result Against Your Benchmarks
+
+Start with the benchmark fields in the campaign:
+
+```yaml
+benchmarks:
+  min_trades_per_year: 100
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.30
+  max_drawdown_pct: 0.03
+  min_cagr: 0.06
+  min_mar: 2.0
+  min_win_rate: 0.50
+```
+
+A baseline backtest is more interesting when it passes these checks together:
+
+```text
+enough trades
+profit factor remains above threshold after slippage and commission
+drawdown is within challenge constraints
+returns are not dominated by one day
+monthly and daily behavior are not fragile
+trade examples match the chart
+```
+
+Red flags:
+
+```text
+very high profit factor with very few trades
+large net profit but poor trades_per_year
+max_drawdown_pct above your account limit
+best_day_concentration above benchmark
+many eod_flatten exits when the strategy is supposed to hit stop or target
+sample trades do not match TradingView
+```
+
+### Step 11: Track Which Config Produced The Report
+
+The campaign folder records the config and input hashes:
+
+```text
+campaign_config.yaml
+campaign_summary.json
+config_hash.txt
+input_data_hash.txt
+run_manifest.json
+```
+
+Use them like this:
+
+```text
+campaign_config.yaml
+  Snapshot of the exact YAML used for the run.
+
+config_hash.txt
+  Changes when the campaign config changes.
+
+input_data_hash.txt
+  Changes when the raw CSV changes.
+
+run_manifest.json
+  Records which test sections have been run for this campaign.
+
+campaign_summary.json
+  Collects latest summary metrics for backtest, grid, monkey, WFA, and Monte Carlo.
+```
+
+The symbol-level index compares campaigns:
+
+```text
+data/reports/strategies/{strategy_name}/{symbol}/runs_index.csv
+```
+
+Use a new campaign id whenever you want to compare a different strategy version, data file, or parameter set side by side.
+
 ## 4. Configure Backtest Costs And Risk
 
 ```yaml

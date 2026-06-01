@@ -11,7 +11,10 @@ def test_monkey_summary():
     cfg = {
         "runs": 3,
         "seed": 1,
-        "parameter_ranges": {"reclaim_window_bars": [2, 3], "target_r_multiple": [1.0, 1.5]},
+        "parameter_ranges": {
+            "entry.params.reclaim_window_bars": [2, 3],
+            "tp.params.target_r_multiple": [1.0, 1.5],
+        },
         "stress": {},
     }
     results, summary = run_monkey(data, BASE_CFG, cfg, {"min_trade_count": 1, "max_drawdown": 99999})

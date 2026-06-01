@@ -9,7 +9,7 @@ from propstack.strategy_modules.tp import build_tp_module
 
 class PdhPdlSweepReclaim:
     def __init__(self, config: dict):
-        self.config = _normalize_strategy_config(config)
+        self.config = _validate_strategy_config(config)
         self.name = self.config.get("strategy_name", "pdh_pdl_sweep")
         self.entry = build_entry_module(self.config["entry"])
         self.tp = build_tp_module(self.config["tp"])
@@ -25,35 +25,17 @@ class PdhPdlSweepReclaim:
         return self.tp.price(entry_price, stop_price, direction)
 
 
-def _normalize_strategy_config(config: dict) -> dict:
-    if "entry" in config and "tp" in config and "sl" in config:
-        return config
-
-    # Backward compatibility for older flat campaign/test configs.
-    return {
-        **config,
-        "entry": {
-            "module": "pdh_pdl_sweep_reclaim",
-            "params": {
-                "reclaim_window_bars": config.get("reclaim_window_bars", 3),
-                "min_volume_ratio": config.get("min_volume_ratio", 0.0),
-                "start_time": config.get("start_time", "08:30:00"),
-                "end_time": config.get("end_time", "14:45:00"),
-                "max_trades_per_day": config.get("max_trades_per_day", 999),
-                "allow_long": config.get("allow_long", True),
-                "allow_short": config.get("allow_short", True),
-            },
-        },
-        "tp": {
-            "module": "fixed_r",
-            "params": {
-                "target_r_multiple": config.get("target_r_multiple", 1.5),
-            },
-        },
-        "sl": {
-            "module": "sweep_extreme",
-            "params": {
-                "stop_offset_ticks": config.get("stop_offset_ticks", 1),
-            },
-        },
-    }
+def _validate_strategy_config(config: dict) -> dict:
+    required = ["entry", "tp", "sl"]
+    missing = [key for key in required if key not in config]
+    if missing:
+        raise ValueError(
+            "Strategy config must use the modular format with entry, tp, and sl sections. "
+            f"Missing: {', '.join(missing)}"
+        )
+    for section in required:
+        if "module" not in config[section]:
+            raise ValueError(f"Strategy {section} section must define a module.")
+        if "params" not in config[section]:
+            raise ValueError(f"Strategy {section} section must define params.")
+    return config

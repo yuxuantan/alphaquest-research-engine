@@ -67,10 +67,6 @@ def summarize_stability(df: pd.DataFrame) -> dict:
         "tp.params.target_r_multiple",
         "sl.params.stop_offset_ticks",
         "entry.params.max_trades_per_day",
-        "reclaim_window_bars",
-        "target_r_multiple",
-        "stop_offset_ticks",
-        "max_trades_per_day",
     ]:
         if col in df.columns:
             grouped = df.groupby(col)["benchmark_passed"].mean().sort_values(ascending=False)

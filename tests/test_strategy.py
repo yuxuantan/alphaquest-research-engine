@@ -34,3 +34,19 @@ def test_pdh_pdl_sweep_signal_reclaim_within_n_bars():
             signals.append(sig)
     assert any(s.direction == "long" for s in signals)
     assert any(s.direction == "short" for s in signals)
+
+
+def test_pdh_pdl_strategy_requires_modular_config():
+    try:
+        PdhPdlSweepReclaim(
+            {
+                "entry": {
+                    "module": "pdh_pdl_sweep_reclaim",
+                    "params": {"reclaim_window_bars": 3},
+                }
+            }
+        )
+    except ValueError as exc:
+        assert "Missing: tp, sl" in str(exc)
+    else:
+        raise AssertionError("Expected modular config validation to fail")

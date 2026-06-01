@@ -15,7 +15,12 @@ def test_wfa_train_test_split():
 def test_wfa_runs():
     df, _, _ = clean_data(DATA_CFG)
     data = build_features(df, DATA_CFG)
-    grid_cfg = {"parameters": {"reclaim_window_bars": [2, 3], "target_r_multiple": [1.0]}}
+    grid_cfg = {
+        "parameters": {
+            "entry.params.reclaim_window_bars": [2, 3],
+            "tp.params.target_r_multiple": [1.0],
+        }
+    }
     results, summary = run_wfa(
         data,
         BASE_CFG,
