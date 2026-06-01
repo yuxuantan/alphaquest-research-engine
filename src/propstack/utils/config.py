@@ -38,13 +38,13 @@ def create_run_dir(
     config_path: str | Path | None = None,
     config: dict | None = None,
 ) -> Path:
-    root = campaign_root(config)
+    root = variant_root(config)
     out = root / run_type
     out.mkdir(parents=True, exist_ok=True)
     (out / "warnings.txt").write_text("", encoding="utf-8")
     if config_path:
         src = Path(config_path)
-        dst = root / "campaign_config.yaml"
+        dst = root / "variant_config.yaml"
         if src.resolve() != dst.resolve():
             shutil.copy2(src, dst)
         step_dst = out / "config_snapshot.yaml"
@@ -52,6 +52,7 @@ def create_run_dir(
             shutil.copy2(src, step_dst)
     manifest = {
         "campaign_id": _campaign_id(config),
+        "variant_id": _variant_id(config),
         "strategy_name": _strategy_name(config),
         "symbol": _symbol(config),
         "dataset_id": _dataset_id(config),
@@ -59,21 +60,21 @@ def create_run_dir(
         "config_source": str(config_path) if config_path else None,
         "config_hash": file_sha256(config_path) if config_path else object_sha256(config or {}),
         "created_at": datetime.now().isoformat(timespec="seconds"),
-        "layout": "strategy_symbol_dataset_campaign",
+        "layout": "campaign_symbol_dataset_variant",
     }
     write_json(root / "run_manifest.json", manifest)
     return out
 
 
-def campaign_root(config: dict | None) -> Path:
+def variant_root(config: dict | None) -> Path:
     return (
         Path("data")
         / "reports"
-        / "strategies"
-        / _strategy_name(config)
+        / "campaigns"
+        / _campaign_id(config)
         / _symbol(config)
         / _dataset_id(config)
-        / _campaign_id(config)
+        / _variant_id(config)
     )
 
 
@@ -95,13 +96,14 @@ def record_campaign_result(
     (root / "input_data_hash.txt").write_text(input_hash, encoding="utf-8")
     (root / "config_hash.txt").write_text(file_sha256(config_path), encoding="utf-8")
     _update_manifest(root, config, config_path, input_hash)
-    _update_campaign_summary(root, config, config_path, input_hash, section, summary)
+    _update_variant_summary(root, config, config_path, input_hash, section, summary)
     _update_runs_index(root)
 
 
 def _update_manifest(root: Path, config: dict, config_path: str | Path, input_hash: str) -> None:
     manifest = {
         "campaign_id": _campaign_id(config),
+        "variant_id": _variant_id(config),
         "strategy_name": _strategy_name(config),
         "symbol": _symbol(config),
         "dataset_id": _dataset_id(config),
@@ -110,12 +112,12 @@ def _update_manifest(root: Path, config: dict, config_path: str | Path, input_ha
         "config_hash": file_sha256(config_path),
         "input_data_hash": input_hash,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
-        "layout": "strategy_symbol_dataset_campaign",
+        "layout": "campaign_symbol_dataset_variant",
     }
     write_json(root / "run_manifest.json", manifest)
 
 
-def _update_campaign_summary(
+def _update_variant_summary(
     root: Path,
     config: dict,
     config_path: str | Path,
@@ -123,7 +125,7 @@ def _update_campaign_summary(
     section: str,
     summary: dict,
 ) -> None:
-    path = root / "campaign_summary.json"
+    path = root / "variant_summary.json"
     if path.exists():
         existing = json.loads(path.read_text(encoding="utf-8"))
     else:
@@ -131,6 +133,7 @@ def _update_campaign_summary(
     existing.update(
         {
             "campaign_id": _campaign_id(config),
+            "variant_id": _variant_id(config),
             "strategy_name": _strategy_name(config),
             "symbol": _symbol(config),
             "dataset_id": _dataset_id(config),
@@ -147,7 +150,7 @@ def _update_campaign_summary(
 
 
 def _update_runs_index(root: Path) -> None:
-    summary_path = root / "campaign_summary.json"
+    summary_path = root / "variant_summary.json"
     if not summary_path.exists():
         return
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
@@ -159,6 +162,7 @@ def _update_runs_index(root: Path) -> None:
     monte_carlo = sections.get("monte_carlo", {})
     row = {
         "campaign_id": summary.get("campaign_id"),
+        "variant_id": summary.get("variant_id"),
         "strategy_name": summary.get("strategy_name"),
         "symbol": summary.get("symbol"),
         "dataset_id": summary.get("dataset_id"),
@@ -182,11 +186,11 @@ def _update_runs_index(root: Path) -> None:
     index_path = root.parent / "runs_index.csv"
     if index_path.exists():
         index = pd.read_csv(index_path)
-        index = index[index["campaign_id"] != row["campaign_id"]]
+        index = index[index["variant_id"] != row["variant_id"]]
         index = pd.concat([index, pd.DataFrame([row])], ignore_index=True)
     else:
         index = pd.DataFrame([row])
-    index = index.sort_values(["updated_at", "campaign_id"], na_position="last")
+    index = index.sort_values(["updated_at", "variant_id"], na_position="last")
     index.to_csv(index_path, index=False)
 
 
@@ -194,6 +198,12 @@ def _campaign_id(config: dict | None) -> str:
     if config and config.get("campaign_id"):
         return str(config["campaign_id"])
     raise ValueError("Campaign config must define a non-empty campaign_id.")
+
+
+def _variant_id(config: dict | None) -> str:
+    if config and config.get("variant_id"):
+        return str(config["variant_id"])
+    raise ValueError("Variant config must define a non-empty variant_id.")
 
 
 def _strategy_name(config: dict | None) -> str:
@@ -204,6 +214,8 @@ def _strategy_name(config: dict | None) -> str:
     strategy = config.get("strategy") or {}
     if strategy.get("strategy_name"):
         return str(strategy["strategy_name"])
+    if config.get("campaign_id"):
+        return str(config["campaign_id"])
     return "unknown_strategy"
 
 

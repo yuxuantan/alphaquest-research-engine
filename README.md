@@ -1,9 +1,11 @@
 # Prop Stack Automation
 
-Research skeleton for futures prop-firm strategy testing. The project is organized around **campaigns**:
+Research skeleton for futures prop-firm strategy testing. The project is organized around **campaigns** and **variants**:
 
 ```text
-one campaign config -> one strategy/symbol/dataset experiment -> one grouped report folder
+campaign -> strategy idea found online or designed for research
+variant  -> one concrete test configuration for that idea
+reports  -> generated evidence for one variant
 ```
 
 The normal workflow is:
@@ -11,9 +13,10 @@ The normal workflow is:
 ```text
 download/export data
 place raw CSV under data/raw/
-create one campaign YAML
+create or update one campaign
+create one variant YAML
 run validation/backtest/grid/monkey/WFA/Monte Carlo
-review campaign_summary.json and runs_index.csv
+review variant_summary.json and runs_index.csv
 ```
 
 ## Install
@@ -29,9 +32,11 @@ python3 -m pytest
 configs/
   campaigns/
     pdh_pdl_sweep/
-      ES/
-        1m_20221201_20260529/
-          baseline.yaml
+      campaign.yaml
+      variants/
+        ES/
+          1m_20221201_20260529/
+            baseline.yaml
 
 data/
   raw/
@@ -39,13 +44,13 @@ data/
     NQ/
   cleaned/
   reports/
-    strategies/
+    campaigns/
       pdh_pdl_sweep/
         ES/
           1m_20221201_20260529/
             baseline/
-              campaign_config.yaml
-              campaign_summary.json
+              variant_config.yaml
+              variant_summary.json
               config_hash.txt
               input_data_hash.txt
               run_manifest.json
@@ -102,39 +107,52 @@ For ES/NQ CME data, use exchange timezone:
 America/Chicago
 ```
 
-## 2. Create A Campaign Config
+## 2. Create A Campaign And Variant Config
 
-Campaign configs are organized by stable context first, then experiment variation:
+A campaign is the strategy idea you are researching. It should stay the same while you test reasonable variations of that same idea: different parameters, slightly different entry/exit mechanics, symbols, timeframes, or datasets.
 
 ```text
-configs/campaigns/{strategy_name}/{symbol}/{dataset_id}/{campaign_id}.yaml
+configs/campaigns/{campaign_id}/campaign.yaml
 ```
 
 Example:
 
 ```text
-configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml
+configs/campaigns/pdh_pdl_sweep/campaign.yaml
+```
+
+A variant is one concrete test configuration under that campaign:
+
+```text
+configs/campaigns/{campaign_id}/variants/{symbol}/{dataset_id}/{variant_id}.yaml
+```
+
+Example:
+
+```text
+configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml
 ```
 
 This makes the path readable without opening the YAML:
 
 ```text
-pdh_pdl_sweep         strategy family
-ES                    symbol
-1m_20221201_20260529  dataset and date range
-baseline              experiment variation
+pdh_pdl_sweep         campaign / strategy idea
+ES                    instrument
+1m_20221201_20260529  timeframe and dataset date range
+baseline              exact variant being tested
 ```
 
-Copy the baseline campaign when you want a new experiment on the same strategy, symbol, and dataset:
+Copy the baseline variant when you want a new version of the same strategy idea:
 
 ```bash
-cp configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r.yaml
+cp configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/tp_2r.yaml
 ```
 
 Edit the new file:
 
 ```yaml
-campaign_id: tp_2r
+campaign_id: pdh_pdl_sweep
+variant_id: tp_2r
 strategy_name: pdh_pdl_sweep
 symbol: ES
 dataset_id: 1m_20221201_20260529
@@ -155,26 +173,45 @@ data:
   rolling_volume_window: 3
 ```
 
-The `campaign_id` and `dataset_id` are mandatory. All runs using the same campaign file write to:
+The `campaign_id`, `variant_id`, and `dataset_id` are mandatory. All runs using the same variant file write to:
 
 ```text
-data/reports/strategies/{strategy_name}/{symbol}/{dataset_id}/{campaign_id}/
+data/reports/campaigns/{campaign_id}/{symbol}/{dataset_id}/{variant_id}/
 ```
 
-Use one YAML per experiment, not one YAML per report type. A single campaign YAML can produce the backtest, grid, monkey, WFA, and Monte Carlo reports for the same controlled setup.
+Use one variant YAML per concrete test configuration, not one YAML per report type. A single variant YAML can produce the backtest, grid, monkey, WFA, and Monte Carlo reports for the same controlled setup.
 
-Create a new campaign YAML when you want to preserve and compare a meaningful experiment:
+Keep the same campaign when the core idea is still recognizable:
 
 ```text
-different dataset or date range
-different symbol
-different entry, TP, or SL module
+reconfiguring default parameters
+slight changes to entry or exit mechanics
+testing ES versus NQ
+testing 1-minute versus 5-minute data
+changing costs, slippage, or prop rules
+running robustness tests for the same online strategy idea
+```
+
+Create a new campaign only when the strategy idea itself changes:
+
+```text
+different source strategy
+different market thesis
+different setup concept
+old idea is no longer recognizable
+```
+
+Create a new variant when you want to preserve and compare a meaningful version of the same campaign:
+
+```text
 different important parameter set
-different cost, slippage, or account assumptions
-different benchmark or prop-rule assumptions
+different entry, TP, or SL module
+different dataset or date range
+different symbol or timeframe
+different cost or benchmark assumptions
 ```
 
-Do not create a new campaign for a temporary crash check or one-off debugging edit. Reuse `baseline` or create a clearly disposable `scratch.yaml` in the same dataset folder.
+Do not create a new variant for a temporary crash check or one-off debugging edit. Reuse `baseline` or create a clearly disposable `scratch.yaml` in the same dataset folder.
 
 Use this naming rule:
 
@@ -186,10 +223,10 @@ file name   = experiment variation
 Examples:
 
 ```text
-configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml
-configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r.yaml
-configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/long_only.yaml
-configs/campaigns/pdh_pdl_sweep/NQ/1m_20221201_20260529/baseline.yaml
+configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml
+configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/tp_2r.yaml
+configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/long_only.yaml
+configs/campaigns/pdh_pdl_sweep/variants/NQ/1m_20221201_20260529/baseline.yaml
 ```
 
 ## 3. Configure Strategy Rules
@@ -227,7 +264,7 @@ tp    -> calculates target price
 sl    -> calculates stop price
 ```
 
-The backtest engine uses a generic `ModularStrategy` composer. There is no separate PDH/PDL strategy wrapper; the campaign YAML is the source of truth for which entry, TP, and SL modules are combined.
+The backtest engine uses a generic `ModularStrategy` composer. There is no separate PDH/PDL strategy wrapper; the variant YAML is the source of truth for which entry, TP, and SL modules are combined.
 
 Each module implementation lives in its own file:
 
@@ -269,7 +306,7 @@ The cleanest workflow is:
 ```text
 1. Define the strategy idea
 2. Build or reuse entry, TP, and SL modules
-3. Wire those modules in one campaign YAML
+3. Wire those modules in one variant YAML
 4. Set the exact data, costs, and risk assumptions
 5. Run the backtest
 6. Validate data and sample trades
@@ -294,7 +331,7 @@ sl:    beyond the sweep candle extreme, offset by ticks
 tp:    fixed R multiple from entry to stop
 ```
 
-For normal one-entry, one-stop, one-target strategies, do not create a strategy file. Create or swap the relevant module and wire it in the campaign YAML. A custom strategy orchestrator is only worth adding later if the engine needs behavior beyond this composition model, such as partial exits, trailing stops, pyramiding, or multiple simultaneous entry systems.
+For normal one-entry, one-stop, one-target strategies, do not create a strategy file. Create or swap the relevant module and wire it in the variant YAML. A custom strategy orchestrator is only worth adding later if the engine needs behavior beyond this composition model, such as partial exits, trailing stops, pyramiding, or multiple simultaneous entry systems.
 
 ### Step 2: Create Or Reuse An Entry Module
 
@@ -442,7 +479,7 @@ TP_MODULES = {
 }
 ```
 
-### Step 5: Wire The Modules In A Campaign Config
+### Step 5: Wire The Modules In A Variant Config
 
 Campaign configs live under:
 
@@ -450,24 +487,25 @@ Campaign configs live under:
 configs/campaigns/
 ```
 
-For a new single parameter run, copy an existing campaign and give it a unique `campaign_id`:
+For a new single parameter run, copy an existing variant and give it a unique `variant_id`:
 
 ```bash
-cp configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r.yaml
+cp configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/tp_2r.yaml
 ```
 
-Set the campaign identity:
+Set the campaign and variant identity:
 
 ```yaml
-campaign_id: tp_2r
+campaign_id: pdh_pdl_sweep
+variant_id: tp_2r
 strategy_name: pdh_pdl_sweep
 symbol: ES
 dataset_id: 1m_20221201_20260529
 ```
 
-Use a new `campaign_id` for every result set you want to preserve. If you reuse the same campaign id, the latest run writes to the same report folder.
+Use a new `variant_id` for every result set you want to preserve. If you reuse the same variant id, the latest run writes to the same report folder.
 
-Do not split one experiment into separate YAML files for backtest, grid, monkey, WFA, and Monte Carlo. Keep those report sections together inside the same campaign YAML so every report points back to the same data, modules, parameters, costs, and benchmarks.
+Do not split one experiment into separate YAML files for backtest, grid, monkey, WFA, and Monte Carlo. Keep those report sections together inside the same variant YAML so every report points back to the same data, modules, parameters, costs, and benchmarks.
 
 Then wire the modules and parameters:
 
@@ -547,27 +585,27 @@ backtest:
   flatten_time: "14:55:00"
 ```
 
-Do not compare campaigns unless these assumptions are intentionally identical or intentionally part of the test.
+Do not compare variants unless these assumptions are intentionally identical or intentionally part of the test.
 
 ### Step 7: Run The Backtest
 
-Run one exact campaign config:
+Run one exact variant config:
 
 ```bash
-CAMPAIGN_CONFIG=configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r.yaml
-PYTHONPATH=src python3 -m propstack.run_backtest --config "$CAMPAIGN_CONFIG"
+VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/tp_2r.yaml
+PYTHONPATH=src python3 -m propstack.run_backtest --config "$VARIANT_CONFIG"
 ```
 
 The command prints the output folder. It will follow this layout:
 
 ```text
-data/reports/strategies/{strategy_name}/{symbol}/{dataset_id}/{campaign_id}/
+data/reports/campaigns/{campaign_id}/{symbol}/{dataset_id}/{variant_id}/
 ```
 
 For the example above:
 
 ```text
-data/reports/strategies/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r/
+data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r/
 ```
 
 ### Step 8: Validate Before Interpreting Performance
@@ -736,7 +774,7 @@ average_trade
 
 ### Step 10: Interpret The Result Against Your Benchmarks
 
-Start with the benchmark fields in the campaign:
+Start with the benchmark fields in the variant config:
 
 ```yaml
 benchmarks:
@@ -773,11 +811,11 @@ sample trades do not match TradingView
 
 ### Step 11: Track Which Config Produced The Report
 
-The campaign folder records the config and input hashes:
+The variant report folder records the config and input hashes:
 
 ```text
-campaign_config.yaml
-campaign_summary.json
+variant_config.yaml
+variant_summary.json
 config_hash.txt
 input_data_hash.txt
 run_manifest.json
@@ -786,29 +824,29 @@ run_manifest.json
 Use them like this:
 
 ```text
-campaign_config.yaml
+variant_config.yaml
   Snapshot of the exact YAML used for the run.
 
 config_hash.txt
-  Changes when the campaign config changes.
+  Changes when the variant config changes.
 
 input_data_hash.txt
   Changes when the raw CSV changes.
 
 run_manifest.json
-  Records which test sections have been run for this campaign.
+  Records which test sections have been run for this variant.
 
-campaign_summary.json
+variant_summary.json
   Collects latest summary metrics for backtest, grid, monkey, WFA, and Monte Carlo.
 ```
 
-The dataset-level index compares campaigns that share the same strategy, symbol, and dataset:
+The dataset-level index compares variants under the same campaign, symbol, and dataset:
 
 ```text
-data/reports/strategies/{strategy_name}/{symbol}/{dataset_id}/runs_index.csv
+data/reports/campaigns/{campaign_id}/{symbol}/{dataset_id}/runs_index.csv
 ```
 
-Use a new `campaign_id` whenever you want to compare a different strategy version or parameter set side by side. Use a new `dataset_id` whenever the raw data file or date range changes.
+Use a new `variant_id` whenever you want to compare a different version side by side. Use a new `dataset_id` whenever the raw data file or date range changes.
 
 ## 4. Configure Backtest Costs And Risk
 
@@ -871,14 +909,14 @@ max_drawdown_pct: 0.20
 ## 6. Run Data Validation And Baseline Backtest
 
 ```bash
-CAMPAIGN_CONFIG=configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml
-PYTHONPATH=src python3 -m propstack.run_backtest --config "$CAMPAIGN_CONFIG"
+VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml
+PYTHONPATH=src python3 -m propstack.run_backtest --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
 
 ```text
-data/reports/strategies/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/
+data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/
   validation/
     cleaned_data.csv
     features_data.csv
@@ -931,7 +969,7 @@ grid:
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_grid --config "$CAMPAIGN_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_grid --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
@@ -975,7 +1013,7 @@ monkey:
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_monkey --config "$CAMPAIGN_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_monkey --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
@@ -1010,7 +1048,7 @@ wfa:
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_wfa --config "$CAMPAIGN_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
@@ -1077,19 +1115,19 @@ monte_carlo:
   cluster_losses: true
 ```
 
-If `trade_log` is blank, Monte Carlo first runs the campaign strategy and uses that trade log.
+If `trade_log` is blank, Monte Carlo first runs the variant strategy and uses that trade log.
 
 You can also point it at an existing trade log:
 
 ```yaml
 monte_carlo:
-  trade_log: data/reports/strategies/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/backtest/trade_log.csv
+  trade_log: data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/backtest/trade_log.csv
 ```
 
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$CAMPAIGN_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
@@ -1121,8 +1159,8 @@ probability_profit_before_drawdown >= 0.50
 Each runner updates:
 
 ```text
-campaign_config.yaml
-campaign_summary.json
+variant_config.yaml
+variant_summary.json
 config_hash.txt
 input_data_hash.txt
 run_manifest.json
@@ -1138,11 +1176,12 @@ did the input data change?
 which sections have been run?
 ```
 
-The campaign summary accumulates results:
+The variant summary accumulates results:
 
 ```json
 {
-  "campaign_id": "baseline",
+  "campaign_id": "pdh_pdl_sweep",
+  "variant_id": "baseline",
   "strategy_name": "pdh_pdl_sweep",
   "symbol": "ES",
   "dataset_id": "1m_20221201_20260529",
@@ -1159,10 +1198,10 @@ The campaign summary accumulates results:
 }
 ```
 
-The dataset-level index lets you compare campaign variations on the same strategy, symbol, and dataset:
+The dataset-level index lets you compare variants under the same campaign, symbol, and dataset:
 
 ```text
-data/reports/strategies/pdh_pdl_sweep/ES/1m_20221201_20260529/runs_index.csv
+data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/runs_index.csv
 ```
 
 ## Recommended End-To-End Workflow
@@ -1170,13 +1209,13 @@ data/reports/strategies/pdh_pdl_sweep/ES/1m_20221201_20260529/runs_index.csv
 For a serious strategy test:
 
 ```bash
-CAMPAIGN_CONFIG=configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml
+VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml
 
-PYTHONPATH=src python3 -m propstack.run_backtest --config "$CAMPAIGN_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_grid --config "$CAMPAIGN_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_monkey --config "$CAMPAIGN_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_wfa --config "$CAMPAIGN_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$CAMPAIGN_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_backtest --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_grid --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_monkey --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$VARIANT_CONFIG"
 ```
 
 Review in this order:
@@ -1190,7 +1229,7 @@ Review in this order:
 6. monkey/monkey_summary.json
 7. wfa/wfa_summary.json
 8. monte_carlo/monte_carlo_summary.json
-9. campaign_summary.json
+9. variant_summary.json
 10. runs_index.csv
 ```
 

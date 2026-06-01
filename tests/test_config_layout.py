@@ -1,27 +1,41 @@
 import pytest
 
-from propstack.utils.config import campaign_root
+from propstack.utils.config import variant_root
 
 
-def test_campaign_root_includes_dataset_id():
+def test_variant_root_includes_campaign_dataset_and_variant():
     config = {
-        "campaign_id": "baseline",
+        "campaign_id": "pdh_pdl_sweep",
+        "variant_id": "baseline",
         "strategy_name": "pdh_pdl_sweep",
         "symbol": "ES",
         "dataset_id": "1m_20221201_20260529",
     }
 
-    assert str(campaign_root(config)) == (
-        "data/reports/strategies/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline"
+    assert str(variant_root(config)) == (
+        "data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline"
     )
 
 
-def test_campaign_root_requires_dataset_id():
+def test_variant_root_requires_dataset_id():
     with pytest.raises(ValueError, match="dataset_id"):
-        campaign_root(
+        variant_root(
             {
-                "campaign_id": "baseline",
+                "campaign_id": "pdh_pdl_sweep",
+                "variant_id": "baseline",
                 "strategy_name": "pdh_pdl_sweep",
                 "symbol": "ES",
+            }
+        )
+
+
+def test_variant_root_requires_variant_id():
+    with pytest.raises(ValueError, match="variant_id"):
+        variant_root(
+            {
+                "campaign_id": "pdh_pdl_sweep",
+                "strategy_name": "pdh_pdl_sweep",
+                "symbol": "ES",
+                "dataset_id": "1m_20221201_20260529",
             }
         )
