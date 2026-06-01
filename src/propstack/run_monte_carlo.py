@@ -5,7 +5,8 @@ import pandas as pd
 
 from propstack.backtest.engine import BacktestEngine
 from propstack.data.pipeline import prepare_data
-from propstack.data.subset import apply_data_subset
+from propstack.data.source import data_source_hash
+from propstack.data.subset import subset_from_config
 from propstack.prop.rules import PropRules
 from propstack.research.monte_carlo import run_monte_carlo
 from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, validation_dir, write_json
@@ -23,11 +24,11 @@ def main() -> None:
         trades = pd.read_csv(mc_cfg["trade_log"])
         input_hash = file_sha256(mc_cfg["trade_log"])
     else:
-        data, _ = prepare_data(campaign["data"], validation_dir(out))
-        data = apply_data_subset(data, campaign.get("core", {}).get("data_subset"))
+        subset = subset_from_config(campaign, "monte_carlo", fallback_sections=("core",))
+        data, _ = prepare_data(campaign["data"], validation_dir(out), subset)
         trades = BacktestEngine(campaign).run(data)["trades"]
         trades.to_csv(out / "source_trade_log.csv", index=False)
-        input_hash = file_sha256(campaign["data"]["raw_csv"])
+        input_hash = data_source_hash(campaign["data"], subset)
     rules = PropRules.from_dict(campaign.get("prop_rules", {}))
     results, summary = run_monte_carlo(trades, mc_cfg, rules)
     results.to_csv(out / "monte_carlo_results.csv", index=False)

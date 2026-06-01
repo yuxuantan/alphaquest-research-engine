@@ -4,9 +4,9 @@ import argparse
 
 from propstack.backtest.engine import BacktestEngine
 from propstack.data.pipeline import prepare_data
-from propstack.data.subset import apply_data_subset
+from propstack.data.source import data_source_hash
+from propstack.data.subset import subset_from_config
 from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, validation_dir, write_json
-from propstack.utils.hashing import file_sha256
 
 
 def main() -> None:
@@ -16,9 +16,9 @@ def main() -> None:
     cfg = load_yaml(args.config)
     core_cfg = cfg.get("core", {})
     out = create_run_dir("core", args.config, cfg)
-    data, _ = prepare_data(cfg["data"], validation_dir(out))
-    data = apply_data_subset(data, core_cfg.get("data_subset"))
-    input_hash = file_sha256(cfg["data"]["raw_csv"])
+    subset = subset_from_config(cfg, "core")
+    data, _ = prepare_data(cfg["data"], validation_dir(out), subset)
+    input_hash = data_source_hash(cfg["data"], subset)
     result = BacktestEngine(cfg, show_progress=True).run(data)
     trades = result["trades"]
     trades.to_csv(out / "trade_log.csv", index=False)

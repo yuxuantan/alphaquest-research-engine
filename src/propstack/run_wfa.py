@@ -3,9 +3,10 @@ from __future__ import annotations
 import argparse
 
 from propstack.data.pipeline import prepare_data
+from propstack.data.source import data_source_hash
+from propstack.data.subset import subset_from_config
 from propstack.research.wfa import run_wfa
 from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, validation_dir, write_json
-from propstack.utils.hashing import file_sha256
 
 
 def main() -> None:
@@ -17,8 +18,9 @@ def main() -> None:
     grid_cfg = campaign["core_grid"]
     benchmarks = campaign.get("benchmarks", {})
     out = create_run_dir("wfa", args.config, campaign)
-    data, _ = prepare_data(campaign["data"], validation_dir(out))
-    input_hash = file_sha256(campaign["data"]["raw_csv"])
+    subset = subset_from_config(campaign, "wfa")
+    data, _ = prepare_data(campaign["data"], validation_dir(out), subset)
+    input_hash = data_source_hash(campaign["data"], subset)
     results, summary = run_wfa(data, campaign, grid_cfg, wfa_cfg, benchmarks)
     results.to_csv(out / "wfa_results.csv", index=False)
     write_json(out / "wfa_summary.json", summary)

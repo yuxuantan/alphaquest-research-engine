@@ -1,5 +1,6 @@
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
+from propstack.data.pipeline import prepare_data
 
 
 DATA_CFG = {
@@ -43,3 +44,15 @@ def test_features_previous_rth_overnight_vwap_rolling_volume():
     assert jan3["overnight_low"] == 99.75
     assert jan3["vwap"] > 0
     assert "rolling_volume" in feat.columns
+
+
+def test_prepare_data_applies_subset_after_feature_warmup():
+    data, report = prepare_data(
+        {**DATA_CFG, "warmup_days": 1},
+        subset_config={"start_date": "2024-01-03", "end_date": "2024-01-03"},
+    )
+
+    assert data["session_date"].astype(str).unique().tolist() == ["2024-01-03"]
+    assert report["loaded_rows"] > report["rows"]
+    jan3 = data[data["is_rth"]].iloc[0]
+    assert jan3["prev_rth_high"] == 101.0

@@ -56,7 +56,9 @@ def create_run_dir(
         "strategy_name": _strategy_name(config),
         "symbol": _symbol(config),
         "dataset_id": _dataset_id(config),
+        "data_source": _data_source(config),
         "raw_csv": _raw_csv(config),
+        "raw_dir": _raw_dir(config),
         "config_source": str(config_path) if config_path else None,
         "config_hash": file_sha256(config_path) if config_path else object_sha256(config or {}),
         "created_at": datetime.now().isoformat(timespec="seconds"),
@@ -107,7 +109,9 @@ def _update_manifest(root: Path, config: dict, config_path: str | Path, input_ha
         "strategy_name": _strategy_name(config),
         "symbol": _symbol(config),
         "dataset_id": _dataset_id(config),
+        "data_source": _data_source(config),
         "raw_csv": _raw_csv(config),
+        "raw_dir": _raw_dir(config),
         "config_source": str(config_path),
         "config_hash": file_sha256(config_path),
         "input_data_hash": input_hash,
@@ -137,7 +141,9 @@ def _update_variant_summary(
             "strategy_name": _strategy_name(config),
             "symbol": _symbol(config),
             "dataset_id": _dataset_id(config),
+            "data_source": _data_source(config),
             "raw_csv": _raw_csv(config),
+            "raw_dir": _raw_dir(config),
             "config_source": str(config_path),
             "config_hash": file_sha256(config_path),
             "input_data_hash": input_hash,
@@ -168,7 +174,9 @@ def _update_runs_index(root: Path) -> None:
         "strategy_name": summary.get("strategy_name"),
         "symbol": summary.get("symbol"),
         "dataset_id": summary.get("dataset_id"),
+        "data_source": summary.get("data_source"),
         "raw_csv": summary.get("raw_csv"),
+        "raw_dir": summary.get("raw_dir"),
         "config_hash": summary.get("config_hash"),
         "input_data_hash": summary.get("input_data_hash"),
         "updated_at": summary.get("updated_at"),
@@ -247,3 +255,24 @@ def _raw_csv(config: dict | None) -> str | None:
     data = config.get("data") or {}
     raw_csv = data.get("raw_csv")
     return str(raw_csv) if raw_csv else None
+
+
+def _raw_dir(config: dict | None) -> str | None:
+    if not config:
+        return None
+    data = config.get("data") or {}
+    raw_dir = data.get("raw_dir")
+    return str(raw_dir) if raw_dir else None
+
+
+def _data_source(config: dict | None) -> str | None:
+    if not config:
+        return None
+    data = config.get("data") or {}
+    if data.get("source"):
+        return str(data["source"])
+    if data.get("raw_dir"):
+        return "databento_dbn"
+    if data.get("raw_csv"):
+        return "csv"
+    return None

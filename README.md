@@ -12,7 +12,7 @@ The normal workflow is:
 
 ```text
 download/export data
-place raw CSV under data/raw/
+place raw data under data/raw/
 create or update one campaign
 create one variant YAML
 run validation/core/core_grid/monkey/WFA/Monte Carlo
@@ -107,6 +107,29 @@ For ES/NQ CME data, use exchange timezone:
 America/Chicago
 ```
 
+Databento monthly DBN downloads are also supported. Keep the downloaded
+`.dbn.zst` files as the immutable raw archive and point the variant at the
+folder:
+
+```yaml
+data:
+  dataset_id: 1m_full_history
+  source: databento_dbn
+  raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
+  cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
+  symbol: ES
+  timezone: America/New_York
+  continuous_contract: dominant_session_volume
+  include_spreads: false
+  warmup_days: 7
+```
+
+The first run converts only the required monthly DBN files to Parquet under
+`data/cache/`; later runs read those cached monthly files. For Databento parent
+futures requests, `continuous_contract: dominant_session_volume` removes spreads
+and keeps the highest-volume outright contract for each session while exposing
+the backtest symbol as `ES`.
+
 ## 2. Create A Campaign And Variant Config
 
 A campaign is the strategy idea you are researching. It should stay the same while you test reasonable variations of that same idea: different parameters, slightly different entry/exit mechanics, symbols, timeframes, or datasets.
@@ -158,20 +181,35 @@ symbol: ES
 dataset_id: 1m_20221201_20260529
 
 data:
-  dataset_id: 1m_20221201_20260529
-  raw_csv: data/raw/ES/es_1m_20221201-20260529.csv
-  csv_format: yyyymmdd_hhmmss_ohlcv
-  has_header: false
-  timestamp_format: "%Y%m%d %H%M%S"
+  dataset_id: 1m_full_history
+  source: databento_dbn
+  raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
+  cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
   symbol: ES
-  timezone: America/Chicago
-  exchange_timezone: America/Chicago
-  rth_start: "08:30:00"
-  rth_end: "15:00:00"
-  eth_start: "17:00:00"
-  eth_end: "08:29:00"
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  continuous_contract: dominant_session_volume
+  include_spreads: false
+  warmup_days: 7
+  rth_start: "09:30:00"
+  rth_end: "16:00:00"
+  eth_start: "16:00:00"
+  eth_end: "09:29:00"
   rolling_volume_window: 3
 ```
+
+Each run section can choose its own test window:
+
+```yaml
+core:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2023-05-29"
+```
+
+`start_date` and `end_date` are session dates. The loader reads a configurable
+warmup period before `start_date` so previous-session features remain available,
+then filters the prepared data to the requested test window.
 
 The `campaign_id`, `variant_id`, and `dataset_id` are mandatory. All runs using the same variant file write to:
 
@@ -554,22 +592,24 @@ core_grid:
 
 ### Step 6: Set The Exact Data And Core Assumptions
 
-The `data` section records exactly which raw CSV is used:
+The `data` section records exactly which raw dataset is used:
 
 ```yaml
 data:
-  dataset_id: 1m_20221201_20260529
-  raw_csv: data/raw/ES/es_1m_20221201-20260529.csv
-  csv_format: yyyymmdd_hhmmss_ohlcv
-  has_header: false
-  timestamp_format: "%Y%m%d %H%M%S"
+  dataset_id: 1m_full_history
+  source: databento_dbn
+  raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
+  cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
   symbol: ES
-  timezone: America/Chicago
-  exchange_timezone: America/Chicago
-  rth_start: "08:30:00"
-  rth_end: "15:00:00"
-  eth_start: "17:00:00"
-  eth_end: "08:29:00"
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  continuous_contract: dominant_session_volume
+  include_spreads: false
+  warmup_days: 7
+  rth_start: "09:30:00"
+  rth_end: "16:00:00"
+  eth_start: "16:00:00"
+  eth_end: "09:29:00"
   rolling_volume_window: 3
 ```
 
@@ -837,7 +877,7 @@ config_hash.txt
   Changes when the variant config changes.
 
 input_data_hash.txt
-  Changes when the raw CSV changes.
+  Changes when the selected raw input files or data window changes.
 
 run_manifest.json
   Records which test sections have been run for this variant.
@@ -955,6 +995,20 @@ previous RTH high/low
 sample trade entry/stop/target/exit bars
 timezone and session boundaries
 ```
+
+To compare a MotiveWave/Rithmic CSV export against the Databento DBN archive:
+
+```bash
+PYTHONPATH=src python3 -m propstack.compare_data_sources \
+  --csv data/raw/ES/es_1m_20221201-20260529.csv \
+  --dbn-dir data/raw/ES/GLBX-20260601-U6S3S4F4GM \
+  --out data/reports/data_compare/ES/rithmic_vs_databento_1m_20221201_20260529
+```
+
+This writes timestamp coverage, OHLCV mismatch summaries, session-level
+differences, missing timestamp segments, selected Databento contracts, and an
+alternate-contract diagnostic that flags when the CSV matches a different
+Databento contract than the configured continuous-contract rule selected.
 
 ## 7. Run Core Grid Search
 
@@ -1182,7 +1236,7 @@ Use these to answer:
 
 ```text
 which config was used?
-which raw CSV was used?
+which raw data source was used?
 did the config change?
 did the input data change?
 which sections have been run?
@@ -1196,8 +1250,9 @@ The variant summary accumulates results:
   "variant_id": "baseline",
   "strategy_name": "pdh_pdl_sweep",
   "symbol": "ES",
-  "dataset_id": "1m_20221201_20260529",
-  "raw_csv": "data/raw/ES/es_1m_20221201-20260529.csv",
+  "dataset_id": "1m_full_history",
+  "data_source": "databento_dbn",
+  "raw_dir": "data/raw/ES/GLBX-20260601-U6S3S4F4GM",
   "config_hash": "...",
   "input_data_hash": "...",
   "sections": {

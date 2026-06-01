@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
+SUBSET_KEYS = ("start_date", "end_date", "start_timestamp", "end_timestamp")
+
 
 def apply_data_subset(data: pd.DataFrame, subset_config: dict | None) -> pd.DataFrame:
     if not subset_config:
@@ -22,6 +24,52 @@ def apply_data_subset(data: pd.DataFrame, subset_config: dict | None) -> pd.Data
         filtered = filtered[filtered["timestamp"] <= _parse_timestamp_bound(data, subset_config["end_timestamp"])]
 
     return filtered.reset_index(drop=True)
+
+
+def subset_from_config(
+    config: dict,
+    section: str | None = None,
+    fallback_sections: tuple[str, ...] = (),
+) -> dict | None:
+    sections = []
+    if section:
+        sections.append(section)
+    sections.extend(fallback_sections)
+    for key in sections:
+        subset = (config.get(key) or {}).get("data_subset")
+        if subset:
+            return dict(subset)
+
+    data_config = config.get("data") or {}
+    return subset_from_data_config(data_config)
+
+
+def subset_from_data_config(data_config: dict) -> dict | None:
+    if data_config.get("data_subset"):
+        return dict(data_config["data_subset"])
+    subset = {key: data_config[key] for key in SUBSET_KEYS if data_config.get(key)}
+    return subset or None
+
+
+def load_bounds_with_warmup(
+    subset_config: dict | None,
+    data_config: dict,
+) -> dict | None:
+    if not subset_config:
+        return None
+
+    bounds = dict(subset_config)
+    warmup_days = int(data_config.get("warmup_days", 7))
+    if warmup_days <= 0:
+        return bounds
+
+    if bounds.get("start_timestamp"):
+        start = pd.Timestamp(bounds["start_timestamp"]) - pd.Timedelta(days=warmup_days)
+        bounds["start_timestamp"] = start.isoformat()
+    elif bounds.get("start_date"):
+        start = pd.Timestamp(bounds["start_date"]) - pd.Timedelta(days=warmup_days)
+        bounds["start_date"] = start.date().isoformat()
+    return bounds
 
 
 def _parse_timestamp_bound(data: pd.DataFrame, value) -> pd.Timestamp:
