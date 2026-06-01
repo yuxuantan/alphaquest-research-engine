@@ -20,7 +20,8 @@ def main() -> None:
     subset = subset_from_config(campaign, "core_grid")
     data, _ = prepare_data(campaign["data"], validation_dir(out), subset)
     input_hash = data_source_hash(campaign["data"], subset)
-    results, summary = run_core_grid(data, campaign, grid_cfg, benchmarks)
+    report_dir = out if grid_cfg.get("retain_iteration_reports", True) else None
+    results, summary = run_core_grid(data, campaign, grid_cfg, benchmarks, report_dir=report_dir)
     results.to_csv(out / "core_grid_results.csv", index=False)
     write_json(out / "core_grid_summary.json", summary)
     record_campaign_result(out, campaign, args.config, input_hash, "core_grid", summary)

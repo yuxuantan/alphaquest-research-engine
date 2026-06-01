@@ -136,6 +136,21 @@ to the contract in the configured roll calendar while exposing the backtest
 symbol as `ES`. Use `dominant_session_volume` only as a quick diagnostic rule;
 it can roll early because it uses same-session volume.
 
+Databento monthly cache files can contain many `contract_symbol` values inside
+one calendar-month Parquet file. A parent futures request such as `ES.FUT`
+returns all ES instruments active in that period, including outright futures
+like `ESU2`, `ESZ2`, and `ESH3`, plus exchange-traded calendar spreads like
+`ESU2-ESZ2`. The row counts differ by contract because `ohlcv-1m` only prints a
+bar for an instrument when that instrument traded during that minute; no-volume
+minutes are absent rather than emitted as zero-volume rows.
+
+Symbols with a hyphen are spread instruments, not ordinary outright contracts.
+For example, `ESU2-ESZ2` is the September 2022 versus December 2022 ES calendar
+spread. It has its own instrument id, price, and volume, and its price is the
+spread between legs rather than the ES futures price level. Keep
+`include_spreads: false` for normal outright backtests; the loader drops hyphen
+symbols before the continuous-contract rule selects the active outright.
+
 The included ES calendar at
 `configs/data/ES/motivewave_rithmic_roll_calendar.csv` covers 2010-2026. Rows
 from 2022-2026 were inferred from the MotiveWave/Rithmic export; earlier rows
@@ -1044,6 +1059,8 @@ core_grid:
     start_date: "2022-12-01"
     end_date: "2026-05-29"
   objective: net_profit
+  min_profitable_iteration_rate: 0.70
+  retain_iteration_reports: true
   parameters:
     entry.params.reclaim_window_bars: [2, 3, 5]
     tp.params.target_r_multiple: [1.0, 1.5, 2.0]
@@ -1067,18 +1084,24 @@ Outputs:
 ```text
 core_grid/core_grid_results.csv
 core_grid/core_grid_summary.json
+core_grid/core_grid_iteration_trades.csv
+core_grid/core_grid_iteration_daily.csv
 ```
 
 Review:
 
 ```text
+percentage_profitable_iterations
+meets_profitable_iteration_threshold
 percentage_passing_benchmark
 top_10_combinations
 stable_parameter_zones
 failure_reason
 ```
 
-Prefer stable parameter regions over the single best row.
+Each array under `core_grid.parameters` is combined with every other array, so the total iteration count is the product of all configured value counts. `core_grid_results.csv` has one row per iteration. When `retain_iteration_reports` is true, the trade and daily CSVs add the iteration `run_id` and parameter values to each row so entries, exits, and P&L can be audited for any run.
+
+Prefer stable parameter regions over the single best row. `percentage_profitable_iterations` must meet `min_profitable_iteration_rate`, which defaults to `0.70` when omitted.
 
 ## 8. Run Monkey / Random Robustness Testing
 

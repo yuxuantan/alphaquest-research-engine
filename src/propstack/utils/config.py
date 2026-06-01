@@ -189,6 +189,8 @@ def _update_runs_index(root: Path) -> None:
         "mar": core.get("mar"),
         "win_rate": core.get("win_rate"),
         "core_grid_pass_rate": core_grid.get("percentage_passing_benchmark"),
+        "core_grid_profitable_iteration_rate": core_grid.get("percentage_profitable_iterations"),
+        "core_grid_meets_profitable_iteration_threshold": core_grid.get("meets_profitable_iteration_threshold"),
         "monkey_pass_rate": monkey.get("percentage_passing_benchmark"),
         "wfa_profitable_window_rate": wfa.get("profitable_window_rate"),
         "monte_carlo_prop_pass_chance": monte_carlo.get("probability_profit_before_drawdown"),

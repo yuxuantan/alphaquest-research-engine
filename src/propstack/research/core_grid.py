@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from itertools import product
+from pathlib import Path
+
 import pandas as pd
 
 from propstack.backtest.engine import BacktestEngine
@@ -10,13 +12,22 @@ from propstack.utils.params import apply_dotted_params
 
 
 def parameter_combinations(params: dict) -> list[dict]:
+    _validate_parameter_grid(params)
     keys = list(params.keys())
     return [dict(zip(keys, values)) for values in product(*(params[k] for k in keys))]
 
 
-def run_core_grid(data: pd.DataFrame, base_config: dict, grid_config: dict, benchmarks: dict) -> tuple[pd.DataFrame, dict]:
+def run_core_grid(
+    data: pd.DataFrame,
+    base_config: dict,
+    grid_config: dict,
+    benchmarks: dict,
+    report_dir: str | Path | None = None,
+) -> tuple[pd.DataFrame, dict]:
     rows = []
-    combos = parameter_combinations(grid_config.get("parameters", {}))
+    parameters = grid_config.get("parameters", {})
+    combos = parameter_combinations(parameters)
+    report_paths = _prepare_iteration_report_paths(report_dir)
     progress = progress_bar(len(combos), "core grid")
     for idx, combo in enumerate(combos, start=1):
         cfg = apply_dotted_params(base_config, combo)
@@ -37,6 +48,7 @@ def run_core_grid(data: pd.DataFrame, base_config: dict, grid_config: dict, benc
                 "cagr": metrics["cagr"],
                 "mar": metrics["mar"],
                 "win_rate": metrics["win_rate"],
+                "profitable": metrics["net_profit"] > 0,
                 "worst_day": metrics["worst_day"],
                 "best_day_concentration": metrics["best_day_concentration"],
                 "consecutive_losses": metrics["max_consecutive_losses"],
@@ -44,16 +56,29 @@ def run_core_grid(data: pd.DataFrame, base_config: dict, grid_config: dict, benc
                 "failure_reason": reason,
             }
         )
+        _append_iteration_report(report_paths, "trades", result["trades"], idx, combo)
+        _append_iteration_report(report_paths, "daily", result["daily"], idx, combo)
         progress.update(idx)
     df = pd.DataFrame(rows)
     passing = int(df["benchmark_passed"].sum()) if len(df) else 0
+    profitable = int(df["profitable"].sum()) if len(df) else 0
+    profitable_rate = float(profitable / len(df)) if len(df) else 0.0
+    profitable_threshold = _profitable_iteration_threshold(grid_config, benchmarks)
     top = df.sort_values(["benchmark_passed", "net_profit"], ascending=[False, False]).head(10)
     summary = {
+        "parameter_value_counts": {key: len(values) for key, values in parameters.items()},
+        "expected_combinations": _expected_combination_count(parameters),
         "total_combinations_tested": int(len(df)),
         "number_passing_benchmark": passing,
         "percentage_passing_benchmark": float(passing / len(df)) if len(df) else 0.0,
+        "profitable_iterations": profitable,
+        "percentage_profitable_iterations": profitable_rate,
+        "profitable_iteration_threshold": profitable_threshold,
+        "meets_profitable_iteration_threshold": profitable_rate >= profitable_threshold,
         "top_10_combinations": top.to_dict(orient="records"),
         "stable_parameter_zones": summarize_stability(df),
+        "iteration_reports_retained": report_paths is not None,
+        "iteration_report_files": _iteration_report_files(report_paths),
         "data_subset": grid_config.get("data_subset", {}),
     }
     return df, summary
@@ -73,3 +98,67 @@ def summarize_stability(df: pd.DataFrame) -> dict:
             grouped = df.groupby(col)["benchmark_passed"].mean().sort_values(ascending=False)
             zones[col] = grouped.to_dict()
     return zones
+
+
+def _validate_parameter_grid(params: dict) -> None:
+    if not isinstance(params, dict):
+        raise ValueError("core_grid.parameters must be a mapping of dotted parameter paths to value lists.")
+    for key, values in params.items():
+        if not isinstance(values, list):
+            raise ValueError(f"core_grid.parameters.{key} must be a list of values.")
+        if not values:
+            raise ValueError(f"core_grid.parameters.{key} must define at least one value.")
+
+
+def _expected_combination_count(params: dict) -> int:
+    total = 1
+    for values in params.values():
+        total *= len(values)
+    return total
+
+
+def _profitable_iteration_threshold(grid_config: dict, benchmarks: dict) -> float:
+    return float(
+        grid_config.get(
+            "min_profitable_iteration_rate",
+            benchmarks.get("min_core_grid_profitable_iteration_rate", 0.70),
+        )
+    )
+
+
+def _prepare_iteration_report_paths(report_dir: str | Path | None) -> dict[str, Path] | None:
+    if report_dir is None:
+        return None
+    root = Path(report_dir)
+    root.mkdir(parents=True, exist_ok=True)
+    paths = {
+        "trades": root / "core_grid_iteration_trades.csv",
+        "daily": root / "core_grid_iteration_daily.csv",
+    }
+    for path in paths.values():
+        if path.exists():
+            path.unlink()
+    return paths
+
+
+def _append_iteration_report(
+    paths: dict[str, Path] | None,
+    name: str,
+    frame: pd.DataFrame,
+    run_id: int,
+    combo: dict,
+) -> None:
+    if paths is None or frame.empty:
+        return
+    out = frame.copy()
+    out.insert(0, "run_id", run_id)
+    for offset, (key, value) in enumerate(combo.items(), start=1):
+        out.insert(offset, key, value)
+    path = paths[name]
+    out.to_csv(path, mode="a", header=not path.exists(), index=False)
+
+
+def _iteration_report_files(paths: dict[str, Path] | None) -> list[str]:
+    if paths is None:
+        return []
+    return [str(path) for path in paths.values()]
