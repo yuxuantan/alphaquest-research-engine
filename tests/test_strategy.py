@@ -10,13 +10,23 @@ def test_pdh_pdl_sweep_signal_reclaim_within_n_bars():
     feat = build_features(df, DATA_CFG).reset_index(drop=True)
     strat = PdhPdlSweepReclaim(
         {
-            "reclaim_window_bars": 3,
-            "start_time": "08:30:00",
-            "end_time": "14:45:00",
-            "allow_long": True,
-            "allow_short": True,
+            "entry": {
+                "module": "pdh_pdl_sweep_reclaim",
+                "params": {
+                    "reclaim_window_bars": 3,
+                    "start_time": "08:30:00",
+                    "end_time": "14:45:00",
+                    "allow_long": True,
+                    "allow_short": True,
+                },
+            },
+            "tp": {"module": "fixed_r", "params": {"target_r_multiple": 1.5}},
+            "sl": {"module": "sweep_extreme", "params": {"stop_offset_ticks": 1}},
         }
     )
+    assert strat.entry.name == "pdh_pdl_sweep_reclaim"
+    assert strat.tp.name == "fixed_r"
+    assert strat.sl.name == "sweep_extreme"
     signals = []
     for _, bar in feat.iterrows():
         sig = strat.on_bar_close(bar)

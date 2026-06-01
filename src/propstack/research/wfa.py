@@ -5,6 +5,7 @@ import pandas as pd
 from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.metrics import benchmark
 from propstack.research.grid import run_grid
+from propstack.utils.params import apply_dotted_params
 from propstack.utils.progress import progress_bar
 
 
@@ -52,7 +53,7 @@ def run_wfa(data: pd.DataFrame, base_config: dict, grid_config: dict, wfa_config
         best = grid_df.sort_values("net_profit", ascending=False).iloc[0]
         param_cols = list(grid_config.get("parameters", {}).keys())
         params = {k: best[k].item() if hasattr(best[k], "item") else best[k] for k in param_cols}
-        test_cfg = {**base_config, "strategy": {**base_config.get("strategy", {}), **params}}
+        test_cfg = apply_dotted_params(base_config, params)
         test_result = BacktestEngine(test_cfg).run(test)
         test_metrics = test_result["metrics"]
         passed, _ = benchmark(test_metrics, benchmarks)

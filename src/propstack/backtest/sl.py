@@ -6,3 +6,26 @@ def sweep_stop(signal, direction: str, tick_size: float, stop_offset_ticks: int)
     if direction == "long":
         return signal.sweep_low - offset
     return signal.sweep_high + offset
+
+
+class SweepExtremeStop:
+    name = "sweep_extreme"
+
+    def __init__(self, params: dict):
+        self.params = params
+
+    def price(self, signal, direction: str, tick_size: float) -> float:
+        return sweep_stop(
+            signal,
+            direction,
+            tick_size,
+            int(self.params.get("stop_offset_ticks", 1)),
+        )
+
+
+def build_sl_module(config: dict):
+    name = config.get("module", "sweep_extreme")
+    params = config.get("params", {})
+    if name == "sweep_extreme":
+        return SweepExtremeStop(params)
+    raise ValueError(f"Unknown SL module: {name}")

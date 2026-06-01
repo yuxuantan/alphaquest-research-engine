@@ -140,16 +140,33 @@ In the same campaign file:
 ```yaml
 strategy:
   strategy_name: pdh_pdl_sweep
-  reclaim_window_bars: 3
-  target_r_multiple: 1.5
-  stop_offset_ticks: 1
-  min_volume_ratio: 0.0
-  start_time: "08:30:00"
-  end_time: "14:45:00"
+  entry:
+    module: pdh_pdl_sweep_reclaim
+    params:
+      reclaim_window_bars: 3
+      min_volume_ratio: 0.0
+      start_time: "08:30:00"
+      end_time: "14:45:00"
+      max_trades_per_day: 3
+      allow_long: true
+      allow_short: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 1
   flatten_time: "14:55:00"
-  max_trades_per_day: 3
-  allow_long: true
-  allow_short: true
+```
+
+The strategy is composed of three explicit modules:
+
+```text
+entry -> detects setup and emits a signal
+tp    -> calculates target price
+sl    -> calculates stop price
 ```
 
 Current strategy logic:
@@ -273,15 +290,15 @@ Configure grid parameters:
 grid:
   objective: net_profit
   parameters:
-    reclaim_window_bars: [2, 3, 5]
-    target_r_multiple: [1.0, 1.5, 2.0]
-    stop_offset_ticks: [1, 2]
-    min_volume_ratio: [0.0, 1.0]
-    start_time: ["08:30:00", "09:00:00"]
-    end_time: ["11:00:00", "14:45:00"]
-    max_trades_per_day: [1, 3]
-    allow_long: [true]
-    allow_short: [true]
+    entry.params.reclaim_window_bars: [2, 3, 5]
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
+    sl.params.stop_offset_ticks: [1, 2]
+    entry.params.min_volume_ratio: [0.0, 1.0]
+    entry.params.start_time: ["08:30:00", "09:00:00"]
+    entry.params.end_time: ["11:00:00", "14:45:00"]
+    entry.params.max_trades_per_day: [1, 3]
+    entry.params.allow_long: [true]
+    entry.params.allow_short: [true]
 ```
 
 Run:
@@ -317,10 +334,10 @@ monkey:
   runs: 200
   seed: 7
   parameter_ranges:
-    reclaim_window_bars: [2, 8]
-    target_r_multiple: [1.0, 2.5]
-    stop_offset_ticks: [1, 4]
-    min_volume_ratio: [0.0, 1.5]
+    entry.params.reclaim_window_bars: [2, 8]
+    tp.params.target_r_multiple: [1.0, 2.5]
+    sl.params.stop_offset_ticks: [1, 4]
+    entry.params.min_volume_ratio: [0.0, 1.5]
   stress:
     extra_slippage_ticks: [0, 2]
     commission_multiplier: [1.0, 1.5]

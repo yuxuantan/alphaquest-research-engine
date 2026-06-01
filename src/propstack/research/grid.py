@@ -6,6 +6,7 @@ import pandas as pd
 from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.metrics import benchmark
 from propstack.utils.progress import progress_bar
+from propstack.utils.params import apply_dotted_params
 
 
 def parameter_combinations(params: dict) -> list[dict]:
@@ -18,10 +19,7 @@ def run_grid(data: pd.DataFrame, base_config: dict, grid_config: dict, benchmark
     combos = parameter_combinations(grid_config.get("parameters", {}))
     progress = progress_bar(len(combos), "grid search")
     for idx, combo in enumerate(combos, start=1):
-        cfg = {
-            **base_config,
-            "strategy": {**base_config.get("strategy", {}), **combo},
-        }
+        cfg = apply_dotted_params(base_config, combo)
         result = BacktestEngine(cfg).run(data)
         metrics = result["metrics"]
         passed, reason = benchmark(metrics, benchmarks)
@@ -64,7 +62,16 @@ def summarize_stability(df: pd.DataFrame) -> dict:
     if df.empty or "benchmark_passed" not in df:
         return {}
     zones = {}
-    for col in ["reclaim_window_bars", "target_r_multiple", "stop_offset_ticks", "max_trades_per_day"]:
+    for col in [
+        "entry.params.reclaim_window_bars",
+        "tp.params.target_r_multiple",
+        "sl.params.stop_offset_ticks",
+        "entry.params.max_trades_per_day",
+        "reclaim_window_bars",
+        "target_r_multiple",
+        "stop_offset_ticks",
+        "max_trades_per_day",
+    ]:
         if col in df.columns:
             grouped = df.groupby(col)["benchmark_passed"].mean().sort_values(ascending=False)
             zones[col] = grouped.to_dict()

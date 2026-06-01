@@ -5,8 +5,6 @@ import pandas as pd
 from propstack.backtest.fills import entry_price, exit_price, stop_target_hit
 from propstack.backtest.metrics import calculate_metrics, daily_results
 from propstack.backtest.risk import DailyRisk
-from propstack.backtest.sl import sweep_stop
-from propstack.backtest.tp import fixed_r_target
 from propstack.strategy.pdh_pdl_sweep import PdhPdlSweepReclaim
 from propstack.utils.progress import progress_bar
 from propstack.utils.time import parse_time
@@ -22,7 +20,8 @@ class BacktestEngine:
     def run(self, data: pd.DataFrame) -> dict:
         df = data.sort_values("timestamp").reset_index(drop=True)
         strategy = PdhPdlSweepReclaim(self.strategy_config)
-        risk = DailyRisk({**self.backtest_config, **self.strategy_config})
+        entry_params = self.strategy_config.get("entry", {}).get("params", {})
+        risk = DailyRisk({**self.backtest_config, **self.strategy_config, **entry_params})
         tick_size = float(self.backtest_config.get("tick_size", 0.25))
         tick_value = float(self.backtest_config.get("tick_value", 12.5))
         commission = float(self.backtest_config.get("commission_per_contract", 2.5))
@@ -42,8 +41,8 @@ class BacktestEngine:
                 sig = pending_signal
                 direction = sig.direction
                 ep = entry_price(float(bar["open"]), direction, tick_size, slippage_ticks)
-                stop = sweep_stop(sig, direction, tick_size, int(self.strategy_config.get("stop_offset_ticks", 1)))
-                target = fixed_r_target(ep, stop, direction, float(self.strategy_config.get("target_r_multiple", 1.5)))
+                stop = strategy.stop_price(sig, direction, tick_size)
+                target = strategy.target_price(ep, stop, direction)
                 position = {
                     "trade_id": trade_id,
                     "strategy_name": strategy.name,

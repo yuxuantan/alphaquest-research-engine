@@ -5,6 +5,7 @@ import pandas as pd
 
 from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.metrics import benchmark, calculate_metrics
+from propstack.utils.params import apply_dotted_params
 from propstack.utils.progress import progress_bar
 
 
@@ -45,7 +46,7 @@ def run_monkey(data: pd.DataFrame, base_config: dict, monkey_config: dict, bench
     progress = progress_bar(total_runs, "monkey runs")
     for run_id in range(1, total_runs + 1):
         sampled = {k: _sample(rng, v) for k, v in monkey_config.get("parameter_ranges", {}).items()}
-        cfg = {**base_config, "strategy": {**base_config.get("strategy", {}), **sampled}}
+        cfg = apply_dotted_params(base_config, sampled)
         result = BacktestEngine(cfg).run(data)
         trades = stress_trades(result["trades"], rng, monkey_config.get("stress", {}))
         metrics = calculate_metrics(
