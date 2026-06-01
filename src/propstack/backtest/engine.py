@@ -16,26 +16,26 @@ class BacktestEngine:
         self.strategy_config = dict(config.get("strategy", {}))
         if "strategy_name" not in self.strategy_config and config.get("strategy_name"):
             self.strategy_config["strategy_name"] = config["strategy_name"]
-        self.backtest_config = config.get("backtest", {})
+        self.core_config = config.get("core", {})
         self.show_progress = show_progress
 
     def run(self, data: pd.DataFrame) -> dict:
         df = data.sort_values("timestamp").reset_index(drop=True)
         strategy = ModularStrategy(self.strategy_config)
         entry_params = self.strategy_config.get("entry", {}).get("params", {})
-        risk = DailyRisk({**self.backtest_config, **self.strategy_config, **entry_params})
-        tick_size = float(self.backtest_config.get("tick_size", 0.25))
-        tick_value = float(self.backtest_config.get("tick_value", 12.5))
-        commission = float(self.backtest_config.get("commission_per_contract", 2.5))
-        slippage_ticks = float(self.backtest_config.get("slippage_ticks", 1))
-        contracts = int(self.backtest_config.get("contracts", 1))
-        flatten_time = parse_time(self.strategy_config.get("flatten_time", self.backtest_config.get("flatten_time", "14:55:00")))
+        risk = DailyRisk({**self.core_config, **self.strategy_config, **entry_params})
+        tick_size = float(self.core_config.get("tick_size", 0.25))
+        tick_value = float(self.core_config.get("tick_value", 12.5))
+        commission = float(self.core_config.get("commission_per_contract", 2.5))
+        slippage_ticks = float(self.core_config.get("slippage_ticks", 1))
+        contracts = int(self.core_config.get("contracts", 1))
+        flatten_time = parse_time(self.strategy_config.get("flatten_time", self.core_config.get("flatten_time", "14:55:00")))
 
         pending_signal = None
         position = None
         trades = []
         trade_id = 1
-        progress = progress_bar(len(df), "backtest bars", enabled=self.show_progress)
+        progress = progress_bar(len(df), "bars", enabled=self.show_progress)
 
         for i, bar in df.iterrows():
             progress.update(i + 1)
@@ -118,6 +118,6 @@ class BacktestEngine:
             "daily": daily_results(trades_df),
             "metrics": calculate_metrics(
                 trades_df,
-                initial_balance=float(self.backtest_config.get("initial_balance", 0)),
+                initial_balance=float(self.core_config.get("initial_balance", 0)),
             ),
         }

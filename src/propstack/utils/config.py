@@ -145,6 +145,8 @@ def _update_variant_summary(
         }
     )
     sections = existing.setdefault("sections", {})
+    for legacy_section in ["backtest", "grid"]:
+        sections.pop(legacy_section, None)
     sections[section] = summary
     write_json(path, existing)
 
@@ -155,8 +157,8 @@ def _update_runs_index(root: Path) -> None:
         return
     summary = json.loads(summary_path.read_text(encoding="utf-8"))
     sections = summary.get("sections", {})
-    backtest = sections.get("backtest", {})
-    grid = sections.get("grid", {})
+    core = sections.get("core", {})
+    core_grid = sections.get("core_grid", {})
     monkey = sections.get("monkey", {})
     wfa = sections.get("wfa", {})
     monte_carlo = sections.get("monte_carlo", {})
@@ -170,15 +172,15 @@ def _update_runs_index(root: Path) -> None:
         "config_hash": summary.get("config_hash"),
         "input_data_hash": summary.get("input_data_hash"),
         "updated_at": summary.get("updated_at"),
-        "total_trades": backtest.get("total_trades"),
-        "trades_per_year": backtest.get("trades_per_year"),
-        "net_profit": backtest.get("net_profit"),
-        "profit_factor": backtest.get("profit_factor"),
-        "max_drawdown_pct": backtest.get("max_drawdown_pct"),
-        "cagr": backtest.get("cagr"),
-        "mar": backtest.get("mar"),
-        "win_rate": backtest.get("win_rate"),
-        "grid_pass_rate": grid.get("percentage_passing_benchmark"),
+        "total_trades": core.get("total_trades"),
+        "trades_per_year": core.get("trades_per_year"),
+        "net_profit": core.get("net_profit"),
+        "profit_factor": core.get("profit_factor"),
+        "max_drawdown_pct": core.get("max_drawdown_pct"),
+        "cagr": core.get("cagr"),
+        "mar": core.get("mar"),
+        "win_rate": core.get("win_rate"),
+        "core_grid_pass_rate": core_grid.get("percentage_passing_benchmark"),
         "monkey_pass_rate": monkey.get("percentage_passing_benchmark"),
         "wfa_profitable_window_rate": wfa.get("profitable_window_rate"),
         "monte_carlo_prop_pass_chance": monte_carlo.get("probability_profit_before_drawdown"),
@@ -186,6 +188,9 @@ def _update_runs_index(root: Path) -> None:
     index_path = root.parent / "runs_index.csv"
     if index_path.exists():
         index = pd.read_csv(index_path)
+        for legacy_column in ["grid_pass_rate"]:
+            if legacy_column in index.columns:
+                index = index.drop(columns=[legacy_column])
         index = index[index["variant_id"] != row["variant_id"]]
         index = pd.concat([index, pd.DataFrame([row])], ignore_index=True)
     else:

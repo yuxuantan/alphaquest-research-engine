@@ -15,7 +15,7 @@ download/export data
 place raw CSV under data/raw/
 create or update one campaign
 create one variant YAML
-run validation/backtest/grid/monkey/WFA/Monte Carlo
+run validation/core/core_grid/monkey/WFA/Monte Carlo
 review variant_summary.json and runs_index.csv
 ```
 
@@ -55,8 +55,8 @@ data/
               input_data_hash.txt
               run_manifest.json
               validation/
-              backtest/
-              grid/
+              core/
+              core_grid/
               monkey/
               wfa/
               monte_carlo/
@@ -179,7 +179,7 @@ The `campaign_id`, `variant_id`, and `dataset_id` are mandatory. All runs using 
 data/reports/campaigns/{campaign_id}/{symbol}/{dataset_id}/{variant_id}/
 ```
 
-Use one variant YAML per concrete test configuration, not one YAML per report type. A single variant YAML can produce the backtest, grid, monkey, WFA, and Monte Carlo reports for the same controlled setup.
+Use one variant YAML per concrete test configuration, not one YAML per report type. A single variant YAML can produce the core, core grid, monkey, WFA, and Monte Carlo reports for the same controlled setup.
 
 Keep the same campaign when the core idea is still recognizable:
 
@@ -264,7 +264,7 @@ tp    -> calculates target price
 sl    -> calculates stop price
 ```
 
-The backtest engine uses a generic `ModularStrategy` composer. There is no separate PDH/PDL strategy wrapper; the variant YAML is the source of truth for which entry, TP, and SL modules are combined.
+The simulation engine uses a generic `ModularStrategy` composer. There is no separate PDH/PDL strategy wrapper; the variant YAML is the source of truth for which entry, TP, and SL modules are combined.
 
 Each module implementation lives in its own file:
 
@@ -299,7 +299,7 @@ Short:
 
 ## Strategy Creation And Backtest Guide
 
-Use this section when you want to create a strategy, choose one exact parameter set, run a backtest, and understand the generated report.
+Use this section when you want to create a strategy, choose one exact parameter set, run the core test, and understand the generated report.
 
 The cleanest workflow is:
 
@@ -308,7 +308,7 @@ The cleanest workflow is:
 2. Build or reuse entry, TP, and SL modules
 3. Wire those modules in one variant YAML
 4. Set the exact data, costs, and risk assumptions
-5. Run the backtest
+5. Run the core test
 6. Validate data and sample trades
 7. Interpret metrics, trades, daily results, and campaign metadata
 ```
@@ -505,7 +505,7 @@ dataset_id: 1m_20221201_20260529
 
 Use a new `variant_id` for every result set you want to preserve. If you reuse the same variant id, the latest run writes to the same report folder.
 
-Do not split one experiment into separate YAML files for backtest, grid, monkey, WFA, and Monte Carlo. Keep those report sections together inside the same variant YAML so every report points back to the same data, modules, parameters, costs, and benchmarks.
+Do not split one experiment into separate YAML files for core, core grid, monkey, WFA, and Monte Carlo. Keep those report sections together inside the same variant YAML so every report points back to the same data, modules, parameters, costs, and benchmarks.
 
 Then wire the modules and parameters:
 
@@ -539,17 +539,20 @@ strategy.{entry|tp|sl}.module = module name registered in __init__.py
 strategy.{entry|tp|sl}.params = parameters passed into that module
 ```
 
-Grid, monkey, and WFA use dotted paths to override the same values:
+Core grid, monkey, and WFA use dotted paths to override the same values:
 
 ```yaml
-grid:
+core_grid:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2026-05-29"
   parameters:
     entry.params.reclaim_window_bars: [2, 3, 5]
     tp.params.target_r_multiple: [1.0, 1.5, 2.0]
     sl.params.stop_offset_ticks: [1, 2]
 ```
 
-### Step 6: Set The Exact Data And Backtest Assumptions
+### Step 6: Set The Exact Data And Core Assumptions
 
 The `data` section records exactly which raw CSV is used:
 
@@ -570,10 +573,13 @@ data:
   rolling_volume_window: 3
 ```
 
-The `backtest` section records execution costs and account assumptions:
+The `core` section records execution costs, account assumptions, and the data subset used by the core test:
 
 ```yaml
-backtest:
+core:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2026-05-29"
   initial_balance: 50000
   tick_size: 0.25
   tick_value: 12.50
@@ -587,13 +593,13 @@ backtest:
 
 Do not compare variants unless these assumptions are intentionally identical or intentionally part of the test.
 
-### Step 7: Run The Backtest
+### Step 7: Run Core
 
-Run one exact variant config:
+Run one exact variant config through the core test:
 
 ```bash
 VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/tp_2r.yaml
-PYTHONPATH=src python3 -m propstack.run_backtest --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
 ```
 
 The command prints the output folder. It will follow this layout:
@@ -610,7 +616,7 @@ data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r/
 
 ### Step 8: Validate Before Interpreting Performance
 
-The backtest run also writes validation files:
+The core run also writes validation files:
 
 ```text
 validation/
@@ -634,14 +640,14 @@ tradingview_comparison.csv
   Gives sample session values to compare against TradingView or your charting platform.
 ```
 
-Do not trust the backtest if previous day high/low, RTH boundaries, or timestamps are wrong.
+Do not trust the test if previous day high/low, RTH boundaries, or timestamps are wrong.
 
-### Step 9: Read The Backtest Report Files
+### Step 9: Read The Core Report Files
 
-Backtest outputs live here:
+Core outputs live here:
 
 ```text
-backtest/
+core/
   trade_log.csv
   daily_results.csv
   metrics.json
@@ -787,7 +793,7 @@ benchmarks:
   min_win_rate: 0.50
 ```
 
-A baseline backtest is more interesting when it passes these checks together:
+A baseline core test is more interesting when it passes these checks together:
 
 ```text
 enough trades
@@ -837,7 +843,7 @@ run_manifest.json
   Records which test sections have been run for this variant.
 
 variant_summary.json
-  Collects latest summary metrics for backtest, grid, monkey, WFA, and Monte Carlo.
+  Collects latest summary metrics for core, core grid, monkey, WFA, and Monte Carlo.
 ```
 
 The dataset-level index compares variants under the same campaign, symbol, and dataset:
@@ -848,10 +854,13 @@ data/reports/campaigns/{campaign_id}/{symbol}/{dataset_id}/runs_index.csv
 
 Use a new `variant_id` whenever you want to compare a different version side by side. Use a new `dataset_id` whenever the raw data file or date range changes.
 
-## 4. Configure Backtest Costs And Risk
+## 4. Configure Core Costs And Risk
 
 ```yaml
-backtest:
+core:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2026-05-29"
   initial_balance: 50000
   tick_size: 0.25
   tick_value: 12.50
@@ -906,11 +915,11 @@ trough equity: 88000
 max_drawdown_pct: 0.20
 ```
 
-## 6. Run Data Validation And Baseline Backtest
+## 6. Run Data Validation And Core
 
 ```bash
 VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml
-PYTHONPATH=src python3 -m propstack.run_backtest --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
@@ -923,7 +932,7 @@ data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/
     data_quality_report.csv
     missing_bars.csv
     tradingview_comparison.csv
-  backtest/
+  core/
     trade_log.csv
     daily_results.csv
     metrics.json
@@ -934,7 +943,7 @@ Before trusting results, manually compare these against TradingView or your char
 
 ```text
 validation/tradingview_comparison.csv
-backtest/sample_trades_for_tv_validation.csv
+core/sample_trades_for_tv_validation.csv
 ```
 
 Check:
@@ -947,12 +956,15 @@ sample trade entry/stop/target/exit bars
 timezone and session boundaries
 ```
 
-## 7. Run Grid Search
+## 7. Run Core Grid Search
 
-Configure grid parameters:
+Configure core grid parameters:
 
 ```yaml
-grid:
+core_grid:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2026-05-29"
   objective: net_profit
   parameters:
     entry.params.reclaim_window_bars: [2, 3, 5]
@@ -969,14 +981,14 @@ grid:
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_grid --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_core_grid --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
 
 ```text
-grid/grid_results.csv
-grid/grid_summary.json
+core_grid/core_grid_results.csv
+core_grid/core_grid_summary.json
 ```
 
 Review:
@@ -1121,7 +1133,7 @@ You can also point it at an existing trade log:
 
 ```yaml
 monte_carlo:
-  trade_log: data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/backtest/trade_log.csv
+  trade_log: data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/core/trade_log.csv
 ```
 
 Run:
@@ -1189,8 +1201,8 @@ The variant summary accumulates results:
   "config_hash": "...",
   "input_data_hash": "...",
   "sections": {
-    "backtest": {},
-    "grid": {},
+    "core": {},
+    "core_grid": {},
     "monkey": {},
     "wfa": {},
     "monte_carlo": {}
@@ -1211,8 +1223,8 @@ For a serious strategy test:
 ```bash
 VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml
 
-PYTHONPATH=src python3 -m propstack.run_backtest --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_grid --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_core_grid --config "$VARIANT_CONFIG"
 PYTHONPATH=src python3 -m propstack.run_monkey --config "$VARIANT_CONFIG"
 PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG"
 PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$VARIANT_CONFIG"
@@ -1223,9 +1235,9 @@ Review in this order:
 ```text
 1. validation/data_quality_report.csv
 2. validation/tradingview_comparison.csv
-3. backtest/metrics.json
-4. backtest/trade_log.csv
-5. grid/grid_summary.json
+3. core/metrics.json
+4. core/trade_log.csv
+5. core_grid/core_grid_summary.json
 6. monkey/monkey_summary.json
 7. wfa/wfa_summary.json
 8. monte_carlo/monte_carlo_summary.json

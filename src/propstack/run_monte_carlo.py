@@ -4,9 +4,10 @@ import argparse
 import pandas as pd
 
 from propstack.backtest.engine import BacktestEngine
+from propstack.data.pipeline import prepare_data
+from propstack.data.subset import apply_data_subset
 from propstack.prop.rules import PropRules
 from propstack.research.monte_carlo import run_monte_carlo
-from propstack.run_backtest import prepare_data
 from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, validation_dir, write_json
 from propstack.utils.hashing import file_sha256
 
@@ -23,6 +24,7 @@ def main() -> None:
         input_hash = file_sha256(mc_cfg["trade_log"])
     else:
         data, _ = prepare_data(campaign["data"], validation_dir(out))
+        data = apply_data_subset(data, campaign.get("core", {}).get("data_subset"))
         trades = BacktestEngine(campaign).run(data)["trades"]
         trades.to_csv(out / "source_trade_log.csv", index=False)
         input_hash = file_sha256(campaign["data"]["raw_csv"])

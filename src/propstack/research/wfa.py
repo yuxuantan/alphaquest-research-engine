@@ -4,7 +4,7 @@ import pandas as pd
 
 from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.metrics import benchmark
-from propstack.research.grid import run_grid
+from propstack.research.core_grid import run_core_grid
 from propstack.utils.params import apply_dotted_params
 from propstack.utils.progress import progress_bar
 
@@ -46,7 +46,7 @@ def run_wfa(data: pd.DataFrame, base_config: dict, grid_config: dict, wfa_config
         if train.empty or test.empty:
             progress.update(wid)
             continue
-        grid_df, _ = run_grid(train, base_config, grid_config, benchmarks)
+        grid_df, _ = run_core_grid(train, base_config, grid_config, benchmarks)
         if grid_df.empty:
             progress.update(wid)
             continue

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 
+from propstack.data.pipeline import prepare_data
 from propstack.research.monkey import run_monkey
-from propstack.run_backtest import prepare_data
 from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, validation_dir, write_json
 from propstack.utils.hashing import file_sha256
 

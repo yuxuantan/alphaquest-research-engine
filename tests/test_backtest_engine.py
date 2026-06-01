@@ -28,7 +28,7 @@ BASE_CFG = {
         "sl": {"module": "sweep_extreme", "params": {"stop_offset_ticks": 1}},
         "flatten_time": "14:55:00",
     },
-    "backtest": {
+    "core": {
         "tick_size": 0.25,
         "tick_value": 12.50,
         "commission_per_contract": 2.50,
@@ -64,7 +64,7 @@ def test_stop_first_same_bar_rule():
 
 
 def test_daily_loss_lockout_limits_trades():
-    cfg = {**BASE_CFG, "backtest": {**BASE_CFG["backtest"], "daily_loss_limit": 1}}
+    cfg = {**BASE_CFG, "core": {**BASE_CFG["core"], "daily_loss_limit": 1}}
     result = BacktestEngine(cfg).run(_features())
     assert "metrics" in result
 

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import argparse
 
+from propstack.data.pipeline import prepare_data
 from propstack.research.wfa import run_wfa
-from propstack.run_backtest import prepare_data
 from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, validation_dir, write_json
 from propstack.utils.hashing import file_sha256
 
@@ -14,7 +14,7 @@ def main() -> None:
     args = parser.parse_args()
     campaign = load_yaml(args.config)
     wfa_cfg = campaign["wfa"]
-    grid_cfg = campaign["grid"]
+    grid_cfg = campaign["core_grid"]
     benchmarks = campaign.get("benchmarks", {})
     out = create_run_dir("wfa", args.config, campaign)
     data, _ = prepare_data(campaign["data"], validation_dir(out))

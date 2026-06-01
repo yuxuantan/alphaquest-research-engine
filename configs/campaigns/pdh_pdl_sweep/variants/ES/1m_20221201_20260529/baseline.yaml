@@ -40,7 +40,10 @@ strategy:
       stop_offset_ticks: 1
   flatten_time: "14:55:00"
 
-backtest:
+core:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2023-05-29"
   initial_balance: 50000
   tick_size: 0.25
   tick_value: 12.50
@@ -72,7 +75,10 @@ benchmarks:
     ideal_ticks_per_side: 2
     min_profit_factor: 1.30
 
-grid:
+core_grid:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2023-05-29"
   objective: net_profit
   parameters:
     entry.params.reclaim_window_bars: [2, 3]

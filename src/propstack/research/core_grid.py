@@ -14,10 +14,10 @@ def parameter_combinations(params: dict) -> list[dict]:
     return [dict(zip(keys, values)) for values in product(*(params[k] for k in keys))]
 
 
-def run_grid(data: pd.DataFrame, base_config: dict, grid_config: dict, benchmarks: dict) -> tuple[pd.DataFrame, dict]:
+def run_core_grid(data: pd.DataFrame, base_config: dict, grid_config: dict, benchmarks: dict) -> tuple[pd.DataFrame, dict]:
     rows = []
     combos = parameter_combinations(grid_config.get("parameters", {}))
-    progress = progress_bar(len(combos), "grid search")
+    progress = progress_bar(len(combos), "core grid")
     for idx, combo in enumerate(combos, start=1):
         cfg = apply_dotted_params(base_config, combo)
         result = BacktestEngine(cfg).run(data)
@@ -54,6 +54,7 @@ def run_grid(data: pd.DataFrame, base_config: dict, grid_config: dict, benchmark
         "percentage_passing_benchmark": float(passing / len(df)) if len(df) else 0.0,
         "top_10_combinations": top.to_dict(orient="records"),
         "stable_parameter_zones": summarize_stability(df),
+        "data_subset": grid_config.get("data_subset", {}),
     }
     return df, summary
 

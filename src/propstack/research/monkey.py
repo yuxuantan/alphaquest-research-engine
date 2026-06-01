@@ -51,7 +51,7 @@ def run_monkey(data: pd.DataFrame, base_config: dict, monkey_config: dict, bench
         trades = stress_trades(result["trades"], rng, monkey_config.get("stress", {}))
         metrics = calculate_metrics(
             trades,
-            initial_balance=float(base_config.get("backtest", {}).get("initial_balance", 0)),
+            initial_balance=float(base_config.get("core", {}).get("initial_balance", 0)),
         )
         passed, reason = benchmark(metrics, benchmarks)
         rows.append(
