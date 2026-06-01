@@ -27,11 +27,20 @@ def main() -> None:
     parser.add_argument("--end-timestamp")
     parser.add_argument("--start-date")
     parser.add_argument("--end-date")
+    parser.add_argument(
+        "--continuous-contract",
+        default="dominant_session_volume",
+        choices=["dominant_session_volume", "session_volume", "explicit_roll_calendar", "none"],
+    )
+    parser.add_argument("--roll-calendar")
     parser.add_argument("--price-tolerance", type=float, default=0.0)
     parser.add_argument("--volume-tolerance", type=float, default=0.0)
     parser.add_argument("--detail-limit", type=int, default=100_000)
     parser.add_argument("--skip-alternate-contract-check", action="store_true")
     args = parser.parse_args()
+
+    if args.continuous_contract == "explicit_roll_calendar" and not args.roll_calendar:
+        parser.error("--roll-calendar is required with --continuous-contract explicit_roll_calendar")
 
     session_config = {
         "symbol": args.symbol,
@@ -53,9 +62,11 @@ def main() -> None:
         "source": "databento_dbn",
         "raw_dir": args.dbn_dir,
         "cache_dir": args.cache_dir or str(Path("data/cache/databento") / Path(args.dbn_dir).name),
-        "continuous_contract": "dominant_session_volume",
+        "continuous_contract": args.continuous_contract,
         "include_spreads": False,
     }
+    if args.roll_calendar:
+        dbn_config["roll_calendar"] = args.roll_calendar
 
     explicit_bounds = _date_bounds_from_args(args)
     csv_df = load_csv_bars(args.csv, csv_config, date_bounds=explicit_bounds)

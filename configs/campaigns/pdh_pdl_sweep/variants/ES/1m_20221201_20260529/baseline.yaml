@@ -12,7 +12,12 @@ data:
   symbol: ES
   timezone: America/New_York
   exchange_timezone: America/New_York
-  continuous_contract: dominant_session_volume
+  continuous_contract: explicit_roll_calendar
+  roll_calendar: configs/data/ES/motivewave_rithmic_roll_calendar.csv
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
   include_spreads: false
   warmup_days: 7
   rth_start: "09:30:00"

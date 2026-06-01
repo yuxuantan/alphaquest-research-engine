@@ -24,6 +24,11 @@ def data_source_hash(data_config: dict, subset_config: dict | None = None) -> st
             "timezone": data_config.get("timezone"),
             "include_spreads": bool(data_config.get("include_spreads", False)),
             "continuous_contract": data_config.get("continuous_contract", "dominant_session_volume"),
+            "roll_calendar": str(data_config.get("roll_calendar", "")),
+            "roll_calendar_sha256": file_sha256(data_config["roll_calendar"])
+            if data_config.get("roll_calendar")
+            else "",
+            "roll_boundary_policy": data_config.get("roll_boundary_policy", {}),
             "files": [
                 {
                     "path": str(path),

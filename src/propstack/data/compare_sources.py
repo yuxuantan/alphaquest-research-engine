@@ -5,7 +5,13 @@ from pathlib import Path
 import pandas as pd
 
 from propstack.data.clean import apply_continuous_contract, validate_ohlc
-from propstack.data.load import filter_timestamp_bounds, load_databento_dbn, load_raw_csv
+from propstack.data.load import (
+    filter_timestamp_bounds,
+    list_databento_dbn_files,
+    load_databento_dbn,
+    load_raw_csv,
+    parse_dbn_file_dates,
+)
 from propstack.data.sessions import assign_sessions
 from propstack.utils.config import write_json
 
@@ -28,6 +34,9 @@ def load_csv_bars(
         timestamp_format=config.get("timestamp_format", "%Y%m%d %H%M%S"),
         date_bounds=date_bounds,
     )
+    line_lookup = csv_line_lookup(path, config)
+    df = df.merge(line_lookup, on="timestamp", how="left")
+    df["csv_source_file"] = str(path)
     df = assign_sessions(df, config)
     df["source"] = "csv"
     return _prepare_for_compare(df, source_name="csv")
@@ -38,6 +47,7 @@ def load_databento_bars(
     date_bounds: dict | None = None,
 ) -> pd.DataFrame:
     df = load_databento_dbn(config, date_bounds=date_bounds)
+    df = assign_databento_files(df, config.get("raw_dir"))
     df = assign_sessions(df, config)
     df = apply_continuous_contract(df, config)
     df["source"] = "databento"
@@ -49,6 +59,7 @@ def load_databento_all_contract_bars(
     date_bounds: dict | None = None,
 ) -> pd.DataFrame:
     df = load_databento_dbn(config, date_bounds=date_bounds)
+    df = assign_databento_files(df, config.get("raw_dir"))
     df = assign_sessions(df, config)
     df["source"] = "databento_all_contracts"
     return df.sort_values(["timestamp", "contract_symbol"]).reset_index(drop=True)
@@ -118,8 +129,9 @@ def compare_ohlcv_sources(
     )
 
     alternate_summary = {}
+    alternate_matches = None
     if dbn_all_contracts_df is not None:
-        alternate_summary = alternate_contract_match_report(
+        alternate_summary, alternate_matches = alternate_contract_match_report(
             csv_df,
             dbn_all_contracts_df,
             comparison,
@@ -128,6 +140,7 @@ def compare_ohlcv_sources(
             volume_tolerance=volume_tolerance,
             detail_limit=detail_limit,
         )
+    build_manual_review_rows(comparison, out, detail_limit=detail_limit, alternate_matches=alternate_matches)
 
     summary = {
         "csv_rows": int(len(csv_df)),
@@ -165,6 +178,41 @@ def infer_bounds_from_csv(csv_df: pd.DataFrame) -> dict:
         "start_timestamp": csv_df["timestamp"].min().isoformat(),
         "end_timestamp": csv_df["timestamp"].max().isoformat(),
     }
+
+
+def csv_line_lookup(path: str | Path, config: dict) -> pd.DataFrame:
+    timestamp_format = config.get("timestamp_format", "%Y%m%d %H%M%S")
+    timezone = config.get("timezone", "America/New_York")
+    has_header = bool(config.get("has_header", False))
+    header = 0 if has_header else None
+    raw = pd.read_csv(path, header=header, usecols=[0], names=["timestamp"] if not has_header else None)
+    if has_header:
+        first_col = raw.columns[0]
+        raw = raw.rename(columns={first_col: "timestamp"})
+    raw["timestamp"] = pd.to_datetime(raw["timestamp"], format=timestamp_format)
+    if raw["timestamp"].dt.tz is None:
+        raw["timestamp"] = raw["timestamp"].dt.tz_localize(timezone)
+    else:
+        raw["timestamp"] = raw["timestamp"].dt.tz_convert(timezone)
+    raw["csv_line_number"] = raw.index + (2 if has_header else 1)
+    return raw.drop_duplicates(subset=["timestamp"], keep="last")
+
+
+def assign_databento_files(df: pd.DataFrame, raw_dir: str | Path | None) -> pd.DataFrame:
+    out = df.copy()
+    out["databento_file"] = None
+    if not raw_dir or out.empty:
+        return out
+
+    timestamp_dates = out["timestamp"].dt.tz_convert("UTC").dt.tz_localize(None).dt.normalize()
+    for path in list_databento_dbn_files(raw_dir):
+        bounds = parse_dbn_file_dates(path)
+        if not bounds:
+            continue
+        start, end = bounds
+        mask = (timestamp_dates >= start) & (timestamp_dates <= end)
+        out.loc[mask, "databento_file"] = str(path)
+    return out
 
 
 def source_summary_row(df: pd.DataFrame, source: str) -> dict:
@@ -212,6 +260,9 @@ def build_row_comparison(
             "symbol_databento",
         ]
     ].copy()
+    for col in ["csv_line_number", "csv_source_file", "databento_file"]:
+        if col in aligned.columns:
+            out[col] = aligned[col]
     if "contract_symbol_databento" in aligned.columns:
         out["contract_symbol_databento"] = aligned["contract_symbol_databento"]
 
@@ -351,13 +402,13 @@ def alternate_contract_match_report(
     price_tolerance: float = 0.0,
     volume_tolerance: float = 0.0,
     detail_limit: int = 100_000,
-) -> dict:
+) -> tuple[dict, pd.DataFrame | None]:
     out = Path(out_dir)
     if comparison.empty or dbn_all_contracts_df.empty:
         empty = pd.DataFrame()
         empty.to_csv(out / "alternate_contract_matches.csv", index=False)
         empty.to_csv(out / "alternate_contract_match_summary.csv", index=False)
-        return {}
+        return {}, None
 
     selected = comparison[comparison["any_price_mismatch"]][
         ["timestamp", "contract_symbol_databento", "max_abs_price_diff", "abs_volume_diff"]
@@ -372,14 +423,25 @@ def alternate_contract_match_report(
         empty = pd.DataFrame()
         empty.to_csv(out / "alternate_contract_matches.csv", index=False)
         empty.to_csv(out / "alternate_contract_match_summary.csv", index=False)
-        return {}
+        return {}, None
 
     csv_slice = csv_df[csv_df["timestamp"].isin(selected["timestamp"])][
-        ["timestamp", *PRICE_COLUMNS, "volume"]
+        [
+            "timestamp",
+            *[col for col in ["csv_line_number", "csv_source_file"] if col in csv_df.columns],
+            *PRICE_COLUMNS,
+            "volume",
+        ]
     ].copy()
     candidates = csv_slice.merge(
         dbn_all_contracts_df[
-            ["timestamp", "contract_symbol", *PRICE_COLUMNS, "volume"]
+            [
+                "timestamp",
+                "contract_symbol",
+                *[col for col in ["databento_file"] if col in dbn_all_contracts_df.columns],
+                *PRICE_COLUMNS,
+                "volume",
+            ]
         ],
         on="timestamp",
         how="inner",
@@ -389,7 +451,7 @@ def alternate_contract_match_report(
         empty = pd.DataFrame()
         empty.to_csv(out / "alternate_contract_matches.csv", index=False)
         empty.to_csv(out / "alternate_contract_match_summary.csv", index=False)
-        return {}
+        return {}, None
 
     for col in PRICE_COLUMNS:
         candidates[f"{col}_diff"] = candidates[f"{col}_databento"] - candidates[f"{col}_csv"]
@@ -437,7 +499,7 @@ def alternate_contract_match_report(
     )
     grouped.to_csv(out / "alternate_contract_match_summary.csv", index=False)
 
-    return {
+    summary = {
         "price_mismatch_timestamps_checked": int(selected["timestamp"].nunique()),
         "timestamps_with_databento_candidates": int(best["timestamp"].nunique()),
         "exact_price_match_any_contract": int(best["exact_price_match"].sum()),
@@ -445,6 +507,73 @@ def alternate_contract_match_report(
         "alternate_match_rows_written": int(min(len(best), detail_limit)),
         "alternate_match_sample_truncated": bool(len(best) > detail_limit),
     }
+    return summary, best
+
+
+def build_manual_review_rows(
+    comparison: pd.DataFrame,
+    out_dir: str | Path,
+    detail_limit: int = 100_000,
+    alternate_matches: pd.DataFrame | None = None,
+) -> None:
+    out = Path(out_dir)
+    if comparison.empty:
+        pd.DataFrame().to_csv(out / "manual_review_rows.csv", index=False)
+        return
+
+    rows = comparison[comparison["any_ohlcv_mismatch"]].copy()
+    rows = rows.sort_values(
+        ["any_price_mismatch", "max_abs_price_diff", "abs_volume_diff"],
+        ascending=[False, False, False],
+    )
+    base_columns = [
+        "timestamp",
+        *[col for col in ["csv_source_file", "csv_line_number", "databento_file"] if col in rows.columns],
+        "session_date_csv",
+        "session_label_csv",
+        "contract_symbol_databento",
+        "any_price_mismatch",
+        "volume_mismatch",
+        "max_abs_price_diff",
+        "abs_volume_diff",
+        "open_csv",
+        "open_databento",
+        "high_csv",
+        "high_databento",
+        "low_csv",
+        "low_databento",
+        "close_csv",
+        "close_databento",
+        "volume_csv",
+        "volume_databento",
+    ]
+    review = rows[[col for col in base_columns if col in rows.columns]].copy()
+
+    if alternate_matches is not None and not alternate_matches.empty:
+        alt_columns = [
+            "timestamp",
+            "best_contract_symbol",
+            "exact_price_match",
+            "better_than_selected",
+            "matched_price_columns",
+            "max_abs_price_diff",
+            "selected_max_abs_price_diff",
+        ]
+        if "databento_file" in alternate_matches.columns:
+            alt_columns.insert(2, "databento_file")
+        alt = alternate_matches[[col for col in alt_columns if col in alternate_matches.columns]].copy()
+        alt = alt.rename(
+            columns={
+                "databento_file": "alternate_databento_file",
+                "max_abs_price_diff": "alternate_max_abs_price_diff",
+                "exact_price_match": "alternate_exact_price_match",
+                "better_than_selected": "alternate_better_than_selected",
+                "matched_price_columns": "alternate_matched_price_columns",
+            }
+        )
+        review = review.merge(alt, on="timestamp", how="left")
+
+    review.head(detail_limit).to_csv(out / "manual_review_rows.csv", index=False)
 
 
 def timestamp_gap_segments(df: pd.DataFrame) -> pd.DataFrame:

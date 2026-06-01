@@ -89,3 +89,40 @@ def test_previous_rth_freshness_detects_overnight_breaches():
     assert overnight["prev_rth_low_fresh"]
     assert not next_rth["prev_rth_high_fresh"]
     assert not next_rth["prev_rth_low_fresh"]
+
+
+def test_previous_rth_levels_can_reset_on_contract_change():
+    cfg = {
+        "rth_start": "09:30:00",
+        "rth_end": "16:00:00",
+        "eth_start": "16:00:00",
+        "eth_end": "09:29:00",
+        "rolling_volume_window": 3,
+        "roll_boundary_policy": {"reset_previous_day_levels": True},
+    }
+    df = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2024-03-11 09:30:00",
+                    "2024-03-11 15:59:00",
+                    "2024-03-12 09:30:00",
+                ]
+            ).tz_localize("America/New_York"),
+            "symbol": ["ES", "ES", "ES"],
+            "contract_symbol": ["ESH4", "ESH4", "ESM4"],
+            "open": [100.0, 100.0, 105.0],
+            "high": [101.0, 102.0, 106.0],
+            "low": [99.0, 98.0, 104.0],
+            "close": [100.5, 101.0, 105.5],
+            "volume": [100, 100, 100],
+        }
+    )
+
+    features = build_features(assign_sessions(df, cfg), cfg)
+    first_new_contract_rth = features[
+        features["timestamp"] == pd.Timestamp("2024-03-12 09:30:00", tz="America/New_York")
+    ].iloc[0]
+
+    assert pd.isna(first_new_contract_rth["prev_rth_high"])
+    assert pd.isna(first_new_contract_rth["prev_rth_low"])

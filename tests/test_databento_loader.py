@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.data.clean import apply_continuous_contract
+from propstack.data.clean import apply_continuous_contract, apply_roll_boundary_policy, load_roll_calendar
 from propstack.data.load import list_databento_dbn_files, parse_dbn_file_dates
 
 
@@ -69,3 +69,99 @@ def test_continuous_contract_selects_dominant_session_contract():
 
     assert filtered["contract_symbol"].tolist() == ["ESM4", "ESM4"]
     assert filtered["symbol"].tolist() == ["ES", "ES"]
+
+
+def test_continuous_contract_selects_explicit_roll_calendar(tmp_path):
+    calendar = tmp_path / "roll_calendar.csv"
+    calendar.write_text(
+        "\n".join(
+            [
+                "start_timestamp,contract_symbol",
+                "2024-01-02 09:30:00-05:00,ESH4",
+                "2024-01-02 09:31:00-05:00,ESM4",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    df = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2024-01-02 09:30",
+                    "2024-01-02 09:30",
+                    "2024-01-02 09:31",
+                    "2024-01-02 09:31",
+                ]
+            ).tz_localize("America/New_York"),
+            "session_date": ["2024-01-02"] * 4,
+            "symbol": ["ESH4", "ESM4", "ESH4", "ESM4"],
+            "contract_symbol": ["ESH4", "ESM4", "ESH4", "ESM4"],
+            "open": [1.0, 2.0, 1.1, 2.1],
+            "high": [1.0, 2.0, 1.1, 2.1],
+            "low": [1.0, 2.0, 1.1, 2.1],
+            "close": [1.0, 2.0, 1.1, 2.1],
+            "volume": [100, 100, 100, 100],
+        }
+    )
+
+    filtered = apply_continuous_contract(
+        df,
+        {
+            "source": "databento_dbn",
+            "symbol": "ES",
+            "timezone": "America/New_York",
+            "continuous_contract": "explicit_roll_calendar",
+            "roll_calendar": str(calendar),
+        },
+    )
+
+    assert filtered["contract_symbol"].tolist() == ["ESH4", "ESM4"]
+
+
+def test_roll_calendar_handles_mixed_dst_offsets(tmp_path):
+    calendar = tmp_path / "roll_calendar.csv"
+    calendar.write_text(
+        "\n".join(
+            [
+                "start_timestamp,contract_symbol",
+                "2024-03-12 00:00:00-04:00,ESM4",
+                "2024-12-17 00:00:00-05:00,ESH5",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    parsed = load_roll_calendar(calendar, "America/New_York")
+
+    assert str(parsed["start_timestamp"].dt.tz) == "America/New_York"
+    assert parsed["contract_symbol"].tolist() == ["ESM4", "ESH5"]
+
+
+def test_roll_boundary_policy_can_skip_roll_sessions():
+    df = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2024-01-01 09:30",
+                    "2024-01-02 09:30",
+                    "2024-01-03 09:30",
+                    "2024-01-04 09:30",
+                ]
+            ).tz_localize("America/New_York"),
+            "session_date": [
+                pd.Timestamp("2024-01-01").date(),
+                pd.Timestamp("2024-01-02").date(),
+                pd.Timestamp("2024-01-03").date(),
+                pd.Timestamp("2024-01-04").date(),
+            ],
+            "contract_symbol": ["ESH4", "ESH4", "ESM4", "ESM4"],
+        }
+    )
+
+    filtered, report = apply_roll_boundary_policy(
+        df,
+        {"roll_boundary_policy": {"skip_sessions_around_roll": 1}},
+    )
+
+    assert filtered["session_date"].astype(str).tolist() == ["2024-01-01"]
+    assert report["roll_boundary_sessions_skipped"] == 3

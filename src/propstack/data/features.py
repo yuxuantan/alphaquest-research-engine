@@ -3,31 +3,47 @@ from __future__ import annotations
 import pandas as pd
 
 
-def add_previous_rth_levels(df: pd.DataFrame) -> pd.DataFrame:
+def add_previous_rth_levels(df: pd.DataFrame, reset_on_contract_change: bool = False) -> pd.DataFrame:
     out = df.copy()
     rth = out[out["is_rth"]]
-    daily = rth.groupby("session_date").agg(
-        rth_high=("high", "max"),
-        rth_low=("low", "min"),
-        rth_open=("open", "first"),
-        rth_close=("close", "last"),
-        total_rth_volume=("volume", "sum"),
-        first_rth_timestamp=("timestamp", "first"),
-        last_rth_timestamp=("timestamp", "last"),
-    )
+    agg = {
+        "rth_high": ("high", "max"),
+        "rth_low": ("low", "min"),
+        "rth_open": ("open", "first"),
+        "rth_close": ("close", "last"),
+        "total_rth_volume": ("volume", "sum"),
+        "first_rth_timestamp": ("timestamp", "first"),
+        "last_rth_timestamp": ("timestamp", "last"),
+    }
+    if "contract_symbol" in rth.columns:
+        agg["rth_contract_symbol"] = ("contract_symbol", "first")
+    daily = rth.groupby("session_date").agg(**agg)
     high_idx = rth.groupby("session_date")["high"].idxmax()
     low_idx = rth.groupby("session_date")["low"].idxmin()
     daily["rth_high_timestamp"] = rth.loc[high_idx].set_index("session_date")["timestamp"]
     daily["rth_low_timestamp"] = rth.loc[low_idx].set_index("session_date")["timestamp"]
-    prev = daily[["rth_high", "rth_low", "rth_high_timestamp", "rth_low_timestamp"]].shift(1).rename(
+    prev_cols = ["rth_high", "rth_low", "rth_high_timestamp", "rth_low_timestamp"]
+    if "rth_contract_symbol" in daily.columns:
+        prev_cols.append("rth_contract_symbol")
+    prev = daily[prev_cols].shift(1).rename(
         columns={
             "rth_high": "prev_rth_high",
             "rth_low": "prev_rth_low",
             "rth_high_timestamp": "prev_rth_high_timestamp",
             "rth_low_timestamp": "prev_rth_low_timestamp",
+            "rth_contract_symbol": "prev_rth_contract_symbol",
         }
     )
     out = out.merge(prev, left_on="session_date", right_index=True, how="left")
+    if reset_on_contract_change and {"contract_symbol", "prev_rth_contract_symbol"}.issubset(out.columns):
+        contract_changed = (
+            out["prev_rth_contract_symbol"].notna()
+            & (out["contract_symbol"].astype(str) != out["prev_rth_contract_symbol"].astype(str))
+        )
+        out.loc[
+            contract_changed,
+            ["prev_rth_high", "prev_rth_low", "prev_rth_high_timestamp", "prev_rth_low_timestamp"],
+        ] = pd.NA
     out = add_previous_rth_freshness(out)
     return out
 
@@ -93,7 +109,8 @@ def add_rolling_volume(df: pd.DataFrame, window: int = 20) -> pd.DataFrame:
 
 
 def build_features(df: pd.DataFrame, config: dict) -> pd.DataFrame:
-    out = add_previous_rth_levels(df)
+    policy = config.get("roll_boundary_policy") or {}
+    out = add_previous_rth_levels(df, bool(policy.get("reset_previous_day_levels", False)))
     out = add_overnight_levels(out)
     out = add_vwap(out)
     out = add_rolling_volume(out, int(config.get("rolling_volume_window", 20)))

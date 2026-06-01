@@ -119,16 +119,28 @@ data:
   cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
   symbol: ES
   timezone: America/New_York
-  continuous_contract: dominant_session_volume
+  continuous_contract: explicit_roll_calendar
+  roll_calendar: configs/data/ES/motivewave_rithmic_roll_calendar.csv
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
   include_spreads: false
   warmup_days: 7
 ```
 
 The first run converts only the required monthly DBN files to Parquet under
 `data/cache/`; later runs read those cached monthly files. For Databento parent
-futures requests, `continuous_contract: dominant_session_volume` removes spreads
-and keeps the highest-volume outright contract for each session while exposing
-the backtest symbol as `ES`.
+futures requests, `continuous_contract: explicit_roll_calendar` filters each bar
+to the contract in the configured roll calendar while exposing the backtest
+symbol as `ES`. Use `dominant_session_volume` only as a quick diagnostic rule;
+it can roll early because it uses same-session volume.
+
+The included ES calendar at
+`configs/data/ES/motivewave_rithmic_roll_calendar.csv` covers 2010-2026. Rows
+from 2022-2026 were inferred from the MotiveWave/Rithmic export; earlier rows
+use the same observed Tuesday-of-expiration-week roll rule and should be
+manually spot-checked if you use pre-2022 results for decisions.
 
 ## 2. Create A Campaign And Variant Config
 
@@ -188,7 +200,12 @@ data:
   symbol: ES
   timezone: America/New_York
   exchange_timezone: America/New_York
-  continuous_contract: dominant_session_volume
+  continuous_contract: explicit_roll_calendar
+  roll_calendar: configs/data/ES/motivewave_rithmic_roll_calendar.csv
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
   include_spreads: false
   warmup_days: 7
   rth_start: "09:30:00"
@@ -603,7 +620,12 @@ data:
   symbol: ES
   timezone: America/New_York
   exchange_timezone: America/New_York
-  continuous_contract: dominant_session_volume
+  continuous_contract: explicit_roll_calendar
+  roll_calendar: configs/data/ES/motivewave_rithmic_roll_calendar.csv
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
   include_spreads: false
   warmup_days: 7
   rth_start: "09:30:00"
@@ -1002,6 +1024,8 @@ To compare a MotiveWave/Rithmic CSV export against the Databento DBN archive:
 PYTHONPATH=src python3 -m propstack.compare_data_sources \
   --csv data/raw/ES/es_1m_20221201-20260529.csv \
   --dbn-dir data/raw/ES/GLBX-20260601-U6S3S4F4GM \
+  --continuous-contract explicit_roll_calendar \
+  --roll-calendar configs/data/ES/motivewave_rithmic_roll_calendar.csv \
   --out data/reports/data_compare/ES/rithmic_vs_databento_1m_20221201_20260529
 ```
 
