@@ -1,15 +1,16 @@
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
-from propstack.strategy.pdh_pdl_sweep import PdhPdlSweepReclaim
+from propstack.strategy import ModularStrategy
 
 from tests.test_data_pipeline import DATA_CFG
 
 
-def test_pdh_pdl_sweep_signal_reclaim_within_n_bars():
+def test_modular_strategy_composes_entry_tp_and_sl_modules():
     df, _, _ = clean_data(DATA_CFG)
     feat = build_features(df, DATA_CFG).reset_index(drop=True)
-    strat = PdhPdlSweepReclaim(
+    strat = ModularStrategy(
         {
+            "strategy_name": "pdh_pdl_sweep",
             "entry": {
                 "module": "pdh_pdl_sweep_reclaim",
                 "params": {
@@ -36,9 +37,9 @@ def test_pdh_pdl_sweep_signal_reclaim_within_n_bars():
     assert any(s.direction == "short" for s in signals)
 
 
-def test_pdh_pdl_strategy_requires_modular_config():
+def test_modular_strategy_requires_entry_tp_and_sl_sections():
     try:
-        PdhPdlSweepReclaim(
+        ModularStrategy(
             {
                 "entry": {
                     "module": "pdh_pdl_sweep_reclaim",

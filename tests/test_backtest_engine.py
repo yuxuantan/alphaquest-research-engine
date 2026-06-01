@@ -10,8 +10,8 @@ from tests.test_data_pipeline import DATA_CFG
 
 BASE_CFG = {
     "data": DATA_CFG,
+    "strategy_name": "pdh_pdl_sweep",
     "strategy": {
-        "strategy_name": "pdh_pdl_sweep",
         "entry": {
             "module": "pdh_pdl_sweep_reclaim",
             "params": {
@@ -50,6 +50,7 @@ def test_next_bar_entry_and_costs():
     trades = result["trades"]
     assert len(trades) >= 2
     first = trades.iloc[0]
+    assert first["strategy_name"] == "pdh_pdl_sweep"
     assert "08:32:00" in str(first["entry_timestamp"])
     assert first["commission"] == 5.0
     assert first["slippage_cost"] == 25.0

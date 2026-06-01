@@ -57,6 +57,9 @@ data/
 
 src/
   propstack/
+    strategy/
+      modular.py
+    strategy_modules/
 
 tests/
 ```
@@ -139,7 +142,6 @@ In the same campaign file:
 
 ```yaml
 strategy:
-  strategy_name: pdh_pdl_sweep
   entry:
     module: pdh_pdl_sweep_reclaim
     params:
@@ -169,9 +171,14 @@ tp    -> calculates target price
 sl    -> calculates stop price
 ```
 
+The backtest engine uses a generic `ModularStrategy` composer. There is no separate PDH/PDL strategy wrapper; the campaign YAML is the source of truth for which entry, TP, and SL modules are combined.
+
 Each module implementation lives in its own file:
 
 ```text
+src/propstack/strategy/
+  modular.py
+
 src/propstack/strategy_modules/
   entry/
     pdh_pdl_sweep_reclaim.py
@@ -231,7 +238,7 @@ sl:    beyond the sweep candle extreme, offset by ticks
 tp:    fixed R multiple from entry to stop
 ```
 
-Only create a new strategy file when the orchestration is different. If you are only changing entry logic, stop logic, or target logic, create or swap one module instead.
+For normal one-entry, one-stop, one-target strategies, do not create a strategy file. Create or swap the relevant module and wire it in the campaign YAML. A custom strategy orchestrator is only worth adding later if the engine needs behavior beyond this composition model, such as partial exits, trailing stops, pyramiding, or multiple simultaneous entry systems.
 
 ### Step 2: Create Or Reuse An Entry Module
 
@@ -407,7 +414,6 @@ Then wire the modules and parameters:
 
 ```yaml
 strategy:
-  strategy_name: pdh_pdl_sweep
   entry:
     module: pdh_pdl_sweep_reclaim
     params:

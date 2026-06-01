@@ -5,7 +5,7 @@ import pandas as pd
 from propstack.backtest.fills import entry_price, exit_price, stop_target_hit
 from propstack.backtest.metrics import calculate_metrics, daily_results
 from propstack.backtest.risk import DailyRisk
-from propstack.strategy.pdh_pdl_sweep import PdhPdlSweepReclaim
+from propstack.strategy import ModularStrategy
 from propstack.utils.progress import progress_bar
 from propstack.utils.time import parse_time
 
@@ -13,13 +13,15 @@ from propstack.utils.time import parse_time
 class BacktestEngine:
     def __init__(self, config: dict, show_progress: bool = False):
         self.config = config
-        self.strategy_config = config.get("strategy", {})
+        self.strategy_config = dict(config.get("strategy", {}))
+        if "strategy_name" not in self.strategy_config and config.get("strategy_name"):
+            self.strategy_config["strategy_name"] = config["strategy_name"]
         self.backtest_config = config.get("backtest", {})
         self.show_progress = show_progress
 
     def run(self, data: pd.DataFrame) -> dict:
         df = data.sort_values("timestamp").reset_index(drop=True)
-        strategy = PdhPdlSweepReclaim(self.strategy_config)
+        strategy = ModularStrategy(self.strategy_config)
         entry_params = self.strategy_config.get("entry", {}).get("params", {})
         risk = DailyRisk({**self.backtest_config, **self.strategy_config, **entry_params})
         tick_size = float(self.backtest_config.get("tick_size", 0.25))

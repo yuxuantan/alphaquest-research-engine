@@ -7,10 +7,10 @@ from propstack.strategy_modules.sl import build_sl_module
 from propstack.strategy_modules.tp import build_tp_module
 
 
-class PdhPdlSweepReclaim:
+class ModularStrategy:
     def __init__(self, config: dict):
         self.config = _validate_strategy_config(config)
-        self.name = self.config.get("strategy_name", "pdh_pdl_sweep")
+        self.name = self.config.get("strategy_name", "modular_strategy")
         self.entry = build_entry_module(self.config["entry"])
         self.tp = build_tp_module(self.config["tp"])
         self.sl = build_sl_module(self.config["sl"])
