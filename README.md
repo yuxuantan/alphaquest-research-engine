@@ -169,6 +169,20 @@ tp    -> calculates target price
 sl    -> calculates stop price
 ```
 
+Each module implementation lives in its own file:
+
+```text
+src/propstack/strategy_modules/
+  entry/
+    pdh_pdl_sweep_reclaim.py
+  tp/
+    fixed_r.py
+  sl/
+    sweep_extreme.py
+```
+
+To add a reusable module, create a new file in the correct folder and register it in that folder's `__init__.py`.
+
 Current strategy logic:
 
 ```text

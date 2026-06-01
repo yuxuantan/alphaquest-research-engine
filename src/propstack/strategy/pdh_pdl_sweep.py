@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.backtest.entry import Signal, build_entry_module
-from propstack.backtest.sl import build_sl_module
-from propstack.backtest.tp import build_tp_module
+from propstack.strategy_modules.entry import Signal, build_entry_module
+from propstack.strategy_modules.sl import build_sl_module
+from propstack.strategy_modules.tp import build_tp_module
 
 
 class PdhPdlSweepReclaim:
