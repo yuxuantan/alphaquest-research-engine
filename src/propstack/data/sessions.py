@@ -15,8 +15,8 @@ def assign_sessions(df: pd.DataFrame, config: dict) -> pd.DataFrame:
     eth_start = parse_time(config.get("eth_start", "17:00:00"))
     eth_end = parse_time(config.get("eth_end", "08:29:00"))
 
-    is_rth = (t >= rth_start) & (t <= rth_end)
     is_eth = (t >= eth_start) | (t <= eth_end)
+    is_rth = (t >= rth_start) & (t <= rth_end) & ~is_eth
     out["is_rth"] = is_rth
     out["is_eth"] = is_eth
     out["session_label"] = "closed"
