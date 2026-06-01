@@ -19,6 +19,12 @@ class PdhPdlSweepReclaimEntry:
             {"long_sweep": None, "short_sweep": None},
         )
 
+    def _bars_between(self, idx: int, sweep: dict) -> int:
+        return idx - sweep["idx"] - 1
+
+    def _within_reclaim_window(self, idx: int, sweep: dict, window: int) -> bool:
+        return idx > sweep["idx"] and self._bars_between(idx, sweep) <= window
+
     def on_bar_close(self, bar: pd.Series, trades_today: int = 0) -> Signal | None:
         if not bar.get("is_rth", False):
             return None
@@ -41,7 +47,16 @@ class PdhPdlSweepReclaimEntry:
         window = int(self.params.get("reclaim_window_bars", 3))
         idx = int(bar.name)
 
-        if self.params.get("allow_long", True) and bar["low"] < prev_low:
+        long_sweep = state.get("long_sweep")
+        short_sweep = state.get("short_sweep")
+        if long_sweep and self._bars_between(idx, long_sweep) > window:
+            state["long_sweep"] = None
+            long_sweep = None
+        if short_sweep and self._bars_between(idx, short_sweep) > window:
+            state["short_sweep"] = None
+            short_sweep = None
+
+        if self.params.get("allow_long", True) and long_sweep is None and bar["low"] < prev_low:
             state["long_sweep"] = {
                 "idx": idx,
                 "timestamp": bar["timestamp"],
@@ -49,7 +64,7 @@ class PdhPdlSweepReclaimEntry:
                 "sweep_high": float(bar["high"]),
                 "level": float(prev_low),
             }
-        if self.params.get("allow_short", True) and bar["high"] > prev_high:
+        if self.params.get("allow_short", True) and short_sweep is None and bar["high"] > prev_high:
             state["short_sweep"] = {
                 "idx": idx,
                 "timestamp": bar["timestamp"],
@@ -59,7 +74,10 @@ class PdhPdlSweepReclaimEntry:
             }
 
         long_sweep = state.get("long_sweep")
-        if long_sweep and idx - long_sweep["idx"] <= window and bar["close"] > long_sweep["level"]:
+        if long_sweep and bar["low"] < long_sweep["level"]:
+            long_sweep["sweep_low"] = min(long_sweep["sweep_low"], float(bar["low"]))
+            long_sweep["sweep_high"] = max(long_sweep["sweep_high"], float(bar["high"]))
+        if long_sweep and self._within_reclaim_window(idx, long_sweep, window) and bar["close"] > long_sweep["level"]:
             state["long_sweep"] = None
             return Signal(
                 direction="long",
@@ -72,7 +90,10 @@ class PdhPdlSweepReclaimEntry:
             )
 
         short_sweep = state.get("short_sweep")
-        if short_sweep and idx - short_sweep["idx"] <= window and bar["close"] < short_sweep["level"]:
+        if short_sweep and bar["high"] > short_sweep["level"]:
+            short_sweep["sweep_low"] = min(short_sweep["sweep_low"], float(bar["low"]))
+            short_sweep["sweep_high"] = max(short_sweep["sweep_high"], float(bar["high"]))
+        if short_sweep and self._within_reclaim_window(idx, short_sweep, window) and bar["close"] < short_sweep["level"]:
             state["short_sweep"] = None
             return Signal(
                 direction="short",
@@ -83,9 +104,4 @@ class PdhPdlSweepReclaimEntry:
                 sweep_low=short_sweep["sweep_low"],
                 reclaim_timestamp=bar["timestamp"],
             )
-
-        if long_sweep and idx - long_sweep["idx"] > window:
-            state["long_sweep"] = None
-        if short_sweep and idx - short_sweep["idx"] > window:
-            state["short_sweep"] = None
         return None
