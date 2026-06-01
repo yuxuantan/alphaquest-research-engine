@@ -54,11 +54,12 @@ def create_run_dir(
         "campaign_id": _campaign_id(config),
         "strategy_name": _strategy_name(config),
         "symbol": _symbol(config),
+        "dataset_id": _dataset_id(config),
         "raw_csv": _raw_csv(config),
         "config_source": str(config_path) if config_path else None,
         "config_hash": file_sha256(config_path) if config_path else object_sha256(config or {}),
         "created_at": datetime.now().isoformat(timespec="seconds"),
-        "layout": "strategy_first",
+        "layout": "strategy_symbol_dataset_campaign",
     }
     write_json(root / "run_manifest.json", manifest)
     return out
@@ -71,6 +72,7 @@ def campaign_root(config: dict | None) -> Path:
         / "strategies"
         / _strategy_name(config)
         / _symbol(config)
+        / _dataset_id(config)
         / _campaign_id(config)
     )
 
@@ -102,12 +104,13 @@ def _update_manifest(root: Path, config: dict, config_path: str | Path, input_ha
         "campaign_id": _campaign_id(config),
         "strategy_name": _strategy_name(config),
         "symbol": _symbol(config),
+        "dataset_id": _dataset_id(config),
         "raw_csv": _raw_csv(config),
         "config_source": str(config_path),
         "config_hash": file_sha256(config_path),
         "input_data_hash": input_hash,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
-        "layout": "strategy_first",
+        "layout": "strategy_symbol_dataset_campaign",
     }
     write_json(root / "run_manifest.json", manifest)
 
@@ -130,6 +133,7 @@ def _update_campaign_summary(
             "campaign_id": _campaign_id(config),
             "strategy_name": _strategy_name(config),
             "symbol": _symbol(config),
+            "dataset_id": _dataset_id(config),
             "raw_csv": _raw_csv(config),
             "config_source": str(config_path),
             "config_hash": file_sha256(config_path),
@@ -157,6 +161,7 @@ def _update_runs_index(root: Path) -> None:
         "campaign_id": summary.get("campaign_id"),
         "strategy_name": summary.get("strategy_name"),
         "symbol": summary.get("symbol"),
+        "dataset_id": summary.get("dataset_id"),
         "raw_csv": summary.get("raw_csv"),
         "config_hash": summary.get("config_hash"),
         "input_data_hash": summary.get("input_data_hash"),
@@ -207,6 +212,16 @@ def _symbol(config: dict | None) -> str:
         return "UNKNOWN"
     data = config.get("data") or {}
     return str(data.get("symbol") or config.get("symbol") or "UNKNOWN")
+
+
+def _dataset_id(config: dict | None) -> str:
+    if not config:
+        return "unknown_dataset"
+    data = config.get("data") or {}
+    dataset_id = config.get("dataset_id") or data.get("dataset_id")
+    if dataset_id:
+        return str(dataset_id)
+    raise ValueError("Campaign config must define a non-empty dataset_id.")
 
 
 def _raw_csv(config: dict | None) -> str | None:

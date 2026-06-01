@@ -30,7 +30,8 @@ configs/
   campaigns/
     pdh_pdl_sweep/
       ES/
-        sample.yaml
+        1m_20221201_20260529/
+          baseline.yaml
 
 data/
   raw/
@@ -41,19 +42,20 @@ data/
     strategies/
       pdh_pdl_sweep/
         ES/
-          sample/
-            campaign_config.yaml
-            campaign_summary.json
-            config_hash.txt
-            input_data_hash.txt
-            run_manifest.json
-            validation/
-            backtest/
-            grid/
-            monkey/
-            wfa/
-            monte_carlo/
-          runs_index.csv
+          1m_20221201_20260529/
+            baseline/
+              campaign_config.yaml
+              campaign_summary.json
+              config_hash.txt
+              input_data_hash.txt
+              run_manifest.json
+              validation/
+              backtest/
+              grid/
+              monkey/
+              wfa/
+              monte_carlo/
+            runs_index.csv
 
 src/
   propstack/
@@ -102,20 +104,43 @@ America/Chicago
 
 ## 2. Create A Campaign Config
 
-Copy the sample campaign:
+Campaign configs are organized by stable context first, then experiment variation:
+
+```text
+configs/campaigns/{strategy_name}/{symbol}/{dataset_id}/{campaign_id}.yaml
+```
+
+Example:
+
+```text
+configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml
+```
+
+This makes the path readable without opening the YAML:
+
+```text
+pdh_pdl_sweep         strategy family
+ES                    symbol
+1m_20221201_20260529  dataset and date range
+baseline              experiment variation
+```
+
+Copy the baseline campaign when you want a new experiment on the same strategy, symbol, and dataset:
 
 ```bash
-cp configs/campaigns/pdh_pdl_sweep/ES/sample.yaml configs/campaigns/pdh_pdl_sweep/ES/es_5y_baseline.yaml
+cp configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r.yaml
 ```
 
 Edit the new file:
 
 ```yaml
-campaign_id: es_5y_baseline
+campaign_id: tp_2r
 strategy_name: pdh_pdl_sweep
 symbol: ES
+dataset_id: 1m_20221201_20260529
 
 data:
+  dataset_id: 1m_20221201_20260529
   raw_csv: data/raw/ES/es_1m_20221201-20260529.csv
   csv_format: yyyymmdd_hhmmss_ohlcv
   has_header: false
@@ -130,10 +155,41 @@ data:
   rolling_volume_window: 3
 ```
 
-The `campaign_id` is mandatory. All runs using the same campaign file write to:
+The `campaign_id` and `dataset_id` are mandatory. All runs using the same campaign file write to:
 
 ```text
-data/reports/strategies/{strategy_name}/{symbol}/{campaign_id}/
+data/reports/strategies/{strategy_name}/{symbol}/{dataset_id}/{campaign_id}/
+```
+
+Use one YAML per experiment, not one YAML per report type. A single campaign YAML can produce the backtest, grid, monkey, WFA, and Monte Carlo reports for the same controlled setup.
+
+Create a new campaign YAML when you want to preserve and compare a meaningful experiment:
+
+```text
+different dataset or date range
+different symbol
+different entry, TP, or SL module
+different important parameter set
+different cost, slippage, or account assumptions
+different benchmark or prop-rule assumptions
+```
+
+Do not create a new campaign for a temporary crash check or one-off debugging edit. Reuse `baseline` or create a clearly disposable `scratch.yaml` in the same dataset folder.
+
+Use this naming rule:
+
+```text
+folder path = stable context
+file name   = experiment variation
+```
+
+Examples:
+
+```text
+configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml
+configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r.yaml
+configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/long_only.yaml
+configs/campaigns/pdh_pdl_sweep/NQ/1m_20221201_20260529/baseline.yaml
 ```
 
 ## 3. Configure Strategy Rules
@@ -397,18 +453,21 @@ configs/campaigns/
 For a new single parameter run, copy an existing campaign and give it a unique `campaign_id`:
 
 ```bash
-cp configs/campaigns/pdh_pdl_sweep/ES/sample.yaml configs/campaigns/pdh_pdl_sweep/ES/es_5y_my_params.yaml
+cp configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r.yaml
 ```
 
 Set the campaign identity:
 
 ```yaml
-campaign_id: es_5y_my_params
+campaign_id: tp_2r
 strategy_name: pdh_pdl_sweep
 symbol: ES
+dataset_id: 1m_20221201_20260529
 ```
 
 Use a new `campaign_id` for every result set you want to preserve. If you reuse the same campaign id, the latest run writes to the same report folder.
+
+Do not split one experiment into separate YAML files for backtest, grid, monkey, WFA, and Monte Carlo. Keep those report sections together inside the same campaign YAML so every report points back to the same data, modules, parameters, costs, and benchmarks.
 
 Then wire the modules and parameters:
 
@@ -458,6 +517,7 @@ The `data` section records exactly which raw CSV is used:
 
 ```yaml
 data:
+  dataset_id: 1m_20221201_20260529
   raw_csv: data/raw/ES/es_1m_20221201-20260529.csv
   csv_format: yyyymmdd_hhmmss_ohlcv
   has_header: false
@@ -494,20 +554,20 @@ Do not compare campaigns unless these assumptions are intentionally identical or
 Run one exact campaign config:
 
 ```bash
-CAMPAIGN_CONFIG=configs/campaigns/pdh_pdl_sweep/ES/es_5y_my_params.yaml
+CAMPAIGN_CONFIG=configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r.yaml
 PYTHONPATH=src python3 -m propstack.run_backtest --config "$CAMPAIGN_CONFIG"
 ```
 
 The command prints the output folder. It will follow this layout:
 
 ```text
-data/reports/strategies/{strategy_name}/{symbol}/{campaign_id}/
+data/reports/strategies/{strategy_name}/{symbol}/{dataset_id}/{campaign_id}/
 ```
 
 For the example above:
 
 ```text
-data/reports/strategies/pdh_pdl_sweep/ES/es_5y_my_params/
+data/reports/strategies/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r/
 ```
 
 ### Step 8: Validate Before Interpreting Performance
@@ -742,13 +802,13 @@ campaign_summary.json
   Collects latest summary metrics for backtest, grid, monkey, WFA, and Monte Carlo.
 ```
 
-The symbol-level index compares campaigns:
+The dataset-level index compares campaigns that share the same strategy, symbol, and dataset:
 
 ```text
-data/reports/strategies/{strategy_name}/{symbol}/runs_index.csv
+data/reports/strategies/{strategy_name}/{symbol}/{dataset_id}/runs_index.csv
 ```
 
-Use a new campaign id whenever you want to compare a different strategy version, data file, or parameter set side by side.
+Use a new `campaign_id` whenever you want to compare a different strategy version or parameter set side by side. Use a new `dataset_id` whenever the raw data file or date range changes.
 
 ## 4. Configure Backtest Costs And Risk
 
@@ -811,14 +871,14 @@ max_drawdown_pct: 0.20
 ## 6. Run Data Validation And Baseline Backtest
 
 ```bash
-CAMPAIGN_CONFIG=configs/campaigns/pdh_pdl_sweep/ES/es_5y_baseline.yaml
+CAMPAIGN_CONFIG=configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml
 PYTHONPATH=src python3 -m propstack.run_backtest --config "$CAMPAIGN_CONFIG"
 ```
 
 Outputs:
 
 ```text
-data/reports/strategies/pdh_pdl_sweep/ES/es_5y_baseline/
+data/reports/strategies/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/
   validation/
     cleaned_data.csv
     features_data.csv
@@ -1023,7 +1083,7 @@ You can also point it at an existing trade log:
 
 ```yaml
 monte_carlo:
-  trade_log: data/reports/strategies/pdh_pdl_sweep/ES/es_5y_baseline/backtest/trade_log.csv
+  trade_log: data/reports/strategies/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/backtest/trade_log.csv
 ```
 
 Run:
@@ -1082,9 +1142,10 @@ The campaign summary accumulates results:
 
 ```json
 {
-  "campaign_id": "es_5y_baseline",
+  "campaign_id": "baseline",
   "strategy_name": "pdh_pdl_sweep",
   "symbol": "ES",
+  "dataset_id": "1m_20221201_20260529",
   "raw_csv": "data/raw/ES/es_1m_20221201-20260529.csv",
   "config_hash": "...",
   "input_data_hash": "...",
@@ -1098,10 +1159,10 @@ The campaign summary accumulates results:
 }
 ```
 
-The symbol-level index lets you compare campaigns:
+The dataset-level index lets you compare campaign variations on the same strategy, symbol, and dataset:
 
 ```text
-data/reports/strategies/pdh_pdl_sweep/ES/runs_index.csv
+data/reports/strategies/pdh_pdl_sweep/ES/1m_20221201_20260529/runs_index.csv
 ```
 
 ## Recommended End-To-End Workflow
@@ -1109,7 +1170,7 @@ data/reports/strategies/pdh_pdl_sweep/ES/runs_index.csv
 For a serious strategy test:
 
 ```bash
-CAMPAIGN_CONFIG=configs/campaigns/pdh_pdl_sweep/ES/es_5y_baseline.yaml
+CAMPAIGN_CONFIG=configs/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline.yaml
 
 PYTHONPATH=src python3 -m propstack.run_backtest --config "$CAMPAIGN_CONFIG"
 PYTHONPATH=src python3 -m propstack.run_grid --config "$CAMPAIGN_CONFIG"
