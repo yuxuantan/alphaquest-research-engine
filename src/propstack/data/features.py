@@ -15,10 +15,47 @@ def add_previous_rth_levels(df: pd.DataFrame) -> pd.DataFrame:
         first_rth_timestamp=("timestamp", "first"),
         last_rth_timestamp=("timestamp", "last"),
     )
-    prev = daily[["rth_high", "rth_low"]].shift(1).rename(
-        columns={"rth_high": "prev_rth_high", "rth_low": "prev_rth_low"}
+    high_idx = rth.groupby("session_date")["high"].idxmax()
+    low_idx = rth.groupby("session_date")["low"].idxmin()
+    daily["rth_high_timestamp"] = rth.loc[high_idx].set_index("session_date")["timestamp"]
+    daily["rth_low_timestamp"] = rth.loc[low_idx].set_index("session_date")["timestamp"]
+    prev = daily[["rth_high", "rth_low", "rth_high_timestamp", "rth_low_timestamp"]].shift(1).rename(
+        columns={
+            "rth_high": "prev_rth_high",
+            "rth_low": "prev_rth_low",
+            "rth_high_timestamp": "prev_rth_high_timestamp",
+            "rth_low_timestamp": "prev_rth_low_timestamp",
+        }
     )
     out = out.merge(prev, left_on="session_date", right_index=True, how="left")
+    out = add_previous_rth_freshness(out)
+    return out
+
+
+def add_previous_rth_freshness(df: pd.DataFrame) -> pd.DataFrame:
+    out = df.copy()
+    out["prev_rth_high_fresh"] = False
+    out["prev_rth_low_fresh"] = False
+    ordered = out.sort_values("timestamp")
+
+    high_keys = ordered[["prev_rth_high", "prev_rth_high_timestamp"]].dropna().drop_duplicates()
+    for row in high_keys.itertuples(index=False):
+        level = float(row.prev_rth_high)
+        created_at = row.prev_rth_high_timestamp
+        breached = (ordered["timestamp"] > created_at) & (ordered["high"] > level)
+        breached_before_bar = breached.cumsum().shift(fill_value=0).astype(bool)
+        uses_level = (ordered["prev_rth_high"] == level) & (ordered["prev_rth_high_timestamp"] == created_at)
+        out.loc[ordered.index[uses_level], "prev_rth_high_fresh"] = ~breached_before_bar[uses_level].to_numpy()
+
+    low_keys = ordered[["prev_rth_low", "prev_rth_low_timestamp"]].dropna().drop_duplicates()
+    for row in low_keys.itertuples(index=False):
+        level = float(row.prev_rth_low)
+        created_at = row.prev_rth_low_timestamp
+        breached = (ordered["timestamp"] > created_at) & (ordered["low"] < level)
+        breached_before_bar = breached.cumsum().shift(fill_value=0).astype(bool)
+        uses_level = (ordered["prev_rth_low"] == level) & (ordered["prev_rth_low_timestamp"] == created_at)
+        out.loc[ordered.index[uses_level], "prev_rth_low_fresh"] = ~breached_before_bar[uses_level].to_numpy()
+
     return out
 
 

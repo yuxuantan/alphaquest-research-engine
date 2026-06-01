@@ -49,3 +49,43 @@ def test_previous_rth_levels_skip_eth_boundary_bar_over_weekend():
 
     assert monday["prev_rth_high"] == 3912.5
     assert monday["prev_rth_low"] == 3877.25
+
+
+def test_previous_rth_freshness_detects_overnight_breaches():
+    cfg = {
+        "rth_start": "09:30:00",
+        "rth_end": "16:00:00",
+        "eth_start": "16:00:00",
+        "eth_end": "09:29:00",
+        "rolling_volume_window": 3,
+    }
+    df = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2024-01-02 09:30:00",
+                    "2024-01-02 09:31:00",
+                    "2024-01-02 16:00:00",
+                    "2024-01-03 09:30:00",
+                ]
+            ).tz_localize("America/New_York"),
+            "symbol": "ES",
+            "open": [100.0, 100.0, 100.0, 100.0],
+            "high": [101.0, 100.5, 101.25, 100.5],
+            "low": [99.0, 99.5, 98.75, 99.25],
+            "close": [100.5, 100.0, 100.0, 100.0],
+            "volume": [100, 100, 100, 100],
+        }
+    )
+    features = build_features(assign_sessions(df, cfg), cfg)
+    overnight = features[
+        features["timestamp"] == pd.Timestamp("2024-01-02 16:00:00", tz="America/New_York")
+    ].iloc[0]
+    next_rth = features[
+        features["timestamp"] == pd.Timestamp("2024-01-03 09:30:00", tz="America/New_York")
+    ].iloc[0]
+
+    assert overnight["prev_rth_high_fresh"]
+    assert overnight["prev_rth_low_fresh"]
+    assert not next_rth["prev_rth_high_fresh"]
+    assert not next_rth["prev_rth_low_fresh"]
