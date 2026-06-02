@@ -5,11 +5,13 @@ from propstack.strategy_modules.tp.opening_range_extension import (
     OpeningRangeExtensionTarget,
     opening_range_extension_target,
 )
+from propstack.strategy_modules.tp.percent_from_entry import PercentFromEntryTarget, percent_from_entry_target
 
 
 TP_MODULES = {
     FixedRTarget.name: FixedRTarget,
     OpeningRangeExtensionTarget.name: OpeningRangeExtensionTarget,
+    PercentFromEntryTarget.name: PercentFromEntryTarget,
 }
 
 
@@ -25,7 +27,9 @@ def build_tp_module(config: dict):
 __all__ = [
     "FixedRTarget",
     "OpeningRangeExtensionTarget",
+    "PercentFromEntryTarget",
     "fixed_r_target",
     "opening_range_extension_target",
+    "percent_from_entry_target",
     "build_tp_module",
 ]

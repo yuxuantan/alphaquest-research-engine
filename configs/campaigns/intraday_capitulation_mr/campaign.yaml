@@ -1,0 +1,60 @@
+campaign_id: intraday_capitulation_mr
+campaign_name: Intraday Capitulation MR (MES-first)
+source:
+  title: Strategy 3 - Intraday Capitulation MR (MES-first)
+  url:
+status: researching
+
+idea:
+  summary: >
+    Test a long-only intraday mean-reversion setup after a high-volume bearish
+    selling-climax bar into or below VWAP support.
+  entry_thesis: >
+    In an upward-biased index, a bearish 15-minute RTH candle that closes near
+    its low, has oversold RSI, trades at or below VWAP, and prints unusually
+    high volume may mark exhaustion rather than continuation.
+  exit_thesis: >
+    The screenshot defines fixed percent exits from entry: 0.30% stop below
+    entry and 0.75% profit target above entry, giving a 2.5:1 reward-to-risk
+    profile.
+
+mechanics:
+  timeframe: >
+    Uses the 1-minute feed to build synthetic 15-minute RTH bars aligned from
+    09:30 ET.
+  market_timezone: America/New_York
+  session: >
+    RTH-only logic from 09:30 through 16:15 ET. The final entry-producing
+    synthetic bar closes at 16:00 ET so the position can still be flattened at
+    16:15 ET.
+  entry_filter:
+    direction: long_only
+    all_conditions: >
+      The completed 15-minute bar must close below its open, close in the
+      bottom configured fraction of its range, have RSI(14) below 35, close at
+      or below session VWAP, and have volume greater than 1.5x the average
+      volume of the prior 20 synthetic 15-minute RTH bars.
+    close_near_low_definition: >
+      Baseline defines "close near low" as close location <= 0.25, where close
+      location is (close - low) / (high - low). The screenshot did not specify
+      a numeric threshold.
+  entry_execution: >
+    Signals are generated at the synthetic 15-minute bar close. The backtest
+    enters with a market order at the next underlying 1-minute bar open with
+    configured slippage.
+  max_trades_per_day: 1
+  stop_loss: >
+    0.30% below entry, rounded down to the nearest tick for long trades.
+  take_profit: >
+    0.75% above entry, rounded up to the nearest tick for long trades.
+  time_exit: >
+    Any open position is flattened at 16:15 ET.
+  instrument_note: >
+    The strategy is intended for MES sizing. This workspace currently has ES
+    price history, not a native MES raw data directory, so the baseline variant
+    labels the run as MES while using ES continuous-contract prices and MES
+    tick value/commission assumptions.
+
+notes:
+  - Baseline follows the screenshot: 15-minute RTH bars, long only, bearish close, close near low, RSI(14) < 35, price <= VWAP, volume > 1.5x 20-bar average, max one trade per day, 0.30% stop, 0.75% target, 16:15 ET flatten.
+  - MES economics use $1.25 per 0.25-point tick and 4 fixed contracts to mirror the screenshot's 4 MES recommendation.

@@ -30,6 +30,7 @@ class BacktestEngine:
         commission = float(self.core_config.get("commission_per_contract", 2.5))
         slippage_ticks = float(self.core_config.get("slippage_ticks", 1))
         flatten_time = parse_time(self.strategy_config.get("flatten_time", self.core_config.get("flatten_time", "14:55:00")))
+        bar_interval_minutes = float(entry_params.get("bar_interval_minutes", 1))
 
         pending_signal = None
         position = None
@@ -101,8 +102,11 @@ class BacktestEngine:
                 position["max_adverse_excursion"] = max(position["max_adverse_excursion"], mae)
 
                 reason, raw_exit = stop_target_hit(bar, direction, position["stop_price"], position["target_price"])
-                if reason is None and bar["timestamp"].time() >= flatten_time:
+                bar_close_timestamp = pd.Timestamp(bar["timestamp"]) + pd.Timedelta(minutes=bar_interval_minutes)
+                exit_timestamp = bar["timestamp"]
+                if reason is None and bar_close_timestamp.time() >= flatten_time:
                     reason, raw_exit = "eod_flatten", float(bar["close"])
+                    exit_timestamp = bar_close_timestamp
                 if reason is not None:
                     xp = exit_price(float(raw_exit), direction, tick_size, slippage_ticks)
                     point_pnl = xp - position["entry_price"] if direction == "long" else position["entry_price"] - xp
@@ -114,7 +118,7 @@ class BacktestEngine:
                     r_mult = point_pnl / position["risk_points"] if position["risk_points"] else 0.0
                     trade = {
                         **position,
-                        "exit_timestamp": bar["timestamp"],
+                        "exit_timestamp": exit_timestamp,
                         "exit_price": xp,
                         "exit_reason": reason,
                         "gross_pnl": gross,

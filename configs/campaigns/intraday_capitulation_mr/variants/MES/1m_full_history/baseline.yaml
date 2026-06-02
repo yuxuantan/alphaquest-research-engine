@@ -1,0 +1,161 @@
+campaign_id: intraday_capitulation_mr
+variant_id: baseline
+strategy_name: intraday_capitulation_mr
+symbol: MES
+dataset_id: 1m_full_history
+
+data:
+  dataset_id: 1m_full_history
+  source: databento_dbn
+  raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
+  cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
+  symbol: MES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  continuous_contract: explicit_roll_calendar
+  roll_calendar: configs/data/ES/motivewave_rithmic_roll_calendar.csv
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
+  include_spreads: false
+  warmup_days: 10
+  rth_start: "09:30:00"
+  rth_end: "16:15:00"
+  eth_start: "16:16:00"
+  eth_end: "09:29:00"
+  rolling_volume_window: 20
+
+strategy:
+  entry:
+    module: intraday_capitulation_mr
+    params:
+      rth_start: "09:30:00"
+      rth_end: "16:15:00"
+      timeframe_minutes: 15
+      bar_interval_minutes: 1
+      rsi_period: 14
+      max_rsi: 35
+      max_close_location_from_low: 0.25
+      volume_avg_window: 20
+      min_volume_avg_bars: 20
+      min_volume_ratio: 1.5
+      last_signal_time: "16:00:00"
+      max_trades_per_day: 1
+      allow_long: true
+      require_full_window: true
+  tp:
+    module: percent_from_entry
+    params:
+      target_pct: 0.0075
+      tick_size: 0.25
+      round_to_tick: true
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.003
+      round_to_tick: true
+  flatten_time: "16:15:00"
+
+core:
+  data_subset:
+    start_date: "2021-01-01"
+    end_date: "2022-12-31"
+  initial_balance: 50000
+  tick_size: 0.25
+  tick_value: 1.25
+  commission_per_contract: 0.74
+  slippage_ticks: 1
+  contracts: 4
+  daily_loss_limit: 1000
+  daily_profit_stop: 2500
+  flatten_time: "16:15:00"
+
+benchmarks:
+  min_trades_per_year: 25
+  preferred_min_total_trades: 150
+  min_profit_factor: 1.25
+  min_total_net_profit: 0
+  min_expectancy_r: 0.0
+  min_win_rate: 0.35
+  max_drawdown_pct: 0.05
+  min_cagr: 0.04
+  min_mar: 1.5
+  max_daily_loss: 1000
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.40
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.60
+  min_monte_carlo_prop_pass_chance: 0.50
+  slippage_sensitivity:
+    required_ticks_per_side: 1
+    ideal_ticks_per_side: 2
+    min_profit_factor: 1.20
+
+core_grid:
+  data_subset:
+    start_date: "2021-01-01"
+    end_date: "2022-12-31"
+  objective: net_profit
+  min_profitable_iteration_rate: 0.60
+  retain_iteration_reports: true
+  parameters:
+    entry.params.max_rsi: [30, 35, 40]
+    entry.params.max_close_location_from_low: [0.20, 0.25, 0.30]
+    entry.params.min_volume_ratio: [1.25, 1.5, 1.75]
+    entry.params.last_signal_time: ["15:45:00", "16:00:00"]
+    sl.params.stop_pct: [0.0025, 0.003, 0.0035]
+    tp.params.target_pct: [0.006, 0.0075, 0.009]
+    entry.params.max_trades_per_day: [1]
+    entry.params.allow_long: [true]
+
+monkey:
+  data_subset:
+    start_date: "2021-01-01"
+    end_date: "2022-12-31"
+  runs: 8000
+  seed: 7
+  beat_threshold: 0.90
+  retain_iteration_reports: true
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    trade_count_tolerance: 0
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.10
+    duration_shape: 0.70
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: true
+
+wfa:
+  data_subset:
+    start_date: "2011-01-01"
+    end_date: "2026-05-29"
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: net_profit
+
+prop_rules:
+  starting_balance: 50000
+  daily_loss_limit: 1000
+  trailing_drawdown: 2500
+  max_contracts: 5
+  max_best_day_profit_percentage: 0.40
+  min_trading_days: 2
+  payout_threshold: 1000
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.03
+
+monte_carlo:
+  data_subset:
+    start_date: "2011-01-01"
+    end_date: "2026-05-29"
+  trade_log:
+  runs: 100
+  seed: 11
+  path_months: 1
+  skip_trade_probability: 0.05
+  skip_winning_trade_probability: 0.05
+  adverse_slippage_per_trade: 0.0
+  cluster_losses: true

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.base import Signal
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 
 
 ENTRY_MODULES = {
+    IntradayCapitulationMREntry.name: IntradayCapitulationMREntry,
     OpeningRangeBreakoutEntry.name: OpeningRangeBreakoutEntry,
     PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
 }
@@ -20,4 +22,10 @@ def build_entry_module(config: dict):
         raise ValueError(f"Unknown entry module: {name}") from exc
 
 
-__all__ = ["Signal", "OpeningRangeBreakoutEntry", "PdhPdlSweepReclaimEntry", "build_entry_module"]
+__all__ = [
+    "Signal",
+    "IntradayCapitulationMREntry",
+    "OpeningRangeBreakoutEntry",
+    "PdhPdlSweepReclaimEntry",
+    "build_entry_module",
+]

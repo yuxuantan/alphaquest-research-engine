@@ -60,6 +60,29 @@ def test_modular_strategy_composes_opening_range_modules():
     assert strat.sl.name == "opening_range_edge"
 
 
+def test_modular_strategy_composes_intraday_capitulation_modules():
+    strat = ModularStrategy(
+        {
+            "strategy_name": "intraday_capitulation_mr",
+            "entry": {
+                "module": "intraday_capitulation_mr",
+                "params": {
+                    "timeframe_minutes": 15,
+                    "rsi_period": 14,
+                    "min_volume_ratio": 1.5,
+                    "max_trades_per_day": 1,
+                },
+            },
+            "tp": {"module": "percent_from_entry", "params": {"target_pct": 0.0075, "tick_size": 0.25}},
+            "sl": {"module": "percent_from_entry", "params": {"stop_pct": 0.003}},
+        }
+    )
+
+    assert strat.entry.name == "intraday_capitulation_mr"
+    assert strat.tp.name == "percent_from_entry"
+    assert strat.sl.name == "percent_from_entry"
+
+
 def test_modular_strategy_requires_entry_tp_and_sl_sections():
     try:
         ModularStrategy(

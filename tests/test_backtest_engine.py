@@ -117,6 +117,62 @@ def test_opening_range_trade_log_uses_strategy_specific_report_columns():
     assert first["breakout_timestamp"] == pd.Timestamp("2024-01-03 09:40", tz="America/New_York")
 
 
+def test_time_exit_uses_bar_close_timestamp():
+    rows = []
+    for minute in range(30, 45):
+        rows.append(
+            {
+                "timestamp": pd.Timestamp(f"2024-01-03 09:{minute:02d}", tz="America/New_York"),
+                "session_date": pd.Timestamp("2024-01-03").date(),
+                "is_rth": True,
+                "open": 100.0,
+                "high": 100.30,
+                "low": 100.00,
+                "close": 100.10,
+            }
+        )
+    rows[0].update({"open": 100.0, "high": 100.20, "low": 99.90, "close": 100.10})
+    rows[2].update({"high": 100.40})
+    rows[9].update({"open": 100.35, "high": 100.55, "low": 100.30, "close": 100.50})
+    for idx in range(10, 15):
+        rows[idx].update({"open": 100.50, "high": 100.80, "low": 100.20, "close": 100.60})
+
+    cfg = {
+        "strategy_name": "five_min_orb_vol_filter",
+        "strategy": {
+            "entry": {
+                "module": "opening_range_breakout",
+                "params": {
+                    "rth_start": "09:30:00",
+                    "opening_range_minutes": 5,
+                    "confirmation_minutes": 5,
+                    "bar_interval_minutes": 1,
+                    "max_opening_range_pct_of_open": 0.0055,
+                    "allow_long": True,
+                    "allow_short": True,
+                },
+            },
+            "tp": {"module": "opening_range_extension", "params": {"extension_fraction": 10.0}},
+            "sl": {"module": "opening_range_edge", "params": {"max_stop_points": 14}},
+            "flatten_time": "09:45:00",
+        },
+        "core": {
+            "tick_size": 0.25,
+            "tick_value": 12.50,
+            "commission_per_contract": 0,
+            "slippage_ticks": 0,
+            "contracts": 1,
+        },
+    }
+
+    trades = BacktestEngine(cfg).run(pd.DataFrame(rows))["trades"]
+
+    assert len(trades) == 1
+    first = trades.iloc[0]
+    assert first["exit_reason"] == "eod_flatten"
+    assert first["exit_timestamp"] == pd.Timestamp("2024-01-03 09:45", tz="America/New_York")
+
+
 def test_risk_percent_sizing_uses_entry_stop_distance_per_trade():
     rows = []
     for minute in range(30, 42):

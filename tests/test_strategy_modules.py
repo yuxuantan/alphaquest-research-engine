@@ -2,12 +2,15 @@ from types import SimpleNamespace
 
 import pandas as pd
 
+from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.sl.opening_range_edge import OpeningRangeEdgeStop
+from propstack.strategy_modules.sl.percent_from_entry import PercentFromEntryStop
 from propstack.strategy_modules.sl.sweep_extreme import SweepExtremeStop
 from propstack.strategy_modules.tp.fixed_r import FixedRTarget
 from propstack.strategy_modules.tp.opening_range_extension import OpeningRangeExtensionTarget
+from propstack.strategy_modules.tp.percent_from_entry import PercentFromEntryTarget
 
 
 def test_fixed_r_target_module_long_and_short():
@@ -33,6 +36,16 @@ def test_opening_range_extension_target_module_long_and_short():
     assert target.price(100.0, 101.0, "short", signal=signal) == 98.0
 
 
+def test_percent_from_entry_stop_and_target_round_to_tick():
+    stop = PercentFromEntryStop({"stop_pct": 0.003})
+    target = PercentFromEntryTarget({"target_pct": 0.0075, "tick_size": 0.25})
+
+    assert stop.price(None, direction="long", tick_size=0.25, entry_price=100.0) == 99.5
+    assert stop.price(None, direction="short", tick_size=0.25, entry_price=100.0) == 100.5
+    assert target.price(100.0, 99.5, "long") == 100.75
+    assert target.price(100.0, 100.5, "short") == 99.25
+
+
 def test_opening_range_edge_stop_skips_when_natural_risk_exceeds_max():
     stop = OpeningRangeEdgeStop({"max_stop_points": 10, "stop_offset_ticks": 0})
     signal = SimpleNamespace(opening_range_high=111.0, opening_range_low=90.0)
@@ -41,6 +54,108 @@ def test_opening_range_edge_stop_skips_when_natural_risk_exceeds_max():
     assert stop.price(signal, direction="short", tick_size=0.25, entry_price=95.0) is None
     assert stop.price(signal, direction="long", tick_size=0.25, entry_price=99.0) == 90.0
     assert stop.price(signal, direction="short", tick_size=0.25, entry_price=101.0) == 111.0
+
+
+def _cap_bar(timestamp, open_price, high, low, close, volume, vwap, session_date=None):
+    ts = pd.Timestamp(timestamp)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("America/New_York")
+    else:
+        ts = ts.tz_convert("America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": session_date or ts.date(),
+            "is_rth": True,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+            "vwap": vwap,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def _cap_window(start, open_price, high, low, close, total_volume, vwap):
+    start_ts = pd.Timestamp(start, tz="America/New_York")
+    bars = []
+    for minute in range(15):
+        ts = start_ts + pd.Timedelta(minutes=minute)
+        bars.append(
+            _cap_bar(
+                ts,
+                open_price if minute == 0 else close,
+                high,
+                low,
+                close,
+                total_volume / 15,
+                vwap,
+            )
+        )
+    return bars
+
+
+def test_intraday_capitulation_mr_entry_emits_on_completed_15m_bar():
+    entry = IntradayCapitulationMREntry(
+        {
+            "timeframe_minutes": 15,
+            "bar_interval_minutes": 1,
+            "rsi_period": 1,
+            "max_rsi": 35,
+            "volume_avg_window": 1,
+            "min_volume_avg_bars": 1,
+            "min_volume_ratio": 1.5,
+            "max_close_location_from_low": 0.25,
+            "last_signal_time": "16:00:00",
+        }
+    )
+    bars = [
+        *_cap_window("2024-01-03 09:30", 100.0, 101.0, 99.0, 100.0, 1000, 100.0),
+        *_cap_window("2024-01-03 09:45", 100.0, 100.2, 98.0, 98.2, 1600, 99.0),
+    ]
+
+    for bar in bars[:-1]:
+        assert entry.on_bar_close(bar) is None
+    signal = entry.on_bar_close(bars[-1])
+
+    assert signal.direction == "long"
+    assert signal.level_type == "intraday_capitulation_mr"
+    assert signal.sweep_low == 98.0
+    assert signal.report_fields["capitulation_bar_start_timestamp"] == pd.Timestamp(
+        "2024-01-03 09:45", tz="America/New_York"
+    )
+    assert signal.report_fields["capitulation_bar_end_timestamp"] == pd.Timestamp(
+        "2024-01-03 10:00", tz="America/New_York"
+    )
+    assert signal.report_fields["capitulation_rsi"] == 0.0
+    assert round(signal.report_fields["capitulation_volume_ratio"], 2) == 1.6
+
+
+def test_intraday_capitulation_mr_entry_rejects_close_not_near_low():
+    entry = IntradayCapitulationMREntry(
+        {
+            "timeframe_minutes": 15,
+            "bar_interval_minutes": 1,
+            "rsi_period": 1,
+            "max_rsi": 35,
+            "volume_avg_window": 1,
+            "min_volume_avg_bars": 1,
+            "min_volume_ratio": 1.5,
+            "max_close_location_from_low": 0.25,
+        }
+    )
+    bars = [
+        *_cap_window("2024-01-03 09:30", 100.0, 101.0, 99.0, 100.0, 1000, 100.0),
+        *_cap_window("2024-01-03 09:45", 100.0, 100.2, 98.0, 99.0, 1600, 99.5),
+    ]
+
+    signal = None
+    for bar in bars:
+        signal = entry.on_bar_close(bar)
+
+    assert signal is None
 
 
 def _orb_bar(timestamp, open_price, high, low, close, session_date=None):
