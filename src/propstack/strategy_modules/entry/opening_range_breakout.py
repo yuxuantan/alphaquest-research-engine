@@ -67,13 +67,17 @@ class OpeningRangeBreakoutEntry:
         if state["skip_day"]:
             return None
 
-        if timestamp.time() >= parse_time(self.params.get("last_entry_time", "12:00:00")):
+        cutoff = parse_time(self.params.get("last_entry_time", "12:00:00"))
+        if timestamp.time() >= cutoff:
             state["completed"] = True
             return None
 
         if elapsed_minutes >= opening_minutes:
             self._append_limited(state["confirmation_bars"], bar, confirmation_bar_count)
             if len(state["confirmation_bars"]) < confirmation_bar_count:
+                return None
+            if self._bar_close_timestamp(bar["timestamp"]).time() >= cutoff:
+                state["completed"] = True
                 return None
             signal = self._confirmation_signal(bar, state["opening_range"], state["confirmation_bars"])
             if signal is not None:
@@ -165,6 +169,8 @@ class OpeningRangeBreakoutEntry:
 
         confirmation_start = confirmation_bars[0]["timestamp"] if confirmation_bars else bar["timestamp"]
         confirmation_end = self._bar_close_timestamp(bar["timestamp"])
+        if confirmation_end.time() >= parse_time(self.params.get("last_entry_time", "12:00:00")):
+            return None
         return Signal(
             direction=direction,
             level_type=level_type,

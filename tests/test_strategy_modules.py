@@ -33,12 +33,14 @@ def test_opening_range_extension_target_module_long_and_short():
     assert target.price(100.0, 101.0, "short", signal=signal) == 98.0
 
 
-def test_opening_range_edge_stop_caps_risk_from_entry():
+def test_opening_range_edge_stop_skips_when_natural_risk_exceeds_max():
     stop = OpeningRangeEdgeStop({"max_stop_points": 10, "stop_offset_ticks": 0})
     signal = SimpleNamespace(opening_range_high=111.0, opening_range_low=90.0)
 
-    assert stop.price(signal, direction="long", tick_size=0.25, entry_price=105.0) == 95.0
-    assert stop.price(signal, direction="short", tick_size=0.25, entry_price=95.0) == 105.0
+    assert stop.price(signal, direction="long", tick_size=0.25, entry_price=105.0) is None
+    assert stop.price(signal, direction="short", tick_size=0.25, entry_price=95.0) is None
+    assert stop.price(signal, direction="long", tick_size=0.25, entry_price=99.0) == 90.0
+    assert stop.price(signal, direction="short", tick_size=0.25, entry_price=101.0) == 111.0
 
 
 def _orb_bar(timestamp, open_price, high, low, close, session_date=None):
@@ -140,6 +142,38 @@ def test_opening_range_breakout_entry_keeps_checking_later_confirmation_windows(
     assert signal.reclaim_timestamp == bars[-1]["timestamp"]
     assert signal.report_fields["confirmation_start_timestamp"] == bars[10]["timestamp"]
     assert signal.report_fields["breakout_timestamp"] == pd.Timestamp("2024-01-03 09:45", tz="America/New_York")
+
+
+def test_opening_range_breakout_entry_rejects_confirmation_close_at_noon():
+    entry = OpeningRangeBreakoutEntry(
+        {
+            "rth_start": "09:30:00",
+            "opening_range_minutes": 5,
+            "confirmation_minutes": 5,
+            "bar_interval_minutes": 1,
+            "last_entry_time": "12:00:00",
+            "allow_long": True,
+            "allow_short": True,
+        }
+    )
+    bars = [
+        _orb_bar("2024-01-03 09:30", 100.0, 100.20, 99.90, 100.10),
+        _orb_bar("2024-01-03 09:31", 100.1, 100.30, 100.00, 100.20),
+        _orb_bar("2024-01-03 09:32", 100.2, 100.40, 100.10, 100.25),
+        _orb_bar("2024-01-03 09:33", 100.2, 100.25, 99.95, 100.05),
+        _orb_bar("2024-01-03 09:34", 100.0, 100.35, 100.05, 100.20),
+        _orb_bar("2024-01-03 11:55", 100.2, 100.45, 100.10, 100.42),
+        _orb_bar("2024-01-03 11:56", 100.4, 100.50, 100.20, 100.43),
+        _orb_bar("2024-01-03 11:57", 100.4, 100.55, 100.30, 100.45),
+        _orb_bar("2024-01-03 11:58", 100.4, 100.60, 100.35, 100.46),
+        _orb_bar("2024-01-03 11:59", 100.4, 100.65, 100.35, 100.50),
+    ]
+
+    signal = None
+    for bar in bars:
+        signal = entry.on_bar_close(bar)
+
+    assert signal is None
 
 
 def test_opening_range_breakout_entry_skips_tuesday_longs():

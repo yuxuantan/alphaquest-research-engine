@@ -40,7 +40,8 @@ mechanics:
     window_minutes: 5
     behavior: >
       After the opening range is complete, evaluate each 5-minute confirmation
-      window until the entry cutoff. A long signal requires the confirmation
+      window until the entry cutoff. Take only the first valid 5-minute candle
+      close outside the opening range. A long signal requires the confirmation
       window close to finish above the opening-range high. A short signal
       requires the confirmation window close to finish below the opening-range
       low. If a window does not break out, keep checking the next window.
@@ -52,12 +53,19 @@ mechanics:
     Signals are generated on the confirmation bar close. The backtest enters on
     the next bar open with configured slippage.
   entry_cutoff: >
-    Do not generate new entries at or after 12:00 ET.
+    Do not generate new entries from confirmation windows that close at or
+    after 12:00 ET.
   max_trades_per_day: 1
+  one_trade_rule: >
+    S1 ORB allows at most one trade attempt per session. Once a valid breakout
+    signal is generated, the session is complete for this strategy. If the
+    position is stopped out, do not re-enter and do not take an opposite-side
+    reversal trade that day.
   stop_loss: >
     Long stops use the opening-range low. Short stops use the opening-range
-    high. Stop distance is capped by the configured max stop points, currently
-    14 ES points in the baseline.
+    high. If the natural opposite-edge stop would require more than the
+    configured max stop points, currently 14 ES points in the baseline, skip
+    the trade instead of trimming the stop.
   take_profit: >
     Long targets are opening-range high plus opening-range width multiplied by
     the configured extension fraction. Short targets are opening-range low

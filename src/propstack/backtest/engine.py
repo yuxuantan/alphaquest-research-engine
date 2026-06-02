@@ -44,6 +44,9 @@ class BacktestEngine:
                 direction = sig.direction
                 ep = entry_price(float(bar["open"]), direction, tick_size, slippage_ticks)
                 stop = strategy.stop_price(sig, direction, tick_size, entry_price=ep)
+                if stop is None:
+                    pending_signal = None
+                    continue
                 target = strategy.target_price(ep, stop, direction, signal=sig)
                 position = {
                     "trade_id": trade_id,

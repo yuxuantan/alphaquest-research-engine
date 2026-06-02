@@ -24,7 +24,7 @@ class ModularStrategy:
         direction: str,
         tick_size: float,
         entry_price: float | None = None,
-    ) -> float:
+    ) -> float | None:
         return self.sl.price(signal, direction, tick_size, entry_price=entry_price)
 
     def target_price(
