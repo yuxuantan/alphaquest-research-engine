@@ -18,3 +18,4 @@ class Signal:
     opening_range_width: float | None = None
     breakout_level: float | None = None
     metadata: dict = field(default_factory=dict)
+    report_fields: dict = field(default_factory=dict)

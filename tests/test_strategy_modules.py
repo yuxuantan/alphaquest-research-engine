@@ -97,6 +97,49 @@ def test_opening_range_breakout_entry_emits_after_confirmation_window():
     assert signal.opening_range_low == 99.90
     assert round(signal.opening_range_width, 2) == 0.50
     assert signal.reclaim_timestamp == bars[-1]["timestamp"]
+    assert signal.report_fields["opening_range_start_timestamp"] == bars[0]["timestamp"]
+    assert signal.report_fields["opening_range_end_timestamp"] == pd.Timestamp(
+        "2024-01-03 09:35", tz="America/New_York"
+    )
+    assert signal.report_fields["confirmation_start_timestamp"] == bars[5]["timestamp"]
+    assert signal.report_fields["confirmation_end_timestamp"] == pd.Timestamp(
+        "2024-01-03 09:40", tz="America/New_York"
+    )
+    assert signal.report_fields["breakout_timestamp"] == pd.Timestamp("2024-01-03 09:40", tz="America/New_York")
+
+
+def test_opening_range_breakout_entry_keeps_checking_later_confirmation_windows():
+    entry = OpeningRangeBreakoutEntry(
+        {
+            "rth_start": "09:30:00",
+            "opening_range_minutes": 5,
+            "confirmation_minutes": 5,
+            "bar_interval_minutes": 1,
+            "max_opening_range_pct_of_open": 0.0055,
+            "allow_long": True,
+            "allow_short": True,
+        }
+    )
+    bars = _orb_long_breakout_bars()
+    bars[-1] = _orb_bar("2024-01-03 09:39", 100.35, 100.38, 100.25, 100.35)
+    bars.extend(
+        [
+            _orb_bar("2024-01-03 09:40", 100.35, 100.38, 100.20, 100.30),
+            _orb_bar("2024-01-03 09:41", 100.30, 100.36, 100.18, 100.28),
+            _orb_bar("2024-01-03 09:42", 100.28, 100.37, 100.22, 100.31),
+            _orb_bar("2024-01-03 09:43", 100.31, 100.39, 100.24, 100.35),
+            _orb_bar("2024-01-03 09:44", 100.35, 100.55, 100.30, 100.50),
+        ]
+    )
+
+    for bar in bars[:-1]:
+        assert entry.on_bar_close(bar) is None
+    signal = entry.on_bar_close(bars[-1])
+
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == bars[-1]["timestamp"]
+    assert signal.report_fields["confirmation_start_timestamp"] == bars[10]["timestamp"]
+    assert signal.report_fields["breakout_timestamp"] == pd.Timestamp("2024-01-03 09:45", tz="America/New_York")
 
 
 def test_opening_range_breakout_entry_skips_tuesday_longs():

@@ -7,8 +7,9 @@ import pandas as pd
 
 from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.metrics import benchmark
-from propstack.utils.progress import progress_bar
 from propstack.utils.params import apply_dotted_params
+from propstack.utils.progress import progress_bar
+from propstack.utils.reports import market_timezone, write_report_csv
 
 
 def parameter_combinations(params: dict) -> list[dict]:
@@ -28,6 +29,7 @@ def run_core_grid(
     parameters = grid_config.get("parameters", {})
     combos = parameter_combinations(parameters)
     report_paths = _prepare_iteration_report_paths(report_dir)
+    report_timezone = market_timezone(base_config)
     progress = progress_bar(len(combos), "core grid")
     for idx, combo in enumerate(combos, start=1):
         cfg = apply_dotted_params(base_config, combo)
@@ -56,8 +58,8 @@ def run_core_grid(
                 "failure_reason": reason,
             }
         )
-        _append_iteration_report(report_paths, "trades", result["trades"], idx, combo)
-        _append_iteration_report(report_paths, "daily", result["daily"], idx, combo)
+        _append_iteration_report(report_paths, "trades", result["trades"], idx, combo, report_timezone)
+        _append_iteration_report(report_paths, "daily", result["daily"], idx, combo, report_timezone)
         progress.update(idx)
     df = pd.DataFrame(rows)
     passing = int(df["benchmark_passed"].sum()) if len(df) else 0
@@ -151,6 +153,7 @@ def _append_iteration_report(
     frame: pd.DataFrame,
     run_id: int,
     combo: dict,
+    timezone: str | None = None,
 ) -> None:
     if paths is None or frame.empty:
         return
@@ -159,7 +162,7 @@ def _append_iteration_report(
     for offset, (key, value) in enumerate(combo.items(), start=1):
         out.insert(offset, key, value)
     path = paths[name]
-    out.to_csv(path, mode="a", header=not path.exists(), index=False)
+    write_report_csv(out, path, timezone, mode="a", header=not path.exists(), index=False)
 
 
 def _iteration_report_files(paths: dict[str, Path] | None) -> list[str]:

@@ -11,6 +11,7 @@ from propstack.prop.rules import PropRules
 from propstack.research.monte_carlo import run_monte_carlo
 from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, validation_dir, write_json
 from propstack.utils.hashing import file_sha256
+from propstack.utils.reports import market_timezone, write_report_csv
 
 
 def main() -> None:
@@ -27,11 +28,11 @@ def main() -> None:
         subset = subset_from_config(campaign, "monte_carlo", fallback_sections=("core",))
         data, _ = prepare_data(campaign["data"], validation_dir(out), subset)
         trades = BacktestEngine(campaign).run(data)["trades"]
-        trades.to_csv(out / "source_trade_log.csv", index=False)
+        write_report_csv(trades, out / "source_trade_log.csv", market_timezone(campaign), index=False)
         input_hash = data_source_hash(campaign["data"], subset)
     rules = PropRules.from_dict(campaign.get("prop_rules", {}))
     results, summary = run_monte_carlo(trades, mc_cfg, rules)
-    results.to_csv(out / "monte_carlo_results.csv", index=False)
+    write_report_csv(results, out / "monte_carlo_results.csv", market_timezone(campaign), index=False)
     write_json(out / "monte_carlo_summary.json", summary)
     record_campaign_result(out, campaign, args.config, input_hash, "monte_carlo", summary)
     print(out)

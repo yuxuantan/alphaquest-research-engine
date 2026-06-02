@@ -51,24 +51,30 @@ class BacktestEngine:
                     "session_date": bar["session_date"],
                     "direction": direction,
                     "level_type": sig.level_type,
-                    "swept_level": sig.swept_level,
-                    "sweep_timestamp": sig.sweep_timestamp,
-                    "sweep_high": sig.sweep_high,
-                    "sweep_low": sig.sweep_low,
-                    "reclaim_timestamp": sig.reclaim_timestamp,
-                    "opening_range_high": sig.opening_range_high,
-                    "opening_range_low": sig.opening_range_low,
-                    "opening_range_open": sig.opening_range_open,
-                    "opening_range_width": sig.opening_range_width,
-                    "breakout_level": sig.breakout_level,
-                    "entry_timestamp": bar["timestamp"],
-                    "entry_price": ep,
-                    "stop_price": stop,
-                    "target_price": target,
-                    "risk_points": abs(ep - stop),
-                    "max_favorable_excursion": 0.0,
-                    "max_adverse_excursion": 0.0,
                 }
+                if sig.report_fields:
+                    position.update(sig.report_fields)
+                else:
+                    position.update(
+                        {
+                            "swept_level": sig.swept_level,
+                            "sweep_timestamp": sig.sweep_timestamp,
+                            "sweep_high": sig.sweep_high,
+                            "sweep_low": sig.sweep_low,
+                            "reclaim_timestamp": sig.reclaim_timestamp,
+                        }
+                    )
+                position.update(
+                    {
+                        "entry_timestamp": bar["timestamp"],
+                        "entry_price": ep,
+                        "stop_price": stop,
+                        "target_price": target,
+                        "risk_points": abs(ep - stop),
+                        "max_favorable_excursion": 0.0,
+                        "max_adverse_excursion": 0.0,
+                    }
+                )
                 risk.record_entry(bar["session_date"])
                 trade_id += 1
             pending_signal = None

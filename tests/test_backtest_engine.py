@@ -56,6 +56,67 @@ def test_next_bar_entry_and_costs():
     assert first["slippage_cost"] == 25.0
 
 
+def test_opening_range_trade_log_uses_strategy_specific_report_columns():
+    rows = []
+    for minute in range(30, 41):
+        rows.append(
+            {
+                "timestamp": pd.Timestamp(f"2024-01-03 09:{minute:02d}", tz="America/New_York"),
+                "session_date": pd.Timestamp("2024-01-03").date(),
+                "is_rth": True,
+                "open": 100.0,
+                "high": 100.30,
+                "low": 100.00,
+                "close": 100.10,
+            }
+        )
+    rows[0].update({"open": 100.0, "high": 100.20, "low": 99.90, "close": 100.10})
+    rows[2].update({"high": 100.40})
+    rows[9].update({"open": 100.35, "high": 100.55, "low": 100.30, "close": 100.50})
+    rows[10].update({"open": 100.55, "high": 100.70, "low": 100.50, "close": 100.65})
+
+    cfg = {
+        "strategy_name": "five_min_orb_vol_filter",
+        "strategy": {
+            "entry": {
+                "module": "opening_range_breakout",
+                "params": {
+                    "rth_start": "09:30:00",
+                    "opening_range_minutes": 5,
+                    "confirmation_minutes": 5,
+                    "bar_interval_minutes": 1,
+                    "max_opening_range_pct_of_open": 0.0055,
+                    "skip_tuesday_longs": True,
+                    "allow_long": True,
+                    "allow_short": True,
+                },
+            },
+            "tp": {"module": "opening_range_extension", "params": {"extension_fraction": 0.5}},
+            "sl": {"module": "opening_range_edge", "params": {"max_stop_points": 14}},
+            "flatten_time": "15:45:00",
+        },
+        "core": {
+            "tick_size": 0.25,
+            "tick_value": 12.50,
+            "commission_per_contract": 2.50,
+            "slippage_ticks": 0,
+            "contracts": 1,
+        },
+    }
+
+    trades = BacktestEngine(cfg).run(pd.DataFrame(rows))["trades"]
+
+    assert len(trades) == 1
+    assert "opening_range_start_timestamp" in trades.columns
+    assert "breakout_timestamp" in trades.columns
+    assert "sweep_timestamp" not in trades.columns
+    assert "reclaim_timestamp" not in trades.columns
+    first = trades.iloc[0]
+    assert first["opening_range_start_timestamp"] == pd.Timestamp("2024-01-03 09:30", tz="America/New_York")
+    assert first["opening_range_end_timestamp"] == pd.Timestamp("2024-01-03 09:35", tz="America/New_York")
+    assert first["breakout_timestamp"] == pd.Timestamp("2024-01-03 09:40", tz="America/New_York")
+
+
 def test_stop_first_same_bar_rule():
     bar = pd.Series({"high": 110, "low": 90})
     reason, price = stop_target_hit(bar, "long", stop_price=95, target_price=105)

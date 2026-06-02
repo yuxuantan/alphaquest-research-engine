@@ -14,8 +14,61 @@ idea:
     can capture early directional expansion after volatility compression.
   exit_thesis: >
     Risk is invalidated at the opposite opening-range edge, capped at 14 ES
-    points. Profit target is 50% of the opening-range width beyond breakout.
+    points. Profit target is a configured extension of the opening-range width
+    beyond the breakout level.
+
+mechanics:
+  timeframe: >
+    Runs on 1-minute bars while modeling a 5-minute opening range and repeated
+    5-minute confirmation windows.
+  market_timezone: America/New_York
+  session: >
+    Uses RTH session times. The opening range begins at 09:30 ET. Trades are
+    flattened at 15:45 ET.
+  opening_range:
+    start_time: "09:30:00"
+    duration_minutes: 5
+    definition: >
+      Opening range high and low are calculated from the first five 1-minute
+      RTH bars, covering 09:30 through 09:34. The range is complete at 09:35.
+  entry_filter:
+    max_opening_range_pct_of_open: 0.0055
+    description: >
+      Skip the session if opening-range width divided by the opening-range open
+      is greater than the configured threshold.
+  confirmation:
+    window_minutes: 5
+    behavior: >
+      After the opening range is complete, evaluate each 5-minute confirmation
+      window until the entry cutoff. A long signal requires the confirmation
+      window close to finish above the opening-range high. A short signal
+      requires the confirmation window close to finish below the opening-range
+      low. If a window does not break out, keep checking the next window.
+  direction_filters:
+    allow_long: true
+    allow_short: true
+    skip_tuesday_longs: true
+  entry_execution: >
+    Signals are generated on the confirmation bar close. The backtest enters on
+    the next bar open with configured slippage.
+  entry_cutoff: >
+    Do not generate new entries at or after 12:00 ET.
+  max_trades_per_day: 1
+  stop_loss: >
+    Long stops use the opening-range low. Short stops use the opening-range
+    high. Stop distance is capped by the configured max stop points, currently
+    14 ES points in the baseline.
+  take_profit: >
+    Long targets are opening-range high plus opening-range width multiplied by
+    the configured extension fraction. Short targets are opening-range low
+    minus opening-range width multiplied by the configured extension fraction.
+    The screenshot baseline used 0.5; variants may test other values.
+  time_exit: >
+    Any open position is flattened at 15:45 ET.
+  reporting: >
+    Report timestamp columns are written in the configured market timezone with
+    DST-aware offsets.
 
 notes:
-  - Baseline mirrors the screenshot: 09:30-09:35 ET opening range, 09:35-09:40 ET confirmation, OR width cap 0.55% of open, skip Tuesday longs, no entries after 12:00 ET, flatten 15:45 ET.
+  - Baseline mirrors the screenshot entry/risk timing: 09:30-09:35 ET opening range, 5-minute confirmation windows, OR width cap 0.55% of open, skip Tuesday longs, no entries after 12:00 ET, flatten 15:45 ET.
   - MES uses the same 14-point stop cap; the dollar risk is lower because MES tick value is one tenth of ES.

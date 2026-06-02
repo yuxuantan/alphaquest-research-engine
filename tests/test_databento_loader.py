@@ -1,9 +1,10 @@
 from pathlib import Path
+import os
 
 import pandas as pd
 
 from propstack.data.clean import apply_continuous_contract, apply_roll_boundary_policy, load_roll_calendar
-from propstack.data.load import list_databento_dbn_files, parse_dbn_file_dates
+from propstack.data.load import _read_cached_dbn_file, list_databento_dbn_files, parse_dbn_file_dates
 
 
 def test_databento_file_dates_parse_monthly_names():
@@ -33,6 +34,32 @@ def test_databento_file_selection_uses_date_overlap(tmp_path):
         "glbx-mdp3-20221201-20221231.ohlcv-1m.dbn.zst",
         "glbx-mdp3-20230101-20230131.ohlcv-1m.dbn.zst",
     ]
+
+
+def test_cached_databento_timestamps_convert_to_config_timezone(tmp_path):
+    raw = tmp_path / "glbx-mdp3-20240101-20240131.ohlcv-1m.dbn.zst"
+    raw.touch()
+    cache_dir = tmp_path / "cache"
+    cache_dir.mkdir()
+    cache_path = cache_dir / "glbx-mdp3-20240101-20240131.ohlcv-1m.parquet"
+    pd.DataFrame(
+        {
+            "timestamp": [pd.Timestamp("2024-01-02 22:30:00", tz="Asia/Singapore")],
+            "open": [1.0],
+            "high": [1.0],
+            "low": [1.0],
+            "close": [1.0],
+            "volume": [1],
+            "symbol": ["ES"],
+            "contract_symbol": ["ESH4"],
+        }
+    ).to_parquet(cache_path, index=False)
+    os.utime(cache_path, (raw.stat().st_mtime + 1, raw.stat().st_mtime + 1))
+
+    out = _read_cached_dbn_file(raw, {"cache_dir": str(cache_dir), "timezone": "America/New_York"})
+
+    assert str(out["timestamp"].dt.tz) == "America/New_York"
+    assert out.loc[0, "timestamp"] == pd.Timestamp("2024-01-02 09:30:00", tz="America/New_York")
 
 
 def test_continuous_contract_selects_dominant_session_contract():

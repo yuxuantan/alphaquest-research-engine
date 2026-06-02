@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 import pandas as pd
 
+from propstack.utils.reports import write_report_csv
+
 
 def tradingview_comparison_report(df: pd.DataFrame) -> pd.DataFrame:
     rth = df[df["is_rth"]].copy()
@@ -47,11 +49,12 @@ def save_pipeline_outputs(
     quality_report: dict,
     missing_bars: pd.DataFrame,
     output_dir: str | Path,
+    timezone: str | None = None,
 ) -> None:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    cleaned.to_csv(out / "cleaned_data.csv", index=False)
-    features.to_csv(out / "features_data.csv", index=False)
-    pd.DataFrame([quality_report]).to_csv(out / "data_quality_report.csv", index=False)
-    missing_bars.to_csv(out / "missing_bars.csv", index=False)
-    tradingview_comparison_report(features).to_csv(out / "tradingview_comparison.csv", index=False)
+    write_report_csv(cleaned, out / "cleaned_data.csv", timezone, index=False)
+    write_report_csv(features, out / "features_data.csv", timezone, index=False)
+    write_report_csv(pd.DataFrame([quality_report]), out / "data_quality_report.csv", timezone, index=False)
+    write_report_csv(missing_bars, out / "missing_bars.csv", timezone, index=False)
+    write_report_csv(tradingview_comparison_report(features), out / "tradingview_comparison.csv", timezone, index=False)

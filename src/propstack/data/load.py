@@ -180,12 +180,21 @@ def filter_timestamp_bounds(
 def _read_cached_dbn_file(path: Path, config: dict) -> pd.DataFrame:
     cache_path = _dbn_cache_path(path, config)
     if cache_path.exists() and cache_path.stat().st_mtime >= path.stat().st_mtime:
-        return pd.read_parquet(cache_path)
+        return _convert_cached_timestamps(pd.read_parquet(cache_path), config)
 
     df = _read_databento_dbn_file(path, config)
     cache_path.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(cache_path, index=False)
     return df
+
+
+def _convert_cached_timestamps(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    if df.empty or "timestamp" not in df.columns:
+        return df
+    out = df.copy()
+    timezone = config.get("timezone", "America/Chicago")
+    out["timestamp"] = pd.to_datetime(out["timestamp"], utc=True).dt.tz_convert(timezone)
+    return out
 
 
 def _read_databento_dbn_file(path: Path, config: dict) -> pd.DataFrame:

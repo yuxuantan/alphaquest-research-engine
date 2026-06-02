@@ -12,6 +12,7 @@ from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.fills import entry_price, exit_price
 from propstack.backtest.metrics import benchmark, calculate_metrics, daily_results
 from propstack.utils.progress import progress_bar
+from propstack.utils.reports import market_timezone, write_report_csv
 from propstack.utils.time import parse_time
 
 
@@ -50,6 +51,7 @@ def run_monkey(
     threshold = float(monkey_config.get("beat_threshold", constraints.get("beat_threshold", 0.90)))
     valid_position_cache: dict[int, np.ndarray] = {}
     report_paths = _prepare_iteration_report_paths(report_dir)
+    report_timezone = market_timezone(base_config)
     progress = progress_bar(total_runs, "monkey runs")
 
     for run_id in range(1, total_runs + 1):
@@ -102,8 +104,8 @@ def run_monkey(
                 "failure_reason": reason,
             }
         )
-        _append_iteration_report(report_paths, "trades", trades, run_id)
-        _append_iteration_report(report_paths, "daily", daily, run_id)
+        _append_iteration_report(report_paths, "trades", trades, run_id, report_timezone)
+        _append_iteration_report(report_paths, "daily", daily, run_id, report_timezone)
         progress.update(run_id)
 
     df = pd.DataFrame(rows)
@@ -490,13 +492,14 @@ def _append_iteration_report(
     name: str,
     frame: pd.DataFrame,
     run_id: int,
+    timezone: str | None = None,
 ) -> None:
     if paths is None or frame.empty:
         return
     out = frame.copy()
     out.insert(0, "run_id", run_id)
     path = paths[name]
-    out.to_csv(path, mode="a", header=not path.exists(), index=False)
+    write_report_csv(out, path, timezone, mode="a", header=not path.exists(), index=False)
 
 
 def _iteration_report_files(paths: dict[str, Path] | None) -> list[str]:

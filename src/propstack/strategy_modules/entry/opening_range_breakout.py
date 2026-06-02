@@ -67,12 +67,20 @@ class OpeningRangeBreakoutEntry:
         if state["skip_day"]:
             return None
 
-        if opening_minutes <= elapsed_minutes < opening_minutes + confirmation_minutes:
+        if timestamp.time() >= parse_time(self.params.get("last_entry_time", "12:00:00")):
+            state["completed"] = True
+            return None
+
+        if elapsed_minutes >= opening_minutes:
             self._append_limited(state["confirmation_bars"], bar, confirmation_bar_count)
             if len(state["confirmation_bars"]) < confirmation_bar_count:
                 return None
-            state["completed"] = True
-            return self._confirmation_signal(bar, state["opening_range"])
+            signal = self._confirmation_signal(bar, state["opening_range"], state["confirmation_bars"])
+            if signal is not None:
+                state["completed"] = True
+                return signal
+            state["confirmation_bars"] = []
+            return None
 
         state["completed"] = True
         return None
@@ -123,13 +131,18 @@ class OpeningRangeBreakoutEntry:
             "width": width,
             "width_pct_of_open": width_pct,
             "start_timestamp": bars[0]["timestamp"],
-            "end_timestamp": bars[-1]["timestamp"],
+            "end_timestamp": self._bar_close_timestamp(bars[-1]["timestamp"]),
         }
 
-    def _confirmation_signal(self, bar: pd.Series, opening_range: dict | None) -> Signal | None:
+    def _confirmation_signal(
+        self,
+        bar: pd.Series,
+        opening_range: dict | None,
+        confirmation_bars: list[pd.Series],
+    ) -> Signal | None:
         if opening_range is None:
             return None
-        if bar["timestamp"].time() > parse_time(self.params.get("last_entry_time", "12:00:00")):
+        if bar["timestamp"].time() >= parse_time(self.params.get("last_entry_time", "12:00:00")):
             return None
 
         close = float(bar["close"])
@@ -150,6 +163,8 @@ class OpeningRangeBreakoutEntry:
         if direction is None:
             return None
 
+        confirmation_start = confirmation_bars[0]["timestamp"] if confirmation_bars else bar["timestamp"]
+        confirmation_end = self._bar_close_timestamp(bar["timestamp"])
         return Signal(
             direction=direction,
             level_type=level_type,
@@ -166,9 +181,27 @@ class OpeningRangeBreakoutEntry:
             metadata={
                 "opening_range_end_timestamp": opening_range["end_timestamp"],
                 "opening_range_width_pct_of_open": opening_range["width_pct_of_open"],
-                "confirmation_timestamp": bar["timestamp"],
+                "confirmation_start_timestamp": confirmation_start,
+                "confirmation_end_timestamp": confirmation_end,
+                "breakout_timestamp": confirmation_end,
+            },
+            report_fields={
+                "opening_range_start_timestamp": opening_range["start_timestamp"],
+                "opening_range_end_timestamp": opening_range["end_timestamp"],
+                "opening_range_high": opening_range["high"],
+                "opening_range_low": opening_range["low"],
+                "opening_range_open": opening_range["open"],
+                "opening_range_width": opening_range["width"],
+                "opening_range_width_pct_of_open": opening_range["width_pct_of_open"],
+                "confirmation_start_timestamp": confirmation_start,
+                "confirmation_end_timestamp": confirmation_end,
+                "breakout_timestamp": confirmation_end,
+                "breakout_level": breakout_level,
             },
         )
+
+    def _bar_close_timestamp(self, timestamp) -> pd.Timestamp:
+        return pd.Timestamp(timestamp) + pd.Timedelta(minutes=float(self.params.get("bar_interval_minutes", 1)))
 
     def _is_tuesday(self, bar: pd.Series) -> bool:
         try:

@@ -6,6 +6,7 @@ from propstack.data.clean import clean_data
 from propstack.data.features import build_features
 from propstack.data.quality import save_pipeline_outputs
 from propstack.data.subset import apply_data_subset, load_bounds_with_warmup, subset_from_data_config
+from propstack.utils.reports import market_timezone
 
 
 def prepare_data(data_config: dict, output_dir=None, subset_config: dict | None = None):
@@ -25,7 +26,7 @@ def prepare_data(data_config: dict, output_dir=None, subset_config: dict | None 
             "last_timestamp": str(cleaned["timestamp"].max()) if len(cleaned) else None,
         }
     if output_dir:
-        save_pipeline_outputs(cleaned, features, quality_report, missing, output_dir)
+        save_pipeline_outputs(cleaned, features, quality_report, missing, output_dir, market_timezone(data_config))
     return features, quality_report
 
 

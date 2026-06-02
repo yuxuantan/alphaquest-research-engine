@@ -7,6 +7,7 @@ from propstack.data.source import data_source_hash
 from propstack.data.subset import subset_from_config
 from propstack.research.wfa import run_wfa
 from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, validation_dir, write_json
+from propstack.utils.reports import market_timezone, write_report_csv
 
 
 def main() -> None:
@@ -22,7 +23,7 @@ def main() -> None:
     data, _ = prepare_data(campaign["data"], validation_dir(out), subset)
     input_hash = data_source_hash(campaign["data"], subset)
     results, summary = run_wfa(data, campaign, grid_cfg, wfa_cfg, benchmarks)
-    results.to_csv(out / "wfa_results.csv", index=False)
+    write_report_csv(results, out / "wfa_results.csv", market_timezone(campaign), index=False)
     write_json(out / "wfa_summary.json", summary)
     record_campaign_result(out, campaign, args.config, input_hash, "wfa", summary)
     print(out)
