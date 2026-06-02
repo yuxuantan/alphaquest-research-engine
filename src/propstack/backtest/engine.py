@@ -5,6 +5,7 @@ import pandas as pd
 from propstack.backtest.fills import entry_price, exit_price, stop_target_hit
 from propstack.backtest.metrics import calculate_metrics, daily_results
 from propstack.backtest.risk import DailyRisk
+from propstack.backtest.sizing import size_position
 from propstack.strategy import ModularStrategy
 from propstack.utils.progress import progress_bar
 from propstack.utils.time import parse_time
@@ -28,7 +29,6 @@ class BacktestEngine:
         tick_value = float(self.core_config.get("tick_value", 12.5))
         commission = float(self.core_config.get("commission_per_contract", 2.5))
         slippage_ticks = float(self.core_config.get("slippage_ticks", 1))
-        contracts = int(self.core_config.get("contracts", 1))
         flatten_time = parse_time(self.strategy_config.get("flatten_time", self.core_config.get("flatten_time", "14:55:00")))
 
         pending_signal = None
@@ -45,6 +45,11 @@ class BacktestEngine:
                 ep = entry_price(float(bar["open"]), direction, tick_size, slippage_ticks)
                 stop = strategy.stop_price(sig, direction, tick_size, entry_price=ep)
                 if stop is None:
+                    pending_signal = None
+                    continue
+                risk_points = abs(ep - stop)
+                sizing = size_position(self.core_config, risk_points, tick_size, tick_value)
+                if sizing.contracts < 1:
                     pending_signal = None
                     continue
                 target = strategy.target_price(ep, stop, direction, signal=sig)
@@ -73,11 +78,13 @@ class BacktestEngine:
                         "entry_price": ep,
                         "stop_price": stop,
                         "target_price": target,
-                        "risk_points": abs(ep - stop),
+                        "risk_points": risk_points,
+                        "contracts": sizing.contracts,
                         "max_favorable_excursion": 0.0,
                         "max_adverse_excursion": 0.0,
                     }
                 )
+                position.update(sizing.report_fields())
                 risk.record_entry(bar["session_date"])
                 trade_id += 1
             pending_signal = None
@@ -99,6 +106,7 @@ class BacktestEngine:
                 if reason is not None:
                     xp = exit_price(float(raw_exit), direction, tick_size, slippage_ticks)
                     point_pnl = xp - position["entry_price"] if direction == "long" else position["entry_price"] - xp
+                    contracts = int(position["contracts"])
                     gross = point_pnl / tick_size * tick_value * contracts
                     total_commission = commission * contracts * 2
                     slippage_cost = slippage_ticks * tick_value * contracts * 2
@@ -109,7 +117,6 @@ class BacktestEngine:
                         "exit_timestamp": bar["timestamp"],
                         "exit_price": xp,
                         "exit_reason": reason,
-                        "contracts": contracts,
                         "gross_pnl": gross,
                         "net_pnl": net,
                         "r_multiple": r_mult,

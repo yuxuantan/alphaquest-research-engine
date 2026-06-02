@@ -663,10 +663,29 @@ core:
   commission_per_contract: 2.50
   slippage_ticks: 1
   contracts: 1
+  position_sizing:
+    mode: fixed_contracts
   daily_loss_limit: 1000
   daily_profit_stop: 1000
   flatten_time: "14:55:00"
 ```
+
+`position_sizing.mode: fixed_contracts` uses `contracts` for every trade. To size each entry from the configured stop distance and initial account balance, use:
+
+```yaml
+core:
+  initial_balance: 100000
+  tick_size: 0.25
+  tick_value: 12.50
+  contracts: 1
+  position_sizing:
+    mode: risk_percent_initial_balance
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
+```
+
+Risk-percent sizing uses `initial_balance * risk_pct` as the target dollar risk, then divides by the entry-to-stop risk per contract. `rounding: floor` is the default and treats the risk percent as a ceiling. `nearest` and `ceil` are available when you explicitly want to test over-risking behavior. If rounding produces fewer than `min_contracts`, the entry is skipped.
 
 Do not compare variants unless these assumptions are intentionally identical or intentionally part of the test.
 
@@ -944,10 +963,14 @@ core:
   commission_per_contract: 2.50
   slippage_ticks: 1
   contracts: 1
+  position_sizing:
+    mode: fixed_contracts
   daily_loss_limit: 1000
   daily_profit_stop: 1000
   flatten_time: "14:55:00"
 ```
+
+For dynamic sizing, set `position_sizing.mode` to `risk_percent_initial_balance` and provide `risk_pct`, for example `0.01` for 1% of `initial_balance`. The trade log includes `position_sizing_mode`, `target_risk_amount`, `dollar_risk_per_contract`, `unrounded_contracts`, and `planned_dollar_risk` for audit.
 
 Important simulator assumptions:
 

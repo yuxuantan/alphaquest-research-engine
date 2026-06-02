@@ -11,6 +11,7 @@ import pandas as pd
 from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.fills import entry_price, exit_price
 from propstack.backtest.metrics import benchmark, calculate_metrics, daily_results
+from propstack.backtest.sizing import size_position
 from propstack.utils.progress import progress_bar
 from propstack.utils.reports import market_timezone, write_report_csv
 from propstack.utils.time import parse_time
@@ -416,7 +417,6 @@ def _build_trade_log(
     tick_value = float(core.get("tick_value", 12.5))
     commission = float(core.get("commission_per_contract", 2.5))
     slippage_ticks = float(core.get("slippage_ticks", 1))
-    contracts = int(core.get("contracts", 1))
     risk_points = max(float(core_profile.get("average_risk_points", tick_size)), tick_size)
 
     rows = []
@@ -427,6 +427,10 @@ def _build_trade_log(
         ep = entry_price(float(entry_bar["open"]), direction, tick_size, slippage_ticks)
         xp = exit_price(float(exit_bar["close"]), direction, tick_size, slippage_ticks)
         point_pnl = xp - ep if direction == "long" else ep - xp
+        sizing = size_position(core, risk_points, tick_size, tick_value)
+        if sizing.contracts < 1:
+            continue
+        contracts = sizing.contracts
         gross = point_pnl / tick_size * tick_value * contracts
         total_commission = commission * contracts * 2
         slippage_cost = slippage_ticks * tick_value * contracts * 2
@@ -455,13 +459,14 @@ def _build_trade_log(
                 "stop_price": pd.NA,
                 "target_price": pd.NA,
                 "risk_points": risk_points,
+                "contracts": contracts,
+                **sizing.report_fields(),
                 "max_favorable_excursion": mfe,
                 "max_adverse_excursion": mae,
                 "exit_timestamp": exit_bar["timestamp"],
                 "exit_price": xp,
                 "exit_reason": "random_exit",
                 "bars_in_trade": int(item["duration"]),
-                "contracts": contracts,
                 "gross_pnl": gross,
                 "net_pnl": net,
                 "r_multiple": point_pnl / risk_points if risk_points else 0.0,

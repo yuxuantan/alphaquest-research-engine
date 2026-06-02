@@ -61,6 +61,11 @@ core:
   commission_per_contract: 2.50
   slippage_ticks: 1
   contracts: 1
+  position_sizing:
+    mode: risk_percent_initial_balance
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
   daily_loss_limit: 1000
   daily_profit_stop: 1000
   flatten_time: "15:45:00"
@@ -96,11 +101,11 @@ core_grid:
   parameters:
     entry.params.max_opening_range_pct_of_open: [0.0045, 0.0055, 0.0065]
     entry.params.confirmation_minutes: [5]
-    tp.params.extension_fraction: [0.4, 0.5, 0.6]
-    sl.params.max_stop_points: [10, 12, 14]
+    tp.params.extension_fraction: [1.0, 1.25, 1.5, 1.75, 2.0]
+    sl.params.max_stop_points: [10, 12, 14, 16]
     sl.params.stop_offset_ticks: [0]
     entry.params.max_trades_per_day: [1]
-    entry.params.skip_tuesday_longs: [true]
+    entry.params.skip_tuesday_longs: [true, false]
     entry.params.allow_long: [true]
     entry.params.allow_short: [true]
 
