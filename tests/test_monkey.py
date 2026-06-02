@@ -1,8 +1,11 @@
+import random
+
+import numpy as np
 import pandas as pd
 
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
-from propstack.research.monkey import run_monkey
+from propstack.research.monkey import _sample_durations, run_monkey
 from tests.test_backtest_engine import BASE_CFG
 from tests.test_data_pipeline import DATA_CFG
 
@@ -27,6 +30,8 @@ def test_monkey_summary():
     assert "core_beats_monkey_max_drawdown_rate" in summary
     assert "meets_monkey_goal" in summary
     assert summary["core_metrics"]["total_trades"] >= 1
+    assert summary["constraints"]["duration_sampling"] == "core_distribution"
+    assert summary["constraints"]["max_duration_bars"] >= 1
     assert set(["total_trades", "long_ratio", "average_bars_in_trade"]).issubset(results.columns)
     assert (results["total_trades"] == summary["core_metrics"]["total_trades"]).all()
 
@@ -64,3 +69,26 @@ def test_monkey_retains_iteration_reports(tmp_path):
     trades = pd.read_csv(trades_path)
     assert set(["run_id", "entry_timestamp", "exit_timestamp", "net_pnl"]).issubset(trades.columns)
     assert sorted(trades["run_id"].unique().tolist()) == [1, 2]
+
+
+def test_monkey_duration_sampling_uses_core_distribution_and_cap():
+    constraints = {
+        "duration_sampling": "core_distribution",
+        "average_bars_tolerance_pct": 0.10,
+        "max_duration_sample_attempts": 10,
+    }
+
+    durations = _sample_durations(
+        np_rng=np.random.default_rng(7),
+        rng=random.Random(7),
+        trade_count=200,
+        core_durations=[5, 10, 20, 35, 55, 289],
+        target_average=30.0,
+        constraints=constraints,
+        max_duration=55,
+    )
+
+    assert len(durations) == 200
+    assert max(durations) <= 55
+    assert set(durations).issubset({5, 10, 20, 35, 55})
+    assert 27.0 <= np.mean(durations) <= 33.0

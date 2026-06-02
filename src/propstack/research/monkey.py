@@ -46,6 +46,8 @@ def run_monkey(
     eligible = _eligible_entries(market, base_config, constraints)
     if eligible.empty:
         raise ValueError("No eligible monkey entry bars found for the configured strategy session.")
+    max_feasible_duration = _max_feasible_duration(eligible)
+    max_duration = min(int(core_profile["max_bars_in_trade"]), max_feasible_duration)
 
     rows = []
     total_runs = int(monkey_config.get("runs", 8000))
@@ -61,7 +63,15 @@ def run_monkey(
         directions = ["long"] * long_trades + ["short"] * (trade_count - long_trades)
         rng.shuffle(directions)
 
-        durations = _sample_durations(np_rng, rng, trade_count, core_profile["average_bars_in_trade"], constraints)
+        durations = _sample_durations(
+            np_rng=np_rng,
+            rng=rng,
+            trade_count=trade_count,
+            core_durations=core_profile["bars_in_trade"],
+            target_average=core_profile["average_bars_in_trade"],
+            constraints=constraints,
+            max_duration=max_duration,
+        )
         schedule = _build_schedule(
             np_rng=np_rng,
             eligible=eligible,
@@ -123,6 +133,7 @@ def run_monkey(
             "short_trades": int(core_profile["short_trades"]),
             "long_ratio": float(core_profile["long_ratio"]),
             "average_bars_in_trade": float(core_profile["average_bars_in_trade"]),
+            "max_bars_in_trade": int(core_profile["max_bars_in_trade"]),
             "net_profit": float(core_profile["net_profit"]),
             "max_drawdown": float(core_profile["max_drawdown"]),
             "max_drawdown_pct": float(core_profile["max_drawdown_pct"]),
@@ -148,7 +159,10 @@ def run_monkey(
             "trade_count_tolerance": int(constraints["trade_count_tolerance"]),
             "long_short_ratio_tolerance": float(constraints["long_short_ratio_tolerance"]),
             "average_bars_tolerance_pct": float(constraints["average_bars_tolerance_pct"]),
+            "duration_sampling": str(constraints["duration_sampling"]),
             "duration_shape": float(constraints["duration_shape"]),
+            "max_duration_bars": int(max_duration),
+            "max_feasible_duration_bars": int(max_feasible_duration),
             "rth_only": bool(constraints.get("rth_only", True)),
             "enforce_non_overlapping": bool(constraints["enforce_non_overlapping"]),
             "enforce_max_trades_per_day": bool(constraints["enforce_max_trades_per_day"]),
@@ -166,17 +180,22 @@ def _constraints(monkey_config: dict) -> dict:
     cfg.setdefault("trade_count_tolerance", monkey_config.get("trade_count_tolerance", 0))
     cfg.setdefault("long_short_ratio_tolerance", monkey_config.get("long_short_ratio_tolerance", 0.05))
     cfg.setdefault("average_bars_tolerance_pct", monkey_config.get("average_bars_tolerance_pct", 0.10))
+    cfg.setdefault("duration_sampling", monkey_config.get("duration_sampling", "core_distribution"))
     cfg.setdefault("duration_shape", monkey_config.get("duration_shape", 0.70))
     cfg.setdefault("enforce_non_overlapping", monkey_config.get("enforce_non_overlapping", True))
     cfg.setdefault("enforce_max_trades_per_day", monkey_config.get("enforce_max_trades_per_day", False))
     cfg.setdefault("max_schedule_attempts", monkey_config.get("max_schedule_attempts", 100))
     cfg.setdefault("max_entry_attempts_per_trade", monkey_config.get("max_entry_attempts_per_trade", 1500))
+    cfg.setdefault("max_duration_sample_attempts", monkey_config.get("max_duration_sample_attempts", 1000))
     cfg.setdefault("beat_threshold", monkey_config.get("beat_threshold", 0.90))
     return cfg
 
 
 def _core_profile(data: pd.DataFrame, trades: pd.DataFrame, metrics: dict) -> dict:
     bars = _bars_in_trade(data, trades)
+    bar_values = [int(value) for value in bars.dropna().round().astype(int).tolist() if int(value) >= 1]
+    if not bar_values:
+        bar_values = [1]
     total = int(len(trades))
     long_trades = int((trades["direction"] == "long").sum())
     short_trades = int((trades["direction"] == "short").sum())
@@ -187,7 +206,9 @@ def _core_profile(data: pd.DataFrame, trades: pd.DataFrame, metrics: dict) -> di
         "long_trades": long_trades,
         "short_trades": short_trades,
         "long_ratio": float(long_trades / total) if total else 0.5,
-        "average_bars_in_trade": float(bars.mean()) if len(bars) else 1.0,
+        "average_bars_in_trade": float(np.mean(bar_values)),
+        "max_bars_in_trade": max(bar_values),
+        "bars_in_trade": bar_values,
         "average_risk_points": float(risk_points.dropna().mean()) if risk_points.notna().any() else 1.0,
         "max_trades_per_day": max(max_trades_per_day, 1),
         "net_profit": float(metrics["net_profit"]),
@@ -242,6 +263,11 @@ def _eligible_entries(data: pd.DataFrame, base_config: dict, constraints: dict) 
     return eligible.reset_index(drop=True)
 
 
+def _max_feasible_duration(eligible: pd.DataFrame) -> int:
+    rooms = eligible["exit_limit"].to_numpy(dtype=int) - eligible["position"].to_numpy(dtype=int) + 1
+    return max(int(rooms.max()) if len(rooms) else 0, 1)
+
+
 def _sample_trade_count(rng: random.Random, target: int, constraints: dict) -> int:
     tolerance = int(constraints.get("trade_count_tolerance", 0))
     pct_tolerance = int(round(target * float(constraints.get("trade_count_tolerance_pct", 0.05))))
@@ -274,14 +300,146 @@ def _sample_durations(
     np_rng: np.random.Generator,
     rng: random.Random,
     trade_count: int,
+    core_durations: list[int],
     target_average: float,
     constraints: dict,
+    max_duration: int,
+) -> list[int]:
+    mode = str(constraints.get("duration_sampling", "core_distribution")).lower()
+    if mode in {"core", "core_distribution", "bootstrap"}:
+        return _sample_core_distribution_durations(
+            np_rng=np_rng,
+            trade_count=trade_count,
+            core_durations=core_durations,
+            target_average=target_average,
+            constraints=constraints,
+            max_duration=max_duration,
+        )
+    if mode in {"gamma", "gamma_multinomial"}:
+        return _sample_gamma_durations(np_rng, rng, trade_count, target_average, constraints, max_duration)
+    raise ValueError(f"Unsupported monkey duration_sampling: {mode}")
+
+
+def _sample_core_distribution_durations(
+    np_rng: np.random.Generator,
+    trade_count: int,
+    core_durations: list[int],
+    target_average: float,
+    constraints: dict,
+    max_duration: int,
+) -> list[int]:
+    feasible = np.array(
+        [int(value) for value in core_durations if 1 <= int(value) <= int(max_duration)],
+        dtype=int,
+    )
+    if len(feasible) == 0:
+        feasible = np.array([max(int(max_duration), 1)], dtype=int)
+
+    lo_total, hi_total = _duration_total_bounds(
+        trade_count=trade_count,
+        target_average=target_average,
+        tolerance=float(constraints.get("average_bars_tolerance_pct", 0.10)),
+        max_duration=int(max_duration),
+    )
+    attempts = max(int(constraints.get("max_duration_sample_attempts", 1000)), 1)
+    for _ in range(attempts):
+        if trade_count == len(feasible):
+            durations = np_rng.permutation(feasible).astype(int)
+        else:
+            durations = np_rng.choice(feasible, size=trade_count, replace=True).astype(int)
+        adjusted = _adjust_durations_to_bounds(durations, feasible, lo_total, hi_total, np_rng)
+        if adjusted is not None:
+            return [int(value) for value in adjusted]
+
+    raise RuntimeError(
+        "Unable to sample monkey durations from the core bars-in-trade profile "
+        f"within average_bars_tolerance_pct={constraints.get('average_bars_tolerance_pct', 0.10)} "
+        f"and max_duration={max_duration}."
+    )
+
+
+def _duration_total_bounds(
+    trade_count: int,
+    target_average: float,
+    tolerance: float,
+    max_duration: int,
+) -> tuple[int, int]:
+    min_total = trade_count
+    max_total = max(int(max_duration), 1) * trade_count
+    lo_average = max(1.0, target_average * (1.0 - tolerance))
+    hi_average = max(lo_average, target_average * (1.0 + tolerance))
+    lo_total = max(min_total, math.ceil(lo_average * trade_count - 1e-9))
+    hi_total = min(max_total, math.floor(hi_average * trade_count + 1e-9))
+    if lo_total > hi_total:
+        raise RuntimeError(
+            "Monkey average_bars_tolerance_pct is incompatible with the duration cap. "
+            f"target_average={target_average}, trade_count={trade_count}, max_duration={max_duration}."
+        )
+    return lo_total, hi_total
+
+
+def _adjust_durations_to_bounds(
+    durations: np.ndarray,
+    feasible_values: np.ndarray,
+    lo_total: int,
+    hi_total: int,
+    np_rng: np.random.Generator,
+) -> np.ndarray | None:
+    values = np.unique(feasible_values.astype(int))
+    total = int(durations.sum())
+    if lo_total <= total <= hi_total:
+        return durations
+
+    max_steps = max(len(durations) * max(len(values), 1) * 2, 1)
+    for _ in range(max_steps):
+        if lo_total <= total <= hi_total:
+            return durations
+
+        changed = False
+        for idx in np_rng.permutation(len(durations)):
+            current = int(durations[idx])
+            if total < lo_total:
+                candidates = values[values > current]
+                if len(candidates) == 0:
+                    continue
+                need = lo_total - total
+                deltas = candidates - current
+                preferred = candidates[deltas <= need]
+                new_value = int(np_rng.choice(preferred if len(preferred) else candidates[:1]))
+            else:
+                candidates = values[values < current]
+                if len(candidates) == 0:
+                    continue
+                need = total - hi_total
+                deltas = current - candidates
+                preferred = candidates[deltas <= need]
+                new_value = int(np_rng.choice(preferred if len(preferred) else candidates[-1:]))
+
+            total += new_value - current
+            durations[idx] = new_value
+            changed = True
+            break
+
+        if not changed:
+            return None
+
+    return durations if lo_total <= total <= hi_total else None
+
+
+def _sample_gamma_durations(
+    np_rng: np.random.Generator,
+    rng: random.Random,
+    trade_count: int,
+    target_average: float,
+    constraints: dict,
+    max_duration: int,
 ) -> list[int]:
     tolerance = float(constraints.get("average_bars_tolerance_pct", 0.10))
-    lo = max(1.0, target_average * (1.0 - tolerance))
-    hi = max(lo, target_average * (1.0 + tolerance))
-    sampled_average = rng.uniform(lo, hi)
+    lo_average = max(1.0, target_average * (1.0 - tolerance))
+    hi_average = max(lo_average, target_average * (1.0 + tolerance))
+    sampled_average = rng.uniform(lo_average, hi_average)
     target_total = max(trade_count, int(round(sampled_average * trade_count)))
+    target_total = min(target_total, max(int(max_duration), 1) * trade_count)
     remaining = target_total - trade_count
     if remaining <= 0:
         return [1] * trade_count
@@ -291,7 +449,8 @@ def _sample_durations(
     if float(weights.sum()) <= 0:
         weights = np.ones(trade_count)
     extra = np_rng.multinomial(remaining, weights / weights.sum())
-    return [int(x) for x in (extra + 1)]
+    durations = np.minimum(extra + 1, max(int(max_duration), 1))
+    return [int(x) for x in durations]
 
 
 def _build_schedule(

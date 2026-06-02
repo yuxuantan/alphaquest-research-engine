@@ -13,13 +13,19 @@ from propstack.utils.reports import market_timezone, write_report_csv
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip writing cleaned/features validation CSVs before the run.",
+    )
     args = parser.parse_args()
     campaign = load_yaml(args.config)
     monkey_cfg = campaign["monkey"]
     benchmarks = campaign.get("benchmarks", {})
     out = create_run_dir("monkey", args.config, campaign)
     subset = subset_from_config(campaign, "monkey")
-    data, _ = prepare_data(campaign["data"], validation_dir(out), subset)
+    output_dir = None if args.skip_validation else validation_dir(out)
+    data, _ = prepare_data(campaign["data"], output_dir, subset)
     input_hash = data_source_hash(campaign["data"], subset)
     report_dir = out if monkey_cfg.get("retain_iteration_reports", False) else None
     results, summary = run_monkey(data, campaign, monkey_cfg, benchmarks, report_dir=report_dir)

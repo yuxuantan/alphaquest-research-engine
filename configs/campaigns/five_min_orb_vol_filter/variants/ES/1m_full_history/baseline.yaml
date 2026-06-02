@@ -32,30 +32,30 @@ strategy:
     params:
       rth_start: "09:30:00"
       opening_range_minutes: 5
-      confirmation_minutes: 5
+      confirmation_minutes: 1
       bar_interval_minutes: 1
-      max_opening_range_pct_of_open: 0.0055
-      last_entry_time: "12:00:00"
+      max_opening_range_pct_of_open: 0.004
+      last_entry_time: "10:00:00"
       max_trades_per_day: 1
-      skip_tuesday_longs: true
+      skip_tuesday_longs: false
       allow_long: true
       allow_short: true
   tp:
     module: opening_range_extension
     params:
-      extension_fraction: 1.5
+      extension_fraction: 2.0
   sl:
     module: opening_range_edge
     params:
       max_stop_points: 12
       stop_offset_ticks: 0
-  flatten_time: "15:45:00"
+  flatten_time: "10:30:00"
 
 core:
   data_subset:
     start_date: "2021-01-01"
     end_date: "2022-12-31"
-  initial_balance: 100000
+  initial_balance: 150000
   tick_size: 0.25
   tick_value: 12.50
   commission_per_contract: 2.50
@@ -65,9 +65,9 @@ core:
     risk_pct: 0.01
     rounding: floor
     min_contracts: 1
-  daily_loss_limit: 1000
-  daily_profit_stop: 1000
-  flatten_time: "15:45:00"
+  daily_loss_limit: 2000
+  daily_profit_stop: 5000
+  flatten_time: "10:30:00"
 
 benchmarks:
   min_trades_per_year: 100
@@ -98,13 +98,13 @@ core_grid:
   min_profitable_iteration_rate: 0.70
   retain_iteration_reports: true
   parameters:
-    entry.params.max_opening_range_pct_of_open: [0.0045, 0.0055, 0.0065]
-    entry.params.confirmation_minutes: [5]
-    tp.params.extension_fraction: [1.0, 1.25, 1.5, 1.75, 2.0]
-    sl.params.max_stop_points: [10, 12, 14, 16]
+    entry.params.max_opening_range_pct_of_open: [0.003, 0.0035, 0.004, 0.0045, 0.005]
+    entry.params.confirmation_minutes: [1]
+    tp.params.extension_fraction: [1.8, 1.9, 2.0, 2.1, 2.2]
+    sl.params.max_stop_points: [10, 11, 12, 13, 14]
     sl.params.stop_offset_ticks: [0]
     entry.params.max_trades_per_day: [1]
-    entry.params.skip_tuesday_longs: [true, false]
+    entry.params.skip_tuesday_longs: [false]
     entry.params.allow_long: [true]
     entry.params.allow_short: [true]
 

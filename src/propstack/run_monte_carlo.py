@@ -17,6 +17,11 @@ from propstack.utils.reports import market_timezone, write_report_csv
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True)
+    parser.add_argument(
+        "--skip-validation",
+        action="store_true",
+        help="Skip writing cleaned/features validation CSVs before the run.",
+    )
     args = parser.parse_args()
     campaign = load_yaml(args.config)
     mc_cfg = {**campaign.get("benchmarks", {}), **campaign["monte_carlo"]}
@@ -26,7 +31,8 @@ def main() -> None:
         input_hash = file_sha256(mc_cfg["trade_log"])
     else:
         subset = subset_from_config(campaign, "monte_carlo", fallback_sections=("core",))
-        data, _ = prepare_data(campaign["data"], validation_dir(out), subset)
+        output_dir = None if args.skip_validation else validation_dir(out)
+        data, _ = prepare_data(campaign["data"], output_dir, subset)
         trades = BacktestEngine(campaign).run(data)["trades"]
         write_report_csv(trades, out / "source_trade_log.csv", market_timezone(campaign), index=False)
         input_hash = data_source_hash(campaign["data"], subset)

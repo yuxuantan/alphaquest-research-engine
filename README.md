@@ -1165,6 +1165,7 @@ monkey:
     trade_count_tolerance: 0
     long_short_ratio_tolerance: 0.05
     average_bars_tolerance_pct: 0.10
+    duration_sampling: core_distribution
     duration_shape: 0.70
     rth_only: true
     enforce_non_overlapping: true
@@ -1218,10 +1219,24 @@ long_short_ratio_tolerance
   the remainder as shorts, then shuffles the direction order.
 
 average_bars_tolerance_pct
-  The iteration samples a target average bars-in-trade inside the configured
-  tolerance. Individual trade durations are then distributed around that target
-  with a gamma/multinomial draw, so the average stays close while individual
-  exits still vary.
+  The iteration samples individual durations from the core run's observed
+  bars-in-trade distribution, then retries/adjusts the sample until the average
+  stays inside this tolerance.
+
+duration_sampling
+  Defaults to `core_distribution`. This preserves the core holding-time shape
+  and prevents synthetic monkey exits that are longer than any comparable core
+  trade. `gamma_multinomial` is still accepted as a legacy mode and uses
+  `duration_shape`.
+
+duration_shape
+  Legacy gamma/multinomial shape parameter. It is only used when
+  `duration_sampling: gamma_multinomial`.
+
+max_duration_bars
+  Reported in `monkey_summary.json`, not configured directly. The runner caps
+  sampled durations at `min(core max bars in trade, max feasible eligible-entry
+  room before flatten_time)`.
 
 rth_only
   Restricts random entries to RTH bars when true.
@@ -1239,8 +1254,8 @@ Where the randomness comes from:
 random trade count within tolerance
 random long count within tolerance
 shuffled long/short sequence
-random target average duration within tolerance
-random distribution of durations across trades
+bootstrap sample from the core bars-in-trade distribution
+average duration constrained by tolerance
 random entry-bar placement from eligible market bars
 real market movement from entry open to random-exit close
 ```
@@ -1248,7 +1263,9 @@ real market movement from entry open to random-exit close
 The monkey does not randomize P&L directly. It builds a trade log from real bars,
 enters at the selected entry bar open, exits at the selected exit bar close,
 applies the configured slippage and commission, then reuses the normal metrics
-calculation.
+calculation. Duration caps are applied before schedule placement, so impossible
+single-trade durations fail during sampling instead of after repeated placement
+attempts.
 
 Audit these columns in `monkey_results.csv` to confirm each run stayed near the
 core profile while retaining variance:
@@ -1262,6 +1279,15 @@ average_bars_in_trade
 average_bars_delta
 net_profit
 max_drawdown
+```
+
+Audit these fields in `monkey_summary.json` to confirm the holding-time cap:
+
+```text
+core_metrics.max_bars_in_trade
+constraints.duration_sampling
+constraints.max_duration_bars
+constraints.max_feasible_duration_bars
 ```
 
 When `retain_iteration_reports` is true, audit the generated monkey trades for
