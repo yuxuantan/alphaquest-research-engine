@@ -84,3 +84,41 @@ def test_max_drawdown_pct_uses_running_equity_peak():
     metrics = calculate_metrics(trades, initial_balance=10000)
     assert metrics["max_drawdown"] == 2000.0
     assert round(metrics["max_drawdown_pct"], 6) == round(2000 / 11000, 6)
+
+
+def test_max_drawdown_includes_starting_balance_peak():
+    trades = pd.DataFrame(
+        {
+            "net_pnl": [-1000.0, -500.0, 200.0],
+            "gross_pnl": [-1000.0, -500.0, 200.0],
+            "r_multiple": [-1.0, -0.5, 0.2],
+            "entry_timestamp": ["2024-01-01", "2024-01-02", "2024-01-03"],
+            "exit_timestamp": ["2024-01-01", "2024-01-02", "2024-01-03"],
+            "session_date": ["2024-01-01", "2024-01-02", "2024-01-03"],
+            "trade_id": [1, 2, 3],
+        }
+    )
+
+    metrics = calculate_metrics(trades, initial_balance=10000)
+
+    assert metrics["max_drawdown"] == 1500.0
+    assert round(metrics["max_drawdown_pct"], 6) == round(1500 / 10000, 6)
+
+
+def test_max_drawdown_orders_trades_by_exit_timestamp():
+    trades = pd.DataFrame(
+        {
+            "net_pnl": [1000.0, -2000.0],
+            "gross_pnl": [1000.0, -2000.0],
+            "r_multiple": [1.0, -2.0],
+            "entry_timestamp": ["2024-01-02", "2024-01-01"],
+            "exit_timestamp": ["2024-01-02", "2024-01-01"],
+            "session_date": ["2024-01-02", "2024-01-01"],
+            "trade_id": [2, 1],
+        }
+    )
+
+    metrics = calculate_metrics(trades, initial_balance=10000)
+
+    assert metrics["max_drawdown"] == 2000.0
+    assert round(metrics["max_drawdown_pct"], 6) == round(2000 / 10000, 6)

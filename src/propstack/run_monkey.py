@@ -20,7 +20,8 @@ def main() -> None:
     subset = subset_from_config(campaign, "monkey")
     data, _ = prepare_data(campaign["data"], validation_dir(out), subset)
     input_hash = data_source_hash(campaign["data"], subset)
-    results, summary = run_monkey(data, campaign, monkey_cfg, benchmarks)
+    report_dir = out if monkey_cfg.get("retain_iteration_reports", False) else None
+    results, summary = run_monkey(data, campaign, monkey_cfg, benchmarks, report_dir=report_dir)
     results.to_csv(out / "monkey_results.csv", index=False)
     write_json(out / "monkey_summary.json", summary)
     record_campaign_result(out, campaign, args.config, input_hash, "monkey", summary)

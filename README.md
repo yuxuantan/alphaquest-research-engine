@@ -1105,22 +1105,25 @@ Prefer stable parameter regions over the single best row. `percentage_profitable
 
 ## 8. Run Monkey / Random Robustness Testing
 
-Configure random parameter and stress ranges:
+Configure constrained random-entry/random-exit iterations. The runner first executes the
+configured core strategy, then generates monkey trade logs with trade count,
+long/short ratio, and average bars in trade kept close to that core result:
 
 ```yaml
 monkey:
-  runs: 200
+  runs: 8000
   seed: 7
-  parameter_ranges:
-    entry.params.reclaim_window_bars: [2, 8]
-    tp.params.target_r_multiple: [1.0, 2.5]
-    sl.params.stop_offset_ticks: [1, 4]
-    entry.params.min_volume_ratio: [0.0, 1.5]
-  stress:
-    extra_slippage_ticks: [0, 2]
-    commission_multiplier: [1.0, 1.5]
-    skip_trade_probability: [0.0, 0.2]
-    skip_winning_trade_probability: [0.0, 0.2]
+  beat_threshold: 0.90
+  retain_iteration_reports: true
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    trade_count_tolerance: 0
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.10
+    duration_shape: 0.70
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
 ```
 
 Run:
@@ -1134,17 +1137,113 @@ Outputs:
 ```text
 monkey/monkey_results.csv
 monkey/monkey_summary.json
+monkey/monkey_iteration_trades.csv
+monkey/monkey_iteration_daily.csv
 ```
 
 Review:
 
 ```text
+core_beats_monkey_net_profit_rate
+core_beats_monkey_max_drawdown_rate
+meets_monkey_goal
 percentage_profitable
 percentage_passing_benchmark
 median_net_profit
 p5_net_profit
 p95_max_drawdown
 ```
+
+The monkey goal passes only when the core run beats the random trades in both
+dimensions: higher net profit than at least `beat_threshold` of monkey
+iterations and lower max drawdown than at least `beat_threshold` of monkey
+iterations.
+
+How the constraints are enforced:
+
+```text
+trade_count_tolerance_pct
+  Each iteration samples a random trade count inside core_total_trades plus or
+  minus the configured tolerance. `trade_count_tolerance` can add an absolute
+  minimum tolerance.
+
+long_short_ratio_tolerance
+  The core long ratio is converted into an allowed integer range for the sampled
+  trade count. The iteration randomly picks a long count in that range, assigns
+  the remainder as shorts, then shuffles the direction order.
+
+average_bars_tolerance_pct
+  The iteration samples a target average bars-in-trade inside the configured
+  tolerance. Individual trade durations are then distributed around that target
+  with a gamma/multinomial draw, so the average stays close while individual
+  exits still vary.
+
+rth_only
+  Restricts random entries to RTH bars when true.
+
+enforce_non_overlapping
+  Prevents simultaneous monkey positions when true.
+
+enforce_max_trades_per_day
+  Optionally caps monkey trades per day at the core run's observed daily max.
+```
+
+Where the randomness comes from:
+
+```text
+random trade count within tolerance
+random long count within tolerance
+shuffled long/short sequence
+random target average duration within tolerance
+random distribution of durations across trades
+random entry-bar placement from eligible market bars
+real market movement from entry open to random-exit close
+```
+
+The monkey does not randomize P&L directly. It builds a trade log from real bars,
+enters at the selected entry bar open, exits at the selected exit bar close,
+applies the configured slippage and commission, then reuses the normal metrics
+calculation.
+
+Audit these columns in `monkey_results.csv` to confirm each run stayed near the
+core profile while retaining variance:
+
+```text
+total_trades
+trade_count_delta
+long_ratio
+long_ratio_delta
+average_bars_in_trade
+average_bars_delta
+net_profit
+max_drawdown
+```
+
+When `retain_iteration_reports` is true, audit the generated monkey trades for
+any selected run in `monkey_iteration_trades.csv`:
+
+```text
+run_id
+trade_id
+direction
+entry_timestamp
+entry_price
+exit_timestamp
+exit_price
+bars_in_trade
+gross_pnl
+net_pnl
+commission
+slippage_cost
+```
+
+`monkey_iteration_daily.csv` gives the same per-run daily aggregation used by
+the normal daily report, with `run_id` added for filtering.
+
+Small rounding effects are expected for `long_ratio_delta` and
+`average_bars_delta`, especially when the core run has a low trade count. The
+deltas are written per iteration so that constraint drift is visible instead of
+hidden.
 
 ## 9. Run Walk-Forward Analysis
 

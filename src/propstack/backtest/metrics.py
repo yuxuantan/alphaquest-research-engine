@@ -4,10 +4,23 @@ import math
 import pandas as pd
 
 
+def _ordered_trades(trades: pd.DataFrame) -> pd.DataFrame:
+    if trades.empty or "exit_timestamp" not in trades.columns:
+        return trades
+    out = trades.copy()
+    out["_exit_timestamp_order"] = pd.to_datetime(out["exit_timestamp"], utc=True)
+    sort_columns = ["_exit_timestamp_order"]
+    if "trade_id" in out.columns:
+        sort_columns.append("trade_id")
+    return out.sort_values(sort_columns, kind="mergesort").drop(columns=["_exit_timestamp_order"])
+
+
 def equity_curve(trades: pd.DataFrame, initial_balance: float = 0.0) -> pd.Series:
     if trades.empty:
         return pd.Series(dtype=float)
-    return initial_balance + trades["net_pnl"].cumsum()
+    ordered = _ordered_trades(trades)
+    cumulative = initial_balance + ordered["net_pnl"].cumsum()
+    return pd.concat([pd.Series([initial_balance]), cumulative], ignore_index=True)
 
 
 def drawdown_stats(trades: pd.DataFrame, initial_balance: float = 0.0) -> tuple[float, float]:
@@ -82,6 +95,7 @@ def calculate_metrics(trades: pd.DataFrame, initial_balance: float = 0.0) -> dic
             "positive_month_rate": 0.0,
             "win_rate": 0.0,
         }
+    trades = _ordered_trades(trades)
     wins = trades.loc[trades["net_pnl"] > 0, "net_pnl"].sum()
     losses = abs(trades.loc[trades["net_pnl"] < 0, "net_pnl"].sum())
     pf = float(wins / losses) if losses else math.inf
