@@ -90,8 +90,12 @@ def summarize_stability(df: pd.DataFrame) -> dict:
     zones = {}
     for col in [
         "entry.params.reclaim_window_bars",
+        "entry.params.max_opening_range_pct_of_open",
+        "entry.params.confirmation_minutes",
         "tp.params.target_r_multiple",
+        "tp.params.extension_fraction",
         "sl.params.stop_offset_ticks",
+        "sl.params.max_stop_points",
         "entry.params.max_trades_per_day",
     ]:
         if col in df.columns:

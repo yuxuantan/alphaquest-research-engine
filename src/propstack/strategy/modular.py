@@ -18,11 +18,23 @@ class ModularStrategy:
     def on_bar_close(self, bar: pd.Series, trades_today: int = 0) -> Signal | None:
         return self.entry.on_bar_close(bar, trades_today=trades_today)
 
-    def stop_price(self, signal: Signal, direction: str, tick_size: float) -> float:
-        return self.sl.price(signal, direction, tick_size)
+    def stop_price(
+        self,
+        signal: Signal,
+        direction: str,
+        tick_size: float,
+        entry_price: float | None = None,
+    ) -> float:
+        return self.sl.price(signal, direction, tick_size, entry_price=entry_price)
 
-    def target_price(self, entry_price: float, stop_price: float, direction: str) -> float:
-        return self.tp.price(entry_price, stop_price, direction)
+    def target_price(
+        self,
+        entry_price: float,
+        stop_price: float,
+        direction: str,
+        signal: Signal | None = None,
+    ) -> float:
+        return self.tp.price(entry_price, stop_price, direction, signal=signal)
 
 
 def _validate_strategy_config(config: dict) -> dict:

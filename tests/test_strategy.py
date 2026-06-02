@@ -37,6 +37,29 @@ def test_modular_strategy_composes_entry_tp_and_sl_modules():
     assert any(s.direction == "short" for s in signals)
 
 
+def test_modular_strategy_composes_opening_range_modules():
+    strat = ModularStrategy(
+        {
+            "strategy_name": "five_min_orb_vol_filter",
+            "entry": {
+                "module": "opening_range_breakout",
+                "params": {
+                    "rth_start": "09:30:00",
+                    "opening_range_minutes": 5,
+                    "confirmation_minutes": 5,
+                    "bar_interval_minutes": 1,
+                },
+            },
+            "tp": {"module": "opening_range_extension", "params": {"extension_fraction": 0.5}},
+            "sl": {"module": "opening_range_edge", "params": {"max_stop_points": 14}},
+        }
+    )
+
+    assert strat.entry.name == "opening_range_breakout"
+    assert strat.tp.name == "opening_range_extension"
+    assert strat.sl.name == "opening_range_edge"
+
+
 def test_modular_strategy_requires_entry_tp_and_sl_sections():
     try:
         ModularStrategy(

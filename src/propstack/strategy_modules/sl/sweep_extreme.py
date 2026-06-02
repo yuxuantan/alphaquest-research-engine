@@ -14,7 +14,7 @@ class SweepExtremeStop:
     def __init__(self, params: dict):
         self.params = params
 
-    def price(self, signal, direction: str, tick_size: float) -> float:
+    def price(self, signal, direction: str, tick_size: float, entry_price: float | None = None) -> float:
         return sweep_stop(
             signal,
             direction,

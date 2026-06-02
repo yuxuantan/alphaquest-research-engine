@@ -43,8 +43,8 @@ class BacktestEngine:
                 sig = pending_signal
                 direction = sig.direction
                 ep = entry_price(float(bar["open"]), direction, tick_size, slippage_ticks)
-                stop = strategy.stop_price(sig, direction, tick_size)
-                target = strategy.target_price(ep, stop, direction)
+                stop = strategy.stop_price(sig, direction, tick_size, entry_price=ep)
+                target = strategy.target_price(ep, stop, direction, signal=sig)
                 position = {
                     "trade_id": trade_id,
                     "strategy_name": strategy.name,
@@ -56,6 +56,11 @@ class BacktestEngine:
                     "sweep_high": sig.sweep_high,
                     "sweep_low": sig.sweep_low,
                     "reclaim_timestamp": sig.reclaim_timestamp,
+                    "opening_range_high": sig.opening_range_high,
+                    "opening_range_low": sig.opening_range_low,
+                    "opening_range_open": sig.opening_range_open,
+                    "opening_range_width": sig.opening_range_width,
+                    "breakout_level": sig.breakout_level,
                     "entry_timestamp": bar["timestamp"],
                     "entry_price": ep,
                     "stop_price": stop,

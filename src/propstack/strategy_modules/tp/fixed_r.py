@@ -14,7 +14,7 @@ class FixedRTarget:
     def __init__(self, params: dict):
         self.params = params
 
-    def price(self, entry_price: float, stop_price: float, direction: str) -> float:
+    def price(self, entry_price: float, stop_price: float, direction: str, signal=None) -> float:
         return fixed_r_target(
             entry_price,
             stop_price,

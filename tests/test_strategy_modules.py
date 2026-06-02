@@ -2,9 +2,12 @@ from types import SimpleNamespace
 
 import pandas as pd
 
+from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
+from propstack.strategy_modules.sl.opening_range_edge import OpeningRangeEdgeStop
 from propstack.strategy_modules.sl.sweep_extreme import SweepExtremeStop
 from propstack.strategy_modules.tp.fixed_r import FixedRTarget
+from propstack.strategy_modules.tp.opening_range_extension import OpeningRangeExtensionTarget
 
 
 def test_fixed_r_target_module_long_and_short():
@@ -20,6 +23,113 @@ def test_sweep_extreme_stop_module_long_and_short():
 
     assert stop.price(signal, direction="long", tick_size=0.25) == 98.5
     assert stop.price(signal, direction="short", tick_size=0.25) == 101.5
+
+
+def test_opening_range_extension_target_module_long_and_short():
+    target = OpeningRangeExtensionTarget({"extension_fraction": 0.5})
+    signal = SimpleNamespace(opening_range_high=101.0, opening_range_low=99.0, opening_range_width=2.0)
+
+    assert target.price(100.0, 99.0, "long", signal=signal) == 102.0
+    assert target.price(100.0, 101.0, "short", signal=signal) == 98.0
+
+
+def test_opening_range_edge_stop_caps_risk_from_entry():
+    stop = OpeningRangeEdgeStop({"max_stop_points": 10, "stop_offset_ticks": 0})
+    signal = SimpleNamespace(opening_range_high=111.0, opening_range_low=90.0)
+
+    assert stop.price(signal, direction="long", tick_size=0.25, entry_price=105.0) == 95.0
+    assert stop.price(signal, direction="short", tick_size=0.25, entry_price=95.0) == 105.0
+
+
+def _orb_bar(timestamp, open_price, high, low, close, session_date=None):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": session_date or ts.date(),
+            "is_rth": True,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume_ratio": 1.0,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def _orb_long_breakout_bars(date="2024-01-03"):
+    return [
+        _orb_bar(f"{date} 09:30", 100.0, 100.20, 99.90, 100.10),
+        _orb_bar(f"{date} 09:31", 100.1, 100.30, 100.00, 100.20),
+        _orb_bar(f"{date} 09:32", 100.2, 100.40, 100.10, 100.25),
+        _orb_bar(f"{date} 09:33", 100.2, 100.25, 99.95, 100.05),
+        _orb_bar(f"{date} 09:34", 100.0, 100.35, 100.05, 100.20),
+        _orb_bar(f"{date} 09:35", 100.2, 100.30, 100.00, 100.10),
+        _orb_bar(f"{date} 09:36", 100.1, 100.30, 100.00, 100.20),
+        _orb_bar(f"{date} 09:37", 100.2, 100.35, 100.10, 100.30),
+        _orb_bar(f"{date} 09:38", 100.3, 100.38, 100.20, 100.35),
+        _orb_bar(f"{date} 09:39", 100.35, 100.55, 100.30, 100.50),
+    ]
+
+
+def test_opening_range_breakout_entry_emits_after_confirmation_window():
+    entry = OpeningRangeBreakoutEntry(
+        {
+            "rth_start": "09:30:00",
+            "opening_range_minutes": 5,
+            "confirmation_minutes": 5,
+            "bar_interval_minutes": 1,
+            "max_opening_range_pct_of_open": 0.0055,
+            "allow_long": True,
+            "allow_short": True,
+        }
+    )
+    bars = _orb_long_breakout_bars()
+
+    for bar in bars[:-1]:
+        assert entry.on_bar_close(bar) is None
+    signal = entry.on_bar_close(bars[-1])
+
+    assert signal.direction == "long"
+    assert signal.level_type == "opening_range_high"
+    assert signal.swept_level == 100.40
+    assert signal.opening_range_low == 99.90
+    assert round(signal.opening_range_width, 2) == 0.50
+    assert signal.reclaim_timestamp == bars[-1]["timestamp"]
+
+
+def test_opening_range_breakout_entry_skips_tuesday_longs():
+    entry = OpeningRangeBreakoutEntry({"skip_tuesday_longs": True})
+    bars = _orb_long_breakout_bars("2024-01-02")
+
+    signal = None
+    for bar in bars:
+        signal = entry.on_bar_close(bar)
+
+    assert signal is None
+
+
+def test_opening_range_breakout_entry_skips_wide_opening_range():
+    entry = OpeningRangeBreakoutEntry({"max_opening_range_pct_of_open": 0.0055})
+    bars = [
+        _orb_bar("2024-01-03 09:30", 100.0, 100.30, 99.90, 100.10),
+        _orb_bar("2024-01-03 09:31", 100.1, 100.50, 100.00, 100.20),
+        _orb_bar("2024-01-03 09:32", 100.2, 100.20, 100.00, 100.10),
+        _orb_bar("2024-01-03 09:33", 100.1, 100.30, 100.00, 100.20),
+        _orb_bar("2024-01-03 09:34", 100.2, 100.40, 100.10, 100.30),
+        _orb_bar("2024-01-03 09:35", 100.3, 100.60, 100.20, 100.50),
+        _orb_bar("2024-01-03 09:36", 100.5, 100.70, 100.40, 100.60),
+        _orb_bar("2024-01-03 09:37", 100.6, 100.70, 100.50, 100.65),
+        _orb_bar("2024-01-03 09:38", 100.6, 100.80, 100.50, 100.70),
+        _orb_bar("2024-01-03 09:39", 100.7, 100.90, 100.60, 100.80),
+    ]
+
+    signal = None
+    for bar in bars:
+        signal = entry.on_bar_close(bar)
+
+    assert signal is None
 
 
 def test_pdh_pdl_entry_module_emits_long_reclaim_signal():
