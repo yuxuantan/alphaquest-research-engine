@@ -670,14 +670,15 @@ core:
   flatten_time: "14:55:00"
 ```
 
-`position_sizing.mode: fixed_contracts` uses `contracts` for every trade. To size each entry from the configured stop distance and initial account balance, use:
+`position_sizing.mode: fixed_contracts` uses `contracts` for every trade. `fixed_contracts` is also the default when `position_sizing` is omitted, so existing configs that only define `contracts` keep the old behavior.
+
+To size each entry from the configured stop distance and initial account balance, use:
 
 ```yaml
 core:
   initial_balance: 100000
   tick_size: 0.25
   tick_value: 12.50
-  contracts: 1
   position_sizing:
     mode: risk_percent_initial_balance
     risk_pct: 0.01
@@ -685,7 +686,9 @@ core:
     min_contracts: 1
 ```
 
-Risk-percent sizing uses `initial_balance * risk_pct` as the target dollar risk, then divides by the entry-to-stop risk per contract. `rounding: floor` is the default and treats the risk percent as a ceiling. `nearest` and `ceil` are available when you explicitly want to test over-risking behavior. If rounding produces fewer than `min_contracts`, the entry is skipped.
+In `risk_percent_initial_balance` mode, do not set `contracts`; the engine calculates contracts per trade after entry and stop are known. Risk-percent sizing uses `initial_balance * risk_pct` as the target dollar risk, then divides by the entry-to-stop risk per contract. Use `risk_pct: 0.01` for 1% risk, or `risk_percent: 1.0` if you prefer percent-point notation.
+
+`rounding: floor` is the default and treats the risk percent as a ceiling. `nearest` and `ceil` are available when you explicitly want to test over-risking behavior. If rounding produces fewer than `min_contracts`, the entry is skipped. `min_contracts` is not a fixed trade size; it is only the minimum size required to allow an entry.
 
 Do not compare variants unless these assumptions are intentionally identical or intentionally part of the test.
 
@@ -970,7 +973,26 @@ core:
   flatten_time: "14:55:00"
 ```
 
-For dynamic sizing, set `position_sizing.mode` to `risk_percent_initial_balance` and provide `risk_pct`, for example `0.01` for 1% of `initial_balance`. The trade log includes `position_sizing_mode`, `target_risk_amount`, `dollar_risk_per_contract`, `unrounded_contracts`, and `planned_dollar_risk` for audit.
+Sizing modes:
+
+```yaml
+# Fixed sizing: uses contracts on every trade.
+core:
+  contracts: 1
+  position_sizing:
+    mode: fixed_contracts
+
+# Dynamic risk sizing: ignores contracts and calculates size per entry.
+core:
+  initial_balance: 100000
+  position_sizing:
+    mode: risk_percent_initial_balance
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
+```
+
+For dynamic sizing, `risk_pct: 0.01` means 1% of `initial_balance`; `risk_percent: 1.0` is the equivalent percent-point form. The trade log includes `position_sizing_mode`, `target_risk_amount`, `dollar_risk_per_contract`, `unrounded_contracts`, and `planned_dollar_risk` for audit.
 
 Important simulator assumptions:
 
