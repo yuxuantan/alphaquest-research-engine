@@ -1344,6 +1344,10 @@ wfa:
   test_months: 1
   step_months: 1
   objective: net_profit
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
   parameters:
     entry.params.reclaim_window_bars: [2, 3]
     tp.params.target_r_multiple: [1.0, 1.5]
@@ -1358,6 +1362,11 @@ can use different parameter spaces.
 `step_months`, which defaults to `test_months` when omitted. `mode: anchored`
 keeps the first train start fixed and expands the train window through each
 new out-of-sample period.
+
+`parallel.enabled: true` runs the in-sample grid combinations for each
+walk-forward window across worker processes. WFA windows still run sequentially
+so memory usage and console output stay bounded. `scope: grid` is the only
+supported parallel scope.
 
 Run:
 

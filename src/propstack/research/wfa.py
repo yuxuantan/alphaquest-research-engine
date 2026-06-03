@@ -111,6 +111,7 @@ def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks:
         "step_months": int(wfa_config["step_months"])
         if "step_months" in wfa_config
         else int(wfa_config.get("test_months", 1)),
+        "parallel": _wfa_parallel_config(wfa_config),
         "passing_windows": int(df["test_passed"].sum()) if len(df) else 0,
         "profitable_windows": int((df["test_net_profit"] > 0).sum()) if len(df) else 0,
         "profitable_window_rate": float((df["test_net_profit"] > 0).mean()) if len(df) else 0.0,
@@ -130,7 +131,26 @@ def _wfa_grid_config(wfa_config: dict) -> dict:
     return {
         "objective": wfa_config.get("objective", "net_profit"),
         "parameters": wfa_config["parameters"],
+        "parallel": _wfa_parallel_config(wfa_config),
     }
+
+
+def _wfa_parallel_config(wfa_config: dict) -> dict:
+    parallel = wfa_config.get("parallel") or {}
+    if isinstance(parallel, bool):
+        return {"enabled": parallel, "scope": "grid"}
+    if not isinstance(parallel, dict):
+        raise ValueError("wfa.parallel must be a boolean or mapping.")
+    scope = str(parallel.get("scope", "grid")).lower()
+    if scope != "grid":
+        raise ValueError("wfa.parallel.scope must be 'grid'.")
+    out = {
+        "enabled": bool(parallel.get("enabled", False)),
+        "scope": scope,
+    }
+    if "workers" in parallel:
+        out["workers"] = int(parallel["workers"])
+    return out
 
 
 def _log_window_start(

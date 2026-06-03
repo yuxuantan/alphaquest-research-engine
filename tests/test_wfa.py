@@ -153,6 +153,7 @@ def test_wfa_uses_own_parameter_space(monkeypatch):
             "train_months": 1,
             "test_months": 1,
             "step_months": 1,
+            "parallel": {"enabled": True, "workers": 3, "scope": "grid"},
             "parameters": wfa_params,
         },
         {"min_trade_count": 0, "max_drawdown": 99999},
@@ -162,6 +163,10 @@ def test_wfa_uses_own_parameter_space(monkeypatch):
     assert len(results) == 2
     assert calls
     assert all(grid_config["parameters"] == wfa_params for grid_config, _ in calls)
+    assert all(
+        grid_config["parallel"] == {"enabled": True, "scope": "grid", "workers": 3}
+        for grid_config, _ in calls
+    )
     assert all(parameter_label == "wfa.parameters" for _, parameter_label in calls)
     assert all(
         config["strategy"]["entry"]["params"]["reclaim_window_bars"] == 7 for config in engine_configs
