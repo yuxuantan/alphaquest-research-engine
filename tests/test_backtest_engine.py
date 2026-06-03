@@ -400,6 +400,26 @@ def test_max_drawdown_includes_starting_balance_peak():
     assert round(metrics["max_drawdown_pct"], 6) == round(1500 / 10000, 6)
 
 
+def test_cagr_and_mar_penalize_zero_or_negative_ending_balance():
+    trades = pd.DataFrame(
+        {
+            "net_pnl": [-12000.0],
+            "gross_pnl": [-12000.0],
+            "r_multiple": [-1.0],
+            "entry_timestamp": ["2024-01-01"],
+            "exit_timestamp": ["2024-01-01"],
+            "session_date": ["2024-01-01"],
+            "trade_id": [1],
+        }
+    )
+
+    metrics = calculate_metrics(trades, initial_balance=10000)
+
+    assert metrics["cagr"] == -1.0
+    assert metrics["max_drawdown_pct"] == 1.2
+    assert round(metrics["mar"], 6) == round(-1.0 / 1.2, 6)
+
+
 def test_max_drawdown_orders_trades_by_exit_timestamp():
     trades = pd.DataFrame(
         {

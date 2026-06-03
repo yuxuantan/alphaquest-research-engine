@@ -108,10 +108,12 @@ def calculate_metrics(trades: pd.DataFrame, initial_balance: float = 0.0) -> dic
     years = _elapsed_years(trades)
     drawdown, max_drawdown_pct = drawdown_stats(trades, initial_balance=initial_balance)
     ending_balance = initial_balance + net_profit
-    if initial_balance > 0 and ending_balance > 0 and years > 0:
+    if initial_balance <= 0 or years <= 0:
+        cagr = 0.0
+    elif ending_balance > 0:
         cagr = (ending_balance / initial_balance) ** (1 / years) - 1
     else:
-        cagr = 0.0
+        cagr = -1.0
     mar = cagr / max_drawdown_pct if max_drawdown_pct > 0 else (math.inf if cagr > 0 else 0.0)
     return {
         "total_trades": int(len(trades)),
