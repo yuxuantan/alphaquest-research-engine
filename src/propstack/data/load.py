@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 import re
 
 import pandas as pd
+
+from propstack.utils.progress import progress_bar
 
 
 COLUMN_ALIASES = {
@@ -46,9 +49,15 @@ def infer_data_source(config: dict) -> str:
     return normalized
 
 
-def load_raw_data(config: dict, date_bounds: dict | None = None) -> pd.DataFrame:
+def load_raw_data(
+    config: dict,
+    date_bounds: dict | None = None,
+    status_callback: Callable[[str], None] | None = None,
+    show_progress: bool = False,
+) -> pd.DataFrame:
     source = infer_data_source(config)
     if source == "csv":
+        _emit(status_callback, f"Reading CSV source: {config['raw_csv']}")
         return load_raw_csv(
             config["raw_csv"],
             symbol=config.get("symbol", "ES"),
@@ -59,7 +68,12 @@ def load_raw_data(config: dict, date_bounds: dict | None = None) -> pd.DataFrame
             date_bounds=date_bounds,
         )
     if source == "databento_dbn":
-        return load_databento_dbn(config, date_bounds=date_bounds)
+        return load_databento_dbn(
+            config,
+            date_bounds=date_bounds,
+            status_callback=status_callback,
+            show_progress=show_progress,
+        )
     raise ValueError(f"Unsupported data source: {source}")
 
 
@@ -103,7 +117,12 @@ def load_raw_csv(
     return df.sort_values("timestamp").reset_index(drop=True)
 
 
-def load_databento_dbn(config: dict, date_bounds: dict | None = None) -> pd.DataFrame:
+def load_databento_dbn(
+    config: dict,
+    date_bounds: dict | None = None,
+    status_callback: Callable[[str], None] | None = None,
+    show_progress: bool = False,
+) -> pd.DataFrame:
     raw_dir = config.get("raw_dir")
     if not raw_dir:
         raise ValueError("Databento DBN data source requires data.raw_dir")
@@ -112,16 +131,25 @@ def load_databento_dbn(config: dict, date_bounds: dict | None = None) -> pd.Data
     if not files:
         raise ValueError(f"No Databento DBN files found in {raw_dir} for date bounds {date_bounds}")
 
-    frames = [_read_cached_dbn_file(path, config) for path in files]
+    _emit(status_callback, f"Selected {len(files):,} Databento files from {raw_dir}.")
+    progress = progress_bar(len(files), "data files", enabled=show_progress)
+    progress.update(0, force=True)
+    frames = []
+    for idx, path in enumerate(files, start=1):
+        frames.append(_read_cached_dbn_file(path, config))
+        progress.update(idx, force=True)
+    _emit(status_callback, "Combining loaded data files...")
     df = pd.concat(frames, ignore_index=True) if frames else pd.DataFrame()
     if df.empty:
         return df
 
     include_spreads = bool(config.get("include_spreads", False))
     if not include_spreads and "contract_symbol" in df.columns:
+        _emit(status_callback, "Filtering spread symbols...")
         df = df[~df["contract_symbol"].astype(str).str.contains("-", regex=False)].copy()
 
     timezone = config.get("timezone", "America/Chicago")
+    _emit(status_callback, "Filtering timestamp bounds and sorting raw bars...")
     df = filter_timestamp_bounds(df, date_bounds, timezone)
     return df.sort_values(["timestamp", "contract_symbol"]).reset_index(drop=True)
 
@@ -269,3 +297,8 @@ def _parse_bound_timestamp(value, timezone: str) -> pd.Timestamp:
     if ts.tzinfo is None:
         return ts.tz_localize(timezone)
     return ts.tz_convert(timezone)
+
+
+def _emit(callback: Callable[[str], None] | None, message: str) -> None:
+    if callback:
+        callback(message)

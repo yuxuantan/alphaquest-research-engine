@@ -7,6 +7,7 @@ dataset_id: 1m_full_history
 data:
   dataset_id: 1m_full_history
   source: databento_dbn
+  feature_set: opening_range
   raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
   cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
   symbol: ES
@@ -136,10 +137,10 @@ wfa:
   step_months: 12
   objective: net_profit
   parameters:
-    entry.params.max_opening_range_pct_of_open: [0.003, 0.0035, 0.004, 0.0045, 0.005]
+    entry.params.max_opening_range_pct_of_open: [0.0035, 0.0055, 0.0075]
     entry.params.confirmation_minutes: [1]
-    tp.params.extension_fraction: [1.8, 1.9, 2.0, 2.1, 2.2]
-    sl.params.max_stop_points: [10, 11, 12, 13, 14]
+    tp.params.extension_fraction: [1.0, 2.0, 3.0]
+    sl.params.max_stop_points: [9, 12, 15]
     sl.params.stop_offset_ticks: [0]
     entry.params.max_trades_per_day: [1]
     entry.params.skip_tuesday_longs: [false]

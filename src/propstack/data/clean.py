@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pandas as pd
@@ -165,18 +166,35 @@ def apply_roll_boundary_policy(df: pd.DataFrame, config: dict) -> tuple[pd.DataF
 def clean_data(
     config: dict,
     date_bounds: dict | None = None,
+    status_callback: Callable[[str], None] | None = None,
+    show_progress: bool = False,
 ) -> tuple[pd.DataFrame, dict, pd.DataFrame]:
-    df = load_raw_data(config, date_bounds=date_bounds)
+    _emit(status_callback, "Loading raw market data...")
+    df = load_raw_data(
+        config,
+        date_bounds=date_bounds,
+        status_callback=status_callback,
+        show_progress=show_progress,
+    )
+    _emit(status_callback, f"Loaded {len(df):,} raw bars. Removing duplicate bars...")
     duplicate_count = int(df.duplicated(subset=["timestamp", "symbol"]).sum())
     df = df.drop_duplicates(subset=["timestamp", "symbol"], keep="last")
+    _emit(status_callback, "Validating OHLC rows...")
     valid_mask = validate_ohlc(df)
     invalid_count = int((~valid_mask).sum())
     df = df[valid_mask].copy()
+    _emit(status_callback, f"OHLC validation kept {len(df):,} bars.")
+    _emit(status_callback, "Assigning market sessions...")
     df = assign_sessions(df, config)
+    _emit(status_callback, "Applying continuous-contract selection...")
     df = apply_continuous_contract(df, config)
+    _emit(status_callback, f"Continuous-contract selection kept {len(df):,} bars.")
+    _emit(status_callback, "Applying roll-boundary policy...")
     df, roll_policy_report = apply_roll_boundary_policy(df, config)
+    _emit(status_callback, f"Roll-boundary policy kept {len(df):,} bars.")
     df["timestamp_utc"] = df["timestamp"].dt.tz_convert("UTC")
     df = df.sort_values("timestamp").reset_index(drop=True)
+    _emit(status_callback, "Detecting missing session bars...")
     missing = detect_missing_bars(df)
     report = {
         "rows": int(len(df)),
@@ -187,4 +205,10 @@ def clean_data(
         "last_timestamp": str(df["timestamp"].max()) if len(df) else None,
         **roll_policy_report,
     }
+    _emit(status_callback, f"Cleaned data ready: {len(df):,} bars, {len(missing):,} missing-session segments.")
     return df, report, missing
+
+
+def _emit(callback: Callable[[str], None] | None, message: str) -> None:
+    if callback:
+        callback(message)

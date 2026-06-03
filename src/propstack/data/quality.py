@@ -19,12 +19,7 @@ def tradingview_comparison_report(df: pd.DataFrame) -> pd.DataFrame:
         first_rth_timestamp=("timestamp", "first"),
         last_rth_timestamp=("timestamp", "last"),
     )
-    levels = df.groupby("session_date").agg(
-        overnight_high=("overnight_high", "first"),
-        overnight_low=("overnight_low", "first"),
-        previous_rth_high=("prev_rth_high", "first"),
-        previous_rth_low=("prev_rth_low", "first"),
-    )
+    levels = _available_level_report(df)
     report = daily.join(levels, how="left").reset_index()
     ordered = [
         "session_date",
@@ -41,6 +36,31 @@ def tradingview_comparison_report(df: pd.DataFrame) -> pd.DataFrame:
         "last_rth_timestamp",
     ]
     return report[ordered]
+
+
+def _available_level_report(df: pd.DataFrame) -> pd.DataFrame:
+    aggregations = {}
+    optional_columns = {
+        "overnight_high": "overnight_high",
+        "overnight_low": "overnight_low",
+        "prev_rth_high": "previous_rth_high",
+        "prev_rth_low": "previous_rth_low",
+    }
+    for source, output in optional_columns.items():
+        if source in df.columns:
+            aggregations[output] = (source, "first")
+
+    sessions = pd.DataFrame(index=df["session_date"].drop_duplicates().sort_values())
+    if not aggregations:
+        for output in optional_columns.values():
+            sessions[output] = pd.NA
+        return sessions
+
+    levels = df.groupby("session_date").agg(**aggregations)
+    for output in optional_columns.values():
+        if output not in levels.columns:
+            levels[output] = pd.NA
+    return levels
 
 
 def save_pipeline_outputs(

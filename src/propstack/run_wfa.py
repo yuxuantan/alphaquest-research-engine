@@ -16,7 +16,7 @@ def main() -> None:
     parser.add_argument(
         "--skip-validation",
         action="store_true",
-        help="Skip writing cleaned/features validation CSVs before the run.",
+        help="Skip writing cleaned/features validation CSVs before the run. Recommended for repeated full-history WFA runs.",
     )
     args = parser.parse_args()
     campaign = load_yaml(args.config)
@@ -25,13 +25,26 @@ def main() -> None:
     out = create_run_dir("wfa", args.config, campaign)
     subset = subset_from_config(campaign, "wfa")
     output_dir = None if args.skip_validation else validation_dir(out)
-    data, _ = prepare_data(campaign["data"], output_dir, subset)
-    input_hash = data_source_hash(campaign["data"], subset)
+    print("Preparing WFA data...", flush=True)
+    data, _ = prepare_data(
+        campaign["data"],
+        output_dir,
+        subset,
+        status_callback=_print_status,
+        show_progress=True,
+    )
+    print(f"Prepared {len(data):,} bars. Starting walk-forward analysis...", flush=True)
     results, summary = run_wfa(data, campaign, wfa_cfg, benchmarks)
     write_report_csv(results, out / "wfa_results.csv", market_timezone(campaign), index=False)
     write_json(out / "wfa_summary.json", summary)
+    print("Recording input data hash and run metadata...", flush=True)
+    input_hash = data_source_hash(campaign["data"], subset)
     record_campaign_result(out, campaign, args.config, input_hash, "wfa", summary)
     print(out)
+
+
+def _print_status(message: str) -> None:
+    print(message, flush=True)
 
 
 if __name__ == "__main__":

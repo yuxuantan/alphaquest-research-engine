@@ -16,6 +16,40 @@ def test_tradingview_comparison_columns():
     assert "previous_rth_low" in report.columns
 
 
+def test_opening_range_feature_set_skips_global_features():
+    df, _, _ = clean_data(DATA_CFG)
+    features = build_features(df, {**DATA_CFG, "feature_set": "opening_range"})
+
+    assert len(features) == len(df)
+    assert "session_date" in features.columns
+    assert "prev_rth_high" not in features.columns
+    assert "overnight_high" not in features.columns
+    assert "vwap" not in features.columns
+    assert "volume_ratio" not in features.columns
+
+
+def test_tradingview_comparison_handles_minimal_feature_set():
+    df, _, _ = clean_data(DATA_CFG)
+    features = build_features(df, {**DATA_CFG, "feature_set": "opening_range"})
+
+    report = tradingview_comparison_report(features)
+
+    assert "overnight_high" in report.columns
+    assert "previous_rth_low" in report.columns
+    assert report["overnight_high"].isna().all()
+
+
+def test_build_features_rejects_unknown_feature_set():
+    df, _, _ = clean_data(DATA_CFG)
+
+    try:
+        build_features(df, {**DATA_CFG, "feature_set": "unknown"})
+    except ValueError as exc:
+        assert "data.feature_set" in str(exc)
+    else:
+        raise AssertionError("Expected ValueError for unknown data.feature_set")
+
+
 def test_previous_rth_levels_skip_eth_boundary_bar_over_weekend():
     cfg = {
         "rth_start": "09:30:00",

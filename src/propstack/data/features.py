@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Callable
+
 import pandas as pd
 
 
@@ -108,10 +110,41 @@ def add_rolling_volume(df: pd.DataFrame, window: int = 20) -> pd.DataFrame:
     return out
 
 
-def build_features(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+def build_features(
+    df: pd.DataFrame,
+    config: dict,
+    status_callback: Callable[[str], None] | None = None,
+) -> pd.DataFrame:
+    feature_set = str(config.get("feature_set", "full")).lower()
+    _emit(status_callback, f"Using feature set: {feature_set}")
+    _validate_feature_set(feature_set)
+    if feature_set in {"none", "opening_range"}:
+        _emit(status_callback, "Skipping derived global features for this feature set.")
+        return df.copy()
+
     policy = config.get("roll_boundary_policy") or {}
-    out = add_previous_rth_levels(df, bool(policy.get("reset_previous_day_levels", False)))
-    out = add_overnight_levels(out)
-    out = add_vwap(out)
-    out = add_rolling_volume(out, int(config.get("rolling_volume_window", 20)))
+    out = df.copy()
+    if feature_set in {"full", "pdh_pdl_sweep"}:
+        _emit(status_callback, "Building previous RTH level features...")
+        out = add_previous_rth_levels(out, bool(policy.get("reset_previous_day_levels", False)))
+    if feature_set == "full":
+        _emit(status_callback, "Building overnight level features...")
+        out = add_overnight_levels(out)
+    if feature_set in {"full", "intraday_capitulation_mr"}:
+        _emit(status_callback, "Building VWAP features...")
+        out = add_vwap(out)
+    if feature_set in {"full", "pdh_pdl_sweep"}:
+        _emit(status_callback, "Building rolling-volume features...")
+        out = add_rolling_volume(out, int(config.get("rolling_volume_window", 20)))
     return out
+
+
+def _validate_feature_set(feature_set: str) -> None:
+    valid = {"full", "none", "opening_range", "pdh_pdl_sweep", "intraday_capitulation_mr"}
+    if feature_set not in valid:
+        raise ValueError(f"Unsupported data.feature_set: {feature_set}. Expected one of {sorted(valid)}.")
+
+
+def _emit(callback: Callable[[str], None] | None, message: str) -> None:
+    if callback:
+        callback(message)

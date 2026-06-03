@@ -115,6 +115,7 @@ folder:
 data:
   dataset_id: 1m_full_history
   source: databento_dbn
+  feature_set: full
   raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
   cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
   symbol: ES
@@ -210,6 +211,7 @@ dataset_id: 1m_20221201_20260529
 data:
   dataset_id: 1m_full_history
   source: databento_dbn
+  feature_set: full
   raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
   cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
   symbol: ES
@@ -630,6 +632,7 @@ The `data` section records exactly which raw dataset is used:
 data:
   dataset_id: 1m_full_history
   source: databento_dbn
+  feature_set: full
   raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
   cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
   symbol: ES
@@ -649,6 +652,20 @@ data:
   eth_end: "09:29:00"
   rolling_volume_window: 3
 ```
+
+`feature_set` controls which derived columns are built during data preparation:
+
+```text
+full                     previous RTH, overnight, VWAP, and rolling volume
+opening_range            no derived global features; use for ORB-style entries
+pdh_pdl_sweep            previous RTH and rolling volume
+intraday_capitulation_mr VWAP only
+none                     cleaned/sessionized bars only
+```
+
+The default is `full` for backwards compatibility. For full-history WFA on
+`opening_range_breakout`, use `feature_set: opening_range` to avoid expensive
+unused feature generation.
 
 The `core` section records execution costs, account assumptions, and the data subset used by the core test:
 

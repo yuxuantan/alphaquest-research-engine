@@ -56,3 +56,18 @@ def test_prepare_data_applies_subset_after_feature_warmup():
     assert report["loaded_rows"] > report["rows"]
     jan3 = data[data["is_rth"]].iloc[0]
     assert jan3["prev_rth_high"] == 101.0
+
+
+def test_prepare_data_emits_status_updates():
+    messages = []
+
+    prepare_data(
+        DATA_CFG,
+        subset_config={"start_date": "2024-01-03", "end_date": "2024-01-03"},
+        status_callback=messages.append,
+    )
+
+    assert "Loading raw market data..." in messages
+    assert "Assigning market sessions..." in messages
+    assert "Building previous RTH level features..." in messages
+    assert "Applying final data subset after warmup feature build..." in messages

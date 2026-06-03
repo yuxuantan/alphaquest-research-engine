@@ -169,6 +169,114 @@ def test_wfa_uses_own_parameter_space(monkeypatch):
     assert all(config["strategy"]["tp"]["params"]["target_r_multiple"] == 2.0 for config in engine_configs)
 
 
+def test_wfa_progress_updates_at_start_and_after_each_window(monkeypatch):
+    updates = []
+    progress_kwargs = []
+
+    class FakeProgress:
+        def update(self, current, force=False):
+            updates.append((current, force))
+
+    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+        return pd.DataFrame(), {}
+
+    def fake_progress_bar(total, label, **kwargs):
+        progress_kwargs.append(kwargs)
+        return FakeProgress()
+
+    monkeypatch.setattr("propstack.research.wfa.progress_bar", fake_progress_bar)
+    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
+    data = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
+            )
+        }
+    )
+
+    run_wfa(
+        data,
+        BASE_CFG,
+        {
+            "train_months": 1,
+            "test_months": 1,
+            "step_months": 1,
+            "parameters": {"entry.params.reclaim_window_bars": [2]},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+    )
+
+    assert updates == [(0, True), (1, True), (2, True)]
+    assert progress_kwargs == [{"show_timing": True}]
+
+
+def test_wfa_logs_current_window_details(monkeypatch, capsys):
+    class FakeProgress:
+        def update(self, current, force=False):
+            return None
+
+    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+        return (
+            pd.DataFrame(
+                [
+                    {
+                        "entry.params.reclaim_window_bars": 7,
+                        "net_profit": 100.0,
+                        "profit_factor": 2.0,
+                        "max_drawdown": 10.0,
+                    }
+                ]
+            ),
+            {},
+        )
+
+    class FakeBacktestEngine:
+        def __init__(self, config):
+            self.config = config
+
+        def run(self, data):
+            return {
+                "metrics": {
+                    "net_profit": 25.0,
+                    "profit_factor": 1.5,
+                    "max_drawdown": 5.0,
+                    "total_trades": 1,
+                }
+            }
+
+    monkeypatch.setattr("propstack.research.wfa.progress_bar", lambda total, label, **kwargs: FakeProgress())
+    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    data = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2022-01-15", "2022-02-15"], utc=True
+            )
+        }
+    )
+
+    run_wfa(
+        data,
+        BASE_CFG,
+        {
+            "train_months": 1,
+            "test_months": 1,
+            "step_months": 1,
+            "parameters": {"entry.params.reclaim_window_bars": [7]},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+    )
+
+    out = capsys.readouterr().out
+    assert "walk-forward 1/1 start" in out
+    assert "in-sample 2022-01-15 -> 2022-02-15" in out
+    assert "out-of-sample 2022-02-15 -> 2022-03-15" in out
+    assert "objective=net_profit train_objective=100.00" in out
+    assert "selected_params=entry.params.reclaim_window_bars=7" in out
+    assert "oos_net_profit=25.00" in out
+    assert "oos_max_drawdown=5.00" in out
+
+
 def test_wfa_requires_own_parameter_space():
     df, _, _ = clean_data(DATA_CFG)
     data = build_features(df, DATA_CFG)

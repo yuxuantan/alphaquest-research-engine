@@ -60,16 +60,20 @@ def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks:
             _wfa_mode(wfa_config),
         )
     )
-    progress = progress_bar(len(windows), "walk-forward windows")
+    progress = progress_bar(len(windows), "walk-forward windows", show_timing=True)
+    progress.update(0, force=True)
     for wid, (tr_s, tr_e, te_s, te_e) in enumerate(windows, start=1):
         train = _slice(data, tr_s, tr_e)
         test = _slice(data, te_s, te_e)
+        _log_window_start(wid, len(windows), tr_s, tr_e, te_s, te_e, len(train), len(test))
         if train.empty or test.empty:
-            progress.update(wid)
+            _log_window_skip(wid, len(windows), "empty train/test slice")
+            progress.update(wid, force=True)
             continue
         grid_df, _ = run_core_grid(train, base_config, grid_config, benchmarks, parameter_label="wfa.parameters")
         if grid_df.empty:
-            progress.update(wid)
+            _log_window_skip(wid, len(windows), "no in-sample grid results")
+            progress.update(wid, force=True)
             continue
         best = grid_df.sort_values("net_profit", ascending=False).iloc[0]
         param_cols = list(grid_config.get("parameters", {}).keys())
@@ -96,7 +100,8 @@ def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks:
                 "test_passed": passed,
             }
         )
-        progress.update(wid)
+        _log_window_result(wid, len(windows), grid_config.get("objective", "net_profit"), params, best, test_metrics)
+        progress.update(wid, force=True)
     df = pd.DataFrame(rows)
     summary = {
         "windows": int(len(df)),
@@ -126,6 +131,69 @@ def _wfa_grid_config(wfa_config: dict) -> dict:
         "objective": wfa_config.get("objective", "net_profit"),
         "parameters": wfa_config["parameters"],
     }
+
+
+def _log_window_start(
+    window_id: int,
+    total_windows: int,
+    train_start,
+    train_end,
+    test_start,
+    test_end,
+    train_rows: int,
+    test_rows: int,
+) -> None:
+    print(
+        "\n"
+        f"walk-forward {window_id}/{total_windows} start | "
+        f"in-sample {_format_period(train_start, train_end)} ({train_rows:,} bars) | "
+        f"out-of-sample {_format_period(test_start, test_end)} ({test_rows:,} bars)",
+        flush=True,
+    )
+
+
+def _log_window_result(
+    window_id: int,
+    total_windows: int,
+    objective: str,
+    params: dict,
+    best,
+    test_metrics: dict,
+) -> None:
+    objective_value = best[objective] if objective in best else best["net_profit"]
+    print(
+        f"walk-forward {window_id}/{total_windows} complete | "
+        f"objective={objective} train_objective={_format_metric(objective_value)} | "
+        f"selected_params={_format_params(params)} | "
+        f"oos_net_profit={_format_metric(test_metrics['net_profit'])} | "
+        f"oos_max_drawdown={_format_metric(test_metrics['max_drawdown'])}",
+        flush=True,
+    )
+
+
+def _log_window_skip(window_id: int, total_windows: int, reason: str) -> None:
+    print(f"walk-forward {window_id}/{total_windows} skipped | reason={reason}", flush=True)
+
+
+def _format_period(start, end) -> str:
+    return f"{pd.Timestamp(start).date()} -> {pd.Timestamp(end).date()}"
+
+
+def _format_params(params: dict) -> str:
+    return ", ".join(f"{key}={_format_param_value(value)}" for key, value in params.items())
+
+
+def _format_param_value(value) -> str:
+    if isinstance(value, bool):
+        return str(value).lower()
+    if isinstance(value, float):
+        return f"{value:g}"
+    return str(value)
+
+
+def _format_metric(value) -> str:
+    numeric = float(value.item() if hasattr(value, "item") else value)
+    return f"{numeric:,.2f}"
 
 
 def _wfa_mode(wfa_config: dict) -> str:
