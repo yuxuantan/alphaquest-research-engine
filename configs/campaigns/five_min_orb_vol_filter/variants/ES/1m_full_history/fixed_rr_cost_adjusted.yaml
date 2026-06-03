@@ -1,5 +1,5 @@
 campaign_id: five_min_orb_vol_filter
-variant_id: baseline
+variant_id: fixed_rr_cost_adjusted
 strategy_name: five_min_orb_vol_filter
 symbol: ES
 dataset_id: 1m_full_history
@@ -33,7 +33,7 @@ strategy:
     params:
       rth_start: "09:30:00"
       opening_range_minutes: 5
-      confirmation_minutes: 5
+      confirmation_minutes: 1
       bar_interval_minutes: 1
       max_opening_range_pct_of_open: 0.0055
       last_entry_time: "12:00:00"
@@ -42,14 +42,18 @@ strategy:
       allow_long: true
       allow_short: true
   tp:
-    module: opening_range_extension
+    module: cost_adjusted_fixed_r
     params:
-      extension_fraction: 0.5
+      target_r_multiple: 1.0
+      tick_size: 0.25
+      tick_value: 12.50
+      commission_per_contract: 2.50
+      slippage_ticks: 1
   sl:
     module: opening_range_edge
     params:
-      max_stop_points: 14
-      stop_offset_ticks: 1
+      max_stop_points: 1000 # no max
+      stop_offset_ticks: 0
   flatten_time: "15:45:00"
 
 core:
@@ -105,7 +109,7 @@ core_grid:
   parameters:
     entry.params.max_opening_range_pct_of_open: [0.003, 0.0035, 0.004, 0.0045, 0.005]
     entry.params.confirmation_minutes: [1]
-    tp.params.extension_fraction: [1.8, 1.9, 2.0, 2.1, 2.2]
+    tp.params.target_r_multiple: [1.0, 1.25, 1.5, 1.75, 2.0]
     sl.params.max_stop_points: [10, 11, 12, 13, 14]
     sl.params.stop_offset_ticks: [0]
     entry.params.max_trades_per_day: [1]
@@ -153,8 +157,7 @@ wfa:
     # entry.params.max_opening_range_pct_of_open: [0.0035, 0.0055, 0.0075]
     entry.params.max_opening_range_pct_of_open: [0.0055]
     entry.params.confirmation_minutes: [1]
-    # tp.params.extension_fraction: [1.0, 2.0, 3.0]
-    tp.params.extension_fraction: [1.0, 1.5, 2.0]
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
     # sl.params.max_stop_points: [9, 12, 15]
     sl.params.max_stop_points: [12]
     sl.params.stop_offset_ticks: [0]

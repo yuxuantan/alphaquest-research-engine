@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from propstack.backtest.fills import entry_price, exit_price, stop_target_hit
@@ -49,12 +51,15 @@ class BacktestEngine:
                 if stop is None:
                     pending_signal = None
                     continue
+                target = strategy.target_price(ep, stop, direction, signal=sig)
+                if _target_already_reached(direction, ep, target, sig):
+                    pending_signal = None
+                    continue
                 risk_points = abs(ep - stop)
                 sizing = size_position(self.core_config, risk_points, tick_size, tick_value, net_liq=net_liq)
                 if sizing.contracts < 1:
                     pending_signal = None
                     continue
-                target = strategy.target_price(ep, stop, direction, signal=sig)
                 position = {
                     "trade_id": trade_id,
                     "strategy_name": strategy.name,
@@ -148,3 +153,33 @@ class BacktestEngine:
                 initial_balance=float(self.core_config.get("initial_balance", 0)),
             ),
         }
+
+
+def _target_already_reached(direction: str, entry: float, target: float, signal) -> bool:
+    if not math.isfinite(entry) or not math.isfinite(target):
+        return True
+    if direction == "long":
+        if entry >= target:
+            return True
+        confirmation_high = _signal_metadata_float(signal, "confirmation_high")
+        return confirmation_high is not None and confirmation_high >= target
+    if direction == "short":
+        if entry <= target:
+            return True
+        confirmation_low = _signal_metadata_float(signal, "confirmation_low")
+        return confirmation_low is not None and confirmation_low <= target
+    return False
+
+
+def _signal_metadata_float(signal, key: str) -> float | None:
+    try:
+        value = signal.metadata.get(key)
+    except AttributeError:
+        return None
+    if value is None:
+        return None
+    try:
+        value = float(value)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None

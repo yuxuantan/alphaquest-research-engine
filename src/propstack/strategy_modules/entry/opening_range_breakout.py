@@ -171,6 +171,8 @@ class OpeningRangeBreakoutEntry:
         confirmation_end = self._bar_close_timestamp(bar["timestamp"])
         if confirmation_end.time() >= parse_time(self.params.get("last_entry_time", "12:00:00")):
             return None
+        confirmation_high = max(float(confirmation_bar["high"]) for confirmation_bar in confirmation_bars)
+        confirmation_low = min(float(confirmation_bar["low"]) for confirmation_bar in confirmation_bars)
         return Signal(
             direction=direction,
             level_type=level_type,
@@ -189,6 +191,9 @@ class OpeningRangeBreakoutEntry:
                 "opening_range_width_pct_of_open": opening_range["width_pct_of_open"],
                 "confirmation_start_timestamp": confirmation_start,
                 "confirmation_end_timestamp": confirmation_end,
+                "confirmation_high": confirmation_high,
+                "confirmation_low": confirmation_low,
+                "confirmation_close": close,
                 "breakout_timestamp": confirmation_end,
             },
             report_fields={

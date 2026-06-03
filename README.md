@@ -1404,6 +1404,7 @@ Outputs:
 wfa/wfa_results.csv
 wfa/wfa_oos_trade_log.csv
 wfa/wfa_summary.json
+wfa/window_###_train_grid.csv
 ```
 
 Review:
@@ -1423,6 +1424,11 @@ test_max_drawdown
 profitable_window_rate
 meets_profitable_window_benchmark
 ```
+
+Each `window_###_train_grid.csv` file contains the full in-sample grid for one
+walk-forward train window. Rows are sorted with the same rule WFA uses to pick
+the winner, so `wfa_selection_rank == 1` and `wfa_selected == true` identify
+the parameter set applied to that window's out-of-sample test period.
 
 Target:
 

@@ -14,6 +14,7 @@ Other current variant configs:
 export VARIANT_CONFIG=configs/campaigns/intraday_capitulation_mr/variants/MES/1m_full_history/baseline.yaml
 export VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_full_history/baseline.yaml
 export VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_full_history/core_grid_rescue.yaml
+export VARIANT_CONFIG=configs/campaigns/five_min_orb_vol_filter/variants/ES/1m_full_history/fixed_rr_cost_adjusted.yaml
 ```
 
 ## Campaign Tests

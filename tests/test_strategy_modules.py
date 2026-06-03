@@ -8,6 +8,7 @@ from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepRe
 from propstack.strategy_modules.sl.opening_range_edge import OpeningRangeEdgeStop
 from propstack.strategy_modules.sl.percent_from_entry import PercentFromEntryStop
 from propstack.strategy_modules.sl.sweep_extreme import SweepExtremeStop
+from propstack.strategy_modules.tp.cost_adjusted_fixed_r import CostAdjustedFixedRTarget
 from propstack.strategy_modules.tp.fixed_r import FixedRTarget
 from propstack.strategy_modules.tp.opening_range_extension import OpeningRangeExtensionTarget
 from propstack.strategy_modules.tp.percent_from_entry import PercentFromEntryTarget
@@ -18,6 +19,21 @@ def test_fixed_r_target_module_long_and_short():
 
     assert target.price(entry_price=100.0, stop_price=98.0, direction="long") == 104.0
     assert target.price(entry_price=100.0, stop_price=102.0, direction="short") == 96.0
+
+
+def test_cost_adjusted_fixed_r_target_module_long_and_short():
+    target = CostAdjustedFixedRTarget(
+        {
+            "target_r_multiple": 2.0,
+            "tick_size": 0.1,
+            "tick_value": 10.0,
+            "commission_per_contract": 5.0,
+            "slippage_ticks": 1,
+        }
+    )
+
+    assert round(target.price(entry_price=100.0, stop_price=99.0, direction="long"), 10) == 102.6
+    assert round(target.price(entry_price=100.0, stop_price=101.0, direction="short"), 10) == 97.4
 
 
 def test_sweep_extreme_stop_module_long_and_short():

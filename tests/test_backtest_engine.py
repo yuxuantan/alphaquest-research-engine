@@ -117,6 +117,86 @@ def test_opening_range_trade_log_uses_strategy_specific_report_columns():
     assert first["breakout_timestamp"] == pd.Timestamp("2024-01-03 09:40", tz="America/New_York")
 
 
+def _opening_range_cfg(extension_fraction: float = 0.5) -> dict:
+    return {
+        "strategy_name": "five_min_orb_vol_filter",
+        "strategy": {
+            "entry": {
+                "module": "opening_range_breakout",
+                "params": {
+                    "rth_start": "09:30:00",
+                    "opening_range_minutes": 5,
+                    "confirmation_minutes": 5,
+                    "bar_interval_minutes": 1,
+                    "max_opening_range_pct_of_open": 0.0055,
+                    "skip_tuesday_longs": True,
+                    "allow_long": True,
+                    "allow_short": True,
+                },
+            },
+            "tp": {"module": "opening_range_extension", "params": {"extension_fraction": extension_fraction}},
+            "sl": {"module": "opening_range_edge", "params": {"max_stop_points": 14}},
+            "flatten_time": "15:45:00",
+        },
+        "core": {
+            "tick_size": 0.25,
+            "tick_value": 12.50,
+            "commission_per_contract": 0,
+            "slippage_ticks": 0,
+            "contracts": 1,
+        },
+    }
+
+
+def _opening_range_long_rows() -> list[dict]:
+    rows = []
+    for minute in range(30, 41):
+        rows.append(
+            {
+                "timestamp": pd.Timestamp(f"2024-01-03 09:{minute:02d}", tz="America/New_York"),
+                "session_date": pd.Timestamp("2024-01-03").date(),
+                "is_rth": True,
+                "open": 100.0,
+                "high": 100.30,
+                "low": 100.00,
+                "close": 100.10,
+            }
+        )
+    rows[0].update({"open": 100.0, "high": 100.20, "low": 99.90, "close": 100.10})
+    rows[2].update({"high": 100.40})
+    rows[9].update({"open": 100.35, "high": 100.55, "low": 100.30, "close": 100.50})
+    return rows
+
+
+def test_opening_range_skips_trade_when_next_bar_entry_is_past_target():
+    rows = _opening_range_long_rows()
+    rows[10].update({"open": 100.80, "high": 100.90, "low": 99.80, "close": 100.00})
+
+    trades = BacktestEngine(_opening_range_cfg()).run(pd.DataFrame(rows))["trades"]
+
+    assert trades.empty
+
+
+def test_opening_range_skips_trade_when_confirmation_window_already_hit_long_target():
+    rows = _opening_range_long_rows()
+    rows[9].update({"high": 100.70})
+    rows[10].update({"open": 100.50, "high": 100.60, "low": 99.80, "close": 100.00})
+
+    trades = BacktestEngine(_opening_range_cfg()).run(pd.DataFrame(rows))["trades"]
+
+    assert trades.empty
+
+
+def test_opening_range_skips_trade_when_confirmation_window_already_hit_short_target():
+    rows = _opening_range_long_rows()
+    rows[9].update({"open": 99.95, "high": 100.05, "low": 99.60, "close": 99.80})
+    rows[10].update({"open": 99.80, "high": 100.50, "low": 99.70, "close": 100.00})
+
+    trades = BacktestEngine(_opening_range_cfg()).run(pd.DataFrame(rows))["trades"]
+
+    assert trades.empty
+
+
 def test_time_exit_uses_bar_close_timestamp():
     rows = []
     for minute in range(30, 45):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import pandas as pd
 
@@ -9,6 +10,7 @@ from propstack.backtest.metrics import benchmark
 from propstack.research.core_grid import run_core_grid
 from propstack.utils.params import apply_dotted_params
 from propstack.utils.progress import progress_bar
+from propstack.utils.reports import market_timezone, write_report_csv
 
 _WFA_OBJECTIVES = {
     "net_profit": "net_profit",
@@ -68,9 +70,11 @@ def run_wfa(
     wfa_config: dict,
     benchmarks: dict,
     include_trade_log: bool = False,
+    train_grid_dir: str | Path | None = None,
 ):
     rows = []
     trade_frames = []
+    train_grid_paths = []
     grid_config = _wfa_grid_config(wfa_config)
     objective = grid_config["objective"]
     windows = list(
@@ -82,6 +86,8 @@ def run_wfa(
             _wfa_mode(wfa_config),
         )
     )
+    if train_grid_dir is not None:
+        _clear_window_train_grid_reports(train_grid_dir)
     progress = progress_bar(len(windows), "walk-forward windows", show_timing=True)
     progress.update(0, force=True)
     for wid, (tr_s, tr_e, te_s, te_e) in enumerate(windows, start=1):
@@ -98,6 +104,19 @@ def run_wfa(
             progress.update(wid, force=True)
             continue
         best = _select_best_in_sample(grid_df, objective)
+        train_grid_path = _write_window_train_grid(
+            grid_df,
+            train_grid_dir,
+            wid,
+            tr_s,
+            tr_e,
+            te_s,
+            te_e,
+            objective,
+            base_config,
+        )
+        if train_grid_path:
+            train_grid_paths.append(train_grid_path)
         param_cols = list(grid_config.get("parameters", {}).keys())
         params = {k: best[k].item() if hasattr(best[k], "item") else best[k] for k in param_cols}
         train_objective = _metric_value(best, objective)
@@ -170,6 +189,8 @@ def run_wfa(
         "median_test_mar": _summary_median(df, "test_mar"),
         "median_test_cagr": _summary_median(df, "test_cagr"),
         "median_test_max_drawdown_pct": _summary_median(df, "test_max_drawdown_pct"),
+        "train_grid_reports_retained": train_grid_dir is not None,
+        "train_grid_report_files": train_grid_paths,
     }
     if include_trade_log:
         trades = _stitch_oos_trades(trade_frames)
@@ -248,6 +269,70 @@ def _stitched_oos_trade_columns() -> list[str]:
     ]
 
 
+def _clear_window_train_grid_reports(train_grid_dir: str | Path) -> None:
+    out = Path(train_grid_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    for path in out.glob("window_*_train_grid.csv"):
+        if path.is_file():
+            path.unlink()
+
+
+def _write_window_train_grid(
+    grid_df: pd.DataFrame,
+    train_grid_dir: str | Path | None,
+    window_id: int,
+    train_start,
+    train_end,
+    test_start,
+    test_end,
+    objective: str,
+    base_config: dict,
+) -> str | None:
+    if train_grid_dir is None:
+        return None
+
+    path = Path(train_grid_dir) / f"window_{window_id:03d}_train_grid.csv"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    annotated = _annotate_train_grid(
+        grid_df,
+        window_id,
+        train_start,
+        train_end,
+        test_start,
+        test_end,
+        objective,
+    )
+    write_report_csv(annotated, path, market_timezone(base_config), index=False)
+    return str(path)
+
+
+def _annotate_train_grid(
+    grid_df: pd.DataFrame,
+    window_id: int,
+    train_start,
+    train_end,
+    test_start,
+    test_end,
+    objective: str,
+) -> pd.DataFrame:
+    sort_columns, ascending = _selection_sort_spec(grid_df, objective)
+    out = grid_df.sort_values(sort_columns, ascending=ascending, na_position="last").reset_index(drop=True)
+    ranks = list(range(1, len(out) + 1))
+    metadata = pd.DataFrame(
+        {
+            "wfa_window_id": [window_id] * len(out),
+            "wfa_train_start": [_date_string(train_start)] * len(out),
+            "wfa_train_end": [_date_string(train_end)] * len(out),
+            "wfa_test_start": [_date_string(test_start)] * len(out),
+            "wfa_test_end": [_date_string(test_end)] * len(out),
+            "wfa_objective": [_objective_label(objective)] * len(out),
+            "wfa_selection_rank": ranks,
+            "wfa_selected": [rank == 1 for rank in ranks],
+        }
+    )
+    return pd.concat([metadata, out], axis=1)
+
+
 def _date_string(value) -> str:
     return pd.Timestamp(value).date().isoformat()
 
@@ -295,6 +380,11 @@ def _select_best_in_sample(grid_df: pd.DataFrame, objective: str):
     if objective not in grid_df.columns:
         raise ValueError(f"wfa.objective '{_objective_label(objective)}' is not available in grid results.")
 
+    sort_columns, ascending = _selection_sort_spec(grid_df, objective)
+    return grid_df.sort_values(sort_columns, ascending=ascending, na_position="last").iloc[0]
+
+
+def _selection_sort_spec(grid_df: pd.DataFrame, objective: str) -> tuple[list[str], list[bool]]:
     sort_columns: list[str] = []
     ascending: list[bool] = []
     for column, asc in [
@@ -308,7 +398,7 @@ def _select_best_in_sample(grid_df: pd.DataFrame, objective: str):
         if column in grid_df.columns and column not in sort_columns:
             sort_columns.append(column)
             ascending.append(asc)
-    return grid_df.sort_values(sort_columns, ascending=ascending, na_position="last").iloc[0]
+    return sort_columns, ascending
 
 
 def _log_window_start(

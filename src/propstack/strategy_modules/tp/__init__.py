@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from propstack.strategy_modules.tp.cost_adjusted_fixed_r import CostAdjustedFixedRTarget, cost_adjusted_fixed_r_target
 from propstack.strategy_modules.tp.fixed_r import FixedRTarget, fixed_r_target
 from propstack.strategy_modules.tp.opening_range_extension import (
     OpeningRangeExtensionTarget,
@@ -9,6 +10,7 @@ from propstack.strategy_modules.tp.percent_from_entry import PercentFromEntryTar
 
 
 TP_MODULES = {
+    CostAdjustedFixedRTarget.name: CostAdjustedFixedRTarget,
     FixedRTarget.name: FixedRTarget,
     OpeningRangeExtensionTarget.name: OpeningRangeExtensionTarget,
     PercentFromEntryTarget.name: PercentFromEntryTarget,
@@ -25,9 +27,11 @@ def build_tp_module(config: dict):
 
 
 __all__ = [
+    "CostAdjustedFixedRTarget",
     "FixedRTarget",
     "OpeningRangeExtensionTarget",
     "PercentFromEntryTarget",
+    "cost_adjusted_fixed_r_target",
     "fixed_r_target",
     "opening_range_extension_target",
     "percent_from_entry_target",

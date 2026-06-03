@@ -34,7 +34,14 @@ def main() -> None:
         show_progress=True,
     )
     print(f"Prepared {len(data):,} bars. Starting walk-forward analysis...", flush=True)
-    results, summary, trades = run_wfa(data, campaign, wfa_cfg, benchmarks, include_trade_log=True)
+    results, summary, trades = run_wfa(
+        data,
+        campaign,
+        wfa_cfg,
+        benchmarks,
+        include_trade_log=True,
+        train_grid_dir=out,
+    )
     report_timezone = market_timezone(campaign)
     trade_log_path = out / "wfa_oos_trade_log.csv"
     summary["stitched_oos_trade_log"] = str(trade_log_path)

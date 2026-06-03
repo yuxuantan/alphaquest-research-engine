@@ -249,6 +249,89 @@ def test_wfa_can_return_stitched_oos_trade_log(monkeypatch):
     assert list(trades["net_pnl"]) == [25.0, 25.0]
 
 
+def test_wfa_can_persist_window_train_grids(monkeypatch, tmp_path):
+    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+        return (
+            pd.DataFrame(
+                [
+                    {
+                        "run_id": 1,
+                        "entry.params.reclaim_window_bars": 2,
+                        "net_profit": 200.0,
+                        "profit_factor": 2.0,
+                        "max_drawdown": 20.0,
+                        "max_drawdown_pct": 0.08,
+                        "cagr": 0.12,
+                        "mar": 1.5,
+                    },
+                    {
+                        "run_id": 2,
+                        "entry.params.reclaim_window_bars": 7,
+                        "net_profit": 100.0,
+                        "profit_factor": 1.8,
+                        "max_drawdown": 5.0,
+                        "max_drawdown_pct": 0.02,
+                        "cagr": 0.10,
+                        "mar": 5.0,
+                    },
+                ]
+            ),
+            {},
+        )
+
+    class FakeBacktestEngine:
+        def __init__(self, config):
+            self.config = config
+
+        def run(self, data):
+            return {
+                "metrics": {
+                    "net_profit": 25.0,
+                    "profit_factor": 1.5,
+                    "max_drawdown": 5.0,
+                    "max_drawdown_pct": 0.01,
+                    "cagr": 0.05,
+                    "mar": 5.0,
+                    "total_trades": 1,
+                }
+            }
+
+    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    data = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2022-01-15", "2022-02-15"], utc=True
+            )
+        }
+    )
+
+    results, summary = run_wfa(
+        data,
+        BASE_CFG,
+        {
+            "train_months": 1,
+            "test_months": 1,
+            "step_months": 1,
+            "objective": "MAR",
+            "parameters": {"entry.params.reclaim_window_bars": [2, 7]},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+        train_grid_dir=tmp_path,
+    )
+
+    grid_path = tmp_path / "window_001_train_grid.csv"
+    saved = pd.read_csv(grid_path)
+
+    assert len(results) == 1
+    assert summary["train_grid_reports_retained"] is True
+    assert summary["train_grid_report_files"] == [str(grid_path)]
+    assert list(saved["wfa_selection_rank"]) == [1, 2]
+    assert list(saved["wfa_selected"]) == [True, False]
+    assert list(saved["entry.params.reclaim_window_bars"]) == [7, 2]
+    assert saved.loc[0, "mar"] == 5.0
+
+
 def test_wfa_progress_updates_at_start_and_after_each_window(monkeypatch):
     updates = []
     progress_kwargs = []

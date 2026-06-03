@@ -60,6 +60,38 @@ def test_modular_strategy_composes_opening_range_modules():
     assert strat.sl.name == "opening_range_edge"
 
 
+def test_modular_strategy_composes_cost_adjusted_fixed_r_target():
+    strat = ModularStrategy(
+        {
+            "strategy_name": "five_min_orb_vol_filter",
+            "entry": {
+                "module": "opening_range_breakout",
+                "params": {
+                    "rth_start": "09:30:00",
+                    "opening_range_minutes": 5,
+                    "confirmation_minutes": 5,
+                    "bar_interval_minutes": 1,
+                },
+            },
+            "tp": {
+                "module": "cost_adjusted_fixed_r",
+                "params": {
+                    "target_r_multiple": 1.0,
+                    "tick_size": 0.25,
+                    "tick_value": 12.50,
+                    "commission_per_contract": 2.50,
+                    "slippage_ticks": 1,
+                },
+            },
+            "sl": {"module": "opening_range_edge", "params": {"max_stop_points": 14}},
+        }
+    )
+
+    assert strat.entry.name == "opening_range_breakout"
+    assert strat.tp.name == "cost_adjusted_fixed_r"
+    assert strat.sl.name == "opening_range_edge"
+
+
 def test_modular_strategy_composes_intraday_capitulation_modules():
     strat = ModularStrategy(
         {
