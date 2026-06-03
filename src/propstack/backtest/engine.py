@@ -31,6 +31,7 @@ class BacktestEngine:
         slippage_ticks = float(self.core_config.get("slippage_ticks", 1))
         flatten_time = parse_time(self.strategy_config.get("flatten_time", self.core_config.get("flatten_time", "14:55:00")))
         bar_interval_minutes = float(entry_params.get("bar_interval_minutes", 1))
+        net_liq = float(self.core_config.get("initial_balance", 0.0))
 
         pending_signal = None
         position = None
@@ -49,7 +50,7 @@ class BacktestEngine:
                     pending_signal = None
                     continue
                 risk_points = abs(ep - stop)
-                sizing = size_position(self.core_config, risk_points, tick_size, tick_value)
+                sizing = size_position(self.core_config, risk_points, tick_size, tick_value, net_liq=net_liq)
                 if sizing.contracts < 1:
                     pending_signal = None
                     continue
@@ -129,6 +130,7 @@ class BacktestEngine:
                     }
                     trades.append(trade)
                     risk.record_exit(position["session_date"], net)
+                    net_liq += net
                     position = None
                     continue
 

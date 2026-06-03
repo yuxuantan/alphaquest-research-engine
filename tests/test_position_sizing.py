@@ -22,6 +22,27 @@ def test_risk_percent_sizing_floors_to_risk_ceiling():
     assert size.planned_dollar_risk == 600.0
 
 
+def test_risk_percent_sizing_uses_current_net_liq_when_provided():
+    size = size_position(
+        {
+            "initial_balance": 100000,
+            "position_sizing": {
+                "mode": "risk_percent_net_liq",
+                "risk_pct": 0.01,
+            },
+        },
+        risk_points=12.0,
+        tick_size=0.25,
+        tick_value=12.50,
+        net_liq=125000,
+    )
+
+    assert size.contracts == 2
+    assert size.net_liq == 125000.0
+    assert size.target_risk_amount == 1250.0
+    assert size.planned_dollar_risk == 1200.0
+
+
 def test_risk_percent_sizing_can_round_to_nearest_contract():
     size = size_position(
         {

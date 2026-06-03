@@ -21,6 +21,9 @@ def simulate_prop_path(trades: pd.DataFrame, rules: PropRules) -> dict:
     drawdown_before_profit = False
     profit_target = rules.starting_balance * (1 + getattr(rules, "profit_target_pct", 0.06))
     drawdown_limit = rules.starting_balance * (1 - getattr(rules, "drawdown_limit_pct", 0.03))
+    payout_target = rules.starting_balance + rules.payout_threshold
+    payout_eligible = False
+    drawdown_before_payout = False
 
     for _, trade in trades.iterrows():
         if int(trade.get("contracts", 1)) > rules.max_contracts:
@@ -45,6 +48,11 @@ def simulate_prop_path(trades: pd.DataFrame, rules: PropRules) -> dict:
                 profit_before_drawdown = True
             elif balance <= drawdown_limit:
                 drawdown_before_profit = True
+        if not payout_eligible and not drawdown_before_payout:
+            if balance >= payout_target:
+                payout_eligible = True
+            elif balance <= drawdown_limit:
+                drawdown_before_payout = True
 
     for _, pnl in daily.items():
         if pnl <= -rules.daily_loss_limit:
@@ -53,14 +61,6 @@ def simulate_prop_path(trades: pd.DataFrame, rules: PropRules) -> dict:
 
     total_profit = balance - rules.starting_balance
     concentration = best_day / total_profit if total_profit > 0 else 0.0
-    if total_profit > 0 and concentration > rules.max_best_day_profit_percentage:
-        payout_eligible = False
-    else:
-        payout_eligible = (
-            not breached
-            and total_profit >= rules.payout_threshold
-            and len(daily) >= rules.min_trading_days
-        )
     return {
         "ending_balance": balance,
         "net_pnl": total_profit,

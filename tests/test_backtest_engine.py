@@ -238,6 +238,77 @@ def test_risk_percent_sizing_uses_entry_stop_distance_per_trade():
     assert first["net_pnl"] == 500.0
 
 
+def _dynamic_sizing_opening_range_rows(session_date: str) -> list[dict]:
+    session = pd.Timestamp(session_date)
+    rows = []
+    for minute in range(30, 42):
+        rows.append(
+            {
+                "timestamp": pd.Timestamp(f"{session.date()} 09:{minute:02d}", tz="America/New_York"),
+                "session_date": session.date(),
+                "is_rth": True,
+                "open": 98.0,
+                "high": 99.0,
+                "low": 97.0,
+                "close": 98.5,
+            }
+        )
+    for idx in range(5):
+        rows[idx].update({"high": 99.0, "low": 96.0, "close": 98.0})
+    rows[9].update({"open": 99.0, "high": 100.0, "low": 98.5, "close": 100.5})
+    rows[10].update({"open": 100.0, "high": 102.25, "low": 99.5, "close": 102.0})
+    return rows
+
+
+def test_risk_percent_sizing_uses_current_net_liq_after_prior_trade():
+    rows = _dynamic_sizing_opening_range_rows("2024-01-03")
+    rows.extend(_dynamic_sizing_opening_range_rows("2024-01-04"))
+    cfg = {
+        "strategy_name": "five_min_orb_vol_filter",
+        "strategy": {
+            "entry": {
+                "module": "opening_range_breakout",
+                "params": {
+                    "rth_start": "09:30:00",
+                    "opening_range_minutes": 5,
+                    "confirmation_minutes": 5,
+                    "bar_interval_minutes": 1,
+                    "max_opening_range_pct_of_open": 0.05,
+                    "skip_tuesday_longs": True,
+                    "allow_long": True,
+                    "allow_short": True,
+                },
+            },
+            "tp": {"module": "opening_range_extension", "params": {"extension_fraction": 1.0}},
+            "sl": {"module": "opening_range_edge", "params": {"max_stop_points": 14}},
+            "flatten_time": "15:45:00",
+        },
+        "core": {
+            "initial_balance": 100000,
+            "tick_size": 0.25,
+            "tick_value": 12.50,
+            "commission_per_contract": 0,
+            "slippage_ticks": 0,
+            "contracts": 1,
+            "position_sizing": {
+                "mode": "risk_percent_initial_balance",
+                "risk_pct": 0.01,
+            },
+        },
+    }
+
+    trades = BacktestEngine(cfg).run(pd.DataFrame(rows))["trades"]
+
+    assert len(trades) == 2
+    first = trades.iloc[0]
+    second = trades.iloc[1]
+    assert first["position_sizing_net_liq"] == 100000.0
+    assert first["target_risk_amount"] == 1000.0
+    assert first["net_pnl"] == 500.0
+    assert second["position_sizing_net_liq"] == 100500.0
+    assert second["target_risk_amount"] == 1005.0
+
+
 def test_opening_range_skips_trade_when_opposite_edge_stop_exceeds_max():
     rows = []
     for minute in range(30, 41):

@@ -689,7 +689,7 @@ core:
 
 `position_sizing.mode: fixed_contracts` uses `contracts` for every trade. `fixed_contracts` is also the default when `position_sizing` is omitted, so existing configs that only define `contracts` keep the old behavior.
 
-To size each entry from the configured stop distance and initial account balance, use:
+To size each entry from the configured stop distance and current account net liquidation, use:
 
 ```yaml
 core:
@@ -697,13 +697,13 @@ core:
   tick_size: 0.25
   tick_value: 12.50
   position_sizing:
-    mode: risk_percent_initial_balance
+    mode: risk_percent_net_liq
     risk_pct: 0.01
     rounding: floor
     min_contracts: 1
 ```
 
-In `risk_percent_initial_balance` mode, do not set `contracts`; the engine calculates contracts per trade after entry and stop are known. Risk-percent sizing uses `initial_balance * risk_pct` as the target dollar risk, then divides by the entry-to-stop risk per contract. Use `risk_pct: 0.01` for 1% risk, or `risk_percent: 1.0` if you prefer percent-point notation.
+In `risk_percent_net_liq` mode, do not set `contracts`; the engine calculates contracts per trade after entry and stop are known. Risk-percent sizing uses current net liquidation at entry time times `risk_pct` as the target dollar risk, then divides by the entry-to-stop risk per contract. Use `risk_pct: 0.01` for 1% risk, or `risk_percent: 1.0` if you prefer percent-point notation. Existing `risk_percent_initial_balance` configs are accepted as aliases for this net-liq behavior.
 
 `rounding: floor` is the default and treats the risk percent as a ceiling. `nearest` and `ceil` are available when you explicitly want to test over-risking behavior. If rounding produces fewer than `min_contracts`, the entry is skipped. `min_contracts` is not a fixed trade size; it is only the minimum size required to allow an entry.
 
@@ -1003,13 +1003,13 @@ core:
 core:
   initial_balance: 100000
   position_sizing:
-    mode: risk_percent_initial_balance
+    mode: risk_percent_net_liq
     risk_pct: 0.01
     rounding: floor
     min_contracts: 1
 ```
 
-For dynamic sizing, `risk_pct: 0.01` means 1% of `initial_balance`; `risk_percent: 1.0` is the equivalent percent-point form. The trade log includes `position_sizing_mode`, `target_risk_amount`, `dollar_risk_per_contract`, `unrounded_contracts`, and `planned_dollar_risk` for audit.
+For dynamic sizing, `risk_pct: 0.01` means 1% of current net liquidation at entry time; `risk_percent: 1.0` is the equivalent percent-point form. The trade log includes `position_sizing_mode`, `position_sizing_net_liq`, `target_risk_amount`, `dollar_risk_per_contract`, `unrounded_contracts`, and `planned_dollar_risk` for audit.
 
 Important simulator assumptions:
 
@@ -1402,6 +1402,7 @@ Outputs:
 
 ```text
 wfa/wfa_results.csv
+wfa/wfa_oos_trade_log.csv
 wfa/wfa_summary.json
 ```
 
@@ -1458,6 +1459,7 @@ Configure Monte Carlo:
 
 ```yaml
 monte_carlo:
+  trade_source: strategy
   trade_log:
   runs: 1000
   seed: 11
@@ -1472,7 +1474,64 @@ monte_carlo:
   cluster_losses: true
 ```
 
-If `trade_log` is blank, Monte Carlo first runs the variant strategy and uses that trade log.
+Monte Carlo chooses its trade input in this order:
+
+```text
+1. If trade_source is wfa_oos, read wfa/wfa_oos_trade_log.csv.
+2. Else if trade_log has a path, read that CSV.
+3. Else rerun the variant strategy and use the generated trade log.
+```
+
+When Monte Carlo reruns the variant strategy, it uses
+`monte_carlo.data_subset`. If that is absent, it falls back to
+`core.data_subset`, then the top-level data subset. This default path is not
+WFA OOS; it uses the fixed strategy parameters in the variant config.
+
+To run Monte Carlo against stitched walk-forward out-of-sample trades, run WFA
+first, then set:
+
+```yaml
+monte_carlo:
+  trade_source: wfa_oos
+```
+
+This reads `wfa/wfa_oos_trade_log.csv` for the same campaign/symbol/dataset/variant.
+
+Monte Carlo mechanics:
+
+```text
+1. Each run starts from the selected trade log.
+2. The trade order is shuffled without replacement.
+3. Trades can be removed using skip_trade_probability.
+4. Winning trades can also be removed using skip_winning_trade_probability.
+5. If cluster_losses is true, losing trades are moved to the front of the path.
+6. adverse_slippage_per_trade is subtracted from every retained trade's net_pnl.
+7. The stressed path is evaluated against prop_rules.
+```
+
+The prop-rule simulation starts at `prop_rules.starting_balance`, walks the
+sampled trade path trade by trade, updates the trailing drawdown floor from the
+account high-water mark, and records whether the account breaches. It also
+tracks whether the path reaches `profit_target_pct` before hitting
+`drawdown_limit_pct`. `payout_eligible` is a first-touch check: it is true when
+the path reaches `starting_balance + payout_threshold` before it reaches the
+`drawdown_limit_pct` balance.
+
+After the path is evaluated, daily PnL is grouped by `session_date` to test
+`daily_loss_limit`, calculate worst/best day, and check best-day profit
+concentration. These fields are still reported for risk review, but they do
+not gate `payout_eligible` in the Monte Carlo engine.
+
+Important implementation details:
+
+```text
+- runs controls how many independent shuffled/stressed paths are generated.
+- seed makes the run reproducible; each run_id gets a deterministic derived seed.
+- Sampling is permutation/subset based, not bootstrap-with-replacement.
+- The simulation uses trade-log rows, not new bar-level market paths.
+- path_months is currently configured but not used by the Monte Carlo engine.
+- Daily-loss checks use the sampled trades' original session_date values.
+```
 
 `monte_carlo.parallel.scope: runs` runs independent path simulations across
 worker processes.

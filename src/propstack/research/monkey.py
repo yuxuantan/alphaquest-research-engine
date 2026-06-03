@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from heapq import heappop, heappush
 import math
 import os
 from pathlib import Path
@@ -747,16 +748,22 @@ def _build_trade_log(
     commission = float(core.get("commission_per_contract", 2.5))
     slippage_ticks = float(core.get("slippage_ticks", 1))
     risk_points = max(float(core_profile.get("average_risk_points", tick_size)), tick_size)
+    net_liq = float(core.get("initial_balance", 0.0))
 
     rows = []
+    pending_exits: list[tuple[int, float]] = []
     for trade_id, item in enumerate(schedule, start=1):
+        while pending_exits and pending_exits[0][0] < item["entry_pos"]:
+            _, closed_net = heappop(pending_exits)
+            net_liq += closed_net
+
         entry_bar = data.iloc[item["entry_pos"]]
         exit_bar = data.iloc[item["exit_pos"]]
         direction = item["direction"]
         ep = entry_price(float(entry_bar["open"]), direction, tick_size, slippage_ticks)
         xp = exit_price(float(exit_bar["close"]), direction, tick_size, slippage_ticks)
         point_pnl = xp - ep if direction == "long" else ep - xp
-        sizing = size_position(core, risk_points, tick_size, tick_value)
+        sizing = size_position(core, risk_points, tick_size, tick_value, net_liq=net_liq)
         if sizing.contracts < 1:
             continue
         contracts = sizing.contracts
@@ -803,6 +810,7 @@ def _build_trade_log(
                 "slippage_cost": slippage_cost,
             }
         )
+        heappush(pending_exits, (int(item["exit_pos"]), net))
     return pd.DataFrame(rows)
 
 

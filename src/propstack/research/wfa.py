@@ -62,8 +62,15 @@ def _slice(data: pd.DataFrame, start, end):
     return data[(naive >= start) & (naive < end)].copy()
 
 
-def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks: dict):
+def run_wfa(
+    data: pd.DataFrame,
+    base_config: dict,
+    wfa_config: dict,
+    benchmarks: dict,
+    include_trade_log: bool = False,
+):
     rows = []
+    trade_frames = []
     grid_config = _wfa_grid_config(wfa_config)
     objective = grid_config["objective"]
     windows = list(
@@ -93,9 +100,24 @@ def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks:
         best = _select_best_in_sample(grid_df, objective)
         param_cols = list(grid_config.get("parameters", {}).keys())
         params = {k: best[k].item() if hasattr(best[k], "item") else best[k] for k in param_cols}
+        train_objective = _metric_value(best, objective)
         test_cfg = apply_dotted_params(base_config, params)
         test_result = BacktestEngine(test_cfg).run(test)
         test_metrics = test_result["metrics"]
+        if include_trade_log:
+            trade_frames.append(
+                _annotate_oos_trades(
+                    test_result.get("trades", pd.DataFrame()),
+                    wid,
+                    tr_s,
+                    tr_e,
+                    te_s,
+                    te_e,
+                    objective,
+                    train_objective,
+                    params,
+                )
+            )
         passed, _ = benchmark(test_metrics, benchmarks)
         rows.append(
             {
@@ -105,7 +127,7 @@ def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks:
                 "test_start": te_s,
                 "test_end": te_e,
                 "objective": _objective_label(objective),
-                "train_objective": _metric_value(best, objective),
+                "train_objective": train_objective,
                 "selected_params": params,
                 "train_mar": _metric_value(best, "mar"),
                 "train_cagr": _metric_value(best, "cagr"),
@@ -149,7 +171,85 @@ def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks:
         "median_test_cagr": _summary_median(df, "test_cagr"),
         "median_test_max_drawdown_pct": _summary_median(df, "test_max_drawdown_pct"),
     }
+    if include_trade_log:
+        trades = _stitch_oos_trades(trade_frames)
+        summary["stitched_oos_trades"] = int(len(trades))
+        return df, summary, trades
     return df, summary
+
+
+def _annotate_oos_trades(
+    trades: pd.DataFrame,
+    window_id: int,
+    train_start,
+    train_end,
+    test_start,
+    test_end,
+    objective: str,
+    train_objective: float,
+    params: dict,
+) -> pd.DataFrame:
+    if trades is None or trades.empty:
+        return pd.DataFrame()
+
+    out = trades.copy().reset_index(drop=True)
+    if "trade_id" in out.columns:
+        source_trade_id = out["trade_id"]
+        out = out.drop(columns=["trade_id"])
+        out.insert(0, "source_trade_id", source_trade_id)
+
+    metadata = pd.DataFrame(
+        {
+            "wfa_window_id": [window_id] * len(out),
+            "wfa_train_start": [_date_string(train_start)] * len(out),
+            "wfa_train_end": [_date_string(train_end)] * len(out),
+            "wfa_test_start": [_date_string(test_start)] * len(out),
+            "wfa_test_end": [_date_string(test_end)] * len(out),
+            "wfa_objective": [_objective_label(objective)] * len(out),
+            "wfa_train_objective": [train_objective] * len(out),
+            "wfa_selected_params": [dict(params)] * len(out),
+        }
+    )
+    return pd.concat([metadata, out], axis=1)
+
+
+def _stitch_oos_trades(frames: list[pd.DataFrame]) -> pd.DataFrame:
+    non_empty = [frame for frame in frames if frame is not None and not frame.empty]
+    if not non_empty:
+        return pd.DataFrame(columns=_stitched_oos_trade_columns())
+
+    out = pd.concat(non_empty, ignore_index=True)
+    sort_columns = [
+        column
+        for column in ["entry_timestamp", "exit_timestamp", "session_date", "wfa_window_id", "source_trade_id"]
+        if column in out.columns
+    ]
+    if sort_columns:
+        out = out.sort_values(sort_columns, kind="stable").reset_index(drop=True)
+    out.insert(0, "trade_id", range(1, len(out) + 1))
+    return out
+
+
+def _stitched_oos_trade_columns() -> list[str]:
+    return [
+        "trade_id",
+        "wfa_window_id",
+        "wfa_train_start",
+        "wfa_train_end",
+        "wfa_test_start",
+        "wfa_test_end",
+        "wfa_objective",
+        "wfa_train_objective",
+        "wfa_selected_params",
+        "source_trade_id",
+        "session_date",
+        "net_pnl",
+        "contracts",
+    ]
+
+
+def _date_string(value) -> str:
+    return pd.Timestamp(value).date().isoformat()
 
 
 def _wfa_grid_config(wfa_config: dict) -> dict:

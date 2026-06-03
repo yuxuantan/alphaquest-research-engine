@@ -174,6 +174,81 @@ def test_wfa_uses_own_parameter_space(monkeypatch):
     assert all(config["strategy"]["tp"]["params"]["target_r_multiple"] == 2.0 for config in engine_configs)
 
 
+def test_wfa_can_return_stitched_oos_trade_log(monkeypatch):
+    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+        return (
+            pd.DataFrame(
+                [
+                    {
+                        "entry.params.reclaim_window_bars": 7,
+                        "net_profit": 100.0,
+                        "profit_factor": 2.0,
+                        "max_drawdown": 10.0,
+                    }
+                ]
+            ),
+            {},
+        )
+
+    class FakeBacktestEngine:
+        def __init__(self, config):
+            self.config = config
+
+        def run(self, data):
+            ts = data["timestamp"].iloc[0]
+            return {
+                "metrics": {
+                    "net_profit": 25.0,
+                    "profit_factor": 1.5,
+                    "max_drawdown": 5.0,
+                    "total_trades": 1,
+                },
+                "trades": pd.DataFrame(
+                    [
+                        {
+                            "trade_id": 1,
+                            "session_date": pd.Timestamp(ts).date(),
+                            "entry_timestamp": ts,
+                            "exit_timestamp": ts + pd.Timedelta(minutes=5),
+                            "contracts": 1,
+                            "net_pnl": 25.0,
+                        }
+                    ]
+                ),
+            }
+
+    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    data = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
+            )
+        }
+    )
+
+    results, summary, trades = run_wfa(
+        data,
+        BASE_CFG,
+        {
+            "train_months": 1,
+            "test_months": 1,
+            "step_months": 1,
+            "parameters": {"entry.params.reclaim_window_bars": [7]},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+        include_trade_log=True,
+    )
+
+    assert len(results) == 2
+    assert summary["stitched_oos_trades"] == 2
+    assert list(trades["trade_id"]) == [1, 2]
+    assert list(trades["source_trade_id"]) == [1, 1]
+    assert list(trades["wfa_window_id"]) == [1, 2]
+    assert "wfa_selected_params" in trades.columns
+    assert list(trades["net_pnl"]) == [25.0, 25.0]
+
+
 def test_wfa_progress_updates_at_start_and_after_each_window(monkeypatch):
     updates = []
     progress_kwargs = []

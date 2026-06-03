@@ -34,8 +34,12 @@ def main() -> None:
         show_progress=True,
     )
     print(f"Prepared {len(data):,} bars. Starting walk-forward analysis...", flush=True)
-    results, summary = run_wfa(data, campaign, wfa_cfg, benchmarks)
-    write_report_csv(results, out / "wfa_results.csv", market_timezone(campaign), index=False)
+    results, summary, trades = run_wfa(data, campaign, wfa_cfg, benchmarks, include_trade_log=True)
+    report_timezone = market_timezone(campaign)
+    trade_log_path = out / "wfa_oos_trade_log.csv"
+    summary["stitched_oos_trade_log"] = str(trade_log_path)
+    write_report_csv(results, out / "wfa_results.csv", report_timezone, index=False)
+    write_report_csv(trades, trade_log_path, report_timezone, index=False)
     write_json(out / "wfa_summary.json", summary)
     print("Recording input data hash and run metadata...", flush=True)
     input_hash = data_source_hash(campaign["data"], subset)
