@@ -21,14 +21,13 @@ def main() -> None:
     args = parser.parse_args()
     campaign = load_yaml(args.config)
     wfa_cfg = campaign["wfa"]
-    grid_cfg = campaign["core_grid"]
     benchmarks = campaign.get("benchmarks", {})
     out = create_run_dir("wfa", args.config, campaign)
     subset = subset_from_config(campaign, "wfa")
     output_dir = None if args.skip_validation else validation_dir(out)
     data, _ = prepare_data(campaign["data"], output_dir, subset)
     input_hash = data_source_hash(campaign["data"], subset)
-    results, summary = run_wfa(data, campaign, grid_cfg, wfa_cfg, benchmarks)
+    results, summary = run_wfa(data, campaign, wfa_cfg, benchmarks)
     write_report_csv(results, out / "wfa_results.csv", market_timezone(campaign), index=False)
     write_json(out / "wfa_summary.json", summary)
     record_campaign_result(out, campaign, args.config, input_hash, "wfa", summary)

@@ -1322,11 +1322,25 @@ Configure train/test windows:
 
 ```yaml
 wfa:
+  mode: unanchored
   train_months: 3
   test_months: 1
   step_months: 1
   objective: net_profit
+  parameters:
+    entry.params.reclaim_window_bars: [2, 3]
+    tp.params.target_r_multiple: [1.0, 1.5]
+    sl.params.stop_offset_ticks: [1, 2]
 ```
+
+WFA uses `wfa.parameters` for its train-window optimization. This is separate
+from `core_grid.parameters`, so core grid sweeps and walk-forward optimization
+can use different parameter spaces.
+
+`mode: unanchored` keeps the train window length fixed and moves it forward by
+`step_months`, which defaults to `test_months` when omitted. `mode: anchored`
+keeps the first train start fixed and expands the train window through each
+new out-of-sample period.
 
 Run:
 

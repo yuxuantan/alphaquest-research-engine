@@ -122,10 +122,21 @@ wfa:
   data_subset:
     start_date: "2022-12-01"
     end_date: "2023-05-29"
+  mode: unanchored
   train_months: 1
   test_months: 1
   step_months: 1
   objective: net_profit
+  parameters:
+    entry.params.reclaim_window_bars: [2, 3]
+    tp.params.target_r_multiple: [1.0, 1.5]
+    sl.params.stop_offset_ticks: [1, 2]
+    entry.params.min_volume_ratio: [0.0]
+    entry.params.start_time: ["09:30:00"]
+    entry.params.end_time: ["12:00:00"]
+    entry.params.max_trades_per_day: [1, 3]
+    entry.params.allow_long: [true]
+    entry.params.allow_short: [true]
 
 prop_rules:
   starting_balance: 50000

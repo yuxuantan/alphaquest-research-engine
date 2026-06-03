@@ -50,11 +50,10 @@ mechanics:
   time_exit: >
     Any open position is flattened at 16:15 ET.
   instrument_note: >
-    The strategy is intended for MES sizing. This workspace currently has ES
-    price history, not a native MES raw data directory, so the baseline variant
-    labels the run as MES while using ES continuous-contract prices and MES
-    tick value/commission assumptions.
+    The source screenshot recommends MES to reduce prop-firm drawdown impact.
+    The current baseline intentionally tests ES economics with ES tick value,
+    ES commission assumptions, and 1% risk-based position sizing.
 
 notes:
   - Baseline follows the screenshot: 15-minute RTH bars, long only, bearish close, close near low, RSI(14) < 35, price <= VWAP, volume > 1.5x 20-bar average, max one trade per day, 0.30% stop, 0.75% target, 16:15 ET flatten.
-  - MES economics use $1.25 per 0.25-point tick and 4 fixed contracts to mirror the screenshot's 4 MES recommendation.
+  - ES economics use $12.50 per 0.25-point tick with 1% initial-balance risk sizing.

@@ -130,10 +130,21 @@ wfa:
   data_subset:
     start_date: "2011-01-01"
     end_date: "2026-05-29"
+  mode: unanchored
   train_months: 48
   test_months: 12
   step_months: 12
   objective: net_profit
+  parameters:
+    entry.params.max_opening_range_pct_of_open: [0.003, 0.0035, 0.004, 0.0045, 0.005]
+    entry.params.confirmation_minutes: [1]
+    tp.params.extension_fraction: [1.8, 1.9, 2.0, 2.1, 2.2]
+    sl.params.max_stop_points: [10, 11, 12, 13, 14]
+    sl.params.stop_offset_ticks: [0]
+    entry.params.max_trades_per_day: [1]
+    entry.params.skip_tuesday_longs: [false]
+    entry.params.allow_long: [true]
+    entry.params.allow_short: [true]
 
 prop_rules:
   starting_balance: 50000

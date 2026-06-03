@@ -12,8 +12,8 @@ from propstack.utils.progress import progress_bar
 from propstack.utils.reports import market_timezone, write_report_csv
 
 
-def parameter_combinations(params: dict) -> list[dict]:
-    _validate_parameter_grid(params)
+def parameter_combinations(params: dict, label: str = "core_grid.parameters") -> list[dict]:
+    _validate_parameter_grid(params, label)
     keys = list(params.keys())
     return [dict(zip(keys, values)) for values in product(*(params[k] for k in keys))]
 
@@ -24,10 +24,11 @@ def run_core_grid(
     grid_config: dict,
     benchmarks: dict,
     report_dir: str | Path | None = None,
+    parameter_label: str = "core_grid.parameters",
 ) -> tuple[pd.DataFrame, dict]:
     rows = []
     parameters = grid_config.get("parameters", {})
-    combos = parameter_combinations(parameters)
+    combos = parameter_combinations(parameters, parameter_label)
     report_paths = _prepare_iteration_report_paths(report_dir)
     report_timezone = market_timezone(base_config)
     progress = progress_bar(len(combos), "core grid")
@@ -106,14 +107,14 @@ def summarize_stability(df: pd.DataFrame) -> dict:
     return zones
 
 
-def _validate_parameter_grid(params: dict) -> None:
+def _validate_parameter_grid(params: dict, label: str) -> None:
     if not isinstance(params, dict):
-        raise ValueError("core_grid.parameters must be a mapping of dotted parameter paths to value lists.")
+        raise ValueError(f"{label} must be a mapping of dotted parameter paths to value lists.")
     for key, values in params.items():
         if not isinstance(values, list):
-            raise ValueError(f"core_grid.parameters.{key} must be a list of values.")
+            raise ValueError(f"{label}.{key} must be a list of values.")
         if not values:
-            raise ValueError(f"core_grid.parameters.{key} must define at least one value.")
+            raise ValueError(f"{label}.{key} must define at least one value.")
 
 
 def _expected_combination_count(params: dict) -> int:
