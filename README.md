@@ -1359,7 +1359,7 @@ wfa:
   train_months: 3
   test_months: 1
   step_months: 1
-  objective: net_profit
+  objective: MAR
   parallel:
     enabled: true
     workers: 6
@@ -1374,6 +1374,10 @@ WFA uses `wfa.parameters` for its train-window optimization. This is separate
 from `core_grid.parameters`, so core grid sweeps and walk-forward optimization
 can use different parameter spaces.
 
+`objective` supports `MAR` and `net_profit`. `MAR` selects the parameter set
+with the highest in-sample CAGR divided by max drawdown percent
+(`max_drawdown_pct`) for each train window.
+
 `mode: unanchored` keeps the train window length fixed and moves it forward by
 `step_months`, which defaults to `test_months` when omitted. `mode: anchored`
 keeps the first train start fixed and expands the train window through each
@@ -1383,6 +1387,10 @@ new out-of-sample period.
 walk-forward window across worker processes. WFA windows still run sequentially
 so memory usage and console output stay bounded. `scope: grid` is the only
 supported parallel scope.
+
+During the run, each completed window prints the selected in-sample objective
+value plus train and out-of-sample MAR, CAGR, max drawdown percent, and net
+profit. The progress bar also carries the latest out-of-sample metrics.
 
 Run:
 
@@ -1401,7 +1409,13 @@ Review:
 
 ```text
 selected_params
+train_mar
+train_cagr
+train_max_drawdown_pct
 train_net_profit
+test_mar
+test_cagr
+test_max_drawdown_pct
 test_net_profit
 test_profit_factor
 test_max_drawdown

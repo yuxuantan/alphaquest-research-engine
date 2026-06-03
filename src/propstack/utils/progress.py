@@ -25,7 +25,7 @@ class ProgressBar:
         self.last_percent = -1
         self.last_line_length = 0
 
-    def update(self, current: int, force: bool = False) -> None:
+    def update(self, current: int, force: bool = False, detail: str | None = None) -> None:
         if not self.enabled:
             return
         current = min(max(int(current), 0), self.total)
@@ -38,6 +38,8 @@ class ProgressBar:
         line = f"{self.label} [{bar}] {current}/{self.total} {percent:3d}%"
         if self.show_timing:
             line = f"{line} | {_timing_text(self.clock() - self.started_at, current, self.total)}"
+        if detail:
+            line = f"{line} | {detail}"
         padding = " " * max(0, self.last_line_length - len(line))
         self.last_line_length = len(line)
         sys.stdout.write(f"\r{line}{padding}")

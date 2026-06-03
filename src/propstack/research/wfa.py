@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pandas as pd
 
 from propstack.backtest.engine import BacktestEngine
@@ -7,6 +9,18 @@ from propstack.backtest.metrics import benchmark
 from propstack.research.core_grid import run_core_grid
 from propstack.utils.params import apply_dotted_params
 from propstack.utils.progress import progress_bar
+
+_WFA_OBJECTIVES = {
+    "net_profit": "net_profit",
+    "net profit": "net_profit",
+    "net-profit": "net_profit",
+    "mar": "mar",
+}
+
+_OBJECTIVE_LABELS = {
+    "net_profit": "net_profit",
+    "mar": "MAR",
+}
 
 
 def create_windows(
@@ -51,6 +65,7 @@ def _slice(data: pd.DataFrame, start, end):
 def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks: dict):
     rows = []
     grid_config = _wfa_grid_config(wfa_config)
+    objective = grid_config["objective"]
     windows = list(
         create_windows(
             data,
@@ -75,7 +90,7 @@ def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks:
             _log_window_skip(wid, len(windows), "no in-sample grid results")
             progress.update(wid, force=True)
             continue
-        best = grid_df.sort_values("net_profit", ascending=False).iloc[0]
+        best = _select_best_in_sample(grid_df, objective)
         param_cols = list(grid_config.get("parameters", {}).keys())
         params = {k: best[k].item() if hasattr(best[k], "item") else best[k] for k in param_cols}
         test_cfg = apply_dotted_params(base_config, params)
@@ -89,22 +104,31 @@ def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks:
                 "train_end": tr_e,
                 "test_start": te_s,
                 "test_end": te_e,
+                "objective": _objective_label(objective),
+                "train_objective": _metric_value(best, objective),
                 "selected_params": params,
-                "train_net_profit": float(best["net_profit"]),
-                "train_profit_factor": float(best["profit_factor"]),
-                "train_max_drawdown": float(best["max_drawdown"]),
-                "test_net_profit": test_metrics["net_profit"],
-                "test_profit_factor": test_metrics["profit_factor"],
-                "test_max_drawdown": test_metrics["max_drawdown"],
-                "test_trades": test_metrics["total_trades"],
+                "train_mar": _metric_value(best, "mar"),
+                "train_cagr": _metric_value(best, "cagr"),
+                "train_max_drawdown_pct": _metric_value(best, "max_drawdown_pct"),
+                "train_net_profit": _metric_value(best, "net_profit"),
+                "train_profit_factor": _metric_value(best, "profit_factor"),
+                "train_max_drawdown": _metric_value(best, "max_drawdown"),
+                "test_mar": _metric_value(test_metrics, "mar"),
+                "test_cagr": _metric_value(test_metrics, "cagr"),
+                "test_max_drawdown_pct": _metric_value(test_metrics, "max_drawdown_pct"),
+                "test_net_profit": _metric_value(test_metrics, "net_profit"),
+                "test_profit_factor": _metric_value(test_metrics, "profit_factor"),
+                "test_max_drawdown": _metric_value(test_metrics, "max_drawdown"),
+                "test_trades": int(_metric_value(test_metrics, "total_trades")),
                 "test_passed": passed,
             }
         )
-        _log_window_result(wid, len(windows), grid_config.get("objective", "net_profit"), params, best, test_metrics)
-        progress.update(wid, force=True)
+        _log_window_result(wid, len(windows), objective, params, best, test_metrics)
+        progress.update(wid, force=True, detail=_progress_detail(test_metrics))
     df = pd.DataFrame(rows)
     summary = {
         "windows": int(len(df)),
+        "objective": _objective_label(objective),
         "window_mode": _wfa_mode(wfa_config),
         "train_months": int(wfa_config.get("train_months", 3)),
         "test_months": int(wfa_config.get("test_months", 1)),
@@ -121,6 +145,9 @@ def run_wfa(data: pd.DataFrame, base_config: dict, wfa_config: dict, benchmarks:
             else False
         ),
         "median_test_net_profit": float(df["test_net_profit"].median()) if len(df) else 0.0,
+        "median_test_mar": _summary_median(df, "test_mar"),
+        "median_test_cagr": _summary_median(df, "test_cagr"),
+        "median_test_max_drawdown_pct": _summary_median(df, "test_max_drawdown_pct"),
     }
     return df, summary
 
@@ -129,7 +156,7 @@ def _wfa_grid_config(wfa_config: dict) -> dict:
     if "parameters" not in wfa_config:
         raise ValueError("wfa.parameters must define the walk-forward optimization parameter space.")
     return {
-        "objective": wfa_config.get("objective", "net_profit"),
+        "objective": _wfa_objective(wfa_config.get("objective", "net_profit")),
         "parameters": wfa_config["parameters"],
         "parallel": _wfa_parallel_config(wfa_config),
     }
@@ -151,6 +178,37 @@ def _wfa_parallel_config(wfa_config: dict) -> dict:
     if "workers" in parallel:
         out["workers"] = int(parallel["workers"])
     return out
+
+
+def _wfa_objective(value) -> str:
+    key = str(value).strip().lower()
+    if key not in _WFA_OBJECTIVES:
+        raise ValueError("wfa.objective must be one of: net_profit, MAR.")
+    return _WFA_OBJECTIVES[key]
+
+
+def _objective_label(objective: str) -> str:
+    return _OBJECTIVE_LABELS.get(objective, objective)
+
+
+def _select_best_in_sample(grid_df: pd.DataFrame, objective: str):
+    if objective not in grid_df.columns:
+        raise ValueError(f"wfa.objective '{_objective_label(objective)}' is not available in grid results.")
+
+    sort_columns: list[str] = []
+    ascending: list[bool] = []
+    for column, asc in [
+        (objective, False),
+        ("cagr", False),
+        ("max_drawdown_pct", True),
+        ("net_profit", False),
+        ("max_drawdown", True),
+        ("run_id", True),
+    ]:
+        if column in grid_df.columns and column not in sort_columns:
+            sort_columns.append(column)
+            ascending.append(asc)
+    return grid_df.sort_values(sort_columns, ascending=ascending, na_position="last").iloc[0]
 
 
 def _log_window_start(
@@ -180,13 +238,19 @@ def _log_window_result(
     best,
     test_metrics: dict,
 ) -> None:
-    objective_value = best[objective] if objective in best else best["net_profit"]
+    objective_value = _metric_value(best, objective)
     print(
         f"walk-forward {window_id}/{total_windows} complete | "
-        f"objective={objective} train_objective={_format_metric(objective_value)} | "
+        f"objective={_objective_label(objective)} train_objective={_format_metric(objective_value)} | "
         f"selected_params={_format_params(params)} | "
-        f"oos_net_profit={_format_metric(test_metrics['net_profit'])} | "
-        f"oos_max_drawdown={_format_metric(test_metrics['max_drawdown'])}",
+        f"train_mar={_format_metric(_metric_value(best, 'mar'))} "
+        f"train_cagr={_format_percent(_metric_value(best, 'cagr'))} "
+        f"train_max_dd_pct={_format_percent(_metric_value(best, 'max_drawdown_pct'))} "
+        f"train_net_profit={_format_metric(_metric_value(best, 'net_profit'))} | "
+        f"oos_mar={_format_metric(_metric_value(test_metrics, 'mar'))} "
+        f"oos_cagr={_format_percent(_metric_value(test_metrics, 'cagr'))} "
+        f"oos_max_dd_pct={_format_percent(_metric_value(test_metrics, 'max_drawdown_pct'))} "
+        f"oos_net_profit={_format_metric(_metric_value(test_metrics, 'net_profit'))}",
         flush=True,
     )
 
@@ -212,8 +276,47 @@ def _format_param_value(value) -> str:
 
 
 def _format_metric(value) -> str:
-    numeric = float(value.item() if hasattr(value, "item") else value)
+    numeric = _to_float(value)
     return f"{numeric:,.2f}"
+
+
+def _format_percent(value) -> str:
+    numeric = _to_float(value)
+    if not math.isfinite(numeric):
+        return str(numeric)
+    return f"{numeric * 100:,.2f}%"
+
+
+def _metric_value(source, key: str, default: float = 0.0) -> float:
+    if isinstance(source, dict):
+        value = source.get(key, default)
+    else:
+        value = source[key] if key in source else default
+    return _to_float(value)
+
+
+def _to_float(value) -> float:
+    if hasattr(value, "item"):
+        value = value.item()
+    if pd.isna(value):
+        return 0.0
+    return float(value)
+
+
+def _summary_median(df: pd.DataFrame, column: str):
+    if not len(df) or column not in df:
+        return 0.0
+    value = _to_float(df[column].median())
+    return value if math.isfinite(value) else None
+
+
+def _progress_detail(test_metrics: dict) -> str:
+    return (
+        f"last OOS MAR={_format_metric(_metric_value(test_metrics, 'mar'))} "
+        f"CAGR={_format_percent(_metric_value(test_metrics, 'cagr'))} "
+        f"DD={_format_percent(_metric_value(test_metrics, 'max_drawdown_pct'))} "
+        f"NP={_format_metric(_metric_value(test_metrics, 'net_profit'))}"
+    )
 
 
 def _wfa_mode(wfa_config: dict) -> str:

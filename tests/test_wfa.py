@@ -179,7 +179,7 @@ def test_wfa_progress_updates_at_start_and_after_each_window(monkeypatch):
     progress_kwargs = []
 
     class FakeProgress:
-        def update(self, current, force=False):
+        def update(self, current, force=False, detail=None):
             updates.append((current, force))
 
     def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
@@ -217,7 +217,7 @@ def test_wfa_progress_updates_at_start_and_after_each_window(monkeypatch):
 
 def test_wfa_logs_current_window_details(monkeypatch, capsys):
     class FakeProgress:
-        def update(self, current, force=False):
+        def update(self, current, force=False, detail=None):
             return None
 
     def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
@@ -229,6 +229,9 @@ def test_wfa_logs_current_window_details(monkeypatch, capsys):
                         "net_profit": 100.0,
                         "profit_factor": 2.0,
                         "max_drawdown": 10.0,
+                        "max_drawdown_pct": 0.02,
+                        "cagr": 0.12,
+                        "mar": 6.0,
                     }
                 ]
             ),
@@ -245,6 +248,9 @@ def test_wfa_logs_current_window_details(monkeypatch, capsys):
                     "net_profit": 25.0,
                     "profit_factor": 1.5,
                     "max_drawdown": 5.0,
+                    "max_drawdown_pct": 0.01,
+                    "cagr": 0.05,
+                    "mar": 5.0,
                     "total_trades": 1,
                 }
             }
@@ -278,8 +284,98 @@ def test_wfa_logs_current_window_details(monkeypatch, capsys):
     assert "out-of-sample 2022-02-15 -> 2022-03-15" in out
     assert "objective=net_profit train_objective=100.00" in out
     assert "selected_params=entry.params.reclaim_window_bars=7" in out
+    assert "train_mar=6.00" in out
+    assert "train_cagr=12.00%" in out
+    assert "train_max_dd_pct=2.00%" in out
+    assert "train_net_profit=100.00" in out
+    assert "oos_mar=5.00" in out
+    assert "oos_cagr=5.00%" in out
+    assert "oos_max_dd_pct=1.00%" in out
     assert "oos_net_profit=25.00" in out
-    assert "oos_max_drawdown=5.00" in out
+
+
+def test_wfa_mar_objective_selects_highest_in_sample_mar(monkeypatch):
+    engine_configs = []
+
+    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+        assert grid_config["objective"] == "mar"
+        return (
+            pd.DataFrame(
+                [
+                    {
+                        "entry.params.reclaim_window_bars": 2,
+                        "net_profit": 200.0,
+                        "profit_factor": 2.0,
+                        "max_drawdown": 20.0,
+                        "max_drawdown_pct": 0.08,
+                        "cagr": 0.12,
+                        "mar": 1.5,
+                    },
+                    {
+                        "entry.params.reclaim_window_bars": 7,
+                        "net_profit": 100.0,
+                        "profit_factor": 1.8,
+                        "max_drawdown": 5.0,
+                        "max_drawdown_pct": 0.02,
+                        "cagr": 0.10,
+                        "mar": 5.0,
+                    },
+                ]
+            ),
+            {},
+        )
+
+    class FakeBacktestEngine:
+        def __init__(self, config):
+            engine_configs.append(config)
+
+        def run(self, data):
+            return {
+                "metrics": {
+                    "net_profit": 25.0,
+                    "profit_factor": 1.5,
+                    "max_drawdown": 5.0,
+                    "max_drawdown_pct": 0.01,
+                    "cagr": 0.05,
+                    "mar": 5.0,
+                    "total_trades": 1,
+                }
+            }
+
+    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    data = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2022-01-15", "2022-02-15"], utc=True
+            )
+        }
+    )
+
+    results, summary = run_wfa(
+        data,
+        BASE_CFG,
+        {
+            "train_months": 1,
+            "test_months": 1,
+            "step_months": 1,
+            "objective": "MAR",
+            "parameters": {"entry.params.reclaim_window_bars": [2, 7]},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+    )
+
+    assert engine_configs[0]["strategy"]["entry"]["params"]["reclaim_window_bars"] == 7
+    assert summary["objective"] == "MAR"
+    assert results.loc[0, "objective"] == "MAR"
+    assert results.loc[0, "train_objective"] == 5.0
+    assert results.loc[0, "train_mar"] == 5.0
+    assert results.loc[0, "train_cagr"] == 0.10
+    assert results.loc[0, "train_max_drawdown_pct"] == 0.02
+    assert results.loc[0, "train_net_profit"] == 100.0
+    assert results.loc[0, "test_mar"] == 5.0
+    assert results.loc[0, "test_cagr"] == 0.05
+    assert results.loc[0, "test_max_drawdown_pct"] == 0.01
 
 
 def test_wfa_requires_own_parameter_space():
@@ -291,5 +387,24 @@ def test_wfa_requires_own_parameter_space():
             data,
             BASE_CFG,
             {"train_months": 1, "test_months": 1, "step_months": 1},
+            {"min_trade_count": 0, "max_drawdown": 99999},
+        )
+
+
+def test_wfa_rejects_unknown_objective():
+    df, _, _ = clean_data(DATA_CFG)
+    data = build_features(df, DATA_CFG)
+
+    with pytest.raises(ValueError, match="wfa.objective"):
+        run_wfa(
+            data,
+            BASE_CFG,
+            {
+                "train_months": 1,
+                "test_months": 1,
+                "step_months": 1,
+                "objective": "sharpe",
+                "parameters": {"entry.params.reclaim_window_bars": [2]},
+            },
             {"min_trade_count": 0, "max_drawdown": 99999},
         )
