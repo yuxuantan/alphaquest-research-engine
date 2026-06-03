@@ -1123,6 +1123,10 @@ core_grid:
   objective: net_profit
   min_profitable_iteration_rate: 0.70
   retain_iteration_reports: true
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
   parameters:
     entry.params.reclaim_window_bars: [2, 3, 5]
     tp.params.target_r_multiple: [1.0, 1.5, 2.0]
@@ -1163,6 +1167,10 @@ failure_reason
 
 Each array under `core_grid.parameters` is combined with every other array, so the total iteration count is the product of all configured value counts. `core_grid_results.csv` has one row per iteration. When `retain_iteration_reports` is true, the trade and daily CSVs add the iteration `run_id` and parameter values to each row so entries, exits, and P&L can be audited for any run.
 
+`core_grid.parallel.scope: grid` runs parameter combinations across worker
+processes. When iteration reports are retained, workers return trade/daily
+frames to the parent process and the parent writes the CSVs in `run_id` order.
+
 Prefer stable parameter regions over the single best row. `percentage_profitable_iterations` must meet `min_profitable_iteration_rate`, which defaults to `0.70` when omitted.
 
 ## 8. Run Monkey / Random Robustness Testing
@@ -1177,6 +1185,10 @@ monkey:
   seed: 7
   beat_threshold: 0.90
   retain_iteration_reports: true
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
   constraints:
     trade_count_tolerance_pct: 0.05
     trade_count_tolerance: 0
@@ -1221,6 +1233,10 @@ The monkey goal passes only when the core run beats the random trades in both
 dimensions: higher net profit than at least `beat_threshold` of monkey
 iterations and lower max drawdown than at least `beat_threshold` of monkey
 iterations.
+
+`monkey.parallel.scope: runs` runs independent monkey iterations across worker
+processes. Iteration reports are still written by the parent process in
+`run_id` order when `retain_iteration_reports` is true.
 
 How the constraints are enforced:
 
@@ -1431,6 +1447,10 @@ monte_carlo:
   trade_log:
   runs: 1000
   seed: 11
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
   path_months: 1
   skip_trade_probability: 0.05
   skip_winning_trade_probability: 0.05
@@ -1439,6 +1459,9 @@ monte_carlo:
 ```
 
 If `trade_log` is blank, Monte Carlo first runs the variant strategy and uses that trade log.
+
+`monte_carlo.parallel.scope: runs` runs independent path simulations across
+worker processes.
 
 You can also point it at an existing trade log:
 

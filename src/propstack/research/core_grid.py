@@ -16,6 +16,7 @@ from propstack.utils.reports import market_timezone, write_report_csv
 _WORKER_DATA = None
 _WORKER_BASE_CONFIG = None
 _WORKER_BENCHMARKS = None
+_WORKER_INCLUDE_REPORTS = False
 
 
 def parameter_combinations(params: dict, label: str = "core_grid.parameters") -> list[dict]:
@@ -38,10 +39,20 @@ def run_core_grid(
     report_paths = _prepare_iteration_report_paths(report_dir)
     report_timezone = market_timezone(base_config)
     parallel = _parallel_settings(grid_config, len(combos))
-    if parallel["enabled"] and report_paths is not None:
-        raise ValueError("Parallel core grid does not support iteration audit reports; disable retain_iteration_reports.")
     if parallel["enabled"]:
-        rows = _run_parallel_core_grid(data, base_config, benchmarks, combos, parallel["workers"])
+        results = _run_parallel_core_grid(
+            data,
+            base_config,
+            benchmarks,
+            combos,
+            parallel["workers"],
+            include_reports=report_paths is not None,
+        )
+        for row, trades, daily in sorted(results, key=lambda item: item[0]["run_id"]):
+            rows.append(row)
+            combo = {key: row[key] for key in parameters}
+            _append_iteration_report(report_paths, "trades", trades, int(row["run_id"]), combo, report_timezone)
+            _append_iteration_report(report_paths, "daily", daily, int(row["run_id"]), combo, report_timezone)
     else:
         progress = progress_bar(len(combos), "core grid")
         for idx, combo in enumerate(combos, start=1):
@@ -86,43 +97,44 @@ def _run_parallel_core_grid(
     benchmarks: dict,
     combos: list[dict],
     workers: int,
-) -> list[dict]:
-    rows = []
+    include_reports: bool = False,
+) -> list[tuple[dict, pd.DataFrame, pd.DataFrame]]:
+    results = []
     progress = progress_bar(len(combos), "core grid")
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=_init_core_grid_worker,
-        initargs=(data, base_config, benchmarks),
+        initargs=(data, base_config, benchmarks, include_reports),
     ) as executor:
         futures = {
             executor.submit(_run_core_grid_worker, idx, combo): idx
             for idx, combo in enumerate(combos, start=1)
         }
         for done, future in enumerate(as_completed(futures), start=1):
-            rows.append(future.result())
+            results.append(future.result())
             progress.update(done)
-    return rows
+    return results
 
 
-def _init_core_grid_worker(data: pd.DataFrame, base_config: dict, benchmarks: dict) -> None:
-    global _WORKER_DATA, _WORKER_BASE_CONFIG, _WORKER_BENCHMARKS
+def _init_core_grid_worker(data: pd.DataFrame, base_config: dict, benchmarks: dict, include_reports: bool) -> None:
+    global _WORKER_DATA, _WORKER_BASE_CONFIG, _WORKER_BENCHMARKS, _WORKER_INCLUDE_REPORTS
     _WORKER_DATA = data
     _WORKER_BASE_CONFIG = base_config
     _WORKER_BENCHMARKS = benchmarks
+    _WORKER_INCLUDE_REPORTS = include_reports
 
 
-def _run_core_grid_worker(idx: int, combo: dict) -> dict:
+def _run_core_grid_worker(idx: int, combo: dict) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
     if _WORKER_DATA is None or _WORKER_BASE_CONFIG is None or _WORKER_BENCHMARKS is None:
         raise RuntimeError("Core grid worker was not initialized.")
-    row, _, _ = _evaluate_core_grid_combo(
+    return _evaluate_core_grid_combo(
         _WORKER_DATA,
         _WORKER_BASE_CONFIG,
         _WORKER_BENCHMARKS,
         idx,
         combo,
-        include_reports=False,
+        include_reports=_WORKER_INCLUDE_REPORTS,
     )
-    return row
 
 
 def _evaluate_core_grid_combo(

@@ -103,6 +103,10 @@ core_grid:
   objective: net_profit
   min_profitable_iteration_rate: 0.60
   retain_iteration_reports: true
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
   parameters:
     entry.params.max_rsi: [30, 35, 40]
     entry.params.max_close_location_from_low: [0.20, 0.25, 0.30]
@@ -121,6 +125,10 @@ monkey:
   seed: 7
   beat_threshold: 0.90
   retain_iteration_reports: true
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
   constraints:
     trade_count_tolerance_pct: 0.05
     trade_count_tolerance: 0
@@ -140,6 +148,10 @@ wfa:
   test_months: 12
   step_months: 12
   objective: net_profit
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
   parameters:
     entry.params.max_rsi: [30, 35, 40]
     entry.params.max_close_location_from_low: [0.20, 0.25, 0.30]
@@ -168,6 +180,10 @@ monte_carlo:
   trade_log:
   runs: 100
   seed: 11
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
   path_months: 1
   skip_trade_probability: 0.05
   skip_winning_trade_probability: 0.05

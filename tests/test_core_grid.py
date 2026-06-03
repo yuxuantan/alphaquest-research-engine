@@ -101,9 +101,9 @@ def test_core_grid_parallel_branch_is_configurable(monkeypatch):
     data = build_features(df, DATA_CFG)
     calls = []
 
-    def fake_run_parallel_core_grid(data, base_config, benchmarks, combos, workers):
-        calls.append({"combos": combos, "workers": workers})
-        rows = []
+    def fake_run_parallel_core_grid(data, base_config, benchmarks, combos, workers, include_reports=False):
+        calls.append({"combos": combos, "workers": workers, "include_reports": include_reports})
+        results = []
         for idx, combo in enumerate(combos, start=1):
             row, _, _ = core_grid_module._evaluate_core_grid_combo(
                 data,
@@ -112,8 +112,8 @@ def test_core_grid_parallel_branch_is_configurable(monkeypatch):
                 idx,
                 combo,
             )
-            rows.append(row)
-        return rows
+            results.append((row, pd.DataFrame(), pd.DataFrame()))
+        return results
 
     monkeypatch.setattr(core_grid_module.os, "cpu_count", lambda: 8)
     monkeypatch.setattr(core_grid_module, "_run_parallel_core_grid", fake_run_parallel_core_grid)
@@ -140,24 +140,46 @@ def test_core_grid_parallel_branch_is_configurable(monkeypatch):
                 {"entry.params.reclaim_window_bars": 3, "tp.params.target_r_multiple": 1.0},
             ],
             "workers": 2,
+            "include_reports": False,
         }
     ]
     assert summary["parallel"] == {"enabled": True, "workers": 2, "scope": "grid"}
 
 
-def test_core_grid_parallel_requires_reports_disabled(tmp_path, monkeypatch):
+def test_core_grid_parallel_can_retain_iteration_reports(tmp_path, monkeypatch):
     df, _, _ = clean_data(DATA_CFG)
     data = build_features(df, DATA_CFG)
     monkeypatch.setattr(core_grid_module.os, "cpu_count", lambda: 8)
 
-    with pytest.raises(ValueError, match="iteration audit reports"):
-        run_core_grid(
-            data,
-            BASE_CFG,
-            {
-                "parallel": {"enabled": True, "workers": 2},
-                "parameters": {"entry.params.reclaim_window_bars": [2, 3]},
-            },
-            {"min_trade_count": 0, "max_drawdown": 99999},
-            report_dir=tmp_path,
-        )
+    def fake_run_parallel_core_grid(data, base_config, benchmarks, combos, workers, include_reports=False):
+        results = []
+        for idx, combo in enumerate(combos, start=1):
+            results.append(
+                core_grid_module._evaluate_core_grid_combo(
+                    data,
+                    base_config,
+                    benchmarks,
+                    idx,
+                    combo,
+                    include_reports=include_reports,
+                )
+            )
+        return results
+
+    monkeypatch.setattr(core_grid_module, "_run_parallel_core_grid", fake_run_parallel_core_grid)
+    results, summary = run_core_grid(
+        data,
+        BASE_CFG,
+        {
+            "parallel": {"enabled": True, "workers": 2},
+            "parameters": {"entry.params.reclaim_window_bars": [2, 3]},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+        report_dir=tmp_path,
+    )
+
+    assert len(results) == 2
+    assert summary["iteration_reports_retained"] is True
+    assert summary["parallel"] == {"enabled": True, "workers": 2, "scope": "grid"}
+    assert (tmp_path / "core_grid_iteration_trades.csv").exists()
+    assert (tmp_path / "core_grid_iteration_daily.csv").exists()

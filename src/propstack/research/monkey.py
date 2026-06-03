@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from bisect import bisect_left
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import math
+import os
 from pathlib import Path
 import random
 
@@ -15,6 +17,16 @@ from propstack.backtest.sizing import size_position
 from propstack.utils.progress import progress_bar
 from propstack.utils.reports import market_timezone, write_report_csv
 from propstack.utils.time import parse_time
+
+_WORKER_MARKET = None
+_WORKER_BASE_CONFIG = None
+_WORKER_BENCHMARKS = None
+_WORKER_CONSTRAINTS = None
+_WORKER_CORE_PROFILE = None
+_WORKER_ELIGIBLE = None
+_WORKER_MAX_DURATION = None
+_WORKER_SEED = None
+_WORKER_INCLUDE_REPORTS = False
 
 
 def run_monkey(
@@ -32,8 +44,6 @@ def run_monkey(
     """
 
     seed = int(monkey_config.get("seed", 1))
-    rng = random.Random(seed)
-    np_rng = np.random.default_rng(seed)
     constraints = _constraints(monkey_config)
 
     market = data.sort_values("timestamp").reset_index(drop=True)
@@ -52,72 +62,47 @@ def run_monkey(
     rows = []
     total_runs = int(monkey_config.get("runs", 8000))
     threshold = float(monkey_config.get("beat_threshold", constraints.get("beat_threshold", 0.90)))
-    valid_position_cache: dict[int, np.ndarray] = {}
     report_paths = _prepare_iteration_report_paths(report_dir)
     report_timezone = market_timezone(base_config)
-    progress = progress_bar(total_runs, "monkey runs")
+    parallel = _parallel_settings(monkey_config, total_runs)
+    if parallel["enabled"]:
+        results = _run_parallel_monkey(
+            market,
+            base_config,
+            benchmarks,
+            constraints,
+            core_profile,
+            eligible,
+            max_duration,
+            seed,
+            total_runs,
+            parallel["workers"],
+            include_reports=report_paths is not None,
+        )
+    else:
+        progress = progress_bar(total_runs, "monkey runs")
+        results = []
+        for run_id in range(1, total_runs + 1):
+            results.append(
+                _evaluate_monkey_run(
+                    run_id,
+                    seed,
+                    market,
+                    base_config,
+                    benchmarks,
+                    constraints,
+                    core_profile,
+                    eligible,
+                    max_duration,
+                    include_reports=report_paths is not None,
+                )
+            )
+            progress.update(run_id)
 
-    for run_id in range(1, total_runs + 1):
-        trade_count = _sample_trade_count(rng, core_profile["total_trades"], constraints)
-        long_trades = _sample_long_count(rng, trade_count, core_profile["long_ratio"], constraints)
-        directions = ["long"] * long_trades + ["short"] * (trade_count - long_trades)
-        rng.shuffle(directions)
-
-        durations = _sample_durations(
-            np_rng=np_rng,
-            rng=rng,
-            trade_count=trade_count,
-            core_durations=core_profile["bars_in_trade"],
-            target_average=core_profile["average_bars_in_trade"],
-            constraints=constraints,
-            max_duration=max_duration,
-        )
-        schedule = _build_schedule(
-            np_rng=np_rng,
-            eligible=eligible,
-            durations=durations,
-            directions=directions,
-            constraints=constraints,
-            max_trades_per_day=int(core_profile["max_trades_per_day"]),
-            valid_position_cache=valid_position_cache,
-        )
-        trades = _build_trade_log(market, schedule, base_config, core_profile)
-        metrics = calculate_metrics(
-            trades,
-            initial_balance=float(base_config.get("core", {}).get("initial_balance", 0)),
-        )
-        daily = daily_results(trades)
-        passed, reason = benchmark(metrics, benchmarks)
-
-        average_bars = float(trades["bars_in_trade"].mean()) if len(trades) else 0.0
-        long_ratio = float((trades["direction"] == "long").mean()) if len(trades) else 0.0
-        rows.append(
-            {
-                "run_id": run_id,
-                "total_trades": metrics["total_trades"],
-                "long_trades": int((trades["direction"] == "long").sum()) if len(trades) else 0,
-                "short_trades": int((trades["direction"] == "short").sum()) if len(trades) else 0,
-                "long_ratio": long_ratio,
-                "average_bars_in_trade": average_bars,
-                "trade_count_delta": int(metrics["total_trades"] - core_profile["total_trades"]),
-                "long_ratio_delta": float(long_ratio - core_profile["long_ratio"]),
-                "average_bars_delta": float(average_bars - core_profile["average_bars_in_trade"]),
-                "net_profit": metrics["net_profit"],
-                "max_drawdown": metrics["max_drawdown"],
-                "max_drawdown_pct": metrics["max_drawdown_pct"],
-                "profit_factor": metrics["profit_factor"],
-                "expectancy_r": metrics["expectancy_r"],
-                "win_rate": metrics["win_rate"],
-                "profitable": metrics["net_profit"] > 0,
-                "core_net_profit_gt_monkey": core_profile["net_profit"] > metrics["net_profit"],
-                "core_max_drawdown_lt_monkey": core_profile["max_drawdown"] < metrics["max_drawdown"],
-                "benchmark_passed": passed,
-                "failure_reason": reason,
-            }
-        )
-        _append_iteration_report(report_paths, "trades", trades, run_id, report_timezone)
-        _append_iteration_report(report_paths, "daily", daily, run_id, report_timezone)
-        progress.update(run_id)
+    for row, trades, daily in sorted(results, key=lambda item: item[0]["run_id"]):
+        rows.append(row)
+        _append_iteration_report(report_paths, "trades", trades, int(row["run_id"]), report_timezone)
+        _append_iteration_report(report_paths, "daily", daily, int(row["run_id"]), report_timezone)
 
     df = pd.DataFrame(rows)
     net_profit_beat_rate = float(df["core_net_profit_gt_monkey"].mean()) if len(df) else 0.0
@@ -170,8 +155,165 @@ def run_monkey(
         "iteration_reports_retained": report_paths is not None,
         "iteration_report_files": _iteration_report_files(report_paths),
         "data_subset": monkey_config.get("data_subset", {}),
+        "parallel": {
+            "enabled": parallel["enabled"],
+            "workers": parallel["workers"] if parallel["enabled"] else 1,
+            "scope": "runs",
+        },
     }
     return df, summary
+
+
+def _run_parallel_monkey(
+    market: pd.DataFrame,
+    base_config: dict,
+    benchmarks: dict,
+    constraints: dict,
+    core_profile: dict,
+    eligible: pd.DataFrame,
+    max_duration: int,
+    seed: int,
+    total_runs: int,
+    workers: int,
+    include_reports: bool = False,
+) -> list[tuple[dict, pd.DataFrame, pd.DataFrame]]:
+    results = []
+    progress = progress_bar(total_runs, "monkey runs")
+    with ProcessPoolExecutor(
+        max_workers=workers,
+        initializer=_init_monkey_worker,
+        initargs=(market, base_config, benchmarks, constraints, core_profile, eligible, max_duration, seed, include_reports),
+    ) as executor:
+        futures = {executor.submit(_run_monkey_worker, run_id): run_id for run_id in range(1, total_runs + 1)}
+        for done, future in enumerate(as_completed(futures), start=1):
+            results.append(future.result())
+            progress.update(done)
+    return results
+
+
+def _init_monkey_worker(
+    market: pd.DataFrame,
+    base_config: dict,
+    benchmarks: dict,
+    constraints: dict,
+    core_profile: dict,
+    eligible: pd.DataFrame,
+    max_duration: int,
+    seed: int,
+    include_reports: bool,
+) -> None:
+    global _WORKER_MARKET, _WORKER_BASE_CONFIG, _WORKER_BENCHMARKS, _WORKER_CONSTRAINTS
+    global _WORKER_CORE_PROFILE, _WORKER_ELIGIBLE, _WORKER_MAX_DURATION, _WORKER_SEED, _WORKER_INCLUDE_REPORTS
+    _WORKER_MARKET = market
+    _WORKER_BASE_CONFIG = base_config
+    _WORKER_BENCHMARKS = benchmarks
+    _WORKER_CONSTRAINTS = constraints
+    _WORKER_CORE_PROFILE = core_profile
+    _WORKER_ELIGIBLE = eligible
+    _WORKER_MAX_DURATION = max_duration
+    _WORKER_SEED = seed
+    _WORKER_INCLUDE_REPORTS = include_reports
+
+
+def _run_monkey_worker(run_id: int) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
+    if (
+        _WORKER_MARKET is None
+        or _WORKER_BASE_CONFIG is None
+        or _WORKER_BENCHMARKS is None
+        or _WORKER_CONSTRAINTS is None
+        or _WORKER_CORE_PROFILE is None
+        or _WORKER_ELIGIBLE is None
+        or _WORKER_MAX_DURATION is None
+        or _WORKER_SEED is None
+    ):
+        raise RuntimeError("Monkey worker was not initialized.")
+    return _evaluate_monkey_run(
+        run_id,
+        _WORKER_SEED,
+        _WORKER_MARKET,
+        _WORKER_BASE_CONFIG,
+        _WORKER_BENCHMARKS,
+        _WORKER_CONSTRAINTS,
+        _WORKER_CORE_PROFILE,
+        _WORKER_ELIGIBLE,
+        _WORKER_MAX_DURATION,
+        include_reports=_WORKER_INCLUDE_REPORTS,
+    )
+
+
+def _evaluate_monkey_run(
+    run_id: int,
+    seed: int,
+    market: pd.DataFrame,
+    base_config: dict,
+    benchmarks: dict,
+    constraints: dict,
+    core_profile: dict,
+    eligible: pd.DataFrame,
+    max_duration: int,
+    include_reports: bool = False,
+) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
+    run_seed = _run_seed(seed, run_id)
+    rng = random.Random(run_seed)
+    np_rng = np.random.default_rng(run_seed)
+    trade_count = _sample_trade_count(rng, core_profile["total_trades"], constraints)
+    long_trades = _sample_long_count(rng, trade_count, core_profile["long_ratio"], constraints)
+    directions = ["long"] * long_trades + ["short"] * (trade_count - long_trades)
+    rng.shuffle(directions)
+
+    durations = _sample_durations(
+        np_rng=np_rng,
+        rng=rng,
+        trade_count=trade_count,
+        core_durations=core_profile["bars_in_trade"],
+        target_average=core_profile["average_bars_in_trade"],
+        constraints=constraints,
+        max_duration=max_duration,
+    )
+    schedule = _build_schedule(
+        np_rng=np_rng,
+        eligible=eligible,
+        durations=durations,
+        directions=directions,
+        constraints=constraints,
+        max_trades_per_day=int(core_profile["max_trades_per_day"]),
+        valid_position_cache={},
+    )
+    trades = _build_trade_log(market, schedule, base_config, core_profile)
+    metrics = calculate_metrics(
+        trades,
+        initial_balance=float(base_config.get("core", {}).get("initial_balance", 0)),
+    )
+    daily = daily_results(trades)
+    passed, reason = benchmark(metrics, benchmarks)
+
+    average_bars = float(trades["bars_in_trade"].mean()) if len(trades) else 0.0
+    long_ratio = float((trades["direction"] == "long").mean()) if len(trades) else 0.0
+    row = {
+        "run_id": run_id,
+        "total_trades": metrics["total_trades"],
+        "long_trades": int((trades["direction"] == "long").sum()) if len(trades) else 0,
+        "short_trades": int((trades["direction"] == "short").sum()) if len(trades) else 0,
+        "long_ratio": long_ratio,
+        "average_bars_in_trade": average_bars,
+        "trade_count_delta": int(metrics["total_trades"] - core_profile["total_trades"]),
+        "long_ratio_delta": float(long_ratio - core_profile["long_ratio"]),
+        "average_bars_delta": float(average_bars - core_profile["average_bars_in_trade"]),
+        "net_profit": metrics["net_profit"],
+        "max_drawdown": metrics["max_drawdown"],
+        "max_drawdown_pct": metrics["max_drawdown_pct"],
+        "profit_factor": metrics["profit_factor"],
+        "expectancy_r": metrics["expectancy_r"],
+        "win_rate": metrics["win_rate"],
+        "profitable": metrics["net_profit"] > 0,
+        "core_net_profit_gt_monkey": core_profile["net_profit"] > metrics["net_profit"],
+        "core_max_drawdown_lt_monkey": core_profile["max_drawdown"] < metrics["max_drawdown"],
+        "benchmark_passed": passed,
+        "failure_reason": reason,
+    }
+    if not include_reports:
+        return row, pd.DataFrame(), pd.DataFrame()
+    return row, trades, daily
 
 
 def _constraints(monkey_config: dict) -> dict:
@@ -189,6 +331,34 @@ def _constraints(monkey_config: dict) -> dict:
     cfg.setdefault("max_duration_sample_attempts", monkey_config.get("max_duration_sample_attempts", 1000))
     cfg.setdefault("beat_threshold", monkey_config.get("beat_threshold", 0.90))
     return cfg
+
+
+def _parallel_settings(monkey_config: dict, run_count: int) -> dict:
+    parallel = monkey_config.get("parallel") or {}
+    if isinstance(parallel, bool):
+        enabled = parallel
+        requested_workers = os.cpu_count() or 1
+        scope = "runs"
+    elif isinstance(parallel, dict):
+        enabled = bool(parallel.get("enabled", False))
+        requested_workers = int(parallel.get("workers") or os.cpu_count() or 1)
+        scope = str(parallel.get("scope", "runs")).lower()
+    else:
+        raise ValueError("monkey.parallel must be a boolean or mapping.")
+
+    if scope != "runs":
+        raise ValueError("monkey.parallel.scope must be 'runs'.")
+    max_cpus = os.cpu_count() or requested_workers
+    workers = max(1, min(requested_workers, max_cpus, max(run_count, 1)))
+    return {
+        "enabled": enabled and workers > 1 and run_count > 1,
+        "workers": workers,
+        "scope": scope,
+    }
+
+
+def _run_seed(seed: int, run_id: int) -> int:
+    return int(seed) + (int(run_id) * 1_000_003)
 
 
 def _core_profile(data: pd.DataFrame, trades: pd.DataFrame, metrics: dict) -> dict:

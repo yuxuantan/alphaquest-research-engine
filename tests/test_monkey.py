@@ -5,6 +5,7 @@ import pandas as pd
 
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
+import propstack.research.monkey as monkey_module
 from propstack.research.monkey import _sample_durations, run_monkey
 from tests.test_backtest_engine import BASE_CFG
 from tests.test_data_pipeline import DATA_CFG
@@ -92,3 +93,59 @@ def test_monkey_duration_sampling_uses_core_distribution_and_cap():
     assert max(durations) <= 55
     assert set(durations).issubset({5, 10, 20, 35, 55})
     assert 27.0 <= np.mean(durations) <= 33.0
+
+
+def test_monkey_parallel_branch_is_configurable(monkeypatch):
+    df, _, _ = clean_data(DATA_CFG)
+    data = build_features(df, DATA_CFG)
+    calls = []
+
+    def fake_run_parallel_monkey(
+        market,
+        base_config,
+        benchmarks,
+        constraints,
+        core_profile,
+        eligible,
+        max_duration,
+        seed,
+        total_runs,
+        workers,
+        include_reports=False,
+    ):
+        calls.append({"total_runs": total_runs, "workers": workers, "include_reports": include_reports})
+        return [
+            monkey_module._evaluate_monkey_run(
+                run_id,
+                seed,
+                market,
+                base_config,
+                benchmarks,
+                constraints,
+                core_profile,
+                eligible,
+                max_duration,
+                include_reports=include_reports,
+            )
+            for run_id in range(1, total_runs + 1)
+        ]
+
+    monkeypatch.setattr(monkey_module.os, "cpu_count", lambda: 8)
+    monkeypatch.setattr(monkey_module, "_run_parallel_monkey", fake_run_parallel_monkey)
+    cfg = {
+        "runs": 3,
+        "seed": 1,
+        "parallel": {"enabled": True, "workers": 2, "scope": "runs"},
+        "constraints": {
+            "trade_count_tolerance_pct": 0.0,
+            "trade_count_tolerance": 0,
+            "long_short_ratio_tolerance": 0.0,
+            "average_bars_tolerance_pct": 0.0,
+        },
+    }
+
+    results, summary = run_monkey(data, BASE_CFG, cfg, {"min_trade_count": 1, "max_drawdown": 99999})
+
+    assert len(results) == 3
+    assert calls == [{"total_runs": 3, "workers": 2, "include_reports": False}]
+    assert summary["parallel"] == {"enabled": True, "workers": 2, "scope": "runs"}
