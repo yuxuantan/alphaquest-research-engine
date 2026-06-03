@@ -1,19 +1,58 @@
 from __future__ import annotations
 
+import math
 import pandas as pd
 
 from propstack.prop.rules import PropRules
 
+REFERENCE_POSITION_SIZING_MODES = {"reference", "source", "source_trade", "source_trade_log"}
+FIXED_POSITION_SIZING_MODES = {"fixed", "fixed_contracts"}
+INITIAL_BALANCE_RISK_MODES = {
+    "risk_percent_initial_balance",
+    "initial_balance_risk",
+    "risk_pct_initial_balance",
+    "risk_percent_init_net_liq",
+    "percent_initial_net_liq",
+    "percent_init_net_liq",
+}
+CURRENT_NET_LIQ_RISK_MODES = {
+    "risk_percent_net_liq",
+    "net_liq_risk",
+    "risk_pct_net_liq",
+    "risk_percent_current_net_liq",
+    "percent_current_net_liq",
+    "current_net_liq_risk",
+}
+RISK_PERCENT_POSITION_SIZING_MODES = INITIAL_BALANCE_RISK_MODES | CURRENT_NET_LIQ_RISK_MODES
 
-def simulate_prop_path(trades: pd.DataFrame, rules: PropRules) -> dict:
+
+def simulate_prop_path(trades: pd.DataFrame, rules: PropRules, sizing_config: dict | None = None) -> dict:
+    result, _ = _simulate_prop_path(trades, rules, sizing_config=sizing_config, collect_events=False)
+    return result
+
+
+def simulate_prop_path_with_events(
+    trades: pd.DataFrame,
+    rules: PropRules,
+    sizing_config: dict | None = None,
+) -> tuple[dict, list[dict]]:
+    return _simulate_prop_path(trades, rules, sizing_config=sizing_config, collect_events=True)
+
+
+def _simulate_prop_path(
+    trades: pd.DataFrame,
+    rules: PropRules,
+    sizing_config: dict | None = None,
+    collect_events: bool = False,
+) -> tuple[dict, list[dict]]:
+    sizing_config = dict(sizing_config or {})
+    sizing_config.setdefault("initial_net_liq", rules.starting_balance)
     balance = rules.starting_balance
     high = balance
     floor = high - rules.trailing_drawdown
     breached = False
     reason = ""
-    daily = trades.groupby("session_date")["net_pnl"].sum() if not trades.empty else pd.Series(dtype=float)
-    worst_day = float(daily.min()) if len(daily) else 0.0
-    best_day = float(daily.max()) if len(daily) else 0.0
+    daily_pnl = {}
     max_consec = cur = 0
     peak_equity = balance
     max_dd = 0.0
@@ -24,13 +63,60 @@ def simulate_prop_path(trades: pd.DataFrame, rules: PropRules) -> dict:
     payout_target = rules.starting_balance + rules.payout_threshold
     payout_eligible = False
     drawdown_before_payout = False
+    events = []
 
     for _, trade in trades.iterrows():
-        if int(trade.get("contracts", 1)) > rules.max_contracts:
-            breached, reason = True, "max_contracts"
-            break
-        pnl = float(trade["net_pnl"])
+        path_index = _trade_value(trade, "_path_index")
+        source_trade_id = _trade_value(trade, "_source_trade_id", _trade_value(trade, "trade_id"))
+        source_session_date = _trade_value(trade, "session_date")
+        sim = _simulated_trade_values(trade, balance, sizing_config)
+        if sim["sim_contracts"] < 1:
+            if collect_events:
+                events.append(
+                    _event_row(
+                        path_index,
+                        source_trade_id,
+                        source_session_date,
+                        balance,
+                        high,
+                        floor,
+                        max_dd,
+                        drawdown_limit,
+                        payout_target,
+                        profit_target,
+                        "position_size_skip",
+                        reason,
+                        sim_values=sim,
+                    )
+                )
+            continue
+        max_contracts_capped = False
+        if int(sim["sim_contracts"]) > rules.max_contracts:
+            sim = _cap_sim_contracts(sim, rules.max_contracts, sizing_config)
+            max_contracts_capped = True
+            if sim["sim_contracts"] < 1:
+                if collect_events:
+                    events.append(
+                        _event_row(
+                            path_index,
+                            source_trade_id,
+                            source_session_date,
+                            balance,
+                            high,
+                            floor,
+                            max_dd,
+                            drawdown_limit,
+                            payout_target,
+                            profit_target,
+                            "position_size_skip",
+                            reason,
+                            sim_values=sim,
+                        )
+                    )
+                continue
+        pnl = float(sim["sim_net_pnl"])
         balance += pnl
+        daily_pnl[source_session_date] = daily_pnl.get(source_session_date, 0.0) + pnl
         high = max(high, balance)
         floor = max(floor, high - rules.trailing_drawdown)
         peak_equity = max(peak_equity, balance)
@@ -40,28 +126,93 @@ def simulate_prop_path(trades: pd.DataFrame, rules: PropRules) -> dict:
             max_consec = max(max_consec, cur)
         else:
             cur = 0
+        event_names = ["trade"]
+        if max_contracts_capped:
+            event_names.append("max_contracts_capped")
         if balance <= floor:
             breached, reason = True, "trailing_drawdown"
+            event_names.append("trailing_drawdown_breach")
+            if collect_events:
+                events.append(
+                    _event_row(
+                        path_index,
+                        source_trade_id,
+                        source_session_date,
+                        balance,
+                        high,
+                        floor,
+                        max_dd,
+                        drawdown_limit,
+                        payout_target,
+                        profit_target,
+                        "|".join(event_names),
+                        reason,
+                        sim_values=sim,
+                    )
+                )
             break
         if not profit_before_drawdown and not drawdown_before_profit:
             if balance >= profit_target:
                 profit_before_drawdown = True
+                event_names.append("profit_target_reached")
             elif balance <= drawdown_limit:
                 drawdown_before_profit = True
+                event_names.append("drawdown_limit_reached")
         if not payout_eligible and not drawdown_before_payout:
             if balance >= payout_target:
                 payout_eligible = True
+                event_names.append("payout_threshold_reached")
             elif balance <= drawdown_limit:
                 drawdown_before_payout = True
+                event_names.append("drawdown_limit_before_payout")
+        if collect_events:
+            events.append(
+                _event_row(
+                    path_index,
+                    source_trade_id,
+                    source_session_date,
+                    balance,
+                    high,
+                    floor,
+                    max_dd,
+                    drawdown_limit,
+                    payout_target,
+                    profit_target,
+                    "|".join(event_names),
+                    reason,
+                    sim_values=sim,
+                )
+            )
 
-    for _, pnl in daily.items():
+    daily = pd.Series(daily_pnl, dtype=float)
+    worst_day = float(daily.min()) if len(daily) else 0.0
+    best_day = float(daily.max()) if len(daily) else 0.0
+    for session_date, pnl in daily.items():
         if pnl <= -rules.daily_loss_limit:
             breached, reason = True, "daily_loss_limit"
+            if collect_events:
+                events.append(
+                    _event_row(
+                        None,
+                        None,
+                        session_date,
+                        balance,
+                        high,
+                        floor,
+                        max_dd,
+                        drawdown_limit,
+                        payout_target,
+                        profit_target,
+                        "daily_loss_limit_breach",
+                        reason,
+                        daily_pnl=float(pnl),
+                    )
+                )
             break
 
     total_profit = balance - rules.starting_balance
     concentration = best_day / total_profit if total_profit > 0 else 0.0
-    return {
+    result = {
         "ending_balance": balance,
         "net_pnl": total_profit,
         "max_drawdown": max_dd,
@@ -75,3 +226,381 @@ def simulate_prop_path(trades: pd.DataFrame, rules: PropRules) -> dict:
         "profit_before_drawdown": profit_before_drawdown,
         "drawdown_before_profit": drawdown_before_profit,
     }
+    return result, events
+
+
+def _event_row(
+    path_index,
+    source_trade_id,
+    source_session_date,
+    balance: float,
+    high: float,
+    trailing_floor: float,
+    max_drawdown: float,
+    drawdown_limit_balance: float,
+    payout_target_balance: float,
+    profit_target_balance: float,
+    event: str,
+    breach_reason: str,
+    daily_pnl=None,
+    sim_values: dict | None = None,
+) -> dict:
+    sim_values = sim_values or {}
+    return {
+        "path_index": path_index,
+        "source_trade_id": source_trade_id,
+        "source_session_date": source_session_date,
+        "source_contracts": sim_values.get("source_contracts"),
+        "sim_contracts": sim_values.get("sim_contracts"),
+        "source_net_pnl": sim_values.get("source_net_pnl"),
+        "sim_net_pnl": sim_values.get("sim_net_pnl"),
+        "position_sizing_mode": sim_values.get("position_sizing_mode"),
+        "position_sizing_net_liq": sim_values.get("position_sizing_net_liq"),
+        "target_risk_amount": sim_values.get("target_risk_amount"),
+        "dollar_risk_per_contract": sim_values.get("dollar_risk_per_contract"),
+        "unrounded_contracts": sim_values.get("unrounded_contracts"),
+        "planned_dollar_risk": sim_values.get("planned_dollar_risk"),
+        "balance": balance,
+        "account_high": high,
+        "trailing_floor": trailing_floor,
+        "max_drawdown": max_drawdown,
+        "drawdown_limit_balance": drawdown_limit_balance,
+        "payout_target_balance": payout_target_balance,
+        "profit_target_balance": profit_target_balance,
+        "event": event,
+        "breach_reason": breach_reason,
+        "daily_pnl": daily_pnl,
+    }
+
+
+def _trade_value(trade, key: str, default=None):
+    value = trade.get(key, default)
+    if hasattr(value, "item"):
+        value = value.item()
+    if pd.isna(value):
+        return default
+    return value
+
+
+def _simulated_trade_values(trade, net_liq: float, sizing_config: dict) -> dict:
+    source_contracts = int(_trade_value(trade, "contracts", 1) or 1)
+    source_net_pnl = float(
+        _trade_value(trade, "_source_net_pnl", _trade_value(trade, "net_pnl", 0.0)) or 0.0
+    )
+    adverse = float(sizing_config.get("adverse_slippage_per_trade", 0.0))
+    position_sizing_mode = _normalize_source_position_sizing_mode(
+        _trade_value(trade, "position_sizing_mode", "fixed_contracts")
+    )
+    monte_carlo_sizing = _monte_carlo_position_sizing(sizing_config)
+    monte_carlo_mode = _normalize_monte_carlo_position_sizing_mode(
+        monte_carlo_sizing.get("mode", "reference")
+    )
+
+    if monte_carlo_mode in FIXED_POSITION_SIZING_MODES:
+        size = _fixed_path_position_size(monte_carlo_sizing)
+        return _scaled_trade_values(
+            source_contracts,
+            source_net_pnl,
+            adverse,
+            size,
+            "fixed_contracts",
+            None,
+        )
+
+    if monte_carlo_mode in RISK_PERCENT_POSITION_SIZING_MODES:
+        risk_base = _risk_base_for_mode(monte_carlo_mode, net_liq, sizing_config)
+        size = _path_position_size(
+            trade,
+            risk_base,
+            sizing_config,
+            monte_carlo_sizing,
+            "monte_carlo.position_sizing",
+        )
+        return _scaled_trade_values(
+            source_contracts,
+            source_net_pnl,
+            adverse,
+            size,
+            _canonical_risk_percent_mode(monte_carlo_mode),
+            risk_base,
+        )
+
+    if _should_resize_trade(position_sizing_mode, sizing_config):
+        risk_base = float(net_liq)
+        size = _path_position_size(
+            trade,
+            risk_base,
+            sizing_config,
+            _core_position_sizing(sizing_config),
+            "core.position_sizing",
+        )
+        return _scaled_trade_values(
+            source_contracts,
+            source_net_pnl,
+            adverse,
+            size,
+            "risk_percent_net_liq",
+            risk_base,
+        )
+
+    return {
+        "source_contracts": source_contracts,
+        "sim_contracts": source_contracts,
+        "source_net_pnl": source_net_pnl,
+        "sim_net_pnl": source_net_pnl - adverse,
+        "position_sizing_mode": position_sizing_mode,
+        "position_sizing_net_liq": None,
+        "target_risk_amount": None,
+        "dollar_risk_per_contract": _trade_value(trade, "dollar_risk_per_contract"),
+        "unrounded_contracts": None,
+        "planned_dollar_risk": None,
+    }
+
+
+def _scaled_trade_values(
+    source_contracts: int,
+    source_net_pnl: float,
+    adverse: float,
+    size: dict,
+    position_sizing_mode: str,
+    position_sizing_net_liq: float | None,
+) -> dict:
+    sim_contracts = int(size["contracts"])
+    if source_contracts <= 0 or sim_contracts <= 0:
+        sim_net_pnl = 0.0
+    else:
+        sim_net_pnl = (source_net_pnl / source_contracts) * sim_contracts - adverse
+    return {
+        "source_contracts": source_contracts,
+        "sim_contracts": sim_contracts,
+        "source_net_pnl": source_net_pnl,
+        "sim_net_pnl": sim_net_pnl,
+        "position_sizing_mode": position_sizing_mode,
+        "position_sizing_net_liq": (
+            None if position_sizing_net_liq is None else float(position_sizing_net_liq)
+        ),
+        "target_risk_amount": size.get("target_risk_amount"),
+        "dollar_risk_per_contract": size.get("dollar_risk_per_contract"),
+        "unrounded_contracts": size.get("unrounded_contracts"),
+        "planned_dollar_risk": size.get("planned_dollar_risk"),
+    }
+
+
+def _cap_sim_contracts(sim_values: dict, max_contracts: int, sizing_config: dict) -> dict:
+    capped_contracts = max(0, int(max_contracts))
+    out = dict(sim_values)
+    out["sim_contracts"] = capped_contracts
+
+    source_contracts = int(out.get("source_contracts") or 0)
+    source_net_pnl = _float_or_default(out.get("source_net_pnl"), 0.0)
+    adverse = float(sizing_config.get("adverse_slippage_per_trade", 0.0))
+    if source_contracts <= 0 or capped_contracts <= 0:
+        out["sim_net_pnl"] = 0.0
+    else:
+        out["sim_net_pnl"] = (source_net_pnl / source_contracts) * capped_contracts - adverse
+
+    dollar_risk_per_contract = out.get("dollar_risk_per_contract")
+    if dollar_risk_per_contract is not None and not pd.isna(dollar_risk_per_contract):
+        out["planned_dollar_risk"] = float(dollar_risk_per_contract) * capped_contracts
+    return out
+
+
+def _float_or_default(value, default: float) -> float:
+    if value is None or pd.isna(value):
+        return default
+    return float(value)
+
+
+def _should_resize_trade(position_sizing_mode: str, sizing_config: dict) -> bool:
+    core_mode = _normalize_source_position_sizing_mode(
+        _core_position_sizing(sizing_config).get("mode", "fixed_contracts")
+    )
+    return (
+        position_sizing_mode in RISK_PERCENT_POSITION_SIZING_MODES
+        and core_mode in RISK_PERCENT_POSITION_SIZING_MODES
+    )
+
+
+def _path_position_size(
+    trade,
+    risk_base: float,
+    sizing_config: dict,
+    sizing: dict,
+    config_name: str,
+) -> dict:
+    dollar_risk_per_contract = _dollar_risk_per_contract_from_trade(
+        trade, sizing_config, config_name
+    )
+    if dollar_risk_per_contract <= 0:
+        raise ValueError("Risk-percent Monte Carlo resizing requires risk_points or dollar_risk_per_contract.")
+    risk_pct = _risk_pct_from_sizing(sizing, sizing_config, config_name)
+    target_risk_amount = float(risk_base) * risk_pct if risk_base > 0 else 0.0
+    unrounded = target_risk_amount / dollar_risk_per_contract if dollar_risk_per_contract else 0.0
+    contracts = _round_contracts(
+        unrounded,
+        _rounding_from_sizing(sizing, sizing_config, config_name),
+        config_name,
+    )
+    max_contracts = _max_contracts_from_sizing(sizing, sizing_config)
+    if max_contracts is not None:
+        contracts = min(contracts, max_contracts)
+    min_contracts = _min_contracts_from_sizing(sizing, sizing_config)
+    if contracts < min_contracts:
+        contracts = 0
+    return {
+        "contracts": contracts,
+        "target_risk_amount": target_risk_amount,
+        "dollar_risk_per_contract": dollar_risk_per_contract,
+        "unrounded_contracts": unrounded,
+        "planned_dollar_risk": dollar_risk_per_contract * contracts,
+    }
+
+
+def _fixed_path_position_size(sizing: dict) -> dict:
+    contracts = sizing.get("contracts")
+    if contracts is None:
+        raise ValueError("monte_carlo.position_sizing.contracts is required for fixed_contracts mode.")
+    contracts = int(contracts)
+    if contracts < 1:
+        raise ValueError("monte_carlo.position_sizing.contracts must be at least 1.")
+    return {
+        "contracts": contracts,
+        "target_risk_amount": None,
+        "dollar_risk_per_contract": None,
+        "unrounded_contracts": None,
+        "planned_dollar_risk": None,
+    }
+
+
+def _dollar_risk_per_contract_from_trade(trade, sizing_config: dict, config_name: str) -> float:
+    risk_points = _trade_value(trade, "risk_points")
+    if risk_points is not None:
+        core = sizing_config.get("core") or {}
+        risk = float(risk_points)
+        tick_size = float(core.get("tick_size", 0.25))
+        tick_value = float(core.get("tick_value", 12.5))
+        if risk <= 0:
+            raise ValueError("risk_points must be greater than 0 for risk-percent Monte Carlo position sizing.")
+        if tick_size <= 0:
+            raise ValueError("core.tick_size must be greater than 0.")
+        if tick_value <= 0:
+            raise ValueError("core.tick_value must be greater than 0.")
+        return risk / tick_size * tick_value
+    dollar_risk_per_contract = float(_trade_value(trade, "dollar_risk_per_contract", 0.0) or 0.0)
+    if dollar_risk_per_contract <= 0:
+        raise ValueError(f"{config_name} risk-percent mode requires risk_points or dollar_risk_per_contract.")
+    return dollar_risk_per_contract
+
+
+def _risk_pct_from_sizing(sizing: dict, sizing_config: dict, config_name: str) -> float:
+    fallback = _core_position_sizing(sizing_config)
+    for source in (sizing, fallback):
+        if "risk_pct" in source:
+            risk_pct = float(source["risk_pct"])
+            break
+        if "risk_fraction" in source:
+            risk_pct = float(source["risk_fraction"])
+            break
+        if "risk_percent" in source:
+            risk_pct = float(source["risk_percent"]) / 100.0
+            break
+    else:
+        risk_pct = 0.01
+    if risk_pct <= 0:
+        raise ValueError(f"{config_name} risk percentage must be greater than 0.")
+    return risk_pct
+
+
+def _rounding_from_sizing(sizing: dict, sizing_config: dict, config_name: str) -> str:
+    fallback = _core_position_sizing(sizing_config)
+    rounding = str(sizing.get("rounding", fallback.get("rounding", "floor"))).lower()
+    if rounding not in {"floor", "nearest", "ceil"}:
+        raise ValueError(f"{config_name}.rounding must be one of: floor, nearest, ceil.")
+    return rounding
+
+
+def _min_contracts_from_sizing(sizing: dict, sizing_config: dict) -> int:
+    fallback = _core_position_sizing(sizing_config)
+    return int(sizing.get("min_contracts", fallback.get("min_contracts", 1)))
+
+
+def _max_contracts_from_sizing(sizing: dict, sizing_config: dict) -> int | None:
+    fallback = _core_position_sizing(sizing_config)
+    max_contracts = sizing.get("max_contracts", fallback.get("max_contracts"))
+    return None if max_contracts is None else int(max_contracts)
+
+
+def _risk_base_for_mode(mode: str, net_liq: float, sizing_config: dict) -> float:
+    if mode in INITIAL_BALANCE_RISK_MODES:
+        return float(sizing_config.get("initial_net_liq", net_liq))
+    if mode in CURRENT_NET_LIQ_RISK_MODES:
+        return float(net_liq)
+    raise ValueError(f"Unsupported risk-percent position sizing mode: {mode}")
+
+
+def _core_position_sizing(sizing_config: dict) -> dict:
+    core = sizing_config.get("core") or {}
+    sizing = core.get("position_sizing") or {}
+    if isinstance(sizing, str):
+        return {"mode": sizing}
+    if sizing is None:
+        return {}
+    if not isinstance(sizing, dict):
+        raise ValueError("core.position_sizing must be a mapping or mode string.")
+    return dict(sizing)
+
+
+def _monte_carlo_position_sizing(sizing_config: dict) -> dict:
+    sizing = sizing_config.get("position_sizing") or {"mode": "reference"}
+    if isinstance(sizing, str):
+        sizing = {"mode": sizing}
+    if sizing is None:
+        sizing = {"mode": "reference"}
+    if not isinstance(sizing, dict):
+        raise ValueError("monte_carlo.position_sizing must be a mapping or mode string.")
+    return dict(sizing)
+
+
+def _normalize_monte_carlo_position_sizing_mode(mode) -> str:
+    normalized = str(mode).strip().lower()
+    if normalized in REFERENCE_POSITION_SIZING_MODES:
+        return "reference"
+    if normalized in FIXED_POSITION_SIZING_MODES:
+        return "fixed_contracts"
+    if normalized in INITIAL_BALANCE_RISK_MODES:
+        return "risk_percent_initial_balance"
+    if normalized in CURRENT_NET_LIQ_RISK_MODES:
+        return "risk_percent_net_liq"
+    raise ValueError(
+        "monte_carlo.position_sizing.mode must be one of: "
+        "reference, fixed_contracts, risk_percent_net_liq, risk_percent_initial_balance."
+    )
+
+
+def _normalize_source_position_sizing_mode(mode) -> str:
+    normalized = str(mode).strip().lower()
+    if normalized in FIXED_POSITION_SIZING_MODES:
+        return "fixed_contracts"
+    if normalized in INITIAL_BALANCE_RISK_MODES:
+        return "risk_percent_initial_balance"
+    if normalized in CURRENT_NET_LIQ_RISK_MODES:
+        return "risk_percent_net_liq"
+    return normalized
+
+
+def _canonical_risk_percent_mode(mode: str) -> str:
+    if mode in INITIAL_BALANCE_RISK_MODES:
+        return "risk_percent_initial_balance"
+    if mode in CURRENT_NET_LIQ_RISK_MODES:
+        return "risk_percent_net_liq"
+    raise ValueError(f"Unsupported risk-percent position sizing mode: {mode}")
+
+
+def _round_contracts(unrounded: float, rounding: str, config_name: str) -> int:
+    if rounding == "floor":
+        return math.floor(unrounded)
+    if rounding == "ceil":
+        return math.ceil(unrounded)
+    if rounding == "nearest":
+        return math.floor(unrounded + 0.5)
+    raise ValueError(f"{config_name}.rounding must be one of: floor, nearest, ceil.")

@@ -1459,8 +1459,7 @@ Configure Monte Carlo:
 
 ```yaml
 monte_carlo:
-  trade_source: strategy
-  trade_log:
+  trade_source: core
   runs: 1000
   seed: 11
   parallel:
@@ -1471,21 +1470,24 @@ monte_carlo:
   skip_trade_probability: 0.05
   skip_winning_trade_probability: 0.05
   adverse_slippage_per_trade: 0.0
+  position_sizing:
+    mode: reference
   cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
 ```
 
-Monte Carlo chooses its trade input in this order:
+Monte Carlo requires an explicit existing report trade log. It never reruns the
+strategy and does not load raw market data.
 
 ```text
-1. If trade_source is wfa_oos, read wfa/wfa_oos_trade_log.csv.
-2. Else if trade_log has a path, read that CSV.
-3. Else rerun the variant strategy and use the generated trade log.
+trade_source: core    -> read core/trade_log.csv
+trade_source: wfa_oos -> read wfa/wfa_oos_trade_log.csv
 ```
 
-When Monte Carlo reruns the variant strategy, it uses
-`monte_carlo.data_subset`. If that is absent, it falls back to
-`core.data_subset`, then the top-level data subset. This default path is not
-WFA OOS; it uses the fixed strategy parameters in the variant config.
+For `trade_source: core`, run `propstack.run_core` first. For
+`trade_source: wfa_oos`, run `propstack.run_wfa` first. If the selected trade
+log is missing, Monte Carlo fails instead of creating a new source implicitly.
 
 To run Monte Carlo against stitched walk-forward out-of-sample trades, run WFA
 first, then set:
@@ -1497,6 +1499,18 @@ monte_carlo:
 
 This reads `wfa/wfa_oos_trade_log.csv` for the same campaign/symbol/dataset/variant.
 
+Optional explicit path overrides are available for report artifacts:
+
+```yaml
+monte_carlo:
+  trade_source: core
+  core_trade_log: data/reports/campaigns/.../core/trade_log.csv
+
+monte_carlo:
+  trade_source: wfa_oos
+  wfa_oos_trade_log: data/reports/campaigns/.../wfa/wfa_oos_trade_log.csv
+```
+
 Monte Carlo mechanics:
 
 ```text
@@ -1505,8 +1519,10 @@ Monte Carlo mechanics:
 3. Trades can be removed using skip_trade_probability.
 4. Winning trades can also be removed using skip_winning_trade_probability.
 5. If cluster_losses is true, losing trades are moved to the front of the path.
-6. adverse_slippage_per_trade is subtracted from every retained trade's net_pnl.
-7. The stressed path is evaluated against prop_rules.
+6. Simulated contracts are chosen from monte_carlo.position_sizing.
+7. If simulated contracts exceed prop_rules.max_contracts, contracts are capped at that max.
+8. adverse_slippage_per_trade is subtracted from each retained trade's simulated PnL.
+9. The stressed path is evaluated against prop_rules.
 ```
 
 The prop-rule simulation starts at `prop_rules.starting_balance`, walks the
@@ -1522,6 +1538,60 @@ After the path is evaluated, daily PnL is grouped by `session_date` to test
 concentration. These fields are still reported for risk review, but they do
 not gate `payout_eligible` in the Monte Carlo engine.
 
+Monte Carlo position sizing:
+
+```yaml
+monte_carlo:
+  position_sizing:
+    mode: reference
+```
+
+`mode: reference` uses the selected report trade log's sizing behavior.
+Fixed-contract source trades keep their source quantity. Risk-percent source
+trades are recomputed from the source trade's risk distance and the reference
+`core.position_sizing` risk settings using the current MC path balance before
+each trade. This preserves the core engine's legacy behavior where
+`risk_percent_initial_balance` is accepted as a net-liq sizing alias.
+
+You can override the reference test's position sizing for Monte Carlo only:
+
+```yaml
+monte_carlo:
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 2
+
+monte_carlo:
+  position_sizing:
+    mode: risk_percent_net_liq
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
+
+monte_carlo:
+  position_sizing:
+    mode: risk_percent_initial_balance
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
+```
+
+`fixed_contracts` forces every retained MC trade to the configured contract
+count. `risk_percent_net_liq` sizes every retained MC trade from the current MC
+path balance before that trade. `risk_percent_initial_balance` sizes every
+retained MC trade from `prop_rules.starting_balance`, so trade order and prior
+PnL do not change the risk base. Percent sizing uses `risk_points` from the
+source trade log, or `dollar_risk_per_contract` if `risk_points` is missing.
+The simulated trade PnL is scaled from the source trade's per-contract PnL,
+then `adverse_slippage_per_trade` is subtracted. This is why
+`source_contracts` can differ from `sim_contracts`, and why `source_net_pnl`
+can differ from `sim_net_pnl`.
+
+If the simulated size is above `prop_rules.max_contracts`, Monte Carlo caps
+`sim_contracts` at `max_contracts` and recomputes `sim_net_pnl` from the capped
+quantity. This is logged as `max_contracts_capped` in
+`monte_carlo_path_events.csv`; it is not counted as an account breach.
+
 Important implementation details:
 
 ```text
@@ -1530,18 +1600,75 @@ Important implementation details:
 - Sampling is permutation/subset based, not bootstrap-with-replacement.
 - The simulation uses trade-log rows, not new bar-level market paths.
 - path_months is currently configured but not used by the Monte Carlo engine.
-- Daily-loss checks use the sampled trades' original session_date values.
+- Daily-loss checks use simulated PnL grouped by the sampled trades' original session_date values.
+```
+
+Audit reports are optional because they can get large. Enable them when you
+want to inspect exactly how a run was sampled and evaluated:
+
+```yaml
+monte_carlo:
+  retain_path_trades: true
+  retain_path_events: true
+```
+
+`monte_carlo_path_trades.csv` records every shuffled source trade for every
+run, including skipped trades:
+
+```text
+run_id
+sample_index
+path_index
+source_trade_id
+source_session_date
+source_contracts
+sim_contracts
+source_net_pnl
+sim_net_pnl
+position_sizing_mode
+position_sizing_net_liq
+target_risk_amount
+dollar_risk_per_contract
+unrounded_contracts
+planned_dollar_risk
+was_skipped
+skip_reason
+was_loss_clustered
+was_applied
+```
+
+`monte_carlo_path_events.csv` records the account-state event trail for
+retained path trades:
+
+```text
+run_id
+path_index
+source_trade_id
+source_session_date
+source_contracts
+sim_contracts
+source_net_pnl
+sim_net_pnl
+position_sizing_mode
+position_sizing_net_liq
+target_risk_amount
+dollar_risk_per_contract
+unrounded_contracts
+planned_dollar_risk
+balance
+account_high
+trailing_floor
+max_drawdown
+drawdown_limit_balance
+payout_target_balance
+profit_target_balance
+event
+breach_reason
+daily_pnl
 ```
 
 `monte_carlo.parallel.scope: runs` runs independent path simulations across
 worker processes.
-
-You can also point it at an existing trade log:
-
-```yaml
-monte_carlo:
-  trade_log: data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/core/trade_log.csv
-```
 
 Run:
 
@@ -1554,17 +1681,78 @@ Outputs:
 ```text
 monte_carlo/monte_carlo_results.csv
 monte_carlo/monte_carlo_summary.json
+monte_carlo/monte_carlo_path_trades.csv   # when retain_path_trades is true
+monte_carlo/monte_carlo_path_events.csv   # when retain_path_events is true
 ```
 
 Review:
 
 ```text
+number_of_runs
+median_ending_balance
+p5_ending_balance
+p95_drawdown
 probability_account_breach
 probability_payout_eligible
 probability_profit_before_drawdown
 probability_net_profit_gt_0
+parallel
+meets_prop_pass_chance_benchmark
+trade_source
+path_trades_report
+path_events_report
+```
+
+Monte Carlo summary metrics:
+
+```text
+number_of_runs
+  Number of independent shuffled/stressed paths evaluated.
+
+median_ending_balance
+  Median final account balance across all runs.
+
 p5_ending_balance
+  5th percentile final account balance. About 5% of runs ended at or below
+  this balance.
+
 p95_drawdown
+  95th percentile max drawdown. About 95% of runs had max drawdown at or below
+  this value, and about 5% were worse.
+
+probability_account_breach
+  Fraction of runs that eventually breached a prop rule, such as trailing
+  drawdown or daily loss limit.
+
+probability_payout_eligible
+  Fraction of runs that reached starting_balance + payout_threshold before
+  reaching the drawdown_limit_pct balance. This is a first-touch metric; a run
+  can be payout eligible and still breach later.
+
+probability_profit_before_drawdown
+  Fraction of runs that reached starting_balance * (1 + profit_target_pct)
+  before reaching starting_balance * (1 - drawdown_limit_pct). This is the
+  main prop-pass benchmark metric.
+
+probability_net_profit_gt_0
+  Fraction of runs whose final simulated net PnL was greater than zero.
+
+parallel
+  Execution metadata showing whether runs were distributed across workers.
+
+meets_prop_pass_chance_benchmark
+  True when probability_profit_before_drawdown is greater than or equal to
+  benchmarks.min_monte_carlo_prop_pass_chance.
+
+trade_source
+  Existing report trade log used as the Monte Carlo input, such as core/trade_log.csv
+  or wfa/wfa_oos_trade_log.csv.
+
+path_trades_report
+  Path to monte_carlo_path_trades.csv when retain_path_trades is true.
+
+path_events_report
+  Path to monte_carlo_path_events.csv when retain_path_events is true.
 ```
 
 Target:

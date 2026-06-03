@@ -26,9 +26,9 @@ PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG"
 PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$VARIANT_CONFIG"
 ```
 
-To run Monte Carlo on stitched WFA out-of-sample trades, run WFA first and set
-`monte_carlo.trade_source: wfa_oos` in the variant config before running
-`propstack.run_monte_carlo`.
+Monte Carlo reads an existing report trade log. Use `monte_carlo.trade_source:
+core` after `propstack.run_core`, or `monte_carlo.trade_source: wfa_oos` after
+`propstack.run_wfa`.
 
 Arguments for all campaign tests:
 

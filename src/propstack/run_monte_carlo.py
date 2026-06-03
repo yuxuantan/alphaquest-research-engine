@@ -4,17 +4,15 @@ import argparse
 from pathlib import Path
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.data.pipeline import prepare_data
-from propstack.data.source import data_source_hash
-from propstack.data.subset import subset_from_config
 from propstack.prop.rules import PropRules
-from propstack.research.monte_carlo import run_monte_carlo
-from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, validation_dir, variant_root, write_json
+from propstack.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
+from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, variant_root, write_json
 from propstack.utils.hashing import file_sha256
 from propstack.utils.reports import market_timezone, write_report_csv
 
+CORE_TRADE_LOG = "trade_log.csv"
 WFA_OOS_TRADE_LOG = "wfa_oos_trade_log.csv"
+CORE_SOURCE_ALIASES = {"core", "core_trade_log", "core-trade-log", "core_trades"}
 WFA_OOS_SOURCE_ALIASES = {"wfa_oos", "wfa-oos", "stitched_wfa_oos", "wfa_stitched_oos"}
 
 
@@ -24,17 +22,33 @@ def main() -> None:
     parser.add_argument(
         "--skip-validation",
         action="store_true",
-        help="Skip writing cleaned/features validation CSVs before the run.",
+        help="Accepted for command compatibility. Monte Carlo reads an existing report trade log.",
     )
     args = parser.parse_args()
     campaign = load_yaml(args.config)
     mc_cfg = {**campaign.get("benchmarks", {}), **campaign["monte_carlo"]}
+    mc_cfg["_core"] = campaign.get("core", {})
     out = create_run_dir("monte_carlo", args.config, campaign)
     trades, input_hash, trade_source = load_monte_carlo_trade_source(campaign, mc_cfg, out, args.skip_validation)
     rules = PropRules.from_dict(campaign.get("prop_rules", {}))
-    results, summary = run_monte_carlo(trades, mc_cfg, rules)
+    retain_path_trades = bool(mc_cfg.get("retain_path_trades", False))
+    retain_path_events = bool(mc_cfg.get("retain_path_events", False))
+    if retain_path_trades or retain_path_events:
+        results, summary, path_trades, path_events = run_monte_carlo_with_audit(trades, mc_cfg, rules)
+    else:
+        results, summary = run_monte_carlo(trades, mc_cfg, rules)
+        path_trades = pd.DataFrame()
+        path_events = pd.DataFrame()
     summary["trade_source"] = trade_source
     write_report_csv(results, out / "monte_carlo_results.csv", market_timezone(campaign), index=False)
+    if retain_path_trades:
+        path_trades_path = out / "monte_carlo_path_trades.csv"
+        write_report_csv(path_trades, path_trades_path, market_timezone(campaign), index=False)
+        summary["path_trades_report"] = str(path_trades_path)
+    if retain_path_events:
+        path_events_path = out / "monte_carlo_path_events.csv"
+        write_report_csv(path_events, path_events_path, market_timezone(campaign), index=False)
+        summary["path_events_report"] = str(path_events_path)
     write_json(out / "monte_carlo_summary.json", summary)
     record_campaign_result(out, campaign, args.config, input_hash, "monte_carlo", summary)
     print(out)
@@ -47,6 +61,17 @@ def load_monte_carlo_trade_source(
     skip_validation: bool = False,
 ) -> tuple[pd.DataFrame, str, dict]:
     source = _monte_carlo_trade_source(mc_cfg)
+    if source == "core":
+        path = _core_trade_log_path(campaign, mc_cfg)
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Core trade log not found at {path}. "
+                f"Run core first; it writes core/{CORE_TRADE_LOG} for this variant."
+            )
+        trades = pd.read_csv(path)
+        _validate_trade_log(trades, source)
+        return trades, file_sha256(path), {"type": source, "path": str(path)}
+
     if source == "wfa_oos":
         path = _wfa_oos_trade_log_path(campaign, mc_cfg)
         if not path.exists():
@@ -58,61 +83,39 @@ def load_monte_carlo_trade_source(
         _validate_trade_log(trades, source)
         return trades, file_sha256(path), {"type": source, "path": str(path)}
 
-    if source == "trade_log":
-        path = Path(mc_cfg["trade_log"])
-        trades = pd.read_csv(path)
-        _validate_trade_log(trades, source)
-        return trades, file_sha256(path), {"type": source, "path": str(path)}
-
-    subset = subset_from_config(campaign, "monte_carlo", fallback_sections=("core",))
-    output_dir = None if skip_validation else validation_dir(out)
-    data, _ = prepare_data(campaign["data"], output_dir, subset)
-    trades = BacktestEngine(campaign).run(data)["trades"]
-    source_path = out / "source_trade_log.csv"
-    write_report_csv(trades, source_path, market_timezone(campaign), index=False)
-    _validate_trade_log(trades, source)
-    return (
-        trades,
-        data_source_hash(campaign["data"], subset),
-        {"type": source, "path": str(source_path), "data_subset": subset or {}},
-    )
+    raise ValueError("monte_carlo.trade_source must be one of: core, wfa_oos.")
 
 
 def _monte_carlo_trade_source(mc_cfg: dict) -> str:
     source = mc_cfg.get("trade_source") or mc_cfg.get("source")
-    trade_log = mc_cfg.get("trade_log")
-    if mc_cfg.get("wfa_oos_trade_log"):
-        return "wfa_oos"
-    if _is_wfa_oos_source_alias(trade_log):
-        return "wfa_oos"
+    if mc_cfg.get("trade_log"):
+        raise ValueError(
+            "monte_carlo.trade_log is no longer supported. "
+            "Set monte_carlo.trade_source to 'core' or 'wfa_oos' and run that report first."
+        )
+    if not source:
+        raise ValueError("monte_carlo.trade_source is required and must be one of: core, wfa_oos.")
 
-    if source:
-        normalized = str(source).strip().lower()
-        if normalized in WFA_OOS_SOURCE_ALIASES:
-            return "wfa_oos"
-        if normalized in {"strategy", "backtest", "variant"}:
-            return "strategy"
-        if normalized in {"trade_log", "file", "csv"}:
-            if not trade_log:
-                raise ValueError("monte_carlo.trade_source is 'trade_log' but monte_carlo.trade_log is blank.")
-            return "trade_log"
-        raise ValueError("monte_carlo.trade_source must be one of: strategy, trade_log, wfa_oos.")
+    normalized = str(source).strip().lower()
+    if normalized in CORE_SOURCE_ALIASES:
+        return "core"
+    if normalized in WFA_OOS_SOURCE_ALIASES:
+        return "wfa_oos"
+    raise ValueError("monte_carlo.trade_source must be one of: core, wfa_oos.")
 
-    return "trade_log" if trade_log else "strategy"
+
+def _core_trade_log_path(campaign: dict, mc_cfg: dict) -> Path:
+    explicit = mc_cfg.get("core_trade_log")
+    if explicit:
+        return Path(explicit)
+    return variant_root(campaign) / "core" / CORE_TRADE_LOG
 
 
 def _wfa_oos_trade_log_path(campaign: dict, mc_cfg: dict) -> Path:
     explicit = mc_cfg.get("wfa_oos_trade_log")
-    trade_log = mc_cfg.get("trade_log")
-    if not explicit and trade_log and not _is_wfa_oos_source_alias(trade_log):
-        explicit = trade_log
     if explicit:
         return Path(explicit)
     return variant_root(campaign) / "wfa" / WFA_OOS_TRADE_LOG
-
-
-def _is_wfa_oos_source_alias(value) -> bool:
-    return isinstance(value, str) and value.strip().lower() in WFA_OOS_SOURCE_ALIASES
 
 
 def _validate_trade_log(trades: pd.DataFrame, source: str) -> None:
