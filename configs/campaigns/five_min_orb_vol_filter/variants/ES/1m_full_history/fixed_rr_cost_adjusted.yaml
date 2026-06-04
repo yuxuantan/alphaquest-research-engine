@@ -36,7 +36,7 @@ strategy:
       confirmation_minutes: 1
       bar_interval_minutes: 1
       max_opening_range_pct_of_open: 0.0055
-      last_entry_time: "12:00:00"
+      last_entry_time: "10:30:00"
       max_trades_per_day: 1
       skip_tuesday_longs: true
       allow_long: true
@@ -44,7 +44,7 @@ strategy:
   tp:
     module: cost_adjusted_fixed_r
     params:
-      target_r_multiple: 1.0
+      target_r_multiple: 2.0
       tick_size: 0.25
       tick_value: 12.50
       commission_per_contract: 2.50
@@ -54,12 +54,14 @@ strategy:
     params:
       max_stop_points: 1000 # no max
       stop_offset_ticks: 0
-  flatten_time: "15:45:00"
+  flatten_time: "11:00:00"
 
 core:
   data_subset:
-    start_date: "2015-01-01"
-    end_date: "2016-12-31"
+    start_date: "2021-01-01"
+    end_date: "2022-12-31"
+    # start_date: "2015-01-01"
+    # end_date: "2016-12-31"
   initial_balance: 150000
   tick_size: 0.25
   tick_value: 12.50
@@ -107,10 +109,10 @@ core_grid:
     workers: 6
     scope: grid
   parameters:
-    entry.params.max_opening_range_pct_of_open: [0.003, 0.0035, 0.004, 0.0045, 0.005]
+    entry.params.max_opening_range_pct_of_open: [0.003, 0.005, 0.007]
     entry.params.confirmation_minutes: [1]
-    tp.params.target_r_multiple: [1.0, 1.25, 1.5, 1.75, 2.0]
-    sl.params.max_stop_points: [10, 11, 12, 13, 14]
+    tp.params.target_r_multiple: [0.5, 1.0, 1.5, 2.0, 2.5]
+    sl.params.max_stop_points: [14, 100]
     sl.params.stop_offset_ticks: [0]
     entry.params.max_trades_per_day: [1]
     entry.params.skip_tuesday_longs: [false]
@@ -141,25 +143,22 @@ monkey:
 
 wfa:
   data_subset:
-    start_date: "2011-01-01"
-    end_date: "2014-01-01"
+    start_date: "2018-01-01"
+    end_date: "2026-01-01"
   mode: unanchored
-  # train_months: 48
   train_months: 24
-  test_months: 12
-  step_months: 12
+  test_months: 6
+  step_months: 6
   objective: MAR
   parallel:
     enabled: true
     workers: 6
     scope: grid
   parameters:
-    # entry.params.max_opening_range_pct_of_open: [0.0035, 0.0055, 0.0075]
-    entry.params.max_opening_range_pct_of_open: [0.0055]
+    entry.params.max_opening_range_pct_of_open: [0.003, 0.005, 0.007]
     entry.params.confirmation_minutes: [1]
-    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
-    # sl.params.max_stop_points: [9, 12, 15]
-    sl.params.max_stop_points: [12]
+    tp.params.target_r_multiple: [0.5, 1.0, 1.5, 2.0, 2.5]
+    sl.params.max_stop_points: [14, 100]
     sl.params.stop_offset_ticks: [0]
     entry.params.max_trades_per_day: [1]
     entry.params.skip_tuesday_longs: [false]

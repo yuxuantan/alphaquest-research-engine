@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
+from propstack.strategy_modules.entry.opening_range_inverse_breakout import OpeningRangeInverseBreakoutEntry
 from propstack.strategy_modules.entry.base import Signal
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 
@@ -9,6 +10,7 @@ from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepRe
 ENTRY_MODULES = {
     IntradayCapitulationMREntry.name: IntradayCapitulationMREntry,
     OpeningRangeBreakoutEntry.name: OpeningRangeBreakoutEntry,
+    OpeningRangeInverseBreakoutEntry.name: OpeningRangeInverseBreakoutEntry,
     PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
 }
 
@@ -26,6 +28,7 @@ __all__ = [
     "Signal",
     "IntradayCapitulationMREntry",
     "OpeningRangeBreakoutEntry",
+    "OpeningRangeInverseBreakoutEntry",
     "PdhPdlSweepReclaimEntry",
     "build_entry_module",
 ]

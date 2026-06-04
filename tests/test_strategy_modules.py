@@ -4,13 +4,16 @@ import pandas as pd
 
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
+from propstack.strategy_modules.entry.opening_range_inverse_breakout import OpeningRangeInverseBreakoutEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.sl.opening_range_edge import OpeningRangeEdgeStop
+from propstack.strategy_modules.sl.opening_range_width import OpeningRangeWidthStop
 from propstack.strategy_modules.sl.percent_from_entry import PercentFromEntryStop
 from propstack.strategy_modules.sl.sweep_extreme import SweepExtremeStop
 from propstack.strategy_modules.tp.cost_adjusted_fixed_r import CostAdjustedFixedRTarget
 from propstack.strategy_modules.tp.fixed_r import FixedRTarget
 from propstack.strategy_modules.tp.opening_range_extension import OpeningRangeExtensionTarget
+from propstack.strategy_modules.tp.opening_range_opposite_edge import OpeningRangeOppositeEdgeTarget
 from propstack.strategy_modules.tp.percent_from_entry import PercentFromEntryTarget
 
 
@@ -70,6 +73,29 @@ def test_opening_range_edge_stop_skips_when_natural_risk_exceeds_max():
     assert stop.price(signal, direction="short", tick_size=0.25, entry_price=95.0) is None
     assert stop.price(signal, direction="long", tick_size=0.25, entry_price=99.0) == 90.0
     assert stop.price(signal, direction="short", tick_size=0.25, entry_price=101.0) == 111.0
+
+
+def test_opening_range_width_stop_uses_entry_price_and_range_width():
+    stop = OpeningRangeWidthStop({"max_stop_points": 10, "stop_offset_ticks": 0})
+    signal = SimpleNamespace(opening_range_width=1.5, metadata={"confirmation_close": 99.0})
+
+    assert stop.price(signal, direction="long", tick_size=0.25, entry_price=98.75) == 97.25
+    assert stop.price(signal, direction="short", tick_size=0.25, entry_price=101.25) == 102.75
+
+
+def test_opening_range_width_stop_skips_when_range_width_exceeds_max():
+    stop = OpeningRangeWidthStop({"max_stop_points": 1.0, "stop_offset_ticks": 0})
+    signal = SimpleNamespace(opening_range_width=1.5, metadata={"confirmation_close": 99.0})
+
+    assert stop.price(signal, direction="long", tick_size=0.25, entry_price=98.75) is None
+
+
+def test_opening_range_opposite_edge_target_module_long_and_short():
+    target = OpeningRangeOppositeEdgeTarget({})
+    signal = SimpleNamespace(opening_range_high=101.0, opening_range_low=99.0)
+
+    assert target.price(98.75, 97.25, "long", signal=signal) == 101.0
+    assert target.price(101.25, 102.75, "short", signal=signal) == 99.0
 
 
 def _cap_bar(timestamp, open_price, high, low, close, volume, vwap, session_date=None):
@@ -338,6 +364,60 @@ def test_opening_range_breakout_entry_skips_wide_opening_range():
         signal = entry.on_bar_close(bar)
 
     assert signal is None
+
+
+def test_opening_range_inverse_breakout_entry_goes_long_on_close_below_low():
+    entry = OpeningRangeInverseBreakoutEntry(
+        {
+            "rth_start": "09:30:00",
+            "opening_range_minutes": 5,
+            "confirmation_minutes": 1,
+            "bar_interval_minutes": 1,
+            "max_opening_range_pct_of_open": 0.0055,
+            "allow_long": True,
+            "allow_short": True,
+            "skip_tuesday_longs": False,
+        }
+    )
+    bars = _orb_long_breakout_bars()[:5]
+    bars.append(_orb_bar("2024-01-03 09:35", 100.0, 100.05, 99.75, 99.80))
+
+    for bar in bars[:-1]:
+        assert entry.on_bar_close(bar) is None
+    signal = entry.on_bar_close(bars[-1])
+
+    assert signal.direction == "long"
+    assert signal.level_type == "opening_range_low_inverse"
+    assert signal.swept_level == 99.90
+    assert signal.opening_range_high == 100.40
+    assert round(signal.opening_range_width, 2) == 0.50
+    assert signal.metadata["confirmation_close"] == 99.80
+    assert signal.report_fields["breakout_timestamp"] == pd.Timestamp("2024-01-03 09:36", tz="America/New_York")
+
+
+def test_opening_range_inverse_breakout_entry_goes_short_on_close_above_high():
+    entry = OpeningRangeInverseBreakoutEntry(
+        {
+            "rth_start": "09:30:00",
+            "opening_range_minutes": 5,
+            "confirmation_minutes": 1,
+            "bar_interval_minutes": 1,
+            "max_opening_range_pct_of_open": 0.0055,
+            "allow_long": True,
+            "allow_short": True,
+        }
+    )
+    bars = _orb_long_breakout_bars()[:5]
+    bars.append(_orb_bar("2024-01-03 09:35", 100.40, 100.55, 100.30, 100.50))
+
+    for bar in bars[:-1]:
+        assert entry.on_bar_close(bar) is None
+    signal = entry.on_bar_close(bars[-1])
+
+    assert signal.direction == "short"
+    assert signal.level_type == "opening_range_high_inverse"
+    assert signal.swept_level == 100.40
+    assert signal.opening_range_low == 99.90
 
 
 def test_pdh_pdl_entry_module_emits_long_reclaim_signal():

@@ -6,6 +6,10 @@ from propstack.strategy_modules.tp.opening_range_extension import (
     OpeningRangeExtensionTarget,
     opening_range_extension_target,
 )
+from propstack.strategy_modules.tp.opening_range_opposite_edge import (
+    OpeningRangeOppositeEdgeTarget,
+    opening_range_opposite_edge_target,
+)
 from propstack.strategy_modules.tp.percent_from_entry import PercentFromEntryTarget, percent_from_entry_target
 
 
@@ -13,6 +17,7 @@ TP_MODULES = {
     CostAdjustedFixedRTarget.name: CostAdjustedFixedRTarget,
     FixedRTarget.name: FixedRTarget,
     OpeningRangeExtensionTarget.name: OpeningRangeExtensionTarget,
+    OpeningRangeOppositeEdgeTarget.name: OpeningRangeOppositeEdgeTarget,
     PercentFromEntryTarget.name: PercentFromEntryTarget,
 }
 
@@ -30,10 +35,12 @@ __all__ = [
     "CostAdjustedFixedRTarget",
     "FixedRTarget",
     "OpeningRangeExtensionTarget",
+    "OpeningRangeOppositeEdgeTarget",
     "PercentFromEntryTarget",
     "cost_adjusted_fixed_r_target",
     "fixed_r_target",
     "opening_range_extension_target",
+    "opening_range_opposite_edge_target",
     "percent_from_entry_target",
     "build_tp_module",
 ]

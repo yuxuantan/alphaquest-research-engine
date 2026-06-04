@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from propstack.strategy_modules.sl.opening_range_edge import OpeningRangeEdgeStop, opening_range_edge_stop
+from propstack.strategy_modules.sl.opening_range_width import OpeningRangeWidthStop, opening_range_width_stop
 from propstack.strategy_modules.sl.percent_from_entry import PercentFromEntryStop, percent_from_entry_stop
 from propstack.strategy_modules.sl.sweep_extreme import SweepExtremeStop, sweep_stop
 
 
 SL_MODULES = {
     OpeningRangeEdgeStop.name: OpeningRangeEdgeStop,
+    OpeningRangeWidthStop.name: OpeningRangeWidthStop,
     PercentFromEntryStop.name: PercentFromEntryStop,
     SweepExtremeStop.name: SweepExtremeStop,
 }
@@ -23,8 +25,10 @@ def build_sl_module(config: dict):
 
 __all__ = [
     "OpeningRangeEdgeStop",
+    "OpeningRangeWidthStop",
     "PercentFromEntryStop",
     "opening_range_edge_stop",
+    "opening_range_width_stop",
     "percent_from_entry_stop",
     "SweepExtremeStop",
     "sweep_stop",

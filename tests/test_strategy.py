@@ -92,6 +92,29 @@ def test_modular_strategy_composes_cost_adjusted_fixed_r_target():
     assert strat.sl.name == "opening_range_edge"
 
 
+def test_modular_strategy_composes_inverse_opening_range_modules():
+    strat = ModularStrategy(
+        {
+            "strategy_name": "five_min_orb_vol_filter_inverse",
+            "entry": {
+                "module": "opening_range_inverse_breakout",
+                "params": {
+                    "rth_start": "09:30:00",
+                    "opening_range_minutes": 5,
+                    "confirmation_minutes": 1,
+                    "bar_interval_minutes": 1,
+                },
+            },
+            "tp": {"module": "opening_range_opposite_edge", "params": {}},
+            "sl": {"module": "opening_range_width", "params": {"max_stop_points": 14}},
+        }
+    )
+
+    assert strat.entry.name == "opening_range_inverse_breakout"
+    assert strat.tp.name == "opening_range_opposite_edge"
+    assert strat.sl.name == "opening_range_width"
+
+
 def test_modular_strategy_composes_intraday_capitulation_modules():
     strat = ModularStrategy(
         {
