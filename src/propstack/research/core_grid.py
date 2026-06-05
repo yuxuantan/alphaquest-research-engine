@@ -14,6 +14,7 @@ from propstack.utils.progress import progress_bar
 from propstack.utils.reports import market_timezone, write_report_csv
 
 _WORKER_DATA = None
+_WORKER_DETAIL_DATA = None
 _WORKER_BASE_CONFIG = None
 _WORKER_BENCHMARKS = None
 _WORKER_INCLUDE_REPORTS = False
@@ -32,6 +33,7 @@ def run_core_grid(
     benchmarks: dict,
     report_dir: str | Path | None = None,
     parameter_label: str = "core_grid.parameters",
+    detail_data: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     rows = []
     parameters = grid_config.get("parameters", {})
@@ -42,6 +44,7 @@ def run_core_grid(
     if parallel["enabled"]:
         results = _run_parallel_core_grid(
             data,
+            detail_data,
             base_config,
             benchmarks,
             combos,
@@ -56,7 +59,15 @@ def run_core_grid(
     else:
         progress = progress_bar(len(combos), "core grid")
         for idx, combo in enumerate(combos, start=1):
-            row, trades, daily = _evaluate_core_grid_combo(data, base_config, benchmarks, idx, combo, include_reports=True)
+            row, trades, daily = _evaluate_core_grid_combo(
+                data,
+                base_config,
+                benchmarks,
+                idx,
+                combo,
+                include_reports=True,
+                detail_data=detail_data,
+            )
             rows.append(row)
             _append_iteration_report(report_paths, "trades", trades, idx, combo, report_timezone)
             _append_iteration_report(report_paths, "daily", daily, idx, combo, report_timezone)
@@ -93,6 +104,7 @@ def run_core_grid(
 
 def _run_parallel_core_grid(
     data: pd.DataFrame,
+    detail_data: pd.DataFrame | None,
     base_config: dict,
     benchmarks: dict,
     combos: list[dict],
@@ -104,7 +116,7 @@ def _run_parallel_core_grid(
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=_init_core_grid_worker,
-        initargs=(data, base_config, benchmarks, include_reports),
+        initargs=(data, detail_data, base_config, benchmarks, include_reports),
     ) as executor:
         futures = {
             executor.submit(_run_core_grid_worker, idx, combo): idx
@@ -116,9 +128,16 @@ def _run_parallel_core_grid(
     return results
 
 
-def _init_core_grid_worker(data: pd.DataFrame, base_config: dict, benchmarks: dict, include_reports: bool) -> None:
-    global _WORKER_DATA, _WORKER_BASE_CONFIG, _WORKER_BENCHMARKS, _WORKER_INCLUDE_REPORTS
+def _init_core_grid_worker(
+    data: pd.DataFrame,
+    detail_data: pd.DataFrame | None,
+    base_config: dict,
+    benchmarks: dict,
+    include_reports: bool,
+) -> None:
+    global _WORKER_DATA, _WORKER_DETAIL_DATA, _WORKER_BASE_CONFIG, _WORKER_BENCHMARKS, _WORKER_INCLUDE_REPORTS
     _WORKER_DATA = data
+    _WORKER_DETAIL_DATA = detail_data
     _WORKER_BASE_CONFIG = base_config
     _WORKER_BENCHMARKS = benchmarks
     _WORKER_INCLUDE_REPORTS = include_reports
@@ -134,6 +153,7 @@ def _run_core_grid_worker(idx: int, combo: dict) -> tuple[dict, pd.DataFrame, pd
         idx,
         combo,
         include_reports=_WORKER_INCLUDE_REPORTS,
+        detail_data=_WORKER_DETAIL_DATA,
     )
 
 
@@ -144,9 +164,10 @@ def _evaluate_core_grid_combo(
     idx: int,
     combo: dict,
     include_reports: bool = False,
+    detail_data: pd.DataFrame | None = None,
 ) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
     cfg = apply_dotted_params(base_config, combo)
-    result = BacktestEngine(cfg).run(data)
+    result = BacktestEngine(cfg).run(data, detail_data=detail_data)
     metrics = result["metrics"]
     passed, reason = benchmark(metrics, benchmarks)
     row = {

@@ -509,6 +509,115 @@ def test_stop_first_same_bar_rule():
     assert price == 95
 
 
+def test_higher_timeframe_exit_conflict_uses_one_minute_detail_order():
+    session_date = pd.Timestamp("2024-01-03").date()
+    bars = pd.DataFrame(
+        [
+            {
+                "timestamp": pd.Timestamp("2024-01-03 09:30", tz="America/New_York"),
+                "session_date": session_date,
+                "is_rth": True,
+                "open": 100.0,
+                "high": 100.0,
+                "low": 99.0,
+                "close": 99.5,
+            },
+            {
+                "timestamp": pd.Timestamp("2024-01-03 09:35", tz="America/New_York"),
+                "session_date": session_date,
+                "is_rth": True,
+                "open": 99.5,
+                "high": 100.8,
+                "low": 99.4,
+                "close": 100.6,
+            },
+            {
+                "timestamp": pd.Timestamp("2024-01-03 09:40", tz="America/New_York"),
+                "session_date": session_date,
+                "is_rth": True,
+                "open": 100.5,
+                "high": 102.25,
+                "low": 98.75,
+                "close": 101.0,
+            },
+        ]
+    )
+    detail_rows = []
+    for minute in range(40, 45):
+        detail_rows.append(
+            {
+                "timestamp": pd.Timestamp(f"2024-01-03 09:{minute}", tz="America/New_York"),
+                "session_date": session_date,
+                "is_rth": True,
+                "open": 100.5,
+                "high": 101.0,
+                "low": 100.0,
+                "close": 100.75,
+            }
+        )
+    detail_rows[1].update({"high": 102.25, "low": 100.75, "close": 102.0})
+    detail_rows[2].update({"high": 101.5, "low": 98.75, "close": 99.0})
+
+    cfg = {
+        "timeframe": "5m",
+        "strategy_name": "five_min_orb_vol_filter",
+        "strategy": {
+            "entry": {
+                "module": "opening_range_breakout",
+                "params": {
+                    "rth_start": "09:30:00",
+                    "opening_range_minutes": 5,
+                    "confirmation_minutes": 5,
+                    "max_opening_range_pct_of_open": 0.05,
+                    "allow_long": True,
+                    "allow_short": True,
+                },
+            },
+            "tp": {"module": "opening_range_extension", "params": {"extension_fraction": 2.0}},
+            "sl": {"module": "opening_range_edge", "params": {"max_stop_points": 14}},
+            "flatten_time": "15:45:00",
+        },
+        "core": {
+            "tick_size": 0.25,
+            "tick_value": 12.50,
+            "commission_per_contract": 0,
+            "slippage_ticks": 0,
+            "contracts": 1,
+        },
+    }
+
+    trades = BacktestEngine(cfg).run(bars, detail_data=pd.DataFrame(detail_rows))["trades"]
+
+    assert len(trades) == 1
+    first = trades.iloc[0]
+    assert first["exit_reason"] == "target"
+    assert first["exit_timestamp"] == pd.Timestamp("2024-01-03 09:41", tz="America/New_York")
+
+
+def test_variant_timeframe_must_match_strategy_bar_interval():
+    cfg = {
+        "timeframe": "5m",
+        "strategy": {
+            "entry": {
+                "module": "opening_range_breakout",
+                "params": {
+                    "bar_interval_minutes": 1,
+                },
+            },
+            "tp": {"module": "opening_range_extension", "params": {}},
+            "sl": {"module": "opening_range_edge", "params": {}},
+        },
+        "core": {},
+    }
+
+    try:
+        BacktestEngine(cfg)
+    except ValueError as exc:
+        assert "bar_interval_minutes" in str(exc)
+    else:
+        raise AssertionError("Expected strategy timeframe mismatch to raise ValueError")
+
+
 def test_daily_loss_lockout_limits_trades():
     cfg = {**BASE_CFG, "core": {**BASE_CFG["core"], "daily_loss_limit": 1}}
     result = BacktestEngine(cfg).run(_features())

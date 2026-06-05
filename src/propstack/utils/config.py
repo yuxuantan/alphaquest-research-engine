@@ -9,6 +9,7 @@ import math
 import pandas as pd
 import yaml
 
+from propstack.data.timeframe import canonical_timeframe, parse_timeframe_minutes
 from propstack.utils.hashing import file_sha256, object_sha256
 
 
@@ -56,13 +57,14 @@ def create_run_dir(
         "strategy_name": _strategy_name(config),
         "symbol": _symbol(config),
         "dataset_id": _dataset_id(config),
+        "timeframe": config_timeframe(config),
         "data_source": _data_source(config),
         "raw_csv": _raw_csv(config),
         "raw_dir": _raw_dir(config),
         "config_source": str(config_path) if config_path else None,
         "config_hash": file_sha256(config_path) if config_path else object_sha256(config or {}),
         "created_at": datetime.now().isoformat(timespec="seconds"),
-        "layout": "campaign_symbol_dataset_variant",
+        "layout": "campaign_symbol_dataset_timeframe_variant",
     }
     write_json(root / "run_manifest.json", manifest)
     return out
@@ -76,6 +78,7 @@ def variant_root(config: dict | None) -> Path:
         / _campaign_id(config)
         / _symbol(config)
         / _dataset_id(config)
+        / config_timeframe(config)
         / _variant_id(config)
     )
 
@@ -109,6 +112,7 @@ def _update_manifest(root: Path, config: dict, config_path: str | Path, input_ha
         "strategy_name": _strategy_name(config),
         "symbol": _symbol(config),
         "dataset_id": _dataset_id(config),
+        "timeframe": config_timeframe(config),
         "data_source": _data_source(config),
         "raw_csv": _raw_csv(config),
         "raw_dir": _raw_dir(config),
@@ -116,7 +120,7 @@ def _update_manifest(root: Path, config: dict, config_path: str | Path, input_ha
         "config_hash": file_sha256(config_path),
         "input_data_hash": input_hash,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
-        "layout": "campaign_symbol_dataset_variant",
+        "layout": "campaign_symbol_dataset_timeframe_variant",
     }
     write_json(root / "run_manifest.json", manifest)
 
@@ -141,6 +145,7 @@ def _update_variant_summary(
             "strategy_name": _strategy_name(config),
             "symbol": _symbol(config),
             "dataset_id": _dataset_id(config),
+            "timeframe": config_timeframe(config),
             "data_source": _data_source(config),
             "raw_csv": _raw_csv(config),
             "raw_dir": _raw_dir(config),
@@ -174,6 +179,7 @@ def _update_runs_index(root: Path) -> None:
         "strategy_name": summary.get("strategy_name"),
         "symbol": summary.get("symbol"),
         "dataset_id": summary.get("dataset_id"),
+        "timeframe": summary.get("timeframe"),
         "data_source": summary.get("data_source"),
         "raw_csv": summary.get("raw_csv"),
         "raw_dir": summary.get("raw_dir"),
@@ -201,7 +207,15 @@ def _update_runs_index(root: Path) -> None:
         for legacy_column in ["grid_pass_rate"]:
             if legacy_column in index.columns:
                 index = index.drop(columns=[legacy_column])
-        index = index[index["variant_id"] != row["variant_id"]]
+        if "timeframe" not in index.columns:
+            index["timeframe"] = None
+        index = index[
+            ~(
+                (index["variant_id"] == row["variant_id"])
+                & (index["dataset_id"] == row["dataset_id"])
+                & (index["timeframe"] == row["timeframe"])
+            )
+        ]
         index = pd.concat([index, pd.DataFrame([row])], ignore_index=True)
     else:
         index = pd.DataFrame([row])
@@ -249,6 +263,25 @@ def _dataset_id(config: dict | None) -> str:
     if dataset_id:
         return str(dataset_id)
     raise ValueError("Campaign config must define a non-empty dataset_id.")
+
+
+def config_timeframe(config: dict | None, required: bool = True) -> str | None:
+    if not config:
+        if required:
+            raise ValueError("Campaign variant config must define a non-empty timeframe.")
+        return None
+    data = config.get("data") or {}
+    value = config.get("timeframe") or data.get("timeframe")
+    if value:
+        return canonical_timeframe(value)
+    if required:
+        raise ValueError("Campaign variant config must define a non-empty timeframe.")
+    return None
+
+
+def config_timeframe_minutes(config: dict | None, required: bool = True) -> int | None:
+    value = config_timeframe(config, required=required)
+    return parse_timeframe_minutes(value) if value else None
 
 
 def _raw_csv(config: dict | None) -> str | None:

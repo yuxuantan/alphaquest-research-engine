@@ -36,6 +36,7 @@ def run_monkey(
     monkey_config: dict,
     benchmarks: dict,
     report_dir: str | Path | None = None,
+    detail_data: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Compare one core strategy run against constrained random trades.
 
@@ -48,7 +49,7 @@ def run_monkey(
     constraints = _constraints(monkey_config)
 
     market = data.sort_values("timestamp").reset_index(drop=True)
-    core_result = BacktestEngine(base_config).run(market)
+    core_result = BacktestEngine(base_config).run(market, detail_data=detail_data)
     core_trades = core_result["trades"]
     if core_trades.empty:
         raise ValueError("Core strategy produced no trades; monkey constraints cannot be derived.")
@@ -389,15 +390,24 @@ def _core_profile(data: pd.DataFrame, trades: pd.DataFrame, metrics: dict) -> di
 
 
 def _bars_in_trade(data: pd.DataFrame, trades: pd.DataFrame) -> pd.Series:
-    position_by_timestamp = {timestamp: pos for pos, timestamp in enumerate(data["timestamp"])}
+    timestamps = data["timestamp"].sort_values().reset_index(drop=True)
     bars = []
     for row in trades.itertuples(index=False):
-        entry_pos = position_by_timestamp.get(pd.Timestamp(row.entry_timestamp))
-        exit_pos = position_by_timestamp.get(pd.Timestamp(row.exit_timestamp))
+        entry_pos = _bar_position_for_timestamp(timestamps, pd.Timestamp(row.entry_timestamp))
+        exit_pos = _bar_position_for_timestamp(timestamps, pd.Timestamp(row.exit_timestamp))
         if entry_pos is None or exit_pos is None:
             continue
         bars.append(max(int(exit_pos - entry_pos + 1), 1))
     return pd.Series(bars, dtype=float)
+
+
+def _bar_position_for_timestamp(timestamps: pd.Series, timestamp: pd.Timestamp) -> int | None:
+    if timestamps.empty:
+        return None
+    pos = int(timestamps.searchsorted(timestamp, side="right")) - 1
+    if pos < 0:
+        return None
+    return min(pos, len(timestamps) - 1)
 
 
 def _eligible_entries(data: pd.DataFrame, base_config: dict, constraints: dict) -> pd.DataFrame:

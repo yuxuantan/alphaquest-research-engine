@@ -430,11 +430,12 @@ def test_monte_carlo_loads_variant_wfa_oos_trade_source(tmp_path, monkeypatch):
         "campaign_id": "sample_campaign",
         "variant_id": "baseline",
         "dataset_id": "1m_full_history",
+        "timeframe": "5m",
         "data": {"symbol": "ES", "dataset_id": "1m_full_history"},
     }
     trade_log = (
         tmp_path
-        / "data/reports/campaigns/sample_campaign/ES/1m_full_history/baseline/wfa/wfa_oos_trade_log.csv"
+        / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/wfa/wfa_oos_trade_log.csv"
     )
     trade_log.parent.mkdir(parents=True)
     pd.DataFrame(
@@ -452,7 +453,7 @@ def test_monte_carlo_loads_variant_wfa_oos_trade_source(tmp_path, monkeypatch):
     trades, _, source = load_monte_carlo_trade_source(
         campaign,
         {"trade_source": "wfa_oos"},
-        tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/baseline/monte_carlo",
+        tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/monte_carlo",
         skip_validation=True,
     )
 
@@ -467,11 +468,12 @@ def test_monte_carlo_loads_variant_core_trade_source(tmp_path, monkeypatch):
         "campaign_id": "sample_campaign",
         "variant_id": "baseline",
         "dataset_id": "1m_full_history",
+        "timeframe": "5m",
         "data": {"symbol": "ES", "dataset_id": "1m_full_history"},
     }
     trade_log = (
         tmp_path
-        / "data/reports/campaigns/sample_campaign/ES/1m_full_history/baseline/core/trade_log.csv"
+        / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/core/trade_log.csv"
     )
     trade_log.parent.mkdir(parents=True)
     pd.DataFrame(
@@ -488,7 +490,7 @@ def test_monte_carlo_loads_variant_core_trade_source(tmp_path, monkeypatch):
     trades, _, source = load_monte_carlo_trade_source(
         campaign,
         {"trade_source": "core"},
-        tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/baseline/monte_carlo",
+        tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/monte_carlo",
         skip_validation=True,
     )
 
@@ -503,6 +505,7 @@ def test_monte_carlo_requires_explicit_report_trade_source(tmp_path, monkeypatch
         "campaign_id": "sample_campaign",
         "variant_id": "baseline",
         "dataset_id": "1m_full_history",
+        "timeframe": "5m",
         "data": {"symbol": "ES", "dataset_id": "1m_full_history"},
     }
 
@@ -510,7 +513,7 @@ def test_monte_carlo_requires_explicit_report_trade_source(tmp_path, monkeypatch
         load_monte_carlo_trade_source(
             campaign,
             {},
-            tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/baseline/monte_carlo",
+            tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/monte_carlo",
             skip_validation=True,
         )
 
@@ -521,6 +524,7 @@ def test_monte_carlo_rejects_generic_trade_log_source(tmp_path, monkeypatch):
         "campaign_id": "sample_campaign",
         "variant_id": "baseline",
         "dataset_id": "1m_full_history",
+        "timeframe": "5m",
         "data": {"symbol": "ES", "dataset_id": "1m_full_history"},
     }
 
@@ -528,6 +532,6 @@ def test_monte_carlo_rejects_generic_trade_log_source(tmp_path, monkeypatch):
         load_monte_carlo_trade_source(
             campaign,
             {"trade_log": "some/path.csv"},
-            tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/baseline/monte_carlo",
+            tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/monte_carlo",
             skip_validation=True,
         )

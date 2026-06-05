@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 import pandas as pd
 
+from propstack.backtest.equity_report import write_equity_report
 from propstack.prop.rules import PropRules
 from propstack.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
 from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, variant_root, write_json
@@ -40,14 +41,31 @@ def main() -> None:
         path_trades = pd.DataFrame()
         path_events = pd.DataFrame()
     summary["trade_source"] = trade_source
-    write_report_csv(results, out / "monte_carlo_results.csv", market_timezone(campaign), index=False)
+    report_timezone = market_timezone(campaign)
+    write_report_csv(results, out / "monte_carlo_results.csv", report_timezone, index=False)
     if retain_path_trades:
         path_trades_path = out / "monte_carlo_path_trades.csv"
-        write_report_csv(path_trades, path_trades_path, market_timezone(campaign), index=False)
+        write_report_csv(path_trades, path_trades_path, report_timezone, index=False)
         summary["path_trades_report"] = str(path_trades_path)
+        summary.update(
+            write_equity_report(
+                path_trades,
+                out,
+                initial_balance=float(rules.starting_balance),
+                timezone=report_timezone,
+                title=(
+                    f"{campaign.get('campaign_id', 'campaign')} / "
+                    f"{campaign.get('variant_id', 'variant')} Monte Carlo path equity curves"
+                ),
+                run_column="run_id",
+                pnl_column="sim_net_pnl",
+                timestamp_column=None,
+                sequence_columns=("path_index", "sample_index"),
+            )
+        )
     if retain_path_events:
         path_events_path = out / "monte_carlo_path_events.csv"
-        write_report_csv(path_events, path_events_path, market_timezone(campaign), index=False)
+        write_report_csv(path_events, path_events_path, report_timezone, index=False)
         summary["path_events_report"] = str(path_events_path)
     write_json(out / "monte_carlo_summary.json", summary)
     record_campaign_result(out, campaign, args.config, input_hash, "monte_carlo", summary)

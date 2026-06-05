@@ -1,12 +1,15 @@
-campaign_id: pdh_pdl_sweep
-variant_id: core_grid_rescue
-strategy_name: pdh_pdl_sweep
+campaign_id: five_min_orb_vol_filter
+variant_id: fixed_rr_cost_adjusted
+strategy_name: five_min_orb_vol_filter
 symbol: ES
 dataset_id: 1m_full_history
+timeframe: 1m
 
 data:
   dataset_id: 1m_full_history
+  source_timeframe: 1m
   source: databento_dbn
+  feature_set: opening_range
   raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
   cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
   symbol: ES
@@ -28,38 +31,52 @@ data:
 
 strategy:
   entry:
-    module: pdh_pdl_sweep_reclaim
+    module: opening_range_breakout
     params:
-      reclaim_window_bars: 3
-      min_volume_ratio: 0.0
-      start_time: "09:30:00"
-      end_time: "12:00:00"
-      max_trades_per_day: 3
+      rth_start: "09:30:00"
+      opening_range_minutes: 5
+      confirmation_minutes: 1
+      bar_interval_minutes: 1
+      max_opening_range_pct_of_open: 0.0055
+      last_entry_time: "10:30:00"
+      max_trades_per_day: 1
+      skip_tuesday_longs: true
       allow_long: true
       allow_short: true
   tp:
-    module: fixed_r
+    module: cost_adjusted_fixed_r
     params:
-      target_r_multiple: 1.0
+      target_r_multiple: 2.0
+      tick_size: 0.25
+      tick_value: 12.50
+      commission_per_contract: 2.50
+      slippage_ticks: 1
   sl:
-    module: sweep_extreme
+    module: opening_range_edge
     params:
-      stop_offset_ticks: 1
-  flatten_time: "15:55:00"
+      max_stop_points: 1000 # no max
+      stop_offset_ticks: 0
+  flatten_time: "11:00:00"
 
 core:
   data_subset:
     start_date: "2021-01-01"
-    end_date: "2021-12-31"
-  initial_balance: 100000
+    end_date: "2022-12-31"
+    # start_date: "2015-01-01"
+    # end_date: "2016-12-31"
+  initial_balance: 150000
   tick_size: 0.25
   tick_value: 12.50
   commission_per_contract: 2.50
   slippage_ticks: 1
-  contracts: 1
-  daily_loss_limit: 1000
-  daily_profit_stop: 1000
-  flatten_time: "15:55:00"
+  position_sizing:
+    mode: risk_percent_net_liq
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
+  daily_loss_limit: 3000
+  daily_profit_stop: 5000
+  flatten_time: "15:45:00"
 
 benchmarks:
   min_trades_per_year: 100
@@ -67,7 +84,7 @@ benchmarks:
   min_profit_factor: 1.30
   min_total_net_profit: 0
   min_expectancy_r: 0.0
-  min_win_rate: 0.50
+  min_win_rate: 0.55
   max_drawdown_pct: 0.03
   min_cagr: 0.06
   min_mar: 2.0
@@ -85,7 +102,7 @@ benchmarks:
 core_grid:
   data_subset:
     start_date: "2021-01-01"
-    end_date: "2021-12-31"
+    end_date: "2022-12-31"
   objective: net_profit
   min_profitable_iteration_rate: 0.70
   retain_iteration_reports: true
@@ -94,20 +111,20 @@ core_grid:
     workers: 6
     scope: grid
   parameters:
-    entry.params.reclaim_window_bars: [1, 3, 5]
-    tp.params.target_r_multiple: [1.0, 1.5, 2.0, 2.5]
-    sl.params.stop_offset_ticks: [1, 3, 5, 10]
-    entry.params.min_volume_ratio: [0.0]
-    entry.params.start_time: ["09:30:00"]
-    entry.params.end_time: ["12:00:00"]
-    entry.params.max_trades_per_day: [1, 3]
+    entry.params.max_opening_range_pct_of_open: [0.003, 0.005, 0.007]
+    entry.params.confirmation_minutes: [1]
+    tp.params.target_r_multiple: [0.5, 1.0, 1.5, 2.0, 2.5]
+    sl.params.max_stop_points: [14, 100]
+    sl.params.stop_offset_ticks: [0]
+    entry.params.max_trades_per_day: [1]
+    entry.params.skip_tuesday_longs: [false]
     entry.params.allow_long: [true]
     entry.params.allow_short: [true]
 
 monkey:
   data_subset:
     start_date: "2021-01-01"
-    end_date: "2021-12-31"
+    end_date: "2022-12-31"
   runs: 8000
   seed: 7
   beat_threshold: 0.90
@@ -128,38 +145,38 @@ monkey:
 
 wfa:
   data_subset:
-    start_date: "2021-01-01"
-    end_date: "2021-12-31"
+    start_date: "2018-01-01"
+    end_date: "2026-01-01"
   mode: unanchored
-  train_months: 1
-  test_months: 1
-  step_months: 1
+  train_months: 24
+  test_months: 6
+  step_months: 6
   objective: MAR
   parallel:
     enabled: true
     workers: 6
     scope: grid
   parameters:
-    entry.params.reclaim_window_bars: [1, 3, 5]
-    tp.params.target_r_multiple: [1.0, 1.5, 2.0, 2.5]
-    sl.params.stop_offset_ticks: [1, 3, 5, 10]
-    entry.params.min_volume_ratio: [0.0]
-    entry.params.start_time: ["09:30:00"]
-    entry.params.end_time: ["12:00:00"]
-    entry.params.max_trades_per_day: [1, 3]
+    entry.params.max_opening_range_pct_of_open: [0.003, 0.005, 0.007]
+    entry.params.confirmation_minutes: [1]
+    tp.params.target_r_multiple: [0.5, 1.0, 1.5, 2.0, 2.5]
+    sl.params.max_stop_points: [14, 100]
+    sl.params.stop_offset_ticks: [0]
+    entry.params.max_trades_per_day: [1]
+    entry.params.skip_tuesday_longs: [false]
     entry.params.allow_long: [true]
     entry.params.allow_short: [true]
 
 prop_rules:
-  starting_balance: 50000
-  daily_loss_limit: 1000
-  trailing_drawdown: 2500
-  max_contracts: 5
-  max_best_day_profit_percentage: 0.40
+  starting_balance: 150000
+  daily_loss_limit: 4000 # set same as trailing dd = no daily loss limit
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.50
   min_trading_days: 2
-  payout_threshold: 1000
+  payout_threshold: 188.9 # set this as the challenge fee to know probability reaching breakeven payout. (assume no min payout threshold). then probability of BE is probability_profit_before_drawdown * probability_payout_eligible
   profit_target_pct: 0.06
-  drawdown_limit_pct: 0.03
+  drawdown_limit_pct: 0.0267
 
 monte_carlo:
   trade_source: core
@@ -171,8 +188,11 @@ monte_carlo:
     scope: runs
   path_months: 1
   skip_trade_probability: 0.05
-  skip_winning_trade_probability: 0.05
+  skip_winning_trade_probability: 0.0
   adverse_slippage_per_trade: 0.0
-  cluster_losses: true
-  retain_path_trades: false
-  retain_path_events: false
+  position_sizing:
+    mode: risk_percent_initial_balance
+    risk_pct: 0.012
+  cluster_losses: false
+  retain_path_trades: true
+  retain_path_events: true

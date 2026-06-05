@@ -3,9 +3,11 @@ variant_id: baseline
 strategy_name: intraday_capitulation_mr
 symbol: ES
 dataset_id: 1m_full_history
+timeframe: 15m
 
 data:
   dataset_id: 1m_full_history
+  source_timeframe: 1m
   source: databento_dbn
   raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
   cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
@@ -33,7 +35,7 @@ strategy:
       rth_start: "09:30:00"
       rth_end: "16:15:00"
       timeframe_minutes: 15
-      bar_interval_minutes: 1
+      bar_interval_minutes: 15
       rsi_period: 14
       max_rsi: 35
       max_close_location_from_low: 0.25

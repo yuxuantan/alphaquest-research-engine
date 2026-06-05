@@ -766,6 +766,8 @@ Core outputs live here:
 core/
   trade_log.csv
   daily_results.csv
+  equity_curve.csv
+  equity_curve.html
   metrics.json
   sample_trades_for_tv_validation.csv
 ```
@@ -776,7 +778,8 @@ Use them in this order:
 1. sample_trades_for_tv_validation.csv
 2. trade_log.csv
 3. daily_results.csv
-4. metrics.json
+4. equity_curve.html
+5. metrics.json
 ```
 
 `sample_trades_for_tv_validation.csv` is for manual chart validation. Confirm:
@@ -844,6 +847,22 @@ days with too many trades
 profit concentration in one or two sessions
 whether daily loss limits are realistic
 ```
+
+`equity_curve.html` opens in a browser and plots account equity from the
+configured `core.initial_balance` plus each closed trade's `net_pnl` in exit
+order. `equity_curve.csv` is the same curve data for audit, including
+`equity`, `peak_equity`, `drawdown`, and `drawdown_pct`.
+
+To generate equity curve files for existing reports without rerunning the
+backtests:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_equity_curves --config "$VARIANT_CONFIG"
+```
+
+Omit `--config` to scan all supported trade logs under `data/reports/campaigns`.
+Use `--trade-log path/to/trade_log.csv --initial-balance 150000` for a single
+standalone trade log.
 
 `metrics.json` is the main performance summary:
 
@@ -1152,6 +1171,8 @@ core_grid/core_grid_results.csv
 core_grid/core_grid_summary.json
 core_grid/core_grid_iteration_trades.csv
 core_grid/core_grid_iteration_daily.csv
+core_grid/equity_curve.csv
+core_grid/equity_curve.html
 ```
 
 Review:
@@ -1165,7 +1186,7 @@ stable_parameter_zones
 failure_reason
 ```
 
-Each array under `core_grid.parameters` is combined with every other array, so the total iteration count is the product of all configured value counts. `core_grid_results.csv` has one row per iteration. When `retain_iteration_reports` is true, the trade and daily CSVs add the iteration `run_id` and parameter values to each row so entries, exits, and P&L can be audited for any run.
+Each array under `core_grid.parameters` is combined with every other array, so the total iteration count is the product of all configured value counts. `core_grid_results.csv` has one row per iteration. When `retain_iteration_reports` is true, the trade and daily CSVs add the iteration `run_id` and parameter values to each row so entries, exits, P&L, and equity curves can be audited for any run. Open `core_grid/equity_curve.html` and choose the `run_id` from the selector.
 
 `core_grid.parallel.scope: grid` runs parameter combinations across worker
 processes. When iteration reports are retained, workers return trade/daily
@@ -1344,6 +1365,9 @@ slippage_cost
 `monkey_iteration_daily.csv` gives the same per-run daily aggregation used by
 the normal daily report, with `run_id` added for filtering.
 
+When monkey iteration reports are retained, `monkey/equity_curve.html` plots
+the equity curve for each random run with a `run_id` selector.
+
 Small rounding effects are expected for `long_ratio_delta` and
 `average_bars_delta`, especially when the core run has a low trade count. The
 deltas are written per iteration so that constraint drift is visible instead of
@@ -1403,6 +1427,8 @@ Outputs:
 ```text
 wfa/wfa_results.csv
 wfa/wfa_oos_trade_log.csv
+wfa/equity_curve.csv
+wfa/equity_curve.html
 wfa/wfa_summary.json
 wfa/window_###_train_grid.csv
 ```
@@ -1424,6 +1450,9 @@ test_max_drawdown
 profitable_window_rate
 meets_profitable_window_benchmark
 ```
+
+`wfa/equity_curve.html` plots the stitched out-of-sample trade log across all
+completed test windows.
 
 Each `window_###_train_grid.csv` file contains the full in-sample grid for one
 walk-forward train window. Rows are sorted with the same rule WFA uses to pick
@@ -1689,6 +1718,7 @@ monte_carlo/monte_carlo_results.csv
 monte_carlo/monte_carlo_summary.json
 monte_carlo/monte_carlo_path_trades.csv   # when retain_path_trades is true
 monte_carlo/monte_carlo_path_events.csv   # when retain_path_events is true
+monte_carlo/equity_curve.html             # when retain_path_trades is true
 ```
 
 Review:

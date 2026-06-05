@@ -105,7 +105,15 @@ def test_wfa_uses_own_parameter_space(monkeypatch):
         "tp.params.target_r_multiple": [2.0],
     }
 
-    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+    def fake_run_core_grid(
+        data,
+        base_config,
+        grid_config,
+        benchmarks,
+        report_dir=None,
+        parameter_label="core_grid.parameters",
+        detail_data=None,
+    ):
         calls.append((grid_config, parameter_label))
         return (
             pd.DataFrame(
@@ -126,7 +134,7 @@ def test_wfa_uses_own_parameter_space(monkeypatch):
         def __init__(self, config):
             engine_configs.append(config)
 
-        def run(self, data):
+        def run(self, data, detail_data=None):
             return {
                 "metrics": {
                     "net_profit": 25.0,
@@ -175,7 +183,15 @@ def test_wfa_uses_own_parameter_space(monkeypatch):
 
 
 def test_wfa_can_return_stitched_oos_trade_log(monkeypatch):
-    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+    def fake_run_core_grid(
+        data,
+        base_config,
+        grid_config,
+        benchmarks,
+        report_dir=None,
+        parameter_label="core_grid.parameters",
+        detail_data=None,
+    ):
         return (
             pd.DataFrame(
                 [
@@ -194,7 +210,7 @@ def test_wfa_can_return_stitched_oos_trade_log(monkeypatch):
         def __init__(self, config):
             self.config = config
 
-        def run(self, data):
+        def run(self, data, detail_data=None):
             ts = data["timestamp"].iloc[0]
             return {
                 "metrics": {
@@ -250,7 +266,15 @@ def test_wfa_can_return_stitched_oos_trade_log(monkeypatch):
 
 
 def test_wfa_can_persist_window_train_grids(monkeypatch, tmp_path):
-    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+    def fake_run_core_grid(
+        data,
+        base_config,
+        grid_config,
+        benchmarks,
+        report_dir=None,
+        parameter_label="core_grid.parameters",
+        detail_data=None,
+    ):
         return (
             pd.DataFrame(
                 [
@@ -283,7 +307,7 @@ def test_wfa_can_persist_window_train_grids(monkeypatch, tmp_path):
         def __init__(self, config):
             self.config = config
 
-        def run(self, data):
+        def run(self, data, detail_data=None):
             return {
                 "metrics": {
                     "net_profit": 25.0,
@@ -340,7 +364,15 @@ def test_wfa_progress_updates_at_start_and_after_each_window(monkeypatch):
         def update(self, current, force=False, detail=None):
             updates.append((current, force))
 
-    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+    def fake_run_core_grid(
+        data,
+        base_config,
+        grid_config,
+        benchmarks,
+        report_dir=None,
+        parameter_label="core_grid.parameters",
+        detail_data=None,
+    ):
         return pd.DataFrame(), {}
 
     def fake_progress_bar(total, label, **kwargs):
@@ -378,7 +410,15 @@ def test_wfa_logs_current_window_details(monkeypatch, capsys):
         def update(self, current, force=False, detail=None):
             return None
 
-    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+    def fake_run_core_grid(
+        data,
+        base_config,
+        grid_config,
+        benchmarks,
+        report_dir=None,
+        parameter_label="core_grid.parameters",
+        detail_data=None,
+    ):
         return (
             pd.DataFrame(
                 [
@@ -400,7 +440,7 @@ def test_wfa_logs_current_window_details(monkeypatch, capsys):
         def __init__(self, config):
             self.config = config
 
-        def run(self, data):
+        def run(self, data, detail_data=None):
             return {
                 "metrics": {
                     "net_profit": 25.0,
@@ -455,7 +495,15 @@ def test_wfa_logs_current_window_details(monkeypatch, capsys):
 def test_wfa_mar_objective_selects_highest_in_sample_mar(monkeypatch):
     engine_configs = []
 
-    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label="core_grid.parameters"):
+    def fake_run_core_grid(
+        data,
+        base_config,
+        grid_config,
+        benchmarks,
+        report_dir=None,
+        parameter_label="core_grid.parameters",
+        detail_data=None,
+    ):
         assert grid_config["objective"] == "mar"
         return (
             pd.DataFrame(
@@ -487,7 +535,7 @@ def test_wfa_mar_objective_selects_highest_in_sample_mar(monkeypatch):
         def __init__(self, config):
             engine_configs.append(config)
 
-        def run(self, data):
+        def run(self, data, detail_data=None):
             return {
                 "metrics": {
                     "net_profit": 25.0,

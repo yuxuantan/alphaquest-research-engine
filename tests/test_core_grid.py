@@ -101,7 +101,7 @@ def test_core_grid_parallel_branch_is_configurable(monkeypatch):
     data = build_features(df, DATA_CFG)
     calls = []
 
-    def fake_run_parallel_core_grid(data, base_config, benchmarks, combos, workers, include_reports=False):
+    def fake_run_parallel_core_grid(data, detail_data, base_config, benchmarks, combos, workers, include_reports=False):
         calls.append({"combos": combos, "workers": workers, "include_reports": include_reports})
         results = []
         for idx, combo in enumerate(combos, start=1):
@@ -151,7 +151,7 @@ def test_core_grid_parallel_can_retain_iteration_reports(tmp_path, monkeypatch):
     data = build_features(df, DATA_CFG)
     monkeypatch.setattr(core_grid_module.os, "cpu_count", lambda: 8)
 
-    def fake_run_parallel_core_grid(data, base_config, benchmarks, combos, workers, include_reports=False):
+    def fake_run_parallel_core_grid(data, detail_data, base_config, benchmarks, combos, workers, include_reports=False):
         results = []
         for idx, combo in enumerate(combos, start=1):
             results.append(

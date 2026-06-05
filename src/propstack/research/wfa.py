@@ -71,6 +71,7 @@ def run_wfa(
     benchmarks: dict,
     include_trade_log: bool = False,
     train_grid_dir: str | Path | None = None,
+    detail_data: pd.DataFrame | None = None,
 ):
     rows = []
     trade_frames = []
@@ -93,12 +94,21 @@ def run_wfa(
     for wid, (tr_s, tr_e, te_s, te_e) in enumerate(windows, start=1):
         train = _slice(data, tr_s, tr_e)
         test = _slice(data, te_s, te_e)
+        train_detail = _slice(detail_data, tr_s, tr_e) if detail_data is not None else None
+        test_detail = _slice(detail_data, te_s, te_e) if detail_data is not None else None
         _log_window_start(wid, len(windows), tr_s, tr_e, te_s, te_e, len(train), len(test))
         if train.empty or test.empty:
             _log_window_skip(wid, len(windows), "empty train/test slice")
             progress.update(wid, force=True)
             continue
-        grid_df, _ = run_core_grid(train, base_config, grid_config, benchmarks, parameter_label="wfa.parameters")
+        grid_df, _ = run_core_grid(
+            train,
+            base_config,
+            grid_config,
+            benchmarks,
+            parameter_label="wfa.parameters",
+            detail_data=train_detail,
+        )
         if grid_df.empty:
             _log_window_skip(wid, len(windows), "no in-sample grid results")
             progress.update(wid, force=True)
@@ -121,7 +131,7 @@ def run_wfa(
         params = {k: best[k].item() if hasattr(best[k], "item") else best[k] for k in param_cols}
         train_objective = _metric_value(best, objective)
         test_cfg = apply_dotted_params(base_config, params)
-        test_result = BacktestEngine(test_cfg).run(test)
+        test_result = BacktestEngine(test_cfg).run(test, detail_data=test_detail)
         test_metrics = test_result["metrics"]
         if include_trade_log:
             trade_frames.append(

@@ -5,17 +5,17 @@ Run commands from the repo root.
 ## Choose A Variant
 
 ```bash
-export VARIANT_CONFIG=configs/campaigns/five_min_orb_vol_filter/variants/ES/1m_full_history/baseline.yaml
+export VARIANT_CONFIG=configs/campaigns/five_min_orb_vol_filter/variants/ES/1m/baseline.yaml
 ```
 
 Other current variant configs:
 
 ```bash
-export VARIANT_CONFIG=configs/campaigns/intraday_capitulation_mr/variants/ES/1m_full_history/baseline.yaml
-export VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_full_history/baseline.yaml
-export VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_full_history/core_grid_rescue.yaml
-export VARIANT_CONFIG=configs/campaigns/five_min_orb_vol_filter/variants/ES/1m_full_history/fixed_rr_cost_adjusted.yaml
-export VARIANT_CONFIG=configs/campaigns/five_min_orb_vol_filter/variants/ES/1m_full_history/inverse.yaml
+export VARIANT_CONFIG=configs/campaigns/intraday_capitulation_mr/variants/ES/15m/baseline.yaml
+export VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m/baseline.yaml
+export VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m/core_grid_rescue.yaml
+export VARIANT_CONFIG=configs/campaigns/five_min_orb_vol_filter/variants/ES/1m/fixed_rr_cost_adjusted.yaml
+export VARIANT_CONFIG=configs/campaigns/five_min_orb_vol_filter/variants/ES/1m/inverse.yaml
 ```
 
 ## Campaign Tests
@@ -26,11 +26,16 @@ PYTHONPATH=src python3 -m propstack.run_core_grid --config "$VARIANT_CONFIG"
 PYTHONPATH=src python3 -m propstack.run_monkey --config "$VARIANT_CONFIG"
 PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG"
 PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_equity_curves --config "$VARIANT_CONFIG"
 ```
 
 Monte Carlo reads an existing report trade log. Use `monte_carlo.trade_source:
 core` after `propstack.run_core`, or `monte_carlo.trade_source: wfa_oos` after
 `propstack.run_wfa`.
+
+`propstack.run_equity_curves` backfills `equity_curve.csv` and
+`equity_curve.html` from existing trade logs. New core, WFA, retained
+core-grid/monkey, and audited Monte Carlo runs write those files automatically.
 
 Arguments for all campaign tests:
 

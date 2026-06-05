@@ -58,6 +58,26 @@ def test_prepare_data_applies_subset_after_feature_warmup():
     assert jan3["prev_rth_high"] == 101.0
 
 
+def test_prepare_data_aggregates_to_requested_timeframe():
+    data, report, execution_data = prepare_data(
+        {**DATA_CFG, "feature_set": "opening_range"},
+        timeframe="5m",
+        include_execution_data=True,
+    )
+
+    jan3_rth = data[(data["session_date"].astype(str) == "2024-01-03") & data["is_rth"]].iloc[0]
+    assert str(jan3_rth["timestamp"]) == "2024-01-03 08:30:00-06:00"
+    assert jan3_rth["open"] == 100.0
+    assert jan3_rth["high"] == 102.5
+    assert jan3_rth["low"] == 98.5
+    assert jan3_rth["close"] == 101.75
+    assert jan3_rth["volume"] == 1010
+    assert jan3_rth["source_bar_count"] == 5
+    assert report["timeframe"] == "5m"
+    assert report["strategy_rows"] < report["rows"]
+    assert len(execution_data) == 20
+
+
 def test_prepare_data_emits_status_updates():
     messages = []
 
