@@ -1,0 +1,32 @@
+campaign_id: rth_gap_fade
+campaign_name: RTH Gap Fade
+source:
+  title:
+  url:
+status: researching
+
+idea:
+  summary: >
+    Test whether ES RTH opening gaps away from the prior RTH close can be faded
+    toward a partial or full gap fill after early rejection.
+  entry_thesis: >
+    If overnight repricing fails after RTH liquidity enters, the prior RTH close
+    can remain a magnet for partial or full gap-fill rotation.
+  exit_thesis: >
+    Risk is invalidated beyond the opening rejection extreme. Targets are
+    tested as fractions of the distance from entry to the prior RTH close.
+
+mechanics:
+  market_timezone: America/New_York
+  session: RTH-only entries using previous RTH close and current-session VWAP known at signal close.
+  variants:
+    open_reversal: >
+      Fade when the opening gap closes back against the RTH gap open.
+    extension_reject: >
+      Fade only after price extends farther away from prior close and rejects.
+    vwap_reclaim: >
+      Fade when price reclaims session VWAP against the opening gap.
+
+notes:
+  - Rationale is market-structure reasoning, not a cited paper.
+  - This campaign fades gaps toward prior close; it is not a prior-high/low continuation retune.

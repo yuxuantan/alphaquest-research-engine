@@ -1,0 +1,35 @@
+campaign_id: overnight_return_late_day_momentum
+campaign_name: Overnight Return Late-Day Momentum
+status: research
+
+academic_sources:
+  - title: "Overnight Returns of Stock Indexes: Evidence from ETFs and Futures"
+    authors: "Qingfu Liu, Yiuman Tse"
+    year: 2017
+    venue: "International Review of Economics & Finance, 48"
+    doi: "10.1016/j.iref.2017.01.005"
+    url: "https://www.sciencedirect.com/science/article/pii/S1059056016301563"
+    finding_used: "For US ETF and futures markets, overnight returns forecast first half-hour returns negatively and last half-hour returns positively."
+    evidence_directness: "Directly includes E-mini futures and tests first and last half-hour intraday intervals."
+
+edge_thesis: >
+  The close-to-open overnight move carries information that continues into the
+  final half-hour of RTH trading, so the strategy waits until 15:30 and trades
+  the last half-hour in the overnight-return direction.
+
+translation_notes:
+  why_es: "The paper explicitly includes E-mini futures and the strategy trades ES, the liquid S&P 500 futures contract."
+  why_effect_may_survive_costs: "The strategy trades once per day at most and holds only the final half-hour, limiting churn and execution frequency."
+  expected_working_regime: "Sessions where overnight information is not fully impounded until closing flows."
+  expected_failure_regime: "Opening gaps that fully reverse, low-participation closes, and late-day news reversals."
+  translation_risks: "The published sample ends in 2014; post-2014 futures microstructure and overnight information assimilation may have changed."
+
+variants:
+  - overnight_sign_close_continuation
+  - opening_reversal_confirmed
+  - overnight_penultimate_alignment
+
+timeframes:
+  - 5m
+  - 15m
+  - 30m

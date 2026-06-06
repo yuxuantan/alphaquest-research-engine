@@ -1,0 +1,36 @@
+campaign_id: daily_time_series_momentum
+campaign_name: Daily Time-Series Momentum
+status: research
+
+academic_sources:
+  - title: "Time Series Momentum"
+    authors: "Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen"
+    year: 2012
+    venue: "Journal of Financial Economics, 104(2), 228-250"
+    doi: "10.1016/j.jfineco.2011.11.003"
+    url: "https://www.sciencedirect.com/science/article/pii/S0304405X11002613"
+    finding_used: "Past one- to 12-month returns positively predict futures returns across equity index, currency, commodity, and bond futures."
+    evidence_directness: "Direct for futures and equity index futures; translated to ES as a single-instrument intraday implementation using prior completed RTH closes."
+
+edge_thesis: >
+  Completed prior RTH closes contain trend information that can guide the next
+  RTH session direction. The strategy forms a trailing close-to-close momentum
+  signal from completed sessions only, enters once near the RTH open, and exits
+  by the RTH close.
+
+translation_notes:
+  why_es: "ES is a liquid S&P 500 equity index futures contract and belongs to the asset class directly studied by the source."
+  why_effect_may_survive_costs: "The strategy trades at most once per day, avoids intraday churn, and uses broad trend thresholds rather than microstructure signals."
+  expected_working_regime: "Persistent trend regimes and crisis-trend periods where equity index futures continue in their prior direction."
+  expected_failure_regime: "Mean-reverting ranges, sharp overnight reversals, and sessions where trend returns occur outside RTH."
+  translation_risks: "The paper's canonical holding period is monthly and diversified across futures; this campaign tests a single-instrument intraday RTH translation."
+
+variants:
+  - close_to_close_trend
+  - volatility_normalized_trend
+  - short_term_alignment
+
+timeframes:
+  - 5m
+  - 15m
+  - 30m

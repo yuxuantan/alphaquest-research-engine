@@ -1,0 +1,43 @@
+campaign_id: overnight_inventory_reversion
+campaign_name: Overnight Inventory Reversion
+source:
+  title:
+  url:
+status: researching
+
+idea:
+  summary: >
+    Test whether ES RTH moves that sweep beyond overnight high/low and then
+    reclaim the overnight range tend to revert back toward session balance.
+  entry_thesis: >
+    Overnight high and low often act as visible liquidity references. A sweep
+    outside that range followed by a reclaim can indicate a failed auction
+    rather than successful range expansion.
+  exit_thesis: >
+    Risk is invalidated beyond the sweep extreme. Targets are tested as
+    cost-adjusted fixed R multiples from entry to stop.
+
+mechanics:
+  market_timezone: America/New_York
+  session: >
+    Uses RTH-only entries after 09:30 ET and exits no later than the configured
+    intraday flatten time.
+  data_features: >
+    Uses full derived features: overnight high/low, session VWAP, previous RTH
+    levels, and rolling volume. Entry logic references only information known
+    by the signal bar close.
+  variants:
+    on_extreme_reclaim_fixed_r: >
+      Fade a sweep beyond overnight high/low after price closes back inside the
+      overnight range.
+    on_extreme_reclaim_vwap_filter: >
+      Same failed-auction setup, but requires the reclaim to remain on the
+      inventory side of VWAP so there is still room back toward balance.
+    on_midpoint_reversion_confirmed: >
+      Enter only after the failed auction has reclaimed the overnight midpoint,
+      trading a more confirmed but later reversion.
+
+notes:
+  - Rationale is market-structure reasoning, not a cited paper.
+  - Expected to struggle during strong trend days or macro/news opening drives
+    that hold outside overnight inventory.

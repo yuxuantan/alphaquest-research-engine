@@ -1,0 +1,35 @@
+campaign_id: late_day_intraday_momentum
+campaign_name: Late-Day Intraday Momentum
+status: research
+
+academic_sources:
+  - title: "Market Intraday Momentum"
+    authors: "Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou"
+    year: 2018
+    venue: "Journal of Financial Economics, 129(2), 394-414"
+    doi: "10.1016/j.jfineco.2018.05.009"
+    url: "https://www.sciencedirect.com/science/article/abs/pii/S0304405X18301351"
+    finding_used: "The first half-hour market return predicts the last half-hour market return; predictability is stronger on high-volume and high-volatility days, and can be improved with the penultimate half-hour return."
+    evidence_directness: "Indirect for ES. The primary study uses SPY and other ETFs, but the mechanism is broad market intraday momentum and the ES contract is the deepest tradable S&P 500 index proxy."
+
+edge_thesis: >
+  The direction of the opening 30-minute market move, measured from the prior RTH
+  close, contains information about late-day order flow and can predict the
+  direction of the final 30 minutes of RTH trading.
+
+translation_notes:
+  why_es: "ES tracks the same S&P 500 market exposure with high liquidity, low explicit transaction costs, and no ETF short-sale constraint."
+  why_effect_may_survive_costs: "The strategy trades once per day at most and holds only the final half-hour, limiting churn relative to intraday scalping."
+  expected_working_regime: "High-participation sessions where early information digestion continues into closing flows."
+  expected_failure_regime: "Low-volume chop, sharp late reversals, and days where ES diverges from ETF close dynamics."
+  translation_risks: "The paper is ETF-focused; ES trades nearly 24 hours, has different closing mechanics, and the dataset is post-2010 rather than the paper's 1993-2013 SPY sample."
+
+variants:
+  - first_half_hour_sign
+  - volume_volatility_conditioned
+  - first_and_penultimate_alignment
+
+timeframes:
+  - 5m
+  - 15m
+  - 30m

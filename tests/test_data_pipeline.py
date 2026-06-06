@@ -40,6 +40,7 @@ def test_features_previous_rth_overnight_vwap_rolling_volume():
     jan3 = feat[(feat["session_date"].astype(str) == "2024-01-03") & (feat["is_rth"])].iloc[0]
     assert jan3["prev_rth_high"] == 101.0
     assert jan3["prev_rth_low"] == 99.0
+    assert jan3["prev_rth_close"] == 100.0
     assert jan3["overnight_high"] == 100.75
     assert jan3["overnight_low"] == 99.75
     assert jan3["vwap"] > 0
@@ -56,6 +57,7 @@ def test_prepare_data_applies_subset_after_feature_warmup():
     assert report["loaded_rows"] > report["rows"]
     jan3 = data[data["is_rth"]].iloc[0]
     assert jan3["prev_rth_high"] == 101.0
+    assert jan3["prev_rth_close"] == 100.0
 
 
 def test_prepare_data_aggregates_to_requested_timeframe():

@@ -1,0 +1,36 @@
+campaign_id: vwap_pullback_continuation
+campaign_name: VWAP Pullback Continuation
+source:
+  title:
+  url:
+status: researching
+
+idea:
+  summary: >
+    Test whether ES trend-biased RTH sessions continue after a controlled
+    pullback into session VWAP and a close back in the trend direction.
+  entry_thesis: >
+    VWAP is a common intraday value benchmark. When a directional session holds
+    or quickly reclaims VWAP, the failed countertrend move may support trend
+    continuation.
+  exit_thesis: >
+    Risk is invalidated beyond the VWAP pullback extreme. Targets are tested as
+    cost-adjusted fixed R multiples from entry to stop.
+
+mechanics:
+  market_timezone: America/New_York
+  session: RTH-only entries using session VWAP known at the signal bar close.
+  variants:
+    opening_drive_vwap_pullback: >
+      Require an opening-drive directional bias before taking the first VWAP
+      pullback continuation.
+    vwap_reclaim_trend_continuation: >
+      Require consecutive closes on the trend side of VWAP before taking a
+      pullback and reclaim.
+    failed_vwap_break_continuation: >
+      Require a brief break through VWAP that fails by the close, expressing
+      trapped countertrend traders.
+
+notes:
+  - Rationale is market-structure reasoning, not a cited paper.
+  - Expected to fail in balanced sessions where VWAP is repeatedly crossed.

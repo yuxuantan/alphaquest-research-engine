@@ -1,0 +1,35 @@
+campaign_id: calendar_session_seasonality
+campaign_name: Calendar Session Seasonality
+status: research
+
+academic_sources:
+  - title: "Calendar anomalies in cash and stock index futures: International evidence"
+    authors: "Christos Floros, Enrique Salvador"
+    year: 2014
+    venue: "Economic Modelling, 37, 216-223"
+    doi: "10.1016/j.econmod.2013.10.036"
+    url: "https://www.sciencedirect.com/science/article/abs/pii/S0264999313004781"
+    finding_used: "Day-of-week and monthly seasonal effects differ between cash and stock index futures and are conditioned by market regime; the study includes S&P 500 futures."
+    evidence_directness: "Direct for S&P 500 futures calendar effects; translated to intraday ES session windows."
+
+edge_thesis: >
+  Calendar effects in stock index futures can concentrate return by weekday and
+  regime. This campaign tests whether a small set of weekday/session windows in
+  ES retains enough edge after current costs and prop constraints.
+
+translation_notes:
+  why_es: "The source includes S&P 500 futures, and ES is the liquid E-mini implementation of that exposure."
+  why_effect_may_survive_costs: "The strategy trades once per eligible day at most and uses fixed session windows rather than high-turnover scalping."
+  expected_working_regime: "Persistent weekday/session flow imbalances and low-friction directional windows."
+  expected_failure_regime: "Regime shifts, calendar anomaly decay, and windows where apparent returns are dominated by a few outlier days."
+  translation_risks: "The source studies daily calendar effects; this campaign translates them to intraday RTH windows and therefore relies on validation rather than assuming direct transfer."
+
+variants:
+  - midweek_morning_strength
+  - late_week_afternoon_bias
+  - broad_session_calendar_mix
+
+timeframes:
+  - 5m
+  - 15m
+  - 30m

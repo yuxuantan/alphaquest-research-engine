@@ -33,6 +33,7 @@ class BacktestEngine:
             if detail_data is not None and not detail_data.empty
             else None
         )
+        diagnostics = self._preflight(df, detail_df)
         strategy = ModularStrategy(self.strategy_config)
         entry_params = self.strategy_config.get("entry", {}).get("params", {})
         risk = DailyRisk({**self.core_config, **self.strategy_config, **entry_params})
@@ -58,15 +59,18 @@ class BacktestEngine:
                 ep = entry_price(float(bar["open"]), direction, tick_size, slippage_ticks)
                 stop = strategy.stop_price(sig, direction, tick_size, entry_price=ep)
                 if stop is None:
+                    diagnostics["rejects"]["missing_stop"] += 1
                     pending_signal = None
                     continue
                 target = strategy.target_price(ep, stop, direction, signal=sig)
                 if _target_already_reached(direction, ep, target, sig):
+                    diagnostics["rejects"]["target_already_reached"] += 1
                     pending_signal = None
                     continue
                 risk_points = abs(ep - stop)
                 sizing = size_position(self.core_config, risk_points, tick_size, tick_value, net_liq=net_liq)
                 if sizing.contracts < 1:
+                    diagnostics["rejects"]["position_sizing"] += 1
                     pending_signal = None
                     continue
                 position = {
@@ -102,7 +106,10 @@ class BacktestEngine:
                 )
                 position.update(sizing.report_fields())
                 risk.record_entry(bar["session_date"])
+                diagnostics["entries_opened"] += 1
                 trade_id += 1
+            elif pending_signal is not None and position is None:
+                diagnostics["rejects"]["daily_risk_lockout"] += 1
             pending_signal = None
 
             if position is not None:
@@ -124,6 +131,7 @@ class BacktestEngine:
                     position["target_price"],
                     bar_close_timestamp,
                     detail_df,
+                    diagnostics,
                 )
                 if reason is None and bar_close_timestamp.time() >= flatten_time:
                     reason, raw_exit = "eod_flatten", float(bar["close"])
@@ -149,6 +157,7 @@ class BacktestEngine:
                         "slippage_cost": slippage_cost,
                     }
                     trades.append(trade)
+                    diagnostics["exits"][reason] = diagnostics["exits"].get(reason, 0) + 1
                     risk.record_exit(position["session_date"], net)
                     net_liq += net
                     position = None
@@ -157,9 +166,11 @@ class BacktestEngine:
             if position is None and risk.allow_new_trade(bar["session_date"]):
                 signal = strategy.on_bar_close(bar, risk.trades_today(bar["session_date"]))
                 if signal is not None:
+                    diagnostics["signals_generated"] += 1
                     pending_signal = signal
 
         trades_df = pd.DataFrame(trades)
+        diagnostics["trades_closed"] = int(len(trades_df))
         return {
             "trades": trades_df,
             "daily": daily_results(trades_df),
@@ -167,7 +178,101 @@ class BacktestEngine:
                 trades_df,
                 initial_balance=float(self.core_config.get("initial_balance", 0)),
             ),
+            "diagnostics": diagnostics,
         }
+
+    def _preflight(self, data: pd.DataFrame, detail_data: pd.DataFrame | None) -> dict:
+        required = {"timestamp", "session_date", "open", "high", "low", "close"}
+        missing = required - set(data.columns)
+        if missing:
+            raise ValueError(f"Backtest data is missing required column(s): {sorted(missing)}.")
+
+        diagnostics = {
+            "preflight": {
+                "rows": int(len(data)),
+                "timeframe_minutes": float(self.timeframe_minutes),
+                "warnings": [],
+                "required_columns": sorted(required),
+            },
+            "signals_generated": 0,
+            "entries_opened": 0,
+            "trades_closed": 0,
+            "rejects": {
+                "missing_stop": 0,
+                "target_already_reached": 0,
+                "position_sizing": 0,
+                "daily_risk_lockout": 0,
+            },
+            "exits": {},
+            "stop_target_conflicts": 0,
+            "detail_conflicts_resolved": 0,
+            "detail_conflicts_unresolved": 0,
+        }
+        self._validate_strategy_feature_columns(data, diagnostics)
+        self._validate_timeframe_column(data, diagnostics)
+        self._validate_detail_data_coverage(data, detail_data, diagnostics)
+        return diagnostics
+
+    def _validate_strategy_feature_columns(self, data: pd.DataFrame, diagnostics: dict) -> None:
+        module = str(self.strategy_config.get("entry", {}).get("module", ""))
+        required_by_module = {
+            "calendar_session_bias": {"is_rth"},
+            "daily_time_series_momentum": {"is_rth"},
+            "pdh_pdl_sweep_reclaim": {"is_rth", "prev_rth_low", "prev_rth_high"},
+            "opening_range_breakout": {"is_rth"},
+            "opening_range_filtered_breakout": {"is_rth", "vwap", "volume_ratio"},
+            "opening_range_inverse_breakout": {"is_rth"},
+            "intraday_capitulation_mr": {"is_rth", "vwap"},
+            "late_day_intraday_momentum": {"is_rth", "prev_rth_close", "volume_ratio"},
+            "overnight_return_late_day_momentum": {"is_rth", "prev_rth_close"},
+            "overnight_inventory_reversion": {"is_rth", "overnight_high", "overnight_low", "vwap"},
+            "pdh_pdl_breakout_continuation": {"is_rth", "prev_rth_high", "prev_rth_low", "volume_ratio"},
+            "rth_gap_fade": {"is_rth", "prev_rth_close", "vwap"},
+            "vwap_pullback_continuation": {"is_rth", "vwap"},
+        }
+        missing = sorted(required_by_module.get(module, set()) - set(data.columns))
+        if missing:
+            diagnostics["preflight"]["warnings"].append(
+                f"Entry module {module} is missing optional/strategy feature column(s): {missing}."
+            )
+
+    def _validate_timeframe_column(self, data: pd.DataFrame, diagnostics: dict) -> None:
+        if "timeframe_minutes" not in data.columns or data.empty:
+            return
+        actual = pd.to_numeric(data["timeframe_minutes"], errors="coerce").dropna().unique()
+        expected = float(self.timeframe_minutes)
+        if len(actual) and any(not math.isclose(float(value), expected) for value in actual):
+            diagnostics["preflight"]["warnings"].append(
+                f"Data timeframe_minutes values {sorted(float(value) for value in actual)} do not match config {expected:g}."
+            )
+
+    def _validate_detail_data_coverage(
+        self,
+        data: pd.DataFrame,
+        detail_data: pd.DataFrame | None,
+        diagnostics: dict,
+    ) -> None:
+        if self.timeframe_minutes <= 1:
+            return
+        if detail_data is None or detail_data.empty:
+            diagnostics["preflight"]["warnings"].append(
+                "Higher-timeframe run has no 1-minute detail_data; same-bar stop/target conflicts will use stop-first fallback."
+            )
+            return
+        required = {"timestamp", "open", "high", "low", "close"}
+        missing = required - set(detail_data.columns)
+        if missing:
+            raise ValueError(f"Backtest detail_data is missing required column(s): {sorted(missing)}.")
+        if data.empty:
+            return
+        first = pd.Timestamp(data["timestamp"].min())
+        last = pd.Timestamp(data["timestamp"].max()) + pd.Timedelta(minutes=self.timeframe_minutes)
+        detail_first = pd.Timestamp(detail_data["timestamp"].min())
+        detail_last = pd.Timestamp(detail_data["timestamp"].max())
+        if detail_first > first or detail_last < last - pd.Timedelta(minutes=1):
+            diagnostics["preflight"]["warnings"].append(
+                "1-minute detail_data does not fully cover the higher-timeframe backtest span."
+            )
 
     def _configured_bar_interval_minutes(self) -> float:
         timeframe_minutes = config_timeframe_minutes(self.config, required=False)
@@ -202,10 +307,12 @@ class BacktestEngine:
         target_price: float,
         bar_close_timestamp: pd.Timestamp,
         detail_data: pd.DataFrame | None,
+        diagnostics: dict,
     ) -> tuple[str | None, float | None, pd.Timestamp]:
         exit_timestamp = bar["timestamp"]
         stop_hit, target_hit = _stop_target_hits(bar, direction, stop_price, target_price)
         if stop_hit and target_hit:
+            diagnostics["stop_target_conflicts"] += 1
             detail_exit = _resolve_detail_stop_target(
                 detail_data,
                 pd.Timestamp(bar["timestamp"]),
@@ -215,7 +322,9 @@ class BacktestEngine:
                 target_price,
             )
             if detail_exit is not None:
+                diagnostics["detail_conflicts_resolved"] += 1
                 return detail_exit
+            diagnostics["detail_conflicts_unresolved"] += 1
         reason, raw_exit = stop_target_hit(bar, direction, stop_price, target_price)
         return reason, raw_exit, exit_timestamp
 

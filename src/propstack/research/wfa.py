@@ -17,11 +17,16 @@ _WFA_OBJECTIVES = {
     "net profit": "net_profit",
     "net-profit": "net_profit",
     "mar": "mar",
+    "profit_factor": "profit_factor",
+    "profit factor": "profit_factor",
+    "profit-factor": "profit_factor",
+    "pf": "profit_factor",
 }
 
 _OBJECTIVE_LABELS = {
     "net_profit": "net_profit",
     "mar": "MAR",
+    "profit_factor": "Profit Factor",
 }
 
 
@@ -78,6 +83,8 @@ def run_wfa(
     train_grid_paths = []
     grid_config = _wfa_grid_config(wfa_config)
     objective = grid_config["objective"]
+    selection_filter = grid_config["selection_filter"]
+    early_exit_min_profit_factor = wfa_config.get("early_exit_min_train_profit_factor")
     windows = list(
         create_windows(
             data,
@@ -113,7 +120,45 @@ def run_wfa(
             _log_window_skip(wid, len(windows), "no in-sample grid results")
             progress.update(wid, force=True)
             continue
-        best = _select_best_in_sample(grid_df, objective)
+        best = _select_best_in_sample(grid_df, objective, selection_filter)
+        if early_exit_min_profit_factor is not None and _metric_value(best, "profit_factor") < float(
+            early_exit_min_profit_factor
+        ):
+            _log_window_skip(
+                wid,
+                len(windows),
+                f"early exit: selected in-sample profit_factor {_metric_value(best, 'profit_factor'):.2f} "
+                f"< {float(early_exit_min_profit_factor):.2f}",
+            )
+            rows.append(
+                {
+                    "window_id": wid,
+                    "train_start": tr_s,
+                    "train_end": tr_e,
+                    "test_start": te_s,
+                    "test_end": te_e,
+                    "objective": _objective_label(objective),
+                    "train_objective": _metric_value(best, objective),
+                    "selected_params": {},
+                    "train_mar": _metric_value(best, "mar"),
+                    "train_cagr": _metric_value(best, "cagr"),
+                    "train_max_drawdown_pct": _metric_value(best, "max_drawdown_pct"),
+                    "train_net_profit": _metric_value(best, "net_profit"),
+                    "train_profit_factor": _metric_value(best, "profit_factor"),
+                    "train_max_drawdown": _metric_value(best, "max_drawdown"),
+                    "test_mar": 0.0,
+                    "test_cagr": 0.0,
+                    "test_max_drawdown_pct": 0.0,
+                    "test_net_profit": 0.0,
+                    "test_profit_factor": 0.0,
+                    "test_max_drawdown": 0.0,
+                    "test_trades": 0,
+                    "test_passed": False,
+                    "early_exit": True,
+                }
+            )
+            progress.update(wid, force=True)
+            break
         train_grid_path = _write_window_train_grid(
             grid_df,
             train_grid_dir,
@@ -187,6 +232,11 @@ def run_wfa(
         if "step_months" in wfa_config
         else int(wfa_config.get("test_months", 1)),
         "parallel": _wfa_parallel_config(wfa_config),
+        "selection_filter": selection_filter,
+        "early_exit_min_train_profit_factor": float(early_exit_min_profit_factor)
+        if early_exit_min_profit_factor is not None
+        else None,
+        "early_exit": bool(len(df) and "early_exit" in df.columns and df["early_exit"].fillna(False).any()),
         "passing_windows": int(df["test_passed"].sum()) if len(df) else 0,
         "profitable_windows": int((df["test_net_profit"] > 0).sum()) if len(df) else 0,
         "profitable_window_rate": float((df["test_net_profit"] > 0).mean()) if len(df) else 0.0,
@@ -354,6 +404,7 @@ def _wfa_grid_config(wfa_config: dict) -> dict:
         "objective": _wfa_objective(wfa_config.get("objective", "net_profit")),
         "parameters": wfa_config["parameters"],
         "parallel": _wfa_parallel_config(wfa_config),
+        "selection_filter": _wfa_selection_filter(wfa_config),
     }
 
 
@@ -378,7 +429,7 @@ def _wfa_parallel_config(wfa_config: dict) -> dict:
 def _wfa_objective(value) -> str:
     key = str(value).strip().lower()
     if key not in _WFA_OBJECTIVES:
-        raise ValueError("wfa.objective must be one of: net_profit, MAR.")
+        raise ValueError("wfa.objective must be one of: net_profit, MAR, profit_factor.")
     return _WFA_OBJECTIVES[key]
 
 
@@ -386,12 +437,13 @@ def _objective_label(objective: str) -> str:
     return _OBJECTIVE_LABELS.get(objective, objective)
 
 
-def _select_best_in_sample(grid_df: pd.DataFrame, objective: str):
+def _select_best_in_sample(grid_df: pd.DataFrame, objective: str, selection_filter: dict | None = None):
     if objective not in grid_df.columns:
         raise ValueError(f"wfa.objective '{_objective_label(objective)}' is not available in grid results.")
 
-    sort_columns, ascending = _selection_sort_spec(grid_df, objective)
-    return grid_df.sort_values(sort_columns, ascending=ascending, na_position="last").iloc[0]
+    candidates = _apply_selection_filter(grid_df, selection_filter or {})
+    sort_columns, ascending = _selection_sort_spec(candidates, objective)
+    return candidates.sort_values(sort_columns, ascending=ascending, na_position="last").iloc[0]
 
 
 def _selection_sort_spec(grid_df: pd.DataFrame, objective: str) -> tuple[list[str], list[bool]]:
@@ -409,6 +461,34 @@ def _selection_sort_spec(grid_df: pd.DataFrame, objective: str) -> tuple[list[st
             sort_columns.append(column)
             ascending.append(asc)
     return sort_columns, ascending
+
+
+def _wfa_selection_filter(wfa_config: dict) -> dict:
+    configured = dict(wfa_config.get("selection_filter") or {})
+    for source, target in [
+        ("selection_min_trades_per_year", "min_trades_per_year"),
+        ("selection_min_total_trades", "min_total_trades"),
+        ("selection_min_profit_factor", "min_profit_factor"),
+    ]:
+        if source in wfa_config and target not in configured:
+            configured[target] = wfa_config[source]
+    return configured
+
+
+def _apply_selection_filter(grid_df: pd.DataFrame, selection_filter: dict) -> pd.DataFrame:
+    candidates = grid_df
+    filters = [
+        ("total_trades", "min_total_trades", lambda series, value: series >= value),
+        ("trades_per_year", "min_trades_per_year", lambda series, value: series >= value),
+        ("profit_factor", "min_profit_factor", lambda series, value: series >= value),
+    ]
+    for column, key, predicate in filters:
+        if key not in selection_filter or column not in candidates.columns:
+            continue
+        candidates = candidates[predicate(pd.to_numeric(candidates[column], errors="coerce"), float(selection_filter[key]))]
+    if candidates.empty:
+        return grid_df
+    return candidates
 
 
 def _log_window_start(

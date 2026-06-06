@@ -4,6 +4,7 @@ import pytest
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
 from propstack.research.wfa import create_windows, run_wfa
+from propstack.research import wfa as wfa_module
 from tests.test_backtest_engine import BASE_CFG
 from tests.test_data_pipeline import DATA_CFG
 
@@ -582,6 +583,77 @@ def test_wfa_mar_objective_selects_highest_in_sample_mar(monkeypatch):
     assert results.loc[0, "test_mar"] == 5.0
     assert results.loc[0, "test_cagr"] == 0.05
     assert results.loc[0, "test_max_drawdown_pct"] == 0.01
+
+
+def test_wfa_profit_factor_objective_can_filter_by_trade_frequency():
+    grid = pd.DataFrame(
+        [
+            {"run_id": 1, "profit_factor": 3.0, "trades_per_year": 10, "net_profit": 100.0},
+            {"run_id": 2, "profit_factor": 2.0, "trades_per_year": 60, "net_profit": 80.0},
+            {"run_id": 3, "profit_factor": 1.5, "trades_per_year": 70, "net_profit": 120.0},
+        ]
+    )
+
+    best = wfa_module._select_best_in_sample(
+        grid,
+        "profit_factor",
+        {"min_trades_per_year": 52},
+    )
+
+    assert best["run_id"] == 2
+
+
+def test_wfa_can_early_exit_on_low_selected_train_profit_factor(monkeypatch):
+    def fake_run_core_grid(
+        data,
+        base_config,
+        grid_config,
+        benchmarks,
+        report_dir=None,
+        parameter_label="core_grid.parameters",
+        detail_data=None,
+    ):
+        return (
+            pd.DataFrame(
+                [
+                    {
+                        "entry.params.reclaim_window_bars": 7,
+                        "net_profit": 100.0,
+                        "profit_factor": 0.9,
+                        "max_drawdown": 10.0,
+                        "total_trades": 10,
+                        "trades_per_year": 100.0,
+                    }
+                ]
+            ),
+            {},
+        )
+
+    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
+    data = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2022-01-15", "2022-02-15"], utc=True
+            )
+        }
+    )
+
+    results, summary = run_wfa(
+        data,
+        BASE_CFG,
+        {
+            "train_months": 1,
+            "test_months": 1,
+            "step_months": 1,
+            "objective": "profit_factor",
+            "early_exit_min_train_profit_factor": 1.0,
+            "parameters": {"entry.params.reclaim_window_bars": [7]},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+    )
+
+    assert summary["early_exit"] is True
+    assert bool(results.loc[0, "early_exit"]) is True
 
 
 def test_wfa_requires_own_parameter_space():

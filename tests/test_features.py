@@ -83,6 +83,7 @@ def test_previous_rth_levels_skip_eth_boundary_bar_over_weekend():
 
     assert monday["prev_rth_high"] == 3912.5
     assert monday["prev_rth_low"] == 3877.25
+    assert monday["prev_rth_close"] == 3879.0
 
 
 def test_previous_rth_freshness_detects_overnight_breaches():
@@ -160,3 +161,4 @@ def test_previous_rth_levels_can_reset_on_contract_change():
 
     assert pd.isna(first_new_contract_rth["prev_rth_high"])
     assert pd.isna(first_new_contract_rth["prev_rth_low"])
+    assert pd.isna(first_new_contract_rth["prev_rth_close"])

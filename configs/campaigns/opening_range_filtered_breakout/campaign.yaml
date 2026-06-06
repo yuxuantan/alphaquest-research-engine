@@ -1,0 +1,39 @@
+campaign_id: opening_range_filtered_breakout
+campaign_name: Opening Range Filtered Breakout
+source:
+  title:
+  url:
+status: researching
+
+idea:
+  summary: >
+    Test whether ES opening-range breaks become more robust when the break is
+    confirmed by current-bar participation and session VWAP context.
+  entry_thesis: >
+    The opening range is a visible early-session reference. Breaks backed by
+    elevated volume and VWAP alignment may identify directional auction
+    acceptance, while failed breaks stretched away from VWAP may offer a
+    separate range-fade expression.
+  exit_thesis: >
+    Continuation variants use either an opening-range extension or
+    cost-adjusted fixed-R target with the opposite opening-range edge as
+    invalidation. Failed-break fades target the opposite side of the opening
+    range and use opening-range-width risk.
+
+mechanics:
+  market_timezone: America/New_York
+  session: RTH-only entries; signals use opening-range state, current-bar volume ratio, and current-bar VWAP known at signal close.
+  variants:
+    volume_confirmed_extension: >
+      Trade continuation breaks through the opening range with minimum
+      same-bar volume ratio and an opening-range extension target.
+    vwap_aligned_fixed_r: >
+      Trade continuation breaks only when the confirming close is aligned with
+      session VWAP, targeting a cost-adjusted fixed R multiple.
+    failed_break_fade: >
+      Fade breaks through the opening range when the close is stretched on the
+      breakout side of VWAP, targeting a return through the range.
+
+notes:
+  - Rationale is market-structure reasoning, not a cited paper.
+  - This is materially different from prior-day breakout, VWAP pullback, gap fade, and overnight inventory campaigns.

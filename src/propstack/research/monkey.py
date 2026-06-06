@@ -37,6 +37,7 @@ def run_monkey(
     benchmarks: dict,
     report_dir: str | Path | None = None,
     detail_data: pd.DataFrame | None = None,
+    core_trades: pd.DataFrame | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Compare one core strategy run against constrained random trades.
 
@@ -49,12 +50,20 @@ def run_monkey(
     constraints = _constraints(monkey_config)
 
     market = data.sort_values("timestamp").reset_index(drop=True)
-    core_result = BacktestEngine(base_config).run(market, detail_data=detail_data)
-    core_trades = core_result["trades"]
+    if core_trades is None:
+        core_result = BacktestEngine(base_config).run(market, detail_data=detail_data)
+        core_trades = core_result["trades"]
+        core_metrics = core_result["metrics"]
+    else:
+        core_trades = core_trades.copy()
+        core_metrics = calculate_metrics(
+            core_trades,
+            initial_balance=float(base_config.get("core", {}).get("initial_balance", 0)),
+        )
     if core_trades.empty:
         raise ValueError("Core strategy produced no trades; monkey constraints cannot be derived.")
 
-    core_profile = _core_profile(market, core_trades, core_result["metrics"])
+    core_profile = _core_profile(market, core_trades, core_metrics)
     eligible = _eligible_entries(market, base_config, constraints)
     if eligible.empty:
         raise ValueError("No eligible monkey entry bars found for the configured strategy session.")
@@ -111,6 +120,7 @@ def run_monkey(
     drawdown_beat_rate = float(df["core_max_drawdown_lt_monkey"].mean()) if len(df) else 0.0
     passing = int(df["benchmark_passed"].sum()) if len(df) else 0
     profitable = int(df["profitable"].sum()) if len(df) else 0
+    representative = _representative_profitable_run(df)
 
     summary = {
         "number_of_runs": int(len(df)),
@@ -141,6 +151,7 @@ def run_monkey(
         "p95_max_drawdown": _quantile(df, "max_drawdown", 0.95),
         "median_average_bars_in_trade": _quantile(df, "average_bars_in_trade", 0.50),
         "median_long_ratio": _quantile(df, "long_ratio", 0.50),
+        "representative_profitable_run": representative,
         "constraints": {
             "trade_count_tolerance_pct": float(constraints["trade_count_tolerance_pct"]),
             "trade_count_tolerance": int(constraints["trade_count_tolerance"]),
@@ -164,6 +175,20 @@ def run_monkey(
         },
     }
     return df, summary
+
+
+def _representative_profitable_run(df: pd.DataFrame) -> dict:
+    if df.empty or "net_profit" not in df.columns:
+        return {}
+    profitable = df[df.get("profitable", False)].copy()
+    if profitable.empty:
+        return {}
+    median_net_profit = float(profitable["net_profit"].median())
+    profitable["_median_net_profit_distance"] = (profitable["net_profit"] - median_net_profit).abs()
+    row = profitable.sort_values(["_median_net_profit_distance", "run_id"], kind="stable").iloc[0]
+    out = row.drop(labels=["_median_net_profit_distance"]).to_dict()
+    out["profitable_median_net_profit"] = median_net_profit
+    return out
 
 
 def _run_parallel_monkey(

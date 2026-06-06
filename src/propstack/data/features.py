@@ -24,13 +24,15 @@ def add_previous_rth_levels(df: pd.DataFrame, reset_on_contract_change: bool = F
     low_idx = rth.groupby("session_date")["low"].idxmin()
     daily["rth_high_timestamp"] = rth.loc[high_idx].set_index("session_date")["timestamp"]
     daily["rth_low_timestamp"] = rth.loc[low_idx].set_index("session_date")["timestamp"]
-    prev_cols = ["rth_high", "rth_low", "rth_high_timestamp", "rth_low_timestamp"]
+    prev_cols = ["rth_high", "rth_low", "rth_open", "rth_close", "rth_high_timestamp", "rth_low_timestamp"]
     if "rth_contract_symbol" in daily.columns:
         prev_cols.append("rth_contract_symbol")
     prev = daily[prev_cols].shift(1).rename(
         columns={
             "rth_high": "prev_rth_high",
             "rth_low": "prev_rth_low",
+            "rth_open": "prev_rth_open",
+            "rth_close": "prev_rth_close",
             "rth_high_timestamp": "prev_rth_high_timestamp",
             "rth_low_timestamp": "prev_rth_low_timestamp",
             "rth_contract_symbol": "prev_rth_contract_symbol",
@@ -44,7 +46,14 @@ def add_previous_rth_levels(df: pd.DataFrame, reset_on_contract_change: bool = F
         )
         out.loc[
             contract_changed,
-            ["prev_rth_high", "prev_rth_low", "prev_rth_high_timestamp", "prev_rth_low_timestamp"],
+            [
+                "prev_rth_high",
+                "prev_rth_low",
+                "prev_rth_open",
+                "prev_rth_close",
+                "prev_rth_high_timestamp",
+                "prev_rth_low_timestamp",
+            ],
         ] = pd.NA
     out = add_previous_rth_freshness(out)
     return out

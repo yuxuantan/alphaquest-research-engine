@@ -49,6 +49,9 @@ def test_next_bar_entry_and_costs():
     result = BacktestEngine(BASE_CFG).run(_features())
     trades = result["trades"]
     assert len(trades) >= 2
+    assert result["diagnostics"]["entries_opened"] == len(trades)
+    assert result["diagnostics"]["trades_closed"] == len(trades)
+    assert result["diagnostics"]["preflight"]["rows"] == len(_features())
     first = trades.iloc[0]
     assert first["strategy_name"] == "pdh_pdl_sweep"
     assert "08:32:00" in str(first["entry_timestamp"])

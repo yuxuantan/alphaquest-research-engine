@@ -35,6 +35,34 @@ def test_monkey_summary():
     assert summary["constraints"]["max_duration_bars"] >= 1
     assert set(["total_trades", "long_ratio", "average_bars_in_trade"]).issubset(results.columns)
     assert (results["total_trades"] == summary["core_metrics"]["total_trades"]).all()
+    assert "representative_profitable_run" in summary
+
+
+def test_monkey_can_use_supplied_core_trades():
+    df, _, _ = clean_data(DATA_CFG)
+    data = build_features(df, DATA_CFG)
+    core_trades = monkey_module.BacktestEngine(BASE_CFG).run(data)["trades"]
+    cfg = {
+        "runs": 3,
+        "seed": 1,
+        "constraints": {
+            "trade_count_tolerance_pct": 0.0,
+            "trade_count_tolerance": 0,
+            "long_short_ratio_tolerance": 0.0,
+            "average_bars_tolerance_pct": 0.0,
+        },
+    }
+
+    results, summary = run_monkey(
+        data,
+        BASE_CFG,
+        cfg,
+        {"min_trade_count": 1, "max_drawdown": 99999},
+        core_trades=core_trades,
+    )
+
+    assert len(results) == 3
+    assert summary["core_metrics"]["total_trades"] == len(core_trades)
 
 
 def test_monkey_retains_iteration_reports(tmp_path):
