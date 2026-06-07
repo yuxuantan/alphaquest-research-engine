@@ -6,6 +6,7 @@ from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessi
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
+from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIntradayMomentumEntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_inverse_breakout import OpeningRangeInverseBreakoutEntry
@@ -14,6 +15,7 @@ from propstack.strategy_modules.entry.overnight_return_late_day_momentum import 
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
+from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
 from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPullbackContinuationEntry
 from propstack.strategy_modules.sl.opening_range_edge import OpeningRangeEdgeStop
 from propstack.strategy_modules.sl.opening_range_width import OpeningRangeWidthStop
@@ -167,6 +169,92 @@ def test_calendar_session_bias_rejects_wrong_time_weekday_rth_and_trade_limit():
     assert entry.on_bar_close(_cal_bar("2024-01-03 09:30"), trades_today=1) is None
 
 
+def _tom_bar(timestamp, open_price=100.0, high=101.0, low=99.0, close=100.5, *, is_rth=True):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": is_rth,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def test_turn_of_month_bias_emits_for_first_and_last_calendar_days():
+    entry = TurnOfMonthBiasEntry(
+        {
+            "setup_mode": "turn_window",
+            "bar_interval_minutes": 5,
+            "signal_time": "11:00:00",
+            "first_calendar_days": 5,
+            "last_calendar_days": 4,
+        }
+    )
+
+    first_day = entry.on_bar_close(_tom_bar("2024-02-02 10:55"))
+    assert first_day.direction == "long"
+    assert first_day.level_type == "turn_of_month_bias_turn_window_long"
+    assert first_day.report_fields["turn_of_month_calendar_day"] == 2
+    assert (
+        first_day.report_fields["academic_source_key"]
+        == "carchano_pardo_2011_calendar_anomalies_stock_index_futures"
+    )
+
+    last_day = entry.on_bar_close(_tom_bar("2024-02-27 10:55"))
+    assert last_day.direction == "long"
+    assert last_day.report_fields["turn_of_month_days_to_month_end"] == 2
+
+
+def test_turn_of_month_bias_rejects_middle_month_wrong_time_rth_trade_limit_and_duplicate():
+    entry = TurnOfMonthBiasEntry(
+        {
+            "setup_mode": "turn_window",
+            "bar_interval_minutes": 5,
+            "signal_time": "11:00:00",
+            "first_calendar_days": 5,
+            "last_calendar_days": 4,
+        }
+    )
+
+    assert entry.on_bar_close(_tom_bar("2024-02-14 10:55")) is None
+    assert entry.on_bar_close(_tom_bar("2024-02-02 10:50")) is None
+    assert entry.on_bar_close(_tom_bar("2024-02-02 10:55", is_rth=False)) is None
+    assert entry.on_bar_close(_tom_bar("2024-02-02 10:55"), trades_today=1) is None
+    assert entry.on_bar_close(_tom_bar("2024-02-02 10:55")) is not None
+    assert entry.on_bar_close(_tom_bar("2024-02-02 10:55")) is None
+
+
+def test_turn_of_month_bias_first_or_last_only_modes():
+    first_only = TurnOfMonthBiasEntry(
+        {
+            "setup_mode": "early_month_strength",
+            "bar_interval_minutes": 5,
+            "signal_time": "11:00:00",
+            "first_calendar_days": 5,
+            "last_calendar_days": 4,
+        }
+    )
+    last_only = TurnOfMonthBiasEntry(
+        {
+            "setup_mode": "month_end_strength",
+            "bar_interval_minutes": 5,
+            "signal_time": "11:00:00",
+            "first_calendar_days": 5,
+            "last_calendar_days": 4,
+        }
+    )
+
+    assert first_only.on_bar_close(_tom_bar("2024-02-02 10:55")) is not None
+    assert first_only.on_bar_close(_tom_bar("2024-02-27 10:55")) is None
+    assert last_only.on_bar_close(_tom_bar("2024-02-02 10:55")) is None
+    assert last_only.on_bar_close(_tom_bar("2024-02-27 10:55")) is not None
+
+
 def _tsm_bar(timestamp, open_price, high, low, close, *, is_rth=True):
     ts = pd.Timestamp(timestamp, tz="America/New_York")
     return pd.Series(
@@ -312,7 +400,9 @@ def _idm_bar(
     volume_ratio=1.0,
     is_rth=True,
 ):
-    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    ts = pd.Timestamp(timestamp)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("America/New_York")
     return pd.Series(
         {
             "timestamp": ts,
@@ -479,6 +569,211 @@ def test_late_day_intraday_momentum_signal_closes_at_last_half_hour_start_for_su
         assert signal.report_fields["late_day_entry_window_start"] == pd.Timestamp(
             "2024-01-03 15:30", tz="America/New_York"
         )
+
+
+def _mim_bar(
+    timestamp,
+    open_price,
+    high,
+    low,
+    close,
+    *,
+    volume=1000,
+    volume_ratio=1.0,
+    is_rth=True,
+):
+    ts = pd.Timestamp(timestamp)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": is_rth,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+            "volume_ratio": volume_ratio,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def _mim_source_window_bars(
+    timeframe_minutes=30,
+    *,
+    start_open=100.0,
+    close=102.0,
+    high=103.0,
+    low=99.5,
+    volume_ratio=1.2,
+    is_rth=True,
+):
+    minutes = list(range(30, 90, timeframe_minutes))
+    bars = []
+    for idx, minute_offset in enumerate(minutes):
+        ts = pd.Timestamp("2024-01-03 09:00", tz="America/New_York") + pd.Timedelta(minutes=minute_offset)
+        bar_open = start_open if idx == 0 else start_open + idx * 0.25
+        bar_close = close if idx == len(minutes) - 1 else bar_open + 0.25
+        bars.append(
+            _mim_bar(
+                ts,
+                bar_open,
+                high,
+                low,
+                bar_close,
+                volume_ratio=volume_ratio,
+                is_rth=is_rth,
+            )
+        )
+    return bars
+
+
+def test_morning_intraday_momentum_emits_long_and_short_from_rth_open_to_signal_return():
+    long_entry = MorningIntradayMomentumEntry(
+        {
+            "setup_mode": "long_only_strength",
+            "bar_interval_minutes": 30,
+            "min_signal_return_ticks": 2,
+            "tick_size": 0.25,
+            "allow_short": False,
+        }
+    )
+    signal = None
+    for bar in _mim_source_window_bars(30, close=102.0):
+        signal = long_entry.on_bar_close(bar)
+
+    assert signal.direction == "long"
+    assert signal.level_type == "morning_intraday_momentum_long_only_strength"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 10:30", tz="America/New_York")
+    assert signal.report_fields["source_return_reference"] == "rth_open_to_signal_close"
+    assert signal.report_fields["source_window_open"] == 100.0
+    assert signal.report_fields["source_window_close"] == 102.0
+    assert signal.report_fields["source_window_return_ticks"] == 8.0
+    assert signal.report_fields["morning_momentum_entry_window_start"] == pd.Timestamp(
+        "2024-01-03 10:30", tz="America/New_York"
+    )
+    assert signal.report_fields["academic_source_key"] == "gao_han_li_zhou_2018_market_intraday_momentum"
+
+    short_entry = MorningIntradayMomentumEntry(
+        {
+            "setup_mode": "two_sided_continuation",
+            "bar_interval_minutes": 30,
+            "min_signal_return_ticks": 2,
+            "tick_size": 0.25,
+        }
+    )
+    signal = None
+    for bar in _mim_source_window_bars(30, close=98.0):
+        signal = short_entry.on_bar_close(bar)
+
+    assert signal.direction == "short"
+    assert signal.report_fields["source_window_return_ticks"] == -8.0
+
+
+def test_morning_intraday_momentum_rejects_invalid_wrong_time_rth_and_trade_limit():
+    small = MorningIntradayMomentumEntry({"bar_interval_minutes": 30, "min_signal_return_ticks": 2})
+    signal = None
+    for bar in _mim_source_window_bars(30, close=100.25):
+        signal = small.on_bar_close(bar)
+    assert signal is None
+
+    outside_rth = MorningIntradayMomentumEntry({"bar_interval_minutes": 30, "min_signal_return_ticks": 1})
+    signal = None
+    for bar in _mim_source_window_bars(30, close=102.0, is_rth=False):
+        signal = outside_rth.on_bar_close(bar)
+    assert signal is None
+
+    early = MorningIntradayMomentumEntry({"bar_interval_minutes": 30, "min_signal_return_ticks": 1})
+    assert early.on_bar_close(_mim_bar("2024-01-03 09:30", 100.0, 101.0, 99.5, 100.5)) is None
+
+    limited = MorningIntradayMomentumEntry({"bar_interval_minutes": 30, "min_signal_return_ticks": 1})
+    first, final = _mim_source_window_bars(30, close=102.0)
+    assert limited.on_bar_close(first) is None
+    assert limited.on_bar_close(final, trades_today=1) is None
+
+
+def test_morning_intraday_momentum_volume_volatility_conditioned_filters():
+    params = {
+        "setup_mode": "volume_volatility_conditioned",
+        "bar_interval_minutes": 30,
+        "min_signal_return_ticks": 1,
+        "min_source_window_volume_ratio": 1.5,
+        "min_source_window_range_points": 2.0,
+    }
+    low_volume = MorningIntradayMomentumEntry(params)
+    signal = None
+    for bar in _mim_source_window_bars(30, close=102.0, volume_ratio=1.2, high=103.0, low=99.5):
+        signal = low_volume.on_bar_close(bar)
+    assert signal is None
+
+    low_range = MorningIntradayMomentumEntry(params)
+    signal = None
+    for bar in _mim_source_window_bars(30, close=102.0, volume_ratio=1.6, high=102.1, low=100.5):
+        signal = low_range.on_bar_close(bar)
+    assert signal is None
+
+    passing = MorningIntradayMomentumEntry(params)
+    signal = None
+    for bar in _mim_source_window_bars(30, close=102.0, volume_ratio=1.6, high=103.0, low=99.5):
+        signal = passing.on_bar_close(bar)
+
+    assert signal.direction == "long"
+    assert signal.report_fields["source_window_avg_volume_ratio"] == 1.6
+    assert signal.report_fields["source_window_range_points"] == 3.5
+
+
+def test_morning_intraday_momentum_signal_close_aligns_entry_for_supported_timeframes():
+    cases = [
+        (5, "2024-01-03 10:25"),
+        (15, "2024-01-03 10:15"),
+        (30, "2024-01-03 10:00"),
+    ]
+    for timeframe_minutes, signal_bar_timestamp in cases:
+        entry = MorningIntradayMomentumEntry(
+            {
+                "setup_mode": "long_only_strength",
+                "bar_interval_minutes": timeframe_minutes,
+                "min_signal_return_ticks": 1,
+            }
+        )
+        signal = None
+        for bar in _mim_source_window_bars(timeframe_minutes, close=102.0):
+            signal = entry.on_bar_close(bar)
+
+        assert signal.direction == "long"
+        assert signal.sweep_timestamp == pd.Timestamp("2024-01-03 09:30", tz="America/New_York")
+        assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 10:30", tz="America/New_York")
+        assert signal.report_fields["morning_momentum_entry_window_start"] == pd.Timestamp(
+            "2024-01-03 10:30", tz="America/New_York"
+        )
+        assert signal.report_fields["morning_momentum_entry_window_end"] == pd.Timestamp(
+            "2024-01-03 10:30", tz="America/New_York"
+        ) + pd.Timedelta(minutes=timeframe_minutes)
+        assert pd.Timestamp(signal_bar_timestamp, tz="America/New_York") + pd.Timedelta(
+            minutes=timeframe_minutes
+        ) == signal.reclaim_timestamp
+
+
+def test_morning_intraday_momentum_does_not_use_future_bars():
+    entry = MorningIntradayMomentumEntry(
+        {
+            "setup_mode": "long_only_strength",
+            "bar_interval_minutes": 30,
+            "min_signal_return_ticks": 1,
+        }
+    )
+    signal = None
+    for bar in _mim_source_window_bars(30, close=102.0):
+        signal = entry.on_bar_close(bar)
+    assert signal.report_fields["source_window_close"] == 102.0
+
+    future = entry.on_bar_close(_mim_bar("2024-01-03 10:30", 80.0, 81.0, 79.0, 79.5))
+
+    assert future is None
+    assert signal.report_fields["source_window_close"] == 102.0
 
 
 def _orlm_bar(

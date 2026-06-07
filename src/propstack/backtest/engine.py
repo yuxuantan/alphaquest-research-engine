@@ -224,10 +224,12 @@ class BacktestEngine:
             "opening_range_inverse_breakout": {"is_rth"},
             "intraday_capitulation_mr": {"is_rth", "vwap"},
             "late_day_intraday_momentum": {"is_rth", "prev_rth_close", "volume_ratio"},
+            "morning_intraday_momentum": {"is_rth", "volume_ratio"},
             "overnight_return_late_day_momentum": {"is_rth", "prev_rth_close"},
             "overnight_inventory_reversion": {"is_rth", "overnight_high", "overnight_low", "vwap"},
             "pdh_pdl_breakout_continuation": {"is_rth", "prev_rth_high", "prev_rth_low", "volume_ratio"},
             "rth_gap_fade": {"is_rth", "prev_rth_close", "vwap"},
+            "turn_of_month_bias": {"is_rth"},
             "vwap_pullback_continuation": {"is_rth", "vwap"},
         }
         missing = sorted(required_by_module.get(module, set()) - set(data.columns))

@@ -1,0 +1,62 @@
+{
+  "_notes": [
+    "Copy this file to a private config file and update balances/open exposure from your Apex/broker dashboard before every trading session.",
+    "This is configured for five Apex 50K EOD accounts. It is intentionally conservative and blocks trades before official Apex limits are reached.",
+    "Use this as a manual pre-trade compliance gate. It cannot guarantee payouts and cannot validate rules Apex reviews qualitatively."
+  ],
+  "defaults": {
+    "account_type": "evaluation",
+    "platform": "rithmic",
+    "starting_balance": 50000,
+    "profit_target": 3000,
+    "max_eod_drawdown": 2000,
+    "daily_loss_limit": 1000,
+    "max_contracts": 6,
+    "current_balance": 50000,
+    "current_equity": 50000,
+    "start_of_day_balance": 50000,
+    "highest_eod_balance": 50000,
+    "eod_threshold": 48000,
+    "daily_realized_pnl": 0,
+    "open_standard_equivalent": 0,
+    "open_side": "flat",
+    "enabled": true,
+    "locked": false
+  },
+  "risk": {
+    "personal_eod_buffer": 250,
+    "personal_dll_buffer": 250,
+    "max_loss_per_trade": 250,
+    "max_daily_loss": 750,
+    "min_reward_risk": 1.0,
+    "slippage_ticks": 1,
+    "round_turn_cost_per_contract": 5,
+    "flat_cutoff_et": "16:55",
+    "lock_after_eval_target": true
+  },
+  "proteryx": {
+    "strategy_uuid_env": "PROTERYX_STRATEGY_UUID",
+    "webhook_url": "https://api.proteryx.com/tradingview/auto-traders/alert",
+    "portfolio": "Apex50kEOD",
+    "route": "selected_accounts",
+    "client_tag": "apex-50k-eod-guarded",
+    "timeout_seconds": 10
+  },
+  "accounts": [
+    {
+      "name": "APEX-50K-EOD-01"
+    },
+    {
+      "name": "APEX-50K-EOD-02"
+    },
+    {
+      "name": "APEX-50K-EOD-03"
+    },
+    {
+      "name": "APEX-50K-EOD-04"
+    },
+    {
+      "name": "APEX-50K-EOD-05"
+    }
+  ]
+}

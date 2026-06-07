@@ -1,0 +1,36 @@
+campaign_id: morning_intraday_momentum_continuation
+campaign_name: Morning Intraday Momentum Continuation
+status: research
+
+academic_sources:
+  - title: "Market Intraday Momentum"
+    authors: "Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou"
+    year: 2018
+    venue: "Journal of Financial Economics, 129(2), 394-414"
+    doi: "10.1016/j.jfineco.2018.05.009"
+    url: "https://www.sciencedirect.com/science/article/abs/pii/S0304405X18301351"
+    finding_used: "Opening-period market returns predict later intraday market returns, especially on high-volume and high-volatility days."
+    evidence_directness: "Indirect for ES. The paper tests SPY and ETFs; ES is used as the liquid S&P 500 futures implementation."
+
+edge_thesis: >
+  A completed RTH morning return, measured from the RTH open to a 10:30 signal
+  close, can identify same-day directional continuation that survives current
+  ES costs when expressed with next-bar execution and risk-managed afternoon
+  exits.
+
+translation_notes:
+  why_es: "ES provides deep, liquid S&P 500 beta with direct intraday execution."
+  why_effect_may_survive_costs: "The strategy trades once per day at most and uses a completed one-hour source window rather than short-horizon scalping."
+  expected_working_regime: "Persistent morning information flow that continues through the afternoon."
+  expected_failure_regime: "Mean-reverting morning extremes, FOMC/news reversals, and regimes where the ETF-documented effect does not transfer to ES."
+  translation_risks: "This tests a broader morning-to-afternoon continuation expression rather than the paper's exact first-to-last-half-hour specification."
+
+variants:
+  - long_only_strength
+  - two_sided_continuation
+  - volume_volatility_conditioned
+
+timeframes:
+  - 5m
+  - 15m
+  - 30m

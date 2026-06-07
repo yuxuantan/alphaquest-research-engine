@@ -4,6 +4,7 @@ from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessi
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
+from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIntradayMomentumEntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_inverse_breakout import OpeningRangeInverseBreakoutEntry
@@ -13,6 +14,7 @@ from propstack.strategy_modules.entry.base import Signal
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
+from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
 from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPullbackContinuationEntry
 
 
@@ -21,6 +23,7 @@ ENTRY_MODULES = {
     DailyTimeSeriesMomentumEntry.name: DailyTimeSeriesMomentumEntry,
     IntradayCapitulationMREntry.name: IntradayCapitulationMREntry,
     LateDayIntradayMomentumEntry.name: LateDayIntradayMomentumEntry,
+    MorningIntradayMomentumEntry.name: MorningIntradayMomentumEntry,
     OpeningRangeBreakoutEntry.name: OpeningRangeBreakoutEntry,
     OpeningRangeFilteredBreakoutEntry.name: OpeningRangeFilteredBreakoutEntry,
     OpeningRangeInverseBreakoutEntry.name: OpeningRangeInverseBreakoutEntry,
@@ -29,6 +32,7 @@ ENTRY_MODULES = {
     PdhPdlBreakoutContinuationEntry.name: PdhPdlBreakoutContinuationEntry,
     PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
     RthGapFadeEntry.name: RthGapFadeEntry,
+    TurnOfMonthBiasEntry.name: TurnOfMonthBiasEntry,
     VwapPullbackContinuationEntry.name: VwapPullbackContinuationEntry,
 }
 
@@ -48,6 +52,7 @@ __all__ = [
     "DailyTimeSeriesMomentumEntry",
     "IntradayCapitulationMREntry",
     "LateDayIntradayMomentumEntry",
+    "MorningIntradayMomentumEntry",
     "OpeningRangeBreakoutEntry",
     "OpeningRangeFilteredBreakoutEntry",
     "OpeningRangeInverseBreakoutEntry",
@@ -56,6 +61,7 @@ __all__ = [
     "PdhPdlBreakoutContinuationEntry",
     "PdhPdlSweepReclaimEntry",
     "RthGapFadeEntry",
+    "TurnOfMonthBiasEntry",
     "VwapPullbackContinuationEntry",
     "build_entry_module",
 ]
