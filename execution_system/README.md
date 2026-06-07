@@ -352,7 +352,70 @@ If you are trading a PA instead of an evaluation, set an account's
 checks for 5 qualifying days, $52,100 safety net, $52,600 minimum request
 balance, 50% consistency, and the six-payout cap.
 
-## 8. Delayed Data Testing
+## 8. Live Strategy Execution Bridge
+
+`strategy_execution_bridge.py` connects the research strategy configs to the
+execution system without modifying the research code:
+
+1. Loads the configured campaign variant YAML read-only.
+2. Pulls recent 1-minute ES historical bars from IBKR.
+3. Subscribes to IBKR 5-second live bars and aggregates completed 1-minute bars.
+4. Builds the same session, timeframe, and feature columns used by backtests.
+5. Runs the modular strategy on newly completed strategy bars.
+6. Computes entry estimate, stop, target, and strategy-suggested size.
+7. Walks size down until the Apex guardrails approve the order.
+8. Dry-runs or sends the guarded market/TP/SL payload to Proteryx.
+
+The example bridge config points at:
+
+```text
+configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml
+```
+
+The bridge needs the same Python environment as the research stack plus IBKR:
+
+```bash
+python3 -m pip install pandas pyyaml ibapi
+```
+
+Check the bridge help:
+
+```bash
+python3 strategy_execution_bridge.py --help
+```
+
+Run one live completed-minute evaluation in dry-run mode:
+
+```bash
+python3 strategy_execution_bridge.py \
+  --config strategy_execution_bridge.example.json \
+  --once
+```
+
+Run continuously in dry-run mode:
+
+```bash
+python3 strategy_execution_bridge.py \
+  --config strategy_execution_bridge.example.json
+```
+
+Allow Proteryx POSTs only after the strategy signal, sizing, and guardrails all
+pass:
+
+```bash
+export PROTERYX_STRATEGY_UUID="your-proteryx-auto-trader-uuid"
+
+python3 strategy_execution_bridge.py \
+  --config strategy_execution_bridge.example.json \
+  --execute
+```
+
+Keep `apex_50k_eod_guardrails.example.json` current with live Apex account
+balances, start-of-day balances, EOD thresholds, and open exposure. The bridge
+uses the lowest selected account equity as the live sizing base, then clamps the
+result to the largest quantity that passes every selected Apex account.
+
+## 9. Delayed Data Testing
 
 If your account does not have live CME data permissions, try delayed data:
 
@@ -373,7 +436,7 @@ Market data type values:
 | `3` | Delayed |
 | `4` | Delayed frozen |
 
-## 9. Use Environment Variables
+## 10. Use Environment Variables
 
 Instead of repeating flags:
 
@@ -392,7 +455,7 @@ python3 ibkr_es_historical_1m_fetch.py --client-id 73
 python3 ibkr_es_l2_ohlcv_poc.py --client-id 72
 ```
 
-## 10. Practical Signal Engine Flow
+## 11. Practical Signal Engine Flow
 
 1. Run `ibkr_es_historical_1m_fetch.py` at startup.
 2. Load `data/ibkr/historical/ES_202606_CME_1min_latest.csv`.
@@ -401,7 +464,7 @@ python3 ibkr_es_l2_ohlcv_poc.py --client-id 72
 5. Append each completed live 1-minute bar to your in-memory bar series.
 6. Recompute entry signals only after a completed bar, unless your strategy explicitly uses partial bars.
 
-## 11. Common Problems
+## 12. Common Problems
 
 `Couldn't connect to TWS`
 

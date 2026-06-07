@@ -1,0 +1,40 @@
+{
+  "_notes": [
+    "Live bridge config. This file lives in execution_system; it references strategy configs outside this folder read-only.",
+    "The bridge is dry-run unless execution.execute is true or the CLI is run with --execute.",
+    "Keep apex_50k_eod_guardrails.example.json updated with current Apex balances/open exposure before running live."
+  ],
+  "project_root": "/Users/yx/Desktop/prop_stack_automation",
+  "strategy_config": "configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml",
+  "guardrails_config": "apex_50k_eod_guardrails.example.json",
+  "ibkr": {
+    "host": "127.0.0.1",
+    "port": 4002,
+    "client_id": 82,
+    "symbol": "ES",
+    "expiry": "202606",
+    "exchange": "CME",
+    "currency": "USD",
+    "multiplier": "50",
+    "local_symbol": null,
+    "market_data_type": 1,
+    "historical_duration": "3 D",
+    "historical_timeout": 90,
+    "connect_timeout": 15,
+    "what_to_show": "TRADES",
+    "use_rth": 0
+  },
+  "execution": {
+    "send_to_proteryx": true,
+    "execute": false,
+    "proteryx_symbol": "ES",
+    "max_source_bars": 10000,
+    "max_quantity": 6,
+    "min_quantity": 1,
+    "accounts": null,
+    "portfolio": "Apex50kEOD",
+    "route": "selected_accounts",
+    "client_tag": "strategy-execution-bridge",
+    "extra_payload": {}
+  }
+}
