@@ -44,6 +44,69 @@ def test_default_stage_criteria_fail_apex_rule_violations():
     assert apex[0]["passed"] is False
 
 
+def test_length_adjusted_mar_requirement_anchors_and_clamps():
+    assert campaign_stages.length_adjusted_mar_requirement(2.0) == 1.5
+    assert campaign_stages.length_adjusted_mar_requirement(3.0) == 1.5
+    assert round(campaign_stages.length_adjusted_mar_requirement(5.0), 2) == 1.06
+    assert round(campaign_stages.length_adjusted_mar_requirement(10.0), 2) == 0.66
+    assert campaign_stages.length_adjusted_mar_requirement(15.0) == 0.5
+    assert campaign_stages.length_adjusted_mar_requirement(20.0) == 0.5
+
+
+def test_wfa_mar_default_criteria_use_length_adjusted_threshold():
+    criteria = campaign_stages._criteria_for_stage("walk_forward_analysis", {})
+    results = evaluate_criteria(
+        {
+            "summary": {
+                "early_exit": False,
+                "windows": 12,
+                "oos_evaluation_years": 15.0,
+            },
+            "stitched_oos_metrics": {
+                "profit_factor": 1.6,
+                "mar": 0.55,
+                "expectancy_r": 0.25,
+                "total_trades": 600,
+                "win_rate": 0.50,
+                "apex_rule_violations": 0,
+            },
+        },
+        criteria,
+    )
+
+    mar = [item for item in results if item["metric"] == "stitched_oos_metrics.mar"][0]
+    assert mar["passed"] is True
+    assert mar["expected"]["min"] == 0.5
+    assert mar["expected"]["dynamic_min"] == "length_adjusted_mar"
+    assert mar["expected"]["span_years"] == 15.0
+
+
+def test_wfa_mar_default_criteria_stay_strict_for_short_oos_spans():
+    criteria = campaign_stages._criteria_for_stage("walk_forward_analysis", {})
+    results = evaluate_criteria(
+        {
+            "summary": {
+                "early_exit": False,
+                "windows": 12,
+                "oos_evaluation_years": 3.0,
+            },
+            "stitched_oos_metrics": {
+                "profit_factor": 1.6,
+                "mar": 1.49,
+                "expectancy_r": 0.25,
+                "total_trades": 600,
+                "win_rate": 0.50,
+                "apex_rule_violations": 0,
+            },
+        },
+        criteria,
+    )
+
+    mar = [item for item in results if item["metric"] == "stitched_oos_metrics.mar"][0]
+    assert mar["passed"] is False
+    assert mar["expected"]["min"] == 1.5
+
+
 def test_incubation_params_are_selected_from_best_wfa_oos_window():
     wfa_results = pd.DataFrame(
         [

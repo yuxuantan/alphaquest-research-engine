@@ -1,0 +1,205 @@
+campaign_id: cftc_tff_hedging_pressure
+variant_id: extended_spx_open_interest_expansion
+strategy_name: cftc_tff_hedging_pressure
+symbol: ES
+dataset_id: 1m_full_history
+timeframe: 30m
+
+research_metadata:
+  academic_source: "de Roon, Nijman, and Veld (2000), Hedging Pressure Effects in Futures Markets"
+  doi: "10.1111/0022-1082.00253"
+  edge_thesis: "Confirmed CFTC S&P 500 open-interest expansion can persist into the RTH close when hedging-pressure carry is active."
+  mechanic: "Trade long ES after confirmed CFTC TFF S&P 500 open-interest expansion and allow the position to flatten at the RTH close."
+  timeframe_rationale: "30m bars align the weekly CFTC state to fixed intraday entries while using existing 1-minute execution detail for stop/target conflict checks."
+  apex_compatibility: "RTH-only entries at or before 11:00 ET and same-day flattening before the futures daily close."
+
+data:
+  dataset_id: 1m_full_history
+  source_timeframe: 1m
+  source: databento_dbn
+  feature_set: full
+  raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
+  cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  continuous_contract: explicit_roll_calendar
+  roll_calendar: configs/data/ES/motivewave_rithmic_roll_calendar.csv
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
+  include_spreads: false
+  warmup_days: 20
+  rth_start: "09:30:00"
+  rth_end: "16:00:00"
+  eth_start: "16:00:00"
+  eth_end: "09:29:00"
+  rolling_volume_window: 20
+
+external_data:
+  cftc_tff_features:
+    path: data/external/cftc_tff_hedging_pressure_features.csv
+    source: "https://www.cftc.gov/files/dea/history/com_fin_txt_YYYY.zip"
+    availability_rule: "Report_Date_as_YYYY-MM-DD plus 6 calendar days; trade no earlier than following Monday RTH."
+    point_in_time: true
+
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: "16:59:59"
+  force_flatten_enabled: true
+  force_flatten_time: "16:58:30"
+  latest_entry_time: "16:45:00"
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+
+strategy:
+  entry:
+    module: cftc_tff_hedging_pressure
+    params:
+      feature_file: data/external/cftc_tff_hedging_pressure_features.csv
+      feature_name: SPX_open_interest_chg13
+      operator: ">="
+      threshold: 47442
+      direction: long
+      entry_time: "11:00:00"
+      max_trades_per_day: 1
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 4.0
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.006
+      round_to_tick: true
+  flatten_time: "16:00:00"
+
+core:
+  data_subset:
+    start_date: "2021-01-01"
+    end_date: "2022-12-31"
+  initial_balance: 150000
+  tick_size: 0.25
+  tick_value: 12.50
+  commission_per_contract: 2.50
+  slippage_ticks: 1
+  position_sizing:
+    mode: risk_percent_net_liq
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
+  daily_loss_limit: 3000
+  daily_profit_stop: 5000
+  flatten_time: "16:00:00"
+
+benchmarks:
+  min_trades_per_year: 60
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.25
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.45
+  max_drawdown_pct: 0.05
+  min_cagr: 0.04
+  min_mar: 1.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.40
+  min_positive_month_rate: 0.50
+  min_wfa_profitable_window_rate: 0.70
+  min_monte_carlo_prop_pass_chance: 0.50
+
+core_grid:
+  data_subset:
+    start_date: "2021-01-01"
+    end_date: "2022-12-31"
+  objective: MAR
+  min_profitable_iteration_rate: 0.70
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: grid
+  parameters:
+    entry.params.threshold: [25000, 47442, 65000]
+    entry.params.entry_time: ["10:00:00", "10:30:00", "11:00:00"]
+    sl.params.stop_pct: [0.0045, 0.006, 0.008]
+    tp.params.target_r_multiple: [3.0, 4.0, 5.0, 8.0]
+
+monkey:
+  data_subset:
+    start_date: "2021-01-01"
+    end_date: "2022-12-31"
+  runs: 8000
+  seed: 7
+  beat_threshold: 0.90
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    trade_count_tolerance: 0
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.10
+    duration_shape: 0.70
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+
+wfa:
+  data_subset:
+    start_date: "2013-04-15"
+    end_date: "2026-05-29"
+  mode: unanchored
+  train_months: 36
+  test_months: 6
+  step_months: 6
+  objective: MAR
+  selection_min_trades_per_year: 60
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.threshold: [25000, 47442, 65000]
+    entry.params.entry_time: ["10:00:00", "10:30:00", "11:00:00"]
+    sl.params.stop_pct: [0.0045, 0.006, 0.008]
+    tp.params.target_r_multiple: [3.0, 4.0, 5.0, 8.0]
+
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.50
+  min_trading_days: 2
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+
+monte_carlo:
+  trade_source: core
+  runs: 500
+  seed: 11
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  path_months: 1
+  skip_trade_probability: 0.05
+  skip_winning_trade_probability: 0.0
+  adverse_slippage_per_trade: 0.0
+  position_sizing:
+    mode: risk_percent_initial_balance
+    risk_pct: 0.01
+  cluster_losses: false
+  retain_path_trades: false
+  retain_path_events: false

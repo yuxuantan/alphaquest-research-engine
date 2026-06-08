@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Bridge IBKR market data, propstack strategy configs, Apex guardrails, and Proteryx.
+Bridge IBKR market data, propstack strategy configs, Apex guardrails, and Tradovate.
 
 The bridge:
   1. Loads a campaign variant YAML from the main propstack project.
@@ -9,9 +9,9 @@ The bridge:
   4. Rebuilds the same session/timeframe/features used by the backtest engine.
   5. Runs the modular strategy on newly completed strategy bars.
   6. Computes entry estimate, stop, target, and guardrail-constrained size.
-  7. Optionally sends the guarded Proteryx alert-format market payload.
+  7. Optionally sends the guarded market OSO bracket order to Tradovate.
 
-It is dry-run by default. Use --execute to allow the Proteryx POST.
+It is dry-run by default. Use --execute to allow the Tradovate POST.
 """
 
 from __future__ import annotations
@@ -60,6 +60,7 @@ else:
     IBAPI_IMPORT_ERROR = None
 
 import apex_eod_guardrails as guardrails
+import tradovate_client as tradovate
 from ibkr_decimal_volume_patch import patch_ibapi_realtime_bar_decimal_volume
 from ibkr_es_historical_1m_fetch import next_quarterly_expiry
 
@@ -68,22 +69,6 @@ HISTORICAL_REQ_ID = 12001
 REALTIME_BARS_REQ_ID = 12002
 INFO_CODES = {2103, 2104, 2106, 2107, 2108, 2158}
 DEFAULT_CONFIG = "strategy_execution_bridge.example.json"
-FUTURES_MONTH_CODES = {
-    1: "F",
-    2: "G",
-    3: "H",
-    4: "J",
-    5: "K",
-    6: "M",
-    7: "N",
-    8: "Q",
-    9: "U",
-    10: "V",
-    11: "X",
-    12: "Z",
-}
-
-
 @dataclass(frozen=True)
 class OneMinuteBar:
     timestamp_epoch: int
@@ -326,6 +311,7 @@ class StrategyExecutionRuntime:
         self.strategy_config_path = resolve_strategy_path(self.project_root, config_path.parent, config["strategy_config"])
         self.guardrails_path = resolve_path(config_path.parent, config.get("guardrails_config", "apex_50k_eod_guardrails.example.json"))
         self.execution_config = config.get("execution", {})
+        self.tradovate_config = config.get("tradovate", {})
         self.ibkr_config = config.get("ibkr", {})
         self.guardrails_config = guardrails.load_config(str(self.guardrails_path))
         self.variant_config = load_yaml(self.strategy_config_path)
@@ -352,8 +338,10 @@ class StrategyExecutionRuntime:
             return
         if not self.ibkr_config.get("symbol"):
             self.ibkr_config["symbol"] = symbol
-        if not self.execution_config.get("proteryx_symbol"):
-            self.execution_config["proteryx_symbol"] = symbol
+        if not self.execution_config.get("guardrail_symbol"):
+            self.execution_config["guardrail_symbol"] = symbol
+        if not self.tradovate_config.get("symbol") and self.ibkr_config.get("expiry"):
+            self.tradovate_config["symbol"] = tradovate.tradovate_contract_symbol(symbol, self.ibkr_config.get("expiry"))
         if not self.ibkr_config.get("multiplier"):
             self.ibkr_config["multiplier"] = default_futures_multiplier(str(self.ibkr_config.get("symbol", symbol)))
 
@@ -392,18 +380,13 @@ class StrategyExecutionRuntime:
                 "market_data_type": self.ibkr_config.get("market_data_type"),
             },
             "guardrails_config": str(self.guardrails_path),
-            "proteryx_symbol": self.execution_config.get("proteryx_symbol"),
-            "ticker_id": proteryx_ticker_id(
-                str(
-                    self.execution_config.get("ticker")
-                    or self.execution_config.get("proteryx_symbol")
-                    or self.variant_config.get("symbol")
-                    or self.data_config.get("symbol")
-                    or "ES"
-                ),
-                self.ibkr_config,
-                self.execution_config,
-            ),
+            "tradovate": {
+                "environment": self.tradovate_config.get("environment", "demo"),
+                "account_id": self.tradovate_config.get("account_id"),
+                "account_spec": self.tradovate_config.get("account_spec"),
+                "symbol": self.tradovate_symbol(),
+                "auth_mode": self.tradovate_config.get("auth_mode", "auto"),
+            },
             "dry_run": not bool(self.execution_config.get("execute", False)),
             "warnings": self.preflight_warnings,
         }
@@ -511,13 +494,13 @@ class StrategyExecutionRuntime:
         if decision["action"] != "send_order":
             return
         self.trades_by_session[session_date] = trades_today + 1
-        if not bool(self.execution_config.get("send_to_proteryx", True)):
-            print("send_to_proteryx=false; guardrail-approved order was not posted.", file=sys.stderr)
+        if not bool(self.execution_config.get("send_to_tradovate", True)):
+            print("send_to_tradovate=false; guardrail-approved order was not posted.", file=sys.stderr)
             return
         if not bool(self.execution_config.get("execute", False)):
-            print("Dry run only. Use --execute or execution.execute=true to POST to Proteryx.", file=sys.stderr)
+            print("Dry run only. Use --execute or execution.execute=true to POST to Tradovate.", file=sys.stderr)
             return
-        self.post_to_proteryx(decision["proteryx_payload"])
+        self.post_to_tradovate(decision["tradovate_payload"])
 
     def plan_trade(self, row: Any, signal_obj: Any) -> dict[str, Any]:
         direction = str(signal_obj.direction)
@@ -543,7 +526,7 @@ class StrategyExecutionRuntime:
         min_qty = int(self.execution_config.get("min_quantity", 1))
         final = self.guardrail_constrained_quantity(
             side=side,
-            symbol=str(self.execution_config.get("proteryx_symbol", self.variant_config.get("symbol", "ES"))),
+            symbol=str(self.execution_config.get("guardrail_symbol", self.variant_config.get("symbol", "ES"))),
             suggested_qty=min(suggested_qty, max_qty),
             min_qty=min_qty,
             stop_points=Decimal(str(stop_points)),
@@ -558,7 +541,11 @@ class StrategyExecutionRuntime:
         self.sent_signal_keys.add(signal_key)
 
         guardrail_report = final["guardrail_report"]
-        proteryx_payload = self.build_proteryx_payload(guardrail_report, close_price=float(row["close"]))
+        tradovate_payload = self.build_tradovate_payload(
+            guardrail_report,
+            stop_price=float(stop_price),
+            target_price=float(target_price),
+        )
         return {
             "action": "send_order",
             "timestamp": str(row["timestamp"]),
@@ -575,7 +562,7 @@ class StrategyExecutionRuntime:
             "suggested_quantity": suggested_qty,
             "quantity": final["quantity"],
             "guardrail_report": guardrail_report,
-            "proteryx_payload": proteryx_payload,
+            "tradovate_payload": tradovate_payload,
         }
 
     def reject(self, row: Any, signal_obj: Any, reason: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -631,51 +618,47 @@ class StrategyExecutionRuntime:
                 return {"quantity": quantity, "guardrail_report": report}
         return None
 
-    def build_proteryx_payload(self, guardrail_report: dict[str, Any], *, close_price: float) -> dict[str, Any]:
-        proteryx = self.guardrails_config.get("proteryx", {})
-        env_name = str(proteryx.get("strategy_uuid_env", "PROTERYX_STRATEGY_UUID"))
-        strategy_uuid = (
-            self.execution_config.get("strategy_uuid")
-            or proteryx.get("strategy_uuid")
-            or os.getenv(env_name)
+    def tradovate_symbol(self) -> str:
+        configured = self.tradovate_config.get("symbol") or self.execution_config.get("tradovate_symbol")
+        if configured:
+            return str(configured)
+        root = str(self.execution_config.get("guardrail_symbol") or self.variant_config.get("symbol") or "ES")
+        expiry = self.ibkr_config.get("expiry")
+        return tradovate.tradovate_contract_symbol(root, expiry) if expiry else root
+
+    def build_tradovate_payload(
+        self,
+        guardrail_report: dict[str, Any],
+        *,
+        stop_price: float,
+        target_price: float,
+        account: tradovate.TradovateAccount | None = None,
+    ) -> dict[str, Any]:
+        account_spec = account.account_spec if account else self.tradovate_config.get("account_spec")
+        account_id = account.account_id if account else self.tradovate_config.get("account_id")
+        return tradovate.build_market_oso_payload(
+            account_spec=str(account_spec) if account_spec else None,
+            account_id=int(account_id) if account_id else None,
+            action=guardrail_report["order"]["side"],
+            symbol=self.tradovate_symbol(),
+            order_qty=int(guardrail_report["order"]["quantity"]),
+            target_price=target_price,
+            stop_price=stop_price,
+            time_in_force=str(self.tradovate_config.get("time_in_force", "Day")),
+            cl_ord_id=self.tradovate_config.get("cl_ord_id"),
+            custom_tag=self.tradovate_config.get("custom_tag"),
+            text=self.tradovate_config.get("text", "strategy-execution-bridge"),
         )
-        if not strategy_uuid:
-            raise RuntimeError(f"missing Proteryx strategy UUID; set execution.strategy_uuid or {env_name}")
 
-        ticker = str(
-            self.execution_config.get("ticker")
-            or self.execution_config.get("proteryx_symbol")
-            or guardrail_report["order"]["symbol"]
-        ).strip()
-        if not ticker:
-            raise RuntimeError("missing Proteryx ticker")
-
-        payload: dict[str, Any] = {
-            "strategy_uuid": strategy_uuid,
-            "time_now": dt.datetime.now(dt.timezone.utc).isoformat(),
-            "close": float(close_price),
-            "exchange": str(self.execution_config.get("exchange") or self.ibkr_config.get("exchange") or "CME"),
-            "ticker": ticker,
-            "action": guardrail_report["order"]["side"],
-            "quantity": guardrail_report["order"]["quantity"],
-            "ticker_id": proteryx_ticker_id(ticker, self.ibkr_config, self.execution_config),
-        }
-        if bool(self.execution_config.get("include_bracket_fields", False)):
-            payload["takeProfitTicks"] = guardrail_report["order"]["take_profit_ticks"]
-            payload["stopLossTicks"] = guardrail_report["order"]["stop_loss_ticks"]
-        extra = self.execution_config.get("extra_payload")
-        if isinstance(extra, dict):
-            payload.update(extra)
-        return payload
-
-    def post_to_proteryx(self, payload: dict[str, Any]) -> None:
-        proteryx = self.guardrails_config.get("proteryx", {})
-        url = str(self.execution_config.get("webhook_url", proteryx.get("webhook_url", guardrails.DEFAULT_WEBHOOK_URL)))
-        timeout = guardrails.decimal_value(proteryx.get("timeout_seconds", "10"))
-        status, response_body = guardrails.post_json(url, payload, timeout)
-        print(f"POST {url} -> HTTP {status}")
-        if response_body:
-            print(response_body)
+    def post_to_tradovate(self, payload: dict[str, Any]) -> None:
+        client, _token_response = tradovate.client_from_config(self.tradovate_config)
+        payload = dict(payload)
+        if not payload.get("accountSpec") or not payload.get("accountId"):
+            account = tradovate.resolve_account(client, self.tradovate_config)
+            payload["accountSpec"] = account.account_spec
+            payload["accountId"] = account.account_id
+        response = client.place_oso(payload)
+        print_report({"endpoint": f"{client.base_url}/order/placeoso", "request": payload, "response": response})
 
 
 def parse_args() -> argparse.Namespace:
@@ -688,7 +671,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project-root", help="Project root containing src/ and configs/. Overrides config.project_root.")
     parser.add_argument("--guardrails-config", help="Apex guardrails JSON. Overrides config.guardrails_config.")
     parser.add_argument("--preflight-only", action="store_true", help="Validate strategy/config and exit without opening IBKR.")
-    parser.add_argument("--execute", action="store_true", help="Allow Proteryx POSTs after guardrails pass.")
+    parser.add_argument("--execute", action="store_true", help="Allow Tradovate POSTs after guardrails pass.")
     parser.add_argument("--once", action="store_true", help="Exit after the first completed live minute is evaluated.")
     parser.add_argument("--max-runtime", type=float, default=0.0, help="Optional runtime limit in seconds.")
     parser.add_argument("--ib-host", "--host", dest="ib_host", help="Override IBKR host.")
@@ -699,8 +682,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--local-symbol", help="Override IBKR local symbol, e.g. ESM6.")
     parser.add_argument("--market-data-type", type=int, choices=(1, 2, 3, 4), help="IBKR market data type.")
     parser.add_argument("--historical-duration", help="IBKR historical seed duration, e.g. '14 D'.")
-    parser.add_argument("--proteryx-symbol", help="Override Proteryx ticker/root. Defaults to selected strategy symbol.")
-    parser.add_argument("--ticker-id", help="Override Proteryx ticker_id, e.g. ESM2026.")
+    parser.add_argument("--tradovate-symbol", help="Override Tradovate contract symbol, e.g. ESM6.")
+    parser.add_argument("--tradovate-account-id", type=int, help="Override Tradovate account id.")
+    parser.add_argument("--tradovate-account-spec", help="Override Tradovate account spec/name.")
+    parser.add_argument("--tradovate-environment", choices=("demo", "live"), help="Override Tradovate environment.")
+    parser.add_argument("--tradovate-access-token", help="Override Tradovate bearer token.")
     parser.add_argument("--max-quantity", type=int, help="Max order quantity before guardrail clamp.")
     return parser.parse_args()
 
@@ -730,15 +716,22 @@ def apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> dic
             ibkr[key] = value
 
     execution = config.setdefault("execution", {})
-    if args.proteryx_symbol:
-        execution["proteryx_symbol"] = args.proteryx_symbol
-    if args.ticker_id:
-        execution["ticker_id"] = args.ticker_id
+    tv_config = config.setdefault("tradovate", {})
+    if args.tradovate_symbol:
+        tv_config["symbol"] = args.tradovate_symbol
+    if args.tradovate_account_id is not None:
+        tv_config["account_id"] = args.tradovate_account_id
+    if args.tradovate_account_spec:
+        tv_config["account_spec"] = args.tradovate_account_spec
+    if args.tradovate_environment:
+        tv_config["environment"] = args.tradovate_environment
+    if args.tradovate_access_token:
+        tv_config["access_token"] = args.tradovate_access_token
     if args.max_quantity is not None:
         execution["max_quantity"] = args.max_quantity
     if args.execute:
         execution["execute"] = True
-        execution["send_to_proteryx"] = True
+        execution["send_to_tradovate"] = True
     return config
 
 
@@ -829,32 +822,6 @@ def build_contract(ibkr: dict[str, Any]) -> Any:
 def display_symbol(contract: Any) -> str:
     contract_id = getattr(contract, "localSymbol", "") or getattr(contract, "lastTradeDateOrContractMonth", "")
     return f"{contract.symbol} {contract_id} {contract.exchange}".strip()
-
-
-def proteryx_ticker_id(ticker: str, ibkr: dict[str, Any], execution: dict[str, Any] | None = None) -> str:
-    execution = execution or {}
-    explicit = execution.get("ticker_id") or ibkr.get("ticker_id")
-    if explicit:
-        return str(explicit)
-    derived = ticker_id_from_expiry(ticker, ibkr.get("expiry"))
-    if derived != ticker:
-        return derived
-    local_symbol = ibkr.get("local_symbol")
-    if local_symbol:
-        return str(local_symbol)
-    return ticker
-
-
-def ticker_id_from_expiry(ticker: str, expiry: Any) -> str:
-    expiry_text = str(expiry or "").strip()
-    ticker_text = ticker.strip()
-    if len(expiry_text) >= 6 and expiry_text[:6].isdigit():
-        year = int(expiry_text[:4])
-        month = int(expiry_text[4:6])
-        month_code = FUTURES_MONTH_CODES.get(month)
-        if month_code:
-            return f"{ticker_text}{month_code}{year}"
-    return ticker_text
 
 
 def default_futures_multiplier(symbol: str) -> str:

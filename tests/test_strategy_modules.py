@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
+from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
@@ -2345,3 +2346,70 @@ def test_volume_conditioned_liquidity_reversal_rejects_low_volume():
     assert entry.on_bar_close(
         _volume_reversal_bar("2024-01-03 09:30", 100.0, 100.25, 97.5, 98.0, volume_ratio=1.1)
     ) is None
+
+
+def test_cftc_tff_hedging_pressure_uses_shifted_trade_date_feature(tmp_path):
+    feature_file = tmp_path / "features.csv"
+    pd.DataFrame(
+        {
+            "trade_date": ["2024-01-02", "2024-01-03"],
+            "SPX_open_interest_chg13": [10000.0, 30000.0],
+        }
+    ).to_csv(feature_file, index=False)
+    entry = CftcTffHedgingPressureEntry(
+        {
+            "feature_file": str(feature_file),
+            "feature_name": "SPX_open_interest_chg13",
+            "operator": ">=",
+            "threshold": 25000.0,
+            "direction": "long",
+            "entry_time": "11:00:00",
+            "bar_interval_minutes": 5,
+        }
+    )
+
+    early = entry.on_bar_close(_cftc_bar("2024-01-03 10:50"))
+    signal = entry.on_bar_close(_cftc_bar("2024-01-03 10:55"))
+
+    assert early is None
+    assert signal.direction == "long"
+    assert signal.report_fields["feature_value"] == 30000.0
+    assert signal.report_fields["feature_availability_rule"].startswith("Tuesday CFTC TFF")
+
+
+def test_cftc_tff_hedging_pressure_rejects_missing_or_below_threshold_feature(tmp_path):
+    feature_file = tmp_path / "features.csv"
+    pd.DataFrame(
+        {
+            "trade_date": ["2024-01-03"],
+            "SPX_open_interest_chg13": [10000.0],
+        }
+    ).to_csv(feature_file, index=False)
+    entry = CftcTffHedgingPressureEntry(
+        {
+            "feature_file": str(feature_file),
+            "feature_name": "SPX_open_interest_chg13",
+            "operator": ">=",
+            "threshold": 25000.0,
+            "entry_time": "11:00:00",
+            "bar_interval_minutes": 5,
+        }
+    )
+
+    assert entry.on_bar_close(_cftc_bar("2024-01-03 10:55")) is None
+    assert entry.on_bar_close(_cftc_bar("2024-01-04 10:55")) is None
+
+
+def _cftc_bar(timestamp):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": True,
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.5,
+            "close": 100.5,
+        }
+    )

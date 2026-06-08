@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime
+import math
 from pathlib import Path
 import shutil
 from typing import Any
@@ -48,7 +49,11 @@ DEFAULT_STAGE_CRITERIA = {
         {"metric": "summary.early_exit", "equals": False},
         {"metric": "summary.windows", "min": 10},
         {"metric": "stitched_oos_metrics.profit_factor", "min": 1.5},
-        {"metric": "stitched_oos_metrics.mar", "min": 1.5},
+        {
+            "metric": "stitched_oos_metrics.mar",
+            "dynamic_min": "length_adjusted_mar",
+            "span_metric": "summary.oos_evaluation_years",
+        },
         {"metric": "stitched_oos_metrics.expectancy_r", "min": 0.2},
         {"metric": "stitched_oos_metrics.total_trades", "min": 500},
         {"metric": "stitched_oos_metrics.win_rate", "min": 0.45},
@@ -290,6 +295,8 @@ def _run_wfa_stage(cfg: dict, stage_cfg: dict, stage_dir: Path, skip_validation:
     initial_balance = float(cfg.get("core", {}).get("initial_balance", 0.0))
     stitched_metrics = calculate_metrics(trades, initial_balance=initial_balance)
     summary["stitched_oos_metrics"] = stitched_metrics
+    summary["oos_evaluation_years"] = _wfa_oos_evaluation_years(results)
+    summary["required_oos_mar"] = length_adjusted_mar_requirement(summary["oos_evaluation_years"])
     summary["incubation_selected_params"] = _select_incubation_params(results)
     summary.update(
         write_equity_report(
@@ -454,6 +461,15 @@ def evaluate_criteria(payload: dict, criteria: list[dict]) -> list[dict]:
         actual = _lookup(payload, metric)
         passed = True
         expected = {}
+        if "dynamic_min" in item:
+            value = _dynamic_minimum(payload, item)
+            expected["min"] = value
+            expected["dynamic_min"] = item["dynamic_min"]
+            span_metric = item.get("span_metric")
+            if span_metric:
+                expected["span_metric"] = span_metric
+                expected["span_years"] = _lookup(payload, span_metric)
+            passed = passed and _numeric(actual) >= value
         if "min" in item:
             expected["min"] = item["min"]
             passed = passed and _numeric(actual) >= float(item["min"])
@@ -472,6 +488,25 @@ def evaluate_criteria(payload: dict, criteria: list[dict]) -> list[dict]:
             }
         )
     return out
+
+
+def length_adjusted_mar_requirement(years: float | int | None) -> float:
+    if years is None:
+        return 1.5
+    years = float(years)
+    if not math.isfinite(years) or years <= 0:
+        return 1.5
+    exponent = math.log(3.0) / math.log(5.0)
+    required = 1.5 * ((years / 3.0) ** -exponent)
+    return max(0.50, min(1.50, required))
+
+
+def _dynamic_minimum(payload: dict, item: dict) -> float:
+    name = item["dynamic_min"]
+    if name == "length_adjusted_mar":
+        years = _lookup(payload, item.get("span_metric", "summary.oos_evaluation_years"))
+        return length_adjusted_mar_requirement(years)
+    raise ValueError(f"Unsupported dynamic minimum: {name}")
 
 
 def _criteria_for_stage(stage_name: str, stage_cfg: dict) -> list[dict]:
@@ -579,6 +614,17 @@ def _select_incubation_params(wfa_results: pd.DataFrame) -> dict:
         row = candidates.sort_values(sort_columns, ascending=[False] * len(sort_columns), na_position="last").iloc[0]
     params = row.get("selected_params", {})
     return params if isinstance(params, dict) else {}
+
+
+def _wfa_oos_evaluation_years(wfa_results: pd.DataFrame) -> float:
+    if wfa_results.empty or not {"test_start", "test_end"}.issubset(wfa_results.columns):
+        return 0.0
+    starts = pd.to_datetime(wfa_results["test_start"], errors="coerce")
+    ends = pd.to_datetime(wfa_results["test_end"], errors="coerce")
+    if starts.dropna().empty or ends.dropna().empty:
+        return 0.0
+    elapsed_days = max((ends.max() - starts.min()).total_seconds() / 86400.0, 1.0)
+    return float(elapsed_days / 365.25)
 
 
 def _required_context_frame(context: dict, key: str, message: str) -> pd.DataFrame:

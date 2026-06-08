@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
+from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
@@ -23,6 +24,7 @@ from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPull
 
 ENTRY_MODULES = {
     CalendarSessionBiasEntry.name: CalendarSessionBiasEntry,
+    CftcTffHedgingPressureEntry.name: CftcTffHedgingPressureEntry,
     DailyTimeSeriesMomentumEntry.name: DailyTimeSeriesMomentumEntry,
     IntradayCapitulationMREntry.name: IntradayCapitulationMREntry,
     LateDayIntradayMomentumEntry.name: LateDayIntradayMomentumEntry,
@@ -53,6 +55,7 @@ def build_entry_module(config: dict):
 __all__ = [
     "Signal",
     "CalendarSessionBiasEntry",
+    "CftcTffHedgingPressureEntry",
     "DailyTimeSeriesMomentumEntry",
     "IntradayCapitulationMREntry",
     "LateDayIntradayMomentumEntry",

@@ -3,7 +3,7 @@
 Manual pre-trade guardrails for Apex 50K EOD evaluation/PA accounts.
 
 This script is a compliance gate, not a trading strategy. It blocks a proposed
-order before it reaches Proteryx when the order would violate, or get too close
+order before it reaches Tradovate when the order would violate, or get too close
 to, Apex-style EOD drawdown, daily loss, position-size, stop/risk, payout, or
 market-close constraints.
 
@@ -17,33 +17,17 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import os
 import sys
-import urllib.error
-import urllib.request
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
+import tradovate_client as tradovate
+
 
 DEFAULT_CONFIG = "apex_50k_eod_guardrails.example.json"
-DEFAULT_WEBHOOK_URL = "https://api.proteryx.com/tradingview/auto-traders/alert"
 EASTERN = ZoneInfo("America/New_York")
-FUTURES_MONTH_CODES = {
-    1: "F",
-    2: "G",
-    3: "H",
-    4: "J",
-    5: "K",
-    6: "M",
-    7: "N",
-    8: "Q",
-    9: "U",
-    10: "V",
-    11: "X",
-    12: "Z",
-}
 
 INSTRUMENTS: dict[str, dict[str, Decimal]] = {
     "ES": {
@@ -79,7 +63,7 @@ PA_50K_MAX_PAYOUTS = (Decimal("1500"), Decimal("1500"), Decimal("2000"), Decimal
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Check Apex 50K EOD guardrails before optionally sending a Proteryx order."
+        description="Check Apex 50K EOD guardrails before optionally sending a Tradovate order."
     )
     parser.add_argument(
         "--config",
@@ -94,68 +78,9 @@ def parse_args() -> argparse.Namespace:
     check = subparsers.add_parser("check-order", help="Check an order without sending it.")
     add_order_args(check)
 
-    send = subparsers.add_parser("send-order", help="Check an order, then optionally POST it to Proteryx.")
+    send = subparsers.add_parser("send-order", help="Check an order, then optionally POST it to Tradovate.")
     add_order_args(send)
-    send.add_argument(
-        "--execute",
-        action="store_true",
-        help="Actually POST to Proteryx if all guardrails pass. Without this, send-order is a dry run.",
-    )
-    send.add_argument(
-        "--strategy-uuid",
-        default=None,
-        help="Override Proteryx strategy UUID. Otherwise config/env is used.",
-    )
-    send.add_argument(
-        "--portfolio",
-        default=None,
-        help="Optional custom portfolio field included only when supplied.",
-    )
-    send.add_argument(
-        "--route",
-        default=None,
-        help="Optional custom route field included only when supplied.",
-    )
-    send.add_argument(
-        "--webhook-url",
-        default=None,
-        help="Override Proteryx webhook URL. Otherwise config/default is used.",
-    )
-    send.add_argument(
-        "--ticker",
-        default=None,
-        help="Override Proteryx ticker/root. Defaults to the checked order symbol.",
-    )
-    send.add_argument(
-        "--ticker-id",
-        default=None,
-        help="Override Proteryx ticker_id, for example ESM2026.",
-    )
-    send.add_argument(
-        "--expiry",
-        default=None,
-        help="Optional YYYYMM futures expiry used to derive ticker_id, for example 202606 -> ESM2026.",
-    )
-    send.add_argument(
-        "--exchange",
-        default=None,
-        help="Override Proteryx exchange field. Otherwise proteryx.exchange or CME is used.",
-    )
-    send.add_argument(
-        "--close",
-        type=positive_decimal,
-        default=None,
-        help="Current close/market price context sent as the Proteryx close field.",
-    )
-    send.add_argument(
-        "--include-bracket-fields",
-        action="store_true",
-        help="Also include takeProfitTicks and stopLossTicks as custom payload fields.",
-    )
-    send.add_argument(
-        "--extra-json",
-        help="Optional JSON object merged into the Proteryx payload.",
-    )
+    add_tradovate_args(send)
 
     return parser.parse_args()
 
@@ -177,6 +102,33 @@ def add_order_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--stop-loss-ticks", "--sl-ticks", dest="sl_ticks", type=positive_int)
     parser.add_argument("--take-profit-points", "--tp-points", dest="tp_points", type=positive_decimal)
     parser.add_argument("--stop-loss-points", "--sl-points", dest="sl_points", type=positive_decimal)
+
+
+def add_tradovate_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--execute", action="store_true", help="Actually POST to Tradovate. Dry-run by default.")
+    parser.add_argument("--environment", choices=("demo", "live"), default=None)
+    parser.add_argument("--tradovate-symbol", default=None, help="Tradovate contract symbol, e.g. ESM6. Defaults to --symbol or root+expiry.")
+    parser.add_argument("--expiry", default=None, help="YYYYMM expiry used to derive the Tradovate symbol when needed.")
+    parser.add_argument("--close", type=positive_decimal, required=True, help="Market/close price used to derive TP/SL bracket prices.")
+    parser.add_argument("--account-id", type=positive_int, default=None)
+    parser.add_argument("--account-spec", default=None)
+    parser.add_argument("--access-token", default=None)
+    parser.add_argument("--auth-mode", choices=("auto", "token", "credentials", "oauth-code"), default=None)
+    parser.add_argument("--name", default=None)
+    parser.add_argument("--password", default=None)
+    parser.add_argument("--app-id", default=None)
+    parser.add_argument("--app-version", default=None)
+    parser.add_argument("--cid", default=None)
+    parser.add_argument("--sec", default=None)
+    parser.add_argument("--device-id", default=None)
+    parser.add_argument("--oauth-code", default=None)
+    parser.add_argument("--redirect-uri", default=None)
+    parser.add_argument("--client-id", default=None)
+    parser.add_argument("--client-secret", default=None)
+    parser.add_argument("--time-in-force", default=None)
+    parser.add_argument("--cl-ord-id", default=None)
+    parser.add_argument("--custom-tag", default=None)
+    parser.add_argument("--text", default=None)
 
 
 def load_config(path: str) -> dict[str, Any]:
@@ -387,86 +339,73 @@ def status_report(config: dict[str, Any]) -> dict[str, Any]:
     return {"accounts": reports}
 
 
-def build_proteryx_payload(config: dict[str, Any], args: argparse.Namespace, check: dict[str, Any]) -> dict[str, Any]:
-    proteryx = config.get("proteryx", {})
-    env_name = str(proteryx.get("strategy_uuid_env", "PROTERYX_STRATEGY_UUID"))
-    strategy_uuid = args.strategy_uuid or proteryx.get("strategy_uuid") or os.getenv(env_name)
-    if not strategy_uuid:
-        raise SystemExit(f"missing Proteryx strategy UUID; set --strategy-uuid, proteryx.strategy_uuid, or {env_name}")
+def build_tradovate_payload(
+    config: dict[str, Any],
+    args: argparse.Namespace,
+    check: dict[str, Any],
+    account: tradovate.TradovateAccount | None = None,
+) -> dict[str, Any]:
+    tv_config = tradovate_config(config, args)
+    symbol = str(tv_config.get("symbol") or args.tradovate_symbol or args.symbol).upper()
+    if not args.tradovate_symbol and args.expiry:
+        symbol = tradovate.tradovate_contract_symbol(instrument_root(args.symbol), args.expiry)
 
-    if args.close is None:
-        raise SystemExit("missing --close for Proteryx payload")
-
-    ticker = str(args.ticker or check["order"]["symbol"]).strip()
-    payload: dict[str, Any] = {
-        "strategy_uuid": strategy_uuid,
-        "time_now": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "close": args.close,
-        "exchange": args.exchange or proteryx.get("exchange", "CME"),
-        "ticker": ticker,
-        "action": check["order"]["side"],
-        "quantity": check["order"]["quantity"],
-        "ticker_id": args.ticker_id or proteryx.get("ticker_id") or ticker_id_from_expiry(ticker, args.expiry or proteryx.get("expiry")),
-    }
-    if args.include_bracket_fields or bool(proteryx.get("include_bracket_fields", False)):
-        payload["takeProfitTicks"] = check["order"]["take_profit_ticks"]
-        payload["stopLossTicks"] = check["order"]["stop_loss_ticks"]
-
-    include_routing_fields = bool(proteryx.get("include_routing_fields", False))
-    if args.route:
-        payload["route"] = args.route
-    elif include_routing_fields and proteryx.get("route"):
-        payload["route"] = proteryx["route"]
-    if args.portfolio:
-        payload["portfolio"] = args.portfolio
-    elif include_routing_fields and proteryx.get("portfolio"):
-        payload["portfolio"] = proteryx["portfolio"]
-    if include_routing_fields and proteryx.get("client_tag"):
-        payload["clientTag"] = proteryx["client_tag"]
-
-    if args.extra_json:
-        try:
-            extra = json.loads(args.extra_json)
-        except json.JSONDecodeError as exc:
-            raise SystemExit(f"--extra-json is not valid JSON: {exc}") from exc
-        if not isinstance(extra, dict):
-            raise SystemExit("--extra-json must be a JSON object")
-        payload.update(extra)
-    return payload
-
-
-def ticker_id_from_expiry(ticker: str, expiry: Any) -> str:
-    expiry_text = str(expiry or "").strip()
-    ticker_text = ticker.strip()
-    if len(expiry_text) >= 6 and expiry_text[:6].isdigit():
-        year = int(expiry_text[:4])
-        month = int(expiry_text[4:6])
-        month_code = FUTURES_MONTH_CODES.get(month)
-        if month_code:
-            return f"{ticker_text}{month_code}{year}"
-    return ticker_text
-
-
-def post_json(url: str, payload: dict[str, Any], timeout: Decimal) -> tuple[int, str]:
-    body = json.dumps(payload, default=json_default, separators=(",", ":")).encode("utf-8")
-    request = urllib.request.Request(
-        url,
-        data=body,
-        headers={
-            "Accept": "application/json, text/plain, */*",
-            "Content-Type": "application/json",
-            "User-Agent": "apex-eod-guardrails/0.1",
-        },
-        method="POST",
+    target_price, stop_price = tradovate.prices_from_distances(
+        side=check["order"]["side"],
+        close_price=args.close,
+        take_profit_points=decimal_value(check["order"]["take_profit_points"]),
+        stop_loss_points=decimal_value(check["order"]["stop_loss_points"]),
+        tick_size=instrument_settings(config, instrument_root(args.symbol))["tick_size"],
     )
-    try:
-        with urllib.request.urlopen(request, timeout=float(timeout)) as response:
-            return response.status, response.read().decode("utf-8", errors="replace")
-    except urllib.error.HTTPError as exc:
-        raw = exc.read().decode("utf-8", errors="replace")
-        raise RuntimeError(f"Proteryx returned HTTP {exc.code}: {raw}") from exc
-    except urllib.error.URLError as exc:
-        raise RuntimeError(f"could not reach Proteryx: {exc.reason}") from exc
+    account_spec = account.account_spec if account else tv_config.get("account_spec")
+    account_id = account.account_id if account else tv_config.get("account_id")
+    return tradovate.build_market_oso_payload(
+        account_spec=str(account_spec) if account_spec else None,
+        account_id=int(account_id) if account_id else None,
+        action=check["order"]["side"],
+        symbol=symbol,
+        order_qty=int(check["order"]["quantity"]),
+        target_price=target_price,
+        stop_price=stop_price,
+        time_in_force=str(tv_config.get("time_in_force", "Day")),
+        cl_ord_id=tv_config.get("cl_ord_id"),
+        custom_tag=tv_config.get("custom_tag"),
+        text=tv_config.get("text"),
+    )
+
+
+def tradovate_config(config: dict[str, Any], args: argparse.Namespace | None = None) -> dict[str, Any]:
+    tv_config = dict(config.get("tradovate", {}))
+    if args is None:
+        return tv_config
+    mapping = {
+        "environment": "environment",
+        "tradovate_symbol": "symbol",
+        "account_id": "account_id",
+        "account_spec": "account_spec",
+        "access_token": "access_token",
+        "auth_mode": "auth_mode",
+        "name": "name",
+        "password": "password",
+        "app_id": "app_id",
+        "app_version": "app_version",
+        "cid": "cid",
+        "sec": "sec",
+        "device_id": "device_id",
+        "oauth_code": "oauth_code",
+        "redirect_uri": "redirect_uri",
+        "client_id": "client_id",
+        "client_secret": "client_secret",
+        "time_in_force": "time_in_force",
+        "cl_ord_id": "cl_ord_id",
+        "custom_tag": "custom_tag",
+        "text": "text",
+    }
+    for arg_name, key in mapping.items():
+        value = getattr(args, arg_name, None)
+        if value not in (None, ""):
+            tv_config[key] = value
+    return tv_config
 
 
 def calculate_eod_threshold(account: dict[str, Any]) -> Decimal:
@@ -713,19 +652,19 @@ def main() -> int:
         return 2
 
     if args.command == "send-order":
-        payload = build_proteryx_payload(config, args, report)
-        print("Guardrails passed. Proteryx payload:")
+        payload = build_tradovate_payload(config, args, report)
+        print("Guardrails passed. Tradovate order payload:")
         print_report(payload)
         if not args.execute:
-            print("Dry run only. Add --execute to POST this payload to Proteryx.", file=sys.stderr)
+            print("Dry run only. Add --execute to POST this order to Tradovate.", file=sys.stderr)
             return 0
-        proteryx = config.get("proteryx", {})
-        url = args.webhook_url or proteryx.get("webhook_url", DEFAULT_WEBHOOK_URL)
-        timeout = decimal_value(proteryx.get("timeout_seconds", "10"))
-        status, response_body = post_json(str(url), payload, timeout)
-        print(f"POST {url} -> HTTP {status}")
-        if response_body:
-            print(response_body)
+        tv_config = tradovate_config(config, args)
+        client, _token_response = tradovate.client_from_config(tv_config)
+        if not payload.get("accountSpec") or not payload.get("accountId"):
+            account = tradovate.resolve_account(client, tv_config)
+            payload = build_tradovate_payload(config, args, report, account)
+        response = client.place_oso(payload)
+        print_report({"endpoint": f"{client.base_url}/order/placeoso", "request": payload, "response": response})
     return 0
 
 

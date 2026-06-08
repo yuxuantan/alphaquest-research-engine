@@ -293,6 +293,7 @@ class BacktestEngine:
         module = str(self.strategy_config.get("entry", {}).get("module", ""))
         required_by_module = {
             "calendar_session_bias": {"is_rth"},
+            "cftc_tff_hedging_pressure": {"is_rth"},
             "daily_time_series_momentum": {"is_rth"},
             "pdh_pdl_sweep_reclaim": {"is_rth", "prev_rth_low", "prev_rth_high"},
             "opening_range_breakout": {"is_rth"},

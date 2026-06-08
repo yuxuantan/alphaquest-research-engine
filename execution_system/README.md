@@ -220,64 +220,73 @@ python3 ibkr_es_l2_ohlcv_poc.py \
   --once
 ```
 
-## 6. Trigger ES Orders Through Proteryx
+## 6. Trigger ES Orders Through Tradovate
 
-`proteryx_es_market_bracket.py` posts the Proteryx Auto Trader alert payload
-shape documented by Proteryx:
+`tradovate_es_market_bracket.py` authenticates to Tradovate and builds a REST
+`order/placeoso` request: a market entry plus attached OCO take-profit and stop
+orders.
 
-```json
-{"strategy_uuid":"...","time_now":"...","close":5300.25,"exchange":"CME","ticker":"ES","action":"buy","quantity":1,"ticker_id":"ESM2026"}
-```
+The script is dry-run by default. It prints the exact order payload and only
+sends the order when `--execute` is provided.
 
-The script is dry-run by default. It prints the exact JSON payload and only sends
-the order when `--execute` is provided. `--close` is required because it is part
-of the Proteryx alert shape. TP/SL distances are still required for
-local risk checks; they are sent as custom fields only when
-`--include-bracket-fields` is provided.
+Tradovate symbols usually use the futures month code plus the final year digit.
+For example, ES June 2026 is `ESM6`. Passing `--root-symbol ES --expiry 202606`
+derives `ESM6` automatically.
 
-Set your Auto Trader UUID:
+Print an OAuth authorization URL:
 
 ```bash
-export PROTERYX_STRATEGY_UUID="your-proteryx-auto-trader-uuid"
+python3 tradovate_es_market_bracket.py auth-url \
+  --client-id "$TRADOVATE_OAUTH_CLIENT_ID" \
+  --redirect-uri "$TRADOVATE_OAUTH_REDIRECT_URI"
 ```
 
-Dry-run a 1-contract ES buy with a 10-point TP and 5-point SL:
+Exchange credentials/API-key settings, then list accounts:
 
 ```bash
-python3 proteryx_es_market_bracket.py \
+export TRADOVATE_ENVIRONMENT=demo
+export TRADOVATE_NAME="your-tradovate-login"
+export TRADOVATE_PASSWORD="your-dedicated-api-password"
+export TRADOVATE_CID="your-cid"
+export TRADOVATE_SECRET="your-api-secret"
+
+python3 tradovate_es_market_bracket.py accounts --auth-mode credentials
+```
+
+Or use an existing bearer token:
+
+```bash
+export TRADOVATE_ACCESS_TOKEN="your-access-token"
+python3 tradovate_es_market_bracket.py accounts
+```
+
+Dry-run a 1-contract ES market buy with a 10-point TP and 5-point SL:
+
+```bash
+python3 tradovate_es_market_bracket.py send-order \
+  --environment demo \
+  --account-id 123456 \
+  --account-spec DEMO123456 \
   --side buy \
   --quantity 1 \
-  --ticker ES \
-  --ticker-id ESM2026 \
-  --exchange CME \
+  --root-symbol ES \
+  --expiry 202606 \
   --close 5300.25 \
   --tp-points 10 \
   --sl-points 5
 ```
 
-You can also derive `ticker_id` from expiry:
+Actually post the OSO bracket to Tradovate:
 
 ```bash
-python3 proteryx_es_market_bracket.py \
-  --side sell \
-  --quantity 1 \
-  --ticker ES \
-  --expiry 202606 \
-  --exchange CME \
-  --close 5300.25 \
-  --tp-ticks 40 \
-  --sl-ticks 20
-```
-
-Send it to Proteryx:
-
-```bash
-python3 proteryx_es_market_bracket.py \
+python3 tradovate_es_market_bracket.py send-order \
+  --environment demo \
+  --account-id 123456 \
+  --account-spec DEMO123456 \
   --side buy \
   --quantity 1 \
-  --ticker ES \
-  --ticker-id ESM2026 \
-  --exchange CME \
+  --root-symbol ES \
+  --expiry 202606 \
   --close 5300.25 \
   --tp-points 10 \
   --sl-points 5 \
@@ -330,26 +339,24 @@ python3 apex_eod_guardrails.py \
   --sl-points 4
 ```
 
-Guard the order, then dry-run the Proteryx payload:
+Guard the order, then dry-run the Tradovate OSO payload:
 
 ```bash
-export PROTERYX_STRATEGY_UUID="your-proteryx-auto-trader-uuid"
-
 python3 apex_eod_guardrails.py \
   --config apex_50k_eod_guardrails.json \
   send-order \
   --side buy \
   --quantity 1 \
   --symbol ES \
-  --ticker ES \
-  --ticker-id ESM2026 \
-  --exchange CME \
+  --expiry 202606 \
   --close 5300.25 \
+  --account-id 123456 \
+  --account-spec DEMO123456 \
   --tp-points 10 \
   --sl-points 4
 ```
 
-Actually post to Proteryx only after the guardrail report is clean:
+Actually post to Tradovate only after the guardrail report is clean:
 
 ```bash
 python3 apex_eod_guardrails.py \
@@ -358,10 +365,10 @@ python3 apex_eod_guardrails.py \
   --side buy \
   --quantity 1 \
   --symbol ES \
-  --ticker ES \
-  --ticker-id ESM2026 \
-  --exchange CME \
+  --expiry 202606 \
   --close 5300.25 \
+  --account-id 123456 \
+  --account-spec DEMO123456 \
   --tp-points 10 \
   --sl-points 4 \
   --execute
@@ -384,7 +391,7 @@ execution system without modifying the research code:
 5. Runs the modular strategy on newly completed strategy bars.
 6. Computes entry estimate, stop, target, and strategy-suggested size.
 7. Walks size down until the Apex guardrails approve the order.
-8. Dry-runs or sends the guarded Proteryx alert-format market payload.
+8. Dry-runs or sends the guarded Tradovate market OSO bracket payload.
 
 The selected campaign variant YAML must define:
 
@@ -398,12 +405,6 @@ The bridge needs the same Python environment as the research stack plus IBKR:
 
 ```bash
 python3 -m pip install pandas pyyaml ibapi
-```
-
-Check the bridge help:
-
-```bash
-python3 strategy_execution_bridge.py --help
 ```
 
 Preflight a strategy without opening IBKR:
@@ -424,25 +425,16 @@ python3 strategy_execution_bridge.py \
   --port 4001 \
   --client-id 82 \
   --expiry 202606 \
+  --tradovate-account-id 123456 \
+  --tradovate-account-spec DEMO123456 \
   --once
 ```
 
-Run continuously in dry-run mode:
-
-```bash
-python3 strategy_execution_bridge.py \
-  --config strategy_execution_bridge.example.json \
-  --strategy-config ../configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml \
-  --port 4001 \
-  --client-id 82 \
-  --expiry 202606
-```
-
-Allow Proteryx POSTs only after the strategy signal, sizing, and guardrails all
+Allow Tradovate POSTs only after the strategy signal, sizing, and guardrails all
 pass:
 
 ```bash
-export PROTERYX_STRATEGY_UUID="your-proteryx-auto-trader-uuid"
+export TRADOVATE_ACCESS_TOKEN="your-access-token"
 
 python3 strategy_execution_bridge.py \
   --config strategy_execution_bridge.example.json \
@@ -450,7 +442,8 @@ python3 strategy_execution_bridge.py \
   --port 4001 \
   --client-id 82 \
   --expiry 202606 \
-  --ticker-id ESM2026 \
+  --tradovate-account-id 123456 \
+  --tradovate-account-spec DEMO123456 \
   --execute
 ```
 
@@ -458,8 +451,8 @@ Keep `apex_50k_eod_guardrails.example.json` current with live Apex account
 balances, start-of-day balances, EOD thresholds, and open exposure. The bridge
 uses the lowest selected account equity as the live sizing base, then clamps the
 result to the largest quantity that passes every selected Apex account. For ES,
-`--expiry 202606` derives `ticker_id` as `ESM2026` unless `execution.ticker_id`
-or `--ticker-id` overrides it.
+`--expiry 202606` derives the Tradovate contract symbol as `ESM6` unless
+`tradovate.symbol` or `--tradovate-symbol` overrides it.
 
 ## 9. Delayed Data Testing
 
