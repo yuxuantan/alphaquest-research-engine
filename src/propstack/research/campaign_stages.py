@@ -37,10 +37,12 @@ DEFAULT_STAGE_CRITERIA = {
     "limited_core_grid_test": [
         {"metric": "summary.total_combinations_tested", "min": 100},
         {"metric": "summary.percentage_profitable_iterations", "min": 0.70},
+        {"metric": "summary.apex_rule_violating_iterations", "max": 0},
     ],
     "limited_monkey_test": [
         {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.90},
         {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.90},
+        {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     "walk_forward_analysis": [
         {"metric": "summary.early_exit", "equals": False},
@@ -50,10 +52,12 @@ DEFAULT_STAGE_CRITERIA = {
         {"metric": "stitched_oos_metrics.expectancy_r", "min": 0.2},
         {"metric": "stitched_oos_metrics.total_trades", "min": 500},
         {"metric": "stitched_oos_metrics.win_rate", "min": 0.45},
+        {"metric": "stitched_oos_metrics.apex_rule_violations", "max": 0},
     ],
     "wfa_oos_monkey_test": [
         {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.90},
         {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.90},
+        {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     "wfa_oos_monte_carlo": [
         {"metric": "summary.probability_profit_before_drawdown", "min": 0.50},
@@ -64,10 +68,12 @@ DEFAULT_STAGE_CRITERIA = {
         {"metric": "metrics.expectancy_r", "min": 0.15},
         {"metric": "metrics.total_trades", "min": 75},
         {"metric": "metrics.win_rate", "min": 0.40},
+        {"metric": "metrics.apex_rule_violations", "max": 0},
     ],
     "simulated_incubation_monkey": [
         {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.80},
         {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.80},
+        {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
 }
 

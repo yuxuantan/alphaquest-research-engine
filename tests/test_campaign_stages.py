@@ -23,6 +23,27 @@ def test_stage_criteria_reports_pass_and_fail():
     assert results[1]["actual"] == 1.1
 
 
+def test_default_stage_criteria_fail_apex_rule_violations():
+    criteria = campaign_stages._criteria_for_stage("simulated_incubation_core", {})
+    results = evaluate_criteria(
+        {
+            "metrics": {
+                "profit_factor": 2.0,
+                "mar": 2.0,
+                "expectancy_r": 0.3,
+                "total_trades": 100,
+                "win_rate": 0.5,
+                "apex_rule_violations": 1,
+            }
+        },
+        criteria,
+    )
+
+    apex = [item for item in results if item["metric"] == "metrics.apex_rule_violations"]
+    assert apex
+    assert apex[0]["passed"] is False
+
+
 def test_incubation_params_are_selected_from_best_wfa_oos_window():
     wfa_results = pd.DataFrame(
         [

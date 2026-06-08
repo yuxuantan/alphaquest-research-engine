@@ -1,0 +1,35 @@
+campaign_id: volume_conditioned_liquidity_reversal
+campaign_name: Volume-Conditioned Liquidity Reversal
+status: research
+
+academic_sources:
+  - title: "Trading Volume and Serial Correlation in Stock Returns"
+    authors: "John Y. Campbell, Sanford J. Grossman, Jiang Wang"
+    year: 1993
+    venue: "The Quarterly Journal of Economics, 108(4), 905-939"
+    doi: "10.2307/2118454"
+    url: "https://academic.oup.com/qje/article-abstract/108/4/905/1899978"
+    finding_used: "The model and evidence imply that price declines on high-volume days are more likely to be associated with higher expected subsequent returns than declines on low-volume days."
+    evidence_directness: "Indirect for ES intraday futures. The paper studies aggregate stock-market daily returns and volume; this campaign translates the inventory/liquidity-pressure mechanism to intraday ES bars."
+
+edge_thesis: >
+  High-volume intraday ES price shocks can represent temporary liquidity
+  pressure. When a completed RTH bar moves sharply on elevated relative volume,
+  fade the shock on the next bar with fixed risk and same-day flattening.
+
+translation_notes:
+  why_es: "ES is a liquid index-futures implementation of aggregate equity-market exposure and prints reliable intraday volume."
+  why_effect_may_survive_costs: "The strategy trades at most once per day, requires elevated relative volume, and avoids low-volume micro-noise shocks."
+  expected_working_regime: "Liquidity-pressure reversals, rebalancing shocks, and non-news intraday overreaction."
+  expected_failure_regime: "Persistent trend/news sessions where high-volume shocks are informed rather than temporary."
+  translation_risks: "The source is daily and equity-index broad; intraday ES futures may absorb liquidity shocks faster and can trend on high-volume information events."
+
+variants:
+  - high_volume_down_reversal
+  - high_volume_up_reversal
+  - symmetric_volume_shock_reversion
+
+timeframes:
+  - 5m
+  - 15m
+  - 30m

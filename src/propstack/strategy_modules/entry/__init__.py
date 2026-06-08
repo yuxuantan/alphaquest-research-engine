@@ -15,6 +15,9 @@ from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPd
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
+from propstack.strategy_modules.entry.volume_conditioned_liquidity_reversal import (
+    VolumeConditionedLiquidityReversalEntry,
+)
 from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPullbackContinuationEntry
 
 
@@ -33,6 +36,7 @@ ENTRY_MODULES = {
     PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
     RthGapFadeEntry.name: RthGapFadeEntry,
     TurnOfMonthBiasEntry.name: TurnOfMonthBiasEntry,
+    VolumeConditionedLiquidityReversalEntry.name: VolumeConditionedLiquidityReversalEntry,
     VwapPullbackContinuationEntry.name: VwapPullbackContinuationEntry,
 }
 
@@ -62,6 +66,7 @@ __all__ = [
     "PdhPdlSweepReclaimEntry",
     "RthGapFadeEntry",
     "TurnOfMonthBiasEntry",
+    "VolumeConditionedLiquidityReversalEntry",
     "VwapPullbackContinuationEntry",
     "build_entry_module",
 ]

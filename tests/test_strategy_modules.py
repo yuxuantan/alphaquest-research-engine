@@ -16,6 +16,9 @@ from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPd
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
+from propstack.strategy_modules.entry.volume_conditioned_liquidity_reversal import (
+    VolumeConditionedLiquidityReversalEntry,
+)
 from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPullbackContinuationEntry
 from propstack.strategy_modules.sl.opening_range_edge import OpeningRangeEdgeStop
 from propstack.strategy_modules.sl.opening_range_width import OpeningRangeWidthStop
@@ -2273,3 +2276,72 @@ def test_rth_gap_fade_rejects_missing_previous_close():
     bar["prev_rth_close"] = pd.NA
 
     assert entry.on_bar_close(bar) is None
+
+
+def _volume_reversal_bar(timestamp, open_price, high, low, close, volume_ratio=1.4, name=None):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": True,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume_ratio": volume_ratio,
+        },
+        name=name if name is not None else ts.hour * 60 + ts.minute,
+    )
+
+
+def test_volume_conditioned_liquidity_reversal_signals_down_and_up_reversals():
+    long_entry = VolumeConditionedLiquidityReversalEntry(
+        {
+            "setup_mode": "high_volume_down_reversal",
+            "start_time": "09:35:00",
+            "end_time": "15:30:00",
+            "bar_interval_minutes": 5,
+            "min_move_ticks": 8,
+            "min_volume_ratio": 1.2,
+        }
+    )
+    long_signal = long_entry.on_bar_close(
+        _volume_reversal_bar("2024-01-03 09:30", 100.0, 100.25, 97.5, 98.0, volume_ratio=1.5)
+    )
+
+    assert long_signal.direction == "long"
+    assert long_signal.report_fields["shock_return_ticks"] == -8.0
+    assert long_signal.report_fields["academic_source_key"] == (
+        "campbell_grossman_wang_1993_volume_serial_correlation"
+    )
+
+    short_entry = VolumeConditionedLiquidityReversalEntry(
+        {
+            "setup_mode": "high_volume_up_reversal",
+            "bar_interval_minutes": 5,
+            "min_move_ticks": 8,
+            "min_volume_ratio": 1.2,
+        }
+    )
+    short_signal = short_entry.on_bar_close(
+        _volume_reversal_bar("2024-01-03 09:30", 100.0, 102.5, 99.75, 102.0, volume_ratio=1.5)
+    )
+
+    assert short_signal.direction == "short"
+    assert short_signal.report_fields["shock_return_ticks"] == 8.0
+
+
+def test_volume_conditioned_liquidity_reversal_rejects_low_volume():
+    entry = VolumeConditionedLiquidityReversalEntry(
+        {
+            "setup_mode": "symmetric_volume_shock_reversion",
+            "bar_interval_minutes": 5,
+            "min_move_ticks": 8,
+            "min_volume_ratio": 1.5,
+        }
+    )
+
+    assert entry.on_bar_close(
+        _volume_reversal_bar("2024-01-03 09:30", 100.0, 100.25, 97.5, 98.0, volume_ratio=1.1)
+    ) is None

@@ -94,6 +94,8 @@ def calculate_metrics(trades: pd.DataFrame, initial_balance: float = 0.0) -> dic
             "max_consecutive_losses": 0,
             "positive_month_rate": 0.0,
             "win_rate": 0.0,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
         }
     trades = _ordered_trades(trades)
     wins = trades.loc[trades["net_pnl"] > 0, "net_pnl"].sum()
@@ -132,11 +134,14 @@ def calculate_metrics(trades: pd.DataFrame, initial_balance: float = 0.0) -> dic
         "positive_month_rate": float((monthly > 0).mean()) if len(monthly) else 0.0,
         "win_rate": float((trades["net_pnl"] > 0).mean()),
         "average_trade": float(trades["net_pnl"].mean()),
+        "apex_rule_violations": _boolean_count(trades, "apex_rule_violation"),
+        "apex_forced_flatten_trades": _boolean_count(trades, "was_forced_flatten"),
     }
 
 
 def benchmark(metrics: dict, thresholds: dict) -> tuple[bool, str]:
     checks = [
+        ("apex_rule_violations", metrics.get("apex_rule_violations", 0) <= 0),
         ("min_total_net_profit", metrics.get("net_profit", 0) >= thresholds.get("min_total_net_profit", float("-inf"))),
         ("min_profit_factor", metrics.get("profit_factor", 0) >= thresholds.get("min_profit_factor", 0)),
         ("min_expectancy_r", metrics.get("expectancy_r", 0) >= thresholds.get("min_expectancy_r", float("-inf"))),
@@ -155,3 +160,9 @@ def benchmark(metrics: dict, thresholds: dict) -> tuple[bool, str]:
     ]
     failures = [name for name, ok in checks if not ok]
     return not failures, ";".join(failures)
+
+
+def _boolean_count(frame: pd.DataFrame, column: str) -> int:
+    if column not in frame.columns:
+        return 0
+    return int(frame[column].fillna(False).astype(bool).sum())

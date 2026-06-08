@@ -7,12 +7,24 @@ The script sends the documented TradingView/Auto Trader style JSON payload to:
 
 By default this is a dry run and only prints the payload. Add --execute to send it.
 
+Default payload shape:
+    {
+      "strategy_uuid": "...",
+      "time_now": "...",
+      "close": 5300.25,
+      "exchange": "CME",
+      "ticker": "ES",
+      "action": "buy",
+      "quantity": 1,
+      "ticker_id": "ESM2026"
+    }
+
 Required Proteryx setup:
     1. Create/configure an Auto Trader in Proteryx.
-    2. Connect the intended broker/account or portfolio route.
+    2. Connect the intended broker/account in Proteryx.
     3. Copy the Auto Trader strategy UUID into PROTERYX_STRATEGY_UUID or pass
        --strategy-uuid.
-    4. Confirm the symbol/contract format expected by your Proteryx setup.
+    4. Confirm the ticker_id/contract format expected by your Proteryx setup.
 """
 
 from __future__ import annotations
@@ -29,22 +41,35 @@ from typing import Any
 
 
 DEFAULT_WEBHOOK_URL = "https://api.proteryx.com/tradingview/auto-traders/alert"
-DEFAULT_ROUTE = "selected_accounts"
 DEFAULT_ES_TICK_SIZE = Decimal("0.25")
+FUTURES_MONTH_CODES = {
+    1: "F",
+    2: "G",
+    3: "H",
+    4: "J",
+    5: "K",
+    6: "M",
+    7: "N",
+    8: "Q",
+    9: "U",
+    10: "V",
+    11: "X",
+    12: "Z",
+}
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
-            "Send a Proteryx webhook payload for an ES market order with attached "
-            "take-profit and stop-loss distances."
+            "Send a Proteryx webhook payload for an ES market order with "
+            "take-profit and stop-loss distances checked locally."
         )
     )
     parser.add_argument(
         "--side",
         choices=("buy", "sell"),
         required=True,
-        help="Entry side for the market order.",
+        help="Entry side for the market order. Sent as the Proteryx action field.",
     )
     parser.add_argument(
         "--quantity",
@@ -53,13 +78,24 @@ def parse_args() -> argparse.Namespace:
         help="Contract quantity. Defaults to PROTERYX_QUANTITY or 1.",
     )
     parser.add_argument(
+        "--ticker",
         "--symbol",
+        dest="ticker",
         default=os.getenv("PROTERYX_SYMBOL", "ES"),
+        help="Ticker/root symbol as configured in Proteryx, for example ES. Defaults to PROTERYX_SYMBOL or ES.",
+    )
+    parser.add_argument(
+        "--ticker-id",
+        default=os.getenv("PROTERYX_TICKER_ID"),
         help=(
-            "Futures symbol/contract as configured in Proteryx, for example ES, "
-            "ESM6, or another broker-mapped ES symbol. Defaults to PROTERYX_SYMBOL "
-            "or ES."
+            "Contract identifier expected by Proteryx, for example ESM2026. Defaults to "
+            "PROTERYX_TICKER_ID, or is derived from --ticker and --expiry when possible."
         ),
+    )
+    parser.add_argument(
+        "--expiry",
+        default=os.getenv("PROTERYX_EXPIRY"),
+        help="Optional YYYYMM futures expiry used to derive ticker_id, for example 202606 -> ESM2026.",
     )
     parser.add_argument(
         "--strategy-uuid",
@@ -68,13 +104,13 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--portfolio",
-        default=os.getenv("PROTERYX_PORTFOLIO"),
-        help="Optional Proteryx portfolio name. Defaults to PROTERYX_PORTFOLIO.",
+        default=None,
+        help="Optional custom portfolio field included only when supplied.",
     )
     parser.add_argument(
         "--route",
-        default=os.getenv("PROTERYX_ROUTE", DEFAULT_ROUTE),
-        help=f"Proteryx route value. Defaults to PROTERYX_ROUTE or {DEFAULT_ROUTE}.",
+        default=None,
+        help="Optional custom route field included only when supplied.",
     )
     parser.add_argument(
         "--webhook-url",
@@ -90,24 +126,29 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--exchange",
         default=os.getenv("PROTERYX_EXCHANGE", "CME"),
-        help="Optional exchange/source context. Defaults to PROTERYX_EXCHANGE or CME.",
+        help="Exchange/source context sent as the exchange field. Defaults to PROTERYX_EXCHANGE or CME.",
     )
     parser.add_argument(
         "--close",
         type=positive_decimal,
         default=env_decimal("PROTERYX_CLOSE"),
-        help="Optional current close/market price context sent as the close field.",
+        help="Current close/market price context sent as the close field.",
     )
     parser.add_argument(
         "--client-tag",
-        default=os.getenv("PROTERYX_CLIENT_TAG"),
-        help="Optional client-side tag included in the payload for log tracing.",
+        default=None,
+        help="Optional custom clientTag field included only when supplied.",
+    )
+    parser.add_argument(
+        "--include-bracket-fields",
+        action="store_true",
+        help="Also include takeProfitTicks and stopLossTicks as custom payload fields.",
     )
     parser.add_argument(
         "--extra-json",
         help=(
             "Optional JSON object merged into the payload for custom Proteryx field "
-            "mappings, for example '{\"account\":\"Sim\"}'."
+            "mappings, for example a Sim account mapping."
         ),
     )
     parser.add_argument(
@@ -160,8 +201,12 @@ def parse_args() -> argparse.Namespace:
 def validate_args(parser: argparse.ArgumentParser, args: argparse.Namespace) -> None:
     if not args.strategy_uuid:
         parser.error("missing --strategy-uuid or PROTERYX_STRATEGY_UUID")
-    if not args.symbol.strip():
-        parser.error("missing --symbol")
+    if not args.ticker.strip():
+        parser.error("missing --ticker")
+    if args.ticker_id is not None and not args.ticker_id.strip():
+        parser.error("--ticker-id must not be blank")
+    if args.close is None:
+        parser.error("missing --close or PROTERYX_CLOSE")
     if not args.webhook_url.startswith(("http://", "https://")):
         parser.error("--webhook-url must start with http:// or https://")
 
@@ -195,24 +240,25 @@ def build_payload(args: argparse.Namespace) -> dict[str, Any]:
         label="stop loss",
     )
 
+    ticker = args.ticker.strip()
     payload: dict[str, Any] = {
         "strategy_uuid": args.strategy_uuid,
         "time_now": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "symbol": args.symbol.strip(),
-        "side": args.side,
+        "close": decimal_to_json_number(args.close),
+        "exchange": args.exchange,
+        "ticker": ticker,
+        "action": args.side,
         "quantity": args.quantity,
-        "orderType": "market",
-        "takeProfitTicks": take_profit_ticks,
-        "stopLossTicks": stop_loss_ticks,
-        "route": args.route,
+        "ticker_id": args.ticker_id or ticker_id_from_expiry(ticker, args.expiry),
     }
 
+    if args.include_bracket_fields:
+        payload["takeProfitTicks"] = take_profit_ticks
+        payload["stopLossTicks"] = stop_loss_ticks
     if args.portfolio:
         payload["portfolio"] = args.portfolio
-    if args.exchange:
-        payload["exchange"] = args.exchange
-    if args.close is not None:
-        payload["close"] = decimal_to_json_number(args.close)
+    if args.route:
+        payload["route"] = args.route
     if args.client_tag:
         payload["clientTag"] = args.client_tag
     if args.extra_json:
@@ -262,6 +308,18 @@ def ticks_from_distance(
             f"computed {raw_ticks} ticks"
         )
     return int(integral)
+
+
+def ticker_id_from_expiry(ticker: str, expiry: str | None) -> str:
+    expiry_text = str(expiry or "").strip()
+    ticker_text = ticker.strip()
+    if len(expiry_text) >= 6 and expiry_text[:6].isdigit():
+        year = int(expiry_text[:4])
+        month = int(expiry_text[4:6])
+        month_code = FUTURES_MONTH_CODES.get(month)
+        if month_code:
+            return f"{ticker_text}{month_code}{year}"
+    return ticker_text
 
 
 def print_json(payload: dict[str, Any]) -> None:
@@ -319,9 +377,9 @@ def main() -> int:
     args = parse_args()
     payload = build_payload(args)
 
-    if payload["symbol"] in {"ES", "MES", "NQ", "MNQ"}:
+    if payload["ticker_id"] == payload["ticker"] and payload["ticker"] in {"ES", "MES", "NQ", "MNQ"}:
         print(
-            f"Warning: using root symbol {payload['symbol']}. Confirm your Proteryx "
+            f"Warning: ticker_id is the root symbol {payload['ticker']}. Confirm your Proteryx "
             "automation maps it to the active contract expected by your broker.",
             file=sys.stderr,
         )

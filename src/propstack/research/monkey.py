@@ -134,6 +134,8 @@ def run_monkey(
             "net_profit": float(core_profile["net_profit"]),
             "max_drawdown": float(core_profile["max_drawdown"]),
             "max_drawdown_pct": float(core_profile["max_drawdown_pct"]),
+            "apex_rule_violations": int(core_profile["apex_rule_violations"]),
+            "apex_forced_flatten_trades": int(core_profile["apex_forced_flatten_trades"]),
         },
         "beat_threshold": threshold,
         "core_beats_monkey_net_profit_rate": net_profit_beat_rate,
@@ -332,6 +334,7 @@ def _evaluate_monkey_run(
         "profit_factor": metrics["profit_factor"],
         "expectancy_r": metrics["expectancy_r"],
         "win_rate": metrics["win_rate"],
+        "apex_rule_violations": metrics.get("apex_rule_violations", 0),
         "profitable": metrics["net_profit"] > 0,
         "core_net_profit_gt_monkey": core_profile["net_profit"] > metrics["net_profit"],
         "core_max_drawdown_lt_monkey": core_profile["max_drawdown"] < metrics["max_drawdown"],
@@ -411,6 +414,8 @@ def _core_profile(data: pd.DataFrame, trades: pd.DataFrame, metrics: dict) -> di
         "net_profit": float(metrics["net_profit"]),
         "max_drawdown": float(metrics["max_drawdown"]),
         "max_drawdown_pct": float(metrics["max_drawdown_pct"]),
+        "apex_rule_violations": int(metrics.get("apex_rule_violations", 0)),
+        "apex_forced_flatten_trades": int(metrics.get("apex_forced_flatten_trades", 0)),
     }
 
 

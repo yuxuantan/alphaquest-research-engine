@@ -2,7 +2,7 @@ import pandas as pd
 
 from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.fills import stop_target_hit
-from propstack.backtest.metrics import calculate_metrics
+from propstack.backtest.metrics import benchmark, calculate_metrics
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
 from tests.test_data_pipeline import DATA_CFG
@@ -254,6 +254,203 @@ def test_time_exit_uses_bar_close_timestamp():
     first = trades.iloc[0]
     assert first["exit_reason"] == "eod_flatten"
     assert first["exit_timestamp"] == pd.Timestamp("2024-01-03 09:45", tz="America/New_York")
+
+
+def _calendar_apex_cfg(
+    *,
+    signal_time: str,
+    weekday: int = 2,
+    timezone: str = "America/New_York",
+) -> dict:
+    return {
+        "strategy_name": "calendar_session_bias",
+        "strategy": {
+            "entry": {
+                "module": "calendar_session_bias",
+                "params": {
+                    "signal_time": signal_time,
+                    "bar_interval_minutes": 1,
+                    "weekday_directions": {weekday: "long"},
+                    "max_trades_per_day": 1,
+                },
+            },
+            "tp": {"module": "fixed_r", "params": {"target_r_multiple": 20.0}},
+            "sl": {"module": "percent_from_entry", "params": {"stop_pct": 0.02}},
+            "flatten_time": "17:30:00",
+        },
+        "core": {
+            "tick_size": 0.25,
+            "tick_value": 12.50,
+            "commission_per_contract": 0,
+            "slippage_ticks": 0,
+            "contracts": 1,
+        },
+        "apex_rules": {
+            "enabled": True,
+            "timezone": timezone,
+            "latest_flat_time": "16:59:59",
+            "force_flatten_enabled": True,
+            "force_flatten_time": "16:58:30",
+            "latest_entry_time": "16:45:00",
+            "cancel_pending_orders_before_flatten": True,
+            "no_overnight_positions": True,
+            "reject_if_position_after_flatten_deadline": True,
+            "reject_if_pending_order_after_flatten_deadline": True,
+            "reject_if_entry_after_latest_entry_time": True,
+        },
+    }
+
+
+def _calendar_rows(start, periods: int, *, timestamp_timezone: str = "America/New_York") -> pd.DataFrame:
+    start_ts = pd.Timestamp(start, tz=timestamp_timezone)
+    rows = []
+    for idx in range(periods):
+        ts = start_ts + pd.Timedelta(minutes=idx)
+        session_date = ts.tz_convert("America/New_York").date()
+        rows.append(
+            {
+                "timestamp": ts,
+                "session_date": session_date,
+                "is_rth": True,
+                "open": 100.0,
+                "high": 100.20,
+                "low": 99.80,
+                "close": 100.0,
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def test_apex_rejects_pending_entry_after_latest_entry_time():
+    cfg = _calendar_apex_cfg(signal_time="16:46:00")
+    result = BacktestEngine(cfg).run(_calendar_rows("2024-01-03 16:45", 3))
+
+    assert result["trades"].empty
+    assert result["diagnostics"]["signals_generated"] == 1
+    assert result["diagnostics"]["rejects"]["apex_latest_entry_time"] == 1
+    assert result["diagnostics"]["apex"]["pending_orders_cancelled"] == 1
+    assert result["metrics"]["apex_rule_violations"] == 0
+
+
+def test_apex_cancels_pending_next_bar_entry_across_market_gap_before_deadline():
+    cfg = _calendar_apex_cfg(signal_time="15:30:00")
+    rows = []
+    for timestamp in ["2024-01-03 15:29", "2024-01-03 18:00"]:
+        ts = pd.Timestamp(timestamp, tz="America/New_York")
+        rows.append(
+            {
+                "timestamp": ts,
+                "session_date": ts.date(),
+                "is_rth": True,
+                "open": 100.0,
+                "high": 100.20,
+                "low": 99.80,
+                "close": 100.0,
+            }
+        )
+
+    result = BacktestEngine(cfg).run(pd.DataFrame(rows))
+
+    assert result["trades"].empty
+    assert result["diagnostics"]["signals_generated"] == 1
+    assert result["diagnostics"]["rejects"]["apex_latest_entry_time"] == 1
+    assert result["diagnostics"]["apex"]["pending_orders_cancelled"] == 1
+    assert result["diagnostics"]["apex"]["pending_order_after_flatten_deadline"] == 0
+    assert result["metrics"]["apex_rule_violations"] == 0
+
+
+def test_apex_force_flatten_uses_last_legal_bar_close_and_reports_fields():
+    cfg = _calendar_apex_cfg(signal_time="16:45:00")
+    result = BacktestEngine(cfg).run(_calendar_rows("2024-01-03 16:44", 16))
+    trades = result["trades"]
+
+    assert len(trades) == 1
+    first = trades.iloc[0]
+    assert first["entry_timestamp"] == pd.Timestamp("2024-01-03 16:45", tz="America/New_York")
+    assert first["exit_timestamp"] == pd.Timestamp("2024-01-03 16:58", tz="America/New_York")
+    assert first["exit_reason"] == "forced_apex_flatten"
+    assert bool(first["apex_rules_enabled"]) is True
+    assert bool(first["was_forced_flatten"]) is True
+    assert bool(first["position_flat_before_deadline"]) is True
+    assert bool(first["pending_orders_cancelled_before_deadline"]) is True
+    assert bool(first["entry_before_latest_entry_time"]) is True
+    assert bool(first["exit_before_flatten_deadline"]) is True
+    assert bool(first["apex_rule_violation"]) is False
+    assert result["metrics"]["apex_forced_flatten_trades"] == 1
+    assert result["metrics"]["apex_rule_violations"] == 0
+
+
+def test_apex_force_flatten_uses_last_available_legal_bar_before_market_gap():
+    cfg = _calendar_apex_cfg(signal_time="12:59:00")
+    rows = []
+    for timestamp in [
+        "2024-01-03 12:58",
+        "2024-01-03 12:59",
+        "2024-01-03 13:00",
+        "2024-01-03 18:00",
+    ]:
+        ts = pd.Timestamp(timestamp, tz="America/New_York")
+        rows.append(
+            {
+                "timestamp": ts,
+                "session_date": ts.date(),
+                "is_rth": True,
+                "open": 100.0,
+                "high": 100.20,
+                "low": 99.80,
+                "close": 100.0,
+            }
+        )
+
+    result = BacktestEngine(cfg).run(pd.DataFrame(rows))
+    trades = result["trades"]
+
+    assert len(trades) == 1
+    first = trades.iloc[0]
+    assert first["entry_timestamp"] == pd.Timestamp("2024-01-03 12:59", tz="America/New_York")
+    assert first["exit_timestamp"] == pd.Timestamp("2024-01-03 13:01", tz="America/New_York")
+    assert first["exit_reason"] == "forced_apex_flatten"
+    assert bool(first["apex_rule_violation"]) is False
+    assert result["diagnostics"]["apex"]["exit_after_flatten_deadline"] == 0
+    assert result["metrics"]["apex_rule_violations"] == 0
+
+
+def test_apex_latest_entry_uses_configured_timezone_for_utc_bars():
+    cfg = _calendar_apex_cfg(signal_time="20:45:00", weekday=0)
+    cfg["strategy"]["flatten_time"] = "23:59:00"
+    result = BacktestEngine(cfg).run(
+        _calendar_rows("2024-06-03 20:44", 16, timestamp_timezone="UTC")
+    )
+    trades = result["trades"]
+
+    assert len(trades) == 1
+    first = trades.iloc[0]
+    assert first["entry_timestamp"] == pd.Timestamp("2024-06-03 20:45", tz="UTC")
+    assert first["exit_timestamp"] == pd.Timestamp("2024-06-03 20:58", tz="UTC")
+    assert result["diagnostics"]["rejects"]["apex_latest_entry_time"] == 0
+    assert result["metrics"]["apex_rule_violations"] == 0
+
+
+def test_benchmark_fails_when_apex_rule_violation_is_present():
+    trades = pd.DataFrame(
+        {
+            "net_pnl": [100.0],
+            "gross_pnl": [100.0],
+            "r_multiple": [1.0],
+            "entry_timestamp": ["2024-01-01 09:30"],
+            "exit_timestamp": ["2024-01-01 10:00"],
+            "session_date": ["2024-01-01"],
+            "trade_id": [1],
+            "apex_rule_violation": [True],
+        }
+    )
+
+    metrics = calculate_metrics(trades, initial_balance=10000)
+    passed, reason = benchmark(metrics, {})
+
+    assert metrics["apex_rule_violations"] == 1
+    assert passed is False
+    assert "apex_rule_violations" in reason
 
 
 def test_risk_percent_sizing_uses_entry_stop_distance_per_trade():

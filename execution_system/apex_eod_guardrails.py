@@ -30,6 +30,20 @@ from zoneinfo import ZoneInfo
 DEFAULT_CONFIG = "apex_50k_eod_guardrails.example.json"
 DEFAULT_WEBHOOK_URL = "https://api.proteryx.com/tradingview/auto-traders/alert"
 EASTERN = ZoneInfo("America/New_York")
+FUTURES_MONTH_CODES = {
+    1: "F",
+    2: "G",
+    3: "H",
+    4: "J",
+    5: "K",
+    6: "M",
+    7: "N",
+    8: "Q",
+    9: "U",
+    10: "V",
+    11: "X",
+    12: "Z",
+}
 
 INSTRUMENTS: dict[str, dict[str, Decimal]] = {
     "ES": {
@@ -95,17 +109,48 @@ def parse_args() -> argparse.Namespace:
     send.add_argument(
         "--portfolio",
         default=None,
-        help="Override Proteryx portfolio. Otherwise config is used.",
+        help="Optional custom portfolio field included only when supplied.",
     )
     send.add_argument(
         "--route",
         default=None,
-        help="Override Proteryx route. Otherwise config is used.",
+        help="Optional custom route field included only when supplied.",
     )
     send.add_argument(
         "--webhook-url",
         default=None,
         help="Override Proteryx webhook URL. Otherwise config/default is used.",
+    )
+    send.add_argument(
+        "--ticker",
+        default=None,
+        help="Override Proteryx ticker/root. Defaults to the checked order symbol.",
+    )
+    send.add_argument(
+        "--ticker-id",
+        default=None,
+        help="Override Proteryx ticker_id, for example ESM2026.",
+    )
+    send.add_argument(
+        "--expiry",
+        default=None,
+        help="Optional YYYYMM futures expiry used to derive ticker_id, for example 202606 -> ESM2026.",
+    )
+    send.add_argument(
+        "--exchange",
+        default=None,
+        help="Override Proteryx exchange field. Otherwise proteryx.exchange or CME is used.",
+    )
+    send.add_argument(
+        "--close",
+        type=positive_decimal,
+        default=None,
+        help="Current close/market price context sent as the Proteryx close field.",
+    )
+    send.add_argument(
+        "--include-bracket-fields",
+        action="store_true",
+        help="Also include takeProfitTicks and stopLossTicks as custom payload fields.",
     )
     send.add_argument(
         "--extra-json",
@@ -349,21 +394,35 @@ def build_proteryx_payload(config: dict[str, Any], args: argparse.Namespace, che
     if not strategy_uuid:
         raise SystemExit(f"missing Proteryx strategy UUID; set --strategy-uuid, proteryx.strategy_uuid, or {env_name}")
 
+    if args.close is None:
+        raise SystemExit("missing --close for Proteryx payload")
+
+    ticker = str(args.ticker or check["order"]["symbol"]).strip()
     payload: dict[str, Any] = {
         "strategy_uuid": strategy_uuid,
         "time_now": dt.datetime.now(dt.timezone.utc).isoformat(),
-        "symbol": check["order"]["symbol"],
-        "side": check["order"]["side"],
+        "close": args.close,
+        "exchange": args.exchange or proteryx.get("exchange", "CME"),
+        "ticker": ticker,
+        "action": check["order"]["side"],
         "quantity": check["order"]["quantity"],
-        "orderType": "market",
-        "takeProfitTicks": check["order"]["take_profit_ticks"],
-        "stopLossTicks": check["order"]["stop_loss_ticks"],
-        "route": args.route or proteryx.get("route", "selected_accounts"),
-        "clientTag": proteryx.get("client_tag", "apex-eod-guarded-order"),
+        "ticker_id": args.ticker_id or proteryx.get("ticker_id") or ticker_id_from_expiry(ticker, args.expiry or proteryx.get("expiry")),
     }
-    portfolio = args.portfolio or proteryx.get("portfolio")
-    if portfolio:
-        payload["portfolio"] = portfolio
+    if args.include_bracket_fields or bool(proteryx.get("include_bracket_fields", False)):
+        payload["takeProfitTicks"] = check["order"]["take_profit_ticks"]
+        payload["stopLossTicks"] = check["order"]["stop_loss_ticks"]
+
+    include_routing_fields = bool(proteryx.get("include_routing_fields", False))
+    if args.route:
+        payload["route"] = args.route
+    elif include_routing_fields and proteryx.get("route"):
+        payload["route"] = proteryx["route"]
+    if args.portfolio:
+        payload["portfolio"] = args.portfolio
+    elif include_routing_fields and proteryx.get("portfolio"):
+        payload["portfolio"] = proteryx["portfolio"]
+    if include_routing_fields and proteryx.get("client_tag"):
+        payload["clientTag"] = proteryx["client_tag"]
 
     if args.extra_json:
         try:
@@ -374,6 +433,18 @@ def build_proteryx_payload(config: dict[str, Any], args: argparse.Namespace, che
             raise SystemExit("--extra-json must be a JSON object")
         payload.update(extra)
     return payload
+
+
+def ticker_id_from_expiry(ticker: str, expiry: Any) -> str:
+    expiry_text = str(expiry or "").strip()
+    ticker_text = ticker.strip()
+    if len(expiry_text) >= 6 and expiry_text[:6].isdigit():
+        year = int(expiry_text[:4])
+        month = int(expiry_text[4:6])
+        month_code = FUTURES_MONTH_CODES.get(month)
+        if month_code:
+            return f"{ticker_text}{month_code}{year}"
+    return ticker_text
 
 
 def post_json(url: str, payload: dict[str, Any], timeout: Decimal) -> tuple[int, str]:

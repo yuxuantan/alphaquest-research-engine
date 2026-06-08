@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import copy
+from dataclasses import dataclass
 import math
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -15,6 +17,42 @@ from propstack.utils.progress import progress_bar
 from propstack.utils.time import parse_time
 
 
+@dataclass(frozen=True)
+class ApexRules:
+    enabled: bool = False
+    timezone: str = "America/New_York"
+    latest_flat_time: object = parse_time("16:59:59")
+    cancel_pending_orders_before_flatten: bool = True
+    no_overnight_positions: bool = True
+    reject_if_position_after_flatten_deadline: bool = True
+    reject_if_pending_order_after_flatten_deadline: bool = True
+    reject_if_entry_after_latest_entry_time: bool = True
+    force_flatten_enabled: bool = True
+    force_flatten_time: object = parse_time("16:58:30")
+    latest_entry_time: object = parse_time("16:45:00")
+
+    @classmethod
+    def from_config(cls, config: dict) -> "ApexRules":
+        raw = dict(config.get("apex_rules") or {})
+        return cls(
+            enabled=bool(raw.get("enabled", False)),
+            timezone=str(raw.get("timezone", "America/New_York")),
+            latest_flat_time=parse_time(raw.get("latest_flat_time", "16:59:59")),
+            cancel_pending_orders_before_flatten=bool(raw.get("cancel_pending_orders_before_flatten", True)),
+            no_overnight_positions=bool(raw.get("no_overnight_positions", True)),
+            reject_if_position_after_flatten_deadline=bool(
+                raw.get("reject_if_position_after_flatten_deadline", True)
+            ),
+            reject_if_pending_order_after_flatten_deadline=bool(
+                raw.get("reject_if_pending_order_after_flatten_deadline", True)
+            ),
+            reject_if_entry_after_latest_entry_time=bool(raw.get("reject_if_entry_after_latest_entry_time", True)),
+            force_flatten_enabled=bool(raw.get("force_flatten_enabled", True)),
+            force_flatten_time=parse_time(raw.get("force_flatten_time", "16:58:30")),
+            latest_entry_time=parse_time(raw.get("latest_entry_time", "16:45:00")),
+        )
+
+
 class BacktestEngine:
     def __init__(self, config: dict, show_progress: bool = False):
         self.config = config
@@ -22,6 +60,8 @@ class BacktestEngine:
         if "strategy_name" not in self.strategy_config and config.get("strategy_name"):
             self.strategy_config["strategy_name"] = config["strategy_name"]
         self.core_config = config.get("core", {})
+        self.apex_rules = ApexRules.from_config(config)
+        self.apex_timezone = ZoneInfo(self.apex_rules.timezone)
         self.show_progress = show_progress
         self.timeframe_minutes = self._configured_bar_interval_minutes()
         self._apply_timeframe_to_strategy()
@@ -53,6 +93,11 @@ class BacktestEngine:
 
         for i, bar in df.iterrows():
             progress.update(i + 1)
+            if pending_signal is not None and position is None and not self._apex_entry_allowed(bar["timestamp"]):
+                diagnostics["rejects"]["apex_latest_entry_time"] += 1
+                self._record_apex_pending_cancel(diagnostics, bar["timestamp"])
+                pending_signal = None
+
             if pending_signal is not None and position is None and risk.allow_new_trade(bar["session_date"]):
                 sig = pending_signal
                 direction = sig.direction
@@ -124,6 +169,7 @@ class BacktestEngine:
                 position["max_adverse_excursion"] = max(position["max_adverse_excursion"], mae)
 
                 bar_close_timestamp = pd.Timestamp(bar["timestamp"]) + pd.Timedelta(minutes=bar_interval_minutes)
+                next_bar_close_timestamp = self._next_bar_close_timestamp(df, i, bar_interval_minutes)
                 reason, raw_exit, exit_timestamp = self._resolve_stop_target_exit(
                     bar,
                     direction,
@@ -135,6 +181,12 @@ class BacktestEngine:
                 )
                 if reason is None and bar_close_timestamp.time() >= flatten_time:
                     reason, raw_exit = "eod_flatten", float(bar["close"])
+                    exit_timestamp = bar_close_timestamp
+                if reason is None and self._apex_should_force_flatten(
+                    bar_close_timestamp,
+                    next_bar_close_timestamp,
+                ):
+                    reason, raw_exit = "forced_apex_flatten", float(bar["close"])
                     exit_timestamp = bar_close_timestamp
                 if reason is not None:
                     xp = exit_price(float(raw_exit), direction, tick_size, slippage_ticks)
@@ -156,28 +208,50 @@ class BacktestEngine:
                         "commission": total_commission,
                         "slippage_cost": slippage_cost,
                     }
+                    trade.update(self._apex_trade_fields(trade))
                     trades.append(trade)
                     diagnostics["exits"][reason] = diagnostics["exits"].get(reason, 0) + 1
+                    self._record_trade_apex_diagnostics(trade, diagnostics)
                     risk.record_exit(position["session_date"], net)
                     net_liq += net
                     position = None
                     continue
 
             if position is None and risk.allow_new_trade(bar["session_date"]):
+                bar_close_timestamp = pd.Timestamp(bar["timestamp"]) + pd.Timedelta(minutes=bar_interval_minutes)
                 signal = strategy.on_bar_close(bar, risk.trades_today(bar["session_date"]))
                 if signal is not None:
                     diagnostics["signals_generated"] += 1
-                    pending_signal = signal
+                    next_entry_timestamp = self._next_bar_entry_timestamp(df, i)
+                    if next_entry_timestamp is not None and self._apex_entry_allowed(next_entry_timestamp):
+                        pending_signal = signal
+                    else:
+                        diagnostics["rejects"]["apex_latest_entry_time"] += 1
+                        self._record_apex_pending_cancel(diagnostics, bar_close_timestamp)
+
+        if pending_signal is not None and self.apex_rules.enabled:
+            last_timestamp = df.iloc[-1]["timestamp"] if len(df) else pd.Timestamp.now(tz=self.apex_timezone)
+            self._record_apex_pending_cancel(diagnostics, last_timestamp)
+            pending_signal = None
+        if position is not None and self.apex_rules.enabled:
+            self._record_apex_violation(diagnostics, "position_after_flatten_deadline")
 
         trades_df = pd.DataFrame(trades)
         diagnostics["trades_closed"] = int(len(trades_df))
+        metrics = calculate_metrics(
+            trades_df,
+            initial_balance=float(self.core_config.get("initial_balance", 0)),
+        )
+        if self.apex_rules.enabled:
+            metrics["apex_rule_violations"] = max(
+                int(metrics.get("apex_rule_violations", 0)),
+                int(diagnostics["apex"]["rule_violations"]),
+            )
+            metrics["apex_forced_flatten_trades"] = int(diagnostics["apex"]["forced_flatten_trades"])
         return {
             "trades": trades_df,
             "daily": daily_results(trades_df),
-            "metrics": calculate_metrics(
-                trades_df,
-                initial_balance=float(self.core_config.get("initial_balance", 0)),
-            ),
+            "metrics": metrics,
             "diagnostics": diagnostics,
         }
 
@@ -202,11 +276,13 @@ class BacktestEngine:
                 "target_already_reached": 0,
                 "position_sizing": 0,
                 "daily_risk_lockout": 0,
+                "apex_latest_entry_time": 0,
             },
             "exits": {},
             "stop_target_conflicts": 0,
             "detail_conflicts_resolved": 0,
             "detail_conflicts_unresolved": 0,
+            "apex": self._apex_diagnostics(),
         }
         self._validate_strategy_feature_columns(data, diagnostics)
         self._validate_timeframe_column(data, diagnostics)
@@ -230,6 +306,7 @@ class BacktestEngine:
             "pdh_pdl_breakout_continuation": {"is_rth", "prev_rth_high", "prev_rth_low", "volume_ratio"},
             "rth_gap_fade": {"is_rth", "prev_rth_close", "vwap"},
             "turn_of_month_bias": {"is_rth"},
+            "volume_conditioned_liquidity_reversal": {"is_rth", "volume_ratio"},
             "vwap_pullback_continuation": {"is_rth", "vwap"},
         }
         missing = sorted(required_by_module.get(module, set()) - set(data.columns))
@@ -329,6 +406,131 @@ class BacktestEngine:
             diagnostics["detail_conflicts_unresolved"] += 1
         reason, raw_exit = stop_target_hit(bar, direction, stop_price, target_price)
         return reason, raw_exit, exit_timestamp
+
+    def _apex_diagnostics(self) -> dict:
+        rules = self.apex_rules
+        return {
+            "enabled": bool(rules.enabled),
+            "timezone": rules.timezone,
+            "latest_flat_time": _format_time(rules.latest_flat_time),
+            "force_flatten_time": _format_time(rules.force_flatten_time),
+            "latest_entry_time": _format_time(rules.latest_entry_time),
+            "pending_orders_cancelled": 0,
+            "pending_order_after_flatten_deadline": 0,
+            "entry_after_latest_entry_time": 0,
+            "exit_after_flatten_deadline": 0,
+            "position_after_flatten_deadline": 0,
+            "overnight_position_violations": 0,
+            "forced_flatten_trades": 0,
+            "rule_violations": 0,
+        }
+
+    def _apex_entry_allowed(self, timestamp) -> bool:
+        rules = self.apex_rules
+        if not rules.enabled:
+            return True
+        ts = self._apex_timestamp(timestamp)
+        if rules.reject_if_entry_after_latest_entry_time and ts.time() > rules.latest_entry_time:
+            return False
+        if ts.time() > rules.latest_flat_time:
+            return False
+        return True
+
+    def _record_apex_pending_cancel(self, diagnostics: dict, timestamp) -> None:
+        if not self.apex_rules.enabled:
+            return
+        diagnostics["apex"]["pending_orders_cancelled"] += 1
+        if not self.apex_rules.reject_if_pending_order_after_flatten_deadline:
+            return
+        ts = self._apex_timestamp(timestamp)
+        if ts.time() > self.apex_rules.latest_flat_time:
+            self._record_apex_violation(diagnostics, "pending_order_after_flatten_deadline")
+
+    def _next_bar_close_timestamp(
+        self,
+        data: pd.DataFrame,
+        current_index: int,
+        bar_interval_minutes: float,
+    ) -> pd.Timestamp | None:
+        next_index = current_index + 1
+        if next_index >= len(data):
+            return None
+        return pd.Timestamp(data.iloc[next_index]["timestamp"]) + pd.Timedelta(minutes=bar_interval_minutes)
+
+    def _next_bar_entry_timestamp(self, data: pd.DataFrame, current_index: int) -> pd.Timestamp | None:
+        next_index = current_index + 1
+        if next_index >= len(data):
+            return None
+        return pd.Timestamp(data.iloc[next_index]["timestamp"])
+
+    def _apex_should_force_flatten(self, bar_close_timestamp, next_bar_close_timestamp=None) -> bool:
+        rules = self.apex_rules
+        if not rules.enabled or not rules.force_flatten_enabled:
+            return False
+        close_ts = self._apex_timestamp(bar_close_timestamp)
+        if close_ts.time() > rules.force_flatten_time:
+            return False
+        if next_bar_close_timestamp is None:
+            return True
+        next_close = self._apex_timestamp(next_bar_close_timestamp)
+        return next_close.date() != close_ts.date() or next_close.time() > rules.force_flatten_time
+
+    def _apex_trade_fields(self, trade: dict) -> dict:
+        rules = self.apex_rules
+        enabled = bool(rules.enabled)
+        entry_ts = self._apex_timestamp(trade["entry_timestamp"])
+        exit_ts = self._apex_timestamp(trade["exit_timestamp"])
+        entry_before_latest = (not enabled) or (not rules.reject_if_entry_after_latest_entry_time) or (
+            entry_ts.time() <= rules.latest_entry_time
+        )
+        exit_before_flatten = (not enabled) or (not rules.reject_if_position_after_flatten_deadline) or (
+            exit_ts.time() <= rules.latest_flat_time
+        )
+        no_overnight_ok = (not enabled) or (not rules.no_overnight_positions) or (entry_ts.date() == exit_ts.date())
+        position_flat_before_deadline = exit_before_flatten and no_overnight_ok
+        violation = enabled and not (
+            entry_before_latest
+            and exit_before_flatten
+            and no_overnight_ok
+        )
+        return {
+            "apex_rules_enabled": enabled,
+            "latest_flat_time": _format_time(rules.latest_flat_time),
+            "force_flatten_time": _format_time(rules.force_flatten_time),
+            "latest_entry_time": _format_time(rules.latest_entry_time),
+            "was_forced_flatten": trade["exit_reason"] == "forced_apex_flatten",
+            "position_flat_before_deadline": position_flat_before_deadline,
+            "pending_orders_cancelled_before_deadline": True,
+            "entry_before_latest_entry_time": entry_before_latest,
+            "exit_before_flatten_deadline": exit_before_flatten,
+            "apex_rule_violation": violation,
+        }
+
+    def _record_trade_apex_diagnostics(self, trade: dict, diagnostics: dict) -> None:
+        if not self.apex_rules.enabled:
+            return
+        if trade.get("was_forced_flatten"):
+            diagnostics["apex"]["forced_flatten_trades"] += 1
+        if trade.get("entry_before_latest_entry_time") is False:
+            self._record_apex_violation(diagnostics, "entry_after_latest_entry_time")
+        if trade.get("exit_before_flatten_deadline") is False:
+            self._record_apex_violation(diagnostics, "exit_after_flatten_deadline")
+        if trade.get("position_flat_before_deadline") is False and trade.get("exit_before_flatten_deadline") is not False:
+            self._record_apex_violation(diagnostics, "overnight_position_violations")
+
+    def _record_apex_violation(self, diagnostics: dict, key: str) -> None:
+        diagnostics["apex"][key] = diagnostics["apex"].get(key, 0) + 1
+        diagnostics["apex"]["rule_violations"] += 1
+
+    def _apex_timestamp(self, timestamp) -> pd.Timestamp:
+        ts = pd.Timestamp(timestamp)
+        if ts.tzinfo is None:
+            return ts.tz_localize(self.apex_timezone)
+        return ts.tz_convert(self.apex_timezone)
+
+
+def _format_time(value) -> str:
+    return parse_time(value).strftime("%H:%M:%S")
 
 
 def _target_already_reached(direction: str, entry: float, target: float, signal) -> bool:

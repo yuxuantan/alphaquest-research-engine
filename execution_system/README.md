@@ -222,11 +222,18 @@ python3 ibkr_es_l2_ohlcv_poc.py \
 
 ## 6. Trigger ES Orders Through Proteryx
 
-`proteryx_es_market_bracket.py` posts a Proteryx Auto Trader webhook payload for
-an ES market order with attached take-profit and stop-loss distances.
+`proteryx_es_market_bracket.py` posts the Proteryx Auto Trader alert payload
+shape documented by Proteryx:
+
+```json
+{"strategy_uuid":"...","time_now":"...","close":5300.25,"exchange":"CME","ticker":"ES","action":"buy","quantity":1,"ticker_id":"ESM2026"}
+```
 
 The script is dry-run by default. It prints the exact JSON payload and only sends
-the order when `--execute` is provided.
+the order when `--execute` is provided. `--close` is required because it is part
+of the Proteryx alert shape. TP/SL distances are still required for
+local risk checks; they are sent as custom fields only when
+`--include-bracket-fields` is provided.
 
 Set your Auto Trader UUID:
 
@@ -240,9 +247,26 @@ Dry-run a 1-contract ES buy with a 10-point TP and 5-point SL:
 python3 proteryx_es_market_bracket.py \
   --side buy \
   --quantity 1 \
-  --symbol ES \
+  --ticker ES \
+  --ticker-id ESM2026 \
+  --exchange CME \
+  --close 5300.25 \
   --tp-points 10 \
   --sl-points 5
+```
+
+You can also derive `ticker_id` from expiry:
+
+```bash
+python3 proteryx_es_market_bracket.py \
+  --side sell \
+  --quantity 1 \
+  --ticker ES \
+  --expiry 202606 \
+  --exchange CME \
+  --close 5300.25 \
+  --tp-ticks 40 \
+  --sl-ticks 20
 ```
 
 Send it to Proteryx:
@@ -251,25 +275,13 @@ Send it to Proteryx:
 python3 proteryx_es_market_bracket.py \
   --side buy \
   --quantity 1 \
-  --symbol ES \
+  --ticker ES \
+  --ticker-id ESM2026 \
+  --exchange CME \
+  --close 5300.25 \
   --tp-points 10 \
   --sl-points 5 \
   --execute
-```
-
-If your Proteryx/broker route expects a specific contract month, pass it
-explicitly, for example `--symbol ESM6`. If your Auto Trader needs portfolio or
-route fields:
-
-```bash
-python3 proteryx_es_market_bracket.py \
-  --side sell \
-  --quantity 1 \
-  --symbol ESM6 \
-  --tp-ticks 40 \
-  --sl-ticks 20 \
-  --portfolio Terminal \
-  --route selected_accounts
 ```
 
 ## 7. Apex 50K EOD Guardrails
@@ -329,6 +341,10 @@ python3 apex_eod_guardrails.py \
   --side buy \
   --quantity 1 \
   --symbol ES \
+  --ticker ES \
+  --ticker-id ESM2026 \
+  --exchange CME \
+  --close 5300.25 \
   --tp-points 10 \
   --sl-points 4
 ```
@@ -342,6 +358,10 @@ python3 apex_eod_guardrails.py \
   --side buy \
   --quantity 1 \
   --symbol ES \
+  --ticker ES \
+  --ticker-id ESM2026 \
+  --exchange CME \
+  --close 5300.25 \
   --tp-points 10 \
   --sl-points 4 \
   --execute
@@ -358,19 +378,21 @@ balance, 50% consistency, and the six-payout cap.
 execution system without modifying the research code:
 
 1. Loads the configured campaign variant YAML read-only.
-2. Pulls recent 1-minute ES historical bars from IBKR.
+2. Pulls recent 1-minute historical bars for the selected futures symbol from IBKR.
 3. Subscribes to IBKR 5-second live bars and aggregates completed 1-minute bars.
 4. Builds the same session, timeframe, and feature columns used by backtests.
 5. Runs the modular strategy on newly completed strategy bars.
 6. Computes entry estimate, stop, target, and strategy-suggested size.
 7. Walks size down until the Apex guardrails approve the order.
-8. Dry-runs or sends the guarded market/TP/SL payload to Proteryx.
+8. Dry-runs or sends the guarded Proteryx alert-format market payload.
 
-The example bridge config points at:
+The selected campaign variant YAML must define:
 
-```text
-configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml
-```
+- top-level `symbol`
+- top-level `timeframe`
+- `strategy.entry.module` and `strategy.entry.params`
+- `strategy.sl.module` and `strategy.sl.params`
+- `strategy.tp.module` and `strategy.tp.params`
 
 The bridge needs the same Python environment as the research stack plus IBKR:
 
@@ -384,11 +406,24 @@ Check the bridge help:
 python3 strategy_execution_bridge.py --help
 ```
 
+Preflight a strategy without opening IBKR:
+
+```bash
+python3 strategy_execution_bridge.py \
+  --config strategy_execution_bridge.example.json \
+  --strategy-config ../configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml \
+  --preflight-only
+```
+
 Run one live completed-minute evaluation in dry-run mode:
 
 ```bash
 python3 strategy_execution_bridge.py \
   --config strategy_execution_bridge.example.json \
+  --strategy-config ../configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml \
+  --port 4001 \
+  --client-id 82 \
+  --expiry 202606 \
   --once
 ```
 
@@ -396,7 +431,11 @@ Run continuously in dry-run mode:
 
 ```bash
 python3 strategy_execution_bridge.py \
-  --config strategy_execution_bridge.example.json
+  --config strategy_execution_bridge.example.json \
+  --strategy-config ../configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml \
+  --port 4001 \
+  --client-id 82 \
+  --expiry 202606
 ```
 
 Allow Proteryx POSTs only after the strategy signal, sizing, and guardrails all
@@ -407,13 +446,20 @@ export PROTERYX_STRATEGY_UUID="your-proteryx-auto-trader-uuid"
 
 python3 strategy_execution_bridge.py \
   --config strategy_execution_bridge.example.json \
+  --strategy-config ../configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml \
+  --port 4001 \
+  --client-id 82 \
+  --expiry 202606 \
+  --ticker-id ESM2026 \
   --execute
 ```
 
 Keep `apex_50k_eod_guardrails.example.json` current with live Apex account
 balances, start-of-day balances, EOD thresholds, and open exposure. The bridge
 uses the lowest selected account equity as the live sizing base, then clamps the
-result to the largest quantity that passes every selected Apex account.
+result to the largest quantity that passes every selected Apex account. For ES,
+`--expiry 202606` derives `ticker_id` as `ESM2026` unless `execution.ticker_id`
+or `--ticker-id` overrides it.
 
 ## 9. Delayed Data Testing
 
@@ -486,6 +532,12 @@ No depth lines print
 
 - Add `--print-depth`.
 - Confirm level II market data permissions for CME futures.
+
+`ValueError: invalid literal for int() with base 10: b'26.0000000000000000'`
+
+- This comes from IBKR's Python decoder parsing realtime-bar volume as `int`.
+- `ibkr_es_l2_ohlcv_poc.py` and `strategy_execution_bridge.py` apply the local `ibkr_decimal_volume_patch.py` runtime patch before subscribing to realtime bars.
+- Re-run the same command; no IB API package files need to be edited.
 
 `No security definition has been found`
 

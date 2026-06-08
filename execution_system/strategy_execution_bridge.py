@@ -4,12 +4,12 @@ Bridge IBKR market data, propstack strategy configs, Apex guardrails, and Proter
 
 The bridge:
   1. Loads a campaign variant YAML from the main propstack project.
-  2. Pulls recent 1-minute ES historical bars from IBKR.
+  2. Pulls recent 1-minute historical bars for the selected futures symbol from IBKR.
   3. Subscribes to live IBKR 5-second bars and aggregates completed 1-minute bars.
   4. Rebuilds the same session/timeframe/features used by the backtest engine.
   5. Runs the modular strategy on newly completed strategy bars.
   6. Computes entry estimate, stop, target, and guardrail-constrained size.
-  7. Optionally sends the guarded market/bracket payload to Proteryx.
+  7. Optionally sends the guarded Proteryx alert-format market payload.
 
 It is dry-run by default. Use --execute to allow the Proteryx POST.
 """
@@ -60,6 +60,7 @@ else:
     IBAPI_IMPORT_ERROR = None
 
 import apex_eod_guardrails as guardrails
+from ibkr_decimal_volume_patch import patch_ibapi_realtime_bar_decimal_volume
 from ibkr_es_historical_1m_fetch import next_quarterly_expiry
 
 
@@ -67,6 +68,20 @@ HISTORICAL_REQ_ID = 12001
 REALTIME_BARS_REQ_ID = 12002
 INFO_CODES = {2103, 2104, 2106, 2107, 2108, 2158}
 DEFAULT_CONFIG = "strategy_execution_bridge.example.json"
+FUTURES_MONTH_CODES = {
+    1: "F",
+    2: "G",
+    3: "H",
+    4: "J",
+    5: "K",
+    6: "M",
+    7: "N",
+    8: "Q",
+    9: "U",
+    10: "V",
+    11: "X",
+    12: "Z",
+}
 
 
 @dataclass(frozen=True)
@@ -308,21 +323,90 @@ class StrategyExecutionRuntime:
         self.config = config
         self.config_path = config_path
         self.project_root = Path(config.get("project_root", config_path.parent.parent)).expanduser().resolve()
-        self.strategy_config_path = resolve_path(self.project_root, config["strategy_config"])
+        self.strategy_config_path = resolve_strategy_path(self.project_root, config_path.parent, config["strategy_config"])
         self.guardrails_path = resolve_path(config_path.parent, config.get("guardrails_config", "apex_50k_eod_guardrails.example.json"))
         self.execution_config = config.get("execution", {})
         self.ibkr_config = config.get("ibkr", {})
         self.guardrails_config = guardrails.load_config(str(self.guardrails_path))
         self.variant_config = load_yaml(self.strategy_config_path)
+        self.preflight_warnings = validate_strategy_variant(
+            self.variant_config,
+            self.strategy_config_path,
+            self.project_root,
+        )
         self.data_config = dict(self.variant_config.get("data", {}))
-        self.timeframe = self.variant_config.get("timeframe") or self.data_config.get("timeframe") or "1m"
+        self.timeframe = self.variant_config.get("timeframe") or self.data_config.get("timeframe")
         self.timeframe_minutes = parse_timeframe_minutes(self.timeframe)
+        self._apply_strategy_defaults_to_execution_config()
+        self.preflight_warnings.extend(self._history_window_warnings())
         self.strategy = self._build_strategy()
         self.bar_store = BarStore(int(self.execution_config.get("max_source_bars", 10000)))
         self.trades_by_session: dict[Any, int] = {}
         self.last_processed_strategy_timestamp: Any = None
         self.last_live_strategy_timestamp: Any = None
         self.sent_signal_keys: set[tuple[Any, str, str]] = set()
+
+    def _apply_strategy_defaults_to_execution_config(self) -> None:
+        symbol = str(self.variant_config.get("symbol") or self.data_config.get("symbol") or "").strip()
+        if not symbol:
+            return
+        if not self.ibkr_config.get("symbol"):
+            self.ibkr_config["symbol"] = symbol
+        if not self.execution_config.get("proteryx_symbol"):
+            self.execution_config["proteryx_symbol"] = symbol
+        if not self.ibkr_config.get("multiplier"):
+            self.ibkr_config["multiplier"] = default_futures_multiplier(str(self.ibkr_config.get("symbol", symbol)))
+
+    def _history_window_warnings(self) -> list[str]:
+        warnings: list[str] = []
+        warmup_days = int(self.data_config.get("warmup_days") or 0)
+        history_days = historical_duration_days(str(self.ibkr_config.get("historical_duration", "")))
+        if warmup_days and history_days is not None and history_days < warmup_days + 1:
+            warnings.append(
+                f"IBKR historical_duration={self.ibkr_config.get('historical_duration')} is shorter than "
+                f"data.warmup_days+1 ({warmup_days + 1} D); strategy features may be under-warmed."
+            )
+        return warnings
+
+    def preflight_report(self) -> dict[str, Any]:
+        strategy = self.variant_config["strategy"]
+        return {
+            "strategy_config": str(self.strategy_config_path),
+            "strategy_name": self.variant_config.get("strategy_name"),
+            "symbol": self.variant_config.get("symbol") or self.data_config.get("symbol"),
+            "timeframe": self.timeframe,
+            "timeframe_minutes": self.timeframe_minutes,
+            "modules": {
+                "entry": strategy["entry"]["module"],
+                "sl": strategy["sl"]["module"],
+                "tp": strategy["tp"]["module"],
+            },
+            "ibkr": {
+                "host": self.ibkr_config.get("host"),
+                "port": self.ibkr_config.get("port"),
+                "client_id": self.ibkr_config.get("client_id"),
+                "symbol": self.ibkr_config.get("symbol"),
+                "expiry": self.ibkr_config.get("expiry"),
+                "local_symbol": self.ibkr_config.get("local_symbol"),
+                "historical_duration": self.ibkr_config.get("historical_duration"),
+                "market_data_type": self.ibkr_config.get("market_data_type"),
+            },
+            "guardrails_config": str(self.guardrails_path),
+            "proteryx_symbol": self.execution_config.get("proteryx_symbol"),
+            "ticker_id": proteryx_ticker_id(
+                str(
+                    self.execution_config.get("ticker")
+                    or self.execution_config.get("proteryx_symbol")
+                    or self.variant_config.get("symbol")
+                    or self.data_config.get("symbol")
+                    or "ES"
+                ),
+                self.ibkr_config,
+                self.execution_config,
+            ),
+            "dry_run": not bool(self.execution_config.get("execute", False)),
+            "warnings": self.preflight_warnings,
+        }
 
     def _build_strategy(self):
         add_project_src_to_path(self.project_root)
@@ -474,7 +558,7 @@ class StrategyExecutionRuntime:
         self.sent_signal_keys.add(signal_key)
 
         guardrail_report = final["guardrail_report"]
-        proteryx_payload = self.build_proteryx_payload(guardrail_report)
+        proteryx_payload = self.build_proteryx_payload(guardrail_report, close_price=float(row["close"]))
         return {
             "action": "send_order",
             "timestamp": str(row["timestamp"]),
@@ -547,7 +631,7 @@ class StrategyExecutionRuntime:
                 return {"quantity": quantity, "guardrail_report": report}
         return None
 
-    def build_proteryx_payload(self, guardrail_report: dict[str, Any]) -> dict[str, Any]:
+    def build_proteryx_payload(self, guardrail_report: dict[str, Any], *, close_price: float) -> dict[str, Any]:
         proteryx = self.guardrails_config.get("proteryx", {})
         env_name = str(proteryx.get("strategy_uuid_env", "PROTERYX_STRATEGY_UUID"))
         strategy_uuid = (
@@ -558,21 +642,27 @@ class StrategyExecutionRuntime:
         if not strategy_uuid:
             raise RuntimeError(f"missing Proteryx strategy UUID; set execution.strategy_uuid or {env_name}")
 
-        payload = {
+        ticker = str(
+            self.execution_config.get("ticker")
+            or self.execution_config.get("proteryx_symbol")
+            or guardrail_report["order"]["symbol"]
+        ).strip()
+        if not ticker:
+            raise RuntimeError("missing Proteryx ticker")
+
+        payload: dict[str, Any] = {
             "strategy_uuid": strategy_uuid,
             "time_now": dt.datetime.now(dt.timezone.utc).isoformat(),
-            "symbol": guardrail_report["order"]["symbol"],
-            "side": guardrail_report["order"]["side"],
+            "close": float(close_price),
+            "exchange": str(self.execution_config.get("exchange") or self.ibkr_config.get("exchange") or "CME"),
+            "ticker": ticker,
+            "action": guardrail_report["order"]["side"],
             "quantity": guardrail_report["order"]["quantity"],
-            "orderType": "market",
-            "takeProfitTicks": guardrail_report["order"]["take_profit_ticks"],
-            "stopLossTicks": guardrail_report["order"]["stop_loss_ticks"],
-            "route": self.execution_config.get("route", proteryx.get("route", "selected_accounts")),
-            "clientTag": self.execution_config.get("client_tag", proteryx.get("client_tag", "strategy-execution-bridge")),
+            "ticker_id": proteryx_ticker_id(ticker, self.ibkr_config, self.execution_config),
         }
-        portfolio = self.execution_config.get("portfolio", proteryx.get("portfolio"))
-        if portfolio:
-            payload["portfolio"] = portfolio
+        if bool(self.execution_config.get("include_bracket_fields", False)):
+            payload["takeProfitTicks"] = guardrail_report["order"]["take_profit_ticks"]
+            payload["stopLossTicks"] = guardrail_report["order"]["stop_loss_ticks"]
         extra = self.execution_config.get("extra_payload")
         if isinstance(extra, dict):
             payload.update(extra)
@@ -590,11 +680,66 @@ class StrategyExecutionRuntime:
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Run live strategy decisions from IBKR through Apex guardrails.")
-    parser.add_argument("--config", default=DEFAULT_CONFIG)
+    parser.add_argument("--config", default=DEFAULT_CONFIG, help="Bridge JSON config inside execution_system.")
+    parser.add_argument(
+        "--strategy-config",
+        help="Campaign variant YAML under configs/campaigns. Overrides config.strategy_config.",
+    )
+    parser.add_argument("--project-root", help="Project root containing src/ and configs/. Overrides config.project_root.")
+    parser.add_argument("--guardrails-config", help="Apex guardrails JSON. Overrides config.guardrails_config.")
+    parser.add_argument("--preflight-only", action="store_true", help="Validate strategy/config and exit without opening IBKR.")
     parser.add_argument("--execute", action="store_true", help="Allow Proteryx POSTs after guardrails pass.")
     parser.add_argument("--once", action="store_true", help="Exit after the first completed live minute is evaluated.")
     parser.add_argument("--max-runtime", type=float, default=0.0, help="Optional runtime limit in seconds.")
+    parser.add_argument("--ib-host", "--host", dest="ib_host", help="Override IBKR host.")
+    parser.add_argument("--ib-port", "--port", dest="ib_port", type=int, help="Override IBKR port.")
+    parser.add_argument("--client-id", type=int, help="Override IBKR client id.")
+    parser.add_argument("--ib-symbol", "--symbol", dest="ib_symbol", help="Override IBKR futures root symbol.")
+    parser.add_argument("--expiry", help="Override IBKR contract expiry, e.g. 202606.")
+    parser.add_argument("--local-symbol", help="Override IBKR local symbol, e.g. ESM6.")
+    parser.add_argument("--market-data-type", type=int, choices=(1, 2, 3, 4), help="IBKR market data type.")
+    parser.add_argument("--historical-duration", help="IBKR historical seed duration, e.g. '14 D'.")
+    parser.add_argument("--proteryx-symbol", help="Override Proteryx ticker/root. Defaults to selected strategy symbol.")
+    parser.add_argument("--ticker-id", help="Override Proteryx ticker_id, e.g. ESM2026.")
+    parser.add_argument("--max-quantity", type=int, help="Max order quantity before guardrail clamp.")
     return parser.parse_args()
+
+
+def apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    config = copy.deepcopy(config)
+    if args.project_root:
+        config["project_root"] = args.project_root
+    if args.strategy_config:
+        config["strategy_config"] = args.strategy_config
+    if args.guardrails_config:
+        config["guardrails_config"] = args.guardrails_config
+
+    ibkr = config.setdefault("ibkr", {})
+    for arg_name, key in {
+        "ib_host": "host",
+        "ib_port": "port",
+        "client_id": "client_id",
+        "ib_symbol": "symbol",
+        "expiry": "expiry",
+        "local_symbol": "local_symbol",
+        "market_data_type": "market_data_type",
+        "historical_duration": "historical_duration",
+    }.items():
+        value = getattr(args, arg_name)
+        if value is not None:
+            ibkr[key] = value
+
+    execution = config.setdefault("execution", {})
+    if args.proteryx_symbol:
+        execution["proteryx_symbol"] = args.proteryx_symbol
+    if args.ticker_id:
+        execution["ticker_id"] = args.ticker_id
+    if args.max_quantity is not None:
+        execution["max_quantity"] = args.max_quantity
+    if args.execute:
+        execution["execute"] = True
+        execution["send_to_proteryx"] = True
+    return config
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -618,6 +763,50 @@ def load_yaml(path: Path) -> dict[str, Any]:
     return data
 
 
+def validate_strategy_variant(config: dict[str, Any], path: Path, project_root: Path) -> list[str]:
+    errors: list[str] = []
+    warnings: list[str] = []
+    try:
+        relative = path.resolve().relative_to(project_root.resolve())
+    except ValueError:
+        warnings.append(f"strategy config is outside project_root: {path}")
+    else:
+        parts = relative.parts
+        if len(parts) < 3 or parts[0] != "configs" or parts[1] != "campaigns":
+            warnings.append(f"strategy config is not under configs/campaigns: {relative}")
+
+    if not config.get("timeframe"):
+        errors.append("variant YAML must define top-level timeframe")
+    if not config.get("symbol"):
+        errors.append("variant YAML must define top-level symbol")
+
+    strategy = config.get("strategy")
+    if not isinstance(strategy, dict):
+        errors.append("variant YAML must define strategy mapping")
+        strategy = {}
+
+    for section in ("entry", "sl", "tp"):
+        value = strategy.get(section)
+        if not isinstance(value, dict):
+            errors.append(f"strategy.{section} must be a mapping")
+            continue
+        if not value.get("module"):
+            errors.append(f"strategy.{section}.module is required")
+        if "params" not in value or not isinstance(value.get("params"), dict):
+            errors.append(f"strategy.{section}.params mapping is required")
+
+    data_config = config.get("data")
+    if not isinstance(data_config, dict):
+        warnings.append("variant YAML has no data mapping; execution will use default session settings")
+    elif not data_config.get("timezone"):
+        warnings.append("data.timezone is missing; execution will default to America/New_York")
+
+    if errors:
+        joined = "\n  - ".join(errors)
+        raise ValueError(f"Strategy variant preflight failed for {path}:\n  - {joined}")
+    return warnings
+
+
 def build_contract(ibkr: dict[str, Any]) -> Any:
     if Contract is None:
         raise RuntimeError("Missing dependency: python3 -m pip install ibapi")
@@ -626,7 +815,7 @@ def build_contract(ibkr: dict[str, Any]) -> Any:
     contract.secType = "FUT"
     contract.exchange = str(ibkr.get("exchange", "CME"))
     contract.currency = str(ibkr.get("currency", "USD"))
-    multiplier = ibkr.get("multiplier", "50")
+    multiplier = ibkr.get("multiplier") or default_futures_multiplier(contract.symbol)
     if multiplier:
         contract.multiplier = str(multiplier)
     local_symbol = ibkr.get("local_symbol")
@@ -640,6 +829,45 @@ def build_contract(ibkr: dict[str, Any]) -> Any:
 def display_symbol(contract: Any) -> str:
     contract_id = getattr(contract, "localSymbol", "") or getattr(contract, "lastTradeDateOrContractMonth", "")
     return f"{contract.symbol} {contract_id} {contract.exchange}".strip()
+
+
+def proteryx_ticker_id(ticker: str, ibkr: dict[str, Any], execution: dict[str, Any] | None = None) -> str:
+    execution = execution or {}
+    explicit = execution.get("ticker_id") or ibkr.get("ticker_id")
+    if explicit:
+        return str(explicit)
+    derived = ticker_id_from_expiry(ticker, ibkr.get("expiry"))
+    if derived != ticker:
+        return derived
+    local_symbol = ibkr.get("local_symbol")
+    if local_symbol:
+        return str(local_symbol)
+    return ticker
+
+
+def ticker_id_from_expiry(ticker: str, expiry: Any) -> str:
+    expiry_text = str(expiry or "").strip()
+    ticker_text = ticker.strip()
+    if len(expiry_text) >= 6 and expiry_text[:6].isdigit():
+        year = int(expiry_text[:4])
+        month = int(expiry_text[4:6])
+        month_code = FUTURES_MONTH_CODES.get(month)
+        if month_code:
+            return f"{ticker_text}{month_code}{year}"
+    return ticker_text
+
+
+def default_futures_multiplier(symbol: str) -> str:
+    return {
+        "ES": "50",
+        "MES": "5",
+        "NQ": "20",
+        "MNQ": "2",
+        "YM": "5",
+        "MYM": "0.5",
+        "RTY": "50",
+        "M2K": "5",
+    }.get(str(symbol).upper(), "")
 
 
 def ib_bar_to_minute(bar: Any, symbol: str, source: str) -> OneMinuteBar | None:
@@ -782,18 +1010,58 @@ def resolve_path(base: Path, value: str | os.PathLike[str]) -> Path:
     return (base / path).resolve()
 
 
+def resolve_strategy_path(project_root: Path, config_dir: Path, value: str | os.PathLike[str]) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    config_relative = (config_dir / path).resolve()
+    if config_relative.exists():
+        return config_relative
+    return (project_root / path).resolve()
+
+
 def parse_timeframe_minutes(value: Any) -> int:
+    if value is None:
+        raise ValueError("timeframe is required")
     text = str(value).strip().lower()
-    if text.endswith("m"):
-        text = text[:-1]
+    if text.endswith("mins"):
+        text = text[:-4]
     elif text.endswith("min"):
         text = text[:-3]
-    elif text.endswith("mins"):
-        text = text[:-4]
+    elif text.endswith("m"):
+        text = text[:-1]
+    elif text.endswith("hours"):
+        text = str(float(text[:-5].strip()) * 60)
+    elif text.endswith("hour"):
+        text = str(float(text[:-4].strip()) * 60)
+    elif text.endswith("h"):
+        text = str(float(text[:-1].strip()) * 60)
     minutes = int(float(text))
     if minutes <= 0:
         raise ValueError("timeframe must be positive")
     return minutes
+
+
+def historical_duration_days(value: str) -> int | None:
+    parts = str(value).strip().split()
+    if len(parts) != 2:
+        return None
+    try:
+        amount = float(parts[0])
+    except ValueError:
+        return None
+    unit = parts[1].upper()
+    if unit.startswith("D"):
+        return int(amount)
+    if unit.startswith("W"):
+        return int(amount * 7)
+    if unit.startswith("M"):
+        return int(amount * 30)
+    if unit.startswith("Y"):
+        return int(amount * 365)
+    if unit.startswith("H"):
+        return 0
+    return None
 
 
 def print_report(report: dict[str, Any]) -> None:
@@ -808,17 +1076,20 @@ def run() -> int:
     if YAML_IMPORT_ERROR is not None:
         print("Missing dependency: python3 -m pip install pyyaml", file=sys.stderr)
         return 2
+    config_path = Path(args.config).expanduser().resolve()
+    config = apply_cli_overrides(load_json(config_path), args)
+
+    runtime = StrategyExecutionRuntime(config, config_path)
+    print_report(runtime.preflight_report())
+    if args.preflight_only:
+        return 0
+
     if IBAPI_IMPORT_ERROR is not None:
         print("Missing dependency: python3 -m pip install ibapi", file=sys.stderr)
         return 2
 
-    config_path = Path(args.config).expanduser().resolve()
-    config = load_json(config_path)
-    if args.execute:
-        config.setdefault("execution", {})["execute"] = True
-        config.setdefault("execution", {})["send_to_proteryx"] = True
+    patch_ibapi_realtime_bar_decimal_volume()
 
-    runtime = StrategyExecutionRuntime(config, config_path)
     contract = build_contract(runtime.ibkr_config)
     display = display_symbol(contract)
     stop_after_first_live_bar = threading.Event()

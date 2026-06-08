@@ -75,6 +75,7 @@ def run_core_grid(
     df = pd.DataFrame(rows).sort_values("run_id").reset_index(drop=True)
     passing = int(df["benchmark_passed"].sum()) if len(df) else 0
     profitable = int(df["profitable"].sum()) if len(df) else 0
+    apex_violating = int((df.get("apex_rule_violations", pd.Series(dtype=int)) > 0).sum()) if len(df) else 0
     profitable_rate = float(profitable / len(df)) if len(df) else 0.0
     profitable_threshold = _profitable_iteration_threshold(grid_config, benchmarks)
     top = df.sort_values(["benchmark_passed", "net_profit"], ascending=[False, False]).head(10)
@@ -86,6 +87,7 @@ def run_core_grid(
         "percentage_passing_benchmark": float(passing / len(df)) if len(df) else 0.0,
         "profitable_iterations": profitable,
         "percentage_profitable_iterations": profitable_rate,
+        "apex_rule_violating_iterations": apex_violating,
         "profitable_iteration_threshold": profitable_threshold,
         "meets_profitable_iteration_threshold": profitable_rate >= profitable_threshold,
         "top_10_combinations": top.to_dict(orient="records"),
@@ -183,6 +185,8 @@ def _evaluate_core_grid_combo(
         "cagr": metrics["cagr"],
         "mar": metrics["mar"],
         "win_rate": metrics["win_rate"],
+        "apex_rule_violations": metrics.get("apex_rule_violations", 0),
+        "apex_forced_flatten_trades": metrics.get("apex_forced_flatten_trades", 0),
         "profitable": metrics["net_profit"] > 0,
         "worst_day": metrics["worst_day"],
         "best_day_concentration": metrics["best_day_concentration"],

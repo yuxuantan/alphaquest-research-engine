@@ -35,6 +35,8 @@ try:
     from ibapi.contract import Contract
     from ibapi.wrapper import EWrapper
 
+    from ibkr_decimal_volume_patch import patch_ibapi_realtime_bar_decimal_volume
+
     IBAPI_IMPORT_ERROR: ImportError | None = None
 except ImportError as exc:  # pragma: no cover - this is for a cleaner CLI error.
     class EClient:  # type: ignore[no-redef]
@@ -622,6 +624,9 @@ def main() -> int:
             file=sys.stderr,
         )
         return 2
+
+    if args.bar_mode == "realtime-5s" and patch_ibapi_realtime_bar_decimal_volume():
+        print("Applied IBKR realtime decimal-volume decoder patch.", file=sys.stderr)
 
     contract = build_es_contract(args)
     app = IbkrPocApp(args, contract, display_symbol(contract))
