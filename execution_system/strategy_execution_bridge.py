@@ -68,7 +68,19 @@ from ibkr_es_historical_1m_fetch import next_quarterly_expiry
 HISTORICAL_REQ_ID = 12001
 REALTIME_BARS_REQ_ID = 12002
 INFO_CODES = {2103, 2104, 2106, 2107, 2108, 2158}
+FATAL_STARTUP_ERROR_CODES = {502, 504, 507}
 DEFAULT_CONFIG = "strategy_execution_bridge.example.json"
+
+
+@dataclass(frozen=True)
+class SyntheticSignal:
+    direction: str
+    level_type: str = "self_test"
+    swept_level: float | None = None
+    metadata: dict[str, Any] | None = None
+    report_fields: dict[str, Any] | None = None
+
+
 @dataclass(frozen=True)
 class OneMinuteBar:
     timestamp_epoch: int
@@ -278,6 +290,9 @@ class IbkrBridgeApp(EWrapper, EClient):
         print(message, file=sys.stderr)
         if severity == "error":
             self.errors.append(message)
+            if not self.started.is_set() and errorCode in FATAL_STARTUP_ERROR_CODES:
+                self.failed = True
+                self.done.set()
         if reqId == HISTORICAL_REQ_ID and severity == "error":
             self.failed = True
             self.done.set()
@@ -314,7 +329,7 @@ class StrategyExecutionRuntime:
         self.tradovate_config = config.get("tradovate", {})
         self.ibkr_config = config.get("ibkr", {})
         self.guardrails_config = guardrails.load_config(str(self.guardrails_path))
-        self.variant_config = load_yaml(self.strategy_config_path)
+        self.variant_config = resolve_project_file_references(load_yaml(self.strategy_config_path), self.project_root)
         self.preflight_warnings = validate_strategy_variant(
             self.variant_config,
             self.strategy_config_path,
@@ -331,6 +346,7 @@ class StrategyExecutionRuntime:
         self.last_processed_strategy_timestamp: Any = None
         self.last_live_strategy_timestamp: Any = None
         self.sent_signal_keys: set[tuple[Any, str, str]] = set()
+        self.entry_alert_count = 0
 
     def _apply_strategy_defaults_to_execution_config(self) -> None:
         symbol = str(self.variant_config.get("symbol") or self.data_config.get("symbol") or "").strip()
@@ -456,6 +472,42 @@ class StrategyExecutionRuntime:
         ]
         return completed.reset_index(drop=True)
 
+    def replay_csv(
+        self,
+        path: Path,
+        *,
+        seed_bars: int,
+        max_live_bars: int = 0,
+        stop_after_signal: bool = False,
+    ) -> dict[str, Any]:
+        bars = csv_to_minute_bars(path, default_symbol=str(self.ibkr_config.get("symbol") or self.variant_config.get("symbol") or "ES"))
+        if not bars:
+            raise RuntimeError(f"replay CSV has no bars: {path}")
+        seed_count = min(max(seed_bars, 0), len(bars))
+        if seed_count:
+            self.seed([replace_bar_source(bar, "replay_seed") for bar in bars[:seed_count]])
+        replayed = 0
+        starting_alerts = self.entry_alert_count
+        for bar in bars[seed_count:]:
+            if max_live_bars and replayed >= max_live_bars:
+                break
+            self.on_completed_minute(replace_bar_source(bar, "replay_live"))
+            replayed += 1
+            if stop_after_signal and self.entry_alert_count > starting_alerts:
+                break
+        summary = {
+            "event": "replay_complete",
+            "csv": str(path),
+            "source_bars": len(bars),
+            "seed_bars": seed_count,
+            "replayed_live_bars": replayed,
+            "entry_alerts": self.entry_alert_count - starting_alerts,
+            "last_processed_strategy_timestamp": str(self.last_processed_strategy_timestamp),
+            "last_live_strategy_timestamp": str(self.last_live_strategy_timestamp),
+        }
+        print_report(summary)
+        return summary
+
     def current_features(self):
         add_project_src_to_path(self.project_root)
         from propstack.data.features import build_features
@@ -475,6 +527,87 @@ class StrategyExecutionRuntime:
         features = build_features(strategy_bars, self.data_config)
         return features.sort_values("timestamp").reset_index(drop=True)
 
+    def self_test_entry_alert(self) -> dict[str, Any]:
+        market_timezone = str(self.data_config.get("timezone", "America/New_York"))
+        timestamp = pd.Timestamp.now(tz=market_timezone).floor(f"{self.timeframe_minutes}min")
+        row = {
+            "timestamp": timestamp,
+            "session_date": timestamp.date(),
+            "close": float(self.execution_config.get("self_test_close", 5300.0)),
+        }
+        direction = str(self.execution_config.get("self_test_direction", "long")).lower()
+        if direction not in {"long", "short"}:
+            raise ValueError("execution.self_test_direction must be long or short")
+        side = "buy" if direction == "long" else "sell"
+        tick_size = float(self.variant_config.get("core", {}).get("tick_size", self.data_config.get("tick_size", 0.25)))
+        tick_value = float(self.variant_config.get("core", {}).get("tick_value", 12.5))
+        slippage_ticks = float(self.variant_config.get("core", {}).get("slippage_ticks", 1))
+        stop_points = float(self.execution_config.get("self_test_stop_points", 4.0))
+        target_points = float(self.execution_config.get("self_test_target_points", 8.0))
+        entry_estimate = estimated_market_entry(float(row["close"]), direction, tick_size, slippage_ticks)
+        if direction == "long":
+            stop_price = entry_estimate - stop_points
+            target_price = entry_estimate + target_points
+        else:
+            stop_price = entry_estimate + stop_points
+            target_price = entry_estimate - target_points
+
+        suggested_qty = self.strategy_suggested_quantity(stop_points, tick_size, tick_value)
+        max_qty = int(self.execution_config.get("max_quantity", suggested_qty))
+        min_qty = int(self.execution_config.get("min_quantity", 1))
+        final = self.guardrail_constrained_quantity(
+            side=side,
+            symbol=str(self.execution_config.get("guardrail_symbol", self.variant_config.get("symbol", "ES"))),
+            suggested_qty=min(suggested_qty, max_qty),
+            min_qty=min_qty,
+            stop_points=Decimal(str(stop_points)),
+            target_points=Decimal(str(target_points)),
+        )
+        if final is None:
+            decision = {
+                "event": "signal_rejected",
+                "action": "reject_signal",
+                "reason": "self-test quantity did not pass guardrails",
+                "suggested_quantity": suggested_qty,
+            }
+            print_report(decision)
+            return decision
+
+        signal_obj = SyntheticSignal(
+            direction=direction,
+            metadata={"source": "self_test_entry_alert"},
+            report_fields={"source": "self_test_entry_alert"},
+        )
+        tradovate_payload = self.build_tradovate_payload(
+            final["guardrail_report"],
+            stop_price=float(stop_price),
+            target_price=float(target_price),
+        )
+        alert = self.entry_alert(
+            row=row,
+            signal_obj=signal_obj,
+            side=side,
+            direction=direction,
+            entry_estimate=entry_estimate,
+            stop_price=float(stop_price),
+            target_price=float(target_price),
+            stop_points=stop_points,
+            target_points=target_points,
+            suggested_qty=suggested_qty,
+            quantity=final["quantity"],
+            tradovate_payload=tradovate_payload,
+        )
+        decision = {
+            "event": "entry_signal",
+            "action": "send_order",
+            "entry_alert": alert,
+            "guardrail_report": final["guardrail_report"],
+            "tradovate_payload": tradovate_payload,
+        }
+        self.emit_entry_alert(decision)
+        print_report(decision)
+        return decision
+
     def _process_strategy_bar(self, row: Any, *, live: bool) -> None:
         timestamp = row["timestamp"]
         session_date = row["session_date"]
@@ -490,6 +623,8 @@ class StrategyExecutionRuntime:
             print(f"No signal on completed strategy bar {timestamp}.", file=sys.stderr)
             return
         decision = self.plan_trade(row, signal_obj)
+        if decision["action"] == "send_order":
+            self.emit_entry_alert(decision)
         print_report(decision)
         if decision["action"] != "send_order":
             return
@@ -510,14 +645,24 @@ class StrategyExecutionRuntime:
         slippage_ticks = float(self.variant_config.get("core", {}).get("slippage_ticks", 1))
         entry_estimate = estimated_market_entry(float(row["close"]), direction, tick_size, slippage_ticks)
         stop_price = self.strategy.stop_price(signal_obj, direction, tick_size, entry_price=entry_estimate)
-        if stop_price is None:
+        try:
+            stop_price_float = float(stop_price)
+        except (TypeError, ValueError):
             return self.reject(row, signal_obj, "strategy did not produce a stop price")
+        if not math.isfinite(stop_price_float):
+            return self.reject(row, signal_obj, "strategy did not produce a finite stop price")
         target_price = self.strategy.target_price(entry_estimate, stop_price, direction, signal=signal_obj)
-        if target_already_reached(direction, entry_estimate, target_price, signal_obj):
+        try:
+            target_price_float = float(target_price)
+        except (TypeError, ValueError):
+            return self.reject(row, signal_obj, "strategy did not produce a target price")
+        if not math.isfinite(target_price_float):
+            return self.reject(row, signal_obj, "strategy did not produce a finite target price")
+        if target_already_reached(direction, entry_estimate, target_price_float, signal_obj):
             return self.reject(row, signal_obj, "target already reached or invalid at entry estimate")
 
-        stop_points = abs(entry_estimate - float(stop_price))
-        target_points = abs(float(target_price) - entry_estimate)
+        stop_points = abs(entry_estimate - stop_price_float)
+        target_points = abs(target_price_float - entry_estimate)
         if stop_points <= 0 or target_points <= 0:
             return self.reject(row, signal_obj, "non-positive stop/target distance")
 
@@ -543,10 +688,25 @@ class StrategyExecutionRuntime:
         guardrail_report = final["guardrail_report"]
         tradovate_payload = self.build_tradovate_payload(
             guardrail_report,
-            stop_price=float(stop_price),
-            target_price=float(target_price),
+            stop_price=stop_price_float,
+            target_price=target_price_float,
+        )
+        alert = self.entry_alert(
+            row=row,
+            signal_obj=signal_obj,
+            side=side,
+            direction=direction,
+            entry_estimate=entry_estimate,
+            stop_price=stop_price_float,
+            target_price=target_price_float,
+            stop_points=stop_points,
+            target_points=target_points,
+            suggested_qty=suggested_qty,
+            quantity=final["quantity"],
+            tradovate_payload=tradovate_payload,
         )
         return {
+            "event": "entry_signal",
             "action": "send_order",
             "timestamp": str(row["timestamp"]),
             "session_date": str(row["session_date"]),
@@ -555,18 +715,73 @@ class StrategyExecutionRuntime:
             "side": side,
             "direction": direction,
             "entry_estimate": entry_estimate,
-            "stop_price": float(stop_price),
-            "target_price": float(target_price),
+            "stop_price": stop_price_float,
+            "target_price": target_price_float,
             "stop_points": stop_points,
             "target_points": target_points,
             "suggested_quantity": suggested_qty,
             "quantity": final["quantity"],
+            "entry_alert": alert,
             "guardrail_report": guardrail_report,
             "tradovate_payload": tradovate_payload,
         }
 
+    def entry_alert(
+        self,
+        *,
+        row: Any,
+        signal_obj: Any,
+        side: str,
+        direction: str,
+        entry_estimate: float,
+        stop_price: float,
+        target_price: float,
+        stop_points: float,
+        target_points: float,
+        suggested_qty: int,
+        quantity: int,
+        tradovate_payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        return {
+            "event": "entry_signal",
+            "timestamp": str(row["timestamp"]),
+            "session_date": str(row["session_date"]),
+            "strategy_name": getattr(self.strategy, "name", self.variant_config.get("strategy_name")),
+            "symbol": str(self.variant_config.get("symbol") or self.data_config.get("symbol") or self.ibkr_config.get("symbol")),
+            "timeframe": self.timeframe,
+            "tradovate_symbol": self.tradovate_symbol(),
+            "side": side,
+            "direction": direction,
+            "quantity": int(quantity),
+            "suggested_quantity": int(suggested_qty),
+            "entry_estimate": float(entry_estimate),
+            "stop_price": float(stop_price),
+            "target_price": float(target_price),
+            "stop_points": float(stop_points),
+            "target_points": float(target_points),
+            "order_type": "Market",
+            "take_profit_order": tradovate_payload.get("bracket1"),
+            "stop_loss_order": tradovate_payload.get("bracket2"),
+            "tradovate_order": tradovate_payload,
+            "signal": signal_report(signal_obj),
+        }
+
+    def emit_entry_alert(self, decision: dict[str, Any]) -> None:
+        alert = decision.get("entry_alert")
+        if not isinstance(alert, dict):
+            return
+        self.entry_alert_count += 1
+        print("ENTRY_SIGNAL " + json.dumps(alert, sort_keys=True, default=guardrails.json_default), flush=True)
+        path = self.execution_config.get("entry_alerts_path")
+        if path:
+            alert_path = resolve_path(self.config_path.parent, path)
+            alert_path.parent.mkdir(parents=True, exist_ok=True)
+            with alert_path.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(alert, sort_keys=True, default=guardrails.json_default) + "\n")
+
     def reject(self, row: Any, signal_obj: Any, reason: str, extra: dict[str, Any] | None = None) -> dict[str, Any]:
         payload = {
+            "event": "signal_rejected",
             "action": "reject_signal",
             "timestamp": str(row["timestamp"]),
             "session_date": str(row["session_date"]),
@@ -671,6 +886,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project-root", help="Project root containing src/ and configs/. Overrides config.project_root.")
     parser.add_argument("--guardrails-config", help="Apex guardrails JSON. Overrides config.guardrails_config.")
     parser.add_argument("--preflight-only", action="store_true", help="Validate strategy/config and exit without opening IBKR.")
+    parser.add_argument("--self-test-entry-alert", action="store_true", help="Emit a synthetic ENTRY_SIGNAL using the selected strategy sizing and guardrails, then exit.")
+    parser.add_argument("--replay-csv", help="Replay an IBKR 1-minute CSV through the same completed-minute strategy path, then exit.")
+    parser.add_argument("--replay-seed-bars", type=int, default=1000, help="Number of CSV bars used to warm up strategy state before live-style replay.")
+    parser.add_argument("--replay-max-live-bars", type=int, default=0, help="Optional cap on replayed live-style bars; 0 means replay all remaining bars.")
+    parser.add_argument("--replay-stop-after-signal", action="store_true", help="Stop replay after the first ENTRY_SIGNAL is emitted.")
     parser.add_argument("--execute", action="store_true", help="Allow Tradovate POSTs after guardrails pass.")
     parser.add_argument("--once", action="store_true", help="Exit after the first completed live minute is evaluated.")
     parser.add_argument("--max-runtime", type=float, default=0.0, help="Optional runtime limit in seconds.")
@@ -854,6 +1074,71 @@ def ib_bar_to_minute(bar: Any, symbol: str, source: str) -> OneMinuteBar | None:
     )
 
 
+def csv_to_minute_bars(path: Path, *, default_symbol: str) -> list[OneMinuteBar]:
+    if pd is None:
+        raise RuntimeError("Missing dependency: python3 -m pip install pandas")
+    df = pd.read_csv(path)
+    if df.empty:
+        return []
+    required = {"open", "high", "low", "close"}
+    missing = required - set(df.columns)
+    if missing:
+        raise RuntimeError(f"replay CSV missing required columns: {', '.join(sorted(missing))}")
+    bars: list[OneMinuteBar] = []
+    for _, row in df.iterrows():
+        epoch = csv_row_epoch(row)
+        if epoch is None:
+            continue
+        bars.append(
+            OneMinuteBar(
+                timestamp_epoch=epoch,
+                symbol=str(row.get("symbol") or default_symbol),
+                open=float(row["open"]),
+                high=float(row["high"]),
+                low=float(row["low"]),
+                close=float(row["close"]),
+                volume=to_decimal(row.get("volume", 0) or 0),
+                count=int(row.get("bar_count", row.get("count", 0)) or 0),
+                source="replay",
+            )
+        )
+    return sorted(bars, key=lambda bar: bar.timestamp_epoch)
+
+
+def csv_row_epoch(row: Any) -> int | None:
+    value = row.get("timestamp_epoch")
+    try:
+        if value is not None and not pd.isna(value):
+            return int(value)
+    except (TypeError, ValueError):
+        pass
+    for column in ("timestamp_utc", "timestamp", "ib_timestamp"):
+        value = row.get(column)
+        if value is None or pd.isna(value):
+            continue
+        parsed = pd.Timestamp(value)
+        if parsed.tzinfo is None:
+            parsed = parsed.tz_localize("UTC")
+        else:
+            parsed = parsed.tz_convert("UTC")
+        return int(parsed.timestamp())
+    return None
+
+
+def replace_bar_source(bar: OneMinuteBar, source: str) -> OneMinuteBar:
+    return OneMinuteBar(
+        timestamp_epoch=bar.timestamp_epoch,
+        symbol=bar.symbol,
+        open=bar.open,
+        high=bar.high,
+        low=bar.low,
+        close=bar.close,
+        volume=bar.volume,
+        count=bar.count,
+        source=source,
+    )
+
+
 def bars_to_dataframe(bars: list[OneMinuteBar], *, market_timezone: str, symbol: str):
     if pd is None:
         raise RuntimeError("Missing dependency: python3 -m pip install pandas")
@@ -987,6 +1272,48 @@ def resolve_strategy_path(project_root: Path, config_dir: Path, value: str | os.
     return (project_root / path).resolve()
 
 
+PROJECT_FILE_REFERENCE_KEYS = {
+    "cache_dir",
+    "data_dir",
+    "directory",
+    "dir",
+    "feature_file",
+    "file",
+    "output_dir",
+    "path",
+    "raw_dir",
+    "roll_calendar",
+}
+
+
+def resolve_project_file_references(value: Any, project_root: Path, *, key: str = "") -> Any:
+    if isinstance(value, dict):
+        return {
+            item_key: resolve_project_file_references(item_value, project_root, key=str(item_key))
+            for item_key, item_value in value.items()
+        }
+    if isinstance(value, list):
+        return [resolve_project_file_references(item, project_root, key=key) for item in value]
+    if isinstance(value, str) and is_project_file_reference_key(key):
+        path = Path(value).expanduser()
+        if path.is_absolute() or "://" in value:
+            return value
+        candidate = (project_root / path).resolve()
+        if candidate.exists():
+            return str(candidate)
+    return value
+
+
+def is_project_file_reference_key(key: str) -> bool:
+    normalized = key.strip().lower()
+    return (
+        normalized in PROJECT_FILE_REFERENCE_KEYS
+        or normalized.endswith("_file")
+        or normalized.endswith("_path")
+        or normalized.endswith("_dir")
+    )
+
+
 def parse_timeframe_minutes(value: Any) -> int:
     if value is None:
         raise ValueError("timeframe is required")
@@ -1032,7 +1359,16 @@ def historical_duration_days(value: str) -> int | None:
 
 
 def print_report(report: dict[str, Any]) -> None:
-    print(json.dumps(report, indent=2, sort_keys=True, default=guardrails.json_default))
+    print(json.dumps(report, indent=2, sort_keys=True, default=guardrails.json_default), flush=True)
+
+
+def wait_until(predicate: Callable[[], bool], timeout_seconds: float, *, poll_seconds: float = 0.1) -> bool:
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    while time.monotonic() < deadline:
+        if predicate():
+            return True
+        time.sleep(min(poll_seconds, max(0.0, deadline - time.monotonic())))
+    return predicate()
 
 
 def run() -> int:
@@ -1048,6 +1384,17 @@ def run() -> int:
 
     runtime = StrategyExecutionRuntime(config, config_path)
     print_report(runtime.preflight_report())
+    if args.self_test_entry_alert:
+        runtime.self_test_entry_alert()
+        return 0
+    if args.replay_csv:
+        runtime.replay_csv(
+            resolve_path(config_path.parent, args.replay_csv),
+            seed_bars=args.replay_seed_bars,
+            max_live_bars=args.replay_max_live_bars,
+            stop_after_signal=args.replay_stop_after_signal,
+        )
+        return 0
     if args.preflight_only:
         return 0
 
@@ -1082,13 +1429,32 @@ def run() -> int:
     thread = threading.Thread(target=app.run, name="ibkr-strategy-execution", daemon=True)
     thread.start()
 
-    if not app.started.wait(float(runtime.ibkr_config.get("connect_timeout", 15))):
+    connect_timeout = float(runtime.ibkr_config.get("connect_timeout", 15))
+    if not wait_until(lambda: app.started.is_set() or app.done.is_set(), connect_timeout):
         print("Timed out waiting for IBKR nextValidId.", file=sys.stderr)
         app.shutdown()
         thread.join(timeout=2)
         return 1
-    if not app.seeded.wait(float(runtime.ibkr_config.get("historical_timeout", 90))):
+    if not app.started.is_set():
+        if app.errors:
+            print(f"IBKR startup failed before nextValidId: {app.errors[-1]}", file=sys.stderr)
+        else:
+            print("IBKR connection closed before nextValidId.", file=sys.stderr)
+        app.shutdown()
+        thread.join(timeout=2)
+        return 1
+
+    historical_timeout = float(runtime.ibkr_config.get("historical_timeout", 90))
+    if not wait_until(lambda: app.seeded.is_set() or app.done.is_set(), historical_timeout):
         print("Timed out waiting for IBKR historical seed.", file=sys.stderr)
+        app.shutdown()
+        thread.join(timeout=2)
+        return 1
+    if not app.seeded.is_set():
+        if app.errors:
+            print(f"IBKR historical seed failed: {app.errors[-1]}", file=sys.stderr)
+        else:
+            print("IBKR connection closed before historical seed completed.", file=sys.stderr)
         app.shutdown()
         thread.join(timeout=2)
         return 1

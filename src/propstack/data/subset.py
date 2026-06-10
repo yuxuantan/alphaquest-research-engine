@@ -22,6 +22,15 @@ def apply_data_subset(data: pd.DataFrame, subset_config: dict | None) -> pd.Data
         filtered = filtered[filtered["timestamp"] >= _parse_timestamp_bound(data, subset_config["start_timestamp"])]
     if subset_config.get("end_timestamp"):
         filtered = filtered[filtered["timestamp"] <= _parse_timestamp_bound(data, subset_config["end_timestamp"])]
+    if subset_config.get("session_labels"):
+        if "session_label" not in filtered.columns:
+            raise ValueError("data_subset.session_labels requires a session_label column.")
+        allowed = {str(value) for value in subset_config["session_labels"]}
+        filtered = filtered[filtered["session_label"].astype(str).isin(allowed)]
+    if subset_config.get("rth_only"):
+        if "is_rth" not in filtered.columns:
+            raise ValueError("data_subset.rth_only requires an is_rth column.")
+        filtered = filtered[filtered["is_rth"].fillna(False).astype(bool)]
 
     return filtered.reset_index(drop=True)
 

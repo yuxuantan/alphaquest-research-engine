@@ -1,0 +1,32 @@
+campaign_id: trade_side_orderflow_large_trade_continuation
+campaign_name: Trade-Side Large-Trade Orderflow Continuation
+status: research
+
+academic_sources:
+  - title: "Flow Toxicity and Liquidity in a High-frequency World"
+    authors: "David Easley, Marcos M. Lopez de Prado, Maureen O'Hara"
+    year: 2012
+    venue: "The Review of Financial Studies, 25(5), 1457-1493"
+    doi: "10.1093/rfs/hhs053"
+    url: "https://academic.oup.com/rfs/article/25/5/1457/1569929"
+    finding_used: "Trade-flow imbalance and flow toxicity contain short-horizon information about liquidity stress and informed trading."
+    evidence_directness: "Moderate; this campaign uses true Databento aggressor-side trade classifications, but translates toxicity/imbalance into an ES intraday continuation rule."
+
+edge_thesis: >
+  Concentrated aggressive large-trade buying in the morning can reveal
+  short-horizon informed pressure that persists after costs. The campaign tests
+  this with only completed ES trade prints and one-minute bars, using no quote
+  or order-book data.
+
+translation_notes:
+  why_es: "ES is highly liquid and the user-provided Databento trades files include aggressor side, trade size, and enough one-minute RTH observations for a pre-purchase viability test."
+  why_effect_may_survive_costs: "The tested edge trades one or two simple morning slots per day with one-contract sizing, Apex-safe same-day exits, and current ES cost assumptions."
+  expected_working_regime: "Directional pressure from large aggressive trades continues through the next intraday window."
+  expected_failure_regime: "Large-trade bursts are absorbed or reverse, or the one-year sample is a regime-specific artifact."
+  translation_risks: "Only one year of true trade-side data is currently available; full acceptance requires longer trade history and default staged validation."
+
+variants:
+  - two_slot_large_trade_continuation
+
+timeframes:
+  - 1m

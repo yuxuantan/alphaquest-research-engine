@@ -1,0 +1,36 @@
+campaign_id: liquidity_risk_capacity_priority
+campaign_name: Liquidity Risk-Capacity Priority
+status: research
+
+academic_sources:
+  - title: "Market Liquidity and Funding Liquidity"
+    authors: "Markus K. Brunnermeier, Lasse Heje Pedersen"
+    year: 2009
+    venue: "Review of Financial Studies"
+    doi: "10.1093/rfs/hhn098"
+    finding_used: "Market liquidity and traders' funding liquidity are mutually reinforcing; speculators' capital, funding conditions, and volatility can affect liquidity and risk premia."
+    evidence_directness: "Indirect for ES. The campaign uses point-in-time public proxies for risk-bearing capacity and liquidity-supply state."
+
+edge_thesis: >
+  ES intraday long exposure should be favored when public, lagged liquidity-capacity
+  proxies suggest available risk-bearing balance sheet or non-stressed volatility
+  participation. A deterministic priority stack selects exactly one daily source
+  state so overlapping public signals do not create hidden multiple-testing or
+  duplicate-position effects.
+
+translation_notes:
+  data_availability: "All external features are shifted to conservative next-session eligibility before ES RTH trading."
+  why_es: "ES is the most liquid implementation of broad U.S. equity index futures exposure."
+  expected_working_regime: "Liquidity-supply or risk-capacity regimes where public balance-sheet and volatility-activity proxies support positive intraday carry."
+  expected_failure_regime: "Crisis deleveraging, policy shocks, or false liquidity expansions where public proxies lag current risk appetite."
+  translation_risks: "The source thesis is structural while the proxies are daily/weekly public measurements, so rolling WFA must reject stale proxy relationships."
+
+variants:
+  - cftc_rrp_vx_priority_long
+  - rrp_cftc_vx_priority_long
+  - vx_rrp_cftc_priority_long
+
+timeframes:
+  - 5m
+  - 15m
+  - 30m

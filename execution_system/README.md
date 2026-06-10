@@ -401,6 +401,12 @@ The selected campaign variant YAML must define:
 - `strategy.sl.module` and `strategy.sl.params`
 - `strategy.tp.module` and `strategy.tp.params`
 
+Relative file references inside the campaign YAML, such as `feature_file` or
+`data_sources.*.path`, are resolved against `project_root`. If preflight warns
+that `historical_duration` is shorter than `data.warmup_days+1`, increase
+`ibkr.historical_duration` or pass `--historical-duration`, for example
+`--historical-duration "100 D"`.
+
 The bridge needs the same Python environment as the research stack plus IBKR:
 
 ```bash
@@ -415,6 +421,45 @@ python3 strategy_execution_bridge.py \
   --strategy-config ../configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml \
   --preflight-only
 ```
+
+Verify the signal message contract without opening IBKR:
+
+```bash
+python3 strategy_execution_bridge.py \
+  --config strategy_execution_bridge.example.json \
+  --strategy-config ../configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml \
+  --tradovate-account-id 123456 \
+  --tradovate-account-spec DEMO123456 \
+  --self-test-entry-alert
+```
+
+The self-test and live path emit a single-line message beginning with
+`ENTRY_SIGNAL` when an approved entry exists. The JSON after the prefix includes
+`strategy_name`, `symbol`, `timeframe`, `side`, `direction`, `quantity`,
+`suggested_quantity`, `entry_estimate`, `stop_price`, `target_price`,
+`stop_points`, `target_points`, and the generated Tradovate market OSO payload.
+Set `execution.entry_alerts_path` in the bridge config to also append these
+messages as JSON Lines.
+
+Replay an IBKR historical CSV through the same completed-minute path used by
+live 5-second bars:
+
+```bash
+python3 strategy_execution_bridge.py \
+  --config strategy_execution_bridge.example.json \
+  --strategy-config ../configs/campaigns/pdh_pdl_breakout_continuation/variants/ES/2m/gap_hold_fast_confirmation_wfa_probe.yaml \
+  --tradovate-account-id 123456 \
+  --tradovate-account-spec DEMO123456 \
+  --replay-csv data/ibkr/historical/ES_202606_CME_1min_latest.csv \
+  --replay-seed-bars 1200 \
+  --replay-max-live-bars 200 \
+  --replay-stop-after-signal
+```
+
+Replay uses the first `--replay-seed-bars` bars as warmup, then feeds the
+remaining bars through `on_completed_minute`, so emitted `ENTRY_SIGNAL` messages
+match the live IBKR strategy path. It does not connect to IBKR or Tradovate
+unless `--execute` is also used.
 
 Run one live completed-minute evaluation in dry-run mode:
 

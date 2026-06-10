@@ -12,6 +12,7 @@ from propstack.strategy_modules.tp.opening_range_opposite_edge import (
     opening_range_opposite_edge_target,
 )
 from propstack.strategy_modules.tp.percent_from_entry import PercentFromEntryTarget, percent_from_entry_target
+from propstack.strategy_modules.tp.signal_fixed_r import SignalFixedRTarget
 
 
 TP_MODULES = {
@@ -21,6 +22,7 @@ TP_MODULES = {
     OpeningRangeExtensionTarget.name: OpeningRangeExtensionTarget,
     OpeningRangeOppositeEdgeTarget.name: OpeningRangeOppositeEdgeTarget,
     PercentFromEntryTarget.name: PercentFromEntryTarget,
+    SignalFixedRTarget.name: SignalFixedRTarget,
 }
 
 
@@ -40,6 +42,7 @@ __all__ = [
     "OpeningRangeExtensionTarget",
     "OpeningRangeOppositeEdgeTarget",
     "PercentFromEntryTarget",
+    "SignalFixedRTarget",
     "cost_adjusted_fixed_r_target",
     "fixed_r_target",
     "opening_range_extension_target",

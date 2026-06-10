@@ -1,0 +1,36 @@
+campaign_id: market_plumbing_priority_ensemble
+campaign_name: Market Plumbing Priority Ensemble
+status: research
+
+academic_sources:
+  - title: "Market Liquidity and Funding Liquidity"
+    authors: "Markus K. Brunnermeier, Lasse Heje Pedersen"
+    year: 2009
+    venue: "Review of Financial Studies"
+    doi: "10.1093/rfs/hhn098"
+    finding_used: "Market liquidity and traders' funding liquidity are mutually reinforcing; capital and liquidity constraints can affect risk premia."
+    evidence_directness: "Indirect for ES. The campaign uses conservative point-in-time public proxies for volatility-market participation and dealer balance-sheet plumbing."
+
+edge_thesis: >
+  ES intraday long exposure can be conditioned by public market-plumbing states
+  when low VX futures open-interest activity and primary-dealer securities-lending
+  contraction indicate a favorable liquidity/risk-capacity regime. A deterministic
+  daily priority stack selects one leg so overlapping states do not create duplicate
+  same-day positions.
+
+translation_notes:
+  data_availability: "CFE daily VX activity is shifted by one ES session; primary-dealer weekly data are shifted to conservative OFR/New York Fed availability before RTH trading."
+  why_es: "ES is the most liquid implementation of broad U.S. equity index futures exposure."
+  expected_working_regime: "Non-crisis sessions where public plumbing proxies identify a low-stress liquidity-supply regime."
+  expected_failure_regime: "Fast deleveraging, policy shocks, or volatility regime changes where daily/weekly public proxies lag current liquidity."
+  translation_risks: "The thesis is structural while the proxies are coarse public aggregates, so staged WFA and Apex audits must reject stale relationships."
+
+variants:
+  - vx_then_primary_dealer_priority_long
+  - primary_dealer_then_vx_priority_long
+  - broad_vx_then_primary_dealer_priority_long
+
+timeframes:
+  - 5m
+  - 15m
+  - 30m

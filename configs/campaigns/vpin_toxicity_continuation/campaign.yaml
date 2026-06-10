@@ -1,0 +1,36 @@
+campaign_id: vpin_toxicity_continuation
+campaign_name: VPIN Toxicity Continuation
+status: research
+
+academic_sources:
+  - title: "Flow Toxicity and Liquidity in a High-frequency World"
+    authors: "David Easley, Marcos M. Lopez de Prado, Maureen O'Hara"
+    year: 2012
+    venue: "The Review of Financial Studies, 25(5), 1457-1493"
+    doi: "10.1093/rfs/hhs053"
+    url: "https://academic.oup.com/rfs/article/25/5/1457/1569929"
+    finding_used: "VPIN estimates order-flow toxicity from signed volume imbalance in volume time and is linked to short-term toxicity-induced volatility."
+    evidence_directness: "Indirect for ES strategy returns; this campaign uses an OHLCV signed-volume proxy because true aggressor-side bid/ask flow is not available locally."
+
+edge_thesis: >
+  Prior-session high VPIN-style toxicity can mark conditions where the next
+  session's intraday upward pressure continues rather than fully mean-reverts.
+  This campaign tests that thesis with only existing ES 1-minute OHLCV data,
+  explicitly treating the signal as a proxy for true order-flow VPIN.
+
+translation_notes:
+  why_es: "ES is the liquid S&P 500 futures contract and has enough intraday volume for session-level volume imbalance proxies."
+  why_effect_may_survive_costs: "The candidate trades at most once per day in a broad afternoon window with one-contract sizing and current ES costs."
+  expected_working_regime: "Prior toxicity plus same-day upward RTH pressure continues into the afternoon."
+  expected_failure_regime: "True bid/ask order flow diverges from OHLCV proxy imbalance, or afternoon continuation is absorbed by mean reversion."
+  translation_risks: "The source requires classified buy/sell trades; this campaign uses only bar-close signed volume and must pass validation before any practical use."
+
+variants:
+  - prior_vpin_session_return_continuation
+  - prior_vpin_drawdown_confirmed
+  - prior_vpin_stronger_return
+
+timeframes:
+  - 1m
+  - 2m
+  - 5m

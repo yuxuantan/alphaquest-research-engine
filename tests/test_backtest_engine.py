@@ -120,6 +120,67 @@ def test_opening_range_trade_log_uses_strategy_specific_report_columns():
     assert first["breakout_timestamp"] == pd.Timestamp("2024-01-03 09:40", tz="America/New_York")
 
 
+def test_signal_metadata_flatten_time_overrides_strategy_default(tmp_path):
+    feature_file = tmp_path / "features.csv"
+    pd.DataFrame(
+        {
+            "trade_date": ["2024-01-03"],
+            "SPX_open_interest_chg13": [120000.0],
+            "reverserepo_total_bil_diff5_z504": [0.0],
+            "vx_z63": [0.0],
+        }
+    ).to_csv(feature_file, index=False)
+    rows = [
+        {
+            "timestamp": pd.Timestamp(f"2024-01-03 09:{minute:02d}", tz="America/New_York"),
+            "session_date": pd.Timestamp("2024-01-03").date(),
+            "is_rth": True,
+            "open": 100.0,
+            "high": 100.5,
+            "low": 99.5,
+            "close": 100.0,
+        }
+        for minute in [30, 35, 40]
+    ]
+    cfg = {
+        "timeframe": "5m",
+        "strategy_name": "liquidity_risk_capacity_priority",
+        "strategy": {
+            "entry": {
+                "module": "liquidity_risk_capacity_priority",
+                "params": {
+                    "feature_file": str(feature_file),
+                    "priority_order": ["cftc_high"],
+                    "bar_interval_minutes": 5,
+                    "cftc_high_threshold": 98748.0,
+                    "cftc_high_flatten_time": "09:45:00",
+                    "cftc_high_stop_pct": 0.01,
+                    "cftc_high_target_r_multiple": 10.0,
+                },
+            },
+            "tp": {"module": "signal_fixed_r", "params": {"default_target_r_multiple": 10.0}},
+            "sl": {"module": "signal_percent_from_entry", "params": {"default_stop_pct": 0.01}},
+            "flatten_time": "15:45:00",
+        },
+        "core": {
+            "tick_size": 0.25,
+            "tick_value": 12.50,
+            "commission_per_contract": 0,
+            "slippage_ticks": 0,
+            "contracts": 1,
+        },
+    }
+
+    trades = BacktestEngine(cfg).run(pd.DataFrame(rows))["trades"]
+
+    assert len(trades) == 1
+    first = trades.iloc[0]
+    assert first["entry_timestamp"] == pd.Timestamp("2024-01-03 09:35", tz="America/New_York")
+    assert first["exit_timestamp"] == pd.Timestamp("2024-01-03 09:45", tz="America/New_York")
+    assert first["exit_reason"] == "eod_flatten"
+    assert first["signal_flatten_time"] == "09:45:00"
+
+
 def _opening_range_cfg(extension_fraction: float = 0.5) -> dict:
     return {
         "strategy_name": "five_min_orb_vol_filter",
@@ -451,6 +512,70 @@ def test_benchmark_fails_when_apex_rule_violation_is_present():
     assert metrics["apex_rule_violations"] == 1
     assert passed is False
     assert "apex_rule_violations" in reason
+
+
+def test_event_no_trade_window_rejects_next_bar_entry_from_csv(tmp_path):
+    events = tmp_path / "events.csv"
+    pd.DataFrame(
+        {
+            "event": ["FOMC", "OTHER"],
+            "date": ["2024-01-03", "2024-01-04"],
+        }
+    ).to_csv(events, index=False)
+    cfg = _calendar_apex_cfg(signal_time="13:30:00")
+    cfg["event_filters"] = {
+        "enabled": True,
+        "timezone": "America/New_York",
+        "no_trade_windows": [
+            {
+                "name": "fomc_test",
+                "source_csv": str(events),
+                "date_column": "date",
+                "event_column": "event",
+                "event_values": ["FOMC"],
+                "start_time": "13:30:00",
+                "end_time": "14:00:00",
+            }
+        ],
+    }
+
+    result = BacktestEngine(cfg).run(_calendar_rows("2024-01-03 13:29", 3))
+
+    assert result["trades"].empty
+    assert result["diagnostics"]["signals_generated"] == 1
+    assert result["diagnostics"]["rejects"]["event_no_trade_window"] == 1
+    assert result["diagnostics"]["event_filters"]["entry_rejections"] == 1
+    assert result["diagnostics"]["event_filters"]["pending_orders_cancelled"] == 1
+    assert result["metrics"]["event_no_trade_entry_rejections"] == 1
+
+
+def test_event_no_trade_window_flattens_open_position_before_window():
+    cfg = _calendar_apex_cfg(signal_time="13:25:00")
+    cfg["event_filters"] = {
+        "enabled": True,
+        "timezone": "America/New_York",
+        "no_trade_windows": [
+            {
+                "name": "fomc_test",
+                "dates": ["2024-01-03"],
+                "start_time": "13:30:00",
+                "end_time": "14:00:00",
+                "flatten_positions": True,
+            }
+        ],
+    }
+
+    result = BacktestEngine(cfg).run(_calendar_rows("2024-01-03 13:24", 10))
+    trades = result["trades"]
+
+    assert len(trades) == 1
+    first = trades.iloc[0]
+    assert first["entry_timestamp"] == pd.Timestamp("2024-01-03 13:25", tz="America/New_York")
+    assert first["exit_timestamp"] == pd.Timestamp("2024-01-03 13:30", tz="America/New_York")
+    assert first["exit_reason"] == "event_no_trade_flatten"
+    assert result["diagnostics"]["event_filters"]["flatten_trades"] == 1
+    assert result["diagnostics"]["event_filters"]["flatten_trades_by_window"]["fomc_test"] == 1
+    assert result["metrics"]["event_no_trade_flatten_trades"] == 1
 
 
 def test_risk_percent_sizing_uses_entry_stop_distance_per_trade():

@@ -2,11 +2,15 @@ from types import SimpleNamespace
 
 import pandas as pd
 
+from propstack.data.features import add_vpin_toxicity_features
 from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
 from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
+from propstack.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
+from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import LiquidityRiskCapacityPriorityEntry
+from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
 from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIntradayMomentumEntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
@@ -17,13 +21,17 @@ from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPd
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
+from propstack.strategy_modules.entry.trade_orderflow_multi_pressure import TradeOrderflowMultiPressureEntry
+from propstack.strategy_modules.entry.trade_orderflow_pressure import TradeOrderflowPressureEntry
 from propstack.strategy_modules.entry.volume_conditioned_liquidity_reversal import (
     VolumeConditionedLiquidityReversalEntry,
 )
+from propstack.strategy_modules.entry.vpin_toxicity_continuation import VpinToxicityContinuationEntry
 from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPullbackContinuationEntry
 from propstack.strategy_modules.sl.opening_range_edge import OpeningRangeEdgeStop
 from propstack.strategy_modules.sl.opening_range_width import OpeningRangeWidthStop
 from propstack.strategy_modules.sl.percent_from_entry import PercentFromEntryStop
+from propstack.strategy_modules.sl.signal_percent_from_entry import SignalPercentFromEntryStop
 from propstack.strategy_modules.sl.sweep_extreme import SweepExtremeStop
 from propstack.strategy_modules.tp.cost_adjusted_fixed_r import CostAdjustedFixedRTarget
 from propstack.strategy_modules.tp.fixed_r import FixedRTarget
@@ -31,6 +39,7 @@ from propstack.strategy_modules.tp.gap_fill_fraction import GapFillFractionTarge
 from propstack.strategy_modules.tp.opening_range_extension import OpeningRangeExtensionTarget
 from propstack.strategy_modules.tp.opening_range_opposite_edge import OpeningRangeOppositeEdgeTarget
 from propstack.strategy_modules.tp.percent_from_entry import PercentFromEntryTarget
+from propstack.strategy_modules.tp.signal_fixed_r import SignalFixedRTarget
 
 
 def test_fixed_r_target_module_long_and_short():
@@ -81,6 +90,20 @@ def test_percent_from_entry_stop_and_target_round_to_tick():
     assert target.price(100.0, 100.5, "short") == 99.25
 
 
+def test_signal_stop_and_target_use_signal_metadata():
+    stop = SignalPercentFromEntryStop({"default_stop_pct": 0.003})
+    target = SignalFixedRTarget({"default_target_r_multiple": 1.5})
+    signal = SimpleNamespace(metadata={"stop_pct": 0.01, "target_r_multiple": 2.0})
+
+    stop_price = stop.price(signal, direction="long", tick_size=0.25, entry_price=100.0)
+    assert stop_price == 99.0
+    assert target.price(100.0, stop_price, "long", signal=signal) == 102.0
+
+    fallback_stop = stop.price(SimpleNamespace(metadata={}), direction="short", tick_size=0.25, entry_price=100.0)
+    assert fallback_stop == 100.5
+    assert target.price(100.0, fallback_stop, "short", signal=SimpleNamespace(metadata={})) == 99.25
+
+
 def test_opening_range_edge_stop_skips_when_natural_risk_exceeds_max():
     stop = OpeningRangeEdgeStop({"max_stop_points": 10, "stop_offset_ticks": 0})
     signal = SimpleNamespace(opening_range_high=111.0, opening_range_low=90.0)
@@ -121,6 +144,238 @@ def test_gap_fill_fraction_target_long_and_short():
 
     assert target.price(100.0, 98.0, "long", signal=long_signal) == 102.0
     assert target.price(100.0, 102.0, "short", signal=short_signal) == 98.0
+
+
+def _vpin_feature_rows():
+    rows = []
+    sessions = [
+        ("2024-01-02", [100.0, 105.0, 110.0, 20.0, 20.5]),
+        ("2024-01-03", [100.0, 105.0, 110.0, 30.0, 30.5]),
+        ("2024-01-04", [100.0, 105.0, 110.0, 110.0, 110.5]),
+    ]
+    for day, closes in sessions:
+        for i, close in enumerate(closes):
+            ts = pd.Timestamp(f"{day} 09:{30 + i:02d}", tz="America/New_York")
+            rows.append(
+                {
+                    "timestamp": ts,
+                    "session_date": ts.date(),
+                    "session_label": "RTH",
+                    "symbol": "ES",
+                    "is_rth": True,
+                    "open": 100.0,
+                    "high": max(110.0, close),
+                    "low": min(99.0, close),
+                    "close": close,
+                    "volume": 1000 + i,
+                }
+            )
+    return pd.DataFrame(rows)
+
+
+def test_vpin_toxicity_features_use_shifted_prior_session_rank():
+    features = add_vpin_toxicity_features(
+        _vpin_feature_rows(),
+        {
+            "vpin_toxicity_features": {
+                "enabled": True,
+                "entry_time": "09:34:00",
+                "bucket_fraction": 0.50,
+                "bucket_lookback": 1,
+                "bucket_min_periods": 1,
+                "vpin_rank_window": 3,
+                "vpin_rank_min_periods": 2,
+                "drawdown_rank_window": 3,
+                "drawdown_rank_min_periods": 2,
+            }
+        },
+    )
+
+    day_three = features[features["session_date"] == pd.Timestamp("2024-01-04").date()].iloc[0]
+    assert day_three["vpin_prior_drawdown_rank3_at_0934"] == 0.5
+    assert "vpin_proxy_b500_l1" in features.columns
+
+
+def _vpin_bar(
+    timestamp,
+    *,
+    vpin_rank=0.5,
+    drawdown_rank=0.4,
+    session_return=0.001,
+    is_rth=True,
+):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": is_rth,
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.5,
+            "close": 100.5,
+            "volume": 1000,
+            "vpin_prior_rank21_at_1330": vpin_rank,
+            "vpin_prior_drawdown_rank63_at_1330": drawdown_rank,
+            "vpin_session_ret": session_return,
+            "vpin_proxy_b010_l5": 0.75,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def test_vpin_toxicity_continuation_emits_on_entry_close_with_signal_risk_metadata():
+    entry = VpinToxicityContinuationEntry(
+        {
+            "entry_time": "13:30:00",
+            "flatten_time": "15:31:00",
+            "bar_interval_minutes": 1,
+            "vpin_rank_cutoff": 0.45,
+            "drawdown_rank_cutoff": 0.30,
+            "min_session_return": 0.0005,
+            "stop_pct": 0.02,
+            "target_r_multiple": 1.0,
+        }
+    )
+
+    assert entry.on_bar_close(_vpin_bar("2024-01-04 13:28")) is None
+    signal = entry.on_bar_close(_vpin_bar("2024-01-04 13:29"))
+
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-04 13:30", tz="America/New_York")
+    assert signal.metadata["stop_pct"] == 0.02
+    assert signal.metadata["target_r_multiple"] == 1.0
+    assert signal.metadata["flatten_time"] == "15:31:00"
+    assert signal.report_fields["academic_source_key"] == "easley_lopez_de_prado_ohara_2012_flow_toxicity"
+    assert entry.on_bar_close(_vpin_bar("2024-01-04 13:29")) is None
+
+
+def test_vpin_toxicity_continuation_rejects_failed_filters_and_trade_limit():
+    low_rank = VpinToxicityContinuationEntry({"bar_interval_minutes": 1})
+    assert low_rank.on_bar_close(_vpin_bar("2024-01-04 13:29", vpin_rank=0.1)) is None
+
+    low_return = VpinToxicityContinuationEntry({"bar_interval_minutes": 1})
+    assert low_return.on_bar_close(_vpin_bar("2024-01-04 13:29", session_return=0.0)) is None
+
+    limited = VpinToxicityContinuationEntry({"bar_interval_minutes": 1})
+    assert limited.on_bar_close(_vpin_bar("2024-01-04 13:29"), trades_today=1) is None
+
+
+def _orderflow_bar(
+    timestamp,
+    *,
+    flow=0.12,
+    source_return=8.0,
+    is_rth=True,
+):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": is_rth,
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.5,
+            "close": 100.5,
+            "trade_orderflow_large20_imbalance_15": flow,
+            "trade_orderflow_return_ticks_5": source_return,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def test_trade_orderflow_pressure_emits_with_flatten_and_risk_metadata():
+    entry = TradeOrderflowPressureEntry(
+        {
+            "entry_time": "10:00:00",
+            "flatten_time": "10:30:00",
+            "bar_interval_minutes": 1,
+            "flow_column": "trade_orderflow_large20_imbalance_15",
+            "flow_threshold": 0.10,
+            "allow_short": False,
+            "stop_pct": 0.02,
+            "target_r_multiple": 10.0,
+        }
+    )
+
+    assert entry.on_bar_close(_orderflow_bar("2024-01-04 09:58")) is None
+    signal = entry.on_bar_close(_orderflow_bar("2024-01-04 09:59"))
+
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-04 10:00", tz="America/New_York")
+    assert signal.metadata["flatten_time"] == "10:30:00"
+    assert signal.metadata["stop_pct"] == 0.02
+    assert signal.metadata["target_r_multiple"] == 10.0
+    assert signal.report_fields["feature_method"] == "databento_trade_aggressor_side"
+    assert signal.report_fields["flow_column"] == "trade_orderflow_large20_imbalance_15"
+    assert signal.report_fields["flow_value"] == 0.12
+
+
+def test_trade_orderflow_pressure_return_filter_and_fade_direction():
+    entry = TradeOrderflowPressureEntry(
+        {
+            "entry_time": "10:00:00",
+            "bar_interval_minutes": 1,
+            "flow_column": "trade_orderflow_large20_imbalance_15",
+            "flow_threshold": 0.10,
+            "positive_flow_direction": "short",
+            "return_column": "trade_orderflow_return_ticks_5",
+            "return_confirmation": "opposite_sign",
+            "min_return_ticks": 4,
+        }
+    )
+
+    assert entry.on_bar_close(_orderflow_bar("2024-01-04 09:59", flow=0.12, source_return=8.0)) is None
+    signal = entry.on_bar_close(_orderflow_bar("2024-01-04 09:59", flow=0.12, source_return=-5.0))
+
+    assert signal.direction == "short"
+    assert entry.on_bar_close(_orderflow_bar("2024-01-04 09:59", flow=0.12, source_return=-5.0), trades_today=1) is None
+
+
+def test_trade_orderflow_multi_pressure_routes_slot_metadata_and_trade_limit():
+    entry = TradeOrderflowMultiPressureEntry(
+        {
+            "bar_interval_minutes": 1,
+            "max_trades_per_day": 2,
+            "slots": [
+                {
+                    "slot_id": "early_large20",
+                    "setup_mode": "large20_early",
+                    "entry_time": "10:00:00",
+                    "flatten_time": "10:31:00",
+                    "flow_column": "trade_orderflow_large20_imbalance_15",
+                    "flow_threshold": 0.10,
+                    "allow_short": False,
+                    "stop_pct": 0.004,
+                    "target_r_multiple": 1.0,
+                },
+                {
+                    "slot_id": "mid_flow",
+                    "setup_mode": "mid_flow",
+                    "entry_time": "10:30:00",
+                    "flatten_time": "13:31:00",
+                    "flow_column": "trade_orderflow_large20_imbalance_15",
+                    "flow_threshold": 0.10,
+                    "allow_short": False,
+                    "stop_pct": 0.008,
+                    "target_r_multiple": 1.25,
+                },
+            ],
+        }
+    )
+
+    early = entry.on_bar_close(_orderflow_bar("2024-01-04 09:59"))
+    assert early.report_fields["slot_id"] == "early_large20"
+    assert early.metadata["flatten_time"] == "10:31:00"
+    assert early.metadata["stop_pct"] == 0.004
+
+    mid = entry.on_bar_close(_orderflow_bar("2024-01-04 10:29"), trades_today=1)
+    assert mid.report_fields["slot_id"] == "mid_flow"
+    assert mid.report_fields["multi_slot_count"] == 2
+    assert mid.metadata["target_r_multiple"] == 1.25
+
+    assert entry.on_bar_close(_orderflow_bar("2024-01-04 10:29"), trades_today=2) is None
 
 
 def _cal_bar(timestamp, open_price=100.0, high=101.0, low=99.0, close=100.5, *, is_rth=True):
@@ -2398,6 +2653,137 @@ def test_cftc_tff_hedging_pressure_rejects_missing_or_below_threshold_feature(tm
 
     assert entry.on_bar_close(_cftc_bar("2024-01-03 10:55")) is None
     assert entry.on_bar_close(_cftc_bar("2024-01-04 10:55")) is None
+
+
+def test_cftc_tff_tiered_hedging_pressure_selects_high_priority_tier(tmp_path):
+    feature_file = tmp_path / "features.csv"
+    pd.DataFrame(
+        {
+            "trade_date": ["2024-01-03", "2024-01-04"],
+            "SPX_open_interest_chg13": [120000.0, 50000.0],
+        }
+    ).to_csv(feature_file, index=False)
+    entry = CftcTffTieredHedgingPressureEntry(
+        {
+            "feature_file": str(feature_file),
+            "high_threshold": 98748.0,
+            "broad_threshold": 47442.0,
+            "high_entry_time": "09:35:00",
+            "broad_entry_time": "11:00:00",
+            "high_stop_pct": 0.008,
+            "broad_stop_pct": 0.006,
+            "high_target_r_multiple": 2.0,
+            "broad_target_r_multiple": 4.0,
+            "bar_interval_minutes": 5,
+        }
+    )
+
+    broad_time = entry.on_bar_close(_cftc_bar("2024-01-03 10:55"))
+    high_signal = entry.on_bar_close(_cftc_bar("2024-01-03 09:30"))
+    broad_signal = entry.on_bar_close(_cftc_bar("2024-01-04 10:55"))
+
+    assert broad_time is None
+    assert high_signal.report_fields["selected_tier"] == "high"
+    assert high_signal.metadata["stop_pct"] == 0.008
+    assert high_signal.metadata["target_r_multiple"] == 2.0
+    assert broad_signal.report_fields["selected_tier"] == "broad"
+    assert broad_signal.metadata["stop_pct"] == 0.006
+    assert broad_signal.metadata["target_r_multiple"] == 4.0
+
+
+def test_liquidity_risk_capacity_priority_selects_first_active_leg(tmp_path):
+    feature_file = tmp_path / "features.csv"
+    pd.DataFrame(
+        {
+            "trade_date": ["2024-01-03", "2024-01-04"],
+            "SPX_open_interest_chg13": [120000.0, 50000.0],
+            "reverserepo_total_bil_diff5_z504": [1.2, 0.1],
+            "vx_z63": [-2.0, -2.0],
+        }
+    ).to_csv(feature_file, index=False)
+    entry = LiquidityRiskCapacityPriorityEntry(
+        {
+            "feature_file": str(feature_file),
+            "priority_order": ["cftc_high", "nyfed_rrp", "cftc_broad", "cboe_vx"],
+            "bar_interval_minutes": 5,
+            "cftc_high_threshold": 98748.0,
+            "cftc_broad_threshold": 47442.0,
+            "rrp_threshold": 0.5,
+            "vx_threshold": -1.275,
+        }
+    )
+
+    high_signal = entry.on_bar_close(_cftc_bar("2024-01-03 09:30"))
+    early_broad = entry.on_bar_close(_cftc_bar("2024-01-04 09:30"))
+    broad_signal = entry.on_bar_close(_cftc_bar("2024-01-04 10:55"))
+
+    assert high_signal.report_fields["selected_liquidity_leg"] == "cftc_high"
+    assert high_signal.metadata["stop_pct"] == 0.008
+    assert high_signal.metadata["target_r_multiple"] == 2.0
+    assert high_signal.metadata["flatten_time"] == "15:30:00"
+    assert early_broad is None
+    assert broad_signal.report_fields["selected_liquidity_leg"] == "cftc_broad"
+    assert broad_signal.report_fields["academic_source_key"] == (
+        "brunnermeier_pedersen_2009_market_liquidity_funding_liquidity"
+    )
+
+
+def test_market_plumbing_priority_selects_first_active_leg(tmp_path):
+    feature_file = tmp_path / "features.csv"
+    pd.DataFrame(
+        {
+            "trade_date": ["2024-01-03", "2024-01-04"],
+            "vx_total_oi_z42": [-1.2, 0.0],
+            "sl_treasury_excluding_tips_overnight_open_diff1_rank52": [0.1, 0.1],
+        }
+    ).to_csv(feature_file, index=False)
+    entry = MarketPlumbingPriorityEntry(
+        {
+            "feature_file": str(feature_file),
+            "priority_order": ["cboe_vx_oi_stress", "primary_dealer_lending_pressure"],
+            "bar_interval_minutes": 5,
+            "legs": [
+                {
+                    "key": "cboe_vx_oi_stress",
+                    "source": "cboe_cfe_vx_activity",
+                    "feature_name": "vx_total_oi_z42",
+                    "operator": "<=",
+                    "threshold": -1.15,
+                    "entry_time": "13:30:00",
+                    "flatten_time": "15:50:00",
+                    "stop_pct": 0.01,
+                    "target_r_multiple": 2.0,
+                    "availability_rule": "CFE daily futures activity shifted one ES session.",
+                },
+                {
+                    "key": "primary_dealer_lending_pressure",
+                    "source": "nyfed_primary_dealer_statistics",
+                    "feature_name": "sl_treasury_excluding_tips_overnight_open_diff1_rank52",
+                    "operator": "<=",
+                    "threshold": 0.3,
+                    "entry_time": "10:30:00",
+                    "flatten_time": "15:30:00",
+                    "stop_pct": 0.012,
+                    "target_r_multiple": 2.0,
+                    "availability_rule": "Weekly primary-dealer data shifted to conservative eligibility.",
+                },
+            ],
+        }
+    )
+
+    early_vx = entry.on_bar_close(_cftc_bar("2024-01-03 10:25"))
+    vx_signal = entry.on_bar_close(_cftc_bar("2024-01-03 13:25"))
+    pd_signal = entry.on_bar_close(_cftc_bar("2024-01-04 10:25"))
+
+    assert early_vx is None
+    assert vx_signal.report_fields["selected_market_plumbing_leg"] == "cboe_vx_oi_stress"
+    assert vx_signal.report_fields["selected_market_plumbing_source"] == "cboe_cfe_vx_activity"
+    assert vx_signal.metadata["flatten_time"] == "15:50:00"
+    assert vx_signal.metadata["stop_pct"] == 0.01
+    assert vx_signal.metadata["target_r_multiple"] == 2.0
+    assert pd_signal.report_fields["selected_market_plumbing_leg"] == "primary_dealer_lending_pressure"
+    assert pd_signal.metadata["flatten_time"] == "15:30:00"
+    assert pd_signal.metadata["stop_pct"] == 0.012
 
 
 def _cftc_bar(timestamp):

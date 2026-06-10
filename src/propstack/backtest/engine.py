@@ -53,6 +53,51 @@ class ApexRules:
         )
 
 
+@dataclass(frozen=True)
+class NoTradeWindow:
+    name: str
+    dates: frozenset[str]
+    start_time: object
+    end_time: object
+    timezone: str
+    block_entries: bool = True
+    cancel_pending_orders: bool = True
+    flatten_positions: bool = True
+    exit_reason: str = "event_no_trade_flatten"
+
+
+@dataclass(frozen=True)
+class EventFilters:
+    enabled: bool = False
+    timezone: str = "America/New_York"
+    no_trade_windows: tuple[NoTradeWindow, ...] = ()
+
+    @classmethod
+    def from_config(cls, config: dict) -> "EventFilters":
+        raw = dict(config.get("event_filters") or {})
+        enabled = bool(raw.get("enabled", False))
+        timezone = str(raw.get("timezone", "America/New_York"))
+        windows = []
+        for item in raw.get("no_trade_windows") or []:
+            window = dict(item or {})
+            window_timezone = str(window.get("timezone", timezone))
+            dates = _no_trade_window_dates(window)
+            windows.append(
+                NoTradeWindow(
+                    name=str(window.get("name", "event_no_trade_window")),
+                    dates=frozenset(dates),
+                    start_time=parse_time(window.get("start_time", "00:00:00")),
+                    end_time=parse_time(window.get("end_time", "23:59:59")),
+                    timezone=window_timezone,
+                    block_entries=bool(window.get("block_entries", True)),
+                    cancel_pending_orders=bool(window.get("cancel_pending_orders", True)),
+                    flatten_positions=bool(window.get("flatten_positions", True)),
+                    exit_reason=str(window.get("exit_reason", "event_no_trade_flatten")),
+                )
+            )
+        return cls(enabled=enabled, timezone=timezone, no_trade_windows=tuple(windows))
+
+
 class BacktestEngine:
     def __init__(self, config: dict, show_progress: bool = False):
         self.config = config
@@ -62,6 +107,7 @@ class BacktestEngine:
         self.core_config = config.get("core", {})
         self.apex_rules = ApexRules.from_config(config)
         self.apex_timezone = ZoneInfo(self.apex_rules.timezone)
+        self.event_filters = EventFilters.from_config(config)
         self.show_progress = show_progress
         self.timeframe_minutes = self._configured_bar_interval_minutes()
         self._apply_timeframe_to_strategy()
@@ -96,6 +142,10 @@ class BacktestEngine:
             if pending_signal is not None and position is None and not self._apex_entry_allowed(bar["timestamp"]):
                 diagnostics["rejects"]["apex_latest_entry_time"] += 1
                 self._record_apex_pending_cancel(diagnostics, bar["timestamp"])
+                pending_signal = None
+            if pending_signal is not None and position is None and not self._event_entry_allowed(bar["timestamp"]):
+                diagnostics["rejects"]["event_no_trade_window"] += 1
+                self._record_event_pending_cancel(diagnostics, bar["timestamp"])
                 pending_signal = None
 
             if pending_signal is not None and position is None and risk.allow_new_trade(bar["session_date"]):
@@ -144,6 +194,7 @@ class BacktestEngine:
                         "stop_price": stop,
                         "target_price": target,
                         "risk_points": risk_points,
+                        "signal_flatten_time": _format_time(_signal_metadata_time(sig, "flatten_time", flatten_time)),
                         "contracts": sizing.contracts,
                         "max_favorable_excursion": 0.0,
                         "max_adverse_excursion": 0.0,
@@ -170,6 +221,7 @@ class BacktestEngine:
 
                 bar_close_timestamp = pd.Timestamp(bar["timestamp"]) + pd.Timedelta(minutes=bar_interval_minutes)
                 next_bar_close_timestamp = self._next_bar_close_timestamp(df, i, bar_interval_minutes)
+                event_window = None
                 reason, raw_exit, exit_timestamp = self._resolve_stop_target_exit(
                     bar,
                     direction,
@@ -179,9 +231,18 @@ class BacktestEngine:
                     detail_df,
                     diagnostics,
                 )
-                if reason is None and bar_close_timestamp.time() >= flatten_time:
+                position_flatten_time = parse_time(position.get("signal_flatten_time", flatten_time))
+                if reason is None and bar_close_timestamp.time() >= position_flatten_time:
                     reason, raw_exit = "eod_flatten", float(bar["close"])
                     exit_timestamp = bar_close_timestamp
+                if reason is None:
+                    event_window = self._event_window_to_flatten_before(
+                        bar_close_timestamp,
+                        next_bar_close_timestamp,
+                    )
+                    if event_window is not None:
+                        reason, raw_exit = event_window.exit_reason, float(bar["close"])
+                        exit_timestamp = bar_close_timestamp
                 if reason is None and self._apex_should_force_flatten(
                     bar_close_timestamp,
                     next_bar_close_timestamp,
@@ -212,6 +273,8 @@ class BacktestEngine:
                     trades.append(trade)
                     diagnostics["exits"][reason] = diagnostics["exits"].get(reason, 0) + 1
                     self._record_trade_apex_diagnostics(trade, diagnostics)
+                    if event_window is not None and reason == event_window.exit_reason:
+                        self._record_event_flatten(diagnostics, event_window)
                     risk.record_exit(position["session_date"], net)
                     net_liq += net
                     position = None
@@ -223,11 +286,19 @@ class BacktestEngine:
                 if signal is not None:
                     diagnostics["signals_generated"] += 1
                     next_entry_timestamp = self._next_bar_entry_timestamp(df, i)
-                    if next_entry_timestamp is not None and self._apex_entry_allowed(next_entry_timestamp):
+                    if (
+                        next_entry_timestamp is not None
+                        and self._apex_entry_allowed(next_entry_timestamp)
+                        and self._event_entry_allowed(next_entry_timestamp)
+                    ):
                         pending_signal = signal
                     else:
-                        diagnostics["rejects"]["apex_latest_entry_time"] += 1
-                        self._record_apex_pending_cancel(diagnostics, bar_close_timestamp)
+                        if next_entry_timestamp is None or not self._apex_entry_allowed(next_entry_timestamp):
+                            diagnostics["rejects"]["apex_latest_entry_time"] += 1
+                            self._record_apex_pending_cancel(diagnostics, bar_close_timestamp)
+                        elif not self._event_entry_allowed(next_entry_timestamp):
+                            diagnostics["rejects"]["event_no_trade_window"] += 1
+                            self._record_event_pending_cancel(diagnostics, next_entry_timestamp)
 
         if pending_signal is not None and self.apex_rules.enabled:
             last_timestamp = df.iloc[-1]["timestamp"] if len(df) else pd.Timestamp.now(tz=self.apex_timezone)
@@ -242,6 +313,9 @@ class BacktestEngine:
             trades_df,
             initial_balance=float(self.core_config.get("initial_balance", 0)),
         )
+        if self.event_filters.enabled:
+            metrics["event_no_trade_flatten_trades"] = int(diagnostics["event_filters"]["flatten_trades"])
+            metrics["event_no_trade_entry_rejections"] = int(diagnostics["event_filters"]["entry_rejections"])
         if self.apex_rules.enabled:
             metrics["apex_rule_violations"] = max(
                 int(metrics.get("apex_rule_violations", 0)),
@@ -277,12 +351,14 @@ class BacktestEngine:
                 "position_sizing": 0,
                 "daily_risk_lockout": 0,
                 "apex_latest_entry_time": 0,
+                "event_no_trade_window": 0,
             },
             "exits": {},
             "stop_target_conflicts": 0,
             "detail_conflicts_resolved": 0,
             "detail_conflicts_unresolved": 0,
             "apex": self._apex_diagnostics(),
+            "event_filters": self._event_filter_diagnostics(),
         }
         self._validate_strategy_feature_columns(data, diagnostics)
         self._validate_timeframe_column(data, diagnostics)
@@ -294,6 +370,7 @@ class BacktestEngine:
         required_by_module = {
             "calendar_session_bias": {"is_rth"},
             "cftc_tff_hedging_pressure": {"is_rth"},
+            "cftc_tff_tiered_hedging_pressure": {"is_rth"},
             "daily_time_series_momentum": {"is_rth"},
             "pdh_pdl_sweep_reclaim": {"is_rth", "prev_rth_low", "prev_rth_high"},
             "opening_range_breakout": {"is_rth"},
@@ -301,13 +378,22 @@ class BacktestEngine:
             "opening_range_inverse_breakout": {"is_rth"},
             "intraday_capitulation_mr": {"is_rth", "vwap"},
             "late_day_intraday_momentum": {"is_rth", "prev_rth_close", "volume_ratio"},
+            "liquidity_risk_capacity_priority": {"is_rth"},
             "morning_intraday_momentum": {"is_rth", "volume_ratio"},
             "overnight_return_late_day_momentum": {"is_rth", "prev_rth_close"},
             "overnight_inventory_reversion": {"is_rth", "overnight_high", "overnight_low", "vwap"},
             "pdh_pdl_breakout_continuation": {"is_rth", "prev_rth_high", "prev_rth_low", "volume_ratio"},
             "rth_gap_fade": {"is_rth", "prev_rth_close", "vwap"},
             "turn_of_month_bias": {"is_rth"},
+            "trade_orderflow_multi_pressure": {"is_rth"},
+            "trade_orderflow_pressure": {"is_rth"},
             "volume_conditioned_liquidity_reversal": {"is_rth", "volume_ratio"},
+            "vpin_toxicity_continuation": {
+                "is_rth",
+                "vpin_prior_rank21_at_1330",
+                "vpin_prior_drawdown_rank63_at_1330",
+                "vpin_session_ret",
+            },
             "vwap_pullback_continuation": {"is_rth", "vwap"},
         }
         missing = sorted(required_by_module.get(module, set()) - set(data.columns))
@@ -529,9 +615,105 @@ class BacktestEngine:
             return ts.tz_localize(self.apex_timezone)
         return ts.tz_convert(self.apex_timezone)
 
+    def _event_filter_diagnostics(self) -> dict:
+        filters = self.event_filters
+        return {
+            "enabled": bool(filters.enabled),
+            "timezone": filters.timezone,
+            "windows_configured": len(filters.no_trade_windows),
+            "entry_rejections": 0,
+            "pending_orders_cancelled": 0,
+            "flatten_trades": 0,
+            "flatten_trades_by_window": {},
+        }
+
+    def _event_entry_allowed(self, timestamp) -> bool:
+        if not self.event_filters.enabled:
+            return True
+        window = self._event_window_at(timestamp)
+        return window is None or not window.block_entries
+
+    def _record_event_pending_cancel(self, diagnostics: dict, timestamp) -> None:
+        if not self.event_filters.enabled:
+            return
+        diagnostics["event_filters"]["entry_rejections"] += 1
+        window = self._event_window_at(timestamp)
+        if window is not None and window.cancel_pending_orders:
+            diagnostics["event_filters"]["pending_orders_cancelled"] += 1
+
+    def _record_event_flatten(self, diagnostics: dict, window: NoTradeWindow) -> None:
+        diagnostics["event_filters"]["flatten_trades"] += 1
+        by_window = diagnostics["event_filters"]["flatten_trades_by_window"]
+        by_window[window.name] = by_window.get(window.name, 0) + 1
+
+    def _event_window_to_flatten_before(
+        self,
+        bar_close_timestamp,
+        next_bar_close_timestamp=None,
+    ) -> NoTradeWindow | None:
+        if not self.event_filters.enabled:
+            return None
+        for window in self.event_filters.no_trade_windows:
+            if not window.flatten_positions:
+                continue
+            close_ts = self._event_timestamp(bar_close_timestamp, window)
+            if close_ts.date().isoformat() not in window.dates:
+                continue
+            if close_ts.time() > window.start_time:
+                continue
+            if close_ts.time() == window.start_time:
+                return window
+            if next_bar_close_timestamp is None:
+                return window
+            next_close = self._event_timestamp(next_bar_close_timestamp, window)
+            if next_close.date() != close_ts.date():
+                return window
+            if next_close.time() > window.start_time:
+                return window
+        return None
+
+    def _event_window_at(self, timestamp) -> NoTradeWindow | None:
+        if not self.event_filters.enabled:
+            return None
+        for window in self.event_filters.no_trade_windows:
+            ts = self._event_timestamp(timestamp, window)
+            if ts.date().isoformat() in window.dates and _time_in_window(ts.time(), window.start_time, window.end_time):
+                return window
+        return None
+
+    def _event_timestamp(self, timestamp, window: NoTradeWindow) -> pd.Timestamp:
+        ts = pd.Timestamp(timestamp)
+        timezone = ZoneInfo(window.timezone)
+        if ts.tzinfo is None:
+            return ts.tz_localize(timezone)
+        return ts.tz_convert(timezone)
+
 
 def _format_time(value) -> str:
     return parse_time(value).strftime("%H:%M:%S")
+
+
+def _no_trade_window_dates(config: dict) -> list[str]:
+    dates = {pd.Timestamp(value).date().isoformat() for value in config.get("dates") or []}
+    source_csv = config.get("source_csv")
+    if source_csv:
+        frame = pd.read_csv(source_csv)
+        event_column = config.get("event_column")
+        event_values = config.get("event_values")
+        if event_column and event_values is not None:
+            allowed = {str(value) for value in event_values}
+            frame = frame[frame[event_column].astype(str).isin(allowed)]
+        date_column = str(config.get("date_column", "date"))
+        if date_column not in frame.columns:
+            raise ValueError(f"No-trade window source_csv {source_csv} is missing date column {date_column!r}.")
+        dates.update(pd.to_datetime(frame[date_column]).dt.date.astype(str))
+    return sorted(dates)
+
+
+def _time_in_window(value, start, end) -> bool:
+    if start <= end:
+        return start <= value < end
+    return value >= start or value < end
 
 
 def _target_already_reached(direction: str, entry: float, target: float, signal) -> bool:
@@ -562,6 +744,14 @@ def _signal_metadata_float(signal, key: str) -> float | None:
     except (TypeError, ValueError):
         return None
     return value if math.isfinite(value) else None
+
+
+def _signal_metadata_time(signal, key: str, default):
+    try:
+        value = signal.metadata.get(key)
+    except AttributeError:
+        value = None
+    return parse_time(default if value is None else value)
 
 
 def _stop_target_hits(

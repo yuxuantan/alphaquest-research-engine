@@ -2,9 +2,12 @@ from __future__ import annotations
 
 from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
 from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
+from propstack.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
+from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import LiquidityRiskCapacityPriorityEntry
+from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
 from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIntradayMomentumEntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
@@ -16,18 +19,24 @@ from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPd
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
+from propstack.strategy_modules.entry.trade_orderflow_multi_pressure import TradeOrderflowMultiPressureEntry
+from propstack.strategy_modules.entry.trade_orderflow_pressure import TradeOrderflowPressureEntry
 from propstack.strategy_modules.entry.volume_conditioned_liquidity_reversal import (
     VolumeConditionedLiquidityReversalEntry,
 )
+from propstack.strategy_modules.entry.vpin_toxicity_continuation import VpinToxicityContinuationEntry
 from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPullbackContinuationEntry
 
 
 ENTRY_MODULES = {
     CalendarSessionBiasEntry.name: CalendarSessionBiasEntry,
     CftcTffHedgingPressureEntry.name: CftcTffHedgingPressureEntry,
+    CftcTffTieredHedgingPressureEntry.name: CftcTffTieredHedgingPressureEntry,
     DailyTimeSeriesMomentumEntry.name: DailyTimeSeriesMomentumEntry,
     IntradayCapitulationMREntry.name: IntradayCapitulationMREntry,
     LateDayIntradayMomentumEntry.name: LateDayIntradayMomentumEntry,
+    LiquidityRiskCapacityPriorityEntry.name: LiquidityRiskCapacityPriorityEntry,
+    MarketPlumbingPriorityEntry.name: MarketPlumbingPriorityEntry,
     MorningIntradayMomentumEntry.name: MorningIntradayMomentumEntry,
     OpeningRangeBreakoutEntry.name: OpeningRangeBreakoutEntry,
     OpeningRangeFilteredBreakoutEntry.name: OpeningRangeFilteredBreakoutEntry,
@@ -38,7 +47,10 @@ ENTRY_MODULES = {
     PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
     RthGapFadeEntry.name: RthGapFadeEntry,
     TurnOfMonthBiasEntry.name: TurnOfMonthBiasEntry,
+    TradeOrderflowMultiPressureEntry.name: TradeOrderflowMultiPressureEntry,
+    TradeOrderflowPressureEntry.name: TradeOrderflowPressureEntry,
     VolumeConditionedLiquidityReversalEntry.name: VolumeConditionedLiquidityReversalEntry,
+    VpinToxicityContinuationEntry.name: VpinToxicityContinuationEntry,
     VwapPullbackContinuationEntry.name: VwapPullbackContinuationEntry,
 }
 
@@ -56,9 +68,12 @@ __all__ = [
     "Signal",
     "CalendarSessionBiasEntry",
     "CftcTffHedgingPressureEntry",
+    "CftcTffTieredHedgingPressureEntry",
     "DailyTimeSeriesMomentumEntry",
     "IntradayCapitulationMREntry",
     "LateDayIntradayMomentumEntry",
+    "LiquidityRiskCapacityPriorityEntry",
+    "MarketPlumbingPriorityEntry",
     "MorningIntradayMomentumEntry",
     "OpeningRangeBreakoutEntry",
     "OpeningRangeFilteredBreakoutEntry",
@@ -69,7 +84,10 @@ __all__ = [
     "PdhPdlSweepReclaimEntry",
     "RthGapFadeEntry",
     "TurnOfMonthBiasEntry",
+    "TradeOrderflowMultiPressureEntry",
+    "TradeOrderflowPressureEntry",
     "VolumeConditionedLiquidityReversalEntry",
+    "VpinToxicityContinuationEntry",
     "VwapPullbackContinuationEntry",
     "build_entry_module",
 ]

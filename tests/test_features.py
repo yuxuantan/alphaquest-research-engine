@@ -2,7 +2,7 @@ import pandas as pd
 
 from propstack.data.clean import clean_data
 from propstack.data.quality import tradingview_comparison_report
-from propstack.data.features import build_features
+from propstack.data.features import add_trade_orderflow_features, build_features
 from propstack.data.sessions import assign_sessions
 
 from tests.test_data_pipeline import DATA_CFG
@@ -26,6 +26,96 @@ def test_opening_range_feature_set_skips_global_features():
     assert "overnight_high" not in features.columns
     assert "vwap" not in features.columns
     assert "volume_ratio" not in features.columns
+
+
+def test_none_feature_set_can_add_gated_vpin_features():
+    df = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2024-01-02 09:30:00",
+                    "2024-01-02 09:31:00",
+                    "2024-01-02 09:32:00",
+                    "2024-01-02 09:33:00",
+                    "2024-01-02 09:34:00",
+                ]
+            ).tz_localize("America/New_York"),
+            "symbol": "ES",
+            "open": [100.0, 100.0, 101.0, 102.0, 101.0],
+            "high": [101.0, 102.0, 103.0, 103.0, 102.0],
+            "low": [99.0, 99.5, 100.5, 100.0, 100.0],
+            "close": [100.5, 101.5, 102.0, 101.0, 101.5],
+            "volume": [100, 110, 120, 130, 140],
+        }
+    )
+
+    features = build_features(
+        assign_sessions(df, DATA_CFG),
+        {
+            **DATA_CFG,
+            "feature_set": "none",
+            "vpin_toxicity_features": {
+                "enabled": True,
+                "entry_time": "09:34:00",
+                "bucket_fraction": 0.50,
+                "bucket_lookback": 1,
+                "bucket_min_periods": 1,
+            },
+        },
+    )
+
+    assert "prev_rth_high" not in features.columns
+    assert "vpin_proxy_b500_l1" in features.columns
+    assert "vpin_session_ret" in features.columns
+
+
+def test_trade_orderflow_features_use_completed_bars_through_signal_close():
+    timestamps = pd.date_range(
+        "2024-01-02 09:30:00",
+        periods=6,
+        freq="1min",
+        tz="America/New_York",
+    )
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "session_date": [timestamps[0].date()] * 6,
+            "session_label": ["RTH"] * 6,
+            "symbol": ["ES"] * 6,
+            "is_rth": [True] * 6,
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0, 105.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 105.0, 106.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 103.0, 104.0],
+            "close": [100.5, 101.5, 102.5, 103.5, 104.5, 105.5],
+            "volume": [100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
+            "signed_volume": [50.0, -20.0, 30.0, 60.0, -10.0, 90.0],
+            "large20_signed_volume": [40.0, -10.0, 20.0, 50.0, -5.0, 70.0],
+            "large20_volume": [80.0, 20.0, 40.0, 100.0, 10.0, 100.0],
+        }
+    )
+
+    features = add_trade_orderflow_features(
+        df,
+        {
+            "trade_orderflow_features": {
+                "enabled": True,
+                "windows": [3],
+                "large_trade_sizes": [20],
+                "tick_size": 0.25,
+                "min_period_fraction": 1.0,
+            }
+        },
+    )
+    signal_bar = features.iloc[3]
+
+    assert signal_bar["trade_orderflow_signed_volume_3"] == 70.0
+    assert signal_bar["trade_orderflow_volume_3"] == 300.0
+    assert round(signal_bar["trade_orderflow_imbalance_3"], 10) == round(70.0 / 300.0, 10)
+    assert signal_bar["trade_orderflow_large20_signed_volume_3"] == 60.0
+    assert signal_bar["trade_orderflow_large20_volume_3"] == 160.0
+    assert signal_bar["trade_orderflow_return_points_3"] == 2.5
+    assert signal_bar["trade_orderflow_return_ticks_3"] == 10.0
+    assert pd.isna(features.iloc[1]["trade_orderflow_return_points_3"])
 
 
 def test_tradingview_comparison_handles_minimal_feature_set():
