@@ -283,6 +283,18 @@ def add_trade_orderflow_features(df: pd.DataFrame, config: dict) -> pd.DataFrame
             group[f"trade_orderflow_volume_{suffix}"] = volume
             group[f"trade_orderflow_signed_volume_{suffix}"] = signed
             group[f"trade_orderflow_imbalance_{suffix}"] = signed / volume.replace(0.0, np.nan)
+            group[f"trade_orderflow_abs_imbalance_{suffix}"] = group[
+                f"trade_orderflow_imbalance_{suffix}"
+            ].abs()
+            if "trades" in group.columns:
+                trades = pd.to_numeric(group["trades"], errors="coerce").rolling(
+                    window, min_periods=min_periods
+                ).sum()
+                group[f"trade_orderflow_trades_{suffix}"] = trades
+                group[f"trade_orderflow_avg_trade_size_{suffix}"] = volume / trades.replace(0.0, np.nan)
+            group[f"trade_orderflow_effort_vs_result_{suffix}"] = (
+                volume / group[f"trade_orderflow_return_ticks_{suffix}"].abs().clip(lower=1.0)
+            )
             for size in large_trade_sizes:
                 large_signed_col = f"large{size}_signed_volume"
                 large_volume_col = f"large{size}_volume"
@@ -303,7 +315,227 @@ def add_trade_orderflow_features(df: pd.DataFrame, config: dict) -> pd.DataFrame
     if not frames:
         return out
     out = pd.concat(frames).sort_index()
+    out = out.replace([np.inf, -np.inf], np.nan)
+    rank_cfg = feature_cfg.get("same_clock_ranks") or {}
+    if rank_cfg.get("enabled", False):
+        out = _add_trade_orderflow_same_clock_ranks(out, rank_cfg)
     return out.replace([np.inf, -np.inf], np.nan)
+
+
+def add_orderflow_recent_pocket_combo_features(df: pd.DataFrame, config: dict) -> pd.DataFrame:
+    out = df.copy()
+    feature_cfg = config.get("orderflow_recent_pocket_combo_features") or {}
+    tick_size = float(feature_cfg.get("tick_size", config.get("tick_size", 0.25)))
+    if tick_size <= 0:
+        raise ValueError("data.orderflow_recent_pocket_combo_features.tick_size must be greater than 0.")
+    required = {
+        "timestamp",
+        "session_date",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "signed_volume",
+        "trade_orderflow_imbalance_15",
+        "trade_orderflow_imbalance_30",
+        "trade_orderflow_return_ticks_15",
+        "trade_orderflow_return_ticks_30",
+        "trade_orderflow_volume_15",
+        "trade_orderflow_volume_30",
+        "trade_orderflow_abs_imbalance_30",
+    }
+    missing = sorted(required - set(out.columns))
+    if missing:
+        raise ValueError(f"orderflow_recent_pocket_combo_features missing required columns: {missing}.")
+
+    out = out.sort_values("timestamp").copy()
+    session_keys = ["session_date"]
+    if "session_label" in out.columns:
+        session_keys.append("session_label")
+    typical = (out["high"] + out["low"] + out["close"]) / 3.0
+    cumulative_pv = (typical * out["volume"]).groupby([out[key] for key in session_keys], sort=False).cumsum()
+    cumulative_volume = out["volume"].groupby([out[key] for key in session_keys], sort=False).cumsum()
+    out["of_combo_vwap"] = cumulative_pv / cumulative_volume.replace(0.0, np.nan)
+    out["of_combo_price_vs_vwap_ticks"] = (out["close"] - out["of_combo_vwap"]) / tick_size
+    out["of_combo_price_vs_vwap_ticks_rank42"] = _same_clock_prior_rank(
+        out, "of_combo_price_vs_vwap_ticks", 42, 20
+    )
+
+    session_open = out.groupby("session_date", sort=False)["open"].transform("first")
+    out["of_combo_session_return_ticks"] = (out["close"] - session_open) / tick_size
+    out["of_combo_session_return_rank42"] = _same_clock_prior_rank(out, "of_combo_session_return_ticks", 42, 20)
+    out["of_combo_imbalance_30_rank42"] = _same_clock_prior_rank(out, "trade_orderflow_imbalance_30", 42, 20)
+    out["of_combo_abs_imbalance_30_rank42"] = _same_clock_prior_rank(
+        out, "trade_orderflow_abs_imbalance_30", 42, 20
+    )
+    out["of_combo_volume_15_rank42"] = _same_clock_prior_rank(out, "trade_orderflow_volume_15", 42, 14)
+    out["of_combo_volume_30_rank42"] = _same_clock_prior_rank(out, "trade_orderflow_volume_30", 42, 20)
+    out["of_combo_sc_imbalance_15_z60"] = _same_clock_shifted_mean_zscore(
+        out, "trade_orderflow_imbalance_15", 60, 30
+    )
+    out["of_combo_sc_imbalance_30_z60"] = _same_clock_shifted_mean_zscore(
+        out, "trade_orderflow_imbalance_30", 60, 30
+    )
+
+    daily = out.groupby("session_date", sort=True).agg(
+        open=("open", "first"),
+        close=("close", "last"),
+        volume=("volume", "sum"),
+        signed=("signed_volume", "sum"),
+    )
+    shifted = daily[["signed", "volume"]].shift(1)
+    daily["of_combo_inv2_signed"] = shifted["signed"].rolling(2, min_periods=2).sum()
+    daily["of_combo_inv2_volume"] = shifted["volume"].rolling(2, min_periods=2).sum()
+    daily["of_combo_inv2_imbalance"] = daily["of_combo_inv2_signed"] / daily[
+        "of_combo_inv2_volume"
+    ].replace(0.0, np.nan)
+    daily_returns = ((daily["close"] - daily["open"]) / tick_size).shift(1)
+    daily["of_combo_inv2_return_ticks"] = daily_returns.rolling(2, min_periods=2).sum()
+    daily["of_combo_inv2_abs_imbalance"] = daily["of_combo_inv2_imbalance"].abs()
+    daily["of_combo_inv2_imbalance_rank252"] = _prior_window_rank_series(
+        daily["of_combo_inv2_imbalance"], 252, 84
+    )
+    daily["of_combo_inv2_abs_imbalance_rank252"] = _prior_window_rank_series(
+        daily["of_combo_inv2_abs_imbalance"], 252, 84
+    )
+    session_map = out["session_date"].map
+    for column in [
+        "of_combo_inv2_imbalance",
+        "of_combo_inv2_return_ticks",
+        "of_combo_inv2_imbalance_rank252",
+        "of_combo_inv2_abs_imbalance_rank252",
+    ]:
+        out[column] = session_map(daily[column])
+
+    out["of_combo_signal_sc_short_1130_loose"] = (
+        (-out["of_combo_sc_imbalance_15_z60"] <= 0.0625)
+        & (-out["trade_orderflow_imbalance_15"] >= 0.045)
+        & (-out["trade_orderflow_imbalance_30"] >= 0.03)
+        & (-out["trade_orderflow_return_ticks_15"] >= 2.0)
+        & (out["of_combo_volume_15_rank42"] >= 0.80)
+    )
+    out["of_combo_signal_multi_short_1130"] = (
+        (out["of_combo_inv2_imbalance"] < 0.0)
+        & ((1.0 - out["of_combo_inv2_imbalance_rank252"]) >= 0.90)
+        & (out["of_combo_inv2_return_ticks"] < 0.0)
+        & (out["of_combo_inv2_abs_imbalance_rank252"] >= 0.90)
+    )
+    out["of_combo_signal_late_vwap_short_1330"] = (
+        (out["trade_orderflow_imbalance_30"] >= 0.06)
+        & (out["of_combo_abs_imbalance_30_rank42"] >= 0.60)
+        & (out["of_combo_price_vs_vwap_ticks"] >= 12.0)
+        & (out["of_combo_price_vs_vwap_ticks_rank42"] >= 0.60)
+        & (out["of_combo_volume_30_rank42"] >= 0.50)
+    )
+    out["of_combo_signal_late_flow_long_1500"] = (
+        (out["trade_orderflow_imbalance_30"] >= 0.03)
+        & (out["of_combo_imbalance_30_rank42"] >= 0.75)
+        & (out["trade_orderflow_return_ticks_30"] >= 2.0)
+        & (out["of_combo_session_return_ticks"] >= 8.0)
+    )
+    return out.replace([np.inf, -np.inf], np.nan)
+
+
+def _same_clock_prior_rank(df: pd.DataFrame, column: str, window: int, min_periods: int) -> pd.Series:
+    ordered = df.sort_values("timestamp")
+    time_key = pd.to_datetime(ordered["timestamp"]).dt.strftime("%H:%M:%S")
+    values = pd.to_numeric(ordered[column], errors="coerce")
+    ranked = values.groupby(time_key, sort=False).transform(
+        lambda series: _rank_current_against_prior_window(series, window, min_periods)
+    )
+    out = pd.Series(np.nan, index=df.index, dtype=float)
+    out.loc[ordered.index] = ranked.to_numpy(dtype=float)
+    return out
+
+
+def _same_clock_shifted_mean_zscore(
+    df: pd.DataFrame, column: str, window: int, min_periods: int
+) -> pd.Series:
+    ordered = df.sort_values("timestamp")
+    time_key = pd.to_datetime(ordered["timestamp"]).dt.strftime("%H:%M:%S")
+    values = pd.to_numeric(ordered[column], errors="coerce")
+
+    def calculate(series: pd.Series) -> pd.Series:
+        shifted = series.shift(1)
+        mean = shifted.rolling(window, min_periods=min_periods).mean()
+        std = shifted.rolling(window, min_periods=min_periods).std()
+        return mean / std.replace(0.0, np.nan)
+
+    zscore = values.groupby(time_key, sort=False).transform(calculate)
+    out = pd.Series(np.nan, index=df.index, dtype=float)
+    out.loc[ordered.index] = zscore.to_numpy(dtype=float)
+    return out
+
+
+def _prior_window_rank_series(values: pd.Series, window: int, min_periods: int) -> pd.Series:
+    raw = values.to_numpy(dtype=float)
+    out = np.full(len(raw), np.nan, dtype=float)
+    for i, value in enumerate(raw):
+        history = raw[max(0, i - window) : i]
+        history = history[np.isfinite(history)]
+        if len(history) < min_periods or not np.isfinite(value):
+            continue
+        out[i] = float((history <= value).mean())
+    return pd.Series(out, index=values.index)
+
+
+def _add_trade_orderflow_same_clock_ranks(df: pd.DataFrame, rank_cfg: dict) -> pd.DataFrame:
+    out = df.copy()
+    columns = [str(value) for value in rank_cfg.get("columns", [])]
+    rank_windows = [int(value) for value in rank_cfg.get("rank_windows", [21, 63])]
+    min_periods_cfg = rank_cfg.get("rank_min_periods")
+
+    if not columns:
+        raise ValueError("data.trade_orderflow_features.same_clock_ranks.columns must not be empty.")
+    if not rank_windows or any(window <= 0 for window in rank_windows):
+        raise ValueError("data.trade_orderflow_features.same_clock_ranks.rank_windows must contain positive integers.")
+    if "timestamp" not in out.columns:
+        raise ValueError("trade_orderflow same-clock ranks require a timestamp column.")
+    missing = [column for column in columns if column not in out.columns]
+    if missing:
+        raise ValueError(f"trade_orderflow same-clock rank columns are missing: {missing}.")
+
+    ordered = out.sort_values("timestamp").copy()
+    time_key = pd.to_datetime(ordered["timestamp"]).dt.strftime("%H:%M:%S")
+    group_keys = [time_key]
+    for optional in ("symbol",):
+        if optional in ordered.columns:
+            group_keys.append(ordered[optional].astype(str))
+
+    for column in columns:
+        values = pd.to_numeric(ordered[column], errors="coerce")
+        for window in rank_windows:
+            min_periods = _same_clock_rank_min_periods(min_periods_cfg, window)
+            rank_col = f"{column}_rank{window}"
+            ranked = values.groupby(group_keys, sort=False).transform(
+                lambda series: _rank_current_against_prior_window(series, window, min_periods)
+            )
+            out.loc[ordered.index, rank_col] = ranked.to_numpy(dtype=float)
+    return out
+
+
+def _same_clock_rank_min_periods(config_value, window: int) -> int:
+    if isinstance(config_value, dict):
+        value = config_value.get(str(window), config_value.get(window))
+        if value is not None:
+            return int(value)
+    elif config_value is not None:
+        return int(config_value)
+    return max(5, window // 3)
+
+
+def _rank_current_against_prior_window(values: pd.Series, window: int, min_periods: int) -> pd.Series:
+    raw = values.to_numpy(dtype=float)
+    out = np.full(len(raw), np.nan, dtype=float)
+    for i, value in enumerate(raw):
+        start = max(0, i - window)
+        history = raw[start:i]
+        history = history[np.isfinite(history)]
+        if len(history) < min_periods or not np.isfinite(value):
+            continue
+        out[i] = float((history <= value).mean())
+    return pd.Series(out, index=values.index)
 
 
 def build_features(
@@ -338,6 +570,9 @@ def build_features(
     if (config.get("trade_orderflow_features") or {}).get("enabled", False):
         _emit(status_callback, "Building trade-side orderflow features...")
         out = add_trade_orderflow_features(out, config)
+    if (config.get("orderflow_recent_pocket_combo_features") or {}).get("enabled", False):
+        _emit(status_callback, "Building recent-pocket aggregate orderflow combo features...")
+        out = add_orderflow_recent_pocket_combo_features(out, config)
     return out
 
 

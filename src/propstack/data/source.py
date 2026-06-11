@@ -13,6 +13,9 @@ def data_source_hash(data_config: dict, subset_config: dict | None = None) -> st
     if source == "csv":
         raw_csv = data_config.get("raw_csv")
         return file_sha256(raw_csv) if raw_csv else object_sha256({"source": source})
+    if source == "parquet":
+        raw_parquet = data_config.get("raw_parquet") or data_config.get("raw_csv")
+        return file_sha256(raw_parquet) if raw_parquet else object_sha256({"source": source})
     if source == "databento_dbn":
         load_bounds = load_bounds_with_warmup(subset_config, data_config)
         files = list_databento_dbn_files(data_config["raw_dir"], date_bounds=load_bounds)

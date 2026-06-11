@@ -13,8 +13,10 @@ from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import Li
 from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
 from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIntradayMomentumEntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
+from propstack.strategy_modules.entry.opening_drive_inventory_combo import OpeningDriveInventoryComboEntry
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_inverse_breakout import OpeningRangeInverseBreakoutEntry
+from propstack.strategy_modules.entry.orderflow_recent_pocket_combo import OrderflowRecentPocketComboEntry
 from propstack.strategy_modules.entry.overnight_inventory_reversion import OvernightInventoryReversionEntry
 from propstack.strategy_modules.entry.overnight_return_late_day_momentum import OvernightReturnLateDayMomentumEntry
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
@@ -22,7 +24,9 @@ from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepRe
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
 from propstack.strategy_modules.entry.trade_orderflow_multi_pressure import TradeOrderflowMultiPressureEntry
+from propstack.strategy_modules.entry.trade_orderflow_multi_state_rank import TradeOrderflowMultiStateRankEntry
 from propstack.strategy_modules.entry.trade_orderflow_pressure import TradeOrderflowPressureEntry
+from propstack.strategy_modules.entry.trade_orderflow_state_rank import TradeOrderflowStateRankEntry
 from propstack.strategy_modules.entry.volume_conditioned_liquidity_reversal import (
     VolumeConditionedLiquidityReversalEntry,
 )
@@ -265,6 +269,7 @@ def _orderflow_bar(
     timestamp,
     *,
     flow=0.12,
+    rank=0.0,
     source_return=8.0,
     is_rth=True,
 ):
@@ -279,6 +284,8 @@ def _orderflow_bar(
             "low": 99.5,
             "close": 100.5,
             "trade_orderflow_large20_imbalance_15": flow,
+            "trade_orderflow_abs_imbalance_5": abs(flow),
+            "trade_orderflow_abs_imbalance_5_rank21": rank,
             "trade_orderflow_return_ticks_5": source_return,
         },
         name=ts.hour * 60 + ts.minute,
@@ -376,6 +383,336 @@ def test_trade_orderflow_multi_pressure_routes_slot_metadata_and_trade_limit():
     assert mid.metadata["target_r_multiple"] == 1.25
 
     assert entry.on_bar_close(_orderflow_bar("2024-01-04 10:29"), trades_today=2) is None
+
+
+def test_trade_orderflow_state_rank_uses_prior_same_clock_history():
+    entry = TradeOrderflowStateRankEntry(
+        {
+            "entry_time": "10:00:00",
+            "flatten_time": "14:31:00",
+            "bar_interval_minutes": 1,
+            "feature_column": "trade_orderflow_abs_imbalance_5",
+            "rank_window": 3,
+            "rank_min_periods": 2,
+            "threshold_side": "le",
+            "rank_threshold": 0.2,
+            "direction": "long",
+            "stop_pct": 0.01,
+            "target_r_multiple": 10.0,
+        }
+    )
+
+    assert entry.on_bar_close(_orderflow_bar("2024-01-02 09:59", flow=0.50)) is None
+    assert entry.on_bar_close(_orderflow_bar("2024-01-03 09:59", flow=0.40)) is None
+    signal = entry.on_bar_close(_orderflow_bar("2024-01-04 09:59", flow=0.10))
+
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-04 10:00", tz="America/New_York")
+    assert signal.report_fields["feature_method"] == "bar_level_orderflow_state_rank"
+    assert signal.report_fields["orderflow_state_feature_column"] == "trade_orderflow_abs_imbalance_5"
+    assert signal.report_fields["orderflow_state_rank"] == 0.0
+    assert signal.metadata["flatten_time"] == "14:31:00"
+
+
+def test_trade_orderflow_state_rank_filters_return_and_trade_limit():
+    entry = TradeOrderflowStateRankEntry(
+        {
+            "entry_time": "10:00:00",
+            "bar_interval_minutes": 1,
+            "feature_column": "trade_orderflow_abs_imbalance_5",
+            "rank_window": 3,
+            "rank_min_periods": 2,
+            "threshold_side": "le",
+            "rank_threshold": 0.2,
+            "direction": "short",
+            "return_column": "trade_orderflow_return_ticks_5",
+            "return_mode": "down",
+            "min_return_ticks": 4,
+        }
+    )
+
+    assert entry.on_bar_close(_orderflow_bar("2024-01-02 09:59", flow=0.50)) is None
+    assert entry.on_bar_close(_orderflow_bar("2024-01-03 09:59", flow=0.40)) is None
+    assert entry.on_bar_close(_orderflow_bar("2024-01-04 09:59", flow=0.10, source_return=3.0)) is None
+    assert entry.on_bar_close(_orderflow_bar("2024-01-05 09:59", flow=0.05, source_return=-5.0), trades_today=1) is None
+
+
+def test_trade_orderflow_state_rank_can_use_precomputed_rank_column():
+    entry = TradeOrderflowStateRankEntry(
+        {
+            "entry_time": "10:00:00",
+            "bar_interval_minutes": 1,
+            "feature_column": "trade_orderflow_abs_imbalance_5",
+            "rank_column": "trade_orderflow_abs_imbalance_5_rank21",
+            "rank_window": 21,
+            "rank_min_periods": 7,
+            "threshold_side": "le",
+            "rank_threshold": 0.2,
+            "direction": "long",
+        }
+    )
+
+    signal = entry.on_bar_close(_orderflow_bar("2024-01-04 09:59", flow=0.30, rank=0.1))
+
+    assert signal.direction == "long"
+    assert signal.report_fields["orderflow_state_rank_column"] == "trade_orderflow_abs_imbalance_5_rank21"
+    assert signal.report_fields["orderflow_state_rank"] == 0.1
+
+
+def test_trade_orderflow_state_rank_can_filter_raw_feature_value():
+    entry = TradeOrderflowStateRankEntry(
+        {
+            "entry_time": "10:00:00",
+            "bar_interval_minutes": 1,
+            "filter_mode": "value",
+            "feature_column": "trade_orderflow_abs_imbalance_5",
+            "threshold_side": "ge",
+            "value_threshold": 0.1,
+            "direction": "short",
+        }
+    )
+
+    assert entry.on_bar_close(_orderflow_bar("2024-01-04 09:59", flow=0.05)) is None
+    signal = entry.on_bar_close(_orderflow_bar("2024-01-05 09:59", flow=0.12))
+
+    assert signal.direction == "short"
+    assert signal.report_fields["orderflow_state_filter_mode"] == "value"
+    assert signal.report_fields["orderflow_state_feature_value"] == 0.12
+    assert signal.report_fields["orderflow_state_value_threshold"] == 0.1
+    assert pd.isna(signal.report_fields["orderflow_state_rank"])
+    assert signal.metadata["filter_mode"] == "value"
+    assert signal.metadata["value_threshold"] == 0.1
+
+
+def test_trade_orderflow_multi_state_rank_routes_stateless_slots():
+    entry = TradeOrderflowMultiStateRankEntry(
+        {
+            "bar_interval_minutes": 1,
+            "rank_window": 21,
+            "rank_min_periods": 7,
+            "threshold_side": "le",
+            "rank_threshold": 0.2,
+            "feature_column": "trade_orderflow_abs_imbalance_5",
+            "rank_column": "trade_orderflow_abs_imbalance_5_rank21",
+            "max_trades_per_day": 2,
+            "slots": [
+                {
+                    "slot_id": "early_low_imbalance",
+                    "setup_mode": "early_low_imbalance",
+                    "entry_time": "10:00:00",
+                    "flatten_time": "10:31:00",
+                    "direction": "long",
+                },
+                {
+                    "slot_id": "late_low_imbalance",
+                    "setup_mode": "late_low_imbalance",
+                    "entry_time": "10:30:00",
+                    "flatten_time": "11:31:00",
+                    "direction": "short",
+                },
+            ],
+        }
+    )
+
+    early = entry.on_bar_close(_orderflow_bar("2024-01-04 09:59", rank=0.1))
+    late = entry.on_bar_close(_orderflow_bar("2024-01-04 10:29", rank=0.1), trades_today=1)
+
+    assert early.direction == "long"
+    assert early.report_fields["slot_id"] == "early_low_imbalance"
+    assert late.direction == "short"
+    assert late.report_fields["slot_id"] == "late_low_imbalance"
+    assert entry.on_bar_close(_orderflow_bar("2024-01-04 10:29", rank=0.1), trades_today=2) is None
+
+
+def _recent_pocket_bar(timestamp, *, signal=True, is_rth=True):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": is_rth,
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.5,
+            "close": 100.5,
+            "of_combo_signal_sc_short_1130_loose": signal,
+            "of_combo_signal_multi_short_1130": False,
+            "of_combo_signal_late_vwap_short_1330": False,
+            "of_combo_signal_late_flow_long_1500": False,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def test_orderflow_recent_pocket_combo_emits_next_bar_slot_signal():
+    entry = OrderflowRecentPocketComboEntry(
+        {
+            "bar_interval_minutes": 1,
+            "stop_pct": 0.004,
+            "target_r_multiple": 2.0,
+            "slots": [
+                {
+                    "slot_id": "same_clock_short_1130",
+                    "signal_column": "of_combo_signal_sc_short_1130_loose",
+                    "entry_time": "11:30:00",
+                    "flatten_time": "13:30:00",
+                    "direction": "short",
+                }
+            ],
+        }
+    )
+
+    assert entry.on_bar_close(_recent_pocket_bar("2024-01-04 11:28")) is None
+    signal = entry.on_bar_close(_recent_pocket_bar("2024-01-04 11:29"))
+
+    assert signal.direction == "short"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-04 11:30", tz="America/New_York")
+    assert signal.metadata["stop_pct"] == 0.004
+    assert signal.metadata["target_r_multiple"] == 2.0
+    assert signal.metadata["flatten_time"] == "13:30:00"
+    assert signal.report_fields["feature_method"] == "recent_pocket_aggregate_orderflow_combo"
+    assert signal.report_fields["orderflow_signal_column"] == "of_combo_signal_sc_short_1130_loose"
+
+
+def test_orderflow_recent_pocket_combo_filters_signal_and_trade_limit():
+    entry = OrderflowRecentPocketComboEntry({"bar_interval_minutes": 1, "max_trades_per_day": 1})
+
+    assert entry.on_bar_close(_recent_pocket_bar("2024-01-04 11:29", signal=False)) is None
+    assert entry.on_bar_close(_recent_pocket_bar("2024-01-04 11:29"), trades_today=1) is None
+
+
+def _opening_inventory_bar(
+    timestamp,
+    *,
+    open_price=100.0,
+    close=100.0,
+    volume=1000.0,
+    signed_volume=-100.0,
+    opening_return_30=-10.0,
+    opening_imbalance_30=-0.01,
+    opening_volume_30=1000.0,
+    is_rth=True,
+):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": is_rth,
+            "open": open_price,
+            "high": max(open_price, close) + 0.5,
+            "low": min(open_price, close) - 0.5,
+            "close": close,
+            "volume": volume,
+            "signed_volume": signed_volume,
+            "trade_orderflow_return_ticks_30": opening_return_30,
+            "trade_orderflow_imbalance_30": opening_imbalance_30,
+            "trade_orderflow_volume_30": opening_volume_30,
+            "trade_orderflow_return_ticks_60": opening_return_30,
+            "trade_orderflow_imbalance_60": opening_imbalance_30,
+            "trade_orderflow_volume_60": opening_volume_30,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def _feed_opening_inventory_session(entry, day: str, *, opening_volume_30: float):
+    assert entry.on_bar_close(_opening_inventory_bar(f"{day} 09:30", opening_volume_30=opening_volume_30)) is None
+    assert entry.on_bar_close(_opening_inventory_bar(f"{day} 09:59", opening_volume_30=opening_volume_30)) is None
+    return entry.on_bar_close(
+        _opening_inventory_bar(
+            f"{day} 10:14",
+            close=97.75,
+            signed_volume=-600.0,
+            opening_volume_30=opening_volume_30,
+        )
+    )
+
+
+def test_opening_drive_inventory_combo_uses_prior_opening_volume_rank():
+    entry = OpeningDriveInventoryComboEntry(
+        {
+            "bar_interval_minutes": 1,
+            "opening_rank_window": 3,
+            "opening_rank_min_periods": 2,
+            "stop_pct": 0.004,
+            "target_r_multiple": 3.0,
+            "slots": [
+                {
+                    "slot_id": "short_pressure_fade_long",
+                    "family": "price_flow_divergence_fade",
+                    "opening_window": 30,
+                    "pressure_direction": "short",
+                    "direction": "long",
+                    "min_open_return_ticks": 8.0,
+                    "min_open_imbalance": "-inf",
+                    "max_open_imbalance": 0.02,
+                    "min_open_volume_rank": 0.70,
+                    "min_session_delta_ratio": -0.10,
+                    "entry_time": "10:15:00",
+                    "hold_minutes": 31,
+                }
+            ],
+        }
+    )
+
+    assert _feed_opening_inventory_session(entry, "2024-01-02", opening_volume_30=100.0) is None
+    assert _feed_opening_inventory_session(entry, "2024-01-03", opening_volume_30=200.0) is None
+    signal = _feed_opening_inventory_session(entry, "2024-01-04", opening_volume_30=300.0)
+
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-04 10:15", tz="America/New_York")
+    assert signal.metadata["flatten_time"] == "10:46:00"
+    assert signal.metadata["stop_pct"] == 0.004
+    assert signal.metadata["target_r_multiple"] == 3.0
+    assert signal.report_fields["feature_method"] == "opening_drive_inventory_aggregate_orderflow_combo"
+    assert signal.report_fields["slot_id"] == "short_pressure_fade_long"
+    assert signal.report_fields["opening_volume_rank"] == 1.0
+    assert signal.report_fields["signed_opening_return_ticks"] == 10.0
+    assert signal.report_fields["signed_opening_imbalance"] == 0.01
+
+
+def test_opening_drive_inventory_combo_filters_trade_limit_but_updates_history():
+    entry = OpeningDriveInventoryComboEntry(
+        {
+            "bar_interval_minutes": 1,
+            "opening_rank_window": 2,
+            "opening_rank_min_periods": 1,
+            "max_trades_per_day": 1,
+            "slots": [
+                {
+                    "slot_id": "short_pressure_fade_long",
+                    "family": "price_flow_divergence_fade",
+                    "opening_window": 30,
+                    "pressure_direction": "short",
+                    "direction": "long",
+                    "min_open_return_ticks": 8.0,
+                    "min_open_imbalance": "-inf",
+                    "max_open_imbalance": 0.02,
+                    "min_open_volume_rank": 0.0,
+                    "entry_time": "10:15:00",
+                    "hold_minutes": 31,
+                }
+            ],
+        }
+    )
+
+    assert _feed_opening_inventory_session(entry, "2024-01-02", opening_volume_30=100.0) is None
+    assert _feed_opening_inventory_session(entry, "2024-01-03", opening_volume_30=200.0) is not None
+    assert entry.on_bar_close(_opening_inventory_bar("2024-01-04 09:30", opening_volume_30=50.0)) is None
+    assert entry.on_bar_close(_opening_inventory_bar("2024-01-04 09:59", opening_volume_30=50.0)) is None
+    assert (
+        entry.on_bar_close(
+            _opening_inventory_bar("2024-01-04 10:14", close=97.75, opening_volume_30=50.0),
+            trades_today=1,
+        )
+        is None
+    )
+    assert entry.on_bar_close(_opening_inventory_bar("2024-01-05 09:30", opening_volume_30=75.0)) is None
+    assert entry.on_bar_close(_opening_inventory_bar("2024-01-05 09:59", opening_volume_30=75.0)) is None
+    signal = entry.on_bar_close(_opening_inventory_bar("2024-01-05 10:14", close=97.75, opening_volume_30=75.0))
+
+    assert signal.report_fields["opening_volume_rank"] == 0.5
 
 
 def _cal_bar(timestamp, open_price=100.0, high=101.0, low=99.0, close=100.5, *, is_rth=True):

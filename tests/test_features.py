@@ -2,7 +2,11 @@ import pandas as pd
 
 from propstack.data.clean import clean_data
 from propstack.data.quality import tradingview_comparison_report
-from propstack.data.features import add_trade_orderflow_features, build_features
+from propstack.data.features import (
+    add_orderflow_recent_pocket_combo_features,
+    add_trade_orderflow_features,
+    build_features,
+)
 from propstack.data.sessions import assign_sessions
 
 from tests.test_data_pipeline import DATA_CFG
@@ -88,6 +92,7 @@ def test_trade_orderflow_features_use_completed_bars_through_signal_close():
             "low": [99.0, 100.0, 101.0, 102.0, 103.0, 104.0],
             "close": [100.5, 101.5, 102.5, 103.5, 104.5, 105.5],
             "volume": [100.0, 100.0, 100.0, 100.0, 100.0, 100.0],
+            "trades": [10.0, 20.0, 30.0, 40.0, 50.0, 60.0],
             "signed_volume": [50.0, -20.0, 30.0, 60.0, -10.0, 90.0],
             "large20_signed_volume": [40.0, -10.0, 20.0, 50.0, -5.0, 70.0],
             "large20_volume": [80.0, 20.0, 40.0, 100.0, 10.0, 100.0],
@@ -110,12 +115,141 @@ def test_trade_orderflow_features_use_completed_bars_through_signal_close():
 
     assert signal_bar["trade_orderflow_signed_volume_3"] == 70.0
     assert signal_bar["trade_orderflow_volume_3"] == 300.0
+    assert signal_bar["trade_orderflow_trades_3"] == 90.0
+    assert round(signal_bar["trade_orderflow_avg_trade_size_3"], 10) == round(300.0 / 90.0, 10)
     assert round(signal_bar["trade_orderflow_imbalance_3"], 10) == round(70.0 / 300.0, 10)
+    assert round(signal_bar["trade_orderflow_abs_imbalance_3"], 10) == round(abs(70.0 / 300.0), 10)
     assert signal_bar["trade_orderflow_large20_signed_volume_3"] == 60.0
     assert signal_bar["trade_orderflow_large20_volume_3"] == 160.0
     assert signal_bar["trade_orderflow_return_points_3"] == 2.5
     assert signal_bar["trade_orderflow_return_ticks_3"] == 10.0
+    assert signal_bar["trade_orderflow_effort_vs_result_3"] == 30.0
     assert pd.isna(features.iloc[1]["trade_orderflow_return_points_3"])
+
+
+def test_trade_orderflow_same_clock_ranks_use_prior_same_time_values():
+    timestamps = pd.to_datetime(
+        [
+            "2024-01-02 09:59:00",
+            "2024-01-02 10:29:00",
+            "2024-01-03 09:59:00",
+            "2024-01-03 10:29:00",
+            "2024-01-04 09:59:00",
+            "2024-01-04 10:29:00",
+        ]
+    ).tz_localize("America/New_York")
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "session_date": [ts.date() for ts in timestamps],
+            "session_label": ["RTH"] * 6,
+            "symbol": ["ES"] * 6,
+            "is_rth": [True] * 6,
+            "open": [100.0] * 6,
+            "high": [101.0] * 6,
+            "low": [99.0] * 6,
+            "close": [100.5] * 6,
+            "volume": [100.0] * 6,
+            "trades": [10.0] * 6,
+            "signed_volume": [50.0, 10.0, 40.0, 20.0, 10.0, 90.0],
+        }
+    )
+
+    features = add_trade_orderflow_features(
+        df,
+        {
+            "trade_orderflow_features": {
+                "enabled": True,
+                "windows": [1],
+                "tick_size": 0.25,
+                "min_period_fraction": 1.0,
+                "same_clock_ranks": {
+                    "enabled": True,
+                    "columns": ["trade_orderflow_abs_imbalance_1"],
+                    "rank_windows": [2],
+                    "rank_min_periods": 2,
+                },
+            }
+        },
+    )
+
+    day_three_0959 = features[features["timestamp"] == timestamps[4]].iloc[0]
+    day_three_1029 = features[features["timestamp"] == timestamps[5]].iloc[0]
+
+    assert day_three_0959["trade_orderflow_abs_imbalance_1_rank2"] == 0.0
+    assert day_three_1029["trade_orderflow_abs_imbalance_1_rank2"] == 1.0
+    assert pd.isna(features.iloc[2]["trade_orderflow_abs_imbalance_1_rank2"])
+
+
+def test_recent_pocket_combo_vwap_leg_uses_prior_same_clock_vwap_rank():
+    def rows(prior_vwap_extension_ticks: float) -> pd.DataFrame:
+        records = []
+        for i in range(20):
+            ts = pd.Timestamp(f"2024-01-{i + 2:02d} 13:29:00", tz="America/New_York")
+            close = 100.0
+            low = close - prior_vwap_extension_ticks * 0.75
+            records.append(
+                {
+                    "timestamp": ts,
+                    "session_date": ts.date(),
+                    "session_label": "RTH",
+                    "symbol": "ES",
+                    "is_rth": True,
+                    "open": 100.0,
+                    "high": close,
+                    "low": low,
+                    "close": close,
+                    "volume": 100.0,
+                    "signed_volume": 5.0,
+                    "trade_orderflow_imbalance_15": 0.0,
+                    "trade_orderflow_imbalance_30": 0.01,
+                    "trade_orderflow_abs_imbalance_30": 0.01,
+                    "trade_orderflow_return_ticks_15": 0.0,
+                    "trade_orderflow_return_ticks_30": 0.0,
+                    "trade_orderflow_volume_15": 100.0,
+                    "trade_orderflow_volume_30": 100.0,
+                }
+            )
+        ts = pd.Timestamp("2024-01-31 13:29:00", tz="America/New_York")
+        records.append(
+            {
+                "timestamp": ts,
+                "session_date": ts.date(),
+                "session_label": "RTH",
+                "symbol": "ES",
+                "is_rth": True,
+                "open": 100.0,
+                "high": 110.0,
+                "low": 101.0,
+                "close": 110.0,
+                "volume": 200.0,
+                "signed_volume": 12.0,
+                "trade_orderflow_imbalance_15": 0.0,
+                "trade_orderflow_imbalance_30": 0.06,
+                "trade_orderflow_abs_imbalance_30": 0.06,
+                "trade_orderflow_return_ticks_15": 0.0,
+                "trade_orderflow_return_ticks_30": 0.0,
+                "trade_orderflow_volume_15": 200.0,
+                "trade_orderflow_volume_30": 200.0,
+            }
+        )
+        return pd.DataFrame(records)
+
+    eligible = add_orderflow_recent_pocket_combo_features(
+        rows(prior_vwap_extension_ticks=4.0),
+        {"orderflow_recent_pocket_combo_features": {"enabled": True, "tick_size": 0.25}},
+    ).iloc[-1]
+    blocked = add_orderflow_recent_pocket_combo_features(
+        rows(prior_vwap_extension_ticks=20.0),
+        {"orderflow_recent_pocket_combo_features": {"enabled": True, "tick_size": 0.25}},
+    ).iloc[-1]
+
+    assert eligible["of_combo_price_vs_vwap_ticks"] == 12.0
+    assert eligible["of_combo_price_vs_vwap_ticks_rank42"] == 1.0
+    assert bool(eligible["of_combo_signal_late_vwap_short_1330"])
+    assert blocked["of_combo_price_vs_vwap_ticks"] == 12.0
+    assert blocked["of_combo_price_vs_vwap_ticks_rank42"] == 0.0
+    assert not bool(blocked["of_combo_signal_late_vwap_short_1330"])
 
 
 def test_tradingview_comparison_handles_minimal_feature_set():

@@ -1,3 +1,5 @@
+import pandas as pd
+
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
 from propstack.data.pipeline import prepare_data
@@ -24,6 +26,46 @@ def test_csv_loading_and_cleaning():
     assert report["invalid_ohlc_count"] == 0
     assert len(df) == 20
     assert "session_date" in df.columns
+
+
+def test_parquet_loading_preserves_orderflow_columns(tmp_path):
+    path = tmp_path / "orderflow.parquet"
+    pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(["2024-01-03 09:30", "2024-01-03 09:31"]),
+            "open": [100.0, 100.5],
+            "high": [101.0, 101.0],
+            "low": [99.5, 100.0],
+            "close": [100.5, 100.75],
+            "volume": [1000, 1200],
+            "signed_volume": [100, -50],
+            "trades": [25, 30],
+        }
+    ).to_parquet(path, index=False)
+
+    data, report = prepare_data(
+        {
+            "source": "parquet",
+            "raw_parquet": str(path),
+            "symbol": "ES",
+            "timezone": "America/New_York",
+            "rth_start": "09:30:00",
+            "rth_end": "15:59:00",
+            "feature_set": "none",
+            "trade_orderflow_features": {
+                "enabled": True,
+                "windows": [2],
+                "large_trade_sizes": [],
+                "min_period_fraction": 1.0,
+                "tick_size": 0.25,
+            },
+        }
+    )
+
+    assert str(data["timestamp"].dt.tz) == "America/New_York"
+    assert report["rows"] == 2
+    assert data.loc[1, "trade_orderflow_signed_volume_2"] == 50
+    assert data.loc[1, "trade_orderflow_trades_2"] == 55
 
 
 def test_timestamp_parsing_and_session_date_assignment():

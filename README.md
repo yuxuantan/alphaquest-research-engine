@@ -152,6 +152,30 @@ spread between legs rather than the ES futures price level. Keep
 `include_spreads: false` for normal outright backtests; the loader drops hyphen
 symbols before the continuous-contract rule selects the active outright.
 
+Sierra Chart bar-level orderflow exports are supported for aggregated
+bid/ask-volume research. Export text or CSV bars with these fields:
+
+```text
+Date, Time, Open, High, Low, Last, Volume, NumberOfTrades, BidVolume, AskVolume
+```
+
+Then build the cache consumed by `trade_orderflow_features`:
+
+```bash
+PYTHONPATH=src python3 -m propstack.build_sierra_orderflow_cache \
+  --raw-path data/raw/ES/sierra-orderflow \
+  --out-csv data/cache/orderflow/es_sierra_orderflow_1m_20110101_20260608.csv \
+  --input-timezone America/New_York \
+  --output-timezone America/New_York
+```
+
+If the Sierra export uses your local chart timezone, pass that as
+`--input-timezone` instead. The cache maps `AskVolume` to `buy_volume`,
+`BidVolume` to `sell_volume`, and writes `signed_volume = AskVolume - BidVolume`.
+It intentionally does not create individual-print large-trade buckets, so use
+configs whose `data.trade_orderflow_features.large_trade_sizes` is empty for
+Sierra-first aggregated-orderflow tests.
+
 The included ES calendar at
 `configs/data/ES/motivewave_rithmic_roll_calendar.csv` covers 2010-2026. Rows
 from 2022-2026 were inferred from the MotiveWave/Rithmic export; earlier rows

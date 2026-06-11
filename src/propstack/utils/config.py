@@ -60,6 +60,7 @@ def create_run_dir(
         "timeframe": config_timeframe(config),
         "data_source": _data_source(config),
         "raw_csv": _raw_csv(config),
+        "raw_parquet": _raw_parquet(config),
         "raw_dir": _raw_dir(config),
         "config_source": str(config_path) if config_path else None,
         "config_hash": file_sha256(config_path) if config_path else object_sha256(config or {}),
@@ -115,6 +116,7 @@ def _update_manifest(root: Path, config: dict, config_path: str | Path, input_ha
         "timeframe": config_timeframe(config),
         "data_source": _data_source(config),
         "raw_csv": _raw_csv(config),
+        "raw_parquet": _raw_parquet(config),
         "raw_dir": _raw_dir(config),
         "config_source": str(config_path),
         "config_hash": file_sha256(config_path),
@@ -148,6 +150,7 @@ def _update_variant_summary(
             "timeframe": config_timeframe(config),
             "data_source": _data_source(config),
             "raw_csv": _raw_csv(config),
+            "raw_parquet": _raw_parquet(config),
             "raw_dir": _raw_dir(config),
             "config_source": str(config_path),
             "config_hash": file_sha256(config_path),
@@ -182,6 +185,7 @@ def _update_runs_index(root: Path) -> None:
         "timeframe": summary.get("timeframe"),
         "data_source": summary.get("data_source"),
         "raw_csv": summary.get("raw_csv"),
+        "raw_parquet": summary.get("raw_parquet"),
         "raw_dir": summary.get("raw_dir"),
         "config_hash": summary.get("config_hash"),
         "input_data_hash": summary.get("input_data_hash"),
@@ -292,6 +296,14 @@ def _raw_csv(config: dict | None) -> str | None:
     return str(raw_csv) if raw_csv else None
 
 
+def _raw_parquet(config: dict | None) -> str | None:
+    if not config:
+        return None
+    data = config.get("data") or {}
+    raw_parquet = data.get("raw_parquet")
+    return str(raw_parquet) if raw_parquet else None
+
+
 def _raw_dir(config: dict | None) -> str | None:
     if not config:
         return None
@@ -308,6 +320,8 @@ def _data_source(config: dict | None) -> str | None:
         return str(data["source"])
     if data.get("raw_dir"):
         return "databento_dbn"
+    if data.get("raw_parquet"):
+        return "parquet"
     if data.get("raw_csv"):
         return "csv"
     return None

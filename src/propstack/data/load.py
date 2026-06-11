@@ -25,6 +25,8 @@ DBN_FILE_RE = re.compile(r".*-(\d{8})-(\d{8})\..*\.dbn(?:\.zst)?$")
 SOURCE_ALIASES = {
     "csv": "csv",
     "raw_csv": "csv",
+    "parquet": "parquet",
+    "raw_parquet": "parquet",
     "databento": "databento_dbn",
     "databento_dbn": "databento_dbn",
     "dbn": "databento_dbn",
@@ -65,6 +67,17 @@ def load_raw_data(
             csv_format=config.get("csv_format", "standard"),
             has_header=bool(config.get("has_header", True)),
             timestamp_format=config.get("timestamp_format"),
+            date_bounds=date_bounds,
+        )
+    if source == "parquet":
+        raw_parquet = config.get("raw_parquet") or config.get("raw_csv")
+        if not raw_parquet:
+            raise ValueError("Parquet data source requires data.raw_parquet")
+        _emit(status_callback, f"Reading Parquet source: {raw_parquet}")
+        return load_raw_parquet(
+            raw_parquet,
+            symbol=config.get("symbol", "ES"),
+            timezone=config.get("timezone", "America/Chicago"),
             date_bounds=date_bounds,
         )
     if source == "databento_dbn":
@@ -112,6 +125,36 @@ def load_raw_csv(
     if "symbol" not in df.columns:
         df["symbol"] = symbol
     for col in ["open", "high", "low", "close", "volume"]:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    df = filter_timestamp_bounds(df, date_bounds, timezone)
+    return df.sort_values("timestamp").reset_index(drop=True)
+
+
+def load_raw_parquet(
+    path: str,
+    symbol: str = "ES",
+    timezone: str = "America/Chicago",
+    date_bounds: dict | None = None,
+) -> pd.DataFrame:
+    df = normalize_columns(pd.read_parquet(path))
+    required = {"timestamp", "open", "high", "low", "close", "volume"}
+    missing = required - set(df.columns)
+    if missing:
+        raise ValueError(f"Parquet missing required columns: {sorted(missing)}")
+
+    df["timestamp"] = pd.to_datetime(df["timestamp"])
+    if df["timestamp"].dt.tz is None:
+        df["timestamp"] = df["timestamp"].dt.tz_localize(timezone)
+    else:
+        df["timestamp"] = df["timestamp"].dt.tz_convert(timezone)
+    if "symbol" not in df.columns:
+        df["symbol"] = symbol
+    numeric_columns = [
+        column
+        for column in df.columns
+        if column not in {"timestamp", "symbol", "contract_symbol", "timestamp_utc", "session_date", "session_label"}
+    ]
+    for col in numeric_columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")
     df = filter_timestamp_bounds(df, date_bounds, timezone)
     return df.sort_values("timestamp").reset_index(drop=True)

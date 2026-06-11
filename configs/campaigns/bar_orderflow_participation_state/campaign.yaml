@@ -1,0 +1,20 @@
+campaign_id: bar_orderflow_participation_state
+name: Bar-Level Orderflow Participation State
+description: >
+  Sierra-compatible ES orderflow campaign using only aggregated bar-level volume,
+  trade count, signed-volume imbalance, and effort-vs-result features. No
+  individual-print-size buckets are required.
+source_candidates:
+  - Easley, Lopez de Prado, and O'Hara (2012), Flow Toxicity and Liquidity in a
+    High-frequency World, Review of Financial Studies, doi:10.1093/rfs/hhs053
+research_constraints:
+  data_granularity: 1-minute aggregated trade/orderflow bars
+  no_hindsight: >
+    Same-clock rank filters use only prior sessions observed before the current
+    signal bar is evaluated.
+  sierra_compatible: true
+  cache_builder: propstack.build_sierra_orderflow_cache
+  allowed_orderflow_fields: >
+    Open, high, low, close, volume, NumberOfTrades, BidVolume, AskVolume,
+    signed volume, buy volume, and sell volume. Do not require individual-print
+    size buckets for this campaign branch.

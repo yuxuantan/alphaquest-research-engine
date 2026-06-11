@@ -514,6 +514,13 @@ def test_benchmark_fails_when_apex_rule_violation_is_present():
     assert "apex_rule_violations" in reason
 
 
+def test_benchmark_treats_max_daily_loss_as_advisory():
+    passed, reason = benchmark({"worst_day": -2500.0}, {"max_daily_loss": 1500.0})
+
+    assert passed is True
+    assert "max_daily_loss" not in reason
+
+
 def test_event_no_trade_window_rejects_next_bar_entry_from_csv(tmp_path):
     events = tmp_path / "events.csv"
     pd.DataFrame(

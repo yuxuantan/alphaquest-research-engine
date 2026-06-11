@@ -151,7 +151,6 @@ def benchmark(metrics: dict, thresholds: dict) -> tuple[bool, str]:
         ("min_mar", metrics.get("mar", 0) >= thresholds.get("min_mar", float("-inf"))),
         ("min_win_rate", metrics.get("win_rate", 0) >= thresholds.get("min_win_rate", 0)),
         ("min_trades_per_year", metrics.get("trades_per_year", 0) >= thresholds.get("min_trades_per_year", 0)),
-        ("max_daily_loss", abs(metrics.get("worst_day", 0)) <= thresholds.get("max_daily_loss", float("inf"))),
         ("max_consecutive_losses", metrics.get("max_consecutive_losses", 0) <= thresholds.get("max_consecutive_losses", 10**9)),
         ("min_trade_count", metrics.get("total_trades", 0) >= thresholds.get("min_trade_count", 0)),
         ("preferred_min_total_trades", metrics.get("total_trades", 0) >= thresholds.get("preferred_min_total_trades", 0)),

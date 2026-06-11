@@ -1,0 +1,328 @@
+campaign_id: bar_orderflow_participation_state
+variant_id: opening_drive_inventory_combo_full_sierra
+strategy_name: opening_drive_inventory_combo
+symbol: ES
+dataset_id: sierra_trade_orderflow_1m_20110105_20260610_full_rth
+timeframe: 1m
+research_metadata:
+  academic_source: Campbell, Grossman, and Wang (1993), Trading Volume and Serial
+    Correlation in Stock Returns, Quarterly Journal of Economics
+  doi: 10.2307/2118454
+  edge_thesis: >
+    High-participation return shocks can alter short-horizon serial correlation
+    because orderflow inventory and liquidity provision change how price pressure
+    is absorbed or continued. This variant tests whether completed ES opening
+    drive return, signed-volume imbalance, and opening-volume rank identify
+    later intraday continuation or divergence-fade pockets.
+  mechanic: >
+    Capture the completed first 30- and 60-minute RTH orderflow state, then
+    enter six fixed later-session windows only when the opening return,
+    signed-volume imbalance, prior-session opening-volume rank, session
+    cumulative delta ratio, and VWAP distance match the predeclared branch rule.
+    All features are completed before the next-bar entry and are available from
+    Sierra-compatible 1-minute OHLCV plus bid/ask-volume aggregates.
+  timeframe_rationale: >
+    One-minute bars are required so the first 30/60 minute opening inventory can
+    be captured exactly and entries can be placed on the next one-minute bar.
+  evidence_directness: >
+    Moderate. The paper is equity-market evidence on volume-conditioned serial
+    correlation rather than ES-specific orderflow, but the implemented
+    hypothesis directly tests its volume/return inventory mechanism with
+    real-time reconstructable aggregate futures bars.
+data:
+  dataset_id: sierra_trade_orderflow_1m_20110105_20260610_full_rth
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  trade_orderflow_features:
+    enabled: true
+    windows:
+      - 30
+      - 60
+    large_trade_sizes: []
+    min_period_fraction: 1.0
+    tick_size: 0.25
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: opening_drive_inventory_combo
+    params:
+      setup_mode: opening_drive_inventory_combo_full_sierra
+      bar_interval_minutes: 1
+      tick_size: 0.25
+      opening_rank_window: 42
+      opening_rank_min_periods: 14
+      stop_pct: 0.004
+      target_r_multiple: 3.0
+      max_trades_per_day: 6
+      slots:
+        - slot_id: divergence_fade_short_pressure_long_1015
+          family: price_flow_divergence_fade
+          opening_window: 30
+          pressure_direction: short
+          direction: long
+          min_open_return_ticks: 8.0
+          max_open_return_ticks: inf
+          min_open_imbalance: -inf
+          max_open_imbalance: 0.02
+          min_open_volume_rank: 0.70
+          min_vwap_extension_ticks: 0.0
+          max_current_retrace_frac: 1.25
+          min_session_delta_ratio: -0.10
+          entry_time: '10:15:00'
+          hold_minutes: 31
+        - slot_id: flow_continuation_short_1315
+          family: opening_drive_flow_continuation
+          opening_window: 60
+          pressure_direction: short
+          direction: short
+          min_open_return_ticks: 16.0
+          max_open_return_ticks: inf
+          min_open_imbalance: 0.05
+          max_open_imbalance: inf
+          min_open_volume_rank: 0.0
+          min_vwap_extension_ticks: 0.0
+          max_current_retrace_frac: 1.25
+          min_session_delta_ratio: -0.10
+          entry_time: '13:15:00'
+          hold_minutes: 31
+        - slot_id: flow_continuation_long_1430
+          family: opening_drive_flow_continuation
+          opening_window: 60
+          pressure_direction: long
+          direction: long
+          min_open_return_ticks: 8.0
+          max_open_return_ticks: inf
+          min_open_imbalance: 0.05
+          max_open_imbalance: inf
+          min_open_volume_rank: 0.0
+          min_vwap_extension_ticks: 0.0
+          max_current_retrace_frac: 1.25
+          min_session_delta_ratio: 0.0
+          entry_time: '14:30:00'
+          hold_minutes: 61
+        - slot_id: flow_continuation_long_1145
+          family: opening_drive_flow_continuation
+          opening_window: 30
+          pressure_direction: long
+          direction: long
+          min_open_return_ticks: 8.0
+          max_open_return_ticks: inf
+          min_open_imbalance: 0.05
+          max_open_imbalance: inf
+          min_open_volume_rank: 0.0
+          min_vwap_extension_ticks: 0.0
+          max_current_retrace_frac: 1.25
+          min_session_delta_ratio: -0.10
+          entry_time: '11:45:00'
+          hold_minutes: 31
+        - slot_id: divergence_fade_long_pressure_short_1400
+          family: price_flow_divergence_fade
+          opening_window: 30
+          pressure_direction: long
+          direction: short
+          min_open_return_ticks: 8.0
+          max_open_return_ticks: inf
+          min_open_imbalance: -inf
+          max_open_imbalance: 0.02
+          min_open_volume_rank: 0.50
+          min_vwap_extension_ticks: 0.0
+          max_current_retrace_frac: 1.25
+          min_session_delta_ratio: -0.10
+          entry_time: '14:00:00'
+          hold_minutes: 16
+        - slot_id: flow_continuation_short_1230
+          family: opening_drive_flow_continuation
+          opening_window: 30
+          pressure_direction: short
+          direction: short
+          min_open_return_ticks: 16.0
+          max_open_return_ticks: inf
+          min_open_imbalance: 0.05
+          max_open_imbalance: inf
+          min_open_volume_rank: 0.0
+          min_vwap_extension_ticks: 0.0
+          max_current_retrace_frac: 1.25
+          min_session_delta_ratio: 0.0
+          entry_time: '12:30:00'
+          hold_minutes: 16
+  tp:
+    module: signal_fixed_r
+    params:
+      default_target_r_multiple: 3.0
+  sl:
+    module: signal_percent_from_entry
+    params:
+      default_stop_pct: 0.004
+      round_to_tick: true
+  flatten_time: '15:31:00'
+core:
+  data_subset:
+    start_date: '2011-01-05'
+    end_date: '2026-06-10'
+    session_labels:
+      - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 3000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:31:00'
+  max_trades_per_day: 6
+benchmarks:
+  min_trades_per_year: 40
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.45
+  max_drawdown_pct: 0.05
+  min_cagr: 0.04
+  min_mar: 0.5
+  max_daily_loss: 3000
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-05'
+    end_date: '2026-06-10'
+    session_labels:
+      - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 8
+    scope: grid
+  parameters:
+    entry.params.stop_pct:
+      - 0.0025
+      - 0.003
+      - 0.0035
+      - 0.004
+      - 0.005
+      - 0.006
+    entry.params.target_r_multiple:
+      - 1.5
+      - 2.0
+      - 2.5
+      - 3.0
+      - 4.0
+      - 6.0
+    entry.params.max_trades_per_day:
+      - 4
+      - 5
+      - 6
+monkey:
+  data_subset:
+    start_date: '2011-01-05'
+    end_date: '2026-06-10'
+    session_labels:
+      - RTH
+  runs: 1000
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    trade_count_tolerance: 0
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2011-01-05'
+    end_date: '2026-06-10'
+    session_labels:
+      - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_min_trades_per_year: 40
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: false
+    workers: 1
+    scope: grid
+  parameters:
+    entry.params.stop_pct:
+      - 0.003
+      - 0.004
+      - 0.005
+    entry.params.target_r_multiple:
+      - 2.0
+      - 3.0
+      - 4.0
+      - 6.0
+    entry.params.max_trades_per_day:
+      - 5
+      - 6
+campaign_tests:
+  walk_forward_analysis:
+    data_window:
+      mode: exclude_last_months
+      months: 0
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 2
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 500
+  seed: 11
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  path_months: 1
+  skip_trade_probability: 0.05
+  skip_winning_trade_probability: 0.0
+  adverse_slippage_per_trade: 0.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: false
+  retain_path_trades: false
+  retain_path_events: false
