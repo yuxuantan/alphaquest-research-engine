@@ -4,6 +4,7 @@ import argparse
 import json
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 import numpy as np
 import pandas as pd
@@ -11,6 +12,7 @@ import pyarrow.parquet as pq
 
 
 SCID_EPOCH = datetime(1899, 12, 30)
+ET = ZoneInfo("America/New_York")
 DAY_US = 86_400_000_000
 MINUTE_US = 60_000_000
 RTH_START_MINUTE = 9 * 60 + 30
@@ -144,6 +146,8 @@ def main() -> None:
         "periods": period_reports,
         "validation": validation,
         "session_policy": {
+            "source_timestamp_timezone": "UTC",
+            "output_timestamp_timezone": "America/New_York",
             "timezone": "America/New_York",
             "rth_start": "09:30:00",
             "rth_end": "15:59:00",
@@ -192,16 +196,20 @@ def parse_args() -> argparse.Namespace:
 
 def active_periods(roll_calendar: Path, files: dict[str, Path]) -> list[dict]:
     calendar = pd.read_csv(roll_calendar)
-    starts = (
-        pd.to_datetime(calendar["start_timestamp"], utc=True)
-        .dt.tz_convert("America/New_York")
-        .dt.tz_localize(None)
+    starts_utc = pd.to_datetime(calendar["start_timestamp"], utc=True)
+    starts_et = starts_utc.dt.tz_convert(ET)
+    calendar = (
+        calendar.assign(
+            start_utc=starts_utc.dt.tz_localize(None),
+            start_et=starts_et.dt.tz_localize(None),
+        )
+        .sort_values("start_utc")
+        .reset_index(drop=True)
     )
-    calendar = calendar.assign(start=starts).sort_values("start").reset_index(drop=True)
-    calendar["end"] = calendar["start"].shift(-1)
+    calendar["end_utc"] = calendar["start_utc"].shift(-1)
     calendar["symbol"] = [
         roll_contract_to_file_symbol(start, contract)
-        for start, contract in zip(calendar["start"], calendar["contract_symbol"], strict=False)
+        for start, contract in zip(calendar["start_et"], calendar["contract_symbol"], strict=False)
     ]
 
     periods: list[dict] = []
@@ -210,8 +218,8 @@ def active_periods(roll_calendar: Path, files: dict[str, Path]) -> list[dict]:
         if path is None:
             continue
         file_start, file_end = parquet_timestamp_bounds(path)
-        start = max(row.start.to_pydatetime(), file_start)
-        end = min(row.end.to_pydatetime() if pd.notna(row.end) else file_end, file_end)
+        start = max(row.start_utc.to_pydatetime(), file_start)
+        end = min(row.end_utc.to_pydatetime() if pd.notna(row.end_utc) else file_end, file_end)
         if start <= end:
             periods.append({"symbol": row.symbol, "path": path, "start": start, "end": end})
     return periods
@@ -304,13 +312,9 @@ def aggregate_batch(batch, *, start_us: int, end_us: int) -> pd.DataFrame:
     ask = batch.column(batch.schema.get_field_index("ask_volume")).to_numpy(zero_copy_only=False)
     trades = batch.column(batch.schema.get_field_index("num_trades")).to_numpy(zero_copy_only=False)
 
-    minute_index = ts // MINUTE_US
-    minute_of_day = minute_index % 1440
     mask = (
         (ts >= start_us)
         & (ts < end_us)
-        & (minute_of_day >= RTH_START_MINUTE)
-        & (minute_of_day <= RTH_END_MINUTE)
         & np.isfinite(price)
         & (price > 0)
         & (volume > 0)
@@ -325,6 +329,21 @@ def aggregate_batch(batch, *, start_us: int, end_us: int) -> pd.DataFrame:
     ask = ask[mask].astype(np.int64, copy=False)
     trades = trades[mask].astype(np.int64, copy=False)
     trades = np.where(trades <= 0, 1, trades)
+
+    local_timestamp = scid_us_to_new_york_datetime(ts)
+    minute_of_day = local_timestamp.hour * 60 + local_timestamp.minute
+    rth_mask = (minute_of_day >= RTH_START_MINUTE) & (minute_of_day <= RTH_END_MINUTE)
+    if not rth_mask.any():
+        return pd.DataFrame()
+
+    ts = ts[rth_mask]
+    price = price[rth_mask]
+    volume = volume[rth_mask]
+    bid = bid[rth_mask]
+    ask = ask[rth_mask]
+    trades = trades[rth_mask]
+    local_timestamp = local_timestamp[rth_mask]
+
     signed = ask - bid
     order = np.argsort(ts, kind="stable")
     ts = ts[order]
@@ -334,7 +353,7 @@ def aggregate_batch(batch, *, start_us: int, end_us: int) -> pd.DataFrame:
     ask = ask[order]
     trades = trades[order]
     signed = signed[order]
-    minute_us = (ts // MINUTE_US) * MINUTE_US
+    minute_us = new_york_datetime_to_scid_us(local_timestamp[order].floor("min"))
 
     df = pd.DataFrame(
         {
@@ -564,6 +583,15 @@ def validate_ready_cache(df: pd.DataFrame) -> dict:
 
 def datetime_to_scid_us(value: datetime) -> int:
     return int((value - SCID_EPOCH).total_seconds() * 1_000_000)
+
+
+def scid_us_to_new_york_datetime(values: np.ndarray) -> pd.DatetimeIndex:
+    return pd.to_datetime(values, unit="us", origin=SCID_EPOCH, utc=True).tz_convert(ET).tz_localize(None)
+
+
+def new_york_datetime_to_scid_us(values: pd.DatetimeIndex) -> np.ndarray:
+    naive = pd.DatetimeIndex(values).tz_localize(None)
+    return ((naive - pd.Timestamp(SCID_EPOCH)) // pd.Timedelta(microseconds=1)).to_numpy(dtype=np.int64)
 
 
 def minute_to_text(value: int) -> str:
