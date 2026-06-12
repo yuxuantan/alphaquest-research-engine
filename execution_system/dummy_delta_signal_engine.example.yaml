@@ -11,6 +11,8 @@ engine:
   replay_seed_bars: 30
   fail_on_insufficient_warmup: false
   alert_prefix: ENTRY_SIGNAL
+  console:
+    debug: false
   process_lock:
     enabled: true
     path: data/runtime/dummy_delta_signal_engine.lock
@@ -79,7 +81,7 @@ engine:
     print_setup_readable: true
     print_rejection_readable: true
     sound:
-      enabled: false
+      enabled: true
       bell: true
       on_setup: true
       on_entry: true
@@ -112,8 +114,8 @@ databento:
     enabled: false
     cost_guard:
       enabled: true
-      allow_live_subscription: false
-      acknowledge_live_data_may_be_billable: false
+      allow_live_subscription: true
+      acknowledge_live_data_may_be_billable: true
     metadata_preflight: true
     allow_live_without_metadata_preflight: false
     require_fail_closed_safety_stops: true

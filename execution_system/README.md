@@ -88,9 +88,9 @@ At startup, `run()` performs these steps:
 2. Creates `SignalEngine`, which validates runtime settings, strategy ids,
    Databento settings, alert sinks, execution-intent sinks, and inferred data
    requirements.
-3. Prints a `preflight` JSON object so the exact config, strategy modules,
-   Databento subscription, alert paths, and data plan are visible before work
-   starts.
+3. Prints a concise `preflight` summary. Pass `--debug` or set
+   `engine.console.debug: true` to print the full JSON object with the exact
+   config, strategy modules, Databento subscription, alert paths, and data plan.
 4. Acquires the process lock for mutating modes so two engine processes do not
    write the same alert/outbox files.
 5. Loads historical seed bars unless `--skip-historical` is set.
@@ -107,9 +107,9 @@ strategy evaluation path is the same regardless of where the bar came from.
 
 Live streaming is explicit. The engine starts live mode only when you pass
 `--live` or set `databento.live.enabled: true`; a missing `live:` block is
-treated as disabled. CLI overrides such as `--live`, `--skip-historical`, and
-`--dry-run-alerts` are applied before the preflight JSON is printed, so the
-preflight report shows the effective run configuration.
+treated as disabled. CLI overrides such as `--live`, `--skip-historical`,
+`--dry-run-alerts`, and `--debug` are applied before the preflight summary is
+printed, so the preflight report shows the effective run configuration.
 
 ### Readiness Mode
 
@@ -413,7 +413,7 @@ The engine has five phases: boot, data planning, warmup, event processing, and
 alert emission.
 
 1. `run()` loads the YAML config, applies CLI overrides, builds a `SignalEngine`,
-   and prints a preflight JSON object.
+   and prints a compact preflight summary, or full preflight JSON in debug mode.
 2. `SignalEngine` loads each enabled strategy, infers required data columns and
    warmup depth, validates the Databento schema, and reports the resulting
    `data_plan`.
@@ -761,6 +761,8 @@ uses `..`.
 - `replay_seed_bars`: number of replay bars used only for warmup before replay
   starts emitting live-style signals.
 - `alert_prefix`: prefix printed before actionable alerts.
+- `console.debug`: when false, stdout uses compact key-value summaries instead
+  of full JSON. Set true, or pass `--debug`, for full JSON console payloads.
 - `process_lock`: optional single-process runtime lock.
 - `output_path_readiness`: readiness-only write probes for configured alert and
   outbox paths. `require_fail_closed_sinks: true` also makes readiness and live
@@ -1063,10 +1065,14 @@ The engine emits three operator-facing notices:
 - `SIGNAL_REJECTED`: printed when a setup cannot become a valid trade because
   timing, direction, stop/target, tick rounding, or sizing failed validation.
 
-Machine-readable JSON is always printed first. When
-`engine.operator.print_human_readable: true`, the engine also prints a compact
-manual-entry block with symbol, direction, quantity, entry, stop, target, risk,
-reward, order type, intent expiry, R/R, timestamps, and useful signal metadata.
+By default, stdout prints compact key-value summaries instead of full JSON. This
+keeps live/manual trading output readable while preserving event names such as
+`TRADE_SETUP`, `ENTRY_SIGNAL`, `SIGNAL_REJECTED`, `SYSTEM_ALERT`, and `FATAL`.
+Set `engine.console.debug: true` or pass `--debug` to restore full JSON console
+payloads. When `engine.operator.print_human_readable: true`, the engine also
+prints a manual-entry block with symbol, direction, quantity, entry, stop,
+target, risk, reward, order type, intent expiry, R/R, timestamps, and useful
+signal metadata.
 
 `print_setup_readable` and `print_rejection_readable` control the compact setup
 and rejection blocks separately. Setup readouts are explicitly marked
@@ -1169,8 +1175,9 @@ last-error fields.
 For live and replay smoke tests, use `--dry-run-alerts` to keep stdout behavior
 and contract validation intact while suppressing setup-alert, entry-alert, and
 execution-intent JSONL writes plus operator sounds. Each dry-run setup or entry
-prints `SYSTEM_ALERT dry_run_outputs_skipped` with the alert/setup id, affected
-paths, execution-intent state, and sound state. In that alert, `would_write` and
+prints `SYSTEM_ALERT dry_run_outputs_skipped`. In compact mode this is a short
+summary; in debug mode it includes the full alert/setup id, affected paths,
+execution-intent state, and sound state. In that alert, `would_write` and
 `would_play` are false because dry-run suppresses side effects; the companion
 `would_write_without_dry_run` and `would_play_without_dry_run` fields show what
 the same event would have done in a normal run. This keeps smoke-test stdout
@@ -1340,7 +1347,8 @@ python3 -B execution_system/databento_signal_engine.py \
   --check-execution-intents
 ```
 
-It prints an `execution_intent_outbox_check` JSON payload with `records_read`,
+In normal mode it prints a compact `execution_intent_outbox_check` summary. In
+debug mode it prints the full JSON payload with `records_read`,
 `actionable_count`, `rejected_count`, `malformed_count`,
 `duplicate_alert_id_count`, `duplicate_setup_id_count`, the currently actionable
 records, and rejected records with reasons. The payload also includes
@@ -1522,17 +1530,22 @@ historical:
     cost_guard:
       enabled: true
       allow_paid_downloads: false
+      require_zero_cost: true
       max_cost_usd: 0.0
       fail_if_estimate_unavailable: true
 ```
 
 Before calling the paid `timeseries.get_range()` endpoint, the engine calls
 Databento metadata `get_cost()` and `get_billable_size()`. If estimated cost is
-above `max_cost_usd`, if cost is positive while `allow_paid_downloads` is false,
-or if the estimate cannot be retrieved and `fail_if_estimate_unavailable` is
-true, the engine prints `SYSTEM_ALERT`/`FATAL` and exits before downloading.
+positive while `require_zero_cost` is true, above `max_cost_usd`, positive while
+`allow_paid_downloads` is false, or if the estimate cannot be retrieved and
+`fail_if_estimate_unavailable` is true, the engine prints `SYSTEM_ALERT`/`FATAL`
+and exits before downloading.
 If `cost_guard.enabled` is explicitly set to false, the engine also exits before
 downloading because unguarded historical requests cannot prove zero cost.
+The same validated cost report is checked again immediately before
+`timeseries.get_range()` so future code changes cannot bypass the zero-cost
+boundary by calling the low-level historical fetch helper directly.
 
 ## Replay
 
@@ -2134,11 +2147,11 @@ Preflight validates:
 - Databento symbol/schema/stype settings that can be checked without network
   access
 
-The preflight JSON includes a `data_plan` section. It shows the configured
-Databento schema, required live schema, source columns, derived feature
-families, large-trade fields, live record-field groups, and warmup requirements
-inferred from the selected strategies. This is the main check that the engine is
-asking Databento only for the data it needs:
+In debug mode, the preflight JSON includes a `data_plan` section. It shows the
+configured Databento schema, required live schema, source columns, derived
+feature families, large-trade fields, live record-field groups, and warmup
+requirements inferred from the selected strategies. This is the main check that
+the engine is asking Databento only for the data it needs:
 
 ```text
 "data_plan": {
@@ -2297,6 +2310,8 @@ false and the metadata check can still pass.
 - `--max-runtime`: stop live mode after this many seconds.
 - `--dry-run-alerts`: print and validate setup/entry signals without writing
   outbox files or playing sounds.
+- `--debug`, `--debug-json`: print full JSON console payloads instead of compact
+  summaries.
 - `--databento-symbols`: override `databento.symbols`.
 - `--databento-stype-in`: override `databento.stype_in`.
 - `--databento-stype-out`: override historical `databento.stype_out`.

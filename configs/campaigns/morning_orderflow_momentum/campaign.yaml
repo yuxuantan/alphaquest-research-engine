@@ -1,0 +1,46 @@
+campaign_id: morning_orderflow_momentum
+campaign_name: Morning Orderflow-Confirmed Intraday Momentum
+status: research
+
+academic_sources:
+  - title: "Market Intraday Momentum"
+    authors: "Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou"
+    year: 2018
+    venue: "Journal of Financial Economics"
+    doi: "10.1016/j.jfineco.2018.05.009"
+    finding_used: "Loose intraday-momentum motivation only. This campaign does not test the paper's specific first-half-hour return predicts last-half-hour return effect."
+    evidence_directness: "Indirect and non-faithful. The campaign enters at 10:30 ET and flattens at 15:30 ET, before the last half-hour."
+  - title: "The Price Impact of Order Book Events"
+    authors: "Rama Cont, Arseniy Kukanov, Sasha Stoikov"
+    year: 2014
+    venue: "Journal of Financial Econometrics"
+    doi: "10.1093/jjfinec/nbt003"
+    finding_used: "Order-flow imbalance is linked to short-horizon price changes."
+    evidence_directness: "Moderate; this campaign uses Sierra-compatible signed-volume imbalance aggregated to bars rather than full depth events."
+
+edge_thesis: >
+  Same-day ES morning momentum should be more reliable when completed morning
+  price displacement and signed orderflow pressure agree. The campaign tests
+  two-sided continuation at 10:30 ET using only completed RTH bars and
+  aggregate signed-volume fields that survive Sierra Chart bar export. This is
+  an empirical ES morning-to-afternoon orderflow adaptation, not a faithful Gao
+  et al. last-half-hour campaign.
+
+translation_notes:
+  classification: "Empirical Sierra-compatible ES morning-to-afternoon orderflow adaptation."
+  not_faithful_gao_last_half_hour: "Gao et al.'s specific first-half-hour to last-half-hour result was tested separately in the late_day_intraday_momentum campaign and failed. This campaign exits at 15:30 ET and therefore does not capitalize on the last-half-hour prediction window."
+  why_es: "ES is liquid, has long corrected Sierra bar-orderflow history in this repo, and is the target market for the validation pipeline."
+  why_effect_may_survive_costs: "The rule enters at most once per day, uses same-session flattening, and requires both price displacement and aggregate orderflow confirmation before paying spread/slippage."
+  expected_working_regime: "Morning directional pressure is informed enough to continue through the afternoon session."
+  expected_failure_regime: "Opening pressure is absorbed, reverses into liquidity provision, or the orderflow filter is redundant with price momentum."
+  translation_risks: "Sierra signed volume is aggregate bar-level orderflow, so it cannot distinguish individual print sequencing or quote-depth replenishment."
+
+variants:
+  - two_sided_signed_flow_continuation
+  - two_sided_large20_flow_continuation
+  - two_sided_broad_large_alignment
+
+timeframes:
+  - 1m
+  - 2m
+  - 5m

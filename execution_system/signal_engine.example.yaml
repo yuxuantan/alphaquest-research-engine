@@ -11,6 +11,8 @@ engine:
   replay_seed_bars: 25000
   fail_on_insufficient_warmup: true
   alert_prefix: ENTRY_SIGNAL
+  console:
+    debug: false
   process_lock:
     enabled: true
     path: data/runtime/signal_engine.lock
@@ -125,6 +127,7 @@ databento:
     cost_guard:
       enabled: true
       allow_paid_downloads: false
+      require_zero_cost: true
       max_cost_usd: 0.0
       fail_if_estimate_unavailable: true
   live:

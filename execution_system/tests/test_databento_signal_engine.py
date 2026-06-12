@@ -28,7 +28,13 @@ def ts(value: str) -> pd.Timestamp:
 
 
 def load_execution_config(name: str) -> dict:
-    return engine.load_yaml(EXECUTION_DIR / name)
+    cfg = engine.load_yaml(EXECUTION_DIR / name)
+    cfg.setdefault("engine", {}).setdefault("console", {})["debug"] = True
+    if name == "dummy_delta_signal_engine.example.yaml":
+        cost_guard = cfg.setdefault("databento", {}).setdefault("live", {}).setdefault("cost_guard", {})
+        cost_guard["allow_live_subscription"] = False
+        cost_guard["acknowledge_live_data_may_be_billable"] = False
+    return cfg
 
 
 def allow_test_live_subscription(cfg: dict) -> None:
@@ -106,6 +112,54 @@ def test_example_configs_write_runtime_outputs_under_ignored_runtime_dir() -> No
         ]
         assert all(path.startswith("data/runtime/alerts/") for path in output_paths)
         assert not any(path.startswith("data/alerts/") for path in output_paths)
+
+
+def test_example_configs_default_to_compact_console() -> None:
+    for config_name in ["signal_engine.example.yaml", "dummy_delta_signal_engine.example.yaml"]:
+        cfg = engine.load_yaml(EXECUTION_DIR / config_name)
+
+        assert engine.normalize_console_config(cfg["engine"].get("console", {})) == {"debug": False}
+
+
+def test_console_compact_mode_suppresses_raw_json(capsys: pytest.CaptureFixture[str]) -> None:
+    previous_debug = engine.CONSOLE_DEBUG_JSON
+    try:
+        engine.configure_console_output({"debug": False})
+
+        engine.print_json(
+            {
+                "event": "historical_timeseries_get_range_blocked_by_guard",
+                "reason": "cost guard approval was missing",
+                "timeseries_get_range_attempted": False,
+            },
+            prefix="SYSTEM_ALERT",
+        )
+
+        captured = capsys.readouterr().out.strip()
+        assert captured.startswith("SYSTEM_ALERT historical_timeseries_get_range_blocked_by_guard")
+        assert "timeseries_get_range_attempted=false" in captured
+        assert "{" not in captured
+        assert '"event"' not in captured
+    finally:
+        engine.configure_console_output({"debug": previous_debug})
+
+
+def test_console_debug_mode_preserves_full_json(capsys: pytest.CaptureFixture[str]) -> None:
+    previous_debug = engine.CONSOLE_DEBUG_JSON
+    try:
+        engine.configure_console_output({"debug": True})
+
+        engine.print_json(
+            {"event": "historical_timeseries_get_range_blocked_by_guard", "timeseries_get_range_attempted": False},
+            prefix="SYSTEM_ALERT",
+        )
+
+        captured = capsys.readouterr().out.strip()
+        assert captured.startswith("SYSTEM_ALERT {")
+        assert '"event": "historical_timeseries_get_range_blocked_by_guard"' in captured
+        assert '"timeseries_get_range_attempted": false' in captured
+    finally:
+        engine.configure_console_output({"debug": previous_debug})
 
 
 def test_execution_system_has_no_legacy_broker_entrypoint() -> None:
@@ -1289,6 +1343,33 @@ def test_cost_guard_blocks_paid_historical_fetch() -> None:
         )
 
 
+def test_cost_guard_blocks_positive_cost_even_when_paid_downloads_are_enabled(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(RuntimeError, match="Refusing Databento historical fetch"):
+        engine.enforce_historical_cost_guard(
+            FakeClient(cost=0.01),
+            {
+                "cost_guard": {
+                    "enabled": True,
+                    "allow_paid_downloads": True,
+                    "require_zero_cost": True,
+                    "max_cost_usd": 1.0,
+                }
+            },
+            dataset="GLBX.MDP3",
+            symbols="ES.FUT",
+            schema="trades",
+            stype_in="parent",
+            start=ts("2026-06-10 13:30:00"),
+            end=ts("2026-06-10 13:31:00"),
+        )
+
+    captured = capsys.readouterr()
+    assert "historical_fetch_blocked_by_cost_guard" in captured.out
+    assert "require_zero_cost" in captured.out
+
+
 def test_cost_guard_disabled_blocks_historical_fetch(capsys: pytest.CaptureFixture[str]) -> None:
     with pytest.raises(RuntimeError, match="cost guard is disabled"):
         engine.enforce_historical_cost_guard(
@@ -1304,6 +1385,43 @@ def test_cost_guard_disabled_blocks_historical_fetch(capsys: pytest.CaptureFixtu
 
     captured = capsys.readouterr()
     assert "historical_fetch_blocked_by_disabled_cost_guard" in captured.out
+
+
+def test_cost_guard_unavailable_estimate_fails_when_zero_cost_is_required(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class CostUnavailableMetadata(FakeMetadata):
+        def get_cost(self, **_: object) -> float:
+            raise RuntimeError("cost endpoint unavailable")
+
+    class Client(FakeClient):
+        def __init__(self) -> None:
+            self.metadata = CostUnavailableMetadata(cost=0.0)
+            self.symbology = FakeSymbology()
+
+    with pytest.raises(RuntimeError, match="zero cost cannot be proven"):
+        engine.enforce_historical_cost_guard(
+            Client(),
+            {
+                "cost_guard": {
+                    "enabled": True,
+                    "allow_paid_downloads": False,
+                    "require_zero_cost": True,
+                    "max_cost_usd": 0.0,
+                    "fail_if_estimate_unavailable": False,
+                }
+            },
+            dataset="GLBX.MDP3",
+            symbols="ES.FUT",
+            schema="trades",
+            stype_in="parent",
+            start=ts("2026-06-10 13:30:00"),
+            end=ts("2026-06-10 13:31:00"),
+        )
+
+    captured = capsys.readouterr()
+    assert "historical_cost_estimate_unavailable" in captured.out
+    assert '"timeseries_get_range_attempted": false' in captured.out
 
 
 def test_cost_guard_allows_zero_cost_historical_fetch() -> None:
@@ -1328,6 +1446,85 @@ def test_cost_guard_allows_zero_cost_historical_fetch() -> None:
     ]
     assert report["timeseries_get_range_attempted"] is False
     assert report["guarded_operation"] == "timeseries.get_range"
+
+
+def test_historical_get_range_requires_cost_guard_before_timeseries_call(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class Timeseries:
+        calls = 0
+
+        def get_range(self, **_: object) -> object:
+            self.calls += 1
+            raise AssertionError("timeseries.get_range should not be called without a guard")
+
+    class Client:
+        def __init__(self) -> None:
+            self.timeseries = Timeseries()
+
+    client = Client()
+
+    with pytest.raises(RuntimeError, match="cost-guard approval"):
+        engine.historical_get_range(
+            client,
+            dataset="GLBX.MDP3",
+            symbols="ES.FUT",
+            schema="trades",
+            stype_in="parent",
+            stype_out="instrument_id",
+            start=ts("2026-06-10 13:30:00"),
+            end=ts("2026-06-10 13:31:00"),
+        )
+
+    captured = capsys.readouterr()
+    assert "historical_timeseries_get_range_blocked_by_guard" in captured.out
+    assert '"timeseries_get_range_attempted": false' in captured.out
+    assert client.timeseries.calls == 0
+
+
+def test_historical_get_range_accepts_valid_zero_cost_guard() -> None:
+    class Store:
+        pass
+
+    class Timeseries:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def get_range(self, **_: object) -> object:
+            self.calls += 1
+            return Store()
+
+    class Client:
+        def __init__(self) -> None:
+            self.timeseries = Timeseries()
+
+    client = Client()
+    guard = {
+        "enabled": True,
+        "allowed": True,
+        "estimated_cost_usd": 0.0,
+        "allow_paid_downloads": False,
+        "require_zero_cost": True,
+        "max_cost_usd": 0.0,
+        "timeseries_get_range_attempted": False,
+        "guarded_operation": "timeseries.get_range",
+    }
+
+    store, stype_out = engine.historical_get_range(
+        client,
+        dataset="GLBX.MDP3",
+        symbols="ES.FUT",
+        schema="trades",
+        stype_in="parent",
+        stype_out="instrument_id",
+        start=ts("2026-06-10 13:30:00"),
+        end=ts("2026-06-10 13:31:00"),
+        cost_guard_report=guard,
+    )
+
+    assert isinstance(store, Store)
+    assert stype_out == "instrument_id"
+    assert client.timeseries.calls == 1
 
 
 def test_live_cost_guard_blocks_unacknowledged_subscription(capsys: pytest.CaptureFixture[str]) -> None:
@@ -4227,6 +4424,14 @@ def test_preflight_rejects_output_path_readiness_string_boolean_config() -> None
     cfg["engine"]["output_path_readiness"]["enabled"] = "true"
 
     with pytest.raises(ValueError, match="output_path_readiness.*enabled must be a YAML boolean"):
+        engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+
+
+def test_preflight_rejects_console_debug_string_boolean_config() -> None:
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["engine"]["console"]["debug"] = "true"
+
+    with pytest.raises(ValueError, match="engine.console.*debug must be a YAML boolean"):
         engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
 
 

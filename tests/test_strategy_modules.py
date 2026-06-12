@@ -12,6 +12,7 @@ from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayI
 from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import LiquidityRiskCapacityPriorityEntry
 from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
 from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIntradayMomentumEntry
+from propstack.strategy_modules.entry.morning_orderflow_momentum import MorningOrderflowMomentumEntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.opening_drive_inventory_combo import OpeningDriveInventoryComboEntry
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
@@ -1226,6 +1227,147 @@ def _mim_source_window_bars(
             )
         )
     return bars
+
+
+def _mom_bar(
+    timestamp,
+    open_price,
+    high,
+    low,
+    close,
+    *,
+    volume=1000,
+    signed_volume=75,
+    large10_volume=500,
+    large10_signed_volume=50,
+    large20_volume=250,
+    large20_signed_volume=25,
+    is_rth=True,
+):
+    ts = pd.Timestamp(timestamp)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": is_rth,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+            "signed_volume": signed_volume,
+            "large10_volume": large10_volume,
+            "large10_signed_volume": large10_signed_volume,
+            "large20_volume": large20_volume,
+            "large20_signed_volume": large20_signed_volume,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def _mom_source_window_bars(
+    *,
+    close=102.0,
+    signed_volume=75,
+    large20_signed_volume=25,
+    is_rth=True,
+):
+    return [
+        _mom_bar(
+            "2024-01-03 09:30",
+            100.0,
+            101.0,
+            99.5,
+            100.5,
+            signed_volume=signed_volume,
+            large20_signed_volume=large20_signed_volume,
+            is_rth=is_rth,
+        ),
+        _mom_bar(
+            "2024-01-03 10:00",
+            100.5,
+            103.0,
+            100.0,
+            close,
+            signed_volume=signed_volume,
+            large20_signed_volume=large20_signed_volume,
+            is_rth=is_rth,
+        ),
+    ]
+
+
+def test_morning_orderflow_momentum_emits_two_sided_signed_flow_continuation():
+    params = {
+        "bar_interval_minutes": 30,
+        "min_signal_return_ticks": 2,
+        "min_orderflow_imbalance": 0.05,
+        "stop_pct": 0.002,
+        "target_r_multiple": 6.0,
+    }
+    long_entry = MorningOrderflowMomentumEntry(params)
+    signal = None
+    for bar in _mom_source_window_bars(close=102.0, signed_volume=75):
+        signal = long_entry.on_bar_close(bar)
+
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 10:30", tz="America/New_York")
+    assert signal.metadata["stop_pct"] == 0.002
+    assert signal.metadata["target_r_multiple"] == 6.0
+    assert signal.metadata["flatten_time"] == "15:30:00"
+    assert signal.report_fields["source_window_return_ticks"] == 8.0
+    assert signal.report_fields["source_window_imbalance"] == 0.075
+    assert signal.report_fields["academic_source_key"] == (
+        "gao_han_li_zhou_intraday_momentum_and_orderflow_imbalance"
+    )
+
+    short_entry = MorningOrderflowMomentumEntry(params)
+    signal = None
+    for bar in _mom_source_window_bars(close=98.0, signed_volume=-75, large20_signed_volume=-25):
+        signal = short_entry.on_bar_close(bar)
+
+    assert signal.direction == "short"
+    assert signal.report_fields["source_window_return_ticks"] == -8.0
+    assert signal.report_fields["source_window_imbalance"] == -0.075
+
+
+def test_morning_orderflow_momentum_requires_completed_window_and_no_future_flow():
+    entry = MorningOrderflowMomentumEntry(
+        {
+            "bar_interval_minutes": 30,
+            "min_signal_return_ticks": 2,
+            "min_orderflow_imbalance": 0.05,
+        }
+    )
+    signal = None
+    for bar in _mom_source_window_bars(close=102.0, signed_volume=10):
+        signal = entry.on_bar_close(bar)
+    assert signal is None
+
+    future = _mom_bar("2024-01-03 10:30", 102.0, 105.0, 101.5, 104.0, signed_volume=1000)
+    assert entry.on_bar_close(future) is None
+
+
+def test_morning_orderflow_momentum_broad_large_alignment_filter():
+    params = {
+        "bar_interval_minutes": 30,
+        "flow_mode": "broad_large_alignment",
+        "min_signal_return_ticks": 2,
+        "min_orderflow_imbalance": 0.05,
+    }
+    weak_large = MorningOrderflowMomentumEntry(params)
+    signal = None
+    for bar in _mom_source_window_bars(close=102.0, signed_volume=75, large20_signed_volume=0):
+        signal = weak_large.on_bar_close(bar)
+    assert signal is None
+
+    passing = MorningOrderflowMomentumEntry(params)
+    signal = None
+    for bar in _mom_source_window_bars(close=102.0, signed_volume=75, large20_signed_volume=25):
+        signal = passing.on_bar_close(bar)
+    assert signal.direction == "long"
+    assert signal.report_fields["source_window_large20_imbalance"] == 0.1
 
 
 def test_morning_intraday_momentum_emits_long_and_short_from_rth_open_to_signal_return():

@@ -59,6 +59,7 @@ DEFAULT_STYPE_IN = "parent"
 DEFAULT_STYPE_OUT = "instrument_id"
 DEFAULT_ALERT_PREFIX = "ENTRY_SIGNAL"
 DEFAULT_OPERATOR_SOUND_MAX_ACTIVE_COMMANDS = 3
+DEFAULT_CONSOLE_DEBUG = False
 SETUP_NOTICE_CONTRACT_VERSION = "trade_setup.v3"
 ALERT_CONTRACT_VERSION = "entry_signal.v5"
 EXECUTION_INTENT_VERSION = "execution_intent.v5"
@@ -77,6 +78,77 @@ PROJECT_FILE_REFERENCE_KEYS = {
     "raw_parquet",
     "roll_calendar",
 }
+CONSOLE_DEBUG_JSON = DEFAULT_CONSOLE_DEBUG
+CONSOLE_SUMMARY_KEYS = (
+    "ok",
+    "checked",
+    "config",
+    "source",
+    "timezone",
+    "strategies",
+    "historical_enabled",
+    "live_enabled",
+    "console",
+    "connected",
+    "records_received",
+    "trade_ticks",
+    "strategy_id",
+    "symbol",
+    "contract_symbol",
+    "timeframe",
+    "direction",
+    "side",
+    "quantity",
+    "entry_price",
+    "entry_basis_price",
+    "stop_loss_price",
+    "take_profit_price",
+    "risk_dollars",
+    "reward_dollars",
+    "setup_id",
+    "alert_id",
+    "record_type",
+    "path",
+    "bars",
+    "accepted_bars",
+    "dropped_bars",
+    "trades",
+    "replayed_bars",
+    "entry_alerts",
+    "setup_notices",
+    "trade_setups",
+    "pending_signals",
+    "pending_expired_count",
+    "last_record_utc",
+    "last_trade_tick_utc",
+    "last_completed_bar_utc",
+    "records_read",
+    "actionable_count",
+    "rejected_count",
+    "malformed_count",
+    "active_strategy_count",
+    "disabled_strategy_count",
+    "runtime_error_strategy_count",
+    "reason",
+    "error_type",
+    "error",
+    "state",
+    "exit_code",
+    "dry_run_alerts",
+    "would_write",
+    "would_play",
+    "would_write_without_dry_run",
+    "would_play_without_dry_run",
+    "timeseries_download_attempted",
+    "timeseries_get_range_attempted",
+    "live_subscription_attempted",
+    "allow_paid_downloads",
+    "allow_live_subscription",
+    "require_zero_cost",
+    "estimated_cost_usd",
+    "max_cost_usd",
+    "fail_on_error",
+)
 
 
 @dataclass(frozen=True)
@@ -1752,6 +1824,7 @@ class SignalEngine:
         self.engine_config = dict(config.get("engine", {}))
         self.databento_config = dict(config.get("databento", {}))
         validate_engine_runtime_config(self.engine_config, self.databento_config)
+        configure_console_output(self.engine_config.get("console", {}))
         self.engine_config_label = str(self.config_path)
         self.engine_config_fingerprint = config_fingerprint_payload(
             {
@@ -1913,6 +1986,7 @@ class SignalEngine:
                 "duplicate_index_last_error": self.alert_sink.last_error,
             },
             "output_path_readiness": self.output_path_readiness_config,
+            "console": normalize_console_config(self.engine_config.get("console", {})),
             "dry_run_alerts": self.dry_run_alerts,
             "setup_alerts": {
                 "enabled": bool(self.setup_alerts_config.get("enabled", False)),
@@ -3336,6 +3410,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--config", default=DEFAULT_CONFIG, help="Signal-engine YAML config.")
     parser.add_argument("--project-root", help="Project root containing src/ and configs/.")
     parser.add_argument("--strategy-config", action="append", help="Add/override with a campaign strategy YAML path.")
+    parser.add_argument(
+        "--debug",
+        "--debug-json",
+        dest="debug",
+        action="store_true",
+        help="Print full JSON payloads to the console instead of concise summaries.",
+    )
     parser.add_argument("--preflight-only", action="store_true", help="Validate config and exit without Databento access.")
     parser.add_argument(
         "--check-databento-metadata",
@@ -3866,12 +3947,15 @@ def check_execution_intents_outbox(
 
 def apply_cli_overrides(config: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
     config = copy.deepcopy(config)
+    engine_config = config.setdefault("engine", {})
     if args.project_root:
         config["project_root"] = args.project_root
     if args.strategy_config:
         config["strategies"] = [{"config": path, "enabled": True} for path in args.strategy_config]
     if args.dry_run_alerts:
-        config.setdefault("engine", {})["dry_run_alerts"] = True
+        engine_config["dry_run_alerts"] = True
+    if getattr(args, "debug", False):
+        engine_config.setdefault("console", {})["debug"] = True
     databento = config.setdefault("databento", {})
     if args.skip_historical:
         databento.setdefault("historical", {})["enabled"] = False
@@ -5833,6 +5917,25 @@ def live_schema_field_requirement_report(
     }
 
 
+def normalize_console_config(raw_config: Any) -> dict[str, Any]:
+    if is_missing_or_blank(raw_config):
+        return {"debug": DEFAULT_CONSOLE_DEBUG}
+    if not isinstance(raw_config, dict):
+        raise ValueError("engine.console must be a mapping")
+    config = dict(raw_config)
+    if "debug" in config:
+        config_bool(config, "debug", DEFAULT_CONSOLE_DEBUG)
+    if "debug_json" in config:
+        config_bool(config, "debug_json", DEFAULT_CONSOLE_DEBUG)
+    debug = bool(config.get("debug", config.get("debug_json", DEFAULT_CONSOLE_DEBUG)))
+    return {"debug": debug}
+
+
+def configure_console_output(raw_config: Any) -> None:
+    global CONSOLE_DEBUG_JSON
+    CONSOLE_DEBUG_JSON = bool(normalize_console_config(raw_config).get("debug", DEFAULT_CONSOLE_DEBUG))
+
+
 def validate_engine_runtime_config(engine_config: dict[str, Any], databento_config: dict[str, Any]) -> None:
     errors: list[str] = []
 
@@ -5869,6 +5972,7 @@ def validate_engine_runtime_config(engine_config: dict[str, Any], databento_conf
     if "alerts_path" in engine_config and not is_missing_or_blank(engine_config.get("alerts_path")):
         check("engine.alerts_path", lambda: require_non_empty_string(engine_config, "alerts_path"))
     check("engine.process_lock", lambda: normalize_process_lock_config(engine_config.get("process_lock", {})))
+    check("engine.console", lambda: normalize_console_config(engine_config.get("console", {})))
     check(
         "engine.output_path_readiness",
         lambda: normalize_output_path_readiness_config(engine_config.get("output_path_readiness", {})),
@@ -6406,7 +6510,7 @@ def validate_historical_config(raw_config: Any) -> None:
         return
     if not isinstance(guard, dict):
         raise ValueError("historical.cost_guard must be a mapping")
-    for key in ("enabled", "allow_paid_downloads", "fail_if_estimate_unavailable"):
+    for key in ("enabled", "allow_paid_downloads", "fail_if_estimate_unavailable", "require_zero_cost"):
         if key in guard:
             config_bool(guard, key, False)
     if "max_cost_usd" in guard:
@@ -7509,7 +7613,7 @@ def fetch_databento_historical_bars(engine: SignalEngine, hist_cfg: dict[str, An
     client = db.Historical(api_key)
     available_start, available_end = historical_dataset_available_range(client, dataset, hist_cfg)
     start, end = historical_bounds(hist_cfg, engine.timezone, max_end=available_end)
-    enforce_historical_cost_guard(
+    cost_guard_report = enforce_historical_cost_guard(
         client,
         hist_cfg,
         dataset=dataset,
@@ -7545,6 +7649,7 @@ def fetch_databento_historical_bars(engine: SignalEngine, hist_cfg: dict[str, An
         end=end,
         limit=hist_cfg.get("limit"),
         available_end=available_end,
+        cost_guard_report=cost_guard_report,
     )
     trades = ensure_trade_symbol_column(store.to_df().reset_index(), store)
     if trades.empty:
@@ -7591,7 +7696,9 @@ def historical_get_range(
     end: Any,
     limit: int | None = None,
     available_end: Any | None = None,
+    cost_guard_report: dict[str, Any] | None = None,
 ) -> tuple[Any, str]:
+    validate_historical_timeseries_download_guard(cost_guard_report)
     try:
         store = client.timeseries.get_range(
             dataset=dataset,
@@ -7628,6 +7735,7 @@ def historical_get_range(
                     end=retry_end,
                     limit=limit,
                     available_end=retry_end,
+                    cost_guard_report=cost_guard_report,
                 )
         if (
             stype_in == "parent"
@@ -7654,8 +7762,49 @@ def historical_get_range(
                 end=end,
                 limit=limit,
                 available_end=available_end,
+                cost_guard_report=cost_guard_report,
             )
         raise
+
+
+def validate_historical_timeseries_download_guard(report: dict[str, Any] | None) -> None:
+    if historical_timeseries_download_guard_ok(report):
+        return
+    payload = {
+        "event": "historical_timeseries_get_range_blocked_by_guard",
+        "reason": (
+            "Refusing to call Databento timeseries.get_range without a prior enabled, allowed, "
+            "finite-cost historical cost-guard report."
+        ),
+        "impact": "No historical timeseries data was downloaded.",
+        "timeseries_get_range_attempted": False,
+        "guarded_operation": "timeseries.get_range",
+        "cost_guard_report": report if isinstance(report, dict) else None,
+    }
+    print_json(payload, prefix="SYSTEM_ALERT")
+    raise RuntimeError("Refusing Databento historical timeseries.get_range without cost-guard approval.")
+
+
+def historical_timeseries_download_guard_ok(report: dict[str, Any] | None) -> bool:
+    if not isinstance(report, dict):
+        return False
+    if not bool(report.get("enabled", False)) or not bool(report.get("allowed", False)):
+        return False
+    if str(report.get("guarded_operation") or "") != "timeseries.get_range":
+        return False
+    if bool(report.get("timeseries_get_range_attempted", True)):
+        return False
+    cost = finite_float(report.get("estimated_cost_usd"))
+    max_cost = finite_float(report.get("max_cost_usd"))
+    if cost is None or max_cost is None:
+        return False
+    if cost > max_cost + 1e-12:
+        return False
+    if cost > 0.0 and bool(report.get("require_zero_cost", True)):
+        return False
+    if cost > 0.0 and not bool(report.get("allow_paid_downloads", False)):
+        return False
+    return True
 
 
 def ensure_trade_symbol_column(frame: Any, store: Any) -> Any:
@@ -7851,7 +8000,11 @@ def enforce_historical_cost_guard(
         payload = {
             "event": "historical_fetch_blocked_by_disabled_cost_guard",
             "reason": "Historical Databento cost guard is disabled; refusing to call timeseries.get_range without a cost estimate.",
-            "fix": "Set databento.historical.cost_guard.enabled: true with allow_paid_downloads: false and max_cost_usd: 0.0 for zero-cost operation.",
+            "fix": (
+                "Set databento.historical.cost_guard.enabled: true, "
+                "allow_paid_downloads: false, require_zero_cost: true, and max_cost_usd: 0.0 "
+                "for zero-cost operation."
+            ),
             "metadata_only": True,
             "databento_api_calls_attempted": [],
             "timeseries_get_range_attempted": False,
@@ -7865,6 +8018,7 @@ def enforce_historical_cost_guard(
 
     fail_if_unavailable = bool(guard.get("fail_if_estimate_unavailable", True))
     allow_paid = bool(guard.get("allow_paid_downloads", False))
+    require_zero_cost = bool(guard.get("require_zero_cost", True))
     max_cost = float(guard.get("max_cost_usd", 0.0))
     request = without_none(
         {
@@ -7887,15 +8041,19 @@ def enforce_historical_cost_guard(
             "schema": schema,
             "symbols": symbols,
             "error": str(exc),
+            "allow_paid_downloads": allow_paid,
+            "require_zero_cost": require_zero_cost,
+            "max_cost_usd": max_cost,
             "metadata_only": True,
             "databento_api_calls_attempted": metadata_api_calls_attempted,
             "timeseries_get_range_attempted": False,
             "guarded_operation": "timeseries.get_range",
         }
         print_json(payload, prefix="SYSTEM_ALERT")
-        if fail_if_unavailable:
+        if fail_if_unavailable or require_zero_cost:
             raise RuntimeError(
-                "Databento historical cost estimate is unavailable; refusing to fetch historical data."
+                "Databento historical cost estimate is unavailable; refusing to fetch historical data "
+                "because zero cost cannot be proven."
             ) from exc
         return {**payload, "enabled": True, "allowed": True}
 
@@ -7931,6 +8089,7 @@ def enforce_historical_cost_guard(
         "estimated_cost_usd": cost,
         "billable_size_bytes": billable_size,
         "allow_paid_downloads": allow_paid,
+        "require_zero_cost": require_zero_cost,
         "max_cost_usd": max_cost,
         "metadata_only": True,
         "databento_api_calls_attempted": metadata_api_calls_attempted,
@@ -7938,12 +8097,21 @@ def enforce_historical_cost_guard(
         "guarded_operation": "timeseries.get_range",
     }
     print_json(payload)
-    if cost > max_cost or (cost > 0.0 and not allow_paid):
+    positive_cost_blocked = cost > 0.0 and require_zero_cost
+    over_max_cost = cost > max_cost
+    paid_without_ack = cost > 0.0 and not allow_paid
+    if positive_cost_blocked or over_max_cost or paid_without_ack:
+        if positive_cost_blocked:
+            reason = "Estimated Databento historical request cost is positive and require_zero_cost is true."
+        elif over_max_cost:
+            reason = "Estimated Databento historical request cost is above the configured max_cost_usd."
+        else:
+            reason = "Estimated Databento historical request cost is positive while allow_paid_downloads is false."
         print_json(
             {
                 **payload,
                 "event": "historical_fetch_blocked_by_cost_guard",
-                "reason": "Estimated Databento historical request cost is above the configured allowance.",
+                "reason": reason,
             },
             prefix="SYSTEM_ALERT",
         )
@@ -11996,8 +12164,113 @@ def required_spec_value(spec: dict[str, Any], key: str) -> Any:
 
 
 def print_json(payload: dict[str, Any], *, prefix: str | None = None) -> None:
-    text = json.dumps(payload, sort_keys=True, default=json_default)
-    print(f"{prefix} {text}" if prefix else text, flush=True)
+    if CONSOLE_DEBUG_JSON:
+        text = json.dumps(payload, sort_keys=True, default=json_default)
+        print(f"{prefix} {text}" if prefix else text, flush=True)
+        return
+    summary = format_console_summary(payload, prefix=prefix)
+    if summary:
+        print(summary, flush=True)
+
+
+def format_console_summary(payload: dict[str, Any], *, prefix: str | None = None) -> str:
+    event = str(payload.get("event") or prefix or "event")
+    if event == "preflight":
+        return format_preflight_console_summary(payload)
+    if event == "live_status":
+        return format_live_status_console_summary(payload)
+    if event == "replay_complete":
+        return format_key_value_console_summary("replay_complete", payload)
+    if prefix == "ENTRY_SIGNAL" or event == "entry_signal":
+        return format_key_value_console_summary("ENTRY_SIGNAL", payload)
+    if prefix == "TRADE_SETUP" or event == "trade_setup":
+        return format_key_value_console_summary("TRADE_SETUP", payload)
+    if prefix == "SIGNAL_REJECTED" or event == "signal_rejected":
+        return format_key_value_console_summary("SIGNAL_REJECTED", payload)
+    if prefix in {"SYSTEM_ALERT", "FATAL"}:
+        return format_key_value_console_summary(f"{prefix} {event}", payload)
+    return format_key_value_console_summary(event, payload)
+
+
+def format_preflight_console_summary(payload: dict[str, Any]) -> str:
+    databento = payload.get("databento", {}) if isinstance(payload.get("databento"), dict) else {}
+    strategies = payload.get("strategies", []) if isinstance(payload.get("strategies"), list) else []
+    details = {
+        "config": payload.get("config"),
+        "symbol": payload.get("symbol"),
+        "timezone": payload.get("timezone"),
+        "strategies": len(strategies),
+        "historical_enabled": databento.get("historical_enabled"),
+        "live_enabled": databento.get("live_enabled"),
+        "console": "debug" if CONSOLE_DEBUG_JSON else "normal",
+    }
+    return format_key_value_console_summary("preflight", details)
+
+
+def format_live_status_console_summary(payload: dict[str, Any]) -> str:
+    details = {
+        "connected": payload.get("connected"),
+        "records_received": payload.get("records_received"),
+        "trade_ticks": payload.get("trade_ticks"),
+        "completed_source_bars": payload.get("completed_source_bars"),
+        "pending_signals": payload.get("pending_signals"),
+        "setup_notices": payload.get("setup_notices"),
+        "entry_alerts": payload.get("entry_alerts"),
+        "last_record_utc": payload.get("last_record_utc"),
+        "last_trade_tick_utc": payload.get("last_trade_tick_utc"),
+        "last_completed_bar_utc": payload.get("last_completed_bar_utc"),
+    }
+    return format_key_value_console_summary("live_status", details)
+
+
+def format_key_value_console_summary(label: str, payload: dict[str, Any]) -> str:
+    parts: list[str] = [label]
+    event = payload.get("event")
+    if event is not None and str(event) not in label.split():
+        append_console_part(parts, "event", event)
+    for key in CONSOLE_SUMMARY_KEYS:
+        if key in payload:
+            append_console_part(parts, key, payload.get(key))
+    if len(parts) == 1 and payload:
+        for key, value in payload.items():
+            if key == "event":
+                continue
+            append_console_part(parts, str(key), value)
+            if len(parts) >= 8:
+                break
+    return " ".join(parts)
+
+
+def append_console_part(parts: list[str], key: str, value: Any) -> None:
+    formatted = format_console_value(value)
+    if formatted is None:
+        return
+    parts.append(f"{key}={formatted}")
+
+
+def format_console_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        if isinstance(value, float) and not math.isfinite(value):
+            return None
+        return format_number(value)
+    if isinstance(value, (dt.date, dt.datetime, dt.time)):
+        text = value.isoformat()
+    elif isinstance(value, str):
+        text = value
+    else:
+        return None
+    text = " ".join(str(text).split())
+    if not text:
+        return None
+    if len(text) > 180:
+        text = f"{text[:177]}..."
+    if any(char.isspace() for char in text) or "=" in text:
+        return json.dumps(text)
+    return text
 
 
 def json_default(value: Any) -> Any:

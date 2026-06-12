@@ -9,6 +9,7 @@ from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayI
 from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import LiquidityRiskCapacityPriorityEntry
 from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
 from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIntradayMomentumEntry
+from propstack.strategy_modules.entry.morning_orderflow_momentum import MorningOrderflowMomentumEntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_inverse_breakout import OpeningRangeInverseBreakoutEntry
@@ -43,6 +44,7 @@ ENTRY_MODULES = {
     LiquidityRiskCapacityPriorityEntry.name: LiquidityRiskCapacityPriorityEntry,
     MarketPlumbingPriorityEntry.name: MarketPlumbingPriorityEntry,
     MorningIntradayMomentumEntry.name: MorningIntradayMomentumEntry,
+    MorningOrderflowMomentumEntry.name: MorningOrderflowMomentumEntry,
     OpeningRangeBreakoutEntry.name: OpeningRangeBreakoutEntry,
     OpeningDriveInventoryComboEntry.name: OpeningDriveInventoryComboEntry,
     OpeningRangeFilteredBreakoutEntry.name: OpeningRangeFilteredBreakoutEntry,
@@ -85,6 +87,7 @@ __all__ = [
     "LiquidityRiskCapacityPriorityEntry",
     "MarketPlumbingPriorityEntry",
     "MorningIntradayMomentumEntry",
+    "MorningOrderflowMomentumEntry",
     "OpeningRangeBreakoutEntry",
     "OpeningDriveInventoryComboEntry",
     "OpeningRangeFilteredBreakoutEntry",
