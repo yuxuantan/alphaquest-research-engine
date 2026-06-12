@@ -119,12 +119,173 @@ def test_trade_orderflow_features_use_completed_bars_through_signal_close():
     assert round(signal_bar["trade_orderflow_avg_trade_size_3"], 10) == round(300.0 / 90.0, 10)
     assert round(signal_bar["trade_orderflow_imbalance_3"], 10) == round(70.0 / 300.0, 10)
     assert round(signal_bar["trade_orderflow_abs_imbalance_3"], 10) == round(abs(70.0 / 300.0), 10)
+    assert round(signal_bar["trade_orderflow_signed_toxicity_3"], 10) == round(abs(70.0 / 300.0), 10)
     assert signal_bar["trade_orderflow_large20_signed_volume_3"] == 60.0
     assert signal_bar["trade_orderflow_large20_volume_3"] == 160.0
     assert signal_bar["trade_orderflow_return_points_3"] == 2.5
     assert signal_bar["trade_orderflow_return_ticks_3"] == 10.0
     assert signal_bar["trade_orderflow_effort_vs_result_3"] == 30.0
     assert pd.isna(features.iloc[1]["trade_orderflow_return_points_3"])
+
+
+def test_trade_orderflow_signed_toxicity_same_clock_rank_uses_prior_values():
+    timestamps = pd.to_datetime(
+        [
+            "2024-01-02 09:59:00",
+            "2024-01-03 09:59:00",
+            "2024-01-04 09:59:00",
+        ]
+    ).tz_localize("America/New_York")
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "session_date": [ts.date() for ts in timestamps],
+            "session_label": ["RTH"] * 3,
+            "symbol": ["ES"] * 3,
+            "is_rth": [True] * 3,
+            "open": [100.0, 100.0, 100.0],
+            "high": [101.0, 101.0, 101.0],
+            "low": [99.0, 99.0, 99.0],
+            "close": [100.5, 100.5, 100.5],
+            "volume": [100.0, 100.0, 100.0],
+            "trades": [10.0, 10.0, 10.0],
+            "signed_volume": [10.0, 90.0, 50.0],
+        }
+    )
+
+    features = add_trade_orderflow_features(
+        df,
+        {
+            "trade_orderflow_features": {
+                "enabled": True,
+                "windows": [1],
+                "large_trade_sizes": [],
+                "tick_size": 0.25,
+                "min_period_fraction": 1.0,
+                "same_clock_ranks": {
+                    "enabled": True,
+                    "columns": ["trade_orderflow_signed_toxicity_1"],
+                    "rank_windows": [2],
+                    "rank_min_periods": 1,
+                },
+            }
+        },
+    )
+
+    assert pd.isna(features.iloc[0]["trade_orderflow_signed_toxicity_1_rank2"])
+    assert features.iloc[1]["trade_orderflow_signed_toxicity_1_rank2"] == 1.0
+    assert features.iloc[2]["trade_orderflow_signed_toxicity_1_rank2"] == 0.5
+
+
+def test_trade_orderflow_prior_session_inventory_is_shifted_and_ranked():
+    timestamps = pd.to_datetime(
+        [
+            "2024-01-02 09:30:00",
+            "2024-01-03 09:30:00",
+            "2024-01-04 09:30:00",
+            "2024-01-05 09:30:00",
+        ]
+    ).tz_localize("America/New_York")
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "session_date": [ts.date() for ts in timestamps],
+            "session_label": ["RTH"] * 4,
+            "symbol": ["ES"] * 4,
+            "is_rth": [True] * 4,
+            "open": [100.0] * 4,
+            "high": [101.0] * 4,
+            "low": [99.0] * 4,
+            "close": [100.5] * 4,
+            "volume": [100.0] * 4,
+            "trades": [10.0] * 4,
+            "signed_volume": [10.0, 90.0, -50.0, 25.0],
+        }
+    )
+
+    features = add_trade_orderflow_features(
+        df,
+        {
+            "trade_orderflow_features": {
+                "enabled": True,
+                "windows": [1],
+                "large_trade_sizes": [],
+                "tick_size": 0.25,
+                "min_period_fraction": 1.0,
+                "prior_session_inventory": {
+                    "enabled": True,
+                    "rank_windows": [2],
+                    "rank_min_periods": 1,
+                },
+            }
+        },
+    )
+
+    assert pd.isna(features.iloc[0]["trade_orderflow_prior_session_imbalance"])
+    assert features.iloc[1]["trade_orderflow_prior_session_imbalance"] == 0.1
+    assert features.iloc[2]["trade_orderflow_prior_session_imbalance"] == 0.9
+    assert features.iloc[2]["trade_orderflow_prior_session_imbalance_rank2"] == 1.0
+    assert features.iloc[3]["trade_orderflow_prior_session_imbalance"] == -0.5
+    assert features.iloc[3]["trade_orderflow_prior_session_imbalance_rank2"] == 0.0
+
+
+def test_trade_orderflow_opening_drive_features_are_visible_after_window_close_only():
+    rows = []
+    sessions = [
+        ("2024-01-02", [50.0, 50.0], [10.0, 10.0]),
+        ("2024-01-03", [100.0, 100.0], [40.0, 40.0]),
+        ("2024-01-04", [75.0, 75.0], [20.0, 20.0]),
+    ]
+    for day, volumes, signed_values in sessions:
+        for minute in range(3):
+            ts = pd.Timestamp(f"{day} 09:{30 + minute:02d}", tz="America/New_York")
+            rows.append(
+                {
+                    "timestamp": ts,
+                    "session_date": ts.date(),
+                    "session_label": "RTH",
+                    "symbol": "ES",
+                    "is_rth": True,
+                    "open": 100.0 + minute,
+                    "high": 101.0 + minute,
+                    "low": 99.0 + minute,
+                    "close": 100.5 + minute,
+                    "volume": volumes[min(minute, 1)],
+                    "trades": 10.0,
+                    "signed_volume": signed_values[min(minute, 1)],
+                }
+            )
+
+    features = add_trade_orderflow_features(
+        pd.DataFrame(rows),
+        {
+            "trade_orderflow_features": {
+                "enabled": True,
+                "windows": [2],
+                "large_trade_sizes": [],
+                "tick_size": 0.25,
+                "min_period_fraction": 1.0,
+                "opening_drive": {
+                    "enabled": True,
+                    "bar_interval_minutes": 1,
+                    "windows": [{"label": "2m", "minutes": 2, "bars": 2}],
+                    "volume_rank_windows": [2],
+                    "volume_rank_min_periods": 1,
+                },
+            }
+        },
+    )
+
+    first_day = features[features["session_date"] == pd.Timestamp("2024-01-02").date()]
+    third_day = features[features["session_date"] == pd.Timestamp("2024-01-04").date()]
+    assert pd.isna(first_day.iloc[0]["trade_orderflow_opening_volume_2m"])
+    assert first_day.iloc[1]["trade_orderflow_opening_volume_2m"] == 100.0
+    assert pd.isna(first_day.iloc[1]["trade_orderflow_opening_volume_rank2_2m"])
+    assert third_day.iloc[1]["trade_orderflow_opening_volume_2m"] == 150.0
+    assert third_day.iloc[1]["trade_orderflow_opening_volume_rank2_2m"] == 0.5
+    assert third_day.iloc[1]["trade_orderflow_opening_return_ticks_2m"] == 6.0
+    assert round(third_day.iloc[1]["trade_orderflow_opening_imbalance_2m"], 10) == round(40.0 / 150.0, 10)
+    assert "trade_orderflow_session_cum_delta_ratio" in features.columns
 
 
 def test_trade_orderflow_same_clock_ranks_use_prior_same_time_values():

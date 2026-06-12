@@ -130,6 +130,43 @@ def test_incubation_params_are_selected_from_best_wfa_oos_window():
     }
 
 
+def test_incubation_train_selection_selects_best_core_grid_row():
+    results = pd.DataFrame(
+        [
+            {
+                "entry.params.stop_pct": 0.0035,
+                "entry.params.target_r_multiple": 1.0,
+                "mar": 0.5,
+                "profit_factor": 1.2,
+                "net_profit": 1000.0,
+                "trades_per_year": 80.0,
+            },
+            {
+                "entry.params.stop_pct": 0.005,
+                "entry.params.target_r_multiple": 2.5,
+                "mar": 1.5,
+                "profit_factor": 1.4,
+                "net_profit": 800.0,
+                "trades_per_year": 90.0,
+            },
+        ]
+    )
+
+    selected = campaign_stages._select_core_grid_params(
+        results,
+        {
+            "entry.params.stop_pct": [0.0035, 0.005],
+            "entry.params.target_r_multiple": [1.0, 2.5],
+        },
+        {"objective": "MAR", "selection_min_trades_per_year": 50},
+    )
+
+    assert selected == {
+        "entry.params.stop_pct": 0.005,
+        "entry.params.target_r_multiple": 2.5,
+    }
+
+
 def test_last_months_stage_subset_uses_config_end_date():
     subset = campaign_stages._subset_from_window(
         {"start_date": "2021-01-01", "end_date": "2026-06-01"},

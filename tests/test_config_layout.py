@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from propstack.utils.config import variant_root
@@ -55,3 +57,20 @@ def test_variant_root_requires_variant_id():
                 "timeframe": "1m",
             }
         )
+
+
+def test_active_configs_do_not_reference_invalid_prefixed_sierra_cache():
+    invalid_tokens = [
+        "sierra_trade_orderflow_1m_20110105_20260610_full_rth",
+        "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth.parquet",
+        "es_sierra_recent_pocket_combo_signal_1m_20110105_20260610",
+        "es_sierra_cross_pocket_meta_signal_1m_20110105_20260610",
+        "es_sierra_footprint_extreme_1m_20110105_20260610",
+    ]
+    offenders = []
+    for path in Path("configs/campaigns").rglob("*.yaml"):
+        text = path.read_text(encoding="utf-8")
+        if any(token in text for token in invalid_tokens):
+            offenders.append(str(path))
+
+    assert offenders == []

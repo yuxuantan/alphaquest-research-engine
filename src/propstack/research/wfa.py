@@ -85,6 +85,7 @@ def run_wfa(
     objective = grid_config["objective"]
     selection_filter = grid_config["selection_filter"]
     early_exit_min_profit_factor = wfa_config.get("early_exit_min_train_profit_factor")
+    early_exit_require_train_profitable = bool(wfa_config.get("early_exit_require_train_profitable", False))
     windows = list(
         create_windows(
             data,
@@ -95,7 +96,8 @@ def run_wfa(
         )
     )
     if train_grid_dir is not None:
-        _clear_window_train_grid_reports(train_grid_dir)
+        if not bool(wfa_config.get("reuse_existing_train_grids", False)):
+            _clear_window_train_grid_reports(train_grid_dir)
     progress = progress_bar(len(windows), "walk-forward windows", show_timing=True)
     progress.update(0, force=True)
     for wid, (tr_s, tr_e, te_s, te_e) in enumerate(windows, start=1):
@@ -108,19 +110,62 @@ def run_wfa(
             _log_window_skip(wid, len(windows), "empty train/test slice")
             progress.update(wid, force=True)
             continue
-        grid_df, _ = run_core_grid(
-            train,
-            base_config,
-            grid_config,
-            benchmarks,
-            parameter_label="wfa.parameters",
-            detail_data=train_detail,
-        )
+        train_grid_path = _existing_window_train_grid(train_grid_dir, wid)
+        reused_train_grid = bool(wfa_config.get("reuse_existing_train_grids", False)) and train_grid_path is not None
+        if reused_train_grid:
+            grid_df = pd.read_csv(train_grid_path)
+            print(f"walk-forward {wid}/{len(windows)} reused train grid {train_grid_path}", flush=True)
+        else:
+            grid_df, _ = run_core_grid(
+                train,
+                base_config,
+                grid_config,
+                benchmarks,
+                parameter_label="wfa.parameters",
+                detail_data=train_detail,
+            )
         if grid_df.empty:
             _log_window_skip(wid, len(windows), "no in-sample grid results")
             progress.update(wid, force=True)
             continue
         best = _select_best_in_sample(grid_df, objective, selection_filter)
+        if early_exit_require_train_profitable and _metric_value(best, "net_profit") <= 0.0:
+            _log_window_skip(
+                wid,
+                len(windows),
+                f"early exit: selected in-sample net_profit {_metric_value(best, 'net_profit'):.2f} "
+                "<= 0.00",
+            )
+            rows.append(
+                {
+                    "window_id": wid,
+                    "train_start": tr_s,
+                    "train_end": tr_e,
+                    "test_start": te_s,
+                    "test_end": te_e,
+                    "objective": _objective_label(objective),
+                    "train_objective": _metric_value(best, objective),
+                    "selected_params": {},
+                    "train_mar": _metric_value(best, "mar"),
+                    "train_cagr": _metric_value(best, "cagr"),
+                    "train_max_drawdown_pct": _metric_value(best, "max_drawdown_pct"),
+                    "train_net_profit": _metric_value(best, "net_profit"),
+                    "train_profit_factor": _metric_value(best, "profit_factor"),
+                    "train_max_drawdown": _metric_value(best, "max_drawdown"),
+                    "test_mar": 0.0,
+                    "test_cagr": 0.0,
+                    "test_max_drawdown_pct": 0.0,
+                    "test_net_profit": 0.0,
+                    "test_profit_factor": 0.0,
+                    "test_max_drawdown": 0.0,
+                    "test_trades": 0,
+                    "test_passed": False,
+                    "early_exit": True,
+                    "early_exit_reason": "selected_train_net_profit_not_positive",
+                }
+            )
+            progress.update(wid, force=True)
+            break
         if early_exit_min_profit_factor is not None and _metric_value(best, "profit_factor") < float(
             early_exit_min_profit_factor
         ):
@@ -155,23 +200,27 @@ def run_wfa(
                     "test_trades": 0,
                     "test_passed": False,
                     "early_exit": True,
+                    "early_exit_reason": "selected_train_profit_factor_below_minimum",
                 }
             )
             progress.update(wid, force=True)
             break
-        train_grid_path = _write_window_train_grid(
-            grid_df,
-            train_grid_dir,
-            wid,
-            tr_s,
-            tr_e,
-            te_s,
-            te_e,
-            objective,
-            base_config,
-        )
-        if train_grid_path:
-            train_grid_paths.append(train_grid_path)
+        if reused_train_grid:
+            train_grid_paths.append(str(train_grid_path))
+        else:
+            written_train_grid_path = _write_window_train_grid(
+                grid_df,
+                train_grid_dir,
+                wid,
+                tr_s,
+                tr_e,
+                te_s,
+                te_e,
+                objective,
+                base_config,
+            )
+            if written_train_grid_path:
+                train_grid_paths.append(written_train_grid_path)
         param_cols = list(grid_config.get("parameters", {}).keys())
         params = {k: best[k].item() if hasattr(best[k], "item") else best[k] for k in param_cols}
         train_objective = _metric_value(best, objective)
@@ -236,6 +285,7 @@ def run_wfa(
         "early_exit_min_train_profit_factor": float(early_exit_min_profit_factor)
         if early_exit_min_profit_factor is not None
         else None,
+        "early_exit_require_train_profitable": early_exit_require_train_profitable,
         "early_exit": bool(len(df) and "early_exit" in df.columns and df["early_exit"].fillna(False).any()),
         "passing_windows": int(df["test_passed"].sum()) if len(df) else 0,
         "profitable_windows": int((df["test_net_profit"] > 0).sum()) if len(df) else 0,
@@ -251,6 +301,7 @@ def run_wfa(
         "median_test_max_drawdown_pct": _summary_median(df, "test_max_drawdown_pct"),
         "train_grid_reports_retained": train_grid_dir is not None,
         "train_grid_report_files": train_grid_paths,
+        "reused_existing_train_grids": bool(wfa_config.get("reuse_existing_train_grids", False)),
     }
     if include_trade_log:
         trades = _stitch_oos_trades(trade_frames)
@@ -335,6 +386,13 @@ def _clear_window_train_grid_reports(train_grid_dir: str | Path) -> None:
     for path in out.glob("window_*_train_grid.csv"):
         if path.is_file():
             path.unlink()
+
+
+def _existing_window_train_grid(train_grid_dir: str | Path | None, window_id: int) -> Path | None:
+    if train_grid_dir is None:
+        return None
+    path = Path(train_grid_dir) / f"window_{window_id:03d}_train_grid.csv"
+    return path if path.is_file() else None
 
 
 def _write_window_train_grid(

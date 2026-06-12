@@ -3,6 +3,7 @@ import pandas as pd
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
 from propstack.data.pipeline import prepare_data
+from propstack.data.timeframe import aggregate_timeframe
 
 
 DATA_CFG = {
@@ -120,6 +121,41 @@ def test_prepare_data_aggregates_to_requested_timeframe():
     assert report["timeframe"] == "5m"
     assert report["strategy_rows"] < report["rows"]
     assert len(execution_data) == 20
+
+
+def test_aggregate_timeframe_preserves_orderflow_sum_columns():
+    timestamps = pd.date_range("2024-01-03 09:30:00", periods=5, freq="1min", tz="America/New_York")
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "symbol": ["ES"] * 5,
+            "session_date": [timestamps[0].date()] * 5,
+            "session_label": ["RTH"] * 5,
+            "is_rth": [True] * 5,
+            "open": [100.0, 101.0, 102.0, 103.0, 104.0],
+            "high": [101.0, 102.0, 103.0, 104.0, 105.0],
+            "low": [99.0, 100.0, 101.0, 102.0, 103.0],
+            "close": [100.5, 101.5, 102.5, 103.5, 104.5],
+            "volume": [10, 20, 30, 40, 50],
+            "signed_volume": [1, -2, 3, -4, 5],
+            "buy_volume": [6, 9, 17, 18, 28],
+            "sell_volume": [5, 11, 14, 22, 23],
+            "trades": [1, 2, 3, 4, 5],
+            "large20_signed_volume": [0, 1, 0, -1, 2],
+            "large20_volume": [0, 2, 0, 2, 3],
+        }
+    )
+
+    out = aggregate_timeframe(df, {"rth_start": "09:30:00"}, "5m")
+    row = out.iloc[0]
+
+    assert row["volume"] == 150
+    assert row["signed_volume"] == 3
+    assert row["buy_volume"] == 78
+    assert row["sell_volume"] == 75
+    assert row["trades"] == 15
+    assert row["large20_signed_volume"] == 2
+    assert row["large20_volume"] == 7
 
 
 def test_prepare_data_emits_status_updates():

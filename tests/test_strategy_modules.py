@@ -16,6 +16,7 @@ from propstack.strategy_modules.entry.opening_range_breakout import OpeningRange
 from propstack.strategy_modules.entry.opening_drive_inventory_combo import OpeningDriveInventoryComboEntry
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_inverse_breakout import OpeningRangeInverseBreakoutEntry
+from propstack.strategy_modules.entry.orderflow_regime import OrderflowRegimeEntry
 from propstack.strategy_modules.entry.orderflow_recent_pocket_combo import OrderflowRecentPocketComboEntry
 from propstack.strategy_modules.entry.overnight_inventory_reversion import OvernightInventoryReversionEntry
 from propstack.strategy_modules.entry.overnight_return_late_day_momentum import OvernightReturnLateDayMomentumEntry
@@ -3136,3 +3137,297 @@ def _cftc_bar(timestamp):
             "close": 100.5,
         }
     )
+
+
+def _orderflow_regime_bar(
+    timestamp: str,
+    *,
+    pressure_rank: float,
+    return_ticks: float,
+    toxicity_rank: float = 0.9,
+    effort_rank: float = 0.9,
+) -> pd.Series:
+    ts = pd.Timestamp(timestamp).tz_localize("America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "session_label": "RTH",
+            "is_rth": True,
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.5,
+            "trade_orderflow_imbalance_5_rank42": pressure_rank,
+            "trade_orderflow_imbalance_5": 0.2 if pressure_rank >= 0.5 else -0.2,
+            "trade_orderflow_return_ticks_5": return_ticks,
+            "trade_orderflow_signed_toxicity_5_rank42": toxicity_rank,
+            "trade_orderflow_signed_toxicity_5": 0.2,
+            "trade_orderflow_effort_vs_result_5_rank42": effort_rank,
+        }
+    )
+
+
+def test_orderflow_regime_flow_impulse_continuation_emits_with_flow_direction():
+    entry = OrderflowRegimeEntry(
+        {
+            "mode": "flow_impulse_continuation",
+            "bar_interval_minutes": 1,
+            "pressure_rank_threshold": 0.85,
+            "min_return_ticks": 2,
+            "slots": [
+                {
+                    "entry_time": "10:00:00",
+                    "pressure_rank_column": "trade_orderflow_imbalance_5_rank42",
+                    "pressure_value_column": "trade_orderflow_imbalance_5",
+                    "return_column": "trade_orderflow_return_ticks_5",
+                }
+            ],
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _orderflow_regime_bar("2024-01-03 09:59:00", pressure_rank=0.9, return_ticks=3)
+    )
+    rejected = entry.on_bar_close(
+        _orderflow_regime_bar("2024-01-03 09:59:00", pressure_rank=0.9, return_ticks=-3)
+    )
+
+    assert signal.direction == "long"
+    assert signal.report_fields["orderflow_regime_mode"] == "flow_impulse_continuation"
+    assert rejected is None
+
+
+def test_orderflow_regime_absorption_reversal_fades_weak_displacement():
+    entry = OrderflowRegimeEntry(
+        {
+            "mode": "absorption_exhaustion_reversal",
+            "bar_interval_minutes": 1,
+            "pressure_rank_threshold": 0.85,
+            "max_abs_return_ticks": 2,
+            "slots": [
+                {
+                    "entry_time": "10:00:00",
+                    "pressure_rank_column": "trade_orderflow_imbalance_5_rank42",
+                    "pressure_value_column": "trade_orderflow_imbalance_5",
+                    "effort_rank_column": "trade_orderflow_effort_vs_result_5_rank42",
+                    "return_column": "trade_orderflow_return_ticks_5",
+                }
+            ],
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _orderflow_regime_bar("2024-01-03 09:59:00", pressure_rank=0.9, return_ticks=1)
+    )
+    rejected = entry.on_bar_close(
+        _orderflow_regime_bar("2024-01-03 09:59:00", pressure_rank=0.9, return_ticks=4)
+    )
+
+    assert signal.direction == "short"
+    assert signal.report_fields["effort_rank"] == 0.9
+    assert rejected is None
+
+
+def test_orderflow_regime_toxicity_continuation_requires_toxicity_rank():
+    entry = OrderflowRegimeEntry(
+        {
+            "mode": "toxicity_regime_continuation",
+            "bar_interval_minutes": 1,
+            "pressure_rank_threshold": 0.85,
+            "toxicity_rank_threshold": 0.75,
+            "slots": [
+                {
+                    "entry_time": "10:00:00",
+                    "pressure_rank_column": "trade_orderflow_imbalance_5_rank42",
+                    "pressure_value_column": "trade_orderflow_imbalance_5",
+                    "toxicity_rank_column": "trade_orderflow_signed_toxicity_5_rank42",
+                    "toxicity_value_column": "trade_orderflow_signed_toxicity_5",
+                    "return_column": "trade_orderflow_return_ticks_5",
+                }
+            ],
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _orderflow_regime_bar("2024-01-03 09:59:00", pressure_rank=0.1, return_ticks=-1, toxicity_rank=0.8)
+    )
+    rejected = entry.on_bar_close(
+        _orderflow_regime_bar("2024-01-03 09:59:00", pressure_rank=0.1, return_ticks=-1, toxicity_rank=0.5)
+    )
+
+    assert signal.direction == "short"
+    assert signal.report_fields["toxicity_rank"] == 0.8
+    assert rejected is None
+
+
+def test_orderflow_regime_flow_impulse_reversal_fades_confirmed_flow():
+    entry = OrderflowRegimeEntry(
+        {
+            "mode": "flow_impulse_reversal",
+            "bar_interval_minutes": 1,
+            "pressure_rank_threshold": 0.85,
+            "min_return_ticks": 2,
+            "slots": [
+                {
+                    "entry_time": "10:00:00",
+                    "pressure_rank_column": "trade_orderflow_imbalance_5_rank42",
+                    "pressure_value_column": "trade_orderflow_imbalance_5",
+                    "return_column": "trade_orderflow_return_ticks_5",
+                }
+            ],
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _orderflow_regime_bar("2024-01-03 09:59:00", pressure_rank=0.9, return_ticks=3)
+    )
+
+    assert signal.direction == "short"
+    assert signal.report_fields["orderflow_regime_mode"] == "flow_impulse_reversal"
+
+
+def test_orderflow_regime_toxicity_reversal_fades_toxic_flow():
+    entry = OrderflowRegimeEntry(
+        {
+            "mode": "toxicity_regime_reversal",
+            "bar_interval_minutes": 1,
+            "pressure_rank_threshold": 0.85,
+            "toxicity_rank_threshold": 0.75,
+            "slots": [
+                {
+                    "entry_time": "10:00:00",
+                    "pressure_rank_column": "trade_orderflow_imbalance_5_rank42",
+                    "pressure_value_column": "trade_orderflow_imbalance_5",
+                    "toxicity_rank_column": "trade_orderflow_signed_toxicity_5_rank42",
+                    "toxicity_value_column": "trade_orderflow_signed_toxicity_5",
+                    "return_column": "trade_orderflow_return_ticks_5",
+                }
+            ],
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _orderflow_regime_bar("2024-01-03 09:59:00", pressure_rank=0.1, return_ticks=-1, toxicity_rank=0.8)
+    )
+
+    assert signal.direction == "long"
+    assert signal.report_fields["orderflow_regime_mode"] == "toxicity_regime_reversal"
+
+
+def test_orderflow_regime_prior_inventory_reversion_fades_prior_inventory_rank():
+    entry = OrderflowRegimeEntry(
+        {
+            "mode": "prior_inventory_reversion",
+            "bar_interval_minutes": 1,
+            "pressure_rank_threshold": 0.8,
+            "slots": [
+                {
+                    "entry_time": "10:00:00",
+                    "pressure_rank_column": "trade_orderflow_prior_session_imbalance_rank252",
+                    "pressure_value_column": "trade_orderflow_prior_session_imbalance",
+                    "return_column": "trade_orderflow_return_ticks_5",
+                }
+            ],
+        }
+    )
+    bar = _orderflow_regime_bar("2024-01-03 09:59:00", pressure_rank=0.5, return_ticks=0)
+    bar["trade_orderflow_prior_session_imbalance_rank252"] = 0.9
+    bar["trade_orderflow_prior_session_imbalance"] = 0.3
+
+    signal = entry.on_bar_close(bar)
+
+    assert signal.direction == "short"
+    assert signal.report_fields["pressure_rank"] == 0.9
+
+
+def _opening_orderflow_bar(
+    timestamp: str,
+    *,
+    opening_return_ticks: float,
+    opening_imbalance: float,
+    opening_volume_rank: float = 0.8,
+    session_return_ticks: float = 20.0,
+    session_delta_ratio: float = 0.10,
+    price_vs_vwap_ticks: float = 4.0,
+) -> pd.Series:
+    bar = _orderflow_regime_bar(timestamp, pressure_rank=0.5, return_ticks=0)
+    bar["trade_orderflow_opening_return_ticks_30m"] = opening_return_ticks
+    bar["trade_orderflow_opening_imbalance_30m"] = opening_imbalance
+    bar["trade_orderflow_opening_volume_rank42_30m"] = opening_volume_rank
+    bar["trade_orderflow_session_return_ticks"] = session_return_ticks
+    bar["trade_orderflow_session_cum_delta_ratio"] = session_delta_ratio
+    bar["trade_orderflow_price_vs_vwap_ticks"] = price_vs_vwap_ticks
+    return bar
+
+
+def test_orderflow_regime_opening_drive_flow_continuation_uses_aligned_opening_flow():
+    entry = OrderflowRegimeEntry(
+        {
+            "mode": "opening_drive_flow_continuation",
+            "bar_interval_minutes": 1,
+            "min_open_return_ticks": 12,
+            "min_open_imbalance": 0.05,
+            "min_open_volume_rank": 0.70,
+            "slots": [{"entry_time": "10:30:00"}],
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _opening_orderflow_bar("2024-01-03 10:29:00", opening_return_ticks=16, opening_imbalance=0.08)
+    )
+    rejected = entry.on_bar_close(
+        _opening_orderflow_bar("2024-01-03 10:29:00", opening_return_ticks=16, opening_imbalance=-0.08)
+    )
+
+    assert signal.direction == "long"
+    assert signal.report_fields["orderflow_regime_mode"] == "opening_drive_flow_continuation"
+    assert rejected is None
+
+
+def test_orderflow_regime_opening_absorption_fade_fades_strong_flow_weak_price():
+    entry = OrderflowRegimeEntry(
+        {
+            "mode": "opening_absorption_fade",
+            "bar_interval_minutes": 1,
+            "min_open_imbalance": 0.08,
+            "max_open_return_ticks": 6,
+            "min_open_volume_rank": 0.70,
+            "slots": [{"entry_time": "10:30:00"}],
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _opening_orderflow_bar("2024-01-03 10:29:00", opening_return_ticks=4, opening_imbalance=0.10)
+    )
+    rejected = entry.on_bar_close(
+        _opening_orderflow_bar("2024-01-03 10:29:00", opening_return_ticks=10, opening_imbalance=0.10)
+    )
+
+    assert signal.direction == "short"
+    assert signal.report_fields["opening_imbalance"] == 0.10
+    assert rejected is None
+
+
+def test_orderflow_regime_opening_price_flow_divergence_fade_fades_price_without_flow():
+    entry = OrderflowRegimeEntry(
+        {
+            "mode": "opening_price_flow_divergence_fade",
+            "bar_interval_minutes": 1,
+            "min_open_return_ticks": 12,
+            "max_abs_open_imbalance": 0.02,
+            "min_open_volume_rank": 0.70,
+            "slots": [{"entry_time": "10:30:00"}],
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _opening_orderflow_bar("2024-01-03 10:29:00", opening_return_ticks=16, opening_imbalance=0.01)
+    )
+    rejected = entry.on_bar_close(
+        _opening_orderflow_bar("2024-01-03 10:29:00", opening_return_ticks=16, opening_imbalance=0.05)
+    )
+
+    assert signal.direction == "short"
+    assert signal.report_fields["orderflow_regime_mode"] == "opening_price_flow_divergence_fade"
+    assert rejected is None

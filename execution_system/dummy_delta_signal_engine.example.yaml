@@ -16,23 +16,33 @@ engine:
     path: data/runtime/dummy_delta_signal_engine.lock
     stale_after_seconds: 86400
     fail_if_locked: true
-  alerts_path: data/alerts/dummy_delta_entry_signals.jsonl
+  output_path_readiness:
+    enabled: true
+    create_parent_dirs: true
+    fail_on_error: true
+    require_fail_closed_sinks: true
+  alerts_path: data/runtime/alerts/dummy_delta_entry_signals.jsonl
   alert_file:
-    fsync: false
-    fail_on_write_error: false
+    fsync: true
+    fail_on_write_error: true
     suppress_duplicate_alert_ids: true
   setup_alerts:
     enabled: true
-    path: data/alerts/dummy_delta_trade_setups.jsonl
-    fsync: false
-    fail_on_write_error: false
+    path: data/runtime/alerts/dummy_delta_trade_setups.jsonl
+    fsync: true
+    fail_on_write_error: true
     suppress_duplicate_setup_ids: true
   execution_intents:
     enabled: true
-    path: data/alerts/dummy_delta_execution_intents.jsonl
-    fsync: false
-    fail_on_write_error: false
+    path: data/runtime/alerts/dummy_delta_execution_intents.jsonl
+    fsync: true
+    fail_on_write_error: true
     suppress_duplicate_alert_ids: true
+    suppress_duplicate_setup_ids: true
+    intent_ttl_seconds: 30
+    enforce_freshness: true
+    freshness_grace_seconds: 0
+    fail_on_freshness_error: true
   data_quality:
     enabled: true
     fail_on_error: false
@@ -41,6 +51,13 @@ engine:
     max_bar_gap_minutes: 5
     max_reported_issues: 10
     alert_repeat_seconds: 120
+    delta_unclassified:
+      enabled: true
+      delta_methods: [price_vs_quote]
+      max_selected_unclassified_fraction: 0.25
+      min_checked_volume: 1
+      require_diagnostic: true
+      severity: error
   feature_quality:
     enabled: true
     fail_on_missing_columns: true
@@ -51,6 +68,12 @@ engine:
     disable_strategy_on_error: true
     max_errors_per_strategy: 1
     fail_when_all_strategies_disabled: true
+  trade_sanity:
+    enabled: true
+    max_stop_points: 25
+    max_take_profit_points: 25
+    max_risk_dollars: 1250
+    max_reward_dollars: 1250
   operator:
     print_human_readable: true
     print_setup_readable: true
@@ -61,7 +84,9 @@ engine:
       on_setup: true
       on_entry: true
       on_system: true
+      max_active_commands: 3
       cleanup_on_exit: true
+      fail_on_error: false
       command: null
   account:
     net_liq: 150000
@@ -85,15 +110,23 @@ databento:
     allow_contract_symbol_regex_relaxation: false
   live:
     enabled: false
+    cost_guard:
+      enabled: true
+      allow_live_subscription: false
+      acknowledge_live_data_may_be_billable: false
     metadata_preflight: true
+    allow_live_without_metadata_preflight: false
+    require_fail_closed_safety_stops: true
     symbology_stype_out: instrument_id
     resolve_instrument_symbols: true
     fail_without_live_symbol_map: true
     subscribe_resolved_raw_symbols: true
+    max_resolved_raw_symbols: 2
     reconnect_policy: reconnect
     heartbeat_interval_s: 30
     startup_grace_seconds: 3
     shutdown_grace_seconds: 3
+    state_lock_timeout_seconds: 5
     maintenance_interval_seconds: 1
     status_interval_seconds: 60
     alert_repeat_seconds: 120
@@ -107,8 +140,16 @@ databento:
     stale_alert_session_end: "16:00:00"
     stale_alert_session_timezone: America/New_York
     stale_alert_weekdays: [0, 1, 2, 3, 4]
-    stop_on_disconnect: false
-    stop_on_unmatched_contract_symbol: false
+    stop_on_disconnect: true
+    stop_on_no_records: true
+    stop_on_no_trade_ticks: true
+    stop_on_no_completed_bars: true
+    stop_on_no_evaluable_strategies: true
+    stop_on_partial_unevaluable_strategies: true
+    stop_on_stale_trade_tick: true
+    stop_on_future_trade_tick: true
+    stop_on_unmatched_contract_symbol: true
+    stop_on_state_lock_timeout: true
     drop_partial_first_live_bar: true
     flush_completed_bars_on_heartbeat: true
     bar_flush_delay_seconds: 2

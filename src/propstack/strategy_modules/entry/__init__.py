@@ -13,6 +13,7 @@ from propstack.strategy_modules.entry.opening_range_breakout import OpeningRange
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_inverse_breakout import OpeningRangeInverseBreakoutEntry
 from propstack.strategy_modules.entry.opening_drive_inventory_combo import OpeningDriveInventoryComboEntry
+from propstack.strategy_modules.entry.orderflow_regime import OrderflowRegimeEntry
 from propstack.strategy_modules.entry.orderflow_recent_pocket_combo import OrderflowRecentPocketComboEntry
 from propstack.strategy_modules.entry.overnight_return_late_day_momentum import OvernightReturnLateDayMomentumEntry
 from propstack.strategy_modules.entry.overnight_inventory_reversion import OvernightInventoryReversionEntry
@@ -46,6 +47,7 @@ ENTRY_MODULES = {
     OpeningDriveInventoryComboEntry.name: OpeningDriveInventoryComboEntry,
     OpeningRangeFilteredBreakoutEntry.name: OpeningRangeFilteredBreakoutEntry,
     OpeningRangeInverseBreakoutEntry.name: OpeningRangeInverseBreakoutEntry,
+    OrderflowRegimeEntry.name: OrderflowRegimeEntry,
     OrderflowRecentPocketComboEntry.name: OrderflowRecentPocketComboEntry,
     OvernightReturnLateDayMomentumEntry.name: OvernightReturnLateDayMomentumEntry,
     OvernightInventoryReversionEntry.name: OvernightInventoryReversionEntry,
@@ -87,6 +89,7 @@ __all__ = [
     "OpeningDriveInventoryComboEntry",
     "OpeningRangeFilteredBreakoutEntry",
     "OpeningRangeInverseBreakoutEntry",
+    "OrderflowRegimeEntry",
     "OrderflowRecentPocketComboEntry",
     "OvernightReturnLateDayMomentumEntry",
     "OvernightInventoryReversionEntry",

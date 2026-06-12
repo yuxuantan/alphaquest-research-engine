@@ -373,7 +373,16 @@ def _run_incubation_core(
     skip_validation: bool,
     context: dict,
 ) -> dict:
-    selected_params = stage_cfg.get("selected_params") or context.get("incubation_params") or {}
+    train_selection_payload = {}
+    if (stage_cfg.get("train_selection") or {}).get("enabled", False):
+        selected_params, train_selection_payload = _run_incubation_train_selection(
+            cfg,
+            stage_cfg["train_selection"],
+            stage_dir / "train_selection",
+            skip_validation,
+        )
+    else:
+        selected_params = stage_cfg.get("selected_params") or context.get("incubation_params") or {}
     test_cfg = apply_dotted_params(cfg, selected_params) if selected_params else copy.deepcopy(cfg)
     subset = _stage_subset(
         test_cfg,
@@ -399,6 +408,7 @@ def _run_incubation_core(
         "metrics": result["metrics"],
         "diagnostics": result.get("diagnostics", {}),
         "selected_params": selected_params,
+        "incubation_train_selection": train_selection_payload,
         "data_quality": quality,
         "input_hash": input_hash,
         "artifacts": _stage_artifacts(stage_dir),
@@ -534,6 +544,7 @@ def _merged_section(cfg: dict, section: str, stage_cfg: dict) -> dict:
             "data_window",
             "enabled",
             "selected_params",
+            "train_selection",
         }
     }
     _deep_update(out, overrides)
@@ -614,6 +625,91 @@ def _select_incubation_params(wfa_results: pd.DataFrame) -> dict:
         row = candidates.sort_values(sort_columns, ascending=[False] * len(sort_columns), na_position="last").iloc[0]
     params = row.get("selected_params", {})
     return params if isinstance(params, dict) else {}
+
+
+def _run_incubation_train_selection(
+    cfg: dict,
+    selection_cfg: dict,
+    train_dir: Path,
+    skip_validation: bool,
+) -> tuple[dict, dict]:
+    train_dir.mkdir(parents=True, exist_ok=True)
+    train_subset = selection_cfg.get("data_subset") or {}
+    if not train_subset:
+        raise ValueError("simulated_incubation_core.train_selection.data_subset is required.")
+    market, detail, quality, input_hash = _prepare_stage_data(
+        cfg,
+        dict(train_subset),
+        train_dir,
+        skip_validation,
+        show_progress=True,
+    )
+    grid_cfg = copy.deepcopy(cfg.get("core_grid", {}))
+    _deep_update(grid_cfg, {key: value for key, value in selection_cfg.items() if key != "data_subset"})
+    parameters = (
+        selection_cfg.get("parameters")
+        or (cfg.get("wfa") or {}).get("parameters")
+        or (cfg.get("core_grid") or {}).get("parameters")
+        or {}
+    )
+    if not parameters:
+        raise ValueError("incubation train selection requires a parameter grid.")
+    grid_cfg["parameters"] = copy.deepcopy(parameters)
+    grid_cfg["data_subset"] = dict(train_subset)
+    grid_cfg.setdefault("retain_iteration_reports", False)
+    results, summary = run_core_grid(
+        market,
+        cfg,
+        grid_cfg,
+        cfg.get("benchmarks", {}),
+        report_dir=train_dir if grid_cfg.get("retain_iteration_reports", False) else None,
+        parameter_label="simulated_incubation_core.train_selection.parameters",
+        detail_data=detail,
+    )
+    selected_params = _select_core_grid_params(results, parameters, selection_cfg)
+    report_timezone = market_timezone(cfg)
+    write_report_csv(results, train_dir / "incubation_train_grid_results.csv", report_timezone, index=False)
+    summary["selected_params"] = selected_params
+    write_json(train_dir / "incubation_train_grid_summary.json", summary)
+    write_json(train_dir / "incubation_selected_params.json", selected_params)
+    return selected_params, {
+        "summary": summary,
+        "selected_params": selected_params,
+        "data_quality": quality,
+        "input_hash": input_hash,
+        "artifacts": _stage_artifacts(train_dir),
+    }
+
+
+def _select_core_grid_params(results: pd.DataFrame, parameters: dict, selection_cfg: dict) -> dict:
+    if results.empty:
+        return {}
+    candidates = results.copy()
+    min_total_trades = selection_cfg.get("selection_min_total_trades")
+    if min_total_trades is not None and "total_trades" in candidates.columns:
+        filtered = candidates[pd.to_numeric(candidates["total_trades"], errors="coerce") >= float(min_total_trades)]
+        if not filtered.empty:
+            candidates = filtered
+    min_trades_per_year = selection_cfg.get("selection_min_trades_per_year")
+    if min_trades_per_year is not None and "trades_per_year" in candidates.columns:
+        filtered = candidates[pd.to_numeric(candidates["trades_per_year"], errors="coerce") >= float(min_trades_per_year)]
+        if not filtered.empty:
+            candidates = filtered
+    objective = str(selection_cfg.get("objective", "MAR")).lower()
+    objective_columns = {
+        "mar": "mar",
+        "profit_factor": "profit_factor",
+        "pf": "profit_factor",
+        "net_profit": "net_profit",
+        "expectancy_r": "expectancy_r",
+    }
+    objective_column = objective_columns.get(objective, objective)
+    sort_columns = [column for column in [objective_column, "profit_factor", "net_profit"] if column in candidates.columns]
+    if sort_columns:
+        row = candidates.sort_values(sort_columns, ascending=[False] * len(sort_columns), na_position="last").iloc[0]
+    else:
+        row = candidates.iloc[0]
+    return {key: row[key] for key in parameters if key in row and not pd.isna(row[key])}
 
 
 def _wfa_oos_evaluation_years(wfa_results: pd.DataFrame) -> float:

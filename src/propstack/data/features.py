@@ -286,6 +286,9 @@ def add_trade_orderflow_features(df: pd.DataFrame, config: dict) -> pd.DataFrame
             group[f"trade_orderflow_abs_imbalance_{suffix}"] = group[
                 f"trade_orderflow_imbalance_{suffix}"
             ].abs()
+            group[f"trade_orderflow_signed_toxicity_{suffix}"] = group[
+                f"trade_orderflow_abs_imbalance_{suffix}"
+            ]
             if "trades" in group.columns:
                 trades = pd.to_numeric(group["trades"], errors="coerce").rolling(
                     window, min_periods=min_periods
@@ -316,10 +319,228 @@ def add_trade_orderflow_features(df: pd.DataFrame, config: dict) -> pd.DataFrame
         return out
     out = pd.concat(frames).sort_index()
     out = out.replace([np.inf, -np.inf], np.nan)
+    inventory_cfg = feature_cfg.get("prior_session_inventory") or {}
+    if inventory_cfg.get("enabled", False):
+        out = _add_trade_orderflow_prior_session_inventory(out, inventory_cfg)
+    opening_cfg = feature_cfg.get("opening_drive") or {}
+    if opening_cfg.get("enabled", False):
+        out = _add_trade_orderflow_opening_drive(out, opening_cfg, config, tick_size)
     rank_cfg = feature_cfg.get("same_clock_ranks") or {}
     if rank_cfg.get("enabled", False):
         out = _add_trade_orderflow_same_clock_ranks(out, rank_cfg)
     return out.replace([np.inf, -np.inf], np.nan)
+
+
+def _add_trade_orderflow_prior_session_inventory(df: pd.DataFrame, inventory_cfg: dict) -> pd.DataFrame:
+    out = df.sort_values("timestamp").copy()
+    rank_windows = [int(value) for value in inventory_cfg.get("rank_windows", [252])]
+    min_periods_cfg = inventory_cfg.get("rank_min_periods")
+    if not rank_windows or any(window <= 0 for window in rank_windows):
+        raise ValueError("data.trade_orderflow_features.prior_session_inventory.rank_windows must be positive.")
+    session_frame = out
+    if "session_label" in session_frame.columns:
+        session_frame = session_frame[session_frame["session_label"].astype(str) == "RTH"]
+    daily = (
+        session_frame.groupby("session_date", sort=True)
+        .agg(signed_volume=("signed_volume", "sum"), volume=("volume", "sum"))
+        .sort_index()
+    )
+    daily["trade_orderflow_prior_session_signed_volume"] = daily["signed_volume"].shift(1)
+    daily["trade_orderflow_prior_session_volume"] = daily["volume"].shift(1)
+    daily["trade_orderflow_prior_session_imbalance"] = (
+        daily["trade_orderflow_prior_session_signed_volume"]
+        / daily["trade_orderflow_prior_session_volume"].replace(0.0, np.nan)
+    )
+    for window in rank_windows:
+        min_periods = _same_clock_rank_min_periods(min_periods_cfg, window)
+        daily[f"trade_orderflow_prior_session_imbalance_rank{window}"] = _prior_window_rank_series(
+            daily["trade_orderflow_prior_session_imbalance"],
+            window,
+            min_periods,
+        )
+    for column in [
+        "trade_orderflow_prior_session_signed_volume",
+        "trade_orderflow_prior_session_volume",
+        "trade_orderflow_prior_session_imbalance",
+        *[f"trade_orderflow_prior_session_imbalance_rank{window}" for window in rank_windows],
+    ]:
+        out[column] = out["session_date"].map(daily[column])
+    return out
+
+
+def _add_trade_orderflow_opening_drive(
+    df: pd.DataFrame,
+    opening_cfg: dict,
+    config: dict,
+    tick_size: float,
+) -> pd.DataFrame:
+    out = df.sort_values("timestamp").copy()
+    windows = [dict(item) for item in opening_cfg.get("windows", [])]
+    if not windows:
+        raise ValueError("data.trade_orderflow_features.opening_drive.windows must not be empty.")
+    rank_windows = [int(value) for value in opening_cfg.get("volume_rank_windows", [42])]
+    rank_min_periods_cfg = opening_cfg.get("volume_rank_min_periods")
+    if any(window <= 0 for window in rank_windows):
+        raise ValueError("data.trade_orderflow_features.opening_drive.volume_rank_windows must be positive.")
+
+    bar_interval_raw = opening_cfg.get(
+        "bar_interval_minutes",
+        config.get("bar_interval_minutes", out.get("timeframe_minutes", 1)),
+    )
+    if isinstance(bar_interval_raw, pd.Series):
+        non_null_intervals = bar_interval_raw.dropna()
+        bar_interval_raw = float(non_null_intervals.iloc[0]) if not non_null_intervals.empty else 1.0
+    bar_interval_minutes = float(bar_interval_raw)
+    if bar_interval_minutes <= 0:
+        raise ValueError("data.trade_orderflow_features.opening_drive.bar_interval_minutes must be positive.")
+
+    session_start = parse_time(opening_cfg.get("rth_start", config.get("rth_start", "09:30:00")))
+    group_cols = ["session_date"]
+    for optional in ["symbol"]:
+        if optional in out.columns:
+            group_cols.append(optional)
+
+    for label in [_opening_window_label(item) for item in windows]:
+        for column in [
+            f"trade_orderflow_opening_return_ticks_{label}",
+            f"trade_orderflow_opening_imbalance_{label}",
+            f"trade_orderflow_opening_abs_imbalance_{label}",
+            f"trade_orderflow_opening_volume_{label}",
+        ]:
+            out[column] = np.nan
+        for rank_window in rank_windows:
+            out[f"trade_orderflow_opening_volume_rank{rank_window}_{label}"] = np.nan
+
+    out["trade_orderflow_session_return_ticks"] = np.nan
+    out["trade_orderflow_session_cum_delta_ratio"] = np.nan
+    out["trade_orderflow_price_vs_vwap_ticks"] = np.nan
+
+    session_records: dict[str, list[dict]] = {
+        _opening_window_label(item): [] for item in windows
+    }
+    for group_key, group in out.groupby(group_cols, sort=True, dropna=False):
+        group = group.sort_values("timestamp")
+        if group.empty:
+            continue
+        open_price = _first_finite(group["open"])
+        close = pd.to_numeric(group["close"], errors="coerce").astype(float)
+        volume = pd.to_numeric(group["volume"], errors="coerce").astype(float)
+        signed = pd.to_numeric(group["signed_volume"], errors="coerce").astype(float)
+        cum_volume = volume.cumsum()
+        cum_pv = (close * volume).cumsum()
+        vwap = cum_pv / cum_volume.replace(0.0, np.nan)
+        if np.isfinite(open_price) and tick_size > 0:
+            out.loc[group.index, "trade_orderflow_session_return_ticks"] = (
+                (close - open_price) / tick_size
+            ).to_numpy(dtype=float)
+        out.loc[group.index, "trade_orderflow_session_cum_delta_ratio"] = (
+            signed.cumsum() / cum_volume.replace(0.0, np.nan)
+        ).to_numpy(dtype=float)
+        out.loc[group.index, "trade_orderflow_price_vs_vwap_ticks"] = (
+            (close - vwap) / tick_size
+        ).to_numpy(dtype=float)
+
+        timestamp = pd.to_datetime(group["timestamp"])
+        bar_close = timestamp + pd.to_timedelta(bar_interval_minutes, unit="m")
+        reference = pd.Timestamp(group.iloc[0]["timestamp"])
+        session_date = group.iloc[0]["session_date"]
+        key_values = group_key if isinstance(group_key, tuple) else (group_key,)
+        symbol_value = key_values[group_cols.index("symbol")] if "symbol" in group_cols else None
+
+        for item in windows:
+            label = _opening_window_label(item)
+            minutes = int(item.get("minutes", str(label).rstrip("m")))
+            bars = int(item.get("bars", max(1, round(minutes / bar_interval_minutes))))
+            capture_ts = _local_session_timestamp_for_feature(session_date, session_start, reference) + pd.Timedelta(
+                minutes=minutes
+            )
+            eligible = bar_close <= capture_ts
+            if not eligible.any():
+                continue
+            capture_idx = group.index[eligible][-1]
+            capture_close = bar_close.loc[capture_idx]
+            if capture_close != capture_ts:
+                continue
+            return_col = f"trade_orderflow_return_ticks_{bars}"
+            imbalance_col = f"trade_orderflow_imbalance_{bars}"
+            volume_col = f"trade_orderflow_volume_{bars}"
+            missing = [column for column in [return_col, imbalance_col, volume_col] if column not in out.columns]
+            if missing:
+                raise ValueError(
+                    "trade_orderflow opening_drive requires rolling orderflow columns. "
+                    f"Missing: {missing}."
+                )
+            return_value = _finite_float_value(out.loc[capture_idx, return_col])
+            imbalance_value = _finite_float_value(out.loc[capture_idx, imbalance_col])
+            volume_value = _finite_float_value(out.loc[capture_idx, volume_col])
+            visible = group.index[bar_close >= capture_ts]
+            out.loc[visible, f"trade_orderflow_opening_return_ticks_{label}"] = return_value
+            out.loc[visible, f"trade_orderflow_opening_imbalance_{label}"] = imbalance_value
+            out.loc[visible, f"trade_orderflow_opening_abs_imbalance_{label}"] = (
+                abs(imbalance_value) if np.isfinite(imbalance_value) else np.nan
+            )
+            out.loc[visible, f"trade_orderflow_opening_volume_{label}"] = volume_value
+            session_records[label].append(
+                {
+                    "session_date": pd.Timestamp(session_date),
+                    "symbol": symbol_value,
+                    "volume": volume_value,
+                    "visible_index": visible,
+                }
+            )
+
+    for label, records in session_records.items():
+        if not records:
+            continue
+        frame = pd.DataFrame(
+            {
+                "session_date": [record["session_date"] for record in records],
+                "symbol": [record["symbol"] for record in records],
+                "volume": [record["volume"] for record in records],
+            }
+        )
+        rank_group_cols = ["symbol"] if "symbol" in group_cols else []
+        if rank_group_cols:
+            rank_groups = frame.groupby(rank_group_cols, sort=False, dropna=False)
+        else:
+            rank_groups = [((), frame)]
+        for _, rank_group in rank_groups:
+            rank_group = rank_group.sort_values("session_date")
+            for rank_window in rank_windows:
+                min_periods = _same_clock_rank_min_periods(rank_min_periods_cfg, rank_window)
+                ranks = _prior_window_rank_series(rank_group["volume"], rank_window, min_periods)
+                for record_index, rank_value in zip(rank_group.index, ranks, strict=False):
+                    out.loc[
+                        records[int(record_index)]["visible_index"],
+                        f"trade_orderflow_opening_volume_rank{rank_window}_{label}",
+                    ] = rank_value
+    return out
+
+
+def _opening_window_label(item: dict) -> str:
+    raw = str(item.get("label", f"{int(item.get('minutes', 30))}m")).lower()
+    return "".join(ch for ch in raw if ch.isalnum())
+
+
+def _first_finite(values: pd.Series) -> float:
+    numeric = pd.to_numeric(values, errors="coerce")
+    finite = numeric[np.isfinite(numeric)]
+    return float(finite.iloc[0]) if not finite.empty else np.nan
+
+
+def _finite_float_value(value) -> float:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return np.nan
+    return out if np.isfinite(out) else np.nan
+
+
+def _local_session_timestamp_for_feature(session_date, session_time, reference: pd.Timestamp) -> pd.Timestamp:
+    naive = pd.Timestamp.combine(pd.Timestamp(session_date).date(), session_time)
+    if reference.tzinfo is None:
+        return naive
+    return naive.tz_localize(reference.tz)
 
 
 def add_orderflow_recent_pocket_combo_features(df: pd.DataFrame, config: dict) -> pd.DataFrame:

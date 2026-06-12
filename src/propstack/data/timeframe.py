@@ -71,6 +71,12 @@ def aggregate_timeframe(df: pd.DataFrame, config: dict, timeframe) -> pd.DataFra
         agg["is_eth"] = ("is_eth", "any")
     if "roll_boundary" in out.columns:
         agg["roll_boundary"] = ("roll_boundary", "any")
+    for optional_sum in ["signed_volume", "buy_volume", "sell_volume", "trades"]:
+        if optional_sum in out.columns:
+            agg[optional_sum] = (optional_sum, "sum")
+    for column in out.columns:
+        if re.fullmatch(r"large\d+_(?:signed_)?volume", str(column)):
+            agg[column] = (column, "sum")
 
     aggregated = out.groupby(group_cols, sort=True, dropna=False).agg(**agg).reset_index()
     aggregated = aggregated.rename(columns={"_timeframe_timestamp": "timestamp"})
@@ -97,6 +103,10 @@ def aggregate_timeframe(df: pd.DataFrame, config: dict, timeframe) -> pd.DataFra
         "low",
         "close",
         "volume",
+        "signed_volume",
+        "buy_volume",
+        "sell_volume",
+        "trades",
         "timeframe_minutes",
         "source_bar_count",
         "roll_boundary",
