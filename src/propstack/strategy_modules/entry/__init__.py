@@ -4,7 +4,9 @@ from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessi
 from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from propstack.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
+from propstack.strategy_modules.entry.gao_last_half_hour_orderflow import GaoLastHalfHourOrderflowEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
+from propstack.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
 from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import LiquidityRiskCapacityPriorityEntry
 from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
@@ -13,6 +15,7 @@ from propstack.strategy_modules.entry.morning_orderflow_momentum import MorningO
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_inverse_breakout import OpeningRangeInverseBreakoutEntry
+from propstack.strategy_modules.entry.opening_gap_orderflow_fade import OpeningGapOrderflowFadeEntry
 from propstack.strategy_modules.entry.opening_drive_inventory_combo import OpeningDriveInventoryComboEntry
 from propstack.strategy_modules.entry.orderflow_regime import OrderflowRegimeEntry
 from propstack.strategy_modules.entry.orderflow_recent_pocket_combo import OrderflowRecentPocketComboEntry
@@ -39,13 +42,16 @@ ENTRY_MODULES = {
     CftcTffHedgingPressureEntry.name: CftcTffHedgingPressureEntry,
     CftcTffTieredHedgingPressureEntry.name: CftcTffTieredHedgingPressureEntry,
     DailyTimeSeriesMomentumEntry.name: DailyTimeSeriesMomentumEntry,
+    GaoLastHalfHourOrderflowEntry.name: GaoLastHalfHourOrderflowEntry,
     IntradayCapitulationMREntry.name: IntradayCapitulationMREntry,
+    IntradayMomentumPriorityEntry.name: IntradayMomentumPriorityEntry,
     LateDayIntradayMomentumEntry.name: LateDayIntradayMomentumEntry,
     LiquidityRiskCapacityPriorityEntry.name: LiquidityRiskCapacityPriorityEntry,
     MarketPlumbingPriorityEntry.name: MarketPlumbingPriorityEntry,
     MorningIntradayMomentumEntry.name: MorningIntradayMomentumEntry,
     MorningOrderflowMomentumEntry.name: MorningOrderflowMomentumEntry,
     OpeningRangeBreakoutEntry.name: OpeningRangeBreakoutEntry,
+    OpeningGapOrderflowFadeEntry.name: OpeningGapOrderflowFadeEntry,
     OpeningDriveInventoryComboEntry.name: OpeningDriveInventoryComboEntry,
     OpeningRangeFilteredBreakoutEntry.name: OpeningRangeFilteredBreakoutEntry,
     OpeningRangeInverseBreakoutEntry.name: OpeningRangeInverseBreakoutEntry,
@@ -82,13 +88,16 @@ __all__ = [
     "CftcTffHedgingPressureEntry",
     "CftcTffTieredHedgingPressureEntry",
     "DailyTimeSeriesMomentumEntry",
+    "GaoLastHalfHourOrderflowEntry",
     "IntradayCapitulationMREntry",
+    "IntradayMomentumPriorityEntry",
     "LateDayIntradayMomentumEntry",
     "LiquidityRiskCapacityPriorityEntry",
     "MarketPlumbingPriorityEntry",
     "MorningIntradayMomentumEntry",
     "MorningOrderflowMomentumEntry",
     "OpeningRangeBreakoutEntry",
+    "OpeningGapOrderflowFadeEntry",
     "OpeningDriveInventoryComboEntry",
     "OpeningRangeFilteredBreakoutEntry",
     "OpeningRangeInverseBreakoutEntry",

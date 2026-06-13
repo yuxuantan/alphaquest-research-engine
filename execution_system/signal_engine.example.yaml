@@ -82,14 +82,17 @@ engine:
     print_rejection_readable: true
     sound:
       enabled: true
-      bell: true
+      bell: false
       on_setup: true
       on_entry: true
       on_system: true
       max_active_commands: 3
       cleanup_on_exit: true
       fail_on_error: false
-      command: null
+      setup_command: /usr/bin/afplay /System/Library/Sounds/Ping.aiff
+      entry_command: /usr/bin/afplay /System/Library/Sounds/Glass.aiff
+      system_command: /usr/bin/afplay /System/Library/Sounds/Basso.aiff
+      command: /usr/bin/afplay /System/Library/Sounds/Glass.aiff
   account:
     net_liq: 150000
     min_contracts: 1
@@ -171,7 +174,7 @@ databento:
     stop_on_stale_trade_tick: true
     stop_on_future_trade_tick: true
     stop_on_unmatched_contract_symbol: true
-    stop_on_state_lock_timeout: true
+    stop_on_state_lock_timeout: false
     drop_partial_first_live_bar: true
     flush_completed_bars_on_heartbeat: true
     bar_flush_delay_seconds: 2

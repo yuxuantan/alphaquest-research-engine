@@ -7,7 +7,9 @@ from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessi
 from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from propstack.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
+from propstack.strategy_modules.entry.gao_last_half_hour_orderflow import GaoLastHalfHourOrderflowEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
+from propstack.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
 from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import LiquidityRiskCapacityPriorityEntry
 from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
@@ -15,6 +17,7 @@ from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIn
 from propstack.strategy_modules.entry.morning_orderflow_momentum import MorningOrderflowMomentumEntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
 from propstack.strategy_modules.entry.opening_drive_inventory_combo import OpeningDriveInventoryComboEntry
+from propstack.strategy_modules.entry.opening_gap_orderflow_fade import OpeningGapOrderflowFadeEntry
 from propstack.strategy_modules.entry.opening_range_filtered_breakout import OpeningRangeFilteredBreakoutEntry
 from propstack.strategy_modules.entry.opening_range_inverse_breakout import OpeningRangeInverseBreakoutEntry
 from propstack.strategy_modules.entry.orderflow_regime import OrderflowRegimeEntry
@@ -108,6 +111,109 @@ def test_signal_stop_and_target_use_signal_metadata():
     fallback_stop = stop.price(SimpleNamespace(metadata={}), direction="short", tick_size=0.25, entry_price=100.0)
     assert fallback_stop == 100.5
     assert target.price(100.0, fallback_stop, "short", signal=SimpleNamespace(metadata={})) == 99.25
+
+
+def _opening_gap_orderflow_bar(
+    timestamp,
+    *,
+    open_=106.0,
+    high=106.25,
+    low=105.75,
+    close=106.0,
+    prev_rth_close=100.0,
+    signed_volume=-100,
+    volume=1000,
+    large20_signed_volume=-250,
+    large20_volume=1000,
+):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": True,
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "prev_rth_close": prev_rth_close,
+            "signed_volume": signed_volume,
+            "volume": volume,
+            "large10_signed_volume": large20_signed_volume,
+            "large10_volume": large20_volume,
+            "large20_signed_volume": large20_signed_volume,
+            "large20_volume": large20_volume,
+        }
+    )
+
+
+def test_opening_gap_orderflow_fade_emits_gap_up_large20_fade_short():
+    entry = OpeningGapOrderflowFadeEntry(
+        {
+            "source_start": "10:45:00",
+            "signal_time": "11:00:00",
+            "flatten_time": "15:45:00",
+            "bar_interval_minutes": 1,
+            "min_opening_gap_ticks": 24,
+            "min_orderflow_imbalance": 0.20,
+            "stop_pct": 0.003,
+            "target_r_multiple": 12.0,
+        }
+    )
+
+    assert entry.on_bar_close(_opening_gap_orderflow_bar("2024-01-03 09:30")) is None
+    signal = None
+    for minute in range(45, 60):
+        signal = entry.on_bar_close(_opening_gap_orderflow_bar(f"2024-01-03 10:{minute:02d}"))
+
+    assert signal is not None
+    assert signal.direction == "short"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 11:00", tz="America/New_York")
+    assert signal.metadata["stop_pct"] == 0.003
+    assert signal.metadata["target_r_multiple"] == 12.0
+    assert signal.metadata["flatten_time"] == "15:45:00"
+    assert signal.report_fields["opening_gap_ticks"] == 24.0
+    assert signal.report_fields["source_window_large20_imbalance"] == -0.25
+
+
+def test_opening_gap_orderflow_fade_rejects_small_gap_and_same_direction_flow():
+    small_gap = OpeningGapOrderflowFadeEntry(
+        {
+            "source_start": "10:45:00",
+            "signal_time": "11:00:00",
+            "bar_interval_minutes": 1,
+            "min_opening_gap_ticks": 24,
+            "min_orderflow_imbalance": 0.20,
+        }
+    )
+    assert small_gap.on_bar_close(
+        _opening_gap_orderflow_bar("2024-01-03 09:30", open_=104.0)
+    ) is None
+    signal = None
+    for minute in range(45, 60):
+        signal = small_gap.on_bar_close(_opening_gap_orderflow_bar(f"2024-01-03 10:{minute:02d}", open_=104.0))
+    assert signal is None
+
+    same_direction = OpeningGapOrderflowFadeEntry(
+        {
+            "source_start": "10:45:00",
+            "signal_time": "11:00:00",
+            "bar_interval_minutes": 1,
+            "min_opening_gap_ticks": 24,
+            "min_orderflow_imbalance": 0.20,
+        }
+    )
+    assert same_direction.on_bar_close(_opening_gap_orderflow_bar("2024-01-04 09:30")) is None
+    signal = None
+    for minute in range(45, 60):
+        signal = same_direction.on_bar_close(
+            _opening_gap_orderflow_bar(
+                f"2024-01-04 10:{minute:02d}",
+                signed_volume=100,
+                large20_signed_volume=250,
+            )
+        )
+    assert signal is None
 
 
 def test_opening_range_edge_stop_skips_when_natural_risk_exceeds_max():
@@ -1169,6 +1275,155 @@ def test_late_day_intraday_momentum_signal_closes_at_last_half_hour_start_for_su
         )
 
 
+def _gao_of_bar(
+    timestamp,
+    open_price,
+    high,
+    low,
+    close,
+    *,
+    volume=1000,
+    signed_volume=75,
+    large10_volume=500,
+    large10_signed_volume=50,
+    large20_volume=250,
+    large20_signed_volume=25,
+    is_rth=True,
+):
+    ts = pd.Timestamp(timestamp)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": is_rth,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+            "signed_volume": signed_volume,
+            "large10_volume": large10_volume,
+            "large10_signed_volume": large10_signed_volume,
+            "large20_volume": large20_volume,
+            "large20_signed_volume": large20_signed_volume,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def test_gao_last_half_hour_orderflow_emits_signed_flow_alignment_at_last_window_start():
+    params = {
+        "setup_mode": "first_signed_flow_alignment",
+        "bar_interval_minutes": 30,
+        "min_first_return_ticks": 2,
+        "min_orderflow_imbalance": 0.05,
+        "stop_pct": 0.0015,
+        "target_r_multiple": 1.5,
+        "tick_size": 0.25,
+    }
+    long_entry = GaoLastHalfHourOrderflowEntry(params)
+    first = _gao_of_bar("2024-01-03 09:30", 100.0, 103.0, 99.5, 102.0, signed_volume=100)
+    assert long_entry.on_bar_close(first) is None
+    signal = long_entry.on_bar_close(_gao_of_bar("2024-01-03 15:00", 102.0, 102.5, 101.5, 102.25))
+
+    assert signal.direction == "long"
+    assert signal.level_type == "gao_last_half_hour_orderflow_first_signed_flow_alignment"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 15:30", tz="America/New_York")
+    assert signal.metadata["flatten_time"] == "16:00:00"
+    assert signal.metadata["stop_pct"] == 0.0015
+    assert signal.metadata["target_r_multiple"] == 1.5
+    assert signal.report_fields["source_return_reference"] == "rth_open_to_first_half_hour_close"
+    assert signal.report_fields["target_window_reference"] == "last_half_hour_15_30_to_16_00"
+    assert signal.report_fields["first_window_return_ticks"] == 8.0
+    assert signal.report_fields["first_window_imbalance"] == 0.1
+    assert signal.report_fields["late_day_entry_window_start"] == pd.Timestamp(
+        "2024-01-03 15:30", tz="America/New_York"
+    )
+
+    short_entry = GaoLastHalfHourOrderflowEntry(params)
+    first = _gao_of_bar(
+        "2024-01-03 09:30",
+        100.0,
+        100.5,
+        97.5,
+        98.0,
+        signed_volume=-100,
+        large20_signed_volume=-25,
+    )
+    assert short_entry.on_bar_close(first) is None
+    signal = short_entry.on_bar_close(_gao_of_bar("2024-01-03 15:00", 98.0, 98.5, 97.5, 97.75))
+
+    assert signal.direction == "short"
+    assert signal.report_fields["first_window_return_ticks"] == -8.0
+    assert signal.report_fields["first_window_imbalance"] == -0.1
+
+
+def test_gao_last_half_hour_orderflow_requires_first_window_flow_and_ignores_future_last_half_hour():
+    entry = GaoLastHalfHourOrderflowEntry(
+        {
+            "setup_mode": "first_signed_flow_alignment",
+            "bar_interval_minutes": 30,
+            "min_first_return_ticks": 2,
+            "min_orderflow_imbalance": 0.05,
+        }
+    )
+    assert entry.on_bar_close(_gao_of_bar("2024-01-03 09:30", 100.0, 103.0, 99.5, 102.0, signed_volume=10)) is None
+    assert entry.on_bar_close(_gao_of_bar("2024-01-03 15:00", 102.0, 102.5, 101.5, 102.25)) is None
+
+    future = _gao_of_bar("2024-01-03 15:30", 102.25, 106.0, 102.0, 105.5, signed_volume=1000)
+    assert entry.on_bar_close(future) is None
+
+
+def test_gao_last_half_hour_orderflow_large20_and_penultimate_alignment_filters():
+    large20 = GaoLastHalfHourOrderflowEntry(
+        {
+            "setup_mode": "first_large20_flow_alignment",
+            "flow_mode": "large20_imbalance",
+            "bar_interval_minutes": 30,
+            "min_first_return_ticks": 2,
+            "min_orderflow_imbalance": 0.05,
+        }
+    )
+    assert large20.on_bar_close(
+        _gao_of_bar("2024-01-03 09:30", 100.0, 103.0, 99.5, 102.0, signed_volume=100, large20_signed_volume=0)
+    ) is None
+    assert large20.on_bar_close(_gao_of_bar("2024-01-03 15:00", 102.0, 102.5, 101.5, 102.25)) is None
+
+    passing_large20 = GaoLastHalfHourOrderflowEntry(
+        {
+            "setup_mode": "first_large20_flow_alignment",
+            "flow_mode": "large20_imbalance",
+            "bar_interval_minutes": 30,
+            "min_first_return_ticks": 2,
+            "min_orderflow_imbalance": 0.05,
+        }
+    )
+    assert passing_large20.on_bar_close(
+        _gao_of_bar("2024-01-03 09:30", 100.0, 103.0, 99.5, 102.0, signed_volume=100, large20_signed_volume=25)
+    ) is None
+    signal = passing_large20.on_bar_close(_gao_of_bar("2024-01-03 15:00", 102.0, 102.5, 101.5, 102.25))
+    assert signal.direction == "long"
+    assert signal.report_fields["first_window_large20_imbalance"] == 0.1
+
+    penultimate = GaoLastHalfHourOrderflowEntry(
+        {
+            "setup_mode": "first_penultimate_signed_flow_alignment",
+            "bar_interval_minutes": 30,
+            "min_first_return_ticks": 2,
+            "min_orderflow_imbalance": 0.05,
+            "min_penultimate_return_ticks": 1,
+        }
+    )
+    assert penultimate.on_bar_close(_gao_of_bar("2024-01-03 09:30", 100.0, 103.0, 99.5, 102.0, signed_volume=100)) is None
+    signal = penultimate.on_bar_close(_gao_of_bar("2024-01-03 15:00", 101.0, 102.5, 100.75, 102.0, signed_volume=100))
+
+    assert signal.direction == "long"
+    assert signal.report_fields["penultimate_window_return_ticks"] == 4.0
+    assert signal.report_fields["penultimate_window_imbalance"] == 0.1
+
+
 def _mim_bar(
     timestamp,
     open_price,
@@ -2062,6 +2317,99 @@ def test_intraday_capitulation_mr_entry_rejects_close_not_near_low():
         signal = entry.on_bar_close(bar)
 
     assert signal is None
+
+
+def test_intraday_momentum_priority_emits_short_first_slot_with_signal_risk_metadata():
+    entry = IntradayMomentumPriorityEntry(
+        {
+            "bar_interval_minutes": 30,
+            "tick_size": 0.25,
+            "short_stop_pct": 0.004,
+            "short_target_r_multiple": 3.5,
+            "slots": [
+                {
+                    "slot_id": "nq_1030_short_weakness",
+                    "param_prefix": "short",
+                    "direction": "short",
+                    "signal_time": "10:30:00",
+                    "min_signal_return_bps": 40,
+                    "stop_pct": 0.0035,
+                    "target_r_multiple": 3.0,
+                    "flatten_time": "15:59:00",
+                },
+                {
+                    "slot_id": "nq_1130_long_strength",
+                    "param_prefix": "long",
+                    "direction": "long",
+                    "signal_time": "11:30:00",
+                    "min_signal_return_bps": 50,
+                    "stop_pct": 0.0035,
+                    "target_r_multiple": 2.5,
+                    "flatten_time": "15:59:00",
+                },
+            ],
+        }
+    )
+
+    bars = [
+        _mim_bar("2024-01-03 09:30", 100.0, 100.2, 99.2, 99.6),
+        _mim_bar("2024-01-03 10:00", 99.6, 99.8, 99.2, 99.5),
+    ]
+    signal = None
+    for bar in bars:
+        signal = entry.on_bar_close(bar)
+
+    assert signal.direction == "short"
+    assert signal.level_type == "intraday_momentum_priority_nq_1030_short_weakness"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 10:30", tz="America/New_York")
+    assert signal.metadata["stop_pct"] == 0.004
+    assert signal.metadata["target_r_multiple"] == 3.5
+    assert signal.metadata["flatten_time"] == "15:59:00"
+    assert round(signal.report_fields["source_window_return_bps"], 6) == -50.0
+    assert signal.report_fields["signal_stop_pct"] == 0.004
+    assert signal.report_fields["signal_target_r_multiple"] == 3.5
+
+
+def test_intraday_momentum_priority_allows_later_slot_only_when_first_slot_does_not_fire():
+    entry = IntradayMomentumPriorityEntry(
+        {
+            "bar_interval_minutes": 30,
+            "tick_size": 0.25,
+            "slots": [
+                {
+                    "slot_id": "nq_1030_short_weakness",
+                    "direction": "short",
+                    "signal_time": "10:30:00",
+                    "min_signal_return_bps": 40,
+                    "stop_pct": 0.0035,
+                    "target_r_multiple": 3.0,
+                },
+                {
+                    "slot_id": "nq_1130_long_strength",
+                    "direction": "long",
+                    "signal_time": "11:30:00",
+                    "min_signal_return_bps": 50,
+                    "stop_pct": 0.0035,
+                    "target_r_multiple": 2.5,
+                },
+            ],
+        }
+    )
+
+    bars = [
+        _mim_bar("2024-01-03 09:30", 100.0, 100.2, 99.9, 100.1),
+        _mim_bar("2024-01-03 10:00", 100.1, 100.3, 100.0, 100.2),
+        _mim_bar("2024-01-03 10:30", 100.2, 100.4, 100.1, 100.3),
+        _mim_bar("2024-01-03 11:00", 100.3, 100.8, 100.2, 100.6),
+    ]
+
+    signals = [entry.on_bar_close(bar) for bar in bars]
+
+    assert signals[1] is None
+    assert signals[-1].direction == "long"
+    assert signals[-1].level_type == "intraday_momentum_priority_nq_1130_long_strength"
+    assert round(signals[-1].report_fields["source_window_return_bps"], 6) == 60.0
+    assert signals[-1].metadata["target_r_multiple"] == 2.5
 
 
 def _orb_bar(timestamp, open_price, high, low, close, session_date=None, volume_ratio=1.0, vwap=100.0):

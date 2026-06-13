@@ -61,10 +61,19 @@ DEFAULT_ALERT_PREFIX = "ENTRY_SIGNAL"
 DEFAULT_OPERATOR_SOUND_MAX_ACTIVE_COMMANDS = 3
 DEFAULT_CONSOLE_DEBUG = False
 SETUP_NOTICE_CONTRACT_VERSION = "trade_setup.v3"
+TRADE_WARNING_CONTRACT_VERSION = "trade_warning.v1"
 ALERT_CONTRACT_VERSION = "entry_signal.v5"
 EXECUTION_INTENT_VERSION = "execution_intent.v5"
 EXECUTION_INTENT_RECORD_VERSION = "execution_intent_record.v5"
 CONFIG_FINGERPRINT_VERSION = "config_fingerprint.v1"
+NON_NUMERIC_RUNTIME_FEATURE_COLUMNS = {
+    "timestamp",
+    "timestamp_utc",
+    "symbol",
+    "contract_symbol",
+    "session_date",
+    "session_label",
+}
 PROJECT_FILE_REFERENCE_KEYS = {
     "cache_dir",
     "data_dir",
@@ -92,12 +101,28 @@ CONSOLE_SUMMARY_KEYS = (
     "connected",
     "records_received",
     "trade_ticks",
+    "trade_ticks_received",
+    "completed_source_bars",
     "strategy_id",
+    "warning_id",
+    "warning_timestamp_utc",
+    "expected_entry_timestamp_utc",
+    "warning_lead_bars",
     "symbol",
     "contract_symbol",
     "timeframe",
-    "direction",
+    "timestamp",
+    "timestamp_utc",
+    "price",
+    "size",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "signed_volume",
     "side",
+    "direction",
     "quantity",
     "entry_price",
     "entry_basis_price",
@@ -116,12 +141,40 @@ CONSOLE_SUMMARY_KEYS = (
     "replayed_bars",
     "entry_alerts",
     "setup_notices",
+    "trade_warnings",
     "trade_setups",
     "pending_signals",
     "pending_expired_count",
     "last_record_utc",
     "last_trade_tick_utc",
     "last_completed_bar_utc",
+    "requirement_count",
+    "expected_bar_count",
+    "available_bar_count",
+    "missing_bar_count",
+    "required_start_utc",
+    "required_end_utc",
+    "first_missing_bar_utc",
+    "last_missing_bar_utc",
+    "missing_bar_samples_truncated",
+    "historical_skipped",
+    "backfill_enabled",
+    "backfill_attempted",
+    "backfill_bars",
+    "accepted_backfill_bars",
+    "catchup_active",
+    "catchup_attempts",
+    "catchup_retry_interval_seconds",
+    "strategy_evaluation_deferred",
+    "strategy_evaluation_deferred_bars",
+    "market_open_price",
+    "current_price",
+    "cumulative_delta",
+    "total_volume",
+    "session_bar_count",
+    "price_change_points",
+    "price_change_ticks",
+    "rth_session_date",
     "records_read",
     "actionable_count",
     "rejected_count",
@@ -888,6 +941,7 @@ class StrategyRuntime:
             path=self.strategy_config_label,
         )
         validate_strategy_trade_mechanics(self.variant_config, strategy_id=self.strategy_id)
+        validate_strategy_pre_trade_warning_config(self.variant_config, strategy_id=self.strategy_id)
         self.data_config = dict(self.variant_config.get("data", {}))
         self.symbol = str(
             strategy_spec.get("symbol")
@@ -922,6 +976,7 @@ class StrategyRuntime:
         self._last_contract_filter_alert_monotonic: float | None = None
         self.trades_by_session: dict[str, int] = {}
         self.sent_signal_keys: set[str] = set()
+        self.sent_warning_keys: set[str] = set()
         self.feature_quality_config = normalize_feature_quality_config(engine_config.get("feature_quality", {}))
         self.feature_quality_skip_count = 0
         self.last_feature_quality_issue: dict[str, Any] | None = None
@@ -970,6 +1025,7 @@ class StrategyRuntime:
                 "sl": nested_get(strategy, "sl", "module"),
                 "tp": nested_get(strategy, "tp", "module"),
             },
+            "pre_trade_warning": self.pre_trade_warning_config(),
             "warnings": self.warnings,
         }
 
@@ -995,7 +1051,7 @@ class StrategyRuntime:
         source_timeframe = str(data.get("source_timeframe", "1m"))
 
         entry_cfg = nested_get(self.variant_config, "strategy", "entry") or {}
-        entry_module = str(entry_cfg.get("module", ""))
+        entry_module = str(entry_cfg.get("module", "")).strip().lower()
         entry_params = dict(entry_cfg.get("params", {})) if isinstance(entry_cfg.get("params"), dict) else {}
 
         if self.is_builtin:
@@ -1015,10 +1071,12 @@ class StrategyRuntime:
         trade_cfg = dict(data.get("trade_orderflow_features") or {})
         orderflow_combo_cfg = dict(data.get("orderflow_recent_pocket_combo_features") or {})
         referenced_feature_columns = collect_feature_column_references(entry_params)
+        uses_morning_orderflow_momentum = entry_module == "morning_orderflow_momentum"
         uses_trade_orderflow = (
             bool(trade_cfg.get("enabled", False))
             or bool(orderflow_combo_cfg.get("enabled", False))
             or "trade_orderflow" in entry_module
+            or uses_morning_orderflow_momentum
             or contains_trade_orderflow_reference(entry_params)
         )
         if uses_trade_orderflow:
@@ -1055,6 +1113,19 @@ class StrategyRuntime:
                     derived_columns.add(str(column))
                     for rank_window in rank_windows:
                         derived_columns.add(f"{column}_rank{rank_window}")
+        if uses_morning_orderflow_momentum:
+            morning_source_columns = morning_orderflow_source_columns(entry_params)
+            source_columns.update(morning_source_columns)
+            feature_families.add("morning_orderflow_momentum")
+            morning_window_bars = estimate_morning_orderflow_window_bars(entry_params, source_timeframe)
+            max_window = max(max_window, morning_window_bars)
+            morning_large_sizes = morning_orderflow_large_trade_sizes(entry_params)
+            large_trade_sizes.update(morning_large_sizes)
+            for size in morning_large_sizes:
+                source_columns.update({f"large{size}_signed_volume", f"large{size}_volume"})
+            reasons.append(
+                "morning_orderflow_momentum uses the completed RTH-open to signal-time signed-orderflow window"
+            )
 
         vpin_cfg = dict(data.get("vpin_toxicity_features") or {})
         if bool(vpin_cfg.get("enabled", False)):
@@ -1155,6 +1226,83 @@ class StrategyRuntime:
                 queued.append(pending)
         return queued
 
+    def pre_trade_warning_config(self) -> dict[str, Any]:
+        entry_params = dict(nested_get(self.variant_config, "strategy", "entry", "params") or {})
+        return normalize_pre_trade_warning_config(entry_params.get("pre_trade_warning", {}))
+
+    def process_pre_trade_warnings(self, store: BarStore) -> list[PendingSignal]:
+        warning_config = self.pre_trade_warning_config()
+        if not bool(warning_config.get("enabled", False)):
+            return []
+        entry_cfg = nested_get(self.variant_config, "strategy", "entry") or {}
+        if not isinstance(entry_cfg, dict):
+            return []
+        entry_module = str(entry_cfg.get("module", "")).strip().lower()
+        if entry_module != "morning_orderflow_momentum":
+            return []
+        features = self.completed_features(store)
+        if features.empty:
+            return []
+        latest_source_end = store.latest_source_end(self.timezone)
+        if latest_source_end is None:
+            return []
+        entry_params = dict(entry_cfg.get("params", {})) if isinstance(entry_cfg.get("params"), dict) else {}
+        pending_items: list[PendingSignal] = []
+        for _, row in features.iterrows():
+            pending = self.morning_orderflow_pre_trade_warning_pending(
+                features,
+                row,
+                entry_params=entry_params,
+                warning_config=warning_config,
+                latest_source_end=latest_source_end,
+            )
+            if pending is None:
+                continue
+            if pending.key in self.sent_warning_keys:
+                continue
+            pending_items.append(pending)
+        return pending_items
+
+    def morning_orderflow_pre_trade_warning_pending(
+        self,
+        features: Any,
+        row: Any,
+        *,
+        entry_params: dict[str, Any],
+        warning_config: dict[str, Any],
+        latest_source_end: Any,
+    ) -> PendingSignal | None:
+        signal_obj, due_utc = morning_orderflow_pre_trade_warning_signal(
+            features,
+            row,
+            entry_params=entry_params,
+            warning_config=warning_config,
+            timezone=self.timezone,
+            timeframe_minutes=self.timeframe_minutes,
+            trades_today=self.trades_by_session.get(session_key_from_row(row), 0),
+            latest_source_end=latest_source_end,
+        )
+        if signal_obj is None or due_utc is None:
+            return None
+        row_timestamp = pd.Timestamp(row["timestamp"])
+        key = alert_hash(
+            "trade_warning",
+            self.strategy_id,
+            str(row_timestamp),
+            str(due_utc),
+            str(getattr(signal_obj, "direction", "")),
+            str(getattr(signal_obj, "level_type", "")),
+            str(getattr(signal_obj, "metadata", {})),
+        )
+        return PendingSignal(
+            strategy=self,
+            row=row.copy(),
+            signal_obj=signal_obj,
+            due_utc=due_utc,
+            queued_at_utc=pd.Timestamp.utcnow(),
+            key=key,
+        )
+
     def feature_row_quality_issue(self, row: Any) -> dict[str, Any] | None:
         if not bool(self.feature_quality_config.get("enabled", True)):
             return None
@@ -1165,7 +1313,7 @@ class StrategyRuntime:
         non_finite = [
             column
             for column in required_columns
-            if column not in {"timestamp", "contract_symbol", "symbol"}
+            if column not in NON_NUMERIC_RUNTIME_FEATURE_COLUMNS
             and row_has_key(row, column)
             and not feature_value_is_finite(row_get(row, column))
         ]
@@ -1202,9 +1350,13 @@ class StrategyRuntime:
             if self.strategy.stop_mode in {"bar_extreme", "latest_bar_extreme", "completed_bar_extreme"}:
                 columns.update({"high", "low"})
         else:
+            entry_cfg = nested_get(self.variant_config, "strategy", "entry") or {}
+            entry_module = str(entry_cfg.get("module", "")).strip().lower() if isinstance(entry_cfg, dict) else ""
             entry_params = dict(nested_get(self.variant_config, "strategy", "entry", "params") or {})
             columns.update(collect_feature_column_references(entry_params))
             columns.update(self.data_requirements().derived_feature_columns)
+            if entry_module == "morning_orderflow_momentum":
+                columns.update(morning_orderflow_runtime_columns(entry_params))
         return sorted(str(column) for column in columns if str(column).strip())
 
     def record_feature_quality_skip(self, row: Any, issue: dict[str, Any]) -> None:
@@ -1333,6 +1485,90 @@ class StrategyRuntime:
             str(due_timestamp),
             str(max_entry_lag_seconds),
         )
+
+    def warning_id_for_pending(
+        self,
+        pending: PendingSignal,
+        *,
+        direction: str,
+        row_timestamp: pd.Timestamp,
+        expected_entry_timestamp: pd.Timestamp,
+    ) -> str:
+        return alert_hash(
+            "trade_warning",
+            self.strategy_id,
+            str(row_timestamp),
+            direction,
+            str(getattr(pending.signal_obj, "level_type", "")),
+            str(expected_entry_timestamp),
+            pending.key,
+        )
+
+    def build_pre_trade_warning_notice(self, pending: PendingSignal) -> dict[str, Any]:
+        direction = str(getattr(pending.signal_obj, "direction", "")).lower()
+        core = copy.deepcopy(self.variant_config.get("core", {}))
+        tick_size = float(core.get("tick_size", self.data_config.get("tick_size", 0.25)))
+        stop_preview = None
+        try:
+            stop_preview = self.strategy.stop_price(
+                pending.signal_obj,
+                direction,
+                tick_size,
+                entry_price=None,
+            )
+        except Exception:
+            stop_preview = None
+        trade_plan_preview = self.build_setup_trade_plan_preview(
+            pending,
+            direction=direction,
+            tick_size=tick_size,
+            stop_preview=stop_preview,
+        )
+        row_timestamp = pd.Timestamp(pending.row["timestamp"])
+        expected_entry_timestamp = pd.Timestamp(pending.due_utc).tz_convert("UTC")
+        report_fields = getattr(pending.signal_obj, "report_fields", {})
+        warning_timestamp = normalize_utc_timestamp(
+            report_fields.get("warning_timestamp_utc", expected_entry_timestamp)
+        )
+        warning_id = self.warning_id_for_pending(
+            pending,
+            direction=direction,
+            row_timestamp=row_timestamp,
+            expected_entry_timestamp=expected_entry_timestamp,
+        )
+        return {
+            "event": "trade_warning",
+            "warning_contract_version": TRADE_WARNING_CONTRACT_VERSION,
+            "warning_id": warning_id,
+            "pending_signal_key": pending.key,
+            "strategy_id": self.strategy_id,
+            "strategy_name": self.variant_config.get("strategy_name", getattr(self.strategy, "name", None)),
+            "strategy_config": self.strategy_config_label,
+            "strategy_config_fingerprint": copy.deepcopy(self.strategy_config_fingerprint),
+            "engine_config": self.engine_config_label,
+            "engine_config_fingerprint": copy.deepcopy(self.engine_config_fingerprint),
+            "symbol": self.symbol,
+            "contract_symbol": str(pending.row.get("contract_symbol", "")),
+            "timeframe": self.timeframe,
+            "warning_timestamp_utc": format_timestamp(warning_timestamp),
+            "signal_timestamp": format_timestamp(row_timestamp),
+            "expected_entry_timestamp_utc": format_timestamp(expected_entry_timestamp),
+            "expected_trade_setup_timestamp_utc": format_timestamp(expected_entry_timestamp),
+            "warning_lead_bars": int(report_fields.get("warning_lead_bars", 1) or 1),
+            "warning_lead_seconds": finite_float(report_fields.get("warning_lead_seconds")),
+            "play_sound": bool(report_fields.get("warning_play_sound", True)),
+            "status": "prepare_only_not_actionable",
+            "reason": (
+                "All configured non-time morning orderflow criteria are currently satisfied. "
+                "The strategy is still waiting for the intended entry time before it can emit TRADE_SETUP/ENTRY_SIGNAL."
+            ),
+            "session_date": str(pending.row.get("session_date", "")),
+            "direction": direction,
+            "side": "buy" if direction == "long" else "sell" if direction == "short" else "",
+            "stop_loss_price_preview": finite_float(stop_preview),
+            "trade_plan_preview": trade_plan_preview,
+            "signal": signal_report(pending.signal_obj),
+        }
 
     def build_setup_notice(self, pending: PendingSignal) -> dict[str, Any]:
         direction = str(getattr(pending.signal_obj, "direction", "")).lower()
@@ -1901,6 +2137,11 @@ class SignalEngine:
         self.operator_sound_health = OperatorSoundHealth()
         self.operator_sound_processes: list[Any] = []
         self.pending: list[PendingSignal] = []
+        self.strategy_evaluation_deferred = False
+        self.strategy_evaluation_deferred_reason: dict[str, Any] | None = None
+        self.strategy_evaluation_deferred_since_utc: str | None = None
+        self.strategy_evaluation_deferred_bars = 0
+        self.warning_notice_count = 0
         self.setup_notice_count = 0
         self.alert_count = 0
         self.source_bar_quality_drops = 0
@@ -2108,6 +2349,142 @@ class SignalEngine:
                 }
             )
 
+    def defer_strategy_evaluation_for_catchup(self, coverage_report: dict[str, Any]) -> None:
+        with self.lock:
+            if self.strategy_evaluation_deferred:
+                self.strategy_evaluation_deferred_reason = copy.deepcopy(coverage_report)
+                return
+            self.strategy_evaluation_deferred = True
+            self.strategy_evaluation_deferred_reason = copy.deepcopy(coverage_report)
+            self.strategy_evaluation_deferred_since_utc = utc_now_iso()
+            self.strategy_evaluation_deferred_bars = 0
+            self.pending = []
+        print_json(
+            {
+                "event": "live_strategy_evaluation_deferred",
+                "strategy_evaluation_deferred": True,
+                "catchup_active": True,
+                "missing_bar_count": coverage_report.get("missing_bar_count"),
+                "required_start_utc": coverage_report.get("required_start_utc"),
+                "required_end_utc": coverage_report.get("required_end_utc"),
+                "first_missing_bar_utc": coverage_report.get("first_missing_bar_utc"),
+                "last_missing_bar_utc": coverage_report.get("last_missing_bar_utc"),
+                "reason": (
+                    "Live source bars will be buffered, but strategy warnings/setups/entries are disabled "
+                    "until current-session coverage is continuous."
+                ),
+            },
+            prefix="SYSTEM_ALERT",
+        )
+
+    def strategy_evaluation_deferred_report(self) -> dict[str, Any]:
+        with self.lock:
+            reason = copy.deepcopy(self.strategy_evaluation_deferred_reason) or {}
+            return {
+                "strategy_evaluation_deferred": self.strategy_evaluation_deferred,
+                "strategy_evaluation_deferred_since_utc": self.strategy_evaluation_deferred_since_utc,
+                "strategy_evaluation_deferred_bars": self.strategy_evaluation_deferred_bars,
+                "missing_bar_count": reason.get("missing_bar_count"),
+                "required_start_utc": reason.get("required_start_utc"),
+                "required_end_utc": reason.get("required_end_utc"),
+                "first_missing_bar_utc": reason.get("first_missing_bar_utc"),
+                "last_missing_bar_utc": reason.get("last_missing_bar_utc"),
+            }
+
+    def resume_strategy_evaluation_after_catchup(self, coverage_report: dict[str, Any]) -> dict[str, Any]:
+        with self.lock:
+            if not self.strategy_evaluation_deferred:
+                return {
+                    "event": "live_strategy_evaluation_already_active",
+                    "strategy_evaluation_deferred": False,
+                    "catchup_active": False,
+                }
+            hydrated_signals = 0
+            for strategy in self.strategies:
+                if strategy.disabled:
+                    continue
+                try:
+                    hydrated_signals += strategy.hydrate(self.store, count_historical_signals=False)
+                except Exception as exc:
+                    self.handle_strategy_runtime_error(
+                        strategy,
+                        exc,
+                        phase="catchup_hydrate",
+                        extra={"source": "live_catchup", "bars": len(self.store.bars())},
+                    )
+            deferred_bars = self.strategy_evaluation_deferred_bars
+            deferred_since = self.strategy_evaluation_deferred_since_utc
+            self.strategy_evaluation_deferred = False
+            self.strategy_evaluation_deferred_reason = None
+            self.strategy_evaluation_deferred_since_utc = None
+            self.strategy_evaluation_deferred_bars = 0
+        payload = {
+            "event": "live_strategy_evaluation_activated",
+            "strategy_evaluation_deferred": False,
+            "catchup_active": False,
+            "hydrated_historical_signals": hydrated_signals,
+            "deferred_bars": deferred_bars,
+            "deferred_since_utc": deferred_since,
+            "missing_bar_count": coverage_report.get("missing_bar_count"),
+            "required_start_utc": coverage_report.get("required_start_utc"),
+            "required_end_utc": coverage_report.get("required_end_utc"),
+            "reason": (
+                "Current-session source bars are continuous. Existing buffered bars were hydrated as context; "
+                "future completed bars can now produce warnings, setups, and entries."
+            ),
+        }
+        print_json(payload)
+        return payload
+
+    def should_print_live_session_metrics(self, bar: SourceMinuteBar) -> bool:
+        if not str(bar.source or "").startswith("live"):
+            return False
+        console_cfg = normalize_console_config(self.engine_config.get("console", {}))
+        live_stream_cfg = dict(console_cfg.get("live_stream") or normalize_live_console_stream_config(None))
+        return bool(live_stream_cfg.get("enabled", False)) and bool(
+            live_stream_cfg.get("print_session_metrics", True)
+        )
+
+    def live_session_metrics_payload(self, bar: SourceMinuteBar) -> dict[str, Any]:
+        timestamp_utc = normalize_utc_timestamp(bar.timestamp_utc)
+        timestamp_local = timestamp_utc.tz_convert(self.timezone)
+        rth_start = parse_clock(self.databento_config.get("rth_start", "09:30:00"))
+        session_start = local_datetime_for_clock(timestamp_local.date(), rth_start, self.timezone)
+        tick_size = 0.25
+        if self.strategies:
+            core = self.strategies[0].variant_config.get("core", {})
+            core = core if isinstance(core, dict) else {}
+            tick_size = float(core.get("tick_size", tick_size) or tick_size)
+        session_bars: list[SourceMinuteBar] = []
+        for item in self.store.bars():
+            item_timestamp = normalize_utc_timestamp(item.timestamp_utc).tz_convert(self.timezone)
+            if item.contract_symbol != bar.contract_symbol:
+                continue
+            if item_timestamp.date() != timestamp_local.date():
+                continue
+            if item_timestamp < session_start or item_timestamp > timestamp_local:
+                continue
+            session_bars.append(item)
+        session_bars.sort(key=lambda item: normalize_utc_timestamp(item.timestamp_utc))
+        market_open_price = float(session_bars[0].open) if session_bars else float(bar.open)
+        current_price = float(bar.close)
+        price_change_points = current_price - market_open_price
+        return {
+            "event": "live_session_metrics",
+            "timestamp": format_timestamp(timestamp_local),
+            "timestamp_utc": format_timestamp(timestamp_utc),
+            "symbol": bar.symbol,
+            "contract_symbol": bar.contract_symbol,
+            "rth_session_date": str(timestamp_local.date()),
+            "market_open_price": market_open_price,
+            "current_price": current_price,
+            "price_change_points": price_change_points,
+            "price_change_ticks": price_change_points / tick_size if tick_size > 0 else None,
+            "cumulative_delta": sum(float(item.signed_volume) for item in session_bars),
+            "total_volume": sum(float(item.volume) for item in session_bars),
+            "session_bar_count": len(session_bars),
+        }
+
     def on_completed_source_bar(self, bar: SourceMinuteBar) -> None:
         with self.lock:
             accepted_bars = self.filter_source_bars_for_quality([bar], source=bar.source or "live", mode="live")
@@ -2117,11 +2494,48 @@ class SignalEngine:
             changed = self.store.add(bar)
             if not changed:
                 return
+            if self.should_print_live_session_metrics(bar):
+                print_json(self.live_session_metrics_payload(bar), prefix="LIVE_SESSION")
+            if self.strategy_evaluation_deferred:
+                self.strategy_evaluation_deferred_bars += 1
+                return
             queued = 0
+            warning_notices: list[dict[str, Any]] = []
             pending_setups: list[PendingSignal] = []
             for strategy in self.strategies:
                 if strategy.disabled:
                     continue
+                try:
+                    warning_items = strategy.process_pre_trade_warnings(self.store)
+                except Exception as exc:
+                    self.handle_strategy_runtime_error(
+                        strategy,
+                        exc,
+                        phase="process_pre_trade_warning",
+                        extra={
+                            "source_bar_timestamp": format_timestamp(bar.timestamp_utc),
+                            "contract_symbol": bar.contract_symbol,
+                        },
+                    )
+                    warning_items = []
+                for pending_warning in warning_items:
+                    try:
+                        notice = strategy.build_pre_trade_warning_notice(pending_warning)
+                        validate_trade_warning_notice_contract(notice)
+                    except Exception as exc:
+                        self.handle_strategy_runtime_error(
+                            strategy,
+                            exc,
+                            phase="build_pre_trade_warning_notice",
+                            extra={
+                                "source_bar_timestamp": format_timestamp(bar.timestamp_utc),
+                                "contract_symbol": bar.contract_symbol,
+                                "pending_signal_key": pending_warning.key,
+                            },
+                        )
+                        continue
+                    strategy.sent_warning_keys.add(pending_warning.key)
+                    warning_notices.append(notice)
                 try:
                     pending_items = strategy.process_new_completed_bars(self.store, live=True)
                 except Exception as exc:
@@ -2148,6 +2562,8 @@ class SignalEngine:
                         "queued": queued,
                     }
                 )
+            for notice in warning_notices:
+                self.emit_trade_warning_record(notice)
             for pending in pending_setups:
                 try:
                     notice = self.build_validated_setup_notice(pending)
@@ -2168,6 +2584,8 @@ class SignalEngine:
 
     def on_entry_tick(self, tick: TradeTick) -> None:
         with self.lock:
+            if self.strategy_evaluation_deferred:
+                return
             if not self.pending:
                 return
             max_lag = float(self.engine_config.get("max_entry_lag_seconds", 120))
@@ -3049,6 +3467,23 @@ class SignalEngine:
         notice = self.build_validated_setup_notice(pending)
         self.emit_setup_notice_record(notice)
 
+    def emit_trade_warning_record(self, notice: dict[str, Any]) -> None:
+        validate_trade_warning_notice_contract(notice)
+        self.warning_notice_count += 1
+        print_json(notice, prefix="TRADE_WARNING")
+        if self.operator_enabled("print_warning_readable", default=True):
+            print(format_trade_warning_readout(notice), flush=True)
+        if self.dry_run_alerts:
+            self.emit_dry_run_outputs_skipped(
+                record_type="trade_warning",
+                sound_kind="setup",
+                alert_id=None,
+                setup_id=notice.get("warning_id"),
+            )
+            return
+        if bool(notice.get("play_sound", True)):
+            self.play_operator_sound("setup")
+
     def build_validated_setup_notice(self, pending: PendingSignal) -> dict[str, Any]:
         notice = pending.strategy.build_setup_notice(pending)
         validate_setup_notice_contract(notice)
@@ -3481,6 +3916,11 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print and validate signals, but do not write JSONL outboxes or play sounds.",
     )
+    parser.add_argument(
+        "--test-sound",
+        choices=("setup", "entry", "system", "all"),
+        help="Play configured operator sound alert(s) and exit without Databento access or alert writes.",
+    )
     parser.add_argument("--databento-symbols", help="Override databento.symbols, e.g. ESM6 or ES.FUT.")
     parser.add_argument("--databento-stype-in", help="Override databento.stype_in.")
     parser.add_argument("--databento-stype-out", help="Override historical databento.stype_out.")
@@ -3502,6 +3942,8 @@ def run() -> int:
     print_json(engine.preflight_report())
     if args.preflight_only:
         return 0
+    if args.test_sound:
+        return run_operator_sound_test(engine, args.test_sound)
     if args.check_databento_metadata:
         print_json(check_databento_metadata(engine))
         return 0
@@ -3544,6 +3986,20 @@ def run() -> int:
         live_enabled = live_startup_requested(engine, args)
         if not live_enabled:
             return 0
+        backfill_cfg = normalize_current_session_backfill_config(
+            dict(engine.databento_config.get("historical", {})).get("current_session_backfill", {})
+        )
+        defer_catchup = str(backfill_cfg.get("startup_mode")) == "defer_until_complete" and not bool(
+            args.skip_historical
+        )
+        coverage_report = ensure_live_startup_session_coverage(
+            engine,
+            historical_skipped=bool(args.skip_historical),
+            now_utc=pd.Timestamp.utcnow(),
+            raise_on_failure=not defer_catchup,
+        )
+        if not bool(coverage_report.get("ok", False)) and defer_catchup:
+            engine.defer_strategy_evaluation_for_catchup(coverage_report)
         engine.audit_runtime_warmup(source="live_startup")
         return run_live(engine, once=args.once, max_runtime=args.max_runtime)
     finally:
@@ -3592,6 +4048,307 @@ def seed_only_completion_report(
 
 def live_startup_requested(engine: SignalEngine, args: argparse.Namespace) -> bool:
     return bool(getattr(args, "live", False) or bool(engine.databento_config.get("live", {}).get("enabled", False)))
+
+
+def ensure_live_startup_session_coverage(
+    engine: SignalEngine,
+    *,
+    historical_skipped: bool,
+    now_utc: Any,
+    raise_on_failure: bool | None = None,
+) -> dict[str, Any]:
+    requirements = live_startup_session_coverage_requirements(engine, now_utc=now_utc)
+    if not requirements:
+        payload = {
+            "event": "live_startup_session_coverage_not_required",
+            "reason": "No active strategy requires current RTH-open source bars at this startup time.",
+        }
+        print_json(payload)
+        return {"ok": True, **payload, "requirements": []}
+
+    hist_cfg = dict(engine.databento_config.get("historical", {}))
+    backfill_cfg = normalize_current_session_backfill_config(hist_cfg.get("current_session_backfill", {}))
+    report = live_startup_session_coverage_report(
+        engine.store.bars(),
+        requirements=requirements,
+        timezone=engine.timezone,
+        max_reported_missing_bars=int(backfill_cfg.get("max_reported_missing_bars", 20) or 20),
+        contract_symbol_regex=engine.contract_symbol_regex,
+    )
+    if bool(report.get("ok", False)):
+        payload = {
+            "event": "live_startup_session_coverage_ok",
+            **report,
+            **live_startup_session_coverage_summary_fields(report),
+        }
+        print_json(payload)
+        return payload
+
+    backfill_attempted = False
+    backfill_bars = 0
+    accepted_backfill_bars = 0
+    if (
+        bool(backfill_cfg.get("enabled", True))
+        and bool(hist_cfg.get("enabled", True))
+        and not historical_skipped
+    ):
+        backfill_attempted = True
+        fetch_start, fetch_end = current_session_backfill_bounds(requirements)
+        backfill_hist_cfg = dict(hist_cfg)
+        backfill_hist_cfg.pop("seed_bars_path", None)
+        backfill_hist_cfg.pop("cache_path", None)
+        backfill_hist_cfg["start"] = fetch_start
+        backfill_hist_cfg["end"] = fetch_end
+        backfill_hist_cfg["max_seed_bars"] = 0
+        print_json(
+            {
+                "event": "live_startup_current_session_backfill_start",
+                "start": format_timestamp(fetch_start),
+                "end": format_timestamp(fetch_end),
+                "requirement_count": len(requirements),
+                "missing_bar_count": report.get("missing_bar_count"),
+                "reason": (
+                    "Current live startup is missing RTH-open source bars required by an active strategy. "
+                    "The engine will try the guarded historical Databento fetch path before opening live mode."
+                ),
+            }
+        )
+        bars = fetch_databento_historical_bars(engine, backfill_hist_cfg)
+        backfill_bars = len(bars)
+        if bars:
+            store_count_start = len(engine.store.bars())
+            engine.seed(bars, source="current_session_backfill")
+            accepted_backfill_bars = max(0, len(engine.store.bars()) - store_count_start)
+        report = live_startup_session_coverage_report(
+            engine.store.bars(),
+            requirements=requirements,
+            timezone=engine.timezone,
+            max_reported_missing_bars=int(backfill_cfg.get("max_reported_missing_bars", 20) or 20),
+            contract_symbol_regex=engine.contract_symbol_regex,
+        )
+
+    coverage_summary = live_startup_session_coverage_summary_fields(report)
+    payload = {
+        "event": "live_startup_session_coverage_ok" if bool(report.get("ok", False)) else "live_startup_session_coverage_failed",
+        **report,
+        **coverage_summary,
+        "historical_skipped": bool(historical_skipped),
+        "backfill_enabled": bool(backfill_cfg.get("enabled", True)),
+        "backfill_attempted": backfill_attempted,
+        "backfill_bars": backfill_bars,
+        "accepted_backfill_bars": accepted_backfill_bars,
+        "reason": (
+            "All active current-session source-bar requirements are satisfied."
+            if bool(report.get("ok", False))
+            else "Current-session source bars required by an active strategy are missing or gapped."
+        ),
+        "impact": (
+            "Live mode can continue with complete current-session context."
+            if bool(report.get("ok", False))
+            else (
+                "Live mode is not safe for strategies that depend on cumulative RTH-open volume delta "
+                "and price change from market open."
+            )
+        ),
+    }
+    print_json(payload, prefix=None if bool(report.get("ok", False)) else "SYSTEM_ALERT")
+    should_raise = bool(backfill_cfg.get("fail_on_missing", True)) if raise_on_failure is None else bool(raise_on_failure)
+    if not bool(report.get("ok", False)) and should_raise:
+        raise RuntimeError(
+            "Live startup current-session coverage failed; missing or gapped RTH-open source bars remain."
+        )
+    return payload
+
+
+def live_startup_session_coverage_requirements(engine: SignalEngine, *, now_utc: Any) -> list[dict[str, Any]]:
+    requirements: list[dict[str, Any]] = []
+    for strategy in engine.strategies:
+        if strategy.disabled:
+            continue
+        entry_cfg = nested_get(strategy.variant_config, "strategy", "entry") or {}
+        if not isinstance(entry_cfg, dict):
+            continue
+        entry_module = str(entry_cfg.get("module", "")).strip().lower()
+        if entry_module != "morning_orderflow_momentum":
+            continue
+        params = dict(entry_cfg.get("params", {})) if isinstance(entry_cfg.get("params"), dict) else {}
+        requirement = morning_orderflow_live_startup_requirement(strategy, params, now_utc=now_utc)
+        if requirement is not None:
+            requirements.append(requirement)
+    return requirements
+
+
+def morning_orderflow_live_startup_requirement(
+    strategy: StrategyRuntime,
+    params: dict[str, Any],
+    *,
+    now_utc: Any,
+) -> dict[str, Any] | None:
+    now = normalize_utc_timestamp(now_utc)
+    now_local = now.tz_convert(strategy.timezone)
+    if now_local.weekday() >= 5:
+        return None
+    source_minutes = max(1, parse_timeframe_minutes(strategy.data_config.get("source_timeframe", "1m")))
+    rth_start = parse_clock(params.get("rth_start", strategy.data_config.get("rth_start", "09:30:00")))
+    signal_time = parse_clock(params.get("signal_time", "10:30:00"))
+    session_start = local_datetime_for_clock(now_local.date(), rth_start, strategy.timezone)
+    signal_timestamp = local_datetime_for_clock(now_local.date(), signal_time, strategy.timezone)
+    latest_complete_start = now_local.floor("min") - pd.Timedelta(minutes=source_minutes)
+    signal_last_bar_start = signal_timestamp - pd.Timedelta(minutes=source_minutes)
+    required_end = min(latest_complete_start, signal_last_bar_start)
+    if required_end < session_start:
+        return None
+    expected_count = int(((required_end - session_start).total_seconds() // (source_minutes * 60)) + 1)
+    return {
+        "strategy_id": strategy.strategy_id,
+        "strategy_name": strategy.variant_config.get("strategy_name", getattr(strategy.strategy, "name", None)),
+        "entry_module": "morning_orderflow_momentum",
+        "reason": "strategy needs cumulative RTH-open signed volume and price change from market open",
+        "timezone": strategy.timezone,
+        "session_date": str(now_local.date()),
+        "source_timeframe_minutes": source_minutes,
+        "required_start": format_timestamp(session_start),
+        "required_end": format_timestamp(required_end),
+        "required_start_utc": format_timestamp(session_start.tz_convert("UTC")),
+        "required_end_utc": format_timestamp(required_end.tz_convert("UTC")),
+        "fetch_end_utc": format_timestamp((required_end + pd.Timedelta(minutes=source_minutes)).tz_convert("UTC")),
+        "expected_bar_count": expected_count,
+        "rth_start": rth_start.isoformat(),
+        "signal_time": signal_time.isoformat(),
+    }
+
+
+def live_startup_session_coverage_report(
+    bars: list[SourceMinuteBar],
+    *,
+    requirements: list[dict[str, Any]],
+    timezone: str,
+    max_reported_missing_bars: int,
+    contract_symbol_regex: re.Pattern[str] | str | None,
+) -> dict[str, Any]:
+    available = available_source_bar_minute_keys(
+        bars,
+        timezone=timezone,
+        contract_symbol_regex=contract_symbol_regex,
+    )
+    requirement_reports: list[dict[str, Any]] = []
+    total_missing = 0
+    for requirement in requirements:
+        source_minutes = int(requirement.get("source_timeframe_minutes", 1) or 1)
+        expected = expected_source_bar_minute_keys(
+            normalize_utc_timestamp(requirement["required_start_utc"]),
+            normalize_utc_timestamp(requirement["required_end_utc"]),
+            source_minutes=source_minutes,
+        )
+        missing = [timestamp for timestamp in expected if timestamp not in available]
+        total_missing += len(missing)
+        requirement_reports.append(
+            {
+                **requirement,
+                "available_bar_count": len(expected) - len(missing),
+                "missing_bar_count": len(missing),
+                "first_missing_bar_utc": format_timestamp(missing[0]) if missing else None,
+                "last_missing_bar_utc": format_timestamp(missing[-1]) if missing else None,
+                "missing_bar_samples_utc": [
+                    format_timestamp(timestamp) for timestamp in missing[:max_reported_missing_bars]
+                ],
+                "missing_bar_samples_truncated": max(0, len(missing) - max_reported_missing_bars),
+                "ok": not missing,
+            }
+        )
+    return {
+        "ok": total_missing == 0,
+        "requirement_count": len(requirements),
+        "missing_bar_count": total_missing,
+        "requirements": requirement_reports,
+    }
+
+
+def live_startup_session_coverage_summary_fields(report: dict[str, Any]) -> dict[str, Any]:
+    requirements = report.get("requirements", [])
+    if not isinstance(requirements, list) or not requirements:
+        return {}
+    expected_count = 0
+    available_count = 0
+    missing_samples_truncated = 0
+    required_starts: list[str] = []
+    required_ends: list[str] = []
+    first_missing: list[str] = []
+    last_missing: list[str] = []
+    for item in requirements:
+        if not isinstance(item, dict):
+            continue
+        expected_count += int(item.get("expected_bar_count", 0) or 0)
+        available_count += int(item.get("available_bar_count", 0) or 0)
+        missing_samples_truncated += int(item.get("missing_bar_samples_truncated", 0) or 0)
+        for source_key, target in (
+            ("required_start_utc", required_starts),
+            ("required_end_utc", required_ends),
+            ("first_missing_bar_utc", first_missing),
+            ("last_missing_bar_utc", last_missing),
+        ):
+            value = item.get(source_key)
+            if value:
+                target.append(str(value))
+    summary: dict[str, Any] = {
+        "expected_bar_count": expected_count,
+        "available_bar_count": available_count,
+        "missing_bar_samples_truncated": missing_samples_truncated,
+    }
+    if required_starts:
+        summary["required_start_utc"] = min(required_starts)
+    if required_ends:
+        summary["required_end_utc"] = max(required_ends)
+    if first_missing:
+        summary["first_missing_bar_utc"] = min(first_missing)
+    if last_missing:
+        summary["last_missing_bar_utc"] = max(last_missing)
+    return summary
+
+
+def current_session_backfill_bounds(requirements: list[dict[str, Any]]) -> tuple[Any, Any]:
+    starts = [normalize_utc_timestamp(requirement["required_start_utc"]) for requirement in requirements]
+    ends = [normalize_utc_timestamp(requirement["fetch_end_utc"]) for requirement in requirements]
+    return min(starts), max(ends)
+
+
+def available_source_bar_minute_keys(
+    bars: list[SourceMinuteBar],
+    *,
+    timezone: str,
+    contract_symbol_regex: re.Pattern[str] | str | None,
+) -> set[pd.Timestamp]:
+    out: set[pd.Timestamp] = set()
+    pattern: re.Pattern[str] | None
+    if isinstance(contract_symbol_regex, str):
+        normalized_pattern = normalize_contract_symbol_regex(contract_symbol_regex)
+        pattern = re.compile(normalized_pattern) if normalized_pattern else None
+    else:
+        pattern = contract_symbol_regex
+    for bar in bars:
+        if not contract_symbol_matches_regex(bar.contract_symbol, pattern):
+            continue
+        timestamp = source_bar_timestamp_utc(bar)
+        if timestamp is None:
+            continue
+        out.add(timestamp.floor("min"))
+    return out
+
+
+def expected_source_bar_minute_keys(start_utc: Any, end_utc: Any, *, source_minutes: int) -> list[pd.Timestamp]:
+    start = normalize_utc_timestamp(start_utc).floor("min")
+    end = normalize_utc_timestamp(end_utc).floor("min")
+    if end < start:
+        return []
+    return [
+        pd.Timestamp(timestamp).tz_convert("UTC")
+        for timestamp in pd.date_range(start, end, freq=f"{source_minutes}min")
+    ]
+
+
+def local_datetime_for_clock(session_date: Any, clock: dt.time, timezone: str) -> pd.Timestamp:
+    timestamp = pd.Timestamp.combine(pd.Timestamp(session_date).date(), clock)
+    return timestamp.tz_localize(timezone)
 
 
 def should_check_live_cost_guard_before_process_lock(engine: SignalEngine, args: argparse.Namespace) -> bool:
@@ -4591,7 +5348,7 @@ def readiness_live_safety_stop_report(engine: SignalEngine) -> dict[str, Any]:
 
     required = bool(live_cfg.get("require_fail_closed_safety_stops", True))
     stops = live_safety_stop_config(live_cfg)
-    disabled = [key for key in LIVE_SAFETY_STOP_DEFAULTS if not bool(stops.get(key, False))]
+    disabled = [key for key in REQUIRED_LIVE_SAFETY_STOP_KEYS if not bool(stops.get(key, False))]
     report.update(
         {
             "checked": True,
@@ -5177,6 +5934,153 @@ def operator_sound_readiness_check(
         return report
     report["reason"] = "sound command executable is available"
     return report
+
+
+def run_operator_sound_test(engine: SignalEngine, selected_kind: str) -> int:
+    if engine.dry_run_alerts:
+        print_json(
+            {
+                "event": "operator_sound_test_failed",
+                "ok": False,
+                "reason": "--dry-run-alerts suppresses operator sounds",
+                "impact": "Run the sound test without --dry-run-alerts to verify the audible alert path.",
+            },
+            prefix="SYSTEM_ALERT",
+        )
+        return 1
+
+    kinds = ["setup", "entry", "system"] if selected_kind == "all" else [selected_kind]
+    readiness = readiness_operator_sound_report(engine)
+    checks_by_kind = {
+        str(check.get("kind")): check
+        for check in readiness.get("checks", [])
+        if isinstance(check, dict) and check.get("kind") is not None
+    }
+    failed = []
+    for kind in kinds:
+        check = checks_by_kind.get(kind)
+        if check is None:
+            failed.append({"kind": kind, "reason": "operator sound readiness check is missing", "ok": False})
+        elif not bool(check.get("configured", False)):
+            failed.append({**check, "ok": False})
+        elif not bool(check.get("ok", False)):
+            failed.append(check)
+    if failed:
+        print_json(
+            {
+                "event": "operator_sound_test_failed",
+                "ok": False,
+                "requested_kind": selected_kind,
+                "failed_checks": failed,
+                "reason": "Configured operator sound alert is not ready.",
+            },
+            prefix="SYSTEM_ALERT",
+        )
+        return 1
+
+    sound = dict(engine.operator_config.get("sound", {}))
+    played: list[dict[str, Any]] = []
+    for kind in kinds:
+        command = sound.get(f"{kind}_command") or sound.get("command")
+        before = engine.operator_sound_health.commands_started
+        print_json(
+            {
+                "event": "operator_sound_test_playing",
+                "kind": kind,
+                "bell": bool(sound.get("bell", True)),
+                "command": command,
+            }
+        )
+        try:
+            engine.play_operator_sound(kind)
+            command_status = wait_for_operator_sound_processes(engine, timeout_seconds=5.0)
+        except Exception as exc:
+            print_json(
+                {
+                    "event": "operator_sound_test_failed",
+                    "ok": False,
+                    "kind": kind,
+                    "command": command,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+                prefix="SYSTEM_ALERT",
+            )
+            return 1
+        after = engine.operator_sound_health.commands_started
+        played.append(
+            {
+                "kind": kind,
+                "bell_written": bool(sound.get("bell", True)),
+                "command": command,
+                "command_started": after > before,
+                "command_completed": bool(command_status.get("completed", False)),
+                "command_ok": bool(command_status.get("ok", False)),
+            }
+        )
+        if not bool(command_status.get("ok", False)):
+            print_json(
+                {
+                    "event": "operator_sound_test_failed",
+                    "ok": False,
+                    "kind": kind,
+                    "command": command,
+                    "process_status": command_status,
+                    "reason": command_status.get("reason", "operator sound command failed"),
+                },
+                prefix="SYSTEM_ALERT",
+            )
+            return 1
+
+    print_json(
+        {
+            "event": "operator_sound_test_ok",
+            "ok": True,
+            "requested_kind": selected_kind,
+            "played": played,
+            "operator_sound": engine.operator_sound_health_report(),
+        }
+    )
+    return 0
+
+
+def wait_for_operator_sound_processes(engine: SignalEngine, *, timeout_seconds: float) -> dict[str, Any]:
+    deadline = time.monotonic() + max(0.0, timeout_seconds)
+    failed_processes: list[dict[str, Any]] = []
+    while True:
+        remaining = []
+        for process in engine.operator_sound_processes:
+            returncode = process.poll()
+            if returncode is None:
+                remaining.append(process)
+                continue
+            if returncode != 0:
+                failed_processes.append(
+                    {
+                        "pid": getattr(process, "pid", None),
+                        "returncode": returncode,
+                    }
+                )
+        engine.operator_sound_processes = remaining
+        if failed_processes:
+            return {
+                "ok": False,
+                "completed": True,
+                "reason": "operator sound command exited non-zero",
+                "failed_processes": failed_processes,
+            }
+        if not engine.operator_sound_processes:
+            return {"ok": True, "completed": True, "reason": "operator sound command completed"}
+        if time.monotonic() >= deadline:
+            remaining_pids = [getattr(process, "pid", None) for process in engine.operator_sound_processes]
+            engine.cleanup_operator_sound_processes(terminate_running=True)
+            return {
+                "ok": False,
+                "completed": False,
+                "reason": "operator sound command did not finish within 5 seconds",
+                "remaining_pids": remaining_pids,
+            }
+        time.sleep(0.05)
 
 
 def readiness_output_path_report(engine: SignalEngine) -> dict[str, Any]:
@@ -5928,7 +6832,39 @@ def normalize_console_config(raw_config: Any) -> dict[str, Any]:
     if "debug_json" in config:
         config_bool(config, "debug_json", DEFAULT_CONSOLE_DEBUG)
     debug = bool(config.get("debug", config.get("debug_json", DEFAULT_CONSOLE_DEBUG)))
-    return {"debug": debug}
+    normalized: dict[str, Any] = {"debug": debug}
+    if "live_stream" in config:
+        normalized["live_stream"] = normalize_live_console_stream_config(config.get("live_stream"))
+    return normalized
+
+
+def normalize_live_console_stream_config(raw_config: Any) -> dict[str, Any]:
+    if is_missing_or_blank(raw_config):
+        return {
+            "enabled": False,
+            "print_trade_ticks": True,
+            "print_completed_bars": True,
+            "print_session_metrics": True,
+            "tick_throttle_seconds": 1.0,
+        }
+    if not isinstance(raw_config, dict):
+        raise ValueError("live_stream must be a mapping")
+    config = dict(raw_config)
+    for key, default in (
+        ("enabled", False),
+        ("print_trade_ticks", True),
+        ("print_completed_bars", True),
+        ("print_session_metrics", True),
+    ):
+        if key in config:
+            config_bool(config, key, default)
+    return {
+        "enabled": bool(config.get("enabled", False)),
+        "print_trade_ticks": bool(config.get("print_trade_ticks", True)),
+        "print_completed_bars": bool(config.get("print_completed_bars", True)),
+        "print_session_metrics": bool(config.get("print_session_metrics", True)),
+        "tick_throttle_seconds": config_float(config, "tick_throttle_seconds", 1.0, min_value=0.0),
+    }
 
 
 def configure_console_output(raw_config: Any) -> None:
@@ -6317,7 +7253,7 @@ def validate_operator_config(raw_config: Any) -> None:
         return
     if not isinstance(raw_config, dict):
         raise ValueError("operator must be a mapping")
-    for key in ("print_human_readable", "print_setup_readable", "print_rejection_readable"):
+    for key in ("print_human_readable", "print_warning_readable", "print_setup_readable", "print_rejection_readable"):
         if key in raw_config:
             config_bool(raw_config, key, True)
     sound = raw_config.get("sound", {})
@@ -6393,6 +7329,35 @@ def validate_strategy_trade_mechanics(config: dict[str, Any], *, strategy_id: st
         max_contracts = int(sizing["max_contracts"])
         if max_contracts < min_contracts:
             raise ValueError(f"{strategy_id}: core.position_sizing.max_contracts must be >= min_contracts")
+
+
+def validate_strategy_pre_trade_warning_config(config: dict[str, Any], *, strategy_id: str) -> None:
+    entry_params = nested_get(config, "strategy", "entry", "params")
+    if not isinstance(entry_params, dict):
+        return
+    raw_config = entry_params.get("pre_trade_warning", {})
+    try:
+        normalize_pre_trade_warning_config(raw_config)
+    except ValueError as exc:
+        raise ValueError(f"{strategy_id}: strategy.entry.params.pre_trade_warning {exc}") from exc
+
+
+def normalize_pre_trade_warning_config(raw_config: Any) -> dict[str, Any]:
+    if is_missing_or_blank(raw_config):
+        raw: dict[str, Any] = {}
+    elif isinstance(raw_config, dict):
+        raw = dict(raw_config)
+    else:
+        raise ValueError("must be a mapping")
+    if "enabled" in raw:
+        config_bool(raw, "enabled", False)
+    if "play_sound" in raw:
+        config_bool(raw, "play_sound", True)
+    return {
+        "enabled": bool(raw.get("enabled", False)),
+        "bars_before_entry": config_int(raw, "bars_before_entry", 1, min_value=1),
+        "play_sound": bool(raw.get("play_sound", True)),
+    }
 
 
 def normalize_position_sizing_config(raw_config: Any, *, strategy_id: str) -> dict[str, Any]:
@@ -6477,6 +7442,8 @@ def normalize_contract_symbol_regex(value: Any) -> str | None:
 def contract_symbol_matches_regex(contract_symbol: Any, pattern: Any | None) -> bool:
     if pattern is None:
         return True
+    if isinstance(pattern, str):
+        pattern = re.compile(pattern)
     text = str(contract_symbol or "").strip()
     if not text:
         return False
@@ -6496,6 +7463,9 @@ def validate_historical_config(raw_config: Any) -> None:
             config_int(raw_config, key, 0, min_value=0)
     if "limit" in raw_config and raw_config.get("limit") is not None:
         config_int(raw_config, "limit", 0, min_value=1)
+    current_session_backfill = raw_config.get("current_session_backfill", {})
+    if not is_missing_or_blank(current_session_backfill):
+        normalize_current_session_backfill_config(current_session_backfill)
     cache_metadata = raw_config.get("cache_metadata", {})
     if not is_missing_or_blank(cache_metadata):
         if not isinstance(cache_metadata, dict):
@@ -6515,6 +7485,38 @@ def validate_historical_config(raw_config: Any) -> None:
             config_bool(guard, key, False)
     if "max_cost_usd" in guard:
         config_float(guard, "max_cost_usd", 0.0, min_value=0.0)
+
+
+def normalize_current_session_backfill_config(raw_config: Any) -> dict[str, Any]:
+    if is_missing_or_blank(raw_config):
+        return {
+            "enabled": True,
+            "fail_on_missing": True,
+            "max_reported_missing_bars": 20,
+            "startup_mode": "fail_closed",
+            "retry_interval_seconds": 30.0,
+            "max_wait_seconds": 0.0,
+        }
+    if not isinstance(raw_config, dict):
+        raise ValueError("historical.current_session_backfill must be a mapping")
+    config = dict(raw_config)
+    for key, default in (("enabled", True), ("fail_on_missing", True)):
+        if key in config:
+            config_bool(config, key, default)
+    startup_mode = str(config.get("startup_mode", "fail_closed")).strip().lower()
+    if startup_mode not in {"fail_closed", "defer_until_complete"}:
+        raise ValueError(
+            "historical.current_session_backfill.startup_mode must be one of "
+            "['fail_closed', 'defer_until_complete']"
+        )
+    return {
+        "enabled": bool(config.get("enabled", True)),
+        "fail_on_missing": bool(config.get("fail_on_missing", True)),
+        "max_reported_missing_bars": config_int(config, "max_reported_missing_bars", 20, min_value=1),
+        "startup_mode": startup_mode,
+        "retry_interval_seconds": config_float(config, "retry_interval_seconds", 30.0, min_value=1.0),
+        "max_wait_seconds": config_float(config, "max_wait_seconds", 0.0, min_value=0.0),
+    }
 
 
 def validate_live_config(raw_config: Any) -> None:
@@ -8198,6 +9200,7 @@ def replay_bars(engine: SignalEngine, path: Path, args: argparse.Namespace) -> d
     replay_source_filter_drops_start = engine.source_contract_filter_drops
     replay_quality_drops_start = engine.source_bar_quality_drops
     replayed = 0
+    starting_warnings = engine.warning_notice_count
     starting_alerts = engine.alert_count
     previous = bars[seed_count]
     latest_replay_utc = normalize_utc_timestamp(previous.timestamp_utc)
@@ -8219,6 +9222,7 @@ def replay_bars(engine: SignalEngine, path: Path, args: argparse.Namespace) -> d
             break
         previous = current
     entry_alerts = engine.alert_count - starting_alerts
+    trade_warnings = engine.warning_notice_count - starting_warnings
     replay_store_count_end = len(engine.store.bars())
     accepted_replay_source_bars = max(0, replay_store_count_end - replay_store_count_start)
     source_contract_filter_replay_drops = max(
@@ -8273,6 +9277,7 @@ def replay_bars(engine: SignalEngine, path: Path, args: argparse.Namespace) -> d
                 "seed_bars": seed_count,
                 "replayed_bars": replayed,
                 "entry_alerts": entry_alerts,
+                "trade_warnings": trade_warnings,
                 "reason": "Replay completed without an ENTRY_SIGNAL while --replay-require-signal was enabled.",
             },
             prefix="SYSTEM_ALERT",
@@ -8321,6 +9326,7 @@ def replay_bars(engine: SignalEngine, path: Path, args: argparse.Namespace) -> d
         "seed_bars": seed_count,
         "replayed_bars": replayed,
         "entry_alerts": entry_alerts,
+        "trade_warnings": trade_warnings,
         "require_signal": require_signal,
         "require_healthy_strategies": require_healthy_strategies,
         "strategy_health_ok": strategy_health_ok,
@@ -8546,8 +9552,20 @@ def run_live(
     startup_grace_seconds = float(live_cfg.get("startup_grace_seconds", 3.0))
     shutdown_grace_seconds = float(live_cfg.get("shutdown_grace_seconds", 3.0))
     state_lock_timeout_seconds = float(live_cfg.get("state_lock_timeout_seconds", 5.0))
-    stop_on_state_lock_timeout = bool(live_cfg.get("stop_on_state_lock_timeout", True))
+    stop_on_state_lock_timeout = bool(live_cfg.get("stop_on_state_lock_timeout", False))
+    console_cfg = normalize_console_config(engine.engine_config.get("console", {}))
+    live_stream_cfg = dict(console_cfg.get("live_stream") or normalize_live_console_stream_config(None))
+    last_live_stream_tick_monotonic: float | None = None
+    backfill_cfg = normalize_current_session_backfill_config(
+        dict(engine.databento_config.get("historical", {})).get("current_session_backfill", {})
+    )
+    catchup_retry_interval_seconds = float(backfill_cfg.get("retry_interval_seconds", 30.0) or 30.0)
+    catchup_max_wait_seconds = float(backfill_cfg.get("max_wait_seconds", 0.0) or 0.0)
+    catchup_started_monotonic = time.monotonic()
+    next_catchup_attempt_monotonic = 0.0
+    catchup_attempts = 0
     live_state_lock = threading.RLock()
+    completed_bar_processing_lock = threading.RLock()
     stop_reason: str | None = None
 
     def request_client_stop(reason: str) -> None:
@@ -8559,6 +9577,29 @@ def run_live(
             client.stop()
         except Exception:
             pass
+
+    def maybe_print_live_trade_tick(tick: TradeTick, *, now: float) -> None:
+        nonlocal last_live_stream_tick_monotonic
+        if not bool(live_stream_cfg.get("enabled", False)):
+            return
+        if not bool(live_stream_cfg.get("print_trade_ticks", True)):
+            return
+        throttle_seconds = float(live_stream_cfg.get("tick_throttle_seconds", 1.0) or 0.0)
+        if (
+            throttle_seconds > 0
+            and last_live_stream_tick_monotonic is not None
+            and now - last_live_stream_tick_monotonic < throttle_seconds
+        ):
+            return
+        last_live_stream_tick_monotonic = now
+        print_json(live_trade_tick_console_payload(tick, health), prefix="LIVE_TICK")
+
+    def maybe_print_live_completed_bar(bar: SourceMinuteBar) -> None:
+        if not bool(live_stream_cfg.get("enabled", False)):
+            return
+        if not bool(live_stream_cfg.get("print_completed_bars", True)):
+            return
+        print_json(live_source_bar_console_payload(bar, health, timezone=engine.timezone), prefix="LIVE_BAR")
 
     def acquire_live_state_lock(operation: str) -> bool:
         if state_lock_timeout_seconds <= 0:
@@ -8594,46 +9635,135 @@ def run_live(
 
     def process_completed_bars(completed: list[SourceMinuteBar]) -> None:
         nonlocal completed_count, first_live_drop_minute_utc
-        for bar in completed:
-            if bar.source == "live_heartbeat":
-                health.heartbeat_flushed_bars += 1
-            bar_minute_utc = normalize_utc_timestamp(bar.timestamp_utc)
-            if drop_partial_first_live_bar and (
-                first_live_drop_minute_utc is None or bar_minute_utc == first_live_drop_minute_utc
-            ):
-                if first_live_drop_minute_utc is None:
-                    first_live_drop_minute_utc = bar_minute_utc
-                health.dropped_partial_bars += 1
-                print_json(
-                    {
-                        "event": "live_partial_first_bar_dropped",
-                        "source_bar_timestamp": format_timestamp(bar_minute_utc),
-                        "first_dropped_minute_utc": format_timestamp(first_live_drop_minute_utc),
-                        "drop_scope": "first_completed_minute",
-                        "contract_symbol": bar.contract_symbol,
-                        "volume": bar.volume,
-                        "signed_volume": bar.signed_volume,
-                        "delta_method": engine.delta_method,
-                        "source": bar.source,
-                        "reason": "First live minute may be partial because subscription can start after the minute opened.",
-                    }
-                )
-                continue
-            engine.on_completed_source_bar(bar)
-            completed_count += 1
-            health.completed_bars += 1
-            health.last_completed_bar_monotonic = time.monotonic()
+        with completed_bar_processing_lock:
+            for bar in completed:
+                if bar.source == "live_heartbeat":
+                    health.heartbeat_flushed_bars += 1
+                bar_minute_utc = normalize_utc_timestamp(bar.timestamp_utc)
+                if drop_partial_first_live_bar and (
+                    first_live_drop_minute_utc is None or bar_minute_utc == first_live_drop_minute_utc
+                ):
+                    if first_live_drop_minute_utc is None:
+                        first_live_drop_minute_utc = bar_minute_utc
+                    health.dropped_partial_bars += 1
+                    print_json(
+                        {
+                            "event": "live_partial_first_bar_dropped",
+                            "source_bar_timestamp": format_timestamp(bar_minute_utc),
+                            "first_dropped_minute_utc": format_timestamp(first_live_drop_minute_utc),
+                            "drop_scope": "first_completed_minute",
+                            "contract_symbol": bar.contract_symbol,
+                            "volume": bar.volume,
+                            "signed_volume": bar.signed_volume,
+                            "delta_method": engine.delta_method,
+                            "source": bar.source,
+                            "reason": "First live minute may be partial because subscription can start after the minute opened.",
+                        }
+                    )
+                    continue
+                maybe_print_live_completed_bar(bar)
+                engine.on_completed_source_bar(bar)
+                completed_count += 1
+                health.completed_bars += 1
+                health.last_completed_bar_monotonic = time.monotonic()
 
-    def run_live_maintenance(now_utc: Any) -> int:
+    def run_live_maintenance(now_utc: Any, *, operation: str = "maintenance") -> int:
         if flush_completed_bars_on_heartbeat:
-            flushed = builder.flush_completed_bars(
-                now_utc=now_utc,
-                flush_delay_seconds=bar_flush_delay_seconds,
-                source="live_heartbeat",
-            )
+            if not acquire_live_state_lock(operation):
+                return completed_count
+            try:
+                flushed = builder.flush_completed_bars(
+                    now_utc=now_utc,
+                    flush_delay_seconds=bar_flush_delay_seconds,
+                    source="live_heartbeat",
+                )
+            finally:
+                live_state_lock.release()
             process_completed_bars(flushed)
         engine.expire_stale_pending_signals(now_utc=now_utc, source="live_heartbeat")
         return completed_count
+
+    def maybe_run_live_catchup(now_utc: Any, now: float) -> None:
+        nonlocal catchup_attempts, next_catchup_attempt_monotonic, strategy_evaluation_baseline
+        if not engine.strategy_evaluation_deferred:
+            return
+        if now < next_catchup_attempt_monotonic:
+            return
+        if catchup_max_wait_seconds > 0 and now - catchup_started_monotonic >= catchup_max_wait_seconds:
+            print_json(
+                {
+                    "event": "live_catchup_timeout",
+                    "catchup_active": True,
+                    "catchup_attempts": catchup_attempts,
+                    "catchup_retry_interval_seconds": catchup_retry_interval_seconds,
+                    "max_wait_seconds": catchup_max_wait_seconds,
+                    **engine.strategy_evaluation_deferred_report(),
+                    "reason": "Current-session coverage did not become continuous before max_wait_seconds.",
+                },
+                prefix="SYSTEM_ALERT",
+            )
+            engine.play_operator_sound("system")
+            request_client_stop("live_catchup_timeout")
+            return
+        catchup_attempts += 1
+        next_catchup_attempt_monotonic = now + catchup_retry_interval_seconds
+        print_json(
+            {
+                "event": "live_catchup_backfill_retry",
+                "catchup_active": True,
+                "catchup_attempts": catchup_attempts,
+                "catchup_retry_interval_seconds": catchup_retry_interval_seconds,
+                **engine.strategy_evaluation_deferred_report(),
+            }
+        )
+        try:
+            report = ensure_live_startup_session_coverage(
+                engine,
+                historical_skipped=False,
+                now_utc=now_utc,
+                raise_on_failure=False,
+            )
+        except Exception as exc:  # noqa: BLE001 - keep live buffering unless cost guard says stop.
+            error_text = str(exc)
+            print_json(
+                {
+                    "event": "live_catchup_backfill_error",
+                    "catchup_active": True,
+                    "catchup_attempts": catchup_attempts,
+                    "error_type": type(exc).__name__,
+                    "error": error_text,
+                    "reason": "Historical current-session catch-up retry failed.",
+                },
+                prefix="SYSTEM_ALERT",
+            )
+            engine.play_operator_sound("system")
+            lowered = error_text.lower()
+            if "cost" in lowered or "paid" in lowered or "billable" in lowered:
+                request_client_stop("live_catchup_backfill_cost_guard_failed")
+            return
+        if bool(report.get("ok", False)):
+            engine.resume_strategy_evaluation_after_catchup(report)
+            strategy_evaluation_baseline = strategy_evaluation_totals(engine.strategy_health_report())
+            return
+        with engine.lock:
+            engine.strategy_evaluation_deferred_reason = copy.deepcopy(report)
+        print_json(
+            {
+                "event": "live_catchup_pending",
+                "catchup_active": True,
+                "catchup_attempts": catchup_attempts,
+                "catchup_retry_interval_seconds": catchup_retry_interval_seconds,
+                "missing_bar_count": report.get("missing_bar_count"),
+                "required_start_utc": report.get("required_start_utc"),
+                "required_end_utc": report.get("required_end_utc"),
+                "first_missing_bar_utc": report.get("first_missing_bar_utc"),
+                "last_missing_bar_utc": report.get("last_missing_bar_utc"),
+                "backfill_bars": report.get("backfill_bars"),
+                "accepted_backfill_bars": report.get("accepted_backfill_bars"),
+                "reason": "Live is buffering bars while waiting for historical backfill to close the gap.",
+            },
+            prefix="SYSTEM_ALERT",
+        )
 
     def handle_record(record: Any) -> None:
         nonlocal completed_count, quote_missing_warned
@@ -8674,62 +9804,67 @@ def run_live(
             unmatched_before = builder.unmatched_contract_ticks_ignored
             with live_state_lock:
                 completed = builder.update(tick)
-                process_completed_bars(completed)
                 late_tick_ignored = builder.late_ticks_ignored > ignored_before
                 unmatched_tick_ignored = builder.unmatched_contract_ticks_ignored > unmatched_before
-                if unmatched_tick_ignored:
-                    health.accepted_contract_ticks = dict(builder.accepted_contract_ticks)
-                    health.unmatched_contract_ticks_ignored = builder.unmatched_contract_ticks_ignored
-                    health.unmatched_contract_ticks = dict(builder.unmatched_contract_ticks)
-                    health.last_unmatched_contract_tick = copy.deepcopy(builder.last_unmatched_contract_tick)
-                    repeat_seconds = float(live_cfg.get("alert_repeat_seconds", 120.0))
-                    if should_emit_live_health_alert(
-                        health,
-                        "live_unmatched_contract_symbol_ignored",
-                        now,
-                        repeat_seconds,
-                    ):
-                        print_json(
-                            {
-                                "event": "live_unmatched_contract_symbol_ignored",
-                                "unmatched_contract_ticks_ignored": health.unmatched_contract_ticks_ignored,
-                                "contract_symbol_regex": health.contract_symbol_regex,
-                                "last_unmatched_contract_tick": health.last_unmatched_contract_tick,
-                                "unmatched_contract_ticks": top_count_items(health.unmatched_contract_ticks),
-                                "accepted_contract_ticks": top_count_items(health.accepted_contract_ticks),
-                                "reason": "A trade tick was ignored because its contract symbol did not match databento.contract_symbol_regex.",
-                                "impact": "The tick was not aggregated into source bars and was not used as an entry trigger.",
-                            },
-                            prefix="SYSTEM_ALERT",
-                        )
-                        engine.play_operator_sound("system")
-                    if bool(live_cfg.get("stop_on_unmatched_contract_symbol", False)):
-                        request_client_stop("unmatched_contract_symbol")
-                elif late_tick_ignored:
-                    health.accepted_contract_ticks = dict(builder.accepted_contract_ticks)
-                    health.late_trade_ticks_ignored = builder.late_ticks_ignored
-                    health.last_late_trade_tick = copy.deepcopy(builder.last_late_tick)
-                    repeat_seconds = float(live_cfg.get("alert_repeat_seconds", 120.0))
-                    if should_emit_live_health_alert(
-                        health,
-                        "live_late_trade_tick_ignored",
-                        now,
-                        repeat_seconds,
-                    ):
-                        print_json(
-                            {
-                                "event": "live_late_trade_tick_ignored",
-                                "late_trade_ticks_ignored": health.late_trade_ticks_ignored,
-                                "last_late_trade_tick": health.last_late_trade_tick,
-                                "reason": "A trade tick arrived for a minute that has already been finalized; it was ignored to avoid duplicate or revised source bars.",
-                            },
-                            prefix="SYSTEM_ALERT",
-                        )
-                        engine.play_operator_sound("system")
-                else:
-                    health.accepted_contract_ticks = dict(builder.accepted_contract_ticks)
-                    engine.on_entry_tick(tick)
-                completed_seen = completed_count
+                accepted_contract_ticks = dict(builder.accepted_contract_ticks)
+                unmatched_contract_ticks_ignored = builder.unmatched_contract_ticks_ignored
+                unmatched_contract_ticks = dict(builder.unmatched_contract_ticks)
+                last_unmatched_contract_tick = copy.deepcopy(builder.last_unmatched_contract_tick)
+                late_trade_ticks_ignored = builder.late_ticks_ignored
+                last_late_trade_tick = copy.deepcopy(builder.last_late_tick)
+                health.accepted_contract_ticks = accepted_contract_ticks
+            process_completed_bars(completed)
+            if unmatched_tick_ignored:
+                health.unmatched_contract_ticks_ignored = unmatched_contract_ticks_ignored
+                health.unmatched_contract_ticks = unmatched_contract_ticks
+                health.last_unmatched_contract_tick = last_unmatched_contract_tick
+                repeat_seconds = float(live_cfg.get("alert_repeat_seconds", 120.0))
+                if should_emit_live_health_alert(
+                    health,
+                    "live_unmatched_contract_symbol_ignored",
+                    now,
+                    repeat_seconds,
+                ):
+                    print_json(
+                        {
+                            "event": "live_unmatched_contract_symbol_ignored",
+                            "unmatched_contract_ticks_ignored": health.unmatched_contract_ticks_ignored,
+                            "contract_symbol_regex": health.contract_symbol_regex,
+                            "last_unmatched_contract_tick": health.last_unmatched_contract_tick,
+                            "unmatched_contract_ticks": top_count_items(health.unmatched_contract_ticks),
+                            "accepted_contract_ticks": top_count_items(health.accepted_contract_ticks),
+                            "reason": "A trade tick was ignored because its contract symbol did not match databento.contract_symbol_regex.",
+                            "impact": "The tick was not aggregated into source bars and was not used as an entry trigger.",
+                        },
+                        prefix="SYSTEM_ALERT",
+                    )
+                    engine.play_operator_sound("system")
+                if bool(live_cfg.get("stop_on_unmatched_contract_symbol", False)):
+                    request_client_stop("unmatched_contract_symbol")
+            elif late_tick_ignored:
+                health.late_trade_ticks_ignored = late_trade_ticks_ignored
+                health.last_late_trade_tick = last_late_trade_tick
+                repeat_seconds = float(live_cfg.get("alert_repeat_seconds", 120.0))
+                if should_emit_live_health_alert(
+                    health,
+                    "live_late_trade_tick_ignored",
+                    now,
+                    repeat_seconds,
+                ):
+                    print_json(
+                        {
+                            "event": "live_late_trade_tick_ignored",
+                            "late_trade_ticks_ignored": health.late_trade_ticks_ignored,
+                            "last_late_trade_tick": health.last_late_trade_tick,
+                            "reason": "A trade tick arrived for a minute that has already been finalized; it was ignored to avoid duplicate or revised source bars.",
+                        },
+                        prefix="SYSTEM_ALERT",
+                    )
+                    engine.play_operator_sound("system")
+            else:
+                maybe_print_live_trade_tick(tick, now=now)
+                engine.on_entry_tick(tick)
+            completed_seen = completed_count
             if once and completed_seen > 0:
                 request_client_stop("once_completed_source_bar")
         except Exception as exc:  # noqa: BLE001 - callback errors must surface and stop live mode.
@@ -8934,17 +10069,15 @@ def run_live(
                 request_client_stop("max_runtime")
                 break
             now = time.monotonic()
+            if engine.strategy_evaluation_deferred:
+                maybe_run_live_catchup(pd.Timestamp.utcnow(), now)
+                if stop_requested.is_set():
+                    break
             if next_maintenance is not None and now >= next_maintenance:
                 maintenance_utc = pd.Timestamp.utcnow()
-                if not acquire_live_state_lock("maintenance"):
-                    next_maintenance = time.monotonic() + maintenance_interval
-                    if stop_requested.is_set():
-                        break
-                    continue
-                try:
-                    completed_seen = run_live_maintenance(maintenance_utc)
-                finally:
-                    live_state_lock.release()
+                completed_seen = run_live_maintenance(maintenance_utc, operation="maintenance")
+                if stop_requested.is_set():
+                    break
                 if once and completed_seen > 0:
                     request_client_stop("once_completed_source_bar")
                     break
@@ -8953,30 +10086,35 @@ def run_live(
                 is_connected = client.is_connected() if callable(client.is_connected) else bool(client.is_connected)
                 connected = bool(is_connected)
                 heartbeat_utc = pd.Timestamp.utcnow()
+                if next_maintenance is None:
+                    completed_count = run_live_maintenance(heartbeat_utc, operation="status_maintenance")
+                    if stop_requested.is_set():
+                        break
                 if not acquire_live_state_lock("status"):
                     next_heartbeat = time.monotonic() + heartbeat_interval
                     if stop_requested.is_set():
                         break
                     continue
                 try:
-                    if next_maintenance is None:
-                        completed_count = run_live_maintenance(heartbeat_utc)
-                    pending_signals = len(engine.pending)
-                    strategy_health = engine.strategy_health_report()
-                    strategy_evaluation = live_strategy_evaluation_summary(
-                        strategy_health,
-                        completed_source_bars=health.completed_bars,
-                        data_plan=engine.data_plan,
-                        live_cfg=live_cfg,
-                        baseline=strategy_evaluation_baseline,
-                    )
-                    pending_status = engine.pending_status(now_utc=heartbeat_utc)
-                    operator_sound = engine.operator_sound_health_report()
-                    source_contract_filter = engine.source_contract_filter_report()
-                    source_bar_quality = engine.source_bar_quality_report()
                     completed_seen = completed_count
                 finally:
                     live_state_lock.release()
+                pending_signals = len(engine.pending)
+                strategy_health = engine.strategy_health_report()
+                strategy_evaluation = live_strategy_evaluation_summary(
+                    strategy_health,
+                    completed_source_bars=health.completed_bars,
+                    data_plan=engine.data_plan,
+                    live_cfg=live_cfg,
+                    baseline=strategy_evaluation_baseline,
+                )
+                if engine.strategy_evaluation_deferred:
+                    strategy_evaluation["deferred"] = True
+                    strategy_evaluation.update(engine.strategy_evaluation_deferred_report())
+                pending_status = engine.pending_status(now_utc=heartbeat_utc)
+                operator_sound = engine.operator_sound_health_report()
+                source_contract_filter = engine.source_contract_filter_report()
+                source_bar_quality = engine.source_bar_quality_report()
                 market_session = live_market_session_state(
                     live_cfg,
                     engine.databento_config,
@@ -8988,6 +10126,7 @@ def run_live(
                         now=now,
                         connected=connected,
                         entry_alerts=engine.alert_count,
+                        trade_warnings=engine.warning_notice_count,
                         pending_signals=pending_signals,
                         alert_sink=engine.alert_sink,
                         setup_notice_sink=engine.setup_notice_sink,
@@ -9000,6 +10139,12 @@ def run_live(
                         source_contract_filter=source_contract_filter,
                         source_bar_quality=source_bar_quality,
                         dry_run_alerts=engine.dry_run_alerts,
+                        catchup={
+                            "active": engine.strategy_evaluation_deferred,
+                            "attempts": catchup_attempts,
+                            "retry_interval_seconds": catchup_retry_interval_seconds,
+                            **engine.strategy_evaluation_deferred_report(),
+                        },
                     )
                 )
                 for alert in live_health_alerts(
@@ -9035,6 +10180,8 @@ def run_live(
         "live_unmatched_contract_symbol_ignored",
         "live_state_lock_timeout",
         "unmatched_contract_symbol",
+        "live_catchup_timeout",
+        "live_catchup_backfill_cost_guard_failed",
         "live_callback_error",
         "live_exception",
     }
@@ -9053,6 +10200,17 @@ def run_live(
             "entry_alerts": engine.alert_count,
             "dry_run_alerts": engine.dry_run_alerts,
             "pending_signals": len(engine.pending),
+            "catchup_active": engine.strategy_evaluation_deferred,
+            "catchup_attempts": catchup_attempts,
+            "catchup_retry_interval_seconds": catchup_retry_interval_seconds,
+            "strategy_evaluation_deferred": engine.strategy_evaluation_deferred,
+            "strategy_evaluation_deferred_bars": engine.strategy_evaluation_deferred_bars,
+            "catchup": {
+                "active": engine.strategy_evaluation_deferred,
+                "attempts": catchup_attempts,
+                "retry_interval_seconds": catchup_retry_interval_seconds,
+                **engine.strategy_evaluation_deferred_report(),
+            },
             "live_errors": len(live_errors),
             "setup_alerts": {
                 "enabled": bool(engine.setup_alerts_config.get("enabled", False)),
@@ -9311,6 +10469,7 @@ def live_status_payload(
     now: float,
     connected: bool,
     entry_alerts: int,
+    trade_warnings: int = 0,
     pending_signals: int,
     alert_sink: AlertSinkHealth | None = None,
     setup_notice_sink: AlertSinkHealth | None = None,
@@ -9323,6 +10482,7 @@ def live_status_payload(
     source_contract_filter: dict[str, Any] | None = None,
     source_bar_quality: dict[str, Any] | None = None,
     dry_run_alerts: bool = False,
+    catchup: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     payload = {
         "event": "live_status",
@@ -9350,10 +10510,21 @@ def live_status_payload(
         else None,
         "max_trade_tick_clock_lag_seconds": round(health.max_tick_clock_lag_seconds, 3),
         "max_trade_tick_clock_future_seconds": round(health.max_tick_clock_future_seconds, 3),
+        "trade_warnings": trade_warnings,
         "entry_alerts": entry_alerts,
         "pending_signals": pending_signals,
         "dry_run_alerts": bool(dry_run_alerts),
     }
+    if catchup is not None:
+        payload["catchup"] = catchup
+        payload["catchup_active"] = bool(catchup.get("active", False))
+        payload["catchup_attempts"] = catchup.get("attempts")
+        payload["catchup_retry_interval_seconds"] = catchup.get("retry_interval_seconds")
+        payload["strategy_evaluation_deferred"] = bool(catchup.get("strategy_evaluation_deferred", False))
+        payload["strategy_evaluation_deferred_bars"] = catchup.get("strategy_evaluation_deferred_bars")
+        payload["missing_bar_count"] = catchup.get("missing_bar_count")
+        payload["first_missing_bar_utc"] = catchup.get("first_missing_bar_utc")
+        payload["last_missing_bar_utc"] = catchup.get("last_missing_bar_utc")
     if strategy_health is not None:
         payload["active_strategy_count"] = sum(1 for item in strategy_health if not item.get("disabled"))
         payload["disabled_strategy_count"] = sum(1 for item in strategy_health if item.get("disabled"))
@@ -9426,6 +10597,49 @@ def live_status_payload(
     return payload
 
 
+def live_trade_tick_console_payload(tick: TradeTick, health: LiveHealth) -> dict[str, Any]:
+    return {
+        "event": "live_trade_tick",
+        "timestamp_utc": format_timestamp(normalize_utc_timestamp(tick.timestamp_utc)),
+        "contract_symbol": tick.contract_symbol,
+        "price": tick.price,
+        "size": tick.size,
+        "side": tick.side,
+        "action": tick.action,
+        "bid_price": tick.bid_price,
+        "ask_price": tick.ask_price,
+        "trade_ticks_received": health.ticks_received,
+        "last_trade_tick_clock_lag_seconds": health.last_tick_clock_lag_seconds,
+    }
+
+
+def live_source_bar_console_payload(
+    bar: SourceMinuteBar,
+    health: LiveHealth,
+    *,
+    timezone: str,
+) -> dict[str, Any]:
+    timestamp_utc = normalize_utc_timestamp(bar.timestamp_utc)
+    return {
+        "event": "live_source_bar_completed",
+        "timestamp": format_timestamp(timestamp_utc.tz_convert(timezone)),
+        "timestamp_utc": format_timestamp(timestamp_utc),
+        "symbol": bar.symbol,
+        "contract_symbol": bar.contract_symbol,
+        "open": bar.open,
+        "high": bar.high,
+        "low": bar.low,
+        "close": bar.close,
+        "volume": bar.volume,
+        "signed_volume": bar.signed_volume,
+        "buy_volume": bar.buy_volume,
+        "sell_volume": bar.sell_volume,
+        "trades": bar.trades,
+        "source": bar.source,
+        "completed_source_bars": health.completed_bars + 1,
+    }
+
+
 def live_health_alerts(
     health: LiveHealth,
     live_cfg: dict[str, Any],
@@ -9467,6 +10681,7 @@ def live_health_alerts(
 
     if (
         strategy_evaluation is not None
+        and not bool(strategy_evaluation.get("deferred", False))
         and bool(strategy_evaluation.get("no_evaluable_strategies", False))
         and should_emit_live_health_alert(health, "live_no_evaluable_strategies", now, repeat_seconds)
     ):
@@ -9495,6 +10710,7 @@ def live_health_alerts(
 
     if (
         strategy_evaluation is not None
+        and not bool(strategy_evaluation.get("deferred", False))
         and bool(strategy_evaluation.get("partially_unevaluable_strategies", False))
         and should_emit_live_health_alert(health, "live_partially_unevaluable_strategies", now, repeat_seconds)
     ):
@@ -9632,8 +10848,13 @@ LIVE_SAFETY_STOP_DEFAULTS = {
     "stop_on_stale_trade_tick": False,
     "stop_on_future_trade_tick": False,
     "stop_on_unmatched_contract_symbol": False,
-    "stop_on_state_lock_timeout": True,
+    "stop_on_state_lock_timeout": False,
 }
+
+
+REQUIRED_LIVE_SAFETY_STOP_KEYS = tuple(
+    key for key in LIVE_SAFETY_STOP_DEFAULTS if key != "stop_on_state_lock_timeout"
+)
 
 
 def live_safety_stop_config(live_cfg: Any) -> dict[str, bool]:
@@ -9921,7 +11142,7 @@ def feature_value_is_finite(value: Any) -> bool:
 
 SOURCE_BAR_COLUMN_ALIASES: dict[str, tuple[str, ...]] = {
     "timestamp": ("timestamp", "timestamp_utc"),
-    "timestamp_utc": ("timestamp_utc", "timestamp"),
+    "timestamp_utc": ("timestamp_utc",),
     "symbol": ("symbol", "root_symbol"),
     "contract_symbol": ("contract_symbol", "raw_symbol", "symbol"),
     "open": ("open", "Open"),
@@ -10618,6 +11839,290 @@ def contains_trade_orderflow_reference(value: Any) -> bool:
     return False
 
 
+def morning_orderflow_source_columns(entry_params: dict[str, Any]) -> set[str]:
+    columns = {"open", "high", "low", "close", "volume", "signed_volume"}
+    for size in morning_orderflow_large_trade_sizes(entry_params):
+        columns.update({f"large{size}_signed_volume", f"large{size}_volume"})
+    return columns
+
+
+def morning_orderflow_runtime_columns(entry_params: dict[str, Any]) -> set[str]:
+    columns = {
+        "timestamp",
+        "contract_symbol",
+        "session_date",
+        "is_rth",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "signed_volume",
+    }
+    for size in morning_orderflow_large_trade_sizes(entry_params):
+        columns.update({f"large{size}_signed_volume", f"large{size}_volume"})
+    return columns
+
+
+def morning_orderflow_large_trade_sizes(entry_params: dict[str, Any]) -> set[int]:
+    flow_mode = str(entry_params.get("flow_mode", "signed_imbalance")).strip().lower()
+    if flow_mode in {"large10_imbalance", "large10"}:
+        return {10}
+    if flow_mode in {"large20_imbalance", "large20", "broad_large_alignment", "signed_and_large20"}:
+        return {20}
+    return set()
+
+
+def estimate_morning_orderflow_window_bars(entry_params: dict[str, Any], source_timeframe: str) -> int:
+    source_minutes = max(1, parse_timeframe_minutes(source_timeframe))
+    start = parse_clock(entry_params.get("rth_start", "09:30:00"))
+    end = parse_clock(entry_params.get("signal_time", "10:30:00"))
+    start_minutes = start.hour * 60 + start.minute + start.second / 60.0
+    end_minutes = end.hour * 60 + end.minute + end.second / 60.0
+    if end_minutes < start_minutes:
+        end_minutes += 24 * 60
+    duration_minutes = max(float(source_minutes), end_minutes - start_minutes)
+    return max(1, int(math.ceil(duration_minutes / source_minutes)))
+
+
+def morning_orderflow_pre_trade_warning_signal(
+    features: Any,
+    row: Any,
+    *,
+    entry_params: dict[str, Any],
+    warning_config: dict[str, Any],
+    timezone: str,
+    timeframe_minutes: int,
+    trades_today: int,
+    latest_source_end: Any,
+) -> tuple[EngineSignal | None, Any | None]:
+    if not bool(row.get("is_rth", False)):
+        return None, None
+    max_trades_per_day = int(entry_params.get("max_trades_per_day", 1) or 1)
+    if int(trades_today) >= max_trades_per_day:
+        return None, None
+    tick_size = float(entry_params.get("tick_size", 0.25) or 0.25)
+    if tick_size <= 0:
+        return None, None
+    bar_minutes = max(1, int(float(entry_params.get("bar_interval_minutes", timeframe_minutes) or timeframe_minutes)))
+    warning_bars = int(warning_config.get("bars_before_entry", 1) or 1)
+    row_timestamp = pd.Timestamp(row["timestamp"])
+    session_date = row.get("session_date")
+    source_start = local_datetime_for_clock(session_date, parse_clock(entry_params.get("rth_start", "09:30:00")), timezone)
+    expected_entry = local_datetime_for_clock(session_date, parse_clock(entry_params.get("signal_time", "10:30:00")), timezone)
+    warning_close = expected_entry - pd.Timedelta(minutes=warning_bars * bar_minutes)
+    row_close = row_timestamp + pd.Timedelta(minutes=bar_minutes)
+    if abs((row_close - warning_close).total_seconds()) > 1e-6:
+        return None, None
+    latest_source_end_local = pd.Timestamp(latest_source_end)
+    if latest_source_end_local.tzinfo is None:
+        latest_source_end_local = latest_source_end_local.tz_localize(timezone)
+    else:
+        latest_source_end_local = latest_source_end_local.tz_convert(timezone)
+    if expected_entry <= latest_source_end_local:
+        return None, None
+
+    source = morning_orderflow_warning_source_window(
+        features,
+        session_date=session_date,
+        source_start=source_start,
+        warning_close=warning_close,
+        bar_minutes=bar_minutes,
+    )
+    if source is None:
+        return None, None
+    source_open = float(source["open"])
+    source_close = float(source["close"])
+    source_return_points = source_close - source_open
+    source_return_ticks = source_return_points / tick_size
+    min_signal_return_ticks = float(entry_params.get("min_signal_return_ticks", 20.0) or 0.0)
+    if abs(source_return_ticks) < min_signal_return_ticks:
+        return None, None
+    metrics = morning_orderflow_warning_metrics(source)
+    primary, secondary = morning_orderflow_warning_flow_values(
+        metrics,
+        flow_mode=str(entry_params.get("flow_mode", "signed_imbalance")).strip().lower(),
+    )
+    if primary is None:
+        return None, None
+    min_orderflow_imbalance = float(entry_params.get("min_orderflow_imbalance", 0.02) or 0.0)
+    direction = morning_orderflow_warning_direction(
+        source_return_ticks,
+        primary,
+        secondary,
+        direction_mode=str(entry_params.get("direction_mode", "two_sided_continuation")).strip().lower(),
+        threshold=min_orderflow_imbalance,
+    )
+    if direction is None:
+        return None, None
+    setup_mode = str(entry_params.get("setup_mode", "two_sided_signed_flow_continuation")).strip().lower()
+    target_r_multiple = float(entry_params.get("target_r_multiple", 3.0) or 3.0)
+    stop_pct = float(entry_params.get("stop_pct", 0.0025) or 0.0025)
+    warning_lead_seconds = (expected_entry - warning_close).total_seconds()
+    report_fields = {
+        "academic_source_key": "gao_han_li_zhou_intraday_momentum_and_orderflow_imbalance",
+        "setup_mode": setup_mode,
+        "feature_method": "sierra_morning_orderflow_momentum",
+        "direction_mode": str(entry_params.get("direction_mode", "two_sided_continuation")).strip().lower(),
+        "flow_mode": str(entry_params.get("flow_mode", "signed_imbalance")).strip().lower(),
+        "source_return_reference": "rth_open_to_warning_close",
+        "source_window_start_timestamp": source["start_timestamp"],
+        "source_window_end_timestamp": source["end_timestamp"],
+        "source_window_open": source_open,
+        "source_window_high": float(source["high"]),
+        "source_window_low": float(source["low"]),
+        "source_window_close": source_close,
+        "source_window_return_points": source_return_points,
+        "source_window_return_ticks": source_return_ticks,
+        "source_window_volume": float(source["volume"]),
+        "source_window_signed_volume": float(source["signed_volume"]),
+        "source_window_imbalance": metrics["signed_imbalance"],
+        "source_window_large10_imbalance": metrics["large10_imbalance"],
+        "source_window_large20_imbalance": metrics["large20_imbalance"],
+        "primary_orderflow_imbalance": primary,
+        "secondary_orderflow_imbalance": secondary,
+        "min_signal_return_ticks": min_signal_return_ticks,
+        "min_orderflow_imbalance": min_orderflow_imbalance,
+        "morning_orderflow_signal_timestamp": expected_entry,
+        "morning_orderflow_intended_entry_timestamp": expected_entry,
+        "warning_timestamp_utc": warning_close.tz_convert("UTC"),
+        "warning_lead_bars": warning_bars,
+        "warning_lead_seconds": warning_lead_seconds,
+        "warning_time_condition_satisfied": False,
+        "warning_non_time_conditions_satisfied": True,
+        "signal_stop_pct": stop_pct,
+        "signal_target_r_multiple": target_r_multiple,
+        "signal_flatten_time": str(entry_params.get("flatten_time", "15:30:00")),
+        "swept_level": source_open,
+        "sweep_timestamp": source["start_timestamp"],
+        "sweep_high": float(source["high"]),
+        "sweep_low": float(source["low"]),
+        "reclaim_timestamp": expected_entry,
+        "warning_play_sound": bool(warning_config.get("play_sound", True)),
+    }
+    signal = EngineSignal(
+        direction=direction,
+        level_type=f"morning_orderflow_momentum_pre_trade_warning_{setup_mode}",
+        swept_level=source_open,
+        metadata={
+            "setup_mode": setup_mode,
+            "direction_mode": report_fields["direction_mode"],
+            "flow_mode": report_fields["flow_mode"],
+            "source_window_return_ticks": source_return_ticks,
+            "primary_orderflow_imbalance": primary,
+            "secondary_orderflow_imbalance": secondary,
+            "stop_pct": stop_pct,
+            "target_r_multiple": target_r_multiple,
+            "flatten_time": str(entry_params.get("flatten_time", "15:30:00")),
+            "warning_lead_bars": warning_bars,
+            "warning_lead_seconds": warning_lead_seconds,
+        },
+        report_fields=report_fields,
+    )
+    return signal, expected_entry.tz_convert("UTC")
+
+
+def morning_orderflow_warning_source_window(
+    features: Any,
+    *,
+    session_date: Any,
+    source_start: Any,
+    warning_close: Any,
+    bar_minutes: int,
+) -> dict[str, Any] | None:
+    if features.empty:
+        return None
+    frame = features.copy()
+    timestamps = pd.to_datetime(frame["timestamp"])
+    rth_mask = frame["is_rth"].astype(bool) if "is_rth" in frame else True
+    mask = (
+        frame["session_date"].astype(str).eq(str(session_date))
+        & rth_mask
+        & (timestamps >= source_start)
+        & (timestamps + pd.Timedelta(minutes=bar_minutes) <= warning_close)
+    )
+    source_rows = frame.loc[mask].sort_values("timestamp")
+    if source_rows.empty:
+        return None
+    expected_count = int(math.ceil((warning_close - source_start).total_seconds() / (bar_minutes * 60)))
+    if len(source_rows) < expected_count:
+        return None
+    first = source_rows.iloc[0]
+    last = source_rows.iloc[-1]
+    source: dict[str, Any] = {
+        "start_timestamp": source_start,
+        "end_timestamp": warning_close,
+        "open": float(first["open"]),
+        "high": float(source_rows["high"].max()),
+        "low": float(source_rows["low"].min()),
+        "close": float(last["close"]),
+        "volume": float(source_rows["volume"].sum()),
+        "signed_volume": float(source_rows["signed_volume"].sum()),
+        "bar_count": int(len(source_rows)),
+    }
+    for size in (10, 20):
+        volume_column = f"large{size}_volume"
+        signed_column = f"large{size}_signed_volume"
+        source[volume_column] = float(source_rows[volume_column].sum()) if volume_column in source_rows else 0.0
+        source[signed_column] = float(source_rows[signed_column].sum()) if signed_column in source_rows else 0.0
+    return source
+
+
+def morning_orderflow_warning_metrics(source: dict[str, Any]) -> dict[str, float | None]:
+    return {
+        "signed_imbalance": ratio_or_none(source.get("signed_volume"), source.get("volume")),
+        "large10_imbalance": ratio_or_none(source.get("large10_signed_volume"), source.get("large10_volume")),
+        "large20_imbalance": ratio_or_none(source.get("large20_signed_volume"), source.get("large20_volume")),
+    }
+
+
+def morning_orderflow_warning_flow_values(
+    metrics: dict[str, float | None],
+    *,
+    flow_mode: str,
+) -> tuple[float | None, float | None]:
+    if flow_mode in {"signed_imbalance", "all_volume_imbalance"}:
+        return metrics["signed_imbalance"], None
+    if flow_mode in {"large10_imbalance", "large10"}:
+        return metrics["large10_imbalance"], None
+    if flow_mode in {"large20_imbalance", "large20"}:
+        return metrics["large20_imbalance"], None
+    if flow_mode in {"broad_large_alignment", "signed_and_large20"}:
+        return metrics["signed_imbalance"], metrics["large20_imbalance"]
+    return None, None
+
+
+def morning_orderflow_warning_direction(
+    return_ticks: float,
+    primary: float,
+    secondary: float | None,
+    *,
+    direction_mode: str,
+    threshold: float,
+) -> str | None:
+    long_ok = return_ticks > 0 and primary >= threshold and (secondary is None or secondary >= threshold)
+    short_ok = return_ticks < 0 and primary <= -threshold and (secondary is None or secondary <= -threshold)
+    if direction_mode in {"two_sided_continuation", "two_sided"}:
+        if long_ok:
+            return "long"
+        if short_ok:
+            return "short"
+        return None
+    if direction_mode in {"long_only_continuation", "long_only"}:
+        return "long" if long_ok else None
+    if direction_mode in {"short_only_continuation", "short_only"}:
+        return "short" if short_ok else None
+    return None
+
+
+def ratio_or_none(numerator: Any, denominator: Any) -> float | None:
+    num = finite_float(numerator)
+    den = finite_float(denominator)
+    if num is None or den is None or den <= 0:
+        return None
+    return num / den
+
+
 def collect_feature_column_references(value: Any) -> set[str]:
     found: set[str] = set()
     if isinstance(value, dict):
@@ -10929,6 +12434,80 @@ def validate_setup_notice_contract(notice: dict[str, Any]) -> None:
         raise ValueError("setup notice signal must be a mapping")
     if "trade_plan_preview" in notice:
         validate_setup_trade_plan_preview(notice["trade_plan_preview"])
+
+
+def validate_trade_warning_notice_contract(notice: dict[str, Any]) -> None:
+    required = {
+        "event",
+        "warning_contract_version",
+        "warning_id",
+        "pending_signal_key",
+        "strategy_id",
+        "strategy_name",
+        "strategy_config",
+        "strategy_config_fingerprint",
+        "engine_config",
+        "engine_config_fingerprint",
+        "symbol",
+        "contract_symbol",
+        "timeframe",
+        "warning_timestamp_utc",
+        "expected_entry_timestamp_utc",
+        "warning_lead_bars",
+        "direction",
+        "side",
+        "trade_plan_preview",
+        "signal",
+    }
+    missing = sorted(required - set(notice))
+    if missing:
+        raise ValueError(f"trade warning missing required field(s): {missing}")
+    if notice["event"] != "trade_warning":
+        raise ValueError("trade warning event must be trade_warning")
+    if notice["warning_contract_version"] != TRADE_WARNING_CONTRACT_VERSION:
+        raise ValueError(f"unsupported trade warning contract version: {notice['warning_contract_version']}")
+    for key in (
+        "warning_id",
+        "pending_signal_key",
+        "strategy_id",
+        "strategy_config",
+        "engine_config",
+        "symbol",
+        "contract_symbol",
+        "timeframe",
+    ):
+        if not str(notice.get(key) or "").strip():
+            raise ValueError(f"trade warning field {key!r} must be non-empty")
+    validate_config_fingerprint_payload(
+        notice["strategy_config_fingerprint"],
+        path=notice.get("strategy_config"),
+        label="trade warning strategy_config_fingerprint",
+    )
+    validate_config_fingerprint_payload(
+        notice["engine_config_fingerprint"],
+        path=notice.get("engine_config"),
+        label="trade warning engine_config_fingerprint",
+    )
+    direction = str(notice["direction"]).lower()
+    side = str(notice["side"]).lower()
+    if direction not in {"long", "short"}:
+        raise ValueError("trade warning direction must be long or short")
+    if side not in {"buy", "sell"}:
+        raise ValueError("trade warning side must be buy or sell")
+    if (direction == "long" and side != "buy") or (direction == "short" and side != "sell"):
+        raise ValueError("trade warning side is inconsistent with direction")
+    if config_int(notice, "warning_lead_bars", 1, min_value=1) < 1:
+        raise ValueError("trade warning warning_lead_bars must be >= 1")
+    try:
+        warning_timestamp = normalize_utc_timestamp(notice["warning_timestamp_utc"])
+        expected_entry_timestamp = normalize_utc_timestamp(notice["expected_entry_timestamp_utc"])
+    except Exception as exc:
+        raise ValueError("trade warning timestamps must parse as timestamps") from exc
+    if expected_entry_timestamp <= warning_timestamp:
+        raise ValueError("trade warning expected_entry_timestamp_utc must be after warning_timestamp_utc")
+    if not isinstance(notice.get("signal"), dict):
+        raise ValueError("trade warning signal must be a mapping")
+    validate_setup_trade_plan_preview(notice["trade_plan_preview"])
 
 
 def validate_setup_trade_plan_preview(preview: Any) -> None:
@@ -11835,6 +13414,70 @@ def require_finite(value: Any, label: str, *, positive: bool = False) -> float:
     return parsed
 
 
+def format_trade_warning_readout(notice: dict[str, Any]) -> str:
+    signal = notice.get("signal", {}) if isinstance(notice.get("signal"), dict) else {}
+    report_fields = signal.get("report_fields", {}) if isinstance(signal.get("report_fields"), dict) else {}
+    preview = notice.get("trade_plan_preview")
+    lines = [
+        "",
+        "=" * 72,
+        "TRADE WARNING - GET READY",
+        "-" * 72,
+        "Status   : PREP WARNING - DO NOT ENTER YET",
+        f"Strategy : {notice.get('strategy_id', '')}",
+        f"Symbol   : {notice.get('contract_symbol') or notice.get('symbol', '')} {notice.get('timeframe', '')}",
+        f"Direction: {str(notice.get('direction', '')).upper()} ({notice.get('side', '')})",
+        f"Warning  : {notice.get('warning_timestamp_utc', '')}",
+        f"Expected : {notice.get('expected_entry_timestamp_utc', '')}",
+    ]
+    lead_seconds = finite_float(notice.get("warning_lead_seconds"))
+    if lead_seconds is not None:
+        lines.append(
+            f"Lead     : {notice.get('warning_lead_bars', '')} bar(s), {format_number(lead_seconds)}s"
+        )
+    if isinstance(preview, dict):
+        if preview.get("status") == "estimated":
+            lines.append("Plan     : ESTIMATE ONLY - wait for TRADE_SETUP / ENTRY_SIGNAL")
+            entry_price = finite_float(preview.get("estimated_entry_price"))
+            stop_price = finite_float(preview.get("stop_loss_price"))
+            target_price = finite_float(preview.get("take_profit_price"))
+            quantity = preview.get("quantity")
+            risk_dollars = finite_float(preview.get("risk_dollars"))
+            reward_dollars = finite_float(preview.get("reward_dollars"))
+            if entry_price is not None:
+                lines.append(f"Est entry: {format_number(entry_price)}")
+            if stop_price is not None:
+                lines.append(f"Est stop : {format_number(stop_price)}")
+            if target_price is not None:
+                lines.append(f"Est tgt  : {format_number(target_price)}")
+            if isinstance(quantity, int) and quantity > 0:
+                lines.append(f"Est qty  : {quantity} contract(s)")
+            if risk_dollars is not None or reward_dollars is not None:
+                lines.append(
+                    "Est R/R  : "
+                    f"${format_number(risk_dollars) if risk_dollars is not None else '?'} / "
+                    f"${format_number(reward_dollars) if reward_dollars is not None else '?'}"
+                )
+        elif preview.get("status") == "unavailable" and preview.get("reason"):
+            lines.append(f"Plan     : unavailable - {preview.get('reason')}")
+    source_return_ticks = finite_float(report_fields.get("source_window_return_ticks"))
+    primary = finite_float(report_fields.get("primary_orderflow_imbalance"))
+    source_close = finite_float(report_fields.get("source_window_close"))
+    if source_return_ticks is not None:
+        lines.append(f"Move     : {format_number(source_return_ticks)} ticks from RTH open")
+    if primary is not None:
+        lines.append(f"Flow     : {format_number(primary)} imbalance")
+    if source_close is not None:
+        lines.append(f"Last px  : {format_number(source_close)}")
+    lines.extend(
+        [
+            "=" * 72,
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
 def format_setup_readout(notice: dict[str, Any]) -> str:
     signal = notice.get("signal", {}) if isinstance(notice.get("signal"), dict) else {}
     metadata = signal.get("metadata", {}) if isinstance(signal.get("metadata"), dict) else {}
@@ -12175,6 +13818,8 @@ def print_json(payload: dict[str, Any], *, prefix: str | None = None) -> None:
 
 def format_console_summary(payload: dict[str, Any], *, prefix: str | None = None) -> str:
     event = str(payload.get("event") or prefix or "event")
+    if prefix in {"LIVE_TICK", "LIVE_BAR", "LIVE_SESSION"}:
+        return format_key_value_console_summary(prefix, payload)
     if event == "preflight":
         return format_preflight_console_summary(payload)
     if event == "live_status":
@@ -12183,6 +13828,8 @@ def format_console_summary(payload: dict[str, Any], *, prefix: str | None = None
         return format_key_value_console_summary("replay_complete", payload)
     if prefix == "ENTRY_SIGNAL" or event == "entry_signal":
         return format_key_value_console_summary("ENTRY_SIGNAL", payload)
+    if prefix == "TRADE_WARNING" or event == "trade_warning":
+        return format_key_value_console_summary("TRADE_WARNING", payload)
     if prefix == "TRADE_SETUP" or event == "trade_setup":
         return format_key_value_console_summary("TRADE_SETUP", payload)
     if prefix == "SIGNAL_REJECTED" or event == "signal_rejected":
@@ -12213,6 +13860,7 @@ def format_live_status_console_summary(payload: dict[str, Any]) -> str:
         "records_received": payload.get("records_received"),
         "trade_ticks": payload.get("trade_ticks"),
         "completed_source_bars": payload.get("completed_source_bars"),
+        "trade_warnings": payload.get("trade_warnings"),
         "pending_signals": payload.get("pending_signals"),
         "setup_notices": payload.get("setup_notices"),
         "entry_alerts": payload.get("entry_alerts"),

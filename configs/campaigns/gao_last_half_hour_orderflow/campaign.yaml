@@ -1,0 +1,42 @@
+campaign_id: gao_last_half_hour_orderflow
+campaign_name: Gao Last-Half-Hour Orderflow Confirmation
+status: research
+
+academic_sources:
+  - title: "Market Intraday Momentum"
+    authors: "Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou"
+    year: 2018
+    venue: "Journal of Financial Economics"
+    doi: "10.1016/j.jfineco.2018.05.009"
+    finding_used: "The first half-hour market return predicts the last half-hour market return."
+    evidence_directness: "Faithful timing translation for ES: signal from the completed 09:30-10:00 RTH window, entry at 15:30 ET, and flatten at 16:00 ET."
+  - title: "The Price Impact of Order Book Events"
+    authors: "Rama Cont, Arseniy Kukanov, Sasha Stoikov"
+    year: 2014
+    venue: "Journal of Financial Econometrics"
+    doi: "10.1093/jjfinec/nbt003"
+    finding_used: "Order-flow imbalance is linked to short-horizon price pressure."
+    evidence_directness: "Moderate; this campaign uses Sierra-compatible signed-volume imbalance aggregated to bars rather than full depth events."
+
+edge_thesis: >
+  Gao et al.'s first-half-hour return dependency should be more robust in ES
+  when the first half-hour price move is confirmed by aggregate Sierra
+  signed-volume orderflow. Variants trade only the final RTH half-hour: signal
+  at 15:30 ET, enter next bar, and flatten at 16:00 ET.
+
+translation_notes:
+  faithful_gao_timing: "Uses completed 09:30-10:00 ET RTH price return to trade the 15:30-16:00 ET last-half-hour window."
+  orderflow_integration: "Adds Sierra bar-level signed-volume, large-trade signed-volume, or penultimate half-hour flow alignment without using individual prints or depth."
+  prior_non_orderflow_result: "The earlier late_day_intraday_momentum campaign tested non-orderflow Gao translations and failed limited core; this campaign tests whether aggregate orderflow confirmation rescues the thesis."
+  expected_working_regime: "Opening information flow persists into closing-risk adjustment and is confirmed by aggressive signed volume."
+  expected_failure_regime: "Opening return is already absorbed before the close, closing flow is dominated by unrelated rebalance pressure, or aggregate bar orderflow is too coarse."
+
+variants:
+  - first_signed_flow_alignment
+  - first_large20_flow_alignment
+  - first_penultimate_signed_flow_alignment
+
+timeframes:
+  - 1m
+  - 5m
+  - 15m

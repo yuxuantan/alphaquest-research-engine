@@ -41,6 +41,10 @@ engine uses the next bar's open as that entry tick.
 
 This means there are two separate moments:
 
+- `TRADE_WARNING`: an optional strategy-specific prep warning. For the morning
+  orderflow strategy, this fires one completed bar before the intended entry
+  when the move and orderflow thresholds are already satisfied, but time has not
+  reached the real setup/entry boundary.
 - `TRADE_SETUP`: the strategy has fired on a completed bar, but the engine is
   waiting for the next entry tick/open.
 - `ENTRY_SIGNAL`: the trade is actionable now, with final entry, quantity, stop,
@@ -403,9 +407,63 @@ moment.
   campaign YAML from `configs/campaigns`.
 - `dummy_delta_signal_engine.example.yaml`: simple built-in strategy for
   verifying the live/replay path.
+- `morning_orderflow_momentum_signal_engine.example.yaml`: live-alert config
+  for the `two_sided_signed_flow_continuation` morning orderflow tracker.
+- `RUN_COMMANDS.md`: copy-paste command runbook for preflight, replay, live,
+  and outbox checks.
+- `strategies/morning_orderflow_momentum_two_sided_signed_flow_continuation_live.yaml`:
+  execution-system strategy YAML with the live-tracker parameters.
 - `data/databento/`: default location for generated historical bar caches.
 - `data/runtime/alerts/`: default location for emitted JSONL alerts and
   router-facing intent records. This is runtime output and is ignored by git.
+
+## Morning Orderflow Tracker Config
+
+The morning orderflow config implements the live tracker from:
+
+```text
+data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_continuation/LIVE_TRADING_TRACKER.md
+```
+
+The execution strategy uses the selected live parameters:
+
+- signal window: RTH open through 10:30 ET
+- direction: two-sided continuation
+- orderflow: signed-volume imbalance
+- minimum source return: 12 ticks
+- minimum signed imbalance: 0.01
+- stop: 0.25% from entry
+- target: 3.0R
+- max trades: 1 per day
+- pre-trade warning: 1 bar before the 10:30 ET intended entry, if all non-time
+  criteria are already satisfied
+
+Preflight it without touching Databento timeseries or live subscriptions:
+
+```bash
+python3 -B execution_system/databento_signal_engine.py \
+  --config execution_system/morning_orderflow_momentum_signal_engine.example.yaml \
+  --preflight-only
+```
+
+Replay the local Databento-derived orderflow cache through the live timing path:
+
+```bash
+python3 -B execution_system/databento_signal_engine.py \
+  --config execution_system/morning_orderflow_momentum_signal_engine.example.yaml \
+  --skip-historical \
+  --dry-run-alerts \
+  --replay-bars data/cache/orderflow/es_trade_orderflow_1m_20250609_20260608.csv \
+  --replay-stop-after-signal \
+  --replay-require-signal \
+  --replay-require-healthy-strategies
+```
+
+The shipped config keeps `databento.live.enabled: true` and prints live ticks
+and completed bars in normal console mode. Live subscription is explicitly
+acknowledged in the YAML, so confirm your Databento billing setup before running
+live. Historical refresh and current-session backfill remain guarded with
+`require_zero_cost: true` and `max_cost_usd: 0.0`.
 
 ## Runtime Flow
 
@@ -562,12 +620,20 @@ The default live setting also drops the first completed bar after subscription,
 because starting the script at 09:31:35 would otherwise create a partial 09:31
 bar.
 
-The engine does not currently backfill the missing first part of the live
-subscription minute. If the process starts at 09:31:35, Databento live only
-delivers records from that point forward. The safe behavior is to drop that
-partial bar and begin evaluating from the next full minute. Historical seeding
-warms up strategy state before live starts, but it is not merged into the
-currently forming live minute.
+Databento live only delivers records from the point of subscription onward. The
+default safe behavior is still to drop the first partial live bar, but strategies
+that need current-session state can also declare a live startup coverage
+requirement. The morning orderflow strategy uses this to require the completed
+RTH-open source bars needed for cumulative signed volume and price change from
+the open. If those bars are missing, the engine tries the guarded
+`historical.current_session_backfill` path before live subscription. With
+`historical.current_session_backfill.startup_mode: defer_until_complete`, if the
+required context remains missing or gapped, live starts in catch-up mode: source
+bars are stored, but strategy warnings, setups, and entries are disabled until
+historical backfill fills the missing gap and the current-session chain is
+continuous. Databento historical metadata can lag the current live session, so a
+zero-cost backfill may still return only finalized bars up to an earlier minute;
+catch-up mode keeps retrying without using incomplete context for signals.
 
 ## Dummy Delta Metadata
 
@@ -926,9 +992,10 @@ Important `databento.live` keys:
   `SYSTEM_ALERT`. The shipped example configs set these to `true` so live mode
   fails closed instead of running silently on stale, missing, clock-skewed,
   rejected, partially unevaluable, or fully unevaluable data.
-- `stop_on_state_lock_timeout`: stop live mode if callback or strategy
-  processing blocks the shared live-state lock long enough to make status and
-  maintenance snapshots unreliable.
+- `stop_on_state_lock_timeout`: opt into stopping live mode if the status or
+  maintenance loop cannot acquire the shared live-state lock quickly enough.
+  The shipped examples leave this `false` so a transient status-lock timeout
+  warns the operator without stopping an otherwise healthy stream.
 - `stop_on_unmatched_contract_symbol`: stop live mode after the first trade tick
   rejected by `contract_symbol_regex`.
 - `flush_completed_bars_on_heartbeat`: finalize live bars by wall clock when a
@@ -1055,8 +1122,11 @@ audit block with raw prices and adjustment ticks.
 
 ## Operator Alerts
 
-The engine emits three operator-facing notices:
+The engine emits four operator-facing notices:
 
+- `TRADE_WARNING`: printed before a setup when a strategy-specific warning rule
+  is enabled and the non-time criteria are already satisfied. It is prep-only;
+  it is not an entry instruction.
 - `TRADE_SETUP`: printed when a completed bar produced a valid strategy setup
   and the engine is waiting for the next tradable tick/open. This is prep-only;
   it is not an entry instruction.
@@ -1096,19 +1166,25 @@ engine:
     print_rejection_readable: true
     sound:
       enabled: true
-      bell: true
+      bell: false
       on_setup: true
       on_entry: true
       on_system: true
       max_active_commands: 3
       cleanup_on_exit: true
       fail_on_error: false
-      command: null
+      setup_command: /usr/bin/afplay /System/Library/Sounds/Ping.aiff
+      entry_command: /usr/bin/afplay /System/Library/Sounds/Glass.aiff
+      system_command: /usr/bin/afplay /System/Library/Sounds/Basso.aiff
+      command: /usr/bin/afplay /System/Library/Sounds/Glass.aiff
 ```
 
-`bell: true` writes the terminal bell character. `command` can be set to an
-external player command, for example `afplay /path/to/sound.wav` on macOS. The
-engine starts the command without blocking the data loop. Sound failures are
+`bell: true` writes the terminal bell character, but IDE terminals often mute
+or suppress it. For manual-trading alerts, prefer an external player command
+such as `/usr/bin/afplay /System/Library/Sounds/Glass.aiff` on macOS.
+`setup_command`, `entry_command`, and `system_command` override the generic
+`command` for each alert type. The engine starts the command without blocking
+the data loop. Sound failures are
 reported as `SYSTEM_ALERT` and do not stop the engine by default. Set
 `fail_on_error: true` only when a missing audio cue should be treated as a
 fatal operator-safety failure; readiness still validates configured command
@@ -1135,6 +1211,9 @@ playing them. A missing or non-executable command prints
 `SYSTEM_ALERT readiness_operator_sound_check_failed`, reports
 `readiness_check_degraded`, and returns a non-zero exit code. Terminal-bell-only
 sound is considered ready when `bell: true`.
+`--test-sound {setup,entry,system,all}` plays the configured sound path and
+exits without Databento access or alert writes. Do not combine it with
+`--dry-run-alerts`, because dry-run mode suppresses sounds by design.
 
 ## Alert File Health
 
@@ -1518,6 +1597,11 @@ Useful historical options:
   `seed_bars_path` before reusing local seed bars.
   `cache_metadata.max_staleness_days` rejects a local historical file whose
   latest bar is older than the configured age threshold.
+- `historical.current_session_backfill`: for live startup coverage checks,
+  fetch the current RTH session's required completed bars through the guarded
+  historical path when local seed data is missing or gapped. `startup_mode:
+  defer_until_complete` starts live and buffers bars while retrying historical
+  backfill; `fail_closed` exits if context remains incomplete.
 - `historical.cost_guard`: estimates Databento historical cost before fetching.
 
 Use `--refresh-historical` to force a fresh fetch from the CLI. Like
@@ -1646,7 +1730,7 @@ databento:
     flush_completed_bars_on_heartbeat: true
     bar_flush_delay_seconds: 2
     status_interval_seconds: 60
-    stop_on_state_lock_timeout: true
+    stop_on_state_lock_timeout: false
     stop_on_disconnect: true
     stop_on_no_records: true
     stop_on_no_trade_ticks: true
@@ -1723,8 +1807,8 @@ Ctrl-C returns `130`, and configured safety stops such as `stop_on_disconnect`,
 `stop_on_no_records`, `stop_on_no_trade_ticks`,
 `stop_on_no_completed_bars`, `stop_on_no_evaluable_strategies`,
 `stop_on_partial_unevaluable_strategies`, `stop_on_stale_trade_tick`,
-`stop_on_future_trade_tick`, `stop_on_state_lock_timeout`, or
-`stop_on_unmatched_contract_symbol` return `1`.
+`stop_on_future_trade_tick`, `stop_on_unmatched_contract_symbol`, or the
+opt-in `stop_on_state_lock_timeout` watchdog return `1`.
 
 Live status includes connection state, uptime, received record/tick counts,
 accepted trade tick count after contract filtering, completed-bar count,
@@ -1762,8 +1846,8 @@ clock is suspicious:
   local UTC wall clock, usually indicating local clock skew or bad timestamp
   handling.
 - `live_state_lock_timeout`: the status/maintenance loop could not acquire the
-  shared live-state lock quickly enough, usually because callback or strategy
-  processing is stalled.
+  shared live-state lock quickly enough. By default this warns and continues;
+  set `stop_on_state_lock_timeout: true` to make it a fatal watchdog.
 - `live_unmatched_contract_symbol_ignored`: a parsed trade tick did not match
   `databento.contract_symbol_regex`; it was not aggregated or used for entry.
 - `entry_contract_symbol_regex_filtered`: a pending setup or entry tick reached
@@ -2310,6 +2394,8 @@ false and the metadata check can still pass.
 - `--max-runtime`: stop live mode after this many seconds.
 - `--dry-run-alerts`: print and validate setup/entry signals without writing
   outbox files or playing sounds.
+- `--test-sound {setup,entry,system,all}`: play configured operator sound(s)
+  and exit without Databento access or alert writes.
 - `--debug`, `--debug-json`: print full JSON console payloads instead of compact
   summaries.
 - `--databento-symbols`: override `databento.symbols`.

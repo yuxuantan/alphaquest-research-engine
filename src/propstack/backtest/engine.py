@@ -384,6 +384,13 @@ class BacktestEngine:
                 "trade_orderflow_volume_30",
                 "trade_orderflow_volume_60",
             },
+            "opening_gap_orderflow_fade": {
+                "is_rth",
+                "prev_rth_close",
+                "signed_volume",
+                "large20_signed_volume",
+                "large20_volume",
+            },
             "opening_range_filtered_breakout": {"is_rth", "vwap", "volume_ratio"},
             "opening_range_inverse_breakout": {"is_rth"},
             "orderflow_recent_pocket_combo": {
@@ -394,6 +401,8 @@ class BacktestEngine:
                 "of_combo_signal_late_flow_long_1500",
             },
             "intraday_capitulation_mr": {"is_rth", "vwap"},
+            "intraday_momentum_priority": {"is_rth"},
+            "gao_last_half_hour_orderflow": {"is_rth", "signed_volume", "large20_signed_volume", "large20_volume"},
             "late_day_intraday_momentum": {"is_rth", "prev_rth_close", "volume_ratio"},
             "liquidity_risk_capacity_priority": {"is_rth"},
             "morning_intraday_momentum": {"is_rth", "volume_ratio"},

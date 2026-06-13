@@ -27,9 +27,20 @@ def ts(value: str) -> pd.Timestamp:
     return pd.Timestamp(value, tz="UTC")
 
 
+def prefixed_json_line(output: str, prefix: str) -> dict:
+    marker = f"{prefix} "
+    for line in output.splitlines():
+        if line.startswith(marker) and line[len(marker) :].startswith("{"):
+            return json.loads(line[len(marker) :])
+    raise AssertionError(f"{prefix} JSON line not found in output:\n{output}")
+
+
 def load_execution_config(name: str) -> dict:
     cfg = engine.load_yaml(EXECUTION_DIR / name)
     cfg.setdefault("engine", {}).setdefault("console", {})["debug"] = True
+    cfg["engine"].setdefault("process_lock", {})["path"] = str(
+        Path("/tmp") / f"propstack_signal_engine_test_{os.getpid()}_{name}.lock"
+    )
     if name == "dummy_delta_signal_engine.example.yaml":
         cost_guard = cfg.setdefault("databento", {}).setdefault("live", {}).setdefault("cost_guard", {})
         cost_guard["allow_live_subscription"] = False
@@ -102,7 +113,11 @@ def test_example_configs_write_runtime_outputs_under_ignored_runtime_dir() -> No
     assert "data/runtime/" in gitignore_text
     assert "data/alerts/*.jsonl" in gitignore_text
 
-    for config_name in ["signal_engine.example.yaml", "dummy_delta_signal_engine.example.yaml"]:
+    for config_name in [
+        "signal_engine.example.yaml",
+        "dummy_delta_signal_engine.example.yaml",
+        "morning_orderflow_momentum_signal_engine.example.yaml",
+    ]:
         cfg = load_execution_config(config_name)
         engine_cfg = cfg["engine"]
         output_paths = [
@@ -115,10 +130,36 @@ def test_example_configs_write_runtime_outputs_under_ignored_runtime_dir() -> No
 
 
 def test_example_configs_default_to_compact_console() -> None:
-    for config_name in ["signal_engine.example.yaml", "dummy_delta_signal_engine.example.yaml"]:
+    for config_name in [
+        "signal_engine.example.yaml",
+        "dummy_delta_signal_engine.example.yaml",
+        "morning_orderflow_momentum_signal_engine.example.yaml",
+    ]:
         cfg = engine.load_yaml(EXECUTION_DIR / config_name)
 
-        assert engine.normalize_console_config(cfg["engine"].get("console", {})) == {"debug": False}
+        normalized = engine.normalize_console_config(cfg["engine"].get("console", {}))
+        assert normalized["debug"] is False
+
+    morning_cfg = engine.load_yaml(EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+    live_stream = engine.normalize_console_config(morning_cfg["engine"].get("console", {}))["live_stream"]
+    assert live_stream == {
+        "enabled": True,
+        "print_trade_ticks": True,
+        "print_completed_bars": True,
+        "print_session_metrics": True,
+        "tick_throttle_seconds": 1.0,
+    }
+
+
+def test_console_live_stream_config_defaults_to_off_when_missing() -> None:
+    assert engine.normalize_console_config({"debug": False}) == {"debug": False}
+    assert engine.normalize_live_console_stream_config({}) == {
+        "enabled": False,
+        "print_trade_ticks": True,
+        "print_completed_bars": True,
+        "print_session_metrics": True,
+        "tick_throttle_seconds": 1.0,
+    }
 
 
 def test_console_compact_mode_suppresses_raw_json(capsys: pytest.CaptureFixture[str]) -> None:
@@ -162,6 +203,39 @@ def test_console_debug_mode_preserves_full_json(capsys: pytest.CaptureFixture[st
         engine.configure_console_output({"debug": previous_debug})
 
 
+def test_read_bars_file_treats_plain_timestamp_as_market_timezone(tmp_path: Path) -> None:
+    path = tmp_path / "local_timestamp_bars.csv"
+    pd.DataFrame(
+        [
+            {
+                "timestamp": "2026-06-11 09:30:00",
+                "symbol": "ES",
+                "contract_symbol": "ESM6",
+                "open": 5000.0,
+                "high": 5001.0,
+                "low": 4999.5,
+                "close": 5000.25,
+                "volume": 100.0,
+                "signed_volume": 10.0,
+                "buy_volume": 55.0,
+                "sell_volume": 45.0,
+                "trades": 25,
+            }
+        ]
+    ).to_csv(path, index=False)
+
+    bars = engine.read_bars_file(
+        path,
+        root_symbol="ES",
+        timezone="America/New_York",
+        source="test",
+        required_source_columns=("timestamp", "open", "high", "low", "close", "volume", "signed_volume"),
+    )
+
+    assert len(bars) == 1
+    assert bars[0].timestamp_utc == ts("2026-06-11 13:30:00")
+
+
 def test_execution_system_has_no_legacy_broker_entrypoint() -> None:
     assert not (EXECUTION_DIR / "strategy_execution_bridge.py").exists()
 
@@ -190,7 +264,7 @@ def test_preflight_report_includes_live_safety_stop_config() -> None:
         "stop_on_stale_trade_tick": True,
         "stop_on_future_trade_tick": True,
         "stop_on_unmatched_contract_symbol": True,
-        "stop_on_state_lock_timeout": True,
+        "stop_on_state_lock_timeout": False,
     }
     assert report["databento"]["live_stop_on_unmatched_contract_symbol"] is True
 
@@ -409,6 +483,30 @@ def sample_source_bar(**overrides: object) -> engine.SourceMinuteBar:
     return engine.SourceMinuteBar(**values)
 
 
+def morning_orderflow_replay_bars(*, signed_volume: float = 5.0, final_price: float = 5003.25) -> list[engine.SourceMinuteBar]:
+    bars: list[engine.SourceMinuteBar] = []
+    for index, timestamp in enumerate(pd.date_range("2026-06-11 13:30:00", periods=61, freq="min", tz="UTC")):
+        open_price = 5000.0 + min(index, 13) * 0.25
+        close_price = 5000.25 + min(index, 12) * 0.25
+        if index >= 13:
+            close_price = final_price
+        bars.append(
+            sample_source_bar(
+                timestamp_utc=pd.Timestamp(timestamp),
+                open=open_price,
+                high=max(open_price, close_price) + 0.25,
+                low=min(open_price, close_price) - 0.25,
+                close=close_price,
+                volume=100.0,
+                signed_volume=signed_volume,
+                buy_volume=(100.0 + signed_volume) / 2.0,
+                sell_volume=(100.0 - signed_volume) / 2.0,
+                trades=20,
+            )
+        )
+    return bars
+
+
 def write_large_flow_strategy_config(path: Path) -> None:
     path.write_text(
         json.dumps(
@@ -548,6 +646,410 @@ def test_replay_require_signal_passes_when_entry_signal_emits(
     assert report["setup_alerts"]["writes_succeeded"] == 0
     assert report["execution_intents"]["writes_succeeded"] == 0
     assert report["source_contract_filter"]["enabled"] is True
+
+
+def test_dummy_delta_config_evaluates_eth_bars(capsys: pytest.CaptureFixture[str]) -> None:
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["engine"]["dry_run_alerts"] = True
+    cfg["engine"]["operator"]["sound"]["enabled"] = False
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+
+    signal_engine.on_completed_source_bar(sample_source_bar(timestamp_utc=ts("2026-06-11 20:00:00")))
+    signal_engine.on_completed_source_bar(
+        sample_source_bar(
+            timestamp_utc=ts("2026-06-11 20:01:00"),
+            open=5000.25,
+            high=5001.25,
+            low=5000.0,
+            close=5000.5,
+        )
+    )
+
+    captured = capsys.readouterr()
+    strategy_health = signal_engine.strategy_health_report()[0]
+    assert strategy_health["evaluated_strategy_row_count"] >= 2
+    assert strategy_health["last_evaluated_strategy_timestamp"] == "2026-06-11T16:01:00-04:00"
+    assert signal_engine.setup_notice_count == 1
+    assert "TRADE_SETUP" in captured.out
+
+
+def test_morning_orderflow_config_matches_live_tracker_params() -> None:
+    cfg = load_execution_config("morning_orderflow_momentum_signal_engine.example.yaml")
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+    strategy = signal_engine.strategies[0]
+    params = strategy.variant_config["strategy"]["entry"]["params"]
+
+    assert params["setup_mode"] == "two_sided_signed_flow_continuation"
+    assert params["direction_mode"] == "two_sided_continuation"
+    assert params["flow_mode"] == "signed_imbalance"
+    assert params["signal_time"] == "10:30:00"
+    assert params["flatten_time"] == "15:30:00"
+    assert params["min_signal_return_ticks"] == 12
+    assert params["min_orderflow_imbalance"] == 0.01
+    assert params["stop_pct"] == 0.0025
+    assert params["target_r_multiple"] == 3.0
+    assert params["pre_trade_warning"] == {"enabled": True, "bars_before_entry": 1, "play_sound": True}
+    assert params["max_trades_per_day"] == 1
+
+    requirement = signal_engine.data_requirements[0]
+    assert "morning_orderflow_momentum" in requirement.feature_families
+    assert "trade_orderflow" in requirement.feature_families
+    assert requirement.max_feature_window_bars >= 60
+    assert requirement.recommended_source_bars >= 60
+    assert {"open", "high", "low", "close", "volume", "signed_volume"}.issubset(requirement.source_columns)
+    assert "large10_signed_volume" not in requirement.source_columns
+    assert "large20_signed_volume" not in requirement.source_columns
+
+    runtime_columns = set(strategy.required_runtime_feature_columns())
+    assert {
+        "timestamp",
+        "contract_symbol",
+        "session_date",
+        "is_rth",
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "signed_volume",
+    }.issubset(runtime_columns)
+
+
+def test_morning_orderflow_replay_emits_trade_warning_one_bar_before_entry(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("morning_orderflow_momentum_signal_engine.example.yaml")
+    cfg["engine"]["dry_run_alerts"] = True
+    cfg["engine"]["replay_seed_bars"] = 0
+    cfg["databento"]["historical"]["enabled"] = False
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+    replay_path = tmp_path / "morning_orderflow_warning.csv"
+    engine.write_bars_file(replay_path, morning_orderflow_replay_bars(), timezone="America/New_York")
+    args = engine.argparse.Namespace(
+        max_replay_bars=0,
+        replay_stop_after_signal=True,
+        replay_require_signal=True,
+        replay_require_healthy_strategies=True,
+    )
+
+    report = engine.replay_bars(signal_engine, replay_path, args)
+
+    captured = capsys.readouterr()
+    warning = prefixed_json_line(captured.out, "TRADE_WARNING")
+    setup = prefixed_json_line(captured.out, "TRADE_SETUP")
+    entry = prefixed_json_line(captured.out, "ENTRY_SIGNAL")
+    assert captured.out.index("TRADE_WARNING") < captured.out.index("TRADE_SETUP") < captured.out.index("ENTRY_SIGNAL")
+    assert report["ok"] is True
+    assert report["trade_warnings"] == 1
+    assert warning["strategy_id"] == "morning_orderflow_momentum_two_sided_signed_flow_continuation_live"
+    assert warning["direction"] == "long"
+    assert warning["status"] == "prepare_only_not_actionable"
+    assert warning["warning_timestamp_utc"] == "2026-06-11T14:29:00+00:00"
+    assert warning["expected_entry_timestamp_utc"] == "2026-06-11T14:30:00+00:00"
+    assert warning["warning_lead_bars"] == 1
+    assert warning["warning_lead_seconds"] == 60.0
+    assert warning["trade_plan_preview"]["status"] == "estimated"
+    assert warning["trade_plan_preview"]["estimated_entry_price"] == 5003.5
+    assert warning["trade_plan_preview"]["quantity"] == 1
+    warning_fields = warning["signal"]["report_fields"]
+    assert warning_fields["warning_non_time_conditions_satisfied"] is True
+    assert warning_fields["warning_time_condition_satisfied"] is False
+    assert warning_fields["source_window_return_ticks"] >= 12.0
+    assert warning_fields["primary_orderflow_imbalance"] >= 0.01
+    assert setup["due_timestamp_utc"] == entry["entry_timestamp_utc"]
+
+
+def test_morning_orderflow_replay_emits_entry_signal_at_1030_open(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("morning_orderflow_momentum_signal_engine.example.yaml")
+    cfg["engine"]["dry_run_alerts"] = True
+    cfg["engine"]["replay_seed_bars"] = 0
+    cfg["databento"]["historical"]["enabled"] = False
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+    replay_path = tmp_path / "morning_orderflow_signal.csv"
+    engine.write_bars_file(replay_path, morning_orderflow_replay_bars(), timezone="America/New_York")
+    args = engine.argparse.Namespace(
+        max_replay_bars=0,
+        replay_stop_after_signal=True,
+        replay_require_signal=True,
+        replay_require_healthy_strategies=True,
+    )
+
+    report = engine.replay_bars(signal_engine, replay_path, args)
+
+    captured = capsys.readouterr()
+    alert = prefixed_json_line(captured.out, "ENTRY_SIGNAL")
+    report_fields = alert["signal"]["report_fields"]
+    assert report["ok"] is True
+    assert report["entry_alerts"] == 1
+    assert report["trade_setups"] == 1
+    assert report["strategy_health_ok"] is True
+    assert alert["strategy_id"] == "morning_orderflow_momentum_two_sided_signed_flow_continuation_live"
+    assert alert["direction"] == "long"
+    assert alert["quantity"] == 1
+    assert alert["signal_timestamp"] == "2026-06-11T10:29:00-04:00"
+    assert alert["entry_timestamp_utc"] == "2026-06-11T14:30:00+00:00"
+    assert alert["entry_price"] == 5003.5
+    assert alert["stop_loss_price"] == 4990.75
+    assert alert["take_profit_price"] == 5041.75
+    assert report_fields["min_signal_return_ticks"] == 12.0
+    assert report_fields["min_orderflow_imbalance"] == 0.01
+    assert report_fields["source_window_return_ticks"] >= 12.0
+    assert report_fields["primary_orderflow_imbalance"] >= 0.01
+    assert report_fields["morning_orderflow_intended_entry_timestamp"] == "2026-06-11T10:30:00-04:00"
+
+
+def test_morning_orderflow_replay_does_not_emit_when_imbalance_threshold_misses(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("morning_orderflow_momentum_signal_engine.example.yaml")
+    cfg["engine"]["dry_run_alerts"] = True
+    cfg["engine"]["replay_seed_bars"] = 0
+    cfg["databento"]["historical"]["enabled"] = False
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+    replay_path = tmp_path / "morning_orderflow_no_signal.csv"
+    engine.write_bars_file(
+        replay_path,
+        morning_orderflow_replay_bars(signed_volume=0.5),
+        timezone="America/New_York",
+    )
+    args = engine.argparse.Namespace(
+        max_replay_bars=0,
+        replay_stop_after_signal=False,
+        replay_require_signal=False,
+        replay_require_healthy_strategies=True,
+    )
+
+    report = engine.replay_bars(signal_engine, replay_path, args)
+
+    captured = capsys.readouterr()
+    assert "TRADE_WARNING" not in captured.out
+    assert "ENTRY_SIGNAL" not in captured.out
+    assert report["ok"] is True
+    assert report["trade_warnings"] == 0
+    assert report["entry_alerts"] == 0
+    assert report["trade_setups"] == 0
+    assert report["strategy_health_ok"] is True
+    assert report["strategy_health"][0]["evaluated_strategy_row_count"] >= 60
+
+
+def test_morning_orderflow_live_startup_backfills_missing_current_session_context(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("morning_orderflow_momentum_signal_engine.example.yaml")
+    cfg["databento"]["historical"]["enabled"] = True
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+    fetched: list[dict] = []
+
+    def fake_fetch(_: engine.SignalEngine, hist_cfg: dict) -> list[engine.SourceMinuteBar]:
+        fetched.append(dict(hist_cfg))
+        return morning_orderflow_replay_bars()[:30]
+
+    monkeypatch.setattr(engine, "fetch_databento_historical_bars", fake_fetch)
+
+    report = engine.ensure_live_startup_session_coverage(
+        signal_engine,
+        historical_skipped=False,
+        now_utc=ts("2026-06-11 14:00:30"),
+    )
+
+    captured = capsys.readouterr()
+    assert report["ok"] is True
+    assert report["backfill_attempted"] is True
+    assert report["accepted_backfill_bars"] == 30
+    assert report["requirements"][0]["expected_bar_count"] == 30
+    assert fetched
+    assert fetched[0]["start"] == ts("2026-06-11 13:30:00")
+    assert fetched[0]["end"] == ts("2026-06-11 14:00:00")
+    assert "seed_bars_path" not in fetched[0]
+    assert "cache_path" not in fetched[0]
+    assert "live_startup_current_session_backfill_start" in captured.out
+    assert "live_startup_session_coverage_ok" in captured.out
+
+
+def test_morning_orderflow_live_startup_fails_when_historical_skipped(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("morning_orderflow_momentum_signal_engine.example.yaml")
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+
+    with pytest.raises(RuntimeError, match="current-session coverage failed"):
+        engine.ensure_live_startup_session_coverage(
+            signal_engine,
+            historical_skipped=True,
+            now_utc=ts("2026-06-11 14:00:30"),
+        )
+
+    captured = capsys.readouterr()
+    assert "live_startup_session_coverage_failed" in captured.out
+    assert '"historical_skipped": true' in captured.out
+    assert '"missing_bar_count": 30' in captured.out
+
+
+def test_morning_orderflow_live_startup_compact_failure_includes_coverage_details(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("morning_orderflow_momentum_signal_engine.example.yaml")
+    cfg["engine"]["console"]["debug"] = False
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+
+    with pytest.raises(RuntimeError, match="current-session coverage failed"):
+        engine.ensure_live_startup_session_coverage(
+            signal_engine,
+            historical_skipped=True,
+            now_utc=ts("2026-06-11 14:00:30"),
+        )
+
+    captured = capsys.readouterr()
+    assert "SYSTEM_ALERT live_startup_session_coverage_failed" in captured.out
+    assert "expected_bar_count=30" in captured.out
+    assert "available_bar_count=0" in captured.out
+    assert "missing_bar_count=30" in captured.out
+    assert "required_start_utc=2026-06-11T13:30:00+00:00" in captured.out
+    assert "required_end_utc=2026-06-11T13:59:00+00:00" in captured.out
+    assert "first_missing_bar_utc=2026-06-11T13:30:00+00:00" in captured.out
+    assert "last_missing_bar_utc=2026-06-11T13:59:00+00:00" in captured.out
+    assert "historical_skipped=true" in captured.out
+    assert "backfill_attempted=false" in captured.out
+
+
+def test_morning_orderflow_live_startup_detects_current_session_gap(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("morning_orderflow_momentum_signal_engine.example.yaml")
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+    bars = [
+        bar
+        for bar in morning_orderflow_replay_bars()[:30]
+        if engine.source_bar_timestamp_utc(bar) != ts("2026-06-11 13:45:00")
+    ]
+    signal_engine.seed(bars, source="historical")
+
+    with pytest.raises(RuntimeError, match="current-session coverage failed"):
+        engine.ensure_live_startup_session_coverage(
+            signal_engine,
+            historical_skipped=True,
+            now_utc=ts("2026-06-11 14:00:30"),
+        )
+
+    captured = capsys.readouterr()
+    assert "live_startup_session_coverage_failed" in captured.out
+    assert '"missing_bar_count": 1' in captured.out
+    assert "2026-06-11T13:45:00+00:00" in captured.out
+
+
+def test_morning_orderflow_live_startup_requires_no_current_session_context_before_open(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("morning_orderflow_momentum_signal_engine.example.yaml")
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+
+    report = engine.ensure_live_startup_session_coverage(
+        signal_engine,
+        historical_skipped=True,
+        now_utc=ts("2026-06-11 13:29:30"),
+    )
+
+    captured = capsys.readouterr()
+    assert report["ok"] is True
+    assert report["requirements"] == []
+    assert "live_startup_session_coverage_not_required" in captured.out
+
+
+def test_deferred_strategy_evaluation_buffers_live_bars_without_signals(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["engine"]["dry_run_alerts"] = True
+    cfg["engine"]["operator"]["sound"]["enabled"] = False
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+
+    signal_engine.defer_strategy_evaluation_for_catchup(
+        {
+            "missing_bar_count": 1,
+            "required_start_utc": "2026-06-11T13:30:00+00:00",
+            "required_end_utc": "2026-06-11T13:30:00+00:00",
+            "first_missing_bar_utc": "2026-06-11T13:30:00+00:00",
+            "last_missing_bar_utc": "2026-06-11T13:30:00+00:00",
+        }
+    )
+    capsys.readouterr()
+
+    signal_engine.on_completed_source_bar(sample_source_bar(signed_volume=10.0, source="live"))
+
+    captured = capsys.readouterr()
+    assert "TRADE_SETUP" not in captured.out
+    assert "ENTRY_SIGNAL" not in captured.out
+    assert len(signal_engine.store.bars()) == 1
+    assert signal_engine.strategy_evaluation_deferred is True
+    assert signal_engine.strategy_evaluation_deferred_bars == 1
+
+
+def test_run_live_catchup_retry_activates_deferred_strategy_evaluation(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["databento"]["api_key"] = "test-key"
+    allow_test_live_subscription(cfg)
+    cfg["databento"]["live"]["metadata_preflight"] = False
+    cfg["databento"]["live"]["resolve_instrument_symbols"] = False
+    cfg["databento"]["live"]["startup_grace_seconds"] = 0
+    cfg["databento"]["live"]["shutdown_grace_seconds"] = 0
+    cfg["databento"]["live"]["maintenance_interval_seconds"] = 0
+    cfg["databento"]["live"]["status_interval_seconds"] = 0
+    cfg["databento"]["historical"]["current_session_backfill"] = {
+        "enabled": True,
+        "startup_mode": "defer_until_complete",
+        "retry_interval_seconds": 1,
+        "max_wait_seconds": 0,
+    }
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+    signal_engine.defer_strategy_evaluation_for_catchup(
+        {
+            "missing_bar_count": 1,
+            "required_start_utc": "2026-06-11T13:30:00+00:00",
+            "required_end_utc": "2026-06-11T13:30:00+00:00",
+            "first_missing_bar_utc": "2026-06-11T13:30:00+00:00",
+            "last_missing_bar_utc": "2026-06-11T13:30:00+00:00",
+        }
+    )
+    calls: list[dict[str, object]] = []
+
+    def fake_coverage_check(*args: object, **kwargs: object) -> dict[str, object]:
+        calls.append(dict(kwargs))
+        return {
+            "event": "live_startup_session_coverage_ok",
+            "ok": True,
+            "missing_bar_count": 0,
+            "required_start_utc": "2026-06-11T13:30:00+00:00",
+            "required_end_utc": "2026-06-11T13:30:00+00:00",
+            "requirements": [],
+        }
+
+    monkeypatch.setattr(engine, "ensure_live_startup_session_coverage", fake_coverage_check)
+    capsys.readouterr()
+
+    rc = engine.run_live(
+        signal_engine,
+        once=False,
+        max_runtime=0.1,
+        live_client_factory=lambda **kwargs: FakeLiveClient(connected_after_start=True, **kwargs),
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert calls
+    assert calls[0]["historical_skipped"] is False
+    assert calls[0]["raise_on_failure"] is False
+    assert "live_catchup_backfill_retry" in captured.out
+    assert "live_strategy_evaluation_activated" in captured.out
+    assert signal_engine.strategy_evaluation_deferred is False
 
 
 def test_replay_require_healthy_strategies_reports_disabled_strategy_failure(
@@ -2642,7 +3144,8 @@ def test_readiness_check_validates_cache_metadata_and_avoids_outbox_writes(
     assert payload["alerts"]["execution_intent_contract"]["checked"] is True
     assert payload["alerts"]["execution_intent_contract"]["probes_checked"] == 2
     assert payload["operator"]["sound"]["ok"] is True
-    assert payload["operator"]["sound"]["checks"][0]["reason"] == "terminal bell is enabled"
+    assert payload["operator"]["sound"]["checks"][0]["reason"] == "sound command executable is available"
+    assert payload["operator"]["sound"]["checks"][0]["executable"] == "/usr/bin/afplay"
     assert payload["process_lock"]["ok"] is True
     assert payload["process_lock"]["status"] == "available"
     assert {
@@ -2977,6 +3480,24 @@ def test_readiness_live_safety_stop_report_requires_fail_closed(
     assert report["checked"] is True
     assert report["required"] is True
     assert report["disabled_required_stops"] == ["stop_on_no_trade_ticks"]
+
+
+def test_readiness_live_safety_stop_report_treats_state_lock_watchdog_as_optional(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["databento"]["live"]["stop_on_state_lock_timeout"] = False
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+
+    report = engine.readiness_live_safety_stop_report(signal_engine)
+
+    captured = capsys.readouterr()
+    assert "readiness_live_safety_stops_ok" in captured.out
+    assert report["ok"] is True
+    assert report["checked"] is True
+    assert report["required"] is True
+    assert report["safety_stops"]["stop_on_state_lock_timeout"] is False
+    assert report["disabled_required_stops"] == []
 
 
 def test_readiness_live_safety_stop_report_allows_explicit_diagnostic_skip(
@@ -3598,6 +4119,71 @@ def test_run_live_callback_entry_writes_all_router_contracts(
     assert outbox["records"][0]["alert_id"] == alert_records[0]["alert_id"]
 
 
+def test_run_live_console_stream_prints_ticks_and_completed_bars(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["databento"]["api_key"] = "test-key"
+    allow_test_live_subscription(cfg)
+    cfg["databento"]["live"]["metadata_preflight"] = False
+    cfg["databento"]["live"]["resolve_instrument_symbols"] = False
+    cfg["databento"]["live"]["startup_grace_seconds"] = 0
+    cfg["databento"]["live"]["shutdown_grace_seconds"] = 0
+    cfg["databento"]["live"]["maintenance_interval_seconds"] = 0
+    cfg["databento"]["live"]["status_interval_seconds"] = 0
+    cfg["databento"]["live"]["drop_partial_first_live_bar"] = False
+    cfg["engine"]["dry_run_alerts"] = True
+    cfg["engine"]["operator"]["sound"]["enabled"] = False
+    cfg["engine"]["console"]["debug"] = False
+    cfg["engine"]["console"]["live_stream"] = {
+        "enabled": True,
+        "print_trade_ticks": True,
+        "print_completed_bars": True,
+        "tick_throttle_seconds": 0.0,
+    }
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+    records = [
+        FakeTradeRecord(
+            timestamp=ts("2026-06-11 13:30:05"),
+            price=5000.0,
+            size=10,
+            side="B",
+            symbol="ESM6",
+        ),
+        FakeTradeRecord(
+            timestamp=ts("2026-06-11 13:31:00"),
+            price=5000.25,
+            size=1,
+            side="B",
+            symbol="ESM6",
+        ),
+    ]
+
+    rc = engine.run_live(
+        signal_engine,
+        once=False,
+        max_runtime=0.1,
+        live_client_factory=lambda **kwargs: FakeLiveClient(
+            connected_after_start=True,
+            records=records,
+            record_delay_seconds=0.01,
+            **kwargs,
+        ),
+    )
+
+    captured = capsys.readouterr()
+    assert rc == 0
+    assert "LIVE_TICK event=live_trade_tick" in captured.out
+    assert "LIVE_BAR event=live_source_bar_completed" in captured.out
+    assert "LIVE_SESSION event=live_session_metrics" in captured.out
+    assert "market_open_price=5,000" in captured.out
+    assert "current_price=5,000" in captured.out
+    assert "cumulative_delta=10" in captured.out
+    assert "total_volume=10" in captured.out
+    assert "price=5,000" in captured.out
+    assert "volume=10" in captured.out
+
+
 def test_run_live_metadata_preflight_failure_blocks_subscription(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -4019,7 +4605,10 @@ def test_run_live_stop_on_no_records_returns_failure(capsys: pytest.CaptureFixtu
     assert '"exit_code": 1' in captured.out
 
 
-def test_run_live_state_lock_timeout_returns_failure(capsys: pytest.CaptureFixture[str]) -> None:
+def test_run_live_state_lock_timeout_returns_failure(
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
     cfg["databento"]["api_key"] = "test-key"
     allow_test_live_subscription(cfg)
@@ -4042,10 +4631,13 @@ def test_run_live_state_lock_timeout_returns_failure(capsys: pytest.CaptureFixtu
         )
     ]
 
-    def slow_entry_tick(_: engine.TradeTick) -> None:
-        time.sleep(0.75)
+    original_update = engine.TradeBarBuilder.update
 
-    signal_engine.on_entry_tick = slow_entry_tick  # type: ignore[method-assign]
+    def slow_update(builder: engine.TradeBarBuilder, tick: engine.TradeTick) -> list[engine.SourceMinuteBar]:
+        time.sleep(0.75)
+        return original_update(builder, tick)
+
+    monkeypatch.setattr(engine.TradeBarBuilder, "update", slow_update)
 
     rc = engine.run_live(
         signal_engine,
@@ -4435,6 +5027,14 @@ def test_preflight_rejects_console_debug_string_boolean_config() -> None:
         engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
 
 
+def test_preflight_rejects_console_live_stream_string_boolean_config() -> None:
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["engine"]["console"]["live_stream"] = {"enabled": "true"}
+
+    with pytest.raises(ValueError, match="engine.console.*enabled must be a YAML boolean"):
+        engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+
+
 def test_preflight_rejects_operator_sound_cleanup_string_boolean_config() -> None:
     cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
     cfg["engine"]["operator"]["sound"]["cleanup_on_exit"] = "true"
@@ -4479,6 +5079,33 @@ def test_preflight_rejects_historical_cache_metadata_string_staleness_config() -
 
     with pytest.raises(ValueError, match="max_staleness_days must be numeric"):
         engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+
+
+def test_preflight_rejects_current_session_backfill_string_boolean_config() -> None:
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["databento"]["historical"] = {
+        "enabled": True,
+        "current_session_backfill": {"enabled": "true"},
+    }
+
+    with pytest.raises(ValueError, match="enabled must be a YAML boolean"):
+        engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+
+
+def test_preflight_rejects_pre_trade_warning_string_boolean_config() -> None:
+    cfg = load_execution_config("morning_orderflow_momentum_signal_engine.example.yaml")
+    strategy_cfg = engine.load_yaml(
+        EXECUTION_DIR / "strategies/morning_orderflow_momentum_two_sided_signed_flow_continuation_live.yaml"
+    )
+    strategy_cfg["strategy"]["entry"]["params"]["pre_trade_warning"]["enabled"] = "true"
+    temp_path = EXECUTION_DIR / "strategies/__tmp_invalid_warning.yaml"
+    try:
+        temp_path.write_text(json.dumps(strategy_cfg), encoding="utf-8")
+        cfg["strategies"][0]["config"] = "strategies/__tmp_invalid_warning.yaml"
+        with pytest.raises(ValueError, match="pre_trade_warning.*enabled must be a YAML boolean"):
+            engine.SignalEngine(cfg, EXECUTION_DIR / "morning_orderflow_momentum_signal_engine.example.yaml")
+    finally:
+        temp_path.unlink(missing_ok=True)
 
 
 def test_preflight_rejects_enabled_process_lock_without_path() -> None:
@@ -6405,6 +7032,122 @@ def test_operator_sound_can_fail_fast_on_command_launch_failure(
     assert report["command_failures"] == 1
     assert report["last_error_type"] == "OSError"
     assert report["fail_on_error"] is True
+
+
+def test_operator_sound_test_plays_configured_kind(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class FakeProcess:
+        def poll(self) -> int:
+            return 0
+
+        def terminate(self) -> None:
+            raise AssertionError("completed sound command should not be terminated")
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 0
+
+        def kill(self) -> None:
+            raise AssertionError("completed sound command should not be killed")
+
+    created: list[list[str]] = []
+
+    def fake_popen(*args: object, **kwargs: object) -> FakeProcess:
+        created.append(list(args[0]))  # type: ignore[arg-type]
+        assert kwargs["stdout"] == engine.subprocess.DEVNULL
+        assert kwargs["stderr"] == engine.subprocess.DEVNULL
+        return FakeProcess()
+
+    monkeypatch.setattr(engine.subprocess, "Popen", fake_popen)
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["engine"]["operator"]["sound"] = {
+        "enabled": True,
+        "bell": False,
+        "on_setup": True,
+        "on_entry": True,
+        "on_system": True,
+        "setup_command": "/bin/echo setup-sound",
+        "entry_command": "/bin/echo entry-sound",
+        "system_command": "/bin/echo system-sound",
+        "max_active_commands": 3,
+    }
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+
+    exit_code = engine.run_operator_sound_test(signal_engine, "entry")
+
+    captured = capsys.readouterr()
+    assert exit_code == 0
+    assert "readiness_operator_sound_ok" in captured.out
+    assert "operator_sound_test_playing" in captured.out
+    assert "operator_sound_test_ok" in captured.out
+    assert created == [["/bin/echo", "entry-sound"]]
+    assert signal_engine.operator_sound_health.attempts == 1
+    assert signal_engine.operator_sound_health.commands_started == 1
+
+
+def test_operator_sound_test_rejects_dry_run_alerts(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    def unexpected_popen(*_: object, **__: object) -> object:
+        raise AssertionError("dry-run sound test should not launch a command")
+
+    monkeypatch.setattr(engine.subprocess, "Popen", unexpected_popen)
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["engine"]["dry_run_alerts"] = True
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+
+    exit_code = engine.run_operator_sound_test(signal_engine, "entry")
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "operator_sound_test_failed" in captured.out
+    assert "--dry-run-alerts suppresses operator sounds" in captured.out
+    assert signal_engine.operator_sound_health.attempts == 0
+
+
+def test_operator_sound_test_fails_on_nonzero_player_exit(
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    class FakeProcess:
+        pid = 12345
+
+        def poll(self) -> int:
+            return 1
+
+        def terminate(self) -> None:
+            raise AssertionError("completed failed command should not be terminated")
+
+        def wait(self, timeout: float | None = None) -> int:
+            return 1
+
+        def kill(self) -> None:
+            raise AssertionError("completed failed command should not be killed")
+
+    def fake_popen(*_: object, **__: object) -> FakeProcess:
+        return FakeProcess()
+
+    monkeypatch.setattr(engine.subprocess, "Popen", fake_popen)
+    cfg = load_execution_config("dummy_delta_signal_engine.example.yaml")
+    cfg["engine"]["operator"]["sound"] = {
+        "enabled": True,
+        "bell": False,
+        "on_entry": True,
+        "entry_command": "/bin/echo entry-sound",
+        "max_active_commands": 3,
+    }
+    signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
+
+    exit_code = engine.run_operator_sound_test(signal_engine, "entry")
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "operator_sound_test_failed" in captured.out
+    assert "operator sound command exited non-zero" in captured.out
+    assert '"returncode": 1' in captured.out
+    assert signal_engine.operator_sound_health.commands_started == 1
 
 
 def test_emit_alert_persists_outboxes_before_fatal_operator_sound_failure(
