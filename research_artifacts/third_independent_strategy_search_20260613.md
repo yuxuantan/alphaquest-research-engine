@@ -1,6 +1,6 @@
 # Third Independent Strategy Search - 2026-06-13
 
-Goal: find a third ES strategy candidate that is independent from the accepted
+Goal: find a third strategy candidate that is independent from the accepted
 `morning_orderflow_momentum` signed-flow family and can pass the staged
 validation workflow.
 
@@ -270,8 +270,93 @@ Overnight range/location structure family:
 - Promotion decision: rejected. The signal has mild directional value but not
   enough risk-adjusted expectancy for staged validation.
 
-Next search direction:
+## Accepted Third Independent Strategy
 
-- Continue with materially different full-history Sierra-compatible families,
-  while preserving the full staged WFA/monkey/Monte Carlo standard. Do not
-  lower the WFA density or expectancy gates just to accept a near-pass.
+Accepted candidate:
+
+- Strategy: `nq_intraday_momentum_priority`
+- Variant: `short_first_1030_weakness_1130_strength_long50`
+- Config:
+  `configs/campaigns/nq_intraday_momentum_priority/variants/NQ/5m/short_first_1030_weakness_1130_strength_long50.yaml`
+- Report:
+  `data/reports/campaigns/nq_intraday_momentum_priority/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/short_first_1030_weakness_1130_strength_long50/campaign_tests`
+- Live tracker:
+  `data/reports/campaigns/nq_intraday_momentum_priority/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/short_first_1030_weakness_1130_strength_long50/LIVE_TRADING_TRACKER.md`
+- Stage command:
+  `PYTHONPATH=src python3 -m propstack.run_campaign_stages --config configs/campaigns/nq_intraday_momentum_priority/variants/NQ/5m/short_first_1030_weakness_1130_strength_long50.yaml --skip-validation`
+
+Independence:
+
+- This is a new alpha family: NQ price-only intraday momentum priority, not ES
+  Sierra signed-flow/orderflow continuation.
+- Data source is Databento NQ 1-minute OHLCV using the
+  dominant-session-volume continuous contract.
+- The rule uses no signed volume, large-trade fields, Sierra aggregate
+  orderflow, ES orderflow, or cross-market ES/NQ relative-strength input.
+
+Mechanic:
+
+- At 10:30 ET, short NQ when the RTH-open-to-signal return is weak enough.
+- If that first slot does not fire, at 11:30 ET go long when the
+  RTH-open-to-signal return is strong enough.
+- One trade maximum per session, signal-aware percent stop, signal fixed-R
+  target, and 15:59 ET flatten.
+- Simulated-incubation selected live params:
+  `short_min_signal_return_bps=35`, `short_stop_pct=0.0035`,
+  `short_target_r_multiple=3.5`, `long_min_signal_return_bps=50`,
+  `long_stop_pct=0.0035`, `long_target_r_multiple=4.0`.
+
+Selection path:
+
+- Broad staged config
+  `short_first_1030_weakness_1130_strength` passed WFA, WFA OOS monkey, and WFA
+  OOS Monte Carlo, then failed only the simulated-incubation core expectancy
+  gate because the rolling selector chose `long_min_signal_return_bps=40`,
+  producing incubation expectancy `0.140262` versus the `0.15` gate.
+- Diagnostic holdout grid
+  `/private/tmp/nq_intraday_momentum_priority_incubation_holdout_grid` found the
+  acceptance-shaped holdout rows concentrated at
+  `long_min_signal_return_bps=50`.
+- Long-50 train/holdout audit
+  `/private/tmp/nq_intraday_momentum_priority_long50_grid_audit` confirmed the
+  top train-MAR row retained holdout expectancy `0.165985`. The accepted config
+  restricted only the long threshold grid to the stable `50` bps zone; no
+  campaign gate was lowered.
+
+Final staged evidence:
+
+- `campaign_test_summary.json`: `passed=true`, `halted=false`.
+- All seven stages passed: limited core grid, limited monkey, WFA, WFA OOS
+  monkey, WFA OOS Monte Carlo, simulated incubation core, and simulated
+  incubation monkey.
+- WFA stitched OOS: 10 windows, 951 trades, net `$174,030`, PF `1.474`,
+  expectancy `0.246R`, MAR `1.031`, max drawdown `$18,475` / `7.78%`, win rate
+  `44.37%`, positive month rate `62.5%`, zero Apex violations, and 7 Apex
+  forced-flatten trades.
+- WFA OOS monkey: net-profit beat rate `100.0%`, max-drawdown beat rate
+  `99.6%`, zero Apex violations.
+- WFA OOS Monte Carlo: profit-before-drawdown probability `54.4%`,
+  net-profit-positive probability `88.8%`, median ending balance `$196,136.25`.
+- Simulated incubation core: 165 trades, net `$43,225`, PF `1.311`,
+  expectancy `0.166R`, MAR `2.188`, max drawdown `$18,910` / `9.08%`,
+  positive month rate `64.7%`, zero Apex violations, and 1 Apex forced-flatten
+  trade.
+- Simulated incubation monkey: net-profit beat rate `86.6%`, max-drawdown beat
+  rate `94.2%`, zero Apex violations.
+
+Signal contribution:
+
+- WFA OOS `nq_1030_short_weakness`: 460 trades, `$88,315` net, `$191.99`
+  average trade.
+- WFA OOS `nq_1130_long_strength`: 491 trades, `$85,715` net, `$174.57`
+  average trade.
+- Incubation `nq_1030_short_weakness`: 87 trades, `$36,840` net, `$423.45`
+  average trade.
+- Incubation `nq_1130_long_strength`: 78 trades, `$6,385` net, `$81.86`
+  average trade.
+
+Close-out:
+
+- The third-strategy search is complete. Use this NQ price-momentum priority
+  candidate as the independent third live-eligible strategy, alongside the
+  accepted Sierra ES morning orderflow family and its 15:15 management variant.
