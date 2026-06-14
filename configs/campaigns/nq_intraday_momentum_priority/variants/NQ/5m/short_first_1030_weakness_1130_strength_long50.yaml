@@ -6,10 +6,27 @@ dataset_id: databento_nq_1m_20110103_20260529_dominant_session_volume
 timeframe: 5m
 
 research_metadata:
-  alpha_family: "NQ intraday price momentum priority"
-  independence_note: "Independent from the accepted ES morning orderflow family: no signed-volume, large-trade, or Sierra orderflow inputs are used."
+  alpha_family: "Intraday momentum / price continuation, NQ implementation"
+  classification: "passed_full_stage_correlated_momentum_candidate"
+  academic_sources:
+    - title: "Market Intraday Momentum"
+      authors: "Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou"
+      year: 2018
+      venue: "Journal of Financial Economics, 129(2), 394-414"
+      doi: "10.1016/j.jfineco.2018.05.009"
+      url: "https://www.sciencedirect.com/science/article/abs/pii/S0304405X18301351"
+      finding_used: "Opening-period market returns can predict later same-day market returns; this motivates testing intraday continuation from completed RTH-open-to-signal returns."
+    - title: "Time Series Momentum"
+      authors: "Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen"
+      year: 2012
+      venue: "Journal of Financial Economics, 104(2), 228-250"
+      doi: "10.1016/j.jfineco.2011.11.003"
+      finding_used: "Futures markets exhibit time-series return persistence; this is lower-frequency support for treating a market's own prior return as a directional signal."
+  independence_note: "Independent only at the instrument/data/feature level: NQ OHLCV, no signed-volume, large-trade, or Sierra orderflow inputs. Not independent at the broad alpha-premise level because the economic edge is still intraday momentum/continuation, overlapping the accepted ES morning momentum/orderflow family."
   edge_thesis: "NQ opening-session weakness can persist from 10:30 ET, while a later stronger RTH-open-to-11:30 move remains tradable if the earlier weakness leg did not fire."
   mechanic: "Causal priority rule: first test 10:30 short weakness from the RTH open; only when that slot does not fire, test 11:30 long strength from the RTH open with the long threshold fixed at 50 bps. One trade maximum per session."
+  evidence_directness: "Moderate. Gao et al. directly supports market-level intraday momentum, but their exact published specification is not this NQ 10:30 weakness / 11:30 strength priority rule. Moskowitz/Ooi/Pedersen supports futures time-series momentum at lower frequency. This variant is therefore a literature-motivated NQ implementation whose tradability comes from the repo's staged WFA, monkey, Monte Carlo, incubation, and Apex validation. It should not be counted as a new independent alpha family under a strict economic-premise definition."
+  translation_risks: "The edge may fail if NQ opening-session continuation decays, if 10:30 weakness becomes mean-reverting, if 11:30 strength stops carrying into the afternoon, or if live slippage materially exceeds the 1-tick backtest assumption."
   source_data: "Databento NQ 1-minute OHLCV, dominant-session-volume continuous contract, RTH-only strategy decisions."
   direct_screen_reference: "/private/tmp/nq_combined_momentum_stable_screen.csv"
   grid_audit_reference: "/private/tmp/nq_intraday_momentum_priority_long50_grid_audit"

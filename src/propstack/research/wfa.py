@@ -459,7 +459,7 @@ def _wfa_grid_config(wfa_config: dict) -> dict:
     if "parameters" not in wfa_config:
         raise ValueError("wfa.parameters must define the walk-forward optimization parameter space.")
     return {
-        "objective": _wfa_objective(wfa_config.get("objective", "net_profit")),
+        "objective": _wfa_objective(wfa_config.get("objective", "MAR")),
         "parameters": wfa_config["parameters"],
         "parallel": _wfa_parallel_config(wfa_config),
         "selection_filter": _wfa_selection_filter(wfa_config),

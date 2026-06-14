@@ -167,6 +167,297 @@ def test_incubation_train_selection_selects_best_core_grid_row():
     }
 
 
+def test_incubation_train_selection_forces_mar_objective(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_prepare_stage_data(cfg, subset, stage_dir, skip_validation, show_progress=False):
+        return pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-02"], utc=True)}), None, {"rows": 1}, "hash"
+
+    def fake_run_core_grid(
+        data,
+        base_config,
+        grid_config,
+        benchmarks,
+        report_dir=None,
+        parameter_label="core_grid.parameters",
+        detail_data=None,
+    ):
+        seen["objective"] = grid_config["objective"]
+        return (
+            pd.DataFrame(
+                [
+                    {
+                        "entry.params.stop_pct": 0.0035,
+                        "mar": 0.5,
+                        "profit_factor": 2.0,
+                        "net_profit": 2000.0,
+                        "trades_per_year": 100.0,
+                    },
+                    {
+                        "entry.params.stop_pct": 0.005,
+                        "mar": 2.0,
+                        "profit_factor": 1.2,
+                        "net_profit": 1000.0,
+                        "trades_per_year": 100.0,
+                    },
+                ]
+            ),
+            {},
+        )
+
+    monkeypatch.setattr(campaign_stages, "_prepare_stage_data", fake_prepare_stage_data)
+    monkeypatch.setattr(campaign_stages, "run_core_grid", fake_run_core_grid)
+
+    selected_params, payload = campaign_stages._run_incubation_train_selection(
+        {
+            "data": {},
+            "core_grid": {"parameters": {"entry.params.stop_pct": [0.0035, 0.005]}},
+        },
+        {
+            "data_subset": {"start_date": "2024-01-01", "end_date": "2024-01-31"},
+            "objective": "net_profit",
+        },
+        tmp_path,
+        skip_validation=True,
+    )
+
+    assert seen["objective"] == "MAR"
+    assert selected_params == {"entry.params.stop_pct": 0.005}
+    assert payload["selected_params"] == {"entry.params.stop_pct": 0.005}
+
+
+def test_default_stage_order_runs_acceptance_last():
+    assert campaign_stages.DEFAULT_STAGE_ORDER[-1] == campaign_stages.ACCEPTANCE_STAGE
+    assert campaign_stages._stage_order({})[-1] == campaign_stages.ACCEPTANCE_STAGE
+
+
+def test_explicit_stage_order_appends_acceptance_by_default():
+    order = campaign_stages._stage_order(
+        {"stage_order": ["limited_core_grid_test", "simulated_incubation_monkey"]}
+    )
+
+    assert order == [
+        "limited_core_grid_test",
+        "simulated_incubation_monkey",
+        campaign_stages.ACCEPTANCE_STAGE,
+    ]
+
+
+def test_explicit_stage_order_can_disable_acceptance_append():
+    order = campaign_stages._stage_order(
+        {
+            "stage_order": ["limited_core_grid_test"],
+            campaign_stages.ACCEPTANCE_STAGE: {"enabled": False},
+        }
+    )
+
+    assert order == ["limited_core_grid_test"]
+
+
+def test_acceptance_stage_inherits_incubation_core_criteria():
+    criteria = [{"metric": "metrics.profit_factor", "min": 1.1}]
+
+    stage_cfg = campaign_stages._stage_config(
+        {"simulated_incubation_core": {"criteria": criteria}},
+        campaign_stages.ACCEPTANCE_STAGE,
+    )
+
+    assert stage_cfg["criteria"] == criteria
+
+
+def test_acceptance_window_uses_latest_six_months_after_two_year_train():
+    subset, window = campaign_stages._planned_acceptance_subset(
+        {"start_date": "2011-01-03", "end_date": "2026-05-29", "session_labels": ["RTH"]},
+        train_months=24,
+        test_months=6,
+    )
+
+    assert subset == {
+        "start_date": "2023-11-29",
+        "end_date": "2026-05-29",
+        "session_labels": ["RTH"],
+    }
+    assert window["train_start"] == pd.Timestamp("2023-11-29")
+    assert window["train_end"] == pd.Timestamp("2025-11-28")
+    assert window["test_start"] == pd.Timestamp("2025-11-29")
+    assert window["test_end"] == pd.Timestamp("2026-05-29")
+
+
+def test_acceptance_selection_forces_mar_objective():
+    cfg = {
+        "wfa": {"selection_min_trades_per_year": 50},
+        "benchmarks": {"min_trades_per_year": 10},
+    }
+
+    selection_cfg = campaign_stages._acceptance_selection_config(
+        cfg,
+        {"train_selection": {"objective": "profit_factor"}},
+        {"entry.params.stop_pct": [0.0035]},
+    )
+
+    assert selection_cfg["objective"] == "MAR"
+    assert selection_cfg["selection_min_trades_per_year"] == 50
+
+
+def test_acceptance_mar_selection_prefers_mar_over_profit_factor():
+    results = pd.DataFrame(
+        [
+            {
+                "entry.params.stop_pct": 0.0035,
+                "profit_factor": 1.3,
+                "mar": 3.0,
+                "net_profit": 1000.0,
+                "trades_per_year": 80.0,
+            },
+            {
+                "entry.params.stop_pct": 0.005,
+                "profit_factor": 1.8,
+                "mar": 1.0,
+                "net_profit": 500.0,
+                "trades_per_year": 80.0,
+            },
+        ]
+    )
+
+    selected = campaign_stages._select_core_grid_params(
+        results,
+        {"entry.params.stop_pct": [0.0035, 0.005]},
+        {"objective": "MAR", "selection_min_trades_per_year": 50},
+    )
+
+    assert selected == {"entry.params.stop_pct": 0.0035}
+
+
+def test_acceptance_oos_stage_writes_core_like_artifacts(tmp_path, monkeypatch):
+    dates = pd.date_range("2023-11-29", "2026-05-29", freq="D", tz="America/New_York")
+    market = pd.DataFrame(
+        {
+            "timestamp": dates,
+            "session_date": [ts.date() for ts in dates],
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.5,
+            "volume": 1000,
+        }
+    )
+    seen = {}
+
+    def fake_prepare_stage_data(cfg, subset, stage_dir, skip_validation, show_progress=False):
+        seen["subset"] = subset
+        return market, None, {"rows": len(market)}, "acceptance-hash"
+
+    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label=None, detail_data=None):
+        seen["train_start"] = str(data["session_date"].min())
+        seen["train_end"] = str(data["session_date"].max())
+        seen["parameter_label"] = parameter_label
+        return (
+            pd.DataFrame(
+                [
+                    {
+                        "run_id": 1,
+                        "entry.params.threshold": 1,
+                        "total_trades": 100,
+                        "trades_per_year": 50.0,
+                        "net_profit": 1000.0,
+                        "profit_factor": 1.5,
+                        "expectancy_r": 0.2,
+                        "max_drawdown": 100.0,
+                        "max_drawdown_pct": 0.01,
+                        "cagr": 0.1,
+                        "mar": 11.0,
+                        "win_rate": 0.5,
+                        "apex_rule_violations": 0,
+                    },
+                    {
+                        "run_id": 2,
+                        "entry.params.threshold": 2,
+                        "total_trades": 100,
+                        "trades_per_year": 50.0,
+                        "net_profit": 900.0,
+                        "profit_factor": 2.0,
+                        "expectancy_r": 0.2,
+                        "max_drawdown": 100.0,
+                        "max_drawdown_pct": 0.01,
+                        "cagr": 0.1,
+                        "mar": 10.0,
+                        "win_rate": 0.5,
+                        "apex_rule_violations": 0,
+                    },
+                ]
+            ),
+            {"total_combinations_tested": 2},
+        )
+
+    class FakeBacktestEngine:
+        def __init__(self, config):
+            seen["selected_threshold"] = config["strategy"]["entry"]["params"]["threshold"]
+
+        def run(self, data, detail_data=None):
+            seen["test_start"] = str(data["session_date"].min())
+            seen["test_end"] = str(data["session_date"].max())
+            trade_ts = pd.Timestamp("2026-01-02 10:00", tz="America/New_York")
+            trades = pd.DataFrame(
+                [
+                    {
+                        "trade_id": 1,
+                        "session_date": trade_ts.date(),
+                        "entry_timestamp": trade_ts,
+                        "exit_timestamp": trade_ts + pd.Timedelta(minutes=5),
+                        "net_pnl": 100.0,
+                        "gross_pnl": 100.0,
+                        "r_multiple": 1.0,
+                        "contracts": 1,
+                    }
+                ]
+            )
+            return {
+                "trades": trades,
+                "daily": pd.DataFrame([{"session_date": trade_ts.date(), "net_pnl": 100.0}]),
+                "metrics": {
+                    "profit_factor": 1.5,
+                    "mar": 1.2,
+                    "expectancy_r": 0.2,
+                    "total_trades": 75,
+                    "win_rate": 0.5,
+                    "apex_rule_violations": 0,
+                },
+                "diagnostics": {"entries_opened": 1},
+            }
+
+    monkeypatch.setattr(campaign_stages, "_prepare_stage_data", fake_prepare_stage_data)
+    monkeypatch.setattr(campaign_stages, "run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr(campaign_stages, "BacktestEngine", FakeBacktestEngine)
+    cfg = {
+        "campaign_id": "demo",
+        "variant_id": "acceptance",
+        "data": {"timezone": "America/New_York"},
+        "core": {
+            "initial_balance": 100000,
+            "data_subset": {"start_date": "2011-01-03", "end_date": "2026-05-29", "session_labels": ["RTH"]},
+        },
+        "strategy": {"entry": {"params": {"threshold": 0}}},
+        "core_grid": {"parameters": {"entry.params.threshold": [1, 2]}},
+        "wfa": {"selection_min_trades_per_year": 50},
+    }
+
+    payload = campaign_stages._run_acceptance_oos(cfg, {}, tmp_path, skip_validation=True)
+
+    assert payload["selected_params"] == {"entry.params.threshold": 1}
+    assert seen["subset"]["start_date"] == "2023-11-29"
+    assert seen["train_start"] == "2023-11-29"
+    assert seen["train_end"] == "2025-11-28"
+    assert seen["test_start"] == "2025-11-29"
+    assert seen["test_end"] == "2026-05-29"
+    assert seen["selected_threshold"] == 1
+    assert seen["parameter_label"] == "acceptance_oos_test.parameters"
+    assert (tmp_path / "acceptance_oos_results.csv").exists()
+    assert (tmp_path / "acceptance_oos_summary.json").exists()
+    assert (tmp_path / "metrics.json").exists()
+    assert (tmp_path / "trade_log.csv").exists()
+    assert (tmp_path / "train_selection" / "acceptance_train_grid_results.csv").exists()
+
+
 def test_last_months_stage_subset_uses_config_end_date():
     subset = campaign_stages._subset_from_window(
         {"start_date": "2021-01-01", "end_date": "2026-06-01"},

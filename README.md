@@ -876,6 +876,8 @@ whether daily loss limits are realistic
 configured `core.initial_balance` plus each closed trade's `net_pnl` in exit
 order. `equity_curve.csv` is the same curve data for audit, including
 `equity`, `peak_equity`, `drawdown`, and `drawdown_pct`.
+Hovering over the chart shows the point timestamp, net liquidation value, and
+current drawdown percentage from the embedded curve data.
 
 To generate equity curve files for existing reports without rerunning the
 backtests:

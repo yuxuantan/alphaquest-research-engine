@@ -24,7 +24,9 @@ from propstack.utils.params import apply_dotted_params
 from propstack.utils.reports import market_timezone, write_report_csv
 
 
-DEFAULT_STAGE_ORDER = [
+ACCEPTANCE_STAGE = "acceptance_oos_test"
+
+PRE_ACCEPTANCE_STAGE_ORDER = [
     "limited_core_grid_test",
     "limited_monkey_test",
     "walk_forward_analysis",
@@ -33,6 +35,8 @@ DEFAULT_STAGE_ORDER = [
     "simulated_incubation_core",
     "simulated_incubation_monkey",
 ]
+
+DEFAULT_STAGE_ORDER = [*PRE_ACCEPTANCE_STAGE_ORDER, ACCEPTANCE_STAGE]
 
 DEFAULT_STAGE_CRITERIA = {
     "limited_core_grid_test": [
@@ -80,6 +84,14 @@ DEFAULT_STAGE_CRITERIA = {
         {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.80},
         {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
+    ACCEPTANCE_STAGE: [
+        {"metric": "metrics.profit_factor", "min": 1.2},
+        {"metric": "metrics.mar", "min": 1.2},
+        {"metric": "metrics.expectancy_r", "min": 0.15},
+        {"metric": "metrics.total_trades", "min": 75},
+        {"metric": "metrics.win_rate", "min": 0.40},
+        {"metric": "metrics.apex_rule_violations", "max": 0},
+    ],
 }
 
 STAGE_LABELS = {
@@ -90,6 +102,7 @@ STAGE_LABELS = {
     "wfa_oos_monte_carlo": "WFA OOS Monte Carlo",
     "simulated_incubation_core": "Simulated Incubation (OOS) Core",
     "simulated_incubation_monkey": "Simulated Incubation (OOS) Monkey",
+    ACCEPTANCE_STAGE: "Acceptance OOS Test",
 }
 
 
@@ -108,7 +121,7 @@ def run_campaign_stage_tests(
         shutil.copy2(config_path, root / "config_snapshot.yaml")
 
     campaign_tests = cfg.get("campaign_tests") or {}
-    stage_order = list(campaign_tests.get("stage_order", DEFAULT_STAGE_ORDER))
+    stage_order = _stage_order(campaign_tests)
     context: dict[str, Any] = {}
     results = []
     halted = False
@@ -191,6 +204,8 @@ def _run_stage(
         context["incubation_detail"] = payload.get("detail")
     elif stage_name == "simulated_incubation_monkey":
         payload = _run_incubation_monkey(cfg, stage_cfg, stage_dir, context)
+    elif stage_name == ACCEPTANCE_STAGE:
+        payload = _run_acceptance_oos(cfg, stage_cfg, stage_dir, skip_validation)
     else:
         raise ValueError(f"Unsupported campaign test stage: {stage_name}")
 
@@ -271,7 +286,7 @@ def _run_wfa_stage(cfg: dict, stage_cfg: dict, stage_dir: Path, skip_validation:
     wfa_cfg.setdefault("train_months", 48)
     wfa_cfg.setdefault("test_months", 12)
     wfa_cfg.setdefault("step_months", 12)
-    wfa_cfg.setdefault("objective", "profit_factor")
+    wfa_cfg["objective"] = "MAR"
     wfa_cfg.setdefault("selection_min_trades_per_year", 52)
     wfa_cfg.setdefault("early_exit_min_train_profit_factor", 1.0)
     subset = _stage_subset(
@@ -418,6 +433,108 @@ def _run_incubation_core(
     }
 
 
+def _run_acceptance_oos(
+    cfg: dict,
+    stage_cfg: dict,
+    stage_dir: Path,
+    skip_validation: bool,
+) -> dict:
+    train_months = int(stage_cfg.get("train_months", 24))
+    test_months = int(stage_cfg.get("test_months", 6))
+    if train_months <= 0 or test_months <= 0:
+        raise ValueError("acceptance_oos_test train_months and test_months must be greater than zero.")
+
+    base_subset = _acceptance_base_subset(cfg, stage_cfg)
+    bounded_subset, planned_window = _planned_acceptance_subset(base_subset, train_months, test_months)
+    market, detail, quality, input_hash = _prepare_stage_data(
+        cfg,
+        bounded_subset,
+        stage_dir,
+        skip_validation,
+        show_progress=True,
+    )
+    window = _resolve_acceptance_window(market, planned_window, train_months, test_months)
+    train = _slice_session_window(market, window["train_start"], window["train_end_exclusive"])
+    test = _slice_session_window(market, window["test_start"], window["test_end_exclusive"])
+    train_detail = (
+        _slice_session_window(detail, window["train_start"], window["train_end_exclusive"])
+        if detail is not None
+        else None
+    )
+    test_detail = (
+        _slice_session_window(detail, window["test_start"], window["test_end_exclusive"])
+        if detail is not None
+        else None
+    )
+    if train.empty or test.empty:
+        raise ValueError(
+            "acceptance_oos_test requires non-empty in-sample and out-of-sample slices "
+            f"for train={_format_acceptance_period(window, 'train')} "
+            f"test={_format_acceptance_period(window, 'test')}."
+        )
+
+    parameters = (
+        stage_cfg.get("parameters")
+        or (cfg.get("wfa") or {}).get("parameters")
+        or (cfg.get("core_grid") or {}).get("parameters")
+        or {}
+    )
+    if not parameters:
+        raise ValueError("acceptance_oos_test requires a parameter grid.")
+
+    selection_cfg = _acceptance_selection_config(cfg, stage_cfg, parameters)
+    selection_cfg["data_subset"] = _window_subset(base_subset, window["train_start"], window["train_end_exclusive"])
+    train_dir = stage_dir / "train_selection"
+    selected_params, train_selection_payload = _run_train_selection_grid(
+        cfg,
+        selection_cfg,
+        train_dir,
+        skip_validation,
+        train_data=train,
+        train_detail=train_detail,
+        data_quality=quality,
+        input_hash=input_hash,
+        parameter_label="acceptance_oos_test.parameters",
+        result_prefix="acceptance",
+    )
+    test_cfg = apply_dotted_params(cfg, selected_params) if selected_params else copy.deepcopy(cfg)
+    result = BacktestEngine(test_cfg).run(test, detail_data=test_detail)
+    trades = result["trades"]
+    report_timezone = market_timezone(test_cfg)
+    write_report_csv(trades, stage_dir / "trade_log.csv", report_timezone, index=False)
+    write_report_csv(result["daily"], stage_dir / "daily_results.csv", report_timezone, index=False)
+    metrics = {**result["metrics"], "diagnostics": result.get("diagnostics", {})}
+    write_json(stage_dir / "metrics.json", metrics)
+    acceptance_summary = _acceptance_summary(window, train, test, selected_params, train_selection_payload, result)
+    write_report_csv(
+        pd.DataFrame([_acceptance_result_row(acceptance_summary)]),
+        stage_dir / "acceptance_oos_results.csv",
+        report_timezone,
+        index=False,
+    )
+    write_json(stage_dir / "acceptance_oos_summary.json", acceptance_summary)
+    write_equity_report(
+        trades,
+        stage_dir,
+        initial_balance=float(test_cfg.get("core", {}).get("initial_balance", 0.0)),
+        timezone=report_timezone,
+        title=f"{test_cfg.get('campaign_id')} / {test_cfg.get('variant_id')} acceptance OOS equity curve",
+    )
+    return {
+        "summary": acceptance_summary,
+        "metrics": result["metrics"],
+        "diagnostics": result.get("diagnostics", {}),
+        "selected_params": selected_params,
+        "acceptance_train_selection": train_selection_payload,
+        "data_quality": quality,
+        "input_hash": input_hash,
+        "artifacts": _stage_artifacts(stage_dir),
+        "trades": trades,
+        "market": test,
+        "detail": test_detail,
+    }
+
+
 def _run_incubation_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context: dict) -> dict:
     trades = _required_context_frame(context, "incubation_trades", "Incubation monkey requires simulated_incubation_core trades.")
     market = context.get("incubation_market")
@@ -528,8 +645,210 @@ def _criteria_for_stage(stage_name: str, stage_cfg: dict) -> list[dict]:
     return copy.deepcopy(DEFAULT_STAGE_CRITERIA.get(stage_name, []))
 
 
+def _stage_order(campaign_tests: dict) -> list[str]:
+    configured = campaign_tests.get("stage_order")
+    if not configured:
+        return list(DEFAULT_STAGE_ORDER)
+    order = list(configured)
+    if ACCEPTANCE_STAGE in order:
+        return order
+    acceptance_cfg = campaign_tests.get(ACCEPTANCE_STAGE) or {}
+    if acceptance_cfg.get("enabled", True) is False:
+        return order
+    return [*order, ACCEPTANCE_STAGE]
+
+
 def _stage_config(campaign_tests: dict, stage_name: str) -> dict:
-    return copy.deepcopy(campaign_tests.get(stage_name) or {})
+    out = copy.deepcopy(campaign_tests.get(stage_name) or {})
+    if stage_name == ACCEPTANCE_STAGE and "criteria" not in out:
+        incubation_core_cfg = campaign_tests.get("simulated_incubation_core") or {}
+        if incubation_core_cfg.get("criteria"):
+            out["criteria"] = copy.deepcopy(incubation_core_cfg["criteria"])
+    return out
+
+
+def _acceptance_base_subset(cfg: dict, stage_cfg: dict) -> dict:
+    if stage_cfg.get("data_subset"):
+        return dict(stage_cfg["data_subset"])
+    return dict((cfg.get("core") or {}).get("data_subset") or (cfg.get("data") or {}).get("data_subset") or {})
+
+
+def _planned_acceptance_subset(
+    base_subset: dict,
+    train_months: int,
+    test_months: int,
+) -> tuple[dict | None, dict | None]:
+    end = _subset_end_date(base_subset)
+    if end is None:
+        return (dict(base_subset) if base_subset else None), None
+    window = _acceptance_window_from_end(end, train_months, test_months)
+    start = _subset_start_date(base_subset)
+    if start is not None and start > window["train_start"]:
+        raise ValueError(
+            "acceptance_oos_test requires the configured data range to cover the full "
+            f"{train_months}-month in-sample window starting {window['train_start'].date().isoformat()}; "
+            f"configured start_date is {start.date().isoformat()}."
+        )
+    bounded = dict(base_subset)
+    bounded["start_date"] = window["train_start"].date().isoformat()
+    bounded["end_date"] = window["test_end"].date().isoformat()
+    return bounded, window
+
+
+def _resolve_acceptance_window(
+    market: pd.DataFrame,
+    planned_window: dict | None,
+    train_months: int,
+    test_months: int,
+) -> dict:
+    if planned_window is not None:
+        return planned_window
+    if market.empty or "session_date" not in market.columns:
+        raise ValueError("acceptance_oos_test cannot infer latest data date from an empty market slice.")
+    sessions = pd.to_datetime(market["session_date"], errors="coerce").dropna()
+    if sessions.empty:
+        raise ValueError("acceptance_oos_test cannot infer latest data date from session_date.")
+    return _acceptance_window_from_end(pd.Timestamp(sessions.max()).normalize(), train_months, test_months)
+
+
+def _acceptance_window_from_end(end_date, train_months: int, test_months: int) -> dict:
+    test_end = pd.Timestamp(end_date).normalize()
+    test_end_exclusive = test_end + pd.Timedelta(days=1)
+    test_start = (test_end - pd.DateOffset(months=test_months)).normalize()
+    train_start = (test_start - pd.DateOffset(months=train_months)).normalize()
+    return {
+        "train_months": train_months,
+        "test_months": test_months,
+        "train_start": train_start,
+        "train_end_exclusive": test_start,
+        "train_end": test_start - pd.Timedelta(days=1),
+        "test_start": test_start,
+        "test_end": test_end,
+        "test_end_exclusive": test_end_exclusive,
+    }
+
+
+def _subset_start_date(subset: dict) -> pd.Timestamp | None:
+    if subset.get("start_date"):
+        return pd.Timestamp(subset["start_date"]).normalize()
+    if subset.get("start_timestamp"):
+        return pd.Timestamp(subset["start_timestamp"]).normalize()
+    return None
+
+
+def _subset_end_date(subset: dict) -> pd.Timestamp | None:
+    if subset.get("end_date"):
+        return pd.Timestamp(subset["end_date"]).normalize()
+    if subset.get("end_timestamp"):
+        return pd.Timestamp(subset["end_timestamp"]).normalize()
+    return None
+
+
+def _slice_session_window(data: pd.DataFrame | None, start, end_exclusive) -> pd.DataFrame:
+    if data is None or data.empty:
+        return pd.DataFrame()
+    sessions = pd.to_datetime(data["session_date"], errors="coerce")
+    mask = (sessions >= pd.Timestamp(start).normalize()) & (sessions < pd.Timestamp(end_exclusive).normalize())
+    return data[mask].copy().reset_index(drop=True)
+
+
+def _acceptance_selection_config(cfg: dict, stage_cfg: dict, parameters: dict) -> dict:
+    out = copy.deepcopy(stage_cfg.get("train_selection") or {})
+    for key in [
+        "parallel",
+        "retain_iteration_reports",
+        "selection_min_profit_factor",
+        "selection_min_total_trades",
+        "selection_min_trades_per_year",
+    ]:
+        if key in stage_cfg and key not in out:
+            out[key] = copy.deepcopy(stage_cfg[key])
+    if "selection_min_trades_per_year" not in out:
+        if (cfg.get("wfa") or {}).get("selection_min_trades_per_year") is not None:
+            out["selection_min_trades_per_year"] = (cfg.get("wfa") or {})["selection_min_trades_per_year"]
+        elif (cfg.get("benchmarks") or {}).get("min_trades_per_year") is not None:
+            out["selection_min_trades_per_year"] = (cfg.get("benchmarks") or {})["min_trades_per_year"]
+    out["objective"] = "MAR"
+    out["parameters"] = copy.deepcopy(parameters)
+    out.setdefault("retain_iteration_reports", False)
+    return out
+
+
+def _window_subset(base_subset: dict, start, end_exclusive) -> dict:
+    out = {
+        key: copy.deepcopy(value)
+        for key, value in base_subset.items()
+        if key not in {"start_date", "end_date", "start_timestamp", "end_timestamp"}
+    }
+    out["start_date"] = pd.Timestamp(start).date().isoformat()
+    out["end_date"] = (pd.Timestamp(end_exclusive).normalize() - pd.Timedelta(days=1)).date().isoformat()
+    return out
+
+
+def _acceptance_summary(
+    window: dict,
+    train: pd.DataFrame,
+    test: pd.DataFrame,
+    selected_params: dict,
+    train_selection_payload: dict,
+    result: dict,
+) -> dict:
+    selected_row = train_selection_payload.get("selected_row", {})
+    return {
+        "selection_objective": "MAR",
+        "train_months": int(window["train_months"]),
+        "test_months": int(window["test_months"]),
+        "train_start": window["train_start"].date().isoformat(),
+        "train_end": window["train_end"].date().isoformat(),
+        "test_start": window["test_start"].date().isoformat(),
+        "test_end": window["test_end"].date().isoformat(),
+        "train_rows": int(len(train)),
+        "test_rows": int(len(test)),
+        "selected_params": selected_params,
+        "train_selected_metrics": {
+            key: selected_row.get(key)
+            for key in [
+                "run_id",
+                "total_trades",
+                "trades_per_year",
+                "net_profit",
+                "profit_factor",
+                "expectancy_r",
+                "max_drawdown",
+                "max_drawdown_pct",
+                "cagr",
+                "mar",
+                "win_rate",
+                "apex_rule_violations",
+            ]
+            if key in selected_row
+        },
+        "metrics": result["metrics"],
+        "diagnostics": result.get("diagnostics", {}),
+        "oos_trades": int(len(result.get("trades", pd.DataFrame()))),
+    }
+
+
+def _acceptance_result_row(summary: dict) -> dict:
+    row = {
+        "selection_objective": summary["selection_objective"],
+        "train_start": summary["train_start"],
+        "train_end": summary["train_end"],
+        "test_start": summary["test_start"],
+        "test_end": summary["test_end"],
+        "train_rows": summary["train_rows"],
+        "test_rows": summary["test_rows"],
+        "selected_params": summary["selected_params"],
+    }
+    row.update({f"train_{key}": value for key, value in summary.get("train_selected_metrics", {}).items()})
+    row.update({f"test_{key}": value for key, value in summary.get("metrics", {}).items()})
+    for key, value in summary.get("selected_params", {}).items():
+        row[key] = value
+    return row
+
+
+def _format_acceptance_period(window: dict, prefix: str) -> str:
+    return f"{window[f'{prefix}_start'].date().isoformat()}->{window[f'{prefix}_end'].date().isoformat()}"
 
 
 def _merged_section(cfg: dict, section: str, stage_cfg: dict) -> dict:
@@ -633,7 +952,8 @@ def _run_incubation_train_selection(
     train_dir: Path,
     skip_validation: bool,
 ) -> tuple[dict, dict]:
-    train_dir.mkdir(parents=True, exist_ok=True)
+    selection_cfg = copy.deepcopy(selection_cfg)
+    selection_cfg["objective"] = "MAR"
     train_subset = selection_cfg.get("data_subset") or {}
     if not train_subset:
         raise ValueError("simulated_incubation_core.train_selection.data_subset is required.")
@@ -644,6 +964,35 @@ def _run_incubation_train_selection(
         skip_validation,
         show_progress=True,
     )
+    return _run_train_selection_grid(
+        cfg,
+        selection_cfg,
+        train_dir,
+        skip_validation,
+        train_data=market,
+        train_detail=detail,
+        data_quality=quality,
+        input_hash=input_hash,
+        parameter_label="simulated_incubation_core.train_selection.parameters",
+        result_prefix="incubation",
+    )
+
+
+def _run_train_selection_grid(
+    cfg: dict,
+    selection_cfg: dict,
+    train_dir: Path,
+    skip_validation: bool,
+    *,
+    train_data: pd.DataFrame,
+    train_detail: pd.DataFrame | None,
+    data_quality: dict,
+    input_hash: str,
+    parameter_label: str,
+    result_prefix: str,
+) -> tuple[dict, dict]:
+    train_dir.mkdir(parents=True, exist_ok=True)
+    train_subset = selection_cfg.get("data_subset") or {}
     grid_cfg = copy.deepcopy(cfg.get("core_grid", {}))
     _deep_update(grid_cfg, {key: value for key, value in selection_cfg.items() if key != "data_subset"})
     parameters = (
@@ -658,32 +1007,39 @@ def _run_incubation_train_selection(
     grid_cfg["data_subset"] = dict(train_subset)
     grid_cfg.setdefault("retain_iteration_reports", False)
     results, summary = run_core_grid(
-        market,
+        train_data,
         cfg,
         grid_cfg,
         cfg.get("benchmarks", {}),
         report_dir=train_dir if grid_cfg.get("retain_iteration_reports", False) else None,
-        parameter_label="simulated_incubation_core.train_selection.parameters",
-        detail_data=detail,
+        parameter_label=parameter_label,
+        detail_data=train_detail,
     )
-    selected_params = _select_core_grid_params(results, parameters, selection_cfg)
+    selected_row = _select_core_grid_row(results, parameters, selection_cfg)
+    selected_params = _core_grid_params_from_row(selected_row, parameters)
     report_timezone = market_timezone(cfg)
-    write_report_csv(results, train_dir / "incubation_train_grid_results.csv", report_timezone, index=False)
+    write_report_csv(results, train_dir / f"{result_prefix}_train_grid_results.csv", report_timezone, index=False)
     summary["selected_params"] = selected_params
-    write_json(train_dir / "incubation_train_grid_summary.json", summary)
-    write_json(train_dir / "incubation_selected_params.json", selected_params)
+    summary["selected_row"] = selected_row.to_dict() if selected_row is not None else {}
+    write_json(train_dir / f"{result_prefix}_train_grid_summary.json", summary)
+    write_json(train_dir / f"{result_prefix}_selected_params.json", selected_params)
     return selected_params, {
         "summary": summary,
         "selected_params": selected_params,
-        "data_quality": quality,
+        "selected_row": summary["selected_row"],
+        "data_quality": data_quality,
         "input_hash": input_hash,
         "artifacts": _stage_artifacts(train_dir),
     }
 
 
 def _select_core_grid_params(results: pd.DataFrame, parameters: dict, selection_cfg: dict) -> dict:
+    return _core_grid_params_from_row(_select_core_grid_row(results, parameters, selection_cfg), parameters)
+
+
+def _select_core_grid_row(results: pd.DataFrame, parameters: dict, selection_cfg: dict):
     if results.empty:
-        return {}
+        return None
     candidates = results.copy()
     min_total_trades = selection_cfg.get("selection_min_total_trades")
     if min_total_trades is not None and "total_trades" in candidates.columns:
@@ -706,9 +1062,13 @@ def _select_core_grid_params(results: pd.DataFrame, parameters: dict, selection_
     objective_column = objective_columns.get(objective, objective)
     sort_columns = [column for column in [objective_column, "profit_factor", "net_profit"] if column in candidates.columns]
     if sort_columns:
-        row = candidates.sort_values(sort_columns, ascending=[False] * len(sort_columns), na_position="last").iloc[0]
-    else:
-        row = candidates.iloc[0]
+        return candidates.sort_values(sort_columns, ascending=[False] * len(sort_columns), na_position="last").iloc[0]
+    return candidates.iloc[0]
+
+
+def _core_grid_params_from_row(row, parameters: dict) -> dict:
+    if row is None:
+        return {}
     return {key: row[key] for key in parameters if key in row and not pd.isna(row[key])}
 
 

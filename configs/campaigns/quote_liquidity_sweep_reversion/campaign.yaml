@@ -1,0 +1,47 @@
+campaign_id: quote_liquidity_sweep_reversion
+campaign_name: Quote-Confirmed Liquidity Sweep Reversion
+status: data_gated_pilot
+
+academic_sources:
+  - title: "The Price Impact of Order Book Events"
+    authors: "Rama Cont, Arseniy Kukanov, and Sasha Stoikov"
+    year: 2014
+    venue: "Journal of Financial Econometrics, 12(1), 47-88"
+    url: "https://arxiv.org/abs/1011.6402"
+    finding_used: "Order-flow imbalance and top-of-book depth help explain short-horizon price changes beyond price levels alone."
+    evidence_directness: "Direct for using bid/ask depth and order-book imbalance; the ES strategy translation still needs TBBO validation."
+  - title: "Price Pressures"
+    authors: "Terrence Hendershott and Albert J. Menkveld"
+    year: 2014
+    venue: "Journal of Financial Economics"
+    url: "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1411943"
+    finding_used: "Liquidity-demand shocks can create temporary price pressure that mean-reverts as intermediaries manage inventory."
+    evidence_directness: "Direct for the temporary-price-pressure thesis; this pilot tests the intraday futures implementation."
+  - title: "Order Imbalance, Liquidity, and Market Returns"
+    authors: "Tarun Chordia, Richard Roll, and Avanidhar Subrahmanyam"
+    year: 2002
+    venue: "Journal of Financial Economics"
+    url: "https://www.cis.upenn.edu/~mkearns/finread/Chordia_buy-sell_orders.pdf"
+    finding_used: "Order imbalance is related to liquidity and return behavior."
+    evidence_directness: "Conceptual support for using imbalance as a tradable liquidity state."
+
+edge_thesis: >
+  Fade failed ES stop-runs only when quote data confirms temporary liquidity
+  demand. A valid long setup sweeps a known downside liquidity pool, reclaims it
+  quickly, and shows bid-side refill plus favorable top-of-book imbalance. A
+  valid short setup is the mirror image at upside liquidity pools.
+
+translation_notes:
+  why_es: "ES has deep RTH liquidity and heavily watched prior-day and opening-range levels where stop runs and inventory transfer can occur."
+  why_not_price_only: "Price-only PDH/PDL and opening-range sweep/reclaim variants have already been rejected; this campaign requires quote/depth state after the reclaim."
+  expected_working_regime: "A sweep consumes visible liquidity, fails to attract continuation, and the top of book refills toward the reclaim direction."
+  expected_failure_regime: "Trend days, macro/news breakouts, or true informed flow where book refill is only temporary before continuation resumes."
+  data_gate: "Requires Databento ES TBBO or comparable top-of-book/depth data. No quote/depth download has been performed for this pilot."
+
+pilot_variants:
+  - tbbo_failed_pdh_pdl_or30_sweep_reclaim
+  - tbbo_failed_opening_range_sweep_reclaim
+  - tbbo_quote_imbalance_flip_priority
+
+timeframes:
+  - 1m

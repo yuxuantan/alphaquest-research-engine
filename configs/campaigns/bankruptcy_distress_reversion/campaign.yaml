@@ -1,0 +1,39 @@
+campaign_id: bankruptcy_distress_reversion
+campaign_name: Bankruptcy Distress Reversion
+status: research
+
+academic_sources:
+  - title: "In Search of Distress Risk"
+    authors: "John Y. Campbell, Jens Hilscher, Jan Szilagyi"
+    year: 2008
+    venue: "Journal of Finance"
+    doi: "10.1111/j.1540-6261.2008.01372.x"
+    finding_used: "Equity returns vary with measured default and distress risk."
+    evidence_directness: "Indirect. The campaign uses official bankruptcy filings as a realized legal-distress proxy, then tests ES intraday reversal after prior-session weakness."
+  - title: "Default Risk in Equity Returns"
+    authors: "Maria Vassalou, Yuhang Xing"
+    year: 2004
+    venue: "Journal of Finance"
+    doi: "10.1111/j.1540-6261.2004.00650.x"
+    finding_used: "Default risk is a priced state variable in equity returns."
+    evidence_directness: "Indirect but thematically aligned with distress-risk state conditioning."
+
+edge_thesis: >
+  Sharp growth in U.S. Chapter 11 bankruptcy filings can proxy for a public
+  realized-distress state. When ES has already sold off in the prior session,
+  some of that risk-off pressure may be overextended intraday, creating a
+  same-day mean-reversion window after the morning cash-session information set
+  is complete.
+
+translation_notes:
+  data_availability: "U.S. Courts quarterly Table F-2 rows are treated as usable only after quarter end plus 45 calendar days, moved to the next weekday when needed."
+  why_es: "ES is the liquid, direct index-futures expression of broad U.S. equity risk."
+  expected_working_regime: "Public credit-distress anxiety plus prior ES weakness creates risk-premium or overreaction reversal pressure into the afternoon."
+  expected_failure_regime: "Persistent deleveraging or recessionary bear markets where bankruptcy acceleration is directional, not mean reverting."
+  translation_risks: "Quarterly filings are slow, 2015-Q4 was not accessible from the unattended official Excel scrape, and the current evidence is a diagnostic near miss rather than a staged pass."
+
+variants:
+  - chapter11_yoy_prior_down_long
+
+timeframes:
+  - 1m

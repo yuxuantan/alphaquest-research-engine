@@ -119,13 +119,14 @@ def test_wfa_uses_own_parameter_space(monkeypatch):
         return (
             pd.DataFrame(
                 [
-                    {
-                        "entry.params.reclaim_window_bars": 7,
-                        "tp.params.target_r_multiple": 2.0,
-                        "net_profit": 100.0,
-                        "profit_factor": 2.0,
-                        "max_drawdown": 10.0,
-                    }
+                        {
+                            "entry.params.reclaim_window_bars": 7,
+                            "tp.params.target_r_multiple": 2.0,
+                            "net_profit": 100.0,
+                            "profit_factor": 2.0,
+                            "mar": 1.0,
+                            "max_drawdown": 10.0,
+                        }
                 ]
             ),
             {},
@@ -196,12 +197,13 @@ def test_wfa_can_return_stitched_oos_trade_log(monkeypatch):
         return (
             pd.DataFrame(
                 [
-                    {
-                        "entry.params.reclaim_window_bars": 7,
-                        "net_profit": 100.0,
-                        "profit_factor": 2.0,
-                        "max_drawdown": 10.0,
-                    }
+                        {
+                            "entry.params.reclaim_window_bars": 7,
+                            "net_profit": 100.0,
+                            "profit_factor": 2.0,
+                            "mar": 1.0,
+                            "max_drawdown": 10.0,
+                        }
                 ]
             ),
             {},
@@ -621,7 +623,7 @@ def test_wfa_logs_current_window_details(monkeypatch, capsys):
     assert "walk-forward 1/1 start" in out
     assert "in-sample 2022-01-15 -> 2022-02-15" in out
     assert "out-of-sample 2022-02-15 -> 2022-03-15" in out
-    assert "objective=net_profit train_objective=100.00" in out
+    assert "objective=MAR train_objective=6.00" in out
     assert "selected_params=entry.params.reclaim_window_bars=7" in out
     assert "train_mar=6.00" in out
     assert "train_cagr=12.00%" in out

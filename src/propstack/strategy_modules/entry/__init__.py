@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from propstack.strategy_modules.entry.bankruptcy_distress_reversion import BankruptcyDistressReversionEntry
 from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
 from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from propstack.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
@@ -24,6 +25,7 @@ from propstack.strategy_modules.entry.overnight_inventory_reversion import Overn
 from propstack.strategy_modules.entry.base import Signal
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
+from propstack.strategy_modules.entry.quote_liquidity_sweep_reversion import QuoteLiquiditySweepReversionEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
 from propstack.strategy_modules.entry.trade_orderflow_multi_pressure import TradeOrderflowMultiPressureEntry
@@ -38,6 +40,7 @@ from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPull
 
 
 ENTRY_MODULES = {
+    BankruptcyDistressReversionEntry.name: BankruptcyDistressReversionEntry,
     CalendarSessionBiasEntry.name: CalendarSessionBiasEntry,
     CftcTffHedgingPressureEntry.name: CftcTffHedgingPressureEntry,
     CftcTffTieredHedgingPressureEntry.name: CftcTffTieredHedgingPressureEntry,
@@ -61,6 +64,7 @@ ENTRY_MODULES = {
     OvernightInventoryReversionEntry.name: OvernightInventoryReversionEntry,
     PdhPdlBreakoutContinuationEntry.name: PdhPdlBreakoutContinuationEntry,
     PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
+    QuoteLiquiditySweepReversionEntry.name: QuoteLiquiditySweepReversionEntry,
     RthGapFadeEntry.name: RthGapFadeEntry,
     TurnOfMonthBiasEntry.name: TurnOfMonthBiasEntry,
     TradeOrderflowMultiPressureEntry.name: TradeOrderflowMultiPressureEntry,
@@ -84,6 +88,7 @@ def build_entry_module(config: dict):
 
 __all__ = [
     "Signal",
+    "BankruptcyDistressReversionEntry",
     "CalendarSessionBiasEntry",
     "CftcTffHedgingPressureEntry",
     "CftcTffTieredHedgingPressureEntry",
@@ -107,6 +112,7 @@ __all__ = [
     "OvernightInventoryReversionEntry",
     "PdhPdlBreakoutContinuationEntry",
     "PdhPdlSweepReclaimEntry",
+    "QuoteLiquiditySweepReversionEntry",
     "RthGapFadeEntry",
     "TurnOfMonthBiasEntry",
     "TradeOrderflowMultiPressureEntry",

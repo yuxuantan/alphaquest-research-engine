@@ -3,6 +3,7 @@ from types import SimpleNamespace
 import pandas as pd
 
 from propstack.data.features import add_vpin_toxicity_features
+from propstack.strategy_modules.entry.bankruptcy_distress_reversion import BankruptcyDistressReversionEntry
 from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
 from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from propstack.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
@@ -3483,6 +3484,74 @@ def test_cftc_tff_hedging_pressure_rejects_missing_or_below_threshold_feature(tm
     assert entry.on_bar_close(_cftc_bar("2024-01-04 10:55")) is None
 
 
+def test_bankruptcy_distress_reversion_uses_asof_feature_and_prior_down_filter(tmp_path):
+    feature_file = tmp_path / "bankruptcy_features.csv"
+    pd.DataFrame(
+        {
+            "period_end": ["2023-12-31"],
+            "effective_date": ["2024-02-14"],
+            "total_ch11_yoy_pct": [20.0],
+        }
+    ).to_csv(feature_file, index=False)
+    entry = BankruptcyDistressReversionEntry(
+        {
+            "feature_file": str(feature_file),
+            "feature_name": "total_ch11_yoy_pct",
+            "operator": ">=",
+            "threshold": 14.0,
+            "direction": "long",
+            "entry_time": "11:00:00",
+            "bar_interval_minutes": 1,
+            "prior_return_filter": "down",
+            "stop_pct": 0.03,
+            "target_r_multiple": 10.0,
+        }
+    )
+
+    entry.on_bar_close(_bankruptcy_bar("2024-02-15 15:59", close=100.0))
+    entry.on_bar_close(_bankruptcy_bar("2024-02-16 15:59", close=98.0))
+    signal = entry.on_bar_close(_bankruptcy_bar("2024-02-20 10:59", close=97.5))
+
+    assert signal.direction == "long"
+    assert signal.report_fields["feature_period_end"] == "2023-12-31"
+    assert signal.report_fields["feature_effective_date"] == "2024-02-14"
+    assert signal.report_fields["feature_value"] == 20.0
+    assert round(signal.report_fields["prior_session_return_pct"], 4) == -2.0
+    assert signal.metadata["stop_pct"] == 0.03
+    assert signal.metadata["target_r_multiple"] == 10.0
+
+
+def test_bankruptcy_distress_reversion_rejects_prior_up_and_stale_feature(tmp_path):
+    feature_file = tmp_path / "bankruptcy_features.csv"
+    pd.DataFrame(
+        {
+            "period_end": ["2023-12-31"],
+            "effective_date": ["2024-02-14"],
+            "total_ch11_yoy_pct": [20.0],
+        }
+    ).to_csv(feature_file, index=False)
+    entry = BankruptcyDistressReversionEntry(
+        {
+            "feature_file": str(feature_file),
+            "feature_name": "total_ch11_yoy_pct",
+            "operator": ">=",
+            "threshold": 14.0,
+            "entry_time": "11:00:00",
+            "bar_interval_minutes": 1,
+            "prior_return_filter": "down",
+            "stale_after_days": 30,
+        }
+    )
+
+    entry.on_bar_close(_bankruptcy_bar("2024-02-15 15:59", close=100.0))
+    entry.on_bar_close(_bankruptcy_bar("2024-02-16 15:59", close=102.0))
+    assert entry.on_bar_close(_bankruptcy_bar("2024-02-20 10:59", close=101.0)) is None
+
+    entry.on_bar_close(_bankruptcy_bar("2024-03-25 15:59", close=100.0))
+    entry.on_bar_close(_bankruptcy_bar("2024-03-26 15:59", close=98.0))
+    assert entry.on_bar_close(_bankruptcy_bar("2024-03-27 10:59", close=97.5)) is None
+
+
 def test_cftc_tff_tiered_hedging_pressure_selects_high_priority_tier(tmp_path):
     feature_file = tmp_path / "features.csv"
     pd.DataFrame(
@@ -3625,6 +3694,21 @@ def _cftc_bar(timestamp):
             "high": 101.0,
             "low": 99.5,
             "close": 100.5,
+        }
+    )
+
+
+def _bankruptcy_bar(timestamp, *, close=100.5):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": True,
+            "open": close,
+            "high": close + 0.5,
+            "low": close - 0.5,
+            "close": close,
         }
     )
 

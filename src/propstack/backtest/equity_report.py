@@ -327,6 +327,7 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
       display: block;
       width: 100%;
       height: 460px;
+      cursor: crosshair;
     }}
     .note {{
       color: var(--muted);
@@ -369,6 +370,8 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
     const chart = document.getElementById("chart");
     const ctx = chart.getContext("2d");
     const ids = runs.map((run) => run.id);
+    const chartMargin = {{ left: 72, right: 20, top: 22, bottom: 42 }};
+    let hoverIndex = null;
 
     for (const run of runs) {{
       const option = document.createElement("option");
@@ -390,6 +393,10 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
       maximumFractionDigits: 2
     }});
 
+    function activeRun() {{
+      return runs.find((item) => item.id === select.value) || runs[0];
+    }}
+
     function resizeCanvas() {{
       const rect = chart.getBoundingClientRect();
       const scale = window.devicePixelRatio || 1;
@@ -399,7 +406,7 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
     }}
 
     function draw() {{
-      const run = runs.find((item) => item.id === select.value) || runs[0];
+      const run = activeRun();
       if (!run) return;
       resizeCanvas();
       const rect = chart.getBoundingClientRect();
@@ -417,7 +424,7 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
 
       const data = run.points;
       if (!data.length) return;
-      const margin = {{ left: 72, right: 20, top: 22, bottom: 42 }};
+      const margin = chartMargin;
       const plotW = Math.max(1, width - margin.left - margin.right);
       const plotH = Math.max(1, height - margin.top - margin.bottom);
       const values = data.map((point) => point.equity);
@@ -502,9 +509,127 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
       ctx.fillText(data[0].timestamp || "start", margin.left, height - margin.bottom + 14);
       ctx.textAlign = "right";
       ctx.fillText(end.timestamp || `trade ${{end.point}}`, width - margin.right, height - margin.bottom + 14);
+
+      if (hoverIndex !== null) {{
+        const index = Math.max(0, Math.min(data.length - 1, hoverIndex));
+        const point = data[index];
+        const hoverX = xAt(index);
+        const hoverY = yAt(point.equity);
+        drawHoverMarker(point, hoverX, hoverY, margin, width, height);
+      }}
     }}
 
-    select.addEventListener("change", draw);
+    function drawHoverMarker(point, x, y, margin, width, height) {{
+      ctx.save();
+      ctx.strokeStyle = "rgba(23, 32, 42, 0.35)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, margin.top);
+      ctx.lineTo(x, height - margin.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      const rows = [
+        ["Date", point.timestamp || `trade ${{point.point}}`],
+        ["Net liq", money.format(point.equity)],
+        ["Curr DD", percent.format(point.drawdownPct || 0)]
+      ];
+      drawTooltip(rows, x, y, margin, width, height);
+      ctx.restore();
+    }}
+
+    function drawTooltip(rows, x, y, margin, width, height) {{
+      const padX = 10;
+      const padY = 8;
+      const lineHeight = 18;
+      const gap = 12;
+      ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      const labelWidth = Math.max(...rows.map((row) => ctx.measureText(row[0]).width));
+      ctx.font = "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      const valueWidth = Math.max(...rows.map((row) => ctx.measureText(row[1]).width));
+      const boxWidth = Math.ceil(labelWidth + gap + valueWidth + padX * 2);
+      const boxHeight = padY * 2 + lineHeight * rows.length;
+      let boxX = x + 12;
+      let boxY = y - boxHeight - 12;
+      if (boxX + boxWidth > width - margin.right) boxX = x - boxWidth - 12;
+      if (boxX < margin.left) boxX = margin.left;
+      if (boxY < margin.top) boxY = y + 12;
+      if (boxY + boxHeight > height - margin.bottom) boxY = height - margin.bottom - boxHeight;
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
+      ctx.strokeStyle = "#d5dae3";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.rect(boxX, boxY, boxWidth, boxHeight);
+      ctx.fill();
+      ctx.stroke();
+
+      rows.forEach((row, index) => {{
+        const textY = boxY + padY + index * lineHeight + lineHeight / 2;
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "left";
+        ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.fillStyle = "#697386";
+        ctx.fillText(row[0], boxX + padX, textY);
+        ctx.font = "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.fillStyle = "#17202a";
+        ctx.fillText(row[1], boxX + padX + labelWidth + gap, textY);
+      }});
+    }}
+
+    function updateHover(event) {{
+      const run = activeRun();
+      const data = run ? run.points : [];
+      if (!data.length) {{
+        clearHover();
+        return;
+      }}
+      const rect = chart.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const margin = chartMargin;
+      if (
+        x < margin.left ||
+        x > width - margin.right ||
+        y < margin.top ||
+        y > height - margin.bottom
+      ) {{
+        clearHover();
+        return;
+      }}
+      const plotW = Math.max(1, width - margin.left - margin.right);
+      const rawIndex = data.length === 1 ? 0 : ((x - margin.left) / plotW) * (data.length - 1);
+      const nextIndex = Math.max(0, Math.min(data.length - 1, Math.round(rawIndex)));
+      if (hoverIndex !== nextIndex) {{
+        hoverIndex = nextIndex;
+        draw();
+      }}
+    }}
+
+    function clearHover() {{
+      if (hoverIndex !== null) {{
+        hoverIndex = null;
+        draw();
+      }}
+    }}
+
+    select.addEventListener("change", () => {{
+      hoverIndex = null;
+      draw();
+    }});
+    chart.addEventListener("mousemove", updateHover);
+    chart.addEventListener("mouseleave", clearHover);
     window.addEventListener("resize", draw);
     select.value = ids[0] || "";
     draw();
@@ -551,6 +676,7 @@ def _html_point(row: pd.Series) -> dict:
         "timestamp": _json_string(row.get("timestamp")),
         "equity": _json_float(row["equity"]),
         "drawdown": _json_float(row["drawdown"]),
+        "drawdownPct": _json_float(row["drawdown_pct"]),
     }
 
 

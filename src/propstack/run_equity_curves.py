@@ -109,10 +109,23 @@ def _trade_log_spec(path: Path) -> TradeLogSpec:
 
 
 def _config_for_trade_log(path: Path) -> dict:
-    for candidate in [path.parent / "config_snapshot.yaml", path.parent.parent / "variant_config.yaml"]:
+    for candidate in _config_candidates_for_trade_log(path):
         if candidate.exists():
             return load_yaml(candidate)
     return {}
+
+
+def _config_candidates_for_trade_log(path: Path) -> list[Path]:
+    candidates = []
+    seen = set()
+    for parent in [path.parent, *path.parent.parents]:
+        for name in ["config_snapshot.yaml", "variant_config.yaml"]:
+            candidate = parent / name
+            if candidate in seen:
+                continue
+            seen.add(candidate)
+            candidates.append(candidate)
+    return candidates
 
 
 def _initial_balance(config: dict, spec: TradeLogSpec, override: float | None) -> float:

@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import json
+import re
+
 import pandas as pd
 
 from propstack.backtest.equity_report import equity_curve_frame, write_equity_report
+from propstack.run_equity_curves import _config_for_trade_log, _initial_balance, _trade_log_spec
 from propstack.run_equity_curves import discover_trade_logs
 
 
@@ -71,6 +75,17 @@ def test_write_equity_report_supports_run_id_selector(tmp_path):
     assert "Run 1" in html
     assert "Run 2" in html
     assert "equity-data" in html
+    assert "Net liq" in html
+    assert "Curr DD" in html
+
+    payload_match = re.search(
+        r'<script id="equity-data" type="application/json">(.*?)</script>',
+        html,
+    )
+    assert payload_match is not None
+    payload = json.loads(payload_match.group(1))
+    run_two = next(run for run in payload["runs"] if run["id"] == "2")
+    assert run_two["points"][1]["drawdownPct"] == 0.04
 
 
 def test_discover_trade_logs_finds_supported_report_files(tmp_path):
@@ -85,3 +100,28 @@ def test_discover_trade_logs_finds_supported_report_files(tmp_path):
     names = [path.name for path in discover_trade_logs(tmp_path)]
 
     assert names == ["trade_log.csv", "core_grid_iteration_trades.csv"]
+
+
+def test_trade_log_config_lookup_finds_parent_campaign_test_snapshot(tmp_path):
+    campaign_tests = tmp_path / "campaign_tests"
+    stage = campaign_tests / "simulated_incubation_core"
+    stage.mkdir(parents=True)
+    (campaign_tests / "config_snapshot.yaml").write_text(
+        "\n".join(
+            [
+                "campaign_id: demo",
+                "variant_id: staged",
+                "core:",
+                "  initial_balance: 150000",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    trade_log = stage / "trade_log.csv"
+    trade_log.write_text("trade_id,net_pnl\n", encoding="utf-8")
+
+    config = _config_for_trade_log(trade_log)
+    spec = _trade_log_spec(trade_log)
+
+    assert config["core"]["initial_balance"] == 150000
+    assert _initial_balance(config, spec, None) == 150000.0

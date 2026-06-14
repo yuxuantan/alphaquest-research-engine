@@ -1,0 +1,51 @@
+campaign_id: mes_es_flow_divergence_reversion
+campaign_name: ES/MES Micro-Flow Divergence Reversion
+status: research_pre_purchase
+
+academic_sources:
+  - title: "Individual Investor Trading and Stock Returns"
+    authors: "Ron Kaniel, Gideon Saar, and Sheridan Titman"
+    year: 2008
+    venue: "The Journal of Finance, 63(1), 273-310"
+    doi: "10.1111/j.1540-6261.2008.01316.x"
+    url: "https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.2008.01316.x"
+    finding_used: "Individual-investor flow is linked to short-horizon liquidity provision and subsequent return behavior."
+    evidence_directness: "Indirect; MES is used as a smaller-notional participant proxy, not as an identified retail account feed."
+  - title: "Do Retail Trades Move Markets?"
+    authors: "Brad M. Barber, Terrance Odean, and Ning Zhu"
+    year: 2009
+    venue: "The Review of Financial Studies, 22(1), 151-186"
+    doi: "10.1093/rfs/hhn035"
+    url: "https://academic.oup.com/rfs/article-abstract/22/1/151/1585397"
+    finding_used: "Small-trade order imbalance is informative about retail-like coordinated flow and later returns."
+    evidence_directness: "Indirect; the campaign adapts small-trade/retail-flow evidence to MES-vs-ES futures flow divergence."
+  - title: "One Security, Many Markets: Determining the Contributions to Price Discovery"
+    authors: "Joel Hasbrouck"
+    year: 1995
+    venue: "The Journal of Finance, 50(4), 1175-1199"
+    doi: "10.1111/j.1540-6261.1995.tb04054.x"
+    url: "https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1995.tb04054.x"
+    finding_used: "Closely linked markets can contribute differently to price discovery and transitory deviations."
+    evidence_directness: "Conceptual support for comparing ES and MES flow states; the tested edge is mean reversion after MES flow diverges from ES."
+
+edge_thesis: >
+  Trade ES against completed MES microstructure pressure when the smaller
+  contract diverges from ES through either aggressive-flow imbalance or a
+  short-window return dislocation. The economic premise is temporary liquidity
+  demand from the smaller-notional contract rather than the trend-following
+  signed-flow continuation family already accepted in ES.
+
+translation_notes:
+  why_es: "ES is the traded instrument; MES is used only as a completed-flow state variable."
+  why_effect_may_survive_costs: "The one-year screens found positive train/Q1/Q2 split pockets after current ES one-contract costs."
+  expected_working_regime: "MES shows forced or retail-like pressure that ES does not fully confirm, allowing ES to mean-revert after the dislocation."
+  expected_failure_regime: "MES becomes the leading informed market, or the one-year sample is a regime-specific artifact."
+  data_gate: "Only one year of local MES trade-side history is currently available. Full acceptance requires longer ES+MES trade-side data and a 2020-start validation protocol."
+
+variants:
+  - morning_mes_sell_pressure_divergence_long
+  - afternoon_mes_large20_buy_pressure_short
+  - midday_es_mes_price_dislocation_fade
+
+timeframes:
+  - 1m

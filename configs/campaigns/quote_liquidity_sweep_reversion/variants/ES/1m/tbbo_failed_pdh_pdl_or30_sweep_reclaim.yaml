@@ -1,0 +1,212 @@
+campaign_id: quote_liquidity_sweep_reversion
+variant_id: tbbo_failed_pdh_pdl_or30_sweep_reclaim
+strategy_name: quote_liquidity_sweep_reversion
+symbol: ES
+dataset_id: databento_tbbo_1m_20250609_20260609_pending
+timeframe: 1m
+
+research_metadata:
+  academic_source: "Cont, Kukanov, and Stoikov (2014); Hendershott and Menkveld (2014); Chordia, Roll, and Subrahmanyam (2002)"
+  edge_thesis: "A known-level ES sweep that fails while top-of-book liquidity refills is a temporary price-pressure event, not a continuation signal."
+  mechanic: "Use only completed 1-minute TBBO-derived bars. Track previous RTH high/low plus the 30-minute opening range. If price sweeps a level by the configured tick buffer, reclaims it within the configured bar window, and the TBBO side in the reclaim direction refills while quote imbalance flips supportive, fade back inside the level."
+  timeframe_rationale: "The effect is a short-horizon book/liquidity event; 1-minute bars preserve the timing while remaining compatible with the existing staged engine."
+  evidence_directness: "High for the book-depth thesis, pending for ES implementation; no local TBBO pilot data has been downloaded."
+  data_status: "DATA_GATED. Build data/cache/orderflow/es_tbbo_liquidity_1m_20250609_20260609.csv with propstack.build_tbbo_liquidity_cache before running."
+  live_status: "Not live eligible. This is a predeclared pilot config only."
+
+data:
+  dataset_id: databento_tbbo_1m_20250609_20260609_pending
+  source_timeframe: 1m
+  source: csv
+  raw_csv: data/cache/orderflow/es_tbbo_liquidity_1m_20250609_20260609.csv
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 7
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  rolling_volume_window: 20
+  continuous_contract: none
+
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: "16:59:59"
+  force_flatten_enabled: true
+  force_flatten_time: "16:58:30"
+  latest_entry_time: "16:45:00"
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+
+strategy:
+  entry:
+    module: quote_liquidity_sweep_reversion
+    params:
+      level_set: both
+      opening_range_minutes: 30
+      rth_start: "09:30:00"
+      start_time: "09:35:00"
+      end_time: "12:00:00"
+      flatten_time: "15:45:00"
+      bar_interval_minutes: 1
+      tick_size: 0.25
+      min_sweep_ticks: 2
+      reclaim_buffer_ticks: 0
+      reclaim_window_bars: 3
+      depth_window: 3
+      min_refill_ratio: 2.0
+      min_quote_imbalance: 0.20
+      max_spread_ticks: 2.0
+      require_liquidity_demand: true
+      min_failed_demand_imbalance: 0.20
+      allow_long: true
+      allow_short: true
+      max_trades_per_day: 1
+      target_r_multiple: 1.5
+  tp:
+    module: signal_fixed_r
+    params:
+      default_target_r_multiple: 1.5
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 1
+  flatten_time: "15:45:00"
+
+core:
+  data_subset:
+    start_date: "2025-06-09"
+    end_date: "2026-06-09"
+    session_labels: [RTH]
+  initial_balance: 150000
+  tick_size: 0.25
+  tick_value: 12.50
+  commission_per_contract: 2.50
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 3000
+  daily_profit_stop: 5000
+  flatten_time: "15:45:00"
+  max_trades_per_day: 1
+
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.30
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.45
+  max_drawdown_pct: 0.05
+  min_cagr: 0.04
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.40
+  min_positive_month_rate: 0.50
+  min_wfa_profitable_window_rate: 0.70
+  min_monte_carlo_prop_pass_chance: 0.50
+
+core_grid:
+  data_subset:
+    start_date: "2025-06-09"
+    end_date: "2026-06-09"
+    session_labels: [RTH]
+  objective: MAR
+  min_profitable_iteration_rate: 0.70
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 8
+    scope: grid
+  parameters:
+    entry.params.min_sweep_ticks: [1, 2, 4]
+    entry.params.min_refill_ratio: [1.5, 2.0, 3.0]
+    entry.params.target_r_multiple: [1.0, 1.5, 2.0]
+    sl.params.stop_offset_ticks: [1, 2, 4]
+
+monkey:
+  data_subset:
+    start_date: "2025-06-09"
+    end_date: "2026-06-09"
+    session_labels: [RTH]
+  runs: 1000
+  seed: 7
+  beat_threshold: 0.90
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    trade_count_tolerance: 0
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.10
+    duration_shape: 0.70
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+
+wfa:
+  data_subset:
+    start_date: "2025-06-09"
+    end_date: "2026-06-09"
+    session_labels: [RTH]
+  mode: unanchored
+  train_months: 4
+  test_months: 1
+  step_months: 1
+  objective: MAR
+  selection_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: false
+    workers: 1
+    scope: grid
+  parameters:
+    entry.params.min_sweep_ticks: [1, 2, 4]
+    entry.params.min_refill_ratio: [1.5, 2.0, 3.0]
+    entry.params.target_r_multiple: [1.0, 1.5, 2.0]
+    sl.params.stop_offset_ticks: [1, 2]
+
+campaign_tests:
+  walk_forward_analysis:
+    data_window:
+      mode: exclude_last_months
+      months: 0
+
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.50
+  min_trading_days: 2
+  payout_threshold: 3000
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+
+monte_carlo:
+  trade_source: core
+  runs: 500
+  seed: 11
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  path_months: 1
+  skip_trade_probability: 0.05
+  skip_winning_trade_probability: 0.05
+  adverse_slippage_per_trade: 0.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
