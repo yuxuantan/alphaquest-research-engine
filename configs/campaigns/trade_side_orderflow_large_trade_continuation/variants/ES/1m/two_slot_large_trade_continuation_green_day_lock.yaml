@@ -214,6 +214,106 @@ campaign_tests:
     data_window:
       mode: exclude_last_months
       months: 0
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: summary.windows
+      min: 10
+    - metric: stitched_oos_metrics.profit_factor
+      exclusive_min: 1.5
+    - metric: stitched_oos_metrics.mar
+      exclusive_min: 0.5
+    - metric: stitched_oos_metrics.expectancy_r
+      exclusive_min: 0.2
+    - metric: stitched_oos_metrics.total_trades
+      exclusive_min: 500
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      min: 100
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      exclusive_min: 1.2
+    - metric: metrics.mar
+      exclusive_min: 1.2
+    - metric: metrics.expectancy_r
+      exclusive_min: 0.15
+    - metric: metrics.total_trades
+      exclusive_min: 75
+    - metric: metrics.apex_rule_violations
+      max: 0
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  acceptance_oos_test:
+    criteria:
+    - metric: metrics.profit_factor
+      exclusive_min: 1.2
+    - metric: metrics.mar
+      exclusive_min: 1.2
+    - metric: metrics.expectancy_r
+      exclusive_min: 0.15
+    - metric: metrics.total_trades
+      exclusive_min: 25
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 24
+    test_months: 6
 prop_rules:
   starting_balance: 150000
   daily_loss_limit: 4000

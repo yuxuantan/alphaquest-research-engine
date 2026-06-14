@@ -25,6 +25,7 @@ from propstack.strategy_modules.entry.overnight_inventory_reversion import Overn
 from propstack.strategy_modules.entry.base import Signal
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
+from propstack.strategy_modules.entry.positive_delta_dislocation import PositiveDeltaDislocationEntry
 from propstack.strategy_modules.entry.quote_liquidity_sweep_reversion import QuoteLiquiditySweepReversionEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
@@ -64,6 +65,7 @@ ENTRY_MODULES = {
     OvernightInventoryReversionEntry.name: OvernightInventoryReversionEntry,
     PdhPdlBreakoutContinuationEntry.name: PdhPdlBreakoutContinuationEntry,
     PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
+    PositiveDeltaDislocationEntry.name: PositiveDeltaDislocationEntry,
     QuoteLiquiditySweepReversionEntry.name: QuoteLiquiditySweepReversionEntry,
     RthGapFadeEntry.name: RthGapFadeEntry,
     TurnOfMonthBiasEntry.name: TurnOfMonthBiasEntry,
@@ -112,6 +114,7 @@ __all__ = [
     "OvernightInventoryReversionEntry",
     "PdhPdlBreakoutContinuationEntry",
     "PdhPdlSweepReclaimEntry",
+    "PositiveDeltaDislocationEntry",
     "QuoteLiquiditySweepReversionEntry",
     "RthGapFadeEntry",
     "TurnOfMonthBiasEntry",

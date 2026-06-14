@@ -5,29 +5,33 @@ symbol: ES
 dataset_id: databento_trades_20250609_20260608
 timeframe: 1m
 research_metadata:
-  academic_source: Easley, Lopez de Prado, and O'Hara (2012), Flow Toxicity and
-    Liquidity in a High-frequency World, Review of Financial Studies
+  academic_source: Easley, Lopez de Prado, and O'Hara (2012), Flow Toxicity and Liquidity
+    in a High-frequency World, Review of Financial Studies
   doi: 10.1093/rfs/hhs053
-  edge_thesis: >
-    Aggregated orderflow participation state may identify a repeated sequence
-    of lower-toxicity and exhaustion windows. This dense priority ensemble
-    combines same-clock rank states and raw signed-volume imbalance thresholds
-    using only Sierra-compatible completed bar fields.
-  mechanic: >
-    Run a deterministic non-overlapping priority stack of twelve completed-bar
-    orderflow slots. Same-clock ranks use only prior sessions at the same clock
-    time; two raw imbalance slots use completed 5- and 60-minute signed-volume
-    thresholds. Each signal enters on the next 1-minute open and flattens at
-    its slot-specific same-session deadline.
-  timeframe_rationale: >
-    Signals use completed 1-minute bars aggregated into 5-, 15-, and 60-minute
-    orderflow state features, then enter on the next 1-minute bar open.
-  evidence_directness: >
-    Moderate. The academic source supports order-flow toxicity and liquidity
-    state as informed-flow proxies; this variant tests a simplified ES
-    implementation using only aggregated bar-level orderflow fields. This
-    variant tests whether a denser non-overlapping priority stack can repair
-    the one-year trade-density weakness seen in the sparse rank combos.
+  edge_thesis: 'Aggregated orderflow participation state may identify a repeated sequence
+    of lower-toxicity and exhaustion windows. This dense priority ensemble combines
+    same-clock rank states and raw signed-volume imbalance thresholds using only Sierra-compatible
+    completed bar fields.
+
+    '
+  mechanic: 'Run a deterministic non-overlapping priority stack of twelve completed-bar
+    orderflow slots. Same-clock ranks use only prior sessions at the same clock time;
+    two raw imbalance slots use completed 5- and 60-minute signed-volume thresholds.
+    Each signal enters on the next 1-minute open and flattens at its slot-specific
+    same-session deadline.
+
+    '
+  timeframe_rationale: 'Signals use completed 1-minute bars aggregated into 5-, 15-,
+    and 60-minute orderflow state features, then enter on the next 1-minute bar open.
+
+    '
+  evidence_directness: 'Moderate. The academic source supports order-flow toxicity
+    and liquidity state as informed-flow proxies; this variant tests a simplified
+    ES implementation using only aggregated bar-level orderflow fields. This variant
+    tests whether a denser non-overlapping priority stack can repair the one-year
+    trade-density weakness seen in the sparse rank combos.
+
+    '
 data:
   dataset_id: databento_trades_20250609_20260608
   source_timeframe: 1m
@@ -43,25 +47,25 @@ data:
   trade_orderflow_features:
     enabled: true
     windows:
-      - 5
-      - 15
-      - 60
+    - 5
+    - 15
+    - 60
     large_trade_sizes: []
     min_period_fraction: 1.0
     tick_size: 0.25
     same_clock_ranks:
       enabled: true
       columns:
-        - trade_orderflow_abs_imbalance_5
-        - trade_orderflow_abs_imbalance_60
-        - trade_orderflow_effort_vs_result_5
-        - trade_orderflow_effort_vs_result_15
-        - trade_orderflow_imbalance_5
-        - trade_orderflow_trades_15
-        - trade_orderflow_avg_trade_size_5
+      - trade_orderflow_abs_imbalance_5
+      - trade_orderflow_abs_imbalance_60
+      - trade_orderflow_effort_vs_result_5
+      - trade_orderflow_effort_vs_result_15
+      - trade_orderflow_imbalance_5
+      - trade_orderflow_trades_15
+      - trade_orderflow_avg_trade_size_5
       rank_windows:
-        - 21
-        - 42
+      - 21
+      - 42
       rank_min_periods:
         '21': 7
         '42': 14
@@ -92,134 +96,134 @@ strategy:
       stop_pct: 0.006
       target_r_multiple: 8.0
       slots:
-        - slot_id: low_abs5_0945_long
-          setup_mode: low_abs5_0945_long
-          entry_time: '09:45:00'
-          flatten_time: '11:16:00'
-          feature_column: trade_orderflow_abs_imbalance_5
-          rank_column: trade_orderflow_abs_imbalance_5_rank42
-          threshold_side: le
-          rank_threshold: 0.1
-          rank_window: 42
-          rank_min_periods: 14
-          direction: long
-        - slot_id: low_trades15_0945_long
-          setup_mode: low_trades15_0945_long
-          entry_time: '09:45:00'
-          flatten_time: '11:46:00'
-          feature_column: trade_orderflow_trades_15
-          rank_column: trade_orderflow_trades_15_rank42
-          threshold_side: le
-          rank_threshold: 0.1
-          rank_window: 42
-          rank_min_periods: 14
-          direction: long
-        - slot_id: high_imbalance5_1015_short
-          setup_mode: high_imbalance5_1015_short
-          entry_time: '10:15:00'
-          flatten_time: '10:46:00'
-          feature_column: trade_orderflow_imbalance_5
-          rank_column: trade_orderflow_imbalance_5_rank21
-          threshold_side: ge
-          rank_threshold: 0.9
-          rank_window: 21
-          rank_min_periods: 7
-          direction: short
-        - slot_id: low_effort5_1030_long
-          setup_mode: low_effort5_1030_long
-          entry_time: '10:30:00'
-          flatten_time: '11:31:00'
-          feature_column: trade_orderflow_effort_vs_result_5
-          rank_column: trade_orderflow_effort_vs_result_5_rank21
-          threshold_side: le
-          rank_threshold: 0.1
-          rank_window: 21
-          rank_min_periods: 7
-          direction: long
-        - slot_id: low_abs5_1045_short
-          setup_mode: low_abs5_1045_short
-          entry_time: '10:45:00'
-          flatten_time: '12:46:00'
-          feature_column: trade_orderflow_abs_imbalance_5
-          rank_column: trade_orderflow_abs_imbalance_5_rank42
-          threshold_side: le
-          rank_threshold: 0.1
-          rank_window: 42
-          rank_min_periods: 14
-          direction: short
-        - slot_id: low_effort15_1100_short
-          setup_mode: low_effort15_1100_short
-          entry_time: '11:00:00'
-          flatten_time: '13:01:00'
-          feature_column: trade_orderflow_effort_vs_result_15
-          rank_column: trade_orderflow_effort_vs_result_15_rank21
-          threshold_side: le
-          rank_threshold: 0.1
-          rank_window: 21
-          rank_min_periods: 7
-          direction: short
-        - slot_id: low_abs60_1130_long
-          setup_mode: low_abs60_1130_long
-          entry_time: '11:30:00'
-          flatten_time: '13:31:00'
-          feature_column: trade_orderflow_abs_imbalance_60
-          rank_column: trade_orderflow_abs_imbalance_60_rank21
-          threshold_side: le
-          rank_threshold: 0.2
-          rank_window: 21
-          rank_min_periods: 7
-          direction: long
-        - slot_id: low_imbalance5_1300_long
-          setup_mode: low_imbalance5_1300_long
-          entry_time: '13:00:00'
-          flatten_time: '14:01:00'
-          feature_column: trade_orderflow_imbalance_5
-          rank_column: trade_orderflow_imbalance_5_rank21
-          threshold_side: le
-          rank_threshold: 0.2
-          rank_window: 21
-          rank_min_periods: 7
-          direction: long
-        - slot_id: raw_positive_imbalance60_1315_short
-          setup_mode: raw_positive_imbalance60_1315_short
-          entry_time: '13:15:00'
-          flatten_time: '14:46:00'
-          filter_mode: value
-          feature_column: trade_orderflow_imbalance_60
-          threshold_side: ge
-          value_threshold: 0.03
-          direction: short
-        - slot_id: low_avg_trade_size5_1315_long
-          setup_mode: low_avg_trade_size5_1315_long
-          entry_time: '13:15:00'
-          flatten_time: '14:46:00'
-          feature_column: trade_orderflow_avg_trade_size_5
-          rank_column: trade_orderflow_avg_trade_size_5_rank21
-          threshold_side: le
-          rank_threshold: 0.2
-          rank_window: 21
-          rank_min_periods: 7
-          direction: long
-        - slot_id: low_abs5_1330_long
-          setup_mode: low_abs5_1330_long
-          entry_time: '13:30:00'
-          flatten_time: '14:31:00'
-          feature_column: trade_orderflow_abs_imbalance_5
-          rank_column: trade_orderflow_abs_imbalance_5_rank21
-          threshold_side: le
-          rank_threshold: 0.2
-          rank_window: 21
-          rank_min_periods: 7
-          direction: long
-        - slot_id: raw_negative_imbalance5_1500_long
-          setup_mode: raw_negative_imbalance5_1500_long
-          entry_time: '15:00:00'
-          flatten_time: '15:31:00'
-          filter_mode: value
-          feature_column: trade_orderflow_imbalance_5
-          threshold_side: le
-          value_threshold: -0.075
-          direction: long
+      - slot_id: low_abs5_0945_long
+        setup_mode: low_abs5_0945_long
+        entry_time: 09:45:00
+        flatten_time: '11:16:00'
+        feature_column: trade_orderflow_abs_imbalance_5
+        rank_column: trade_orderflow_abs_imbalance_5_rank42
+        threshold_side: le
+        rank_threshold: 0.1
+        rank_window: 42
+        rank_min_periods: 14
+        direction: long
+      - slot_id: low_trades15_0945_long
+        setup_mode: low_trades15_0945_long
+        entry_time: 09:45:00
+        flatten_time: '11:46:00'
+        feature_column: trade_orderflow_trades_15
+        rank_column: trade_orderflow_trades_15_rank42
+        threshold_side: le
+        rank_threshold: 0.1
+        rank_window: 42
+        rank_min_periods: 14
+        direction: long
+      - slot_id: high_imbalance5_1015_short
+        setup_mode: high_imbalance5_1015_short
+        entry_time: '10:15:00'
+        flatten_time: '10:46:00'
+        feature_column: trade_orderflow_imbalance_5
+        rank_column: trade_orderflow_imbalance_5_rank21
+        threshold_side: ge
+        rank_threshold: 0.9
+        rank_window: 21
+        rank_min_periods: 7
+        direction: short
+      - slot_id: low_effort5_1030_long
+        setup_mode: low_effort5_1030_long
+        entry_time: '10:30:00'
+        flatten_time: '11:31:00'
+        feature_column: trade_orderflow_effort_vs_result_5
+        rank_column: trade_orderflow_effort_vs_result_5_rank21
+        threshold_side: le
+        rank_threshold: 0.1
+        rank_window: 21
+        rank_min_periods: 7
+        direction: long
+      - slot_id: low_abs5_1045_short
+        setup_mode: low_abs5_1045_short
+        entry_time: '10:45:00'
+        flatten_time: '12:46:00'
+        feature_column: trade_orderflow_abs_imbalance_5
+        rank_column: trade_orderflow_abs_imbalance_5_rank42
+        threshold_side: le
+        rank_threshold: 0.1
+        rank_window: 42
+        rank_min_periods: 14
+        direction: short
+      - slot_id: low_effort15_1100_short
+        setup_mode: low_effort15_1100_short
+        entry_time: '11:00:00'
+        flatten_time: '13:01:00'
+        feature_column: trade_orderflow_effort_vs_result_15
+        rank_column: trade_orderflow_effort_vs_result_15_rank21
+        threshold_side: le
+        rank_threshold: 0.1
+        rank_window: 21
+        rank_min_periods: 7
+        direction: short
+      - slot_id: low_abs60_1130_long
+        setup_mode: low_abs60_1130_long
+        entry_time: '11:30:00'
+        flatten_time: '13:31:00'
+        feature_column: trade_orderflow_abs_imbalance_60
+        rank_column: trade_orderflow_abs_imbalance_60_rank21
+        threshold_side: le
+        rank_threshold: 0.2
+        rank_window: 21
+        rank_min_periods: 7
+        direction: long
+      - slot_id: low_imbalance5_1300_long
+        setup_mode: low_imbalance5_1300_long
+        entry_time: '13:00:00'
+        flatten_time: '14:01:00'
+        feature_column: trade_orderflow_imbalance_5
+        rank_column: trade_orderflow_imbalance_5_rank21
+        threshold_side: le
+        rank_threshold: 0.2
+        rank_window: 21
+        rank_min_periods: 7
+        direction: long
+      - slot_id: raw_positive_imbalance60_1315_short
+        setup_mode: raw_positive_imbalance60_1315_short
+        entry_time: '13:15:00'
+        flatten_time: '14:46:00'
+        filter_mode: value
+        feature_column: trade_orderflow_imbalance_60
+        threshold_side: ge
+        value_threshold: 0.03
+        direction: short
+      - slot_id: low_avg_trade_size5_1315_long
+        setup_mode: low_avg_trade_size5_1315_long
+        entry_time: '13:15:00'
+        flatten_time: '14:46:00'
+        feature_column: trade_orderflow_avg_trade_size_5
+        rank_column: trade_orderflow_avg_trade_size_5_rank21
+        threshold_side: le
+        rank_threshold: 0.2
+        rank_window: 21
+        rank_min_periods: 7
+        direction: long
+      - slot_id: low_abs5_1330_long
+        setup_mode: low_abs5_1330_long
+        entry_time: '13:30:00'
+        flatten_time: '14:31:00'
+        feature_column: trade_orderflow_abs_imbalance_5
+        rank_column: trade_orderflow_abs_imbalance_5_rank21
+        threshold_side: le
+        rank_threshold: 0.2
+        rank_window: 21
+        rank_min_periods: 7
+        direction: long
+      - slot_id: raw_negative_imbalance5_1500_long
+        setup_mode: raw_negative_imbalance5_1500_long
+        entry_time: '15:00:00'
+        flatten_time: '15:31:00'
+        filter_mode: value
+        feature_column: trade_orderflow_imbalance_5
+        threshold_side: le
+        value_threshold: -0.075
+        direction: long
   tp:
     module: signal_fixed_r
     params:
@@ -235,7 +239,7 @@ core:
     start_date: '2025-06-09'
     end_date: '2026-06-08'
     session_labels:
-      - RTH
+    - RTH
   initial_balance: 150000
   tick_size: 0.25
   tick_value: 12.5
@@ -269,7 +273,7 @@ core_grid:
     start_date: '2025-06-09'
     end_date: '2026-06-08'
     session_labels:
-      - RTH
+    - RTH
   objective: MAR
   min_profitable_iteration_rate: 0.7
   retain_iteration_reports: false
@@ -279,28 +283,28 @@ core_grid:
     scope: grid
   parameters:
     entry.params.slots.0.rank_threshold:
-      - 0.05
-      - 0.1
-      - 0.15
-      - 0.2
+    - 0.05
+    - 0.1
+    - 0.15
+    - 0.2
     entry.params.stop_pct:
-      - 0.0035
-      - 0.0045
-      - 0.006
-      - 0.008
-      - 0.01
+    - 0.0035
+    - 0.0045
+    - 0.006
+    - 0.008
+    - 0.01
     entry.params.target_r_multiple:
-      - 4.0
-      - 6.0
-      - 8.0
-      - 10.0
-      - 12.0
+    - 4.0
+    - 6.0
+    - 8.0
+    - 10.0
+    - 12.0
 monkey:
   data_subset:
     start_date: '2025-06-09'
     end_date: '2026-06-08'
     session_labels:
-      - RTH
+    - RTH
   runs: 1000
   seed: 7
   beat_threshold: 0.9
@@ -323,7 +327,7 @@ wfa:
     start_date: '2025-06-09'
     end_date: '2026-06-08'
     session_labels:
-      - RTH
+    - RTH
   mode: unanchored
   train_months: 4
   test_months: 1
@@ -337,22 +341,122 @@ wfa:
     scope: grid
   parameters:
     entry.params.slots.0.rank_threshold:
-      - 0.05
-      - 0.1
-      - 0.15
+    - 0.05
+    - 0.1
+    - 0.15
     entry.params.stop_pct:
-      - 0.0045
-      - 0.006
-      - 0.008
+    - 0.0045
+    - 0.006
+    - 0.008
     entry.params.target_r_multiple:
-      - 6.0
-      - 8.0
-      - 10.0
+    - 6.0
+    - 8.0
+    - 10.0
 campaign_tests:
   walk_forward_analysis:
     data_window:
       mode: exclude_last_months
       months: 0
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: summary.windows
+      min: 10
+    - metric: stitched_oos_metrics.profit_factor
+      exclusive_min: 1.5
+    - metric: stitched_oos_metrics.mar
+      exclusive_min: 0.5
+    - metric: stitched_oos_metrics.expectancy_r
+      exclusive_min: 0.2
+    - metric: stitched_oos_metrics.total_trades
+      exclusive_min: 500
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      min: 100
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      exclusive_min: 1.2
+    - metric: metrics.mar
+      exclusive_min: 1.2
+    - metric: metrics.expectancy_r
+      exclusive_min: 0.15
+    - metric: metrics.total_trades
+      exclusive_min: 75
+    - metric: metrics.apex_rule_violations
+      max: 0
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  acceptance_oos_test:
+    criteria:
+    - metric: metrics.profit_factor
+      exclusive_min: 1.2
+    - metric: metrics.mar
+      exclusive_min: 1.2
+    - metric: metrics.expectancy_r
+      exclusive_min: 0.15
+    - metric: metrics.total_trades
+      exclusive_min: 25
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 24
+    test_months: 6
 prop_rules:
   starting_balance: 150000
   daily_loss_limit: 4000

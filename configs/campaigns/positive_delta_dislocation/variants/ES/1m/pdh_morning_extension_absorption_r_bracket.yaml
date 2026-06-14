@@ -1,0 +1,212 @@
+campaign_id: positive_delta_dislocation
+variant_id: pdh_morning_extension_absorption_r_bracket
+strategy_name: positive_delta_dislocation
+symbol: ES
+dataset_id: sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny
+timeframe: 1m
+research_metadata:
+  source: Follow-on variant from the user-supplied positive-delta-dislocation rule.
+  edge_thesis: >
+    The literal ES run only had positive average PnL in the 10:30 and 11:30
+    signal slots, and the better quartiles were deeper negative hourly windows
+    with larger raw positive delta. This variant tests that narrower absorption
+    interpretation with realistic bracket risk.
+  mechanic: >
+    At 10:30 and 11:30 ET only, require the signal close to be materially above
+    the previous RTH high, the completed 60-minute RTH window to be negative,
+    and signed trade delta to be positive by the configured threshold. The
+    optional delta-ratio cap keeps the setup closer to high-volume absorption
+    than thin positive-delta imbalance.
+  exit_rule: >
+    Use a realistic percent-from-entry stop and fixed-R target selected by the
+    grid, with unresolved trades flattened at 16:00 ET.
+  timeframe_rationale: >
+    This keeps the supplied one-hour rule intact but removes the weaker midday
+    and late-day ES slots and replaces the inactive 10000 dollar bracket with
+    a tradable intraday risk bracket.
+data:
+  dataset_id: sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: full
+  warmup_days: 10
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  rolling_volume_window: 20
+  trade_orderflow_features:
+    enabled: true
+    windows:
+    - 60
+    large_trade_sizes: []
+    min_period_fraction: 1.0
+    tick_size: 0.25
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: positive_delta_dislocation
+    params:
+      setup_mode: pdh_morning_extension_absorption_long
+      rth_start: 09:30:00
+      signal_start: '10:30:00'
+      signal_end: '11:30:00'
+      allowed_signal_times:
+      - '10:30:00'
+      - '11:30:00'
+      flatten_time: '16:00:00'
+      bar_interval_minutes: 1
+      hour_window_minutes: 60
+      tick_size: 0.25
+      min_close_above_prev_high_ticks: 32
+      min_negative_hour_ticks: 8
+      min_hour_delta: 2500
+      max_hour_delta_ratio: 0.05
+      max_trades_per_day: 1
+      require_fresh_prev_high: false
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.002
+      round_to_tick: true
+  flatten_time: '16:00:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 1000000000
+  daily_profit_stop: 1000000000
+  flatten_time: '16:00:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_best_day_concentration: 0.5
+  min_positive_month_rate: 0.5
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: &train_subset
+    start_date: '2011-01-03'
+    end_date: '2024-12-31'
+    session_labels:
+    - RTH
+  objective: MAR
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &parameter_grid
+    entry.params.min_close_above_prev_high_ticks:
+    - 16
+    - 32
+    - 64
+    entry.params.min_negative_hour_ticks:
+    - 4
+    - 8
+    - 12
+    - 16
+    entry.params.min_hour_delta:
+    - 1500
+    - 2500
+    - 3500
+    - 5000
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+monkey:
+  data_subset: *train_subset
+  runs: 500
+  seed: 7
+  beat_threshold: 0.8
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: true
+wfa:
+  data_subset: *train_subset
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  early_exit_require_train_profitable: true
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: *parameter_grid
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 10000
+  trailing_drawdown: 10000
+  max_contracts: 1
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 2
+  payout_threshold: 5000
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0667
+monte_carlo:
+  trade_source: core
+  runs: 500
+  seed: 11
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  path_months: 1
+  skip_trade_probability: 0.05
+  skip_winning_trade_probability: 0.0
+  adverse_slippage_per_trade: 0.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: false
+  retain_path_trades: false
+  retain_path_events: false

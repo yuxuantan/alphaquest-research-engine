@@ -54,7 +54,7 @@ def main() -> None:
     if not files:
         raise SystemExit(f"No Parquet files found in {raw_dir}")
 
-    periods = active_periods(args.roll_calendar, files)
+    periods = active_periods(args.roll_calendar, files, args.root_symbol)
     if not periods:
         raise SystemExit("No roll-calendar periods overlap the available Sierra Parquet files.")
 
@@ -90,6 +90,7 @@ def main() -> None:
         print(f"[{idx}/{len(periods)}] aggregate {symbol}: {path.name}", flush=True)
         bars = aggregate_active_period(
             path,
+            root_symbol=args.root_symbol,
             symbol=symbol,
             start=period["start"],
             end=period["end"],
@@ -180,6 +181,11 @@ def parse_args() -> argparse.Namespace:
         default=Path("configs/data/ES/motivewave_rithmic_roll_calendar.csv"),
         help="Explicit ES roll calendar.",
     )
+    parser.add_argument(
+        "--root-symbol",
+        default="ES",
+        help="Root futures symbol to emit and use for contract file lookup, e.g. ES or NQ.",
+    )
     parser.add_argument("--output-csv", type=Path, required=True)
     parser.add_argument("--output-parquet", type=Path)
     parser.add_argument("--report-json", type=Path)
@@ -194,7 +200,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def active_periods(roll_calendar: Path, files: dict[str, Path]) -> list[dict]:
+def active_periods(roll_calendar: Path, files: dict[str, Path], root_symbol: str = "ES") -> list[dict]:
     calendar = pd.read_csv(roll_calendar)
     starts_utc = pd.to_datetime(calendar["start_timestamp"], utc=True)
     starts_et = starts_utc.dt.tz_convert(ET)
@@ -208,7 +214,7 @@ def active_periods(roll_calendar: Path, files: dict[str, Path]) -> list[dict]:
     )
     calendar["end_utc"] = calendar["start_utc"].shift(-1)
     calendar["symbol"] = [
-        roll_contract_to_file_symbol(start, contract)
+        roll_contract_to_file_symbol(start, contract, root_symbol)
         for start, contract in zip(calendar["start_et"], calendar["contract_symbol"], strict=False)
     ]
 
@@ -225,10 +231,17 @@ def active_periods(roll_calendar: Path, files: dict[str, Path]) -> list[dict]:
     return periods
 
 
-def roll_contract_to_file_symbol(start: pd.Timestamp, contract: str) -> str:
-    month = str(contract)[2]
+def roll_contract_to_file_symbol(start: pd.Timestamp, contract: str, root_symbol: str = "ES") -> str:
+    month = contract_month_code(contract)
     year = start.year + 1 if month == "H" else start.year
-    return f"ES{month}{year % 100:02d}"
+    return f"{root_symbol}{month}{year % 100:02d}"
+
+
+def contract_month_code(contract: str) -> str:
+    for char in str(contract):
+        if char in {"H", "M", "U", "Z"}:
+            return char
+    raise ValueError(f"Could not infer quarterly month code from contract symbol: {contract!r}")
 
 
 def parquet_timestamp_bounds(path: Path) -> tuple[datetime, datetime]:
@@ -256,6 +269,7 @@ def is_bar_like_contract(symbol: str, path: Path) -> bool:
 def aggregate_active_period(
     path: Path,
     *,
+    root_symbol: str,
     symbol: str,
     start: datetime,
     end: datetime,
@@ -297,7 +311,7 @@ def aggregate_active_period(
     combined["timestamp"] = pd.to_datetime(
         [SCID_EPOCH + timedelta(microseconds=int(value)) for value in combined["minute_us"]]
     )
-    combined["symbol"] = "ES"
+    combined["symbol"] = root_symbol
     combined["contract_symbol"] = symbol
     return combined[OUTPUT_COLUMNS].sort_values("timestamp").reset_index(drop=True)
 

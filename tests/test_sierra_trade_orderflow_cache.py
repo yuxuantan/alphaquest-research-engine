@@ -9,6 +9,7 @@ from tools.build_sierra_trade_orderflow_cache import (
     SCID_EPOCH,
     aggregate_batch,
     datetime_to_scid_us,
+    roll_contract_to_file_symbol,
 )
 
 
@@ -98,3 +99,8 @@ def test_aggregate_batch_converts_utc_scid_timestamps_to_new_york_rth_winter() -
 
     assert len(out) == 1
     assert _timestamp_from_minute_us(out.iloc[0]["minute_us"]) == pd.Timestamp("2025-12-15 09:30")
+
+
+def test_roll_contract_to_file_symbol_supports_non_es_root_symbol() -> None:
+    assert roll_contract_to_file_symbol(pd.Timestamp("2025-12-15"), "ESH6", "NQ") == "NQH26"
+    assert roll_contract_to_file_symbol(pd.Timestamp("2025-06-15"), "ESU5", "NQ") == "NQU25"

@@ -525,6 +525,7 @@ def _wfa_selection_filter(wfa_config: dict) -> dict:
     configured = dict(wfa_config.get("selection_filter") or {})
     for source, target in [
         ("selection_min_trades_per_year", "min_trades_per_year"),
+        ("selection_exclusive_min_trades_per_year", "exclusive_min_trades_per_year"),
         ("selection_min_total_trades", "min_total_trades"),
         ("selection_min_profit_factor", "min_profit_factor"),
     ]:
@@ -538,6 +539,7 @@ def _apply_selection_filter(grid_df: pd.DataFrame, selection_filter: dict) -> pd
     filters = [
         ("total_trades", "min_total_trades", lambda series, value: series >= value),
         ("trades_per_year", "min_trades_per_year", lambda series, value: series >= value),
+        ("trades_per_year", "exclusive_min_trades_per_year", lambda series, value: series > value),
         ("profit_factor", "min_profit_factor", lambda series, value: series >= value),
     ]
     for column, key, predicate in filters:

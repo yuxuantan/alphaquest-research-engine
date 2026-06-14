@@ -1,0 +1,35 @@
+campaign_id: positive_delta_dislocation
+campaign_name: Positive Delta Dislocation At Prior High
+source:
+  title: Screenshot rule set supplied by user
+  url:
+status: researching
+
+idea:
+  summary: >
+    Test a long-only futures setup where price is above the previous RTH high while
+    the latest completed one-hour RTH candle is down but has positive aggressive
+    trade delta.
+  entry_thesis: >
+    A negative hourly candle with positive signed volume above a visible prior
+    high may mark absorption or passive selling exhaustion, leaving price
+    vulnerable to upside continuation.
+  exit_thesis: >
+    The supplied rule uses symmetric +10000/-10000 dollars per ES contract and
+    exits any unresolved trade at the RTH end of day.
+
+mechanics:
+  market_timezone: America/New_York
+  session: RTH-only, using Sierra aggregated one-minute orderflow bars.
+  previous_session_high: Current signal-bar close must be at least the configured
+    tick buffer above the previous RTH high.
+  hourly_candle: Signals are evaluated only at completed RTH-aligned 60-minute
+    windows ending 10:30 through 15:30 ET.
+  hourly_delta: The same completed 60-minute window must have positive signed
+    volume delta at or above the configured threshold.
+  risk: Fixed 10000 dollar stop and fixed 10000 dollar target per contract.
+
+notes:
+  - This campaign is a literal user-supplied rule test, not a cited academic replication.
+  - The bracket point distance is instrument-specific: 200.00 ES points and
+    500.00 NQ points for the current configs.

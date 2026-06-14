@@ -5610,3 +5610,535 @@ Close-out:
   - Best true liquidity-sweep branch:
     `quote_liquidity_sweep_reversion/ES/1m/tbbo_failed_pdh_pdl_or30_sweep_reclaim`,
     pending explicit approval for a bounded one-year ES `tbbo` pilot.
+
+## ES U.S. Courts Bankruptcy Distress-Reversion Campaign
+
+- Status: staged and rejected at WFA, but this is the strongest no-new-data
+  independent ES mean-reversion variant found in this pass. It is not
+  live-eligible.
+- Why tested: U.S. bankruptcy filings are a realized legal-distress source,
+  distinct from survey sentiment, credit-spread levels, ADS/WEI/CFNAI
+  business-condition indexes, liquidity sweep, ES/MES microstructure
+  divergence, and accepted trend/orderflow continuation. The ES translation is
+  explicitly mean-reversion: after public Chapter 11 filing growth is elevated,
+  buy ES only after a prior-session ES down move.
+- Academic framing: Campbell, Hilscher, and Szilagyi (2008), "In Search of
+  Distress Risk", and Vassalou and Xing (2004), "Default Risk in Equity
+  Returns", support distress/default-risk state conditioning. This is indirect
+  ES evidence; the campaign still had to clear the repo's staged gates.
+- Source audit:
+  - Official U.S. Courts data-table pages were scraped for Table F-2 quarterly
+    bankruptcy-filings Excel links.
+  - Source manifest:
+    `research_artifacts/uscourts_bankruptcy_f2_quarterly_manifest_20260614.json`.
+  - Local downloaded workbooks:
+    `/private/tmp/uscourts_bankruptcy/f2_YYYY-MM-DD.xls[x]`.
+  - Repo feature cache:
+    `data/external/uscourts_bankruptcy_f2_quarterly_features.csv`.
+  - Scratch feature cache:
+    `/private/tmp/uscourts_bankruptcy/uscourts_bankruptcy_f2_quarterly_features_2010_2026.csv`.
+  - Scratch flat diagnostic screen:
+    `/private/tmp/uscourts_bankruptcy/uscourts_bankruptcy_f2_es_mean_reversion_screen_all.csv`
+    and
+    `/private/tmp/uscourts_bankruptcy/uscourts_bankruptcy_f2_es_mean_reversion_screen_top.csv`.
+  - Campaign config:
+    `configs/campaigns/bankruptcy_distress_reversion/variants/ES/1m/chapter11_yoy_prior_down_long.yaml`.
+  - Campaign report:
+    `data/reports/campaigns/bankruptcy_distress_reversion/ES/1m_full_history/1m/chapter11_yoy_prior_down_long/campaign_tests`.
+- Source coverage: parsed `64` quarterly F-2 rows from `2010-03-31` through
+  `2026-03-31`. The only unattended gap was `2015-12-31`, where no official
+  Excel download link was found by the page scrape; no synthetic repair was
+  applied.
+- No-lookahead handling: each quarter became eligible only after quarter end
+  plus `45` calendar days, moved to the next weekday when needed. The 2026-Q1
+  row became eligible on `2026-05-15`.
+- Feature set: national total filings, Chapter 7/11/13/other splits,
+  business and nonbusiness totals, business Chapter 11, QoQ/YoY percentage
+  changes, 16-quarter z-scores using prior-quarter rolling statistics,
+  business share, Chapter 11 share, and business-Chapter-11 share.
+- Scratch diagnostic mechanics: no-lookahead ES RTH flat holds using entries
+  `09:35`, `10:00`, `10:30`, `11:00`, `13:30`, and `14:30`, exits `12:00`,
+  `15:30`, and `15:59`, one ES contract, `$30` round-turn cost, prior-session
+  ES up/down filters, and long/short directions.
+- Scratch diagnostic result: `7,488` screened rows, `0` pass-like rows,
+  `1` near-like row, `4` loose-shape rows, and `4` mean-reversion loose rows.
+  Best row was `total_ch11_yoy_pct >= 14.780168`, prior-down long
+  `11:00 -> 15:30`: full n491/PF `1.242`, WFA n215/PF `1.365`, core n231/PF
+  `1.149`, incubation n45/PF `1.397`.
+- Campaign implementation:
+  - Added entry module `bankruptcy_distress_reversion`, with as-of quarterly
+    feature lookup, stale-feature protection, prior-session up/down filter, and
+    signal-level stop/target metadata.
+  - Registered the module in `src/propstack/strategy_modules/entry/__init__.py`.
+  - Added focused tests in `tests/test_strategy_modules.py`.
+  - Added campaign metadata in
+    `configs/campaigns/bankruptcy_distress_reversion/campaign.yaml`.
+- Final staged result:
+  - Limited core grid: passed. `108/108` combinations profitable, `0` Apex
+    rule-violating iterations. Top row used threshold `11.876485`, entry
+    `11:00`, stop `0.03`, target `5R`: n232, net `$30,527.50`, PF `1.356`,
+    MAR `1.705`, win rate `53.9%`, max drawdown `$9,130`.
+  - Limited monkey: passed. Core beat monkey net profit in `95.3%` of runs and
+    max drawdown in `99.4625%` of runs.
+  - WFA: failed. `18` windows, no early exit, stitched OOS n409, net
+    `$45,867.50`, PF `1.384`, MAR `0.642`, expectancy R `0.0207`, win rate
+    `55.5%`, Apex violations `0`. It failed PF `1.5`, length-adjusted MAR
+    `0.7086`, expectancy R `0.2`, and total-trades `500`. Profitable window
+    rate was `50%`, and several OOS windows had zero trades.
+- Promotion decision: do not promote to live, incubation, or accepted status.
+  The branch is economically interesting and passed core plus monkey, but WFA
+  does not meet the objective gates and the signal is too sparse/regime
+  dependent. Treat this as the best current no-new-data ES-only independent
+  mean-reversion candidate to study further, not as an accepted third alpha
+  family. Do not rerun simple bankruptcy total, Chapter 11 growth, business
+  filing growth, filing share, z-score, rank, or prior-down long variants
+  without a materially different WFA repair that directly addresses sparse OOS
+  windows and low expectancy R.
+
+## ES Atlanta Fed SBU Business-Uncertainty Screen
+
+- Status: rejected before staged implementation. This is an independent,
+  academically backed ES mean-reversion source, but the corrected source-gate
+  diagnostic produced `0` pass-like, `0` near-like, and `0` loose-shape rows.
+- Why tested: the Atlanta Fed Survey of Business Uncertainty is a no-cost,
+  official monthly panel survey of U.S. firms' one-year-ahead sales and
+  employment expectations and uncertainty. It is distinct from Michigan
+  consumer sentiment, NFIB small-business sentiment, SPF recession anxiety,
+  ADS/WEI/CFNAI real-activity indexes, ES/MES microstructure divergence,
+  quote-liquidity sweep, bankruptcy distress, and the accepted trend/orderflow
+  continuation families.
+- Academic framing: Altig, Barrero, Bloom, Davis, Meyer, and Parker,
+  "Surveying Business Uncertainty", motivates the SBU as a firm-expectations
+  and subjective-uncertainty data source. The ES thesis was indirect and
+  contrarian: when public business expectations/uncertainty states imply weak
+  or uncertain firm growth, buy ES only after completed intraday weakness, or
+  short only after completed intraday strength.
+- Source audit:
+  - Official SBU page:
+    `https://www.atlantafed.org/research-and-data/surveys/business-uncertainty`.
+  - Official workbook downloaded to
+    `/private/tmp/atlanta_sbu_data_20260614.xlsx` from
+    `https://www.atlantafed.org/-/media/Project/Atlanta/FRBA/Documents/datafiles/research/surveys/business-uncertainty/sbu-data.xlsx`.
+  - Because local Python did not have `openpyxl`, the final corrected screen
+    used FRED mirrors of the same core SBU series:
+    `ATLSBUSRGEP` business expectations for sales-revenue growth,
+    `ATLSBUSRGUP` business uncertainty for sales-revenue growth,
+    `ATLSBUEGEP` business expectations for employment growth, and
+    `ATLSBUEGUP` business uncertainty for employment growth.
+  - Corrected feature cache:
+    `/private/tmp/atlanta_sbu_business_uncertainty_corrected_features.csv`.
+  - Corrected diagnostic screen:
+    `/private/tmp/atlanta_sbu_business_uncertainty_corrected_es_screen_all.csv`
+    and
+    `/private/tmp/atlanta_sbu_business_uncertainty_corrected_es_screen_top.csv`.
+  - The first scratch pass used the same four series but had the sales and
+    employment expectation/uncertainty labels crossed for two FRED IDs; the
+    corrected outputs above supersede
+    `/private/tmp/atlanta_sbu_business_uncertainty_*`.
+- Source coverage: `114` monthly SBU observations from `2016-12-01` through
+  `2026-05-01`. The corrected no-lookahead merge produced `2,305` eligible ES
+  sessions from `2017-01-16` through `2026-05-29`.
+- No-lookahead handling: each observation month became eligible only after
+  month-end plus `15` calendar days, moved to the next weekday when needed, and
+  then as-of merged onto actual ES sessions. Any future pass would still require
+  exact official release-date or vintage validation before campaign staging.
+- Feature set: sales and employment expectation levels, sales and employment
+  uncertainty levels, average expectation, average uncertainty,
+  employment-minus-sales expectation gap, employment-minus-sales uncertainty
+  gap, uncertainty-to-expectation ratio, 1/3/6/12-month changes, 3/6/12-month
+  mean gaps, and 12/24/60-month ranks and z-scores.
+- Scratch diagnostic mechanics: same-session ES RTH flat holds using prior
+  RTH-open-to-entry completed moves, entries `09:35`, `10:00`, `10:30`,
+  `11:00`, `13:30`, and `14:30`, exits `12:00`, `15:30`, and `15:59`, one ES
+  contract, `$30` round-turn cost, and only mean-reversion directions
+  (`prior_down_long` and `prior_up_short`).
+- Corrected diagnostic result: `2,741` feature-threshold specs, `128`
+  entry/exit/side/move outcome specs, `62,019` retained positive diagnostic
+  rows, `0` pass-like rows, `0` near-like rows, and `0` loose-shape rows.
+  High-PF rows were tiny pockets rather than campaign candidates. The best
+  score row was `uncertainty_to_expectation_chg12 <= -0.362849`,
+  `prior_down_long`, `40` ticks minimum completed weakness, `09:35 -> 12:00`:
+  early n0, WFA n12/PF `6.324`, core n8/PF `7.024`, incubation n8/PF `7.012`,
+  full n20/PF `6.629`. The best dense WFA-400 row was
+  `employment_minus_sales_uncertainty_gap_mean3 <= 0.282333`,
+  `prior_down_long`, `10` ticks minimum weakness, `11:00 -> 15:59`: early
+  n229/PF `0.947`, WFA n419/PF `1.295`, core n156/PF `1.368`,
+  incubation n134/PF `0.743`, full n782/PF `1.076`.
+- Promotion decision: do not stage SBU as a campaign. The source is legitimate
+  and independent, but simple SBU sales/employment expectation, uncertainty,
+  gap, ratio, rank, z-score, change, and mean-gap variants are either sparse
+  high-PF pockets or dense low-PF rows with weak early/incubation robustness.
+  Do not rerun simple SBU business-expectations or uncertainty state variants
+  without exact release/vintage validation and a materially different execution
+  confirmation signal.
+
+## ES Liquidity-Sweep Versus ES/MES Continuation Checkpoint
+
+- User follow-up: "what about liquidity sweep?" For ES, treat liquidity sweep as
+  a separate quote/depth branch, not as the current ES/MES flow-divergence lead.
+- True sweep candidate retained:
+  `quote_liquidity_sweep_reversion/ES/1m/tbbo_failed_pdh_pdl_or30_sweep_reclaim`.
+  It requires an approved one-year ES `tbbo` pilot cache before any staged run.
+  Protocol:
+  `research_artifacts/es_quote_liquidity_sweep_pilot_protocol_20260614.md`.
+- Rejected sweep-like families remain closed: price-only PDH/PDL or overnight
+  high/low wick/reclaim, opening-range failed break, ICT/SMC sweep plus FVG
+  retrace, and aggregate trade-side-only sweep/fade. Do not rerun these as
+  "liquidity sweep" without actual quote/depth confirmation.
+- Current first ranked non-depth ES mean-reversion candidate remains
+  `mes_es_flow_divergence_reversion/ES/1m/afternoon_mes_large20_buy_pressure_short`,
+  because it already passed limited core and monkey on the one-year aligned
+  ES/MES trade-side sample and failed WFA only on short-history density/window
+  gates.
+- A predeclared 2020-start ES/MES validation sibling now exists at
+  `configs/campaigns/mes_es_flow_divergence_reversion/variants/ES/1m/afternoon_mes_large20_buy_pressure_short_2020start.yaml`.
+  It must not be run until the approved ES+MES `trades` cache exists at
+  `data/cache/orderflow/es_mes_flow_divergence_1m_20200101_20260609.csv`.
+- Spend boundary: no Databento quote/depth or ES+MES trade downloads were run in
+  this checkpoint. Either branch needs a fresh metadata/cost check and explicit
+  approval before pulling paid data.
+
+## ES EIA Petroleum Inventory Stress Re-Audit
+
+- Status: rejected before staged implementation. This rechecked the reachable
+  official EIA historical XLS route, so the petroleum branch should remain
+  closed unless a materially different execution signal is introduced.
+- Why tested: weekly petroleum inventories are a no-cost official physical
+  supply/demand source, distinct from BLS input-price pressure, Census trade
+  balance, drought/weather/climate stress, ES/MES microstructure divergence,
+  quote-liquidity sweep, and accepted trend/orderflow continuation. Academic
+  framing used Hamilton/Kilian-style oil shock and macroeconomic activity
+  evidence: petroleum supply/demand stress can proxy transient macro risk
+  pressure, but the ES translation still has to be split-stable after costs.
+- Source audit:
+  - Official EIA historical XLS files loaded successfully from `hist_xls` for
+    `WCESTUS1`, `WCRSTUS1`, `W_EPC0_SAX_YCUOK_MBBL`, `WGTSTUS1`, and
+    `WDISTUS1`.
+  - Feature cache:
+    `/private/tmp/eia_petroleum_stress_features.csv`.
+  - Screen results:
+    `/private/tmp/eia_petroleum_stress_es_screen_all.csv` and
+    `/private/tmp/eia_petroleum_stress_es_screen_top.csv`.
+  - Scratch refresh:
+    `/private/tmp/current_scratch_candidate_audit_post_eia_petroleum_stress_20260614.csv`.
+  - ES cache:
+    `data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet`.
+- Source coverage: `2,280` weekly rows after merging U.S. crude stocks excluding
+  SPR, total crude stocks, Cushing crude stocks, total gasoline stocks, and
+  distillate stocks. Source dates run from `1982-08-20` through `2026-06-05`
+  where available; Cushing begins in `2004`.
+- No-lookahead handling: each week-ended EIA observation became eligible only
+  from source Friday plus seven calendar days. This is deliberately conservative
+  versus exact Weekly Petroleum Status Report release timestamps and avoids
+  same-day release assumptions.
+- Feature set: inventory levels, 1/4/13-week changes, percentage changes,
+  drawdowns, 13/26/52-week ranks, z-scores, mean gaps, total-inventory draw,
+  product draw, crude-minus-product draw, Cushing share of crude stocks, and
+  gasoline-plus-distillate share.
+- Diagnostic mechanics: same-session ES RTH flat holds using entries `09:35`,
+  `10:00`, `10:30`, `11:00`, `13:30`, and `14:30`, exits `12:00`, `15:30`,
+  and `15:59`, one ES contract, `$30` round-turn cost, and both no-filter rows
+  plus mean-reversion rows (`prior_down_long` and `prior_up_short`) after
+  completed intraday moves of 8/16/32/48 ticks.
+- Result summary: `3,819` eligible ES sessions, `136` feature columns, `816`
+  threshold specs, `160` outcome specs, and `36,329` retained positive
+  diagnostic rows.
+  - `0` pass-like rows.
+  - `0` near-like rows.
+  - `0` loose-shape rows.
+  - `29,011` retained mean-reversion rows, with `0` mean-reversion pass/near/
+    loose rows.
+  - `0` rows with `wfa_n >= 500` and `wfa_pf >= 1.5`.
+  - `1` row with `wfa_n >= 500` and `wfa_pf >= 1.4`, but it was not
+    mean-reversion and failed incubation badly.
+  - `0` rows with `wfa_n >= 400`, `wfa_pf >= 1.4`, `incubation_n >= 50`, and
+    `incubation_pf >= 1.2`.
+- Best WFA500/PF row: `all_inventory_draw4_from_mean13 <= -19711.538462`,
+  no prior filter, long `09:35 -> 15:30`; early n146/PF `0.955`, WFA n571/PF
+  `1.416`/MAR `6.862`, core n64/PF `2.586`, incubation n51/PF `0.433`, and
+  full n768/PF `1.177`.
+- Best dense mean-reversion rows were weak: low gasoline-stock 26-week rank,
+  prior-up short `14:30 -> 15:59`, had WFA n427/PF `1.044`, early PF `0.760`,
+  incubation n63/PF `1.552`, and full PF `1.073`; low crude-ex-SPR rank had
+  WFA n418/PF `1.037` and full PF `0.951`.
+- Best loose-looking mean-reversion row: `products_draw4_pct_rank26 <=
+  0.307692`, prior-down long `13:30 -> 15:30`; early n109/PF `0.905`, WFA
+  n337/PF `1.406`, core n74/PF `1.692`, incubation n58/PF `0.834`, and full
+  n504/PF `1.231`.
+- Promotion decision: do not stage. Official EIA petroleum inventory state is
+  valid enough to screen through the XLS path, but the ES intraday translation
+  either becomes sparse high-PF event pockets or dense low-PF/holdout-failed
+  exposure. Do not rerun simple crude/gasoline/distillate/Cushing inventory
+  level, drawdown, rebuild, rank, z-score, product-draw, total-draw, or
+  inventory-share variants without materially different non-petroleum
+  confirmation.
+
+## ES BLS Productivity / Unit-Labor-Cost Stress Screen
+
+- Status: rejected before staged implementation. This is a distinct official
+  macro cost/efficiency source, but the ES intraday mean-reversion translation
+  did not clear even a pre-campaign diagnostic gate.
+- Why tested: productivity and unit-labor-cost shocks are linked to production-
+  based asset-pricing and labor-cost pressure research. A plausible ES
+  translation is that weak real output/productivity or rising unit labor costs
+  proxy slow-moving macro stress, and same-day ES weakness may partially
+  mean-revert when the stress state is already known.
+- Source audit:
+  - Official current-history FRED graph CSV mirrors of BLS Labor Productivity
+    and Costs series:
+    `https://fred.stlouisfed.org/graph/fredgraph.csv?id=OPHNFB`,
+    `https://fred.stlouisfed.org/graph/fredgraph.csv?id=ULCNFB`,
+    `https://fred.stlouisfed.org/graph/fredgraph.csv?id=COMPRNFB`,
+    `https://fred.stlouisfed.org/graph/fredgraph.csv?id=HOANBS`,
+    `https://fred.stlouisfed.org/graph/fredgraph.csv?id=OUTNFB`, and
+    `https://fred.stlouisfed.org/graph/fredgraph.csv?id=PRS85006092`.
+  - Feature cache:
+    `/private/tmp/bls_productivity_unit_labor_features.csv`.
+  - Flat screen results:
+    `/private/tmp/bls_productivity_unit_labor_es_screen_all.csv` and
+    `/private/tmp/bls_productivity_unit_labor_es_screen_top.csv`.
+  - Managed-exit rescue:
+    `/private/tmp/bls_productivity_unit_labor_path_rescue_top.csv`.
+  - ES cache:
+    `data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet`.
+- Source coverage: six quarterly BLS/FRED series with `317` source quarters from
+  `1947-Q1` through `2026-Q1`; the ES screen had `3,817` eligible RTH sessions
+  from `2011-01-03` through `2026-06-09`.
+- No-lookahead handling: each quarterly observation became eligible only after
+  quarter-end plus `90` calendar days. This deliberately excluded `2026-Q1`
+  from the current ES sample and is still only a current-history diagnostic; any
+  future pass would require exact BLS release/vintage validation.
+- Feature set: labor productivity, unit labor cost, real compensation per hour,
+  hours worked, real output, published labor-productivity annual-rate change,
+  1- and 4-quarter changes/pct changes, 8/16/32-quarter ranks and z-scores,
+  unit-labor-cost-minus-productivity pressure, compensation-minus-productivity
+  pressure, and output-minus-hours pressure.
+- Flat diagnostic mechanics: same-session ES RTH holds using entries `09:35`,
+  `10:00`, `10:30`, `11:00`, `13:30`, and `14:30`, exits `12:00`, `15:30`,
+  and `15:59`, one ES contract, `$30` round-turn cost, no-filter rows, and
+  mean-reversion rows (`prior_down_long`, `prior_up_short`, `gap_down_long`,
+  and `gap_up_short`).
+- Flat result summary: `185` feature columns, `174` screened feature columns,
+  and `3,132` retained positive split rows.
+  - `0` pass-like rows.
+  - `0` near-like rows.
+  - `6` loose-shape rows, all mean-reversion rows.
+  - `0` rows with `wfa_n >= 500` and `wfa_pf >= 1.5`.
+  - `0` rows with `wfa_n >= 500` and `wfa_pf >= 1.4`.
+- Best loose flat row: low 8-quarter rank of four-quarter real-output change
+  (`real_output_chg4_rank8 <= 0.30`), prior-down long `10:30 -> 15:30`; full
+  n437/PF `1.361`, WFA n304/PF `1.377`/MAR `2.678`, core n27/PF `2.355`, and
+  incubation n52/PF `1.223`. It failed WFA density/PF and core density.
+- Focused managed-exit rescue: took the six loose rows plus the strongest
+  bounded mean-reversion diagnostics, `20` candidate rows total, and tested
+  stop-first paths with `stop_pct` `0.0025`, `0.0035`, `0.005`, `0.0075`, and
+  `0.010`, and targets `1R`, `1.5R`, `2R`, `3R`, and `4R`. The rescue retained
+  `232` positive rows, with `0` pass-like and `0` near-like rows.
+- Best managed row: `real_output_chg4_rank16 <= 0.30`, prior-down long
+  `11:00 -> 15:30`, `stop_pct=0.010`, `target_r=3.0`; full n274/PF `1.593`,
+  WFA n190/PF `1.738`/MAR `6.534`, core n53/PF `1.799`, and incubation n28/PF
+  `1.021`. This is a sparse current-history pocket, not a promotable campaign.
+- Promotion decision: do not stage. BLS productivity/unit-labor-cost state is a
+  valid official macro source, but the simple ES intraday translation either
+  lacks WFA density, fails the WFA PF gate, or depends on too few quarterly
+  states with weak 2025-2026 holdout behavior. Do not rerun simple productivity,
+  unit-labor-cost, compensation, hours, real-output, productivity-minus-cost,
+  or output-minus-hours rank/z-score/change variants without exact BLS vintage
+  validation and materially different execution confirmation.
+
+## Post-BLS-Productivity Candidate Refresh
+
+- Status: no new independent ES mean-reversion campaign was promoted after the
+  BLS productivity/unit-labor-cost rejection.
+- Duplicate/source refresh: the remaining no-cost source list is still covered
+  by prior ledger closures. This includes GSCPI, regional Fed manufacturing
+  surveys, ICI/fund-flow/MMF/NAAIM sources, volatility/option/Treasury/
+  commodity/FX lanes, labor/retail/housing/business-formation/inventory/
+  capacity/utilization sources, OECD CLI, JOLTS/claims, consumer-sentiment and
+  survey-expectations sources, Beige Book/FOMC text, AQI/weather/lunar/sunspot/
+  daylight/DST calendar sources, and prior price-only market-structure variants.
+- Scratch audit: wrote
+  `/private/tmp/current_scratch_candidate_audit_post_bls_productivity_20260614.csv`
+  after scanning `165` `/private/tmp/*top*.csv`, `*all*.csv`, and
+  `*summary*.csv` files, reading up to `5,000` rows per file.
+- Scratch audit result: `44` files had at least one interesting flag; `1` file
+  had pass-flagged rows, `19` had near-flagged rows, and `12` had loose-shape
+  rows. The only pass flags came from `/private/tmp/campaign_summary_mining.csv`
+  and mapped to the existing ES `morning_orderflow_momentum` signed-flow
+  full-stage passes, not a new mean-reversion alpha.
+- The new BLS productivity files contributed `0` pass-like rows, `0` near-like
+  rows, and only the six flat loose rows already rejected above. Remaining
+  near/loose flags are already rejected or covered families, including Chicago
+  Fed NFCI/CFNAI, House filing-pressure, BLS price pressure, NAAIM exposure,
+  USDM drought, FHWA VMT, CDC ILINet, personal saving/PCE/profit-margin, and
+  similar prior audits.
+- Current priority remains unchanged:
+  1. First: `mes_es_flow_divergence_reversion/ES/1m/afternoon_mes_large20_buy_pressure_short`
+     after approved longer ES+MES `trades` history and the predeclared
+     validation protocol in
+     `research_artifacts/es_mes_flow_divergence_validation_protocol_20260614.md`.
+  2. Second: `quote_liquidity_sweep_reversion/ES/1m/tbbo_failed_pdh_pdl_or30_sweep_reclaim`
+     as a bounded one-year ES `tbbo` pilot governed by
+     `research_artifacts/es_quote_liquidity_sweep_pilot_protocol_20260614.md`.
+- No paid Databento data was pulled. Rerun metadata/cost checks and get explicit
+  approval before either the ES+MES `trades` validation dataset or the ES `tbbo`
+  liquidity-sweep pilot.
+
+## ES Report-Tree Reversion Audit
+
+- Status: no hidden ES report-tree mean-reversion pass was found. This does not
+  finish the third-strategy objective; it narrows the next action to the
+  already ranked data-gated branches.
+- Audit artifact:
+  `research_artifacts/es_campaign_summary_reversion_audit_20260614.csv`.
+- Scope: scanned `184` ES `campaign_test_summary.json` files under
+  `data/reports/campaigns`.
+- Method note: the audit used stage progression rather than the top-level
+  `passed` boolean because existing accepted reports can still contain later
+  legacy `acceptance_oos_test` failures.
+- Reversion-like report count: `58`, using campaign/variant keywords including
+  reversion, reversal, fade, sweep, gap, inventory, absorption, exhaustion,
+  liquidity, and divergence.
+- Only three reversion-like ES summaries reached both limited core and limited
+  monkey before failing WFA:
+  - `liquidity_risk_capacity_priority/ES/5m/cftc_rrp_vx_priority_long`.
+  - `bankruptcy_distress_reversion/ES/1m/chapter11_yoy_prior_down_long`.
+  - `mes_es_flow_divergence_reversion/ES/1m/afternoon_mes_large20_buy_pressure_short`.
+- Promotion decision: no existing report-tree ES mean-reversion candidate is
+  live-eligible or sufficient for the independent third-alpha objective. The
+  current actionable sequence remains:
+  1. First: `mes_es_flow_divergence_reversion/ES/1m/afternoon_mes_large20_buy_pressure_short_2020start`
+     after approved longer ES+MES `trades` history and the predeclared protocol.
+  2. Second: `quote_liquidity_sweep_reversion/ES/1m/tbbo_failed_pdh_pdl_or30_sweep_reclaim`
+     after an approved bounded one-year ES `tbbo` pilot.
+- No paid Databento data was pulled for this audit.
+
+## ES AQR BAB/QMJ Factor-Stress Screen
+
+- Status: rejected before staged implementation. This is an academically clean,
+  independent equity-factor state thesis, but it did not produce a promotable ES
+  mean-reversion campaign.
+- Academic/source framing:
+  - BAB used the AQR daily Betting Against Beta equity factor workbook, based on
+    Frazzini and Pedersen's "Betting Against Beta" research.
+  - QMJ used the AQR daily Quality Minus Junk equity factor workbook, based on
+    Asness, Frazzini, and Pedersen's "Quality Minus Junk" research.
+  - Thesis tested: broad equity factor stress/relief could create same-day ES
+    index reversion pressure after low-beta or quality factor underperformance.
+- Source/data artifacts:
+  - BAB workbook:
+    `/private/tmp/aqr_factor_state/bab_daily.xlsx`.
+  - QMJ workbook:
+    `/private/tmp/aqr_factor_state/qmj_daily.xlsx`.
+  - Parsed feature caches:
+    `/private/tmp/aqr_factor_state/aqr_bab_factor_features.csv` and
+    `/private/tmp/aqr_factor_state/aqr_qmj_factor_features.csv`.
+  - Scratch screen results:
+    `/private/tmp/aqr_factor_state/aqr_bab_es_screen_all.csv`,
+    `/private/tmp/aqr_factor_state/aqr_bab_es_screen_top.csv`,
+    `/private/tmp/aqr_factor_state/aqr_qmj_es_screen_all.csv`, and
+    `/private/tmp/aqr_factor_state/aqr_qmj_es_screen_top.csv`.
+  - Durable combined top-row artifact:
+    `research_artifacts/es_aqr_bab_qmj_factor_stress_top_20260614.csv`.
+  - ES cache:
+    `data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet`.
+- Source caveat: both AQR workbooks state that AQR reconstructs full history on
+  updates. The screen therefore used them only as a current-history diagnostic;
+  any future pass would require a point-in-time or reproducible vintage policy.
+- No-lookahead handling: each daily factor return became eligible no earlier than
+  the next business-day ES session, then was carried forward only after that
+  eligibility date.
+- Feature set: USA daily factor return, 3/5/10/21/63-day sums and means,
+  21/63/126/252-day ranks and z-scores of the daily factor return and 5-day sum,
+  plus absolute, negative-stress, and positive-pressure variants.
+- ES diagnostic mechanics: fixed RTH holds using entries `09:35`, `10:00`,
+  `10:30`, `11:00`, `13:30`, and `14:30`; exits `12:00`, `15:30`, and `15:59`;
+  one ES contract; `$30` round-turn cost; no-filter longs/shorts plus
+  `prior_down_long` and `prior_up_short` mean-reversion filters.
+- BAB coverage/result:
+  - Parsed factor coverage: `1930-12-01` through `2026-03-31`.
+  - ES screen coverage: `3,817` sessions from `2011-01-03` through `2026-06-09`.
+  - Screen rows: `9,210`.
+  - `0` pass-like rows, `0` near-like rows, and `2` loose-shape rows.
+  - Best loose row: `bab_usa_rank126 <= 0.190476`, no-filter long
+    `09:35 -> 15:59`, full n780/PF `1.389`, WFA n492/PF `1.487`, core
+    n85/PF `1.316`, incubation n109/PF `1.273`. It misses promotion because WFA
+    density is below 500 and WFA PF is below 1.5.
+- QMJ coverage/result:
+  - Parsed factor coverage: `1957-07-01` through `2026-03-31`.
+  - ES screen coverage: `3,817` sessions from `2011-01-03` through `2026-06-09`.
+  - Screen rows: `33,536`.
+  - `0` pass-like rows, `0` near-like rows, and `4` loose-shape rows.
+  - Best loose row: `qmj_usa_rank126 <= 0.198413`, no-filter long
+    `09:35 -> 15:59`, full n786/PF `1.291`, WFA n501/PF `1.355`, core
+    n99/PF `1.286`, incubation n107/PF `1.234`. It has enough WFA density but
+    does not come close to the WFA PF gate.
+- Promotion decision: do not stage BAB/QMJ factor-stress ES variants. The edge
+  shape is directionally plausible but too weak after ES costs and split testing.
+  Do not rerun simple BAB/QMJ level, return, sum, rank, z-score, low-factor-stress
+  long, or high-factor-pressure short variants without materially different
+  execution confirmation and a point-in-time vintage plan.
+- Current priority remains unchanged:
+  1. First: `mes_es_flow_divergence_reversion/ES/1m/afternoon_mes_large20_buy_pressure_short_2020start`
+     after approved longer ES+MES `trades` history and the predeclared protocol.
+  2. Second: `quote_liquidity_sweep_reversion/ES/1m/tbbo_failed_pdh_pdl_or30_sweep_reclaim`
+     after an approved bounded one-year ES `tbbo` pilot.
+
+## Post-AQR Scratch-Candidate Audit
+
+- Status: no unresolved saved pass-shaped ES mean-reversion candidate was found
+  after adding the AQR BAB/QMJ outputs.
+- Audit artifact:
+  `research_artifacts/current_scratch_candidate_audit_post_aqr_20260614.csv`.
+- Scope: scanned `166` scratch CSV files from top-level `/private/tmp` plus
+  `/private/tmp/aqr_factor_state`, reading up to `5,000` rows per file.
+- Result:
+  - `0` files with positive pass flags and `0` pass-flagged rows.
+  - `19` files with near flags and `347` near-flagged rows.
+  - `8` files with loose flags and `20` loose rows.
+- AQR contribution: BAB/QMJ added only loose rows, no pass or near rows.
+  - `/private/tmp/aqr_factor_state/aqr_bab_es_screen_all.csv`: `0` pass,
+    `0` near, `2` loose.
+  - `/private/tmp/aqr_factor_state/aqr_qmj_es_screen_all.csv`: `0` pass,
+    `0` near, `4` loose.
+- The remaining near rows are already rejected or covered source families from
+  prior audits, not new live-eligible evidence.
+- Current actionable sequence remains data-gated:
+  1. First: build and validate the predeclared ES/MES 2020-start trade-history
+     sibling.
+  2. Second: run the quote-confirmed ES `tbbo` liquidity-sweep pilot if the data
+     download is explicitly approved.
+
+## Data-Gated Next-Action Checkpoint
+
+- Status: the independent ES mean-reversion objective is blocked on external
+  market-data approval, not on another local source-screen pass.
+- Current-state checks:
+  - No local SPY/SPX/ETF minute dataset was found under `data/` for a cash-futures
+    dislocation or ETF-futures basis reversion test.
+  - ES orderflow absorption/exhaustion is not a fresh route: `orderflow_regime`
+    `absorption_exhaustion_reversal`, `orderflow_opening_drive`
+    `opening_absorption_fade`, and `opening_price_flow_divergence_fade` are
+    already in the report tree and failed before WFA promotion.
+  - The post-AQR scratch audit found `0` pass-flagged saved scratch rows after
+    scanning `/private/tmp` and `/private/tmp/aqr_factor_state`.
+- Best current non-depth candidate:
+  `mes_es_flow_divergence_reversion/ES/1m/afternoon_mes_large20_buy_pressure_short_2020start`.
+  Required next step is explicit approval to obtain 2020-start ES+MES Databento
+  `trades` history, then run the predeclared validation protocol in
+  `research_artifacts/es_mes_flow_divergence_validation_protocol_20260614.md`.
+  The existing metadata-only estimate is
+  `research_artifacts/databento_es_mes_trades_20200101_20260609_cost_manifest_20260614.json`
+  with sampled combined estimate about `$949.34`.
+- Best true liquidity-sweep candidate:
+  `quote_liquidity_sweep_reversion/ES/1m/tbbo_failed_pdh_pdl_or30_sweep_reclaim`.
+  Required next step is explicit approval for the bounded one-year ES `tbbo`
+  pilot in `research_artifacts/es_quote_liquidity_sweep_pilot_protocol_20260614.md`.
+  The existing metadata-only estimate is
+  `research_artifacts/databento_es_tbbo_20250609_20260609_cost_manifest_20260614.json`
+  with sampled one-year RTH `tbbo` cost about `$14.88` and estimated size
+  `8.08 GB`.
+- Do not treat further no-cost public macro/news/factor/calendar/source scans as
+  higher priority unless a genuinely new point-in-time source is introduced. The
+  ledger now has repeated mechanical audits showing no unresolved saved
+  pass-shaped ES mean-reversion candidate.

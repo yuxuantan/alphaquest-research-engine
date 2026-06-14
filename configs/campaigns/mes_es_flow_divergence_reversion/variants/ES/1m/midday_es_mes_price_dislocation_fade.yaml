@@ -4,16 +4,25 @@ strategy_name: trade_orderflow_pressure
 symbol: ES
 dataset_id: es_mes_price_flow_divergence_1m_20250610_20260608
 timeframe: 1m
-
 research_metadata:
-  academic_source: "Hasbrouck (1995); Kaniel, Saar, and Titman (2008); Barber, Odean, and Zhu (2009)"
-  doi: "10.1111/j.1540-6261.1995.tb04054.x; 10.1111/j.1540-6261.2008.01316.x; 10.1093/rfs/hhn035"
-  edge_thesis: "ES and MES are tightly linked contracts, but the smaller-notional MES contract can temporarily move farther than ES around retail-like or liquidity-demand bursts. Fade completed MES-vs-ES return dislocations in ES for same-session mean reversion."
-  mechanic: "At 11:00 ET, use only completed 10:57-10:59 ES and MES bars. Compute MES 3-minute return ticks minus ES 3-minute return ticks. If MES is at least the configured threshold richer than ES, short ES; if MES is at least the threshold cheaper than ES, go long ES. Use one trade maximum per session, a signal percent stop, a fixed-R target, and a 14:30 ET flat time."
-  timeframe_rationale: "Signals use completed 1-minute bars and enter on the next 1-minute bar open."
-  evidence_directness: "Moderate/indirect; this is a linked-market price-discovery/temporary-dislocation translation, not an account-classified retail or inventory feed."
-  data_status: "One-year local ES+MES trade-side cache only; not live eligible until longer ES+MES history passes a predeclared 2020-start validation protocol."
-
+  academic_source: Hasbrouck (1995); Kaniel, Saar, and Titman (2008); Barber, Odean,
+    and Zhu (2009)
+  doi: 10.1111/j.1540-6261.1995.tb04054.x; 10.1111/j.1540-6261.2008.01316.x; 10.1093/rfs/hhn035
+  edge_thesis: ES and MES are tightly linked contracts, but the smaller-notional MES
+    contract can temporarily move farther than ES around retail-like or liquidity-demand
+    bursts. Fade completed MES-vs-ES return dislocations in ES for same-session mean
+    reversion.
+  mechanic: At 11:00 ET, use only completed 10:57-10:59 ES and MES bars. Compute MES
+    3-minute return ticks minus ES 3-minute return ticks. If MES is at least the configured
+    threshold richer than ES, short ES; if MES is at least the threshold cheaper than
+    ES, go long ES. Use one trade maximum per session, a signal percent stop, a fixed-R
+    target, and a 14:30 ET flat time.
+  timeframe_rationale: Signals use completed 1-minute bars and enter on the next 1-minute
+    bar open.
+  evidence_directness: Moderate/indirect; this is a linked-market price-discovery/temporary-dislocation
+    translation, not an account-classified retail or inventory feed.
+  data_status: One-year local ES+MES trade-side cache only; not live eligible until
+    longer ES+MES history passes a predeclared 2020-start validation protocol.
 data:
   dataset_id: es_mes_price_flow_divergence_1m_20250610_20260608
   source_timeframe: 1m
@@ -24,30 +33,28 @@ data:
   exchange_timezone: America/New_York
   feature_set: none
   warmup_days: 0
-  rth_start: "09:30:00"
-  rth_end: "15:59:00"
-
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
 apex_rules:
   enabled: true
   timezone: America/New_York
-  latest_flat_time: "16:59:59"
+  latest_flat_time: '16:59:59'
   force_flatten_enabled: true
-  force_flatten_time: "16:58:30"
-  latest_entry_time: "16:45:00"
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
   cancel_pending_orders_before_flatten: true
   no_overnight_positions: true
   reject_if_position_after_flatten_deadline: true
   reject_if_pending_order_after_flatten_deadline: true
   reject_if_entry_after_latest_entry_time: true
-
 strategy:
   entry:
     module: trade_orderflow_pressure
     params:
       setup_mode: es_mes_price_dislocation_fade
       bar_interval_minutes: 1
-      entry_time: "11:00:00"
-      flatten_time: "14:30:00"
+      entry_time: '11:00:00'
+      flatten_time: '14:30:00'
       flow_column: mes_minus_es_return_ticks_3
       flow_threshold: 1.0
       positive_flow_direction: short
@@ -55,7 +62,7 @@ strategy:
       allow_short: true
       return_confirmation: none
       max_trades_per_day: 1
-      stop_pct: 0.010
+      stop_pct: 0.01
       target_r_multiple: 4.0
   tp:
     module: signal_fixed_r
@@ -64,32 +71,31 @@ strategy:
   sl:
     module: signal_percent_from_entry
     params:
-      default_stop_pct: 0.010
+      default_stop_pct: 0.01
       round_to_tick: true
-  flatten_time: "14:30:00"
-
+  flatten_time: '14:30:00'
 core:
   data_subset:
-    start_date: "2025-06-10"
-    end_date: "2026-06-08"
-    session_labels: [RTH]
+    start_date: '2025-06-10'
+    end_date: '2026-06-08'
+    session_labels:
+    - RTH
   initial_balance: 150000
   tick_size: 0.25
-  tick_value: 12.50
-  commission_per_contract: 2.50
+  tick_value: 12.5
+  commission_per_contract: 2.5
   slippage_ticks: 1
   position_sizing:
     mode: fixed_contracts
     contracts: 1
   daily_loss_limit: 3000
   daily_profit_stop: 5000
-  flatten_time: "14:30:00"
+  flatten_time: '14:30:00'
   max_trades_per_day: 1
-
 benchmarks:
   min_trades_per_year: 50
   preferred_min_total_trades: 500
-  min_profit_factor: 1.30
+  min_profit_factor: 1.3
   min_total_net_profit: 0
   min_expectancy_r: 0.05
   min_win_rate: 0.45
@@ -98,36 +104,50 @@ benchmarks:
   min_mar: 0.5
   max_daily_loss: 1500
   max_consecutive_losses: 8
-  max_best_day_concentration: 0.40
-  min_positive_month_rate: 0.50
-  min_wfa_profitable_window_rate: 0.70
-  min_monte_carlo_prop_pass_chance: 0.50
-
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
 core_grid:
   data_subset:
-    start_date: "2025-06-10"
-    end_date: "2026-06-08"
-    session_labels: [RTH]
+    start_date: '2025-06-10'
+    end_date: '2026-06-08'
+    session_labels:
+    - RTH
   objective: MAR
-  min_profitable_iteration_rate: 0.70
+  min_profitable_iteration_rate: 0.7
   retain_iteration_reports: false
   parallel:
     enabled: true
     workers: 8
     scope: grid
   parameters:
-    entry.params.flow_threshold: [0.75, 1.0, 1.25, 1.5, 2.0]
-    entry.params.stop_pct: [0.006, 0.008, 0.010, 0.012]
-    entry.params.target_r_multiple: [1.5, 2.0, 3.0, 4.0, 6.0]
-
+    entry.params.flow_threshold:
+    - 0.75
+    - 1.0
+    - 1.25
+    - 1.5
+    - 2.0
+    entry.params.stop_pct:
+    - 0.006
+    - 0.008
+    - 0.01
+    - 0.012
+    entry.params.target_r_multiple:
+    - 1.5
+    - 2.0
+    - 3.0
+    - 4.0
+    - 6.0
 monkey:
   data_subset:
-    start_date: "2025-06-10"
-    end_date: "2026-06-08"
-    session_labels: [RTH]
+    start_date: '2025-06-10'
+    end_date: '2026-06-08'
+    session_labels:
+    - RTH
   runs: 1000
   seed: 7
-  beat_threshold: 0.90
+  beat_threshold: 0.9
   retain_iteration_reports: false
   parallel:
     enabled: false
@@ -137,17 +157,17 @@ monkey:
     trade_count_tolerance_pct: 0.05
     trade_count_tolerance: 0
     long_short_ratio_tolerance: 0.05
-    average_bars_tolerance_pct: 0.10
-    duration_shape: 0.70
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
     rth_only: true
     enforce_non_overlapping: true
     enforce_max_trades_per_day: false
-
 wfa:
   data_subset:
-    start_date: "2025-06-10"
-    end_date: "2026-06-08"
-    session_labels: [RTH]
+    start_date: '2025-06-10'
+    end_date: '2026-06-08'
+    session_labels:
+    - RTH
   mode: unanchored
   train_months: 4
   test_months: 1
@@ -160,27 +180,136 @@ wfa:
     workers: 1
     scope: grid
   parameters:
-    entry.params.flow_threshold: [0.75, 1.0, 1.25, 1.5]
-    entry.params.stop_pct: [0.006, 0.008, 0.010, 0.012]
-    entry.params.target_r_multiple: [1.5, 2.0, 3.0, 4.0]
-
+    entry.params.flow_threshold:
+    - 0.75
+    - 1.0
+    - 1.25
+    - 1.5
+    entry.params.stop_pct:
+    - 0.006
+    - 0.008
+    - 0.01
+    - 0.012
+    entry.params.target_r_multiple:
+    - 1.5
+    - 2.0
+    - 3.0
+    - 4.0
 campaign_tests:
   walk_forward_analysis:
     data_window:
       mode: exclude_last_months
       months: 0
-
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: summary.windows
+      min: 10
+    - metric: stitched_oos_metrics.profit_factor
+      exclusive_min: 1.5
+    - metric: stitched_oos_metrics.mar
+      exclusive_min: 0.5
+    - metric: stitched_oos_metrics.expectancy_r
+      exclusive_min: 0.2
+    - metric: stitched_oos_metrics.total_trades
+      exclusive_min: 500
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      min: 100
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      exclusive_min: 1.2
+    - metric: metrics.mar
+      exclusive_min: 1.2
+    - metric: metrics.expectancy_r
+      exclusive_min: 0.15
+    - metric: metrics.total_trades
+      exclusive_min: 75
+    - metric: metrics.apex_rule_violations
+      max: 0
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  acceptance_oos_test:
+    criteria:
+    - metric: metrics.profit_factor
+      exclusive_min: 1.2
+    - metric: metrics.mar
+      exclusive_min: 1.2
+    - metric: metrics.expectancy_r
+      exclusive_min: 0.15
+    - metric: metrics.total_trades
+      exclusive_min: 25
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 24
+    test_months: 6
 prop_rules:
   starting_balance: 150000
   daily_loss_limit: 4000
   trailing_drawdown: 4000
   max_contracts: 10
-  max_best_day_profit_percentage: 0.50
+  max_best_day_profit_percentage: 0.5
   min_trading_days: 2
   payout_threshold: 188.9
   profit_target_pct: 0.06
   drawdown_limit_pct: 0.0267
-
 monte_carlo:
   trade_source: core
   runs: 500

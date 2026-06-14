@@ -23,6 +23,20 @@ def test_stage_criteria_reports_pass_and_fail():
     assert results[1]["actual"] == 1.1
 
 
+def test_stage_criteria_support_exclusive_min():
+    results = evaluate_criteria(
+        {"metrics": {"profit_factor": 1.2, "mar": 1.2001}},
+        [
+            {"metric": "metrics.profit_factor", "exclusive_min": 1.2},
+            {"metric": "metrics.mar", "exclusive_min": 1.2},
+        ],
+    )
+
+    assert results[0]["passed"] is False
+    assert results[0]["expected"] == {"exclusive_min": 1.2}
+    assert results[1]["passed"] is True
+
+
 def test_default_stage_criteria_fail_apex_rule_violations():
     criteria = campaign_stages._criteria_for_stage("simulated_incubation_core", {})
     results = evaluate_criteria(
@@ -53,7 +67,36 @@ def test_length_adjusted_mar_requirement_anchors_and_clamps():
     assert campaign_stages.length_adjusted_mar_requirement(20.0) == 0.5
 
 
-def test_wfa_mar_default_criteria_use_length_adjusted_threshold():
+def test_default_stage_criteria_match_screenshot_benchmarks():
+    limited_monkey = campaign_stages._criteria_for_stage("limited_monkey_test", {})
+    wfa = campaign_stages._criteria_for_stage("walk_forward_analysis", {})
+    incubation = campaign_stages._criteria_for_stage("simulated_incubation_core", {})
+    acceptance = campaign_stages._criteria_for_stage(campaign_stages.ACCEPTANCE_STAGE, {})
+
+    def by_metric(criteria):
+        return {item["metric"]: item for item in criteria}
+
+    assert by_metric(limited_monkey)["summary.core_beats_monkey_net_profit_rate"]["min"] == 0.90
+    assert by_metric(wfa)["stitched_oos_metrics.profit_factor"]["min"] == 1.2
+    assert by_metric(wfa)["stitched_oos_metrics.mar"]["min"] == 0.4
+    assert by_metric(wfa)["stitched_oos_metrics.total_trades"]["min"] == 500
+    assert "stitched_oos_metrics.expectancy_r" not in by_metric(wfa)
+    assert "stitched_oos_metrics.win_rate" not in by_metric(wfa)
+    assert by_metric(campaign_stages._criteria_for_stage("wfa_oos_monkey_test", {}))[
+        "summary.core_beats_monkey_net_profit_rate"
+    ]["min"] == 0.80
+    assert by_metric(incubation)["metrics.profit_factor"]["min"] == 1.0
+    assert by_metric(incubation)["metrics.mar"]["min"] == 1.0
+    assert by_metric(incubation)["metrics.total_trades"]["min"] == 75
+    assert "metrics.expectancy_r" not in by_metric(incubation)
+    assert by_metric(acceptance)["metrics.profit_factor"]["min"] == 1.0
+    assert by_metric(acceptance)["metrics.mar"]["min"] == 1.0
+    assert by_metric(acceptance)["metrics.total_trades"]["min"] == 25
+    assert "metrics.expectancy_r" not in by_metric(acceptance)
+    assert "metrics.win_rate" not in by_metric(acceptance)
+
+
+def test_wfa_mar_default_criteria_use_fixed_screenshot_threshold():
     criteria = campaign_stages._criteria_for_stage("walk_forward_analysis", {})
     results = evaluate_criteria(
         {
@@ -63,9 +106,8 @@ def test_wfa_mar_default_criteria_use_length_adjusted_threshold():
                 "oos_evaluation_years": 15.0,
             },
             "stitched_oos_metrics": {
-                "profit_factor": 1.6,
-                "mar": 0.55,
-                "expectancy_r": 0.25,
+                "profit_factor": 1.2,
+                "mar": 0.4,
                 "total_trades": 600,
                 "win_rate": 0.50,
                 "apex_rule_violations": 0,
@@ -76,12 +118,10 @@ def test_wfa_mar_default_criteria_use_length_adjusted_threshold():
 
     mar = [item for item in results if item["metric"] == "stitched_oos_metrics.mar"][0]
     assert mar["passed"] is True
-    assert mar["expected"]["min"] == 0.5
-    assert mar["expected"]["dynamic_min"] == "length_adjusted_mar"
-    assert mar["expected"]["span_years"] == 15.0
+    assert mar["expected"] == {"min": 0.4}
 
 
-def test_wfa_mar_default_criteria_stay_strict_for_short_oos_spans():
+def test_wfa_monte_carlo_probability_remains_exclusive():
     criteria = campaign_stages._criteria_for_stage("walk_forward_analysis", {})
     results = evaluate_criteria(
         {
@@ -91,9 +131,8 @@ def test_wfa_mar_default_criteria_stay_strict_for_short_oos_spans():
                 "oos_evaluation_years": 3.0,
             },
             "stitched_oos_metrics": {
-                "profit_factor": 1.6,
-                "mar": 1.49,
-                "expectancy_r": 0.25,
+                "profit_factor": 1.2,
+                "mar": 0.4,
                 "total_trades": 600,
                 "win_rate": 0.50,
                 "apex_rule_violations": 0,
@@ -103,8 +142,13 @@ def test_wfa_mar_default_criteria_stay_strict_for_short_oos_spans():
     )
 
     mar = [item for item in results if item["metric"] == "stitched_oos_metrics.mar"][0]
-    assert mar["passed"] is False
-    assert mar["expected"]["min"] == 1.5
+    assert mar["passed"] is True
+    assert mar["expected"] == {"min": 0.4}
+
+    mc_criteria = campaign_stages._criteria_for_stage("wfa_oos_monte_carlo", {})
+    mc_results = evaluate_criteria({"summary": {"probability_profit_before_drawdown": 0.5}}, mc_criteria)
+    assert mc_results[0]["passed"] is False
+    assert mc_results[0]["expected"] == {"exclusive_min": 0.5}
 
 
 def test_incubation_params_are_selected_from_best_wfa_oos_window():
@@ -183,6 +227,10 @@ def test_incubation_train_selection_forces_mar_objective(tmp_path, monkeypatch):
         detail_data=None,
     ):
         seen["objective"] = grid_config["objective"]
+        seen["selection_min_trades_per_year"] = grid_config.get("selection_min_trades_per_year")
+        seen["selection_exclusive_min_trades_per_year"] = grid_config.get(
+            "selection_exclusive_min_trades_per_year"
+        )
         return (
             pd.DataFrame(
                 [
@@ -216,12 +264,15 @@ def test_incubation_train_selection_forces_mar_objective(tmp_path, monkeypatch):
         {
             "data_subset": {"start_date": "2024-01-01", "end_date": "2024-01-31"},
             "objective": "net_profit",
+            "selection_min_trades_per_year": 50,
         },
         tmp_path,
         skip_validation=True,
     )
 
     assert seen["objective"] == "MAR"
+    assert seen.get("selection_min_trades_per_year") is None
+    assert seen["selection_exclusive_min_trades_per_year"] == 50
     assert selected_params == {"entry.params.stop_pct": 0.005}
     assert payload["selected_params"] == {"entry.params.stop_pct": 0.005}
 
@@ -229,6 +280,15 @@ def test_incubation_train_selection_forces_mar_objective(tmp_path, monkeypatch):
 def test_default_stage_order_runs_acceptance_last():
     assert campaign_stages.DEFAULT_STAGE_ORDER[-1] == campaign_stages.ACCEPTANCE_STAGE
     assert campaign_stages._stage_order({})[-1] == campaign_stages.ACCEPTANCE_STAGE
+
+
+def test_canonicalize_campaign_config_can_exclude_acceptance():
+    cfg = campaign_stages.canonicalize_campaign_config({}, include_acceptance=False)
+    campaign_tests = cfg["campaign_tests"]
+
+    assert campaign_tests["stage_order"] == campaign_stages.PRE_ACCEPTANCE_STAGE_ORDER
+    assert campaign_tests[campaign_stages.ACCEPTANCE_STAGE]["enabled"] is False
+    assert campaign_stages._stage_order(campaign_tests) == campaign_stages.PRE_ACCEPTANCE_STAGE_ORDER
 
 
 def test_explicit_stage_order_appends_acceptance_by_default():
@@ -254,7 +314,7 @@ def test_explicit_stage_order_can_disable_acceptance_append():
     assert order == ["limited_core_grid_test"]
 
 
-def test_acceptance_stage_inherits_incubation_core_criteria():
+def test_acceptance_stage_does_not_inherit_incubation_core_criteria():
     criteria = [{"metric": "metrics.profit_factor", "min": 1.1}]
 
     stage_cfg = campaign_stages._stage_config(
@@ -262,7 +322,7 @@ def test_acceptance_stage_inherits_incubation_core_criteria():
         campaign_stages.ACCEPTANCE_STAGE,
     )
 
-    assert stage_cfg["criteria"] == criteria
+    assert "criteria" not in stage_cfg
 
 
 def test_acceptance_window_uses_latest_six_months_after_two_year_train():
@@ -296,7 +356,8 @@ def test_acceptance_selection_forces_mar_objective():
     )
 
     assert selection_cfg["objective"] == "MAR"
-    assert selection_cfg["selection_min_trades_per_year"] == 50
+    assert "selection_min_trades_per_year" not in selection_cfg
+    assert selection_cfg["selection_exclusive_min_trades_per_year"] == 50
 
 
 def test_acceptance_mar_selection_prefers_mar_over_profit_factor():
@@ -326,6 +387,37 @@ def test_acceptance_mar_selection_prefers_mar_over_profit_factor():
     )
 
     assert selected == {"entry.params.stop_pct": 0.0035}
+
+
+def test_median_profitable_core_grid_row_selects_representative_profit():
+    results = pd.DataFrame(
+        [
+            {"run_id": 1, "entry.params.threshold": 1, "net_profit": -100.0, "profitable": False},
+            {"run_id": 2, "entry.params.threshold": 2, "net_profit": 100.0, "profitable": True},
+            {"run_id": 3, "entry.params.threshold": 3, "net_profit": 300.0, "profitable": True},
+            {"run_id": 4, "entry.params.threshold": 4, "net_profit": 1000.0, "profitable": True},
+        ]
+    )
+
+    row = campaign_stages._select_median_profitable_core_grid_row(
+        results,
+        {"entry.params.threshold": [1, 2, 3, 4]},
+    )
+
+    assert row["run_id"] == 3
+    assert campaign_stages._core_grid_params_from_row(
+        row,
+        {"entry.params.threshold": [1, 2, 3, 4]},
+    ) == {"entry.params.threshold": 3}
+
+
+def test_configured_stale_criteria_are_ignored_for_canonical_stage():
+    criteria = campaign_stages._criteria_for_stage(
+        "walk_forward_analysis",
+        {"criteria": [{"metric": "stitched_oos_metrics.profit_factor", "min": 1.4}]},
+    )
+
+    assert {"metric": "stitched_oos_metrics.profit_factor", "min": 1.2} in criteria
 
 
 def test_acceptance_oos_stage_writes_core_like_artifacts(tmp_path, monkeypatch):

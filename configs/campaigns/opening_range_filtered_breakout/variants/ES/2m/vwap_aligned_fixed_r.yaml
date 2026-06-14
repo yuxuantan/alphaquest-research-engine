@@ -4,7 +4,6 @@ strategy_name: opening_range_filtered_breakout
 symbol: ES
 dataset_id: 1m_full_history
 timeframe: 2m
-
 data:
   dataset_id: 1m_full_history
   source_timeframe: 1m
@@ -23,19 +22,18 @@ data:
     skip_sessions_around_roll: 1
   include_spreads: false
   warmup_days: 10
-  rth_start: "09:30:00"
-  rth_end: "16:00:00"
-  eth_start: "16:00:00"
-  eth_end: "09:29:00"
+  rth_start: 09:30:00
+  rth_end: '16:00:00'
+  eth_start: '16:00:00'
+  eth_end: 09:29:00
   rolling_volume_window: 20
-
 strategy:
   entry:
     module: opening_range_filtered_breakout
     params:
       setup_mode: continuation
       vwap_filter: trade_aligned
-      rth_start: "09:30:00"
+      rth_start: 09:30:00
       opening_range_minutes: 5
       confirmation_minutes: 1
       bar_interval_minutes: 2
@@ -43,7 +41,7 @@ strategy:
       breakout_buffer_ticks: 0
       vwap_buffer_ticks: 0
       min_volume_ratio: 1.0
-      last_entry_time: "10:30:00"
+      last_entry_time: '10:30:00'
       max_trades_per_day: 1
       skip_tuesday_longs: false
       allow_long: true
@@ -54,24 +52,23 @@ strategy:
     params:
       target_r_multiple: 1.0
       tick_size: 0.25
-      tick_value: 12.50
-      commission_per_contract: 2.50
+      tick_value: 12.5
+      commission_per_contract: 2.5
       slippage_ticks: 1
   sl:
     module: opening_range_edge
     params:
       max_stop_points: 14
       stop_offset_ticks: 0
-  flatten_time: "11:00:00"
-
+  flatten_time: '11:00:00'
 core:
   data_subset:
-    start_date: "2021-01-01"
-    end_date: "2022-12-31"
+    start_date: '2021-01-01'
+    end_date: '2022-12-31'
   initial_balance: 150000
   tick_size: 0.25
-  tick_value: 12.50
-  commission_per_contract: 2.50
+  tick_value: 12.5
+  commission_per_contract: 2.5
   slippage_ticks: 1
   position_sizing:
     mode: risk_percent_net_liq
@@ -80,8 +77,7 @@ core:
     min_contracts: 1
   daily_loss_limit: 3000
   daily_profit_stop: 5000
-  flatten_time: "11:00:00"
-
+  flatten_time: '11:00:00'
 benchmarks:
   min_trades_per_year: 80
   preferred_min_total_trades: 500
@@ -94,35 +90,46 @@ benchmarks:
   min_mar: 1.5
   max_daily_loss: 1500
   max_consecutive_losses: 8
-  max_best_day_concentration: 0.40
-  min_positive_month_rate: 0.50
-  min_wfa_profitable_window_rate: 0.70
-  min_monte_carlo_prop_pass_chance: 0.50
-
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
 core_grid:
   data_subset:
-    start_date: "2021-01-01"
-    end_date: "2022-12-31"
+    start_date: '2021-01-01'
+    end_date: '2022-12-31'
   objective: MAR
-  min_profitable_iteration_rate: 0.70
+  min_profitable_iteration_rate: 0.7
   retain_iteration_reports: false
   parallel:
     enabled: false
     workers: 1
     scope: grid
   parameters:
-    entry.params.opening_range_minutes: [5, 10, 15]
-    entry.params.max_opening_range_pct_of_open: [0.0035, 0.0055, 0.0075]
-    entry.params.min_volume_ratio: [0.75, 1.0, 1.25]
-    tp.params.target_r_multiple: [0.75, 1.0, 1.25, 1.5]
-
+    entry.params.opening_range_minutes:
+    - 5
+    - 10
+    - 15
+    entry.params.max_opening_range_pct_of_open:
+    - 0.0035
+    - 0.0055
+    - 0.0075
+    entry.params.min_volume_ratio:
+    - 0.75
+    - 1.0
+    - 1.25
+    tp.params.target_r_multiple:
+    - 0.75
+    - 1.0
+    - 1.25
+    - 1.5
 monkey:
   data_subset:
-    start_date: "2021-01-01"
-    end_date: "2022-12-31"
+    start_date: '2021-01-01'
+    end_date: '2022-12-31'
   runs: 8000
   seed: 7
-  beat_threshold: 0.90
+  beat_threshold: 0.9
   retain_iteration_reports: false
   parallel:
     enabled: false
@@ -132,16 +139,15 @@ monkey:
     trade_count_tolerance_pct: 0.05
     trade_count_tolerance: 0
     long_short_ratio_tolerance: 0.05
-    average_bars_tolerance_pct: 0.10
-    duration_shape: 0.70
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
     rth_only: true
     enforce_non_overlapping: true
     enforce_max_trades_per_day: false
-
 wfa:
   data_subset:
-    start_date: "2011-01-01"
-    end_date: "2026-05-29"
+    start_date: '2011-01-01'
+    end_date: '2026-05-29'
   mode: unanchored
   train_months: 48
   test_months: 12
@@ -154,28 +160,138 @@ wfa:
     workers: 1
     scope: grid
   parameters:
-    entry.params.opening_range_minutes: [5, 10, 15]
-    entry.params.max_opening_range_pct_of_open: [0.0035, 0.0055, 0.0075]
-    entry.params.min_volume_ratio: [0.75, 1.0, 1.25]
-    tp.params.target_r_multiple: [0.75, 1.0, 1.25, 1.5]
-
+    entry.params.opening_range_minutes:
+    - 5
+    - 10
+    - 15
+    entry.params.max_opening_range_pct_of_open:
+    - 0.0035
+    - 0.0055
+    - 0.0075
+    entry.params.min_volume_ratio:
+    - 0.75
+    - 1.0
+    - 1.25
+    tp.params.target_r_multiple:
+    - 0.75
+    - 1.0
+    - 1.25
+    - 1.5
 campaign_tests:
   simulated_incubation_core:
     data_subset:
-      start_date: "2024-11-30"
-      end_date: "2026-05-29"
-
+      start_date: '2024-11-30'
+      end_date: '2026-05-29'
+    criteria:
+    - metric: metrics.profit_factor
+      exclusive_min: 1.2
+    - metric: metrics.mar
+      exclusive_min: 1.2
+    - metric: metrics.expectancy_r
+      exclusive_min: 0.15
+    - metric: metrics.total_trades
+      exclusive_min: 75
+    - metric: metrics.apex_rule_violations
+      max: 0
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      min: 100
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: summary.windows
+      min: 10
+    - metric: stitched_oos_metrics.profit_factor
+      exclusive_min: 1.5
+    - metric: stitched_oos_metrics.mar
+      exclusive_min: 0.5
+    - metric: stitched_oos_metrics.expectancy_r
+      exclusive_min: 0.2
+    - metric: stitched_oos_metrics.total_trades
+      exclusive_min: 500
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  acceptance_oos_test:
+    criteria:
+    - metric: metrics.profit_factor
+      exclusive_min: 1.2
+    - metric: metrics.mar
+      exclusive_min: 1.2
+    - metric: metrics.expectancy_r
+      exclusive_min: 0.15
+    - metric: metrics.total_trades
+      exclusive_min: 25
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 24
+    test_months: 6
 prop_rules:
   starting_balance: 150000
   daily_loss_limit: 4000
   trailing_drawdown: 4000
   max_contracts: 10
-  max_best_day_profit_percentage: 0.50
+  max_best_day_profit_percentage: 0.5
   min_trading_days: 2
   payout_threshold: 188.9
   profit_target_pct: 0.06
   drawdown_limit_pct: 0.0267
-
 monte_carlo:
   trade_source: core
   runs: 500

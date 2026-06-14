@@ -410,6 +410,13 @@ class BacktestEngine:
             "overnight_return_late_day_momentum": {"is_rth", "prev_rth_close"},
             "overnight_inventory_reversion": {"is_rth", "overnight_high", "overnight_low", "vwap"},
             "pdh_pdl_breakout_continuation": {"is_rth", "prev_rth_high", "prev_rth_low", "volume_ratio"},
+            "positive_delta_dislocation": {
+                "is_rth",
+                "prev_rth_high",
+                "trade_orderflow_return_points_60",
+                "trade_orderflow_signed_volume_60",
+                "trade_orderflow_volume_60",
+            },
             "rth_gap_fade": {"is_rth", "prev_rth_close", "vwap"},
             "turn_of_month_bias": {"is_rth"},
             "trade_orderflow_multi_pressure": {"is_rth"},

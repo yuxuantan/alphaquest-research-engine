@@ -77,6 +77,9 @@ def test_write_equity_report_supports_run_id_selector(tmp_path):
     assert "equity-data" in html
     assert "Net liq" in html
     assert "Curr DD" in html
+    assert "Win Rate" in html
+    assert "PF" in html
+    assert "MAR" in html
 
     payload_match = re.search(
         r'<script id="equity-data" type="application/json">(.*?)</script>',
@@ -84,8 +87,14 @@ def test_write_equity_report_supports_run_id_selector(tmp_path):
     )
     assert payload_match is not None
     payload = json.loads(payload_match.group(1))
+    run_one = next(run for run in payload["runs"] if run["id"] == "1")
     run_two = next(run for run in payload["runs"] if run["id"] == "2")
+    assert run_one["summary"]["winRate"] == 1.0
+    assert run_one["summary"]["profitFactor"] == "Infinity"
     assert run_two["points"][1]["drawdownPct"] == 0.04
+    assert run_two["summary"]["winRate"] == 0.0
+    assert run_two["summary"]["profitFactor"] == 0.0
+    assert "mar" in run_two["summary"]
 
 
 def test_discover_trade_logs_finds_supported_report_files(tmp_path):

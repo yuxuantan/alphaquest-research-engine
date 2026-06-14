@@ -13,6 +13,8 @@ Candidate:
 - Primary variant: `afternoon_mes_large20_buy_pressure_short`
 - Config:
   `configs/campaigns/mes_es_flow_divergence_reversion/variants/ES/1m/afternoon_mes_large20_buy_pressure_short.yaml`
+- Predeclared 2020-start validation config:
+  `configs/campaigns/mes_es_flow_divergence_reversion/variants/ES/1m/afternoon_mes_large20_buy_pressure_short_2020start.yaml`
 - Current one-year report:
   `data/reports/campaigns/mes_es_flow_divergence_reversion/ES/es_mes_trade_orderflow_1m_20250610_20260608/1m/afternoon_mes_large20_buy_pressure_short/campaign_tests`
 
@@ -151,8 +153,20 @@ PYTHONPATH=src python3 -m propstack.build_es_mes_flow_divergence_cache \
   --out-csv data/cache/orderflow/es_mes_flow_divergence_1m_20200101_20260609.csv
 ```
 
-Before staging, add a new variant or dataset override that is identical to the
-current primary config except for `dataset_id`, `raw_csv`, and date ranges.
+The predeclared validation sibling is already present and must only be run after
+the approved cache exists:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_campaign_stages \
+  --config configs/campaigns/mes_es_flow_divergence_reversion/variants/ES/1m/afternoon_mes_large20_buy_pressure_short_2020start.yaml \
+  --skip-validation
+```
+
+It encodes the 2020-start raw CSV, 2020-2024 pre-incubation window,
+2025-2026 simulated incubation window, 24-month train / 3-month test / 3-month
+step WFA, and the standard 500-WFA-trade live-candidate gate. If the longer MES
+history still produces fewer than 500 stitched WFA OOS trades, this branch
+cannot be called a full-stage live candidate under the current policy.
 
 ## Predeclared Validation Rules
 

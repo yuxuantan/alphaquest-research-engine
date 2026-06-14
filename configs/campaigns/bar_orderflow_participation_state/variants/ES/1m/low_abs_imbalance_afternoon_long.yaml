@@ -5,24 +5,29 @@ symbol: ES
 dataset_id: databento_trades_20250609_20260608
 timeframe: 1m
 research_metadata:
-  academic_source: Easley, Lopez de Prado, and O'Hara (2012), Flow Toxicity and
-    Liquidity in a High-frequency World, Review of Financial Studies
+  academic_source: Easley, Lopez de Prado, and O'Hara (2012), Flow Toxicity and Liquidity
+    in a High-frequency World, Review of Financial Studies
   doi: 10.1093/rfs/hhs053
-  edge_thesis: >
-    Low bar-level signed-volume imbalance at a fixed intraday decision time can
-    identify lower-toxicity, more balanced liquidity conditions where a simple
+  edge_thesis: 'Low bar-level signed-volume imbalance at a fixed intraday decision
+    time can identify lower-toxicity, more balanced liquidity conditions where a simple
     afternoon ES long drift is less exposed to adverse informed flow.
-  mechanic: >
-    At 13:30 ET, rank the just-completed 5-minute absolute signed-volume
+
+    '
+  mechanic: 'At 13:30 ET, rank the just-completed 5-minute absolute signed-volume
     imbalance against prior same-clock sessions. Go long only when the rank is in
     the low tail, then flatten at 14:31 ET.
-  timeframe_rationale: >
-    The signal uses completed 1-minute bars aggregated into a 5-minute orderflow
-    state, then enters on the next 1-minute bar open.
-  evidence_directness: >
-    Moderate. The academic source supports order-flow toxicity and liquidity
-    state as an informed-flow proxy; this config tests a simplified, bar-level ES
-    implementation that should be portable to Sierra Chart bid/ask-volume bars.
+
+    '
+  timeframe_rationale: 'The signal uses completed 1-minute bars aggregated into a
+    5-minute orderflow state, then enters on the next 1-minute bar open.
+
+    '
+  evidence_directness: 'Moderate. The academic source supports order-flow toxicity
+    and liquidity state as an informed-flow proxy; this config tests a simplified,
+    bar-level ES implementation that should be portable to Sierra Chart bid/ask-volume
+    bars.
+
+    '
 data:
   dataset_id: databento_trades_20250609_20260608
   source_timeframe: 1m
@@ -38,7 +43,7 @@ data:
   trade_orderflow_features:
     enabled: true
     windows:
-      - 5
+    - 5
     large_trade_sizes: []
     min_period_fraction: 1.0
     tick_size: 0.25
@@ -87,7 +92,7 @@ core:
     start_date: '2025-06-09'
     end_date: '2026-06-08'
     session_labels:
-      - RTH
+    - RTH
   initial_balance: 150000
   tick_size: 0.25
   tick_value: 12.5
@@ -121,7 +126,7 @@ core_grid:
     start_date: '2025-06-09'
     end_date: '2026-06-08'
     session_labels:
-      - RTH
+    - RTH
   objective: MAR
   min_profitable_iteration_rate: 0.7
   retain_iteration_reports: false
@@ -131,28 +136,28 @@ core_grid:
     scope: grid
   parameters:
     entry.params.rank_threshold:
-      - 0.1
-      - 0.2
-      - 0.3
-      - 0.4
+    - 0.1
+    - 0.2
+    - 0.3
+    - 0.4
     entry.params.stop_pct:
-      - 0.0025
-      - 0.003
-      - 0.004
-      - 0.006
-      - 0.008
+    - 0.0025
+    - 0.003
+    - 0.004
+    - 0.006
+    - 0.008
     entry.params.target_r_multiple:
-      - 2.0
-      - 4.0
-      - 8.0
-      - 10.0
-      - 12.0
+    - 2.0
+    - 4.0
+    - 8.0
+    - 10.0
+    - 12.0
 monkey:
   data_subset:
     start_date: '2025-06-09'
     end_date: '2026-06-08'
     session_labels:
-      - RTH
+    - RTH
   runs: 1000
   seed: 7
   beat_threshold: 0.9
@@ -175,7 +180,7 @@ wfa:
     start_date: '2025-06-09'
     end_date: '2026-06-08'
     session_labels:
-      - RTH
+    - RTH
   mode: unanchored
   train_months: 4
   test_months: 1
@@ -189,22 +194,122 @@ wfa:
     scope: grid
   parameters:
     entry.params.rank_threshold:
-      - 0.1
-      - 0.2
-      - 0.3
+    - 0.1
+    - 0.2
+    - 0.3
     entry.params.stop_pct:
-      - 0.003
-      - 0.004
-      - 0.006
+    - 0.003
+    - 0.004
+    - 0.006
     entry.params.target_r_multiple:
-      - 4.0
-      - 8.0
-      - 10.0
+    - 4.0
+    - 8.0
+    - 10.0
 campaign_tests:
   walk_forward_analysis:
     data_window:
       mode: exclude_last_months
       months: 0
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: summary.windows
+      min: 10
+    - metric: stitched_oos_metrics.profit_factor
+      exclusive_min: 1.5
+    - metric: stitched_oos_metrics.mar
+      exclusive_min: 0.5
+    - metric: stitched_oos_metrics.expectancy_r
+      exclusive_min: 0.2
+    - metric: stitched_oos_metrics.total_trades
+      exclusive_min: 500
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      min: 100
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      exclusive_min: 1.2
+    - metric: metrics.mar
+      exclusive_min: 1.2
+    - metric: metrics.expectancy_r
+      exclusive_min: 0.15
+    - metric: metrics.total_trades
+      exclusive_min: 75
+    - metric: metrics.apex_rule_violations
+      max: 0
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  acceptance_oos_test:
+    criteria:
+    - metric: metrics.profit_factor
+      exclusive_min: 1.2
+    - metric: metrics.mar
+      exclusive_min: 1.2
+    - metric: metrics.expectancy_r
+      exclusive_min: 0.15
+    - metric: metrics.total_trades
+      exclusive_min: 25
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 24
+    test_months: 6
 prop_rules:
   starting_balance: 150000
   daily_loss_limit: 4000

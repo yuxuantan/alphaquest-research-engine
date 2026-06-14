@@ -878,6 +878,8 @@ order. `equity_curve.csv` is the same curve data for audit, including
 `equity`, `peak_equity`, `drawdown`, and `drawdown_pct`.
 Hovering over the chart shows the point timestamp, net liquidation value, and
 current drawdown percentage from the embedded curve data.
+The HTML summary cards also include win rate, profit factor, and MAR for the
+displayed run.
 
 To generate equity curve files for existing reports without rerunning the
 backtests:

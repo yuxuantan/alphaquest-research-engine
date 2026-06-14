@@ -27,6 +27,7 @@ from propstack.strategy_modules.entry.overnight_inventory_reversion import Overn
 from propstack.strategy_modules.entry.overnight_return_late_day_momentum import OvernightReturnLateDayMomentumEntry
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
+from propstack.strategy_modules.entry.positive_delta_dislocation import PositiveDeltaDislocationEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
 from propstack.strategy_modules.entry.trade_orderflow_multi_pressure import TradeOrderflowMultiPressureEntry
@@ -40,11 +41,13 @@ from propstack.strategy_modules.entry.vpin_toxicity_continuation import VpinToxi
 from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPullbackContinuationEntry
 from propstack.strategy_modules.sl.opening_range_edge import OpeningRangeEdgeStop
 from propstack.strategy_modules.sl.opening_range_width import OpeningRangeWidthStop
+from propstack.strategy_modules.sl.fixed_dollar_per_contract import FixedDollarPerContractStop
 from propstack.strategy_modules.sl.percent_from_entry import PercentFromEntryStop
 from propstack.strategy_modules.sl.signal_percent_from_entry import SignalPercentFromEntryStop
 from propstack.strategy_modules.sl.sweep_extreme import SweepExtremeStop
 from propstack.strategy_modules.tp.cost_adjusted_fixed_r import CostAdjustedFixedRTarget
 from propstack.strategy_modules.tp.fixed_r import FixedRTarget
+from propstack.strategy_modules.tp.fixed_dollar_per_contract import FixedDollarPerContractTarget
 from propstack.strategy_modules.tp.gap_fill_fraction import GapFillFractionTarget
 from propstack.strategy_modules.tp.opening_range_extension import OpeningRangeExtensionTarget
 from propstack.strategy_modules.tp.opening_range_opposite_edge import OpeningRangeOppositeEdgeTarget
@@ -72,6 +75,18 @@ def test_cost_adjusted_fixed_r_target_module_long_and_short():
 
     assert round(target.price(entry_price=100.0, stop_price=99.0, direction="long"), 10) == 102.6
     assert round(target.price(entry_price=100.0, stop_price=101.0, direction="short"), 10) == 97.4
+
+
+def test_fixed_dollar_per_contract_stop_and_target_convert_es_dollars_to_points():
+    stop = FixedDollarPerContractStop({"dollars_per_contract": 10000.0, "tick_value": 12.5})
+    target = FixedDollarPerContractTarget(
+        {"dollars_per_contract": 10000.0, "tick_size": 0.25, "tick_value": 12.5}
+    )
+
+    assert stop.price(None, direction="long", tick_size=0.25, entry_price=4300.0) == 4100.0
+    assert target.price(4300.0, 4100.0, "long") == 4500.0
+    assert stop.price(None, direction="short", tick_size=0.25, entry_price=4300.0) == 4500.0
+    assert target.price(4300.0, 4500.0, "short") == 4100.0
 
 
 def test_sweep_extreme_stop_module_long_and_short():
@@ -1624,6 +1639,129 @@ def test_morning_orderflow_momentum_broad_large_alignment_filter():
         signal = passing.on_bar_close(bar)
     assert signal.direction == "long"
     assert signal.report_fields["source_window_large20_imbalance"] == 0.1
+
+
+def _positive_delta_dislocation_bar(
+    timestamp,
+    *,
+    close=101.25,
+    high=101.5,
+    low=100.75,
+    prev_rth_high=101.0,
+    hour_return=-0.25,
+    hour_delta=600,
+    hour_volume=10000,
+    is_rth=True,
+    prev_rth_high_fresh=True,
+):
+    ts = pd.Timestamp(timestamp)
+    if ts.tzinfo is None:
+        ts = ts.tz_localize("America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": is_rth,
+            "open": close - 0.25,
+            "high": high,
+            "low": low,
+            "close": close,
+            "prev_rth_high": prev_rth_high,
+            "prev_rth_high_fresh": prev_rth_high_fresh,
+            "trade_orderflow_return_points_60": hour_return,
+            "trade_orderflow_signed_volume_60": hour_delta,
+            "trade_orderflow_volume_60": hour_volume,
+        }
+    )
+
+
+def test_positive_delta_dislocation_emits_long_on_completed_negative_hour_positive_delta_above_pdh():
+    entry = PositiveDeltaDislocationEntry(
+        {
+            "bar_interval_minutes": 1,
+            "hour_window_minutes": 60,
+            "min_close_above_prev_high_ticks": 1,
+            "min_negative_hour_ticks": 1,
+            "min_hour_delta": 500,
+            "flatten_time": "16:00:00",
+        }
+    )
+
+    assert entry.on_bar_close(_positive_delta_dislocation_bar("2024-01-03 10:28")) is None
+    signal = entry.on_bar_close(_positive_delta_dislocation_bar("2024-01-03 10:29"))
+
+    assert signal.direction == "long"
+    assert signal.level_type == "positive_delta_dislocation_pdh_negative_hour_positive_delta_long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 10:30", tz="America/New_York")
+    assert signal.report_fields["prev_rth_high"] == 101.0
+    assert signal.report_fields["hour_return_ticks"] == -1.0
+    assert signal.report_fields["hour_signed_volume_delta"] == 600.0
+    assert signal.report_fields["min_hour_delta"] == 500.0
+    assert signal.metadata["flatten_time"] == "16:00:00"
+
+
+def test_positive_delta_dislocation_rejects_missing_setup_conditions():
+    cases = [
+        {"close": 101.0},
+        {"hour_return": 0.25},
+        {"hour_delta": 499},
+        {"is_rth": False},
+    ]
+    for kwargs in cases:
+        entry = PositiveDeltaDislocationEntry({"bar_interval_minutes": 1, "min_hour_delta": 500})
+        assert entry.on_bar_close(_positive_delta_dislocation_bar("2024-01-03 10:29", **kwargs)) is None
+
+    limited = PositiveDeltaDislocationEntry({"bar_interval_minutes": 1, "max_trades_per_day": 1})
+    assert limited.on_bar_close(_positive_delta_dislocation_bar("2024-01-03 10:29"), trades_today=1) is None
+
+
+def test_positive_delta_dislocation_optional_filters_accept_matching_signal():
+    entry = PositiveDeltaDislocationEntry(
+        {
+            "bar_interval_minutes": 1,
+            "allowed_signal_times": ["10:30:00", "11:30:00"],
+            "min_close_above_prev_high_ticks": 1,
+            "max_close_above_prev_high_ticks": 8,
+            "min_hour_delta": 500,
+            "max_hour_delta": 1000,
+            "min_hour_delta_ratio": 0.04,
+            "max_hour_delta_ratio": 0.08,
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _positive_delta_dislocation_bar(
+            "2024-01-03 10:29",
+            close=102.0,
+            prev_rth_high=101.0,
+            hour_delta=600,
+            hour_volume=10000,
+        )
+    )
+
+    assert signal.direction == "long"
+    assert signal.report_fields["max_close_above_prev_high_ticks"] == 8.0
+    assert signal.report_fields["max_hour_delta"] == 1000.0
+    assert signal.report_fields["hour_delta_ratio"] == 0.06
+
+
+def test_positive_delta_dislocation_optional_filters_reject_out_of_band_signal():
+    cases = [
+        ({"allowed_signal_times": ["11:30:00"]}, {}),
+        ({"max_close_above_prev_high_ticks": 3}, {"close": 102.0, "prev_rth_high": 101.0}),
+        ({"max_hour_delta": 550}, {"hour_delta": 600}),
+        ({"min_hour_delta_ratio": 0.08}, {"hour_delta": 600, "hour_volume": 10000}),
+        ({"max_hour_delta_ratio": 0.05}, {"hour_delta": 600, "hour_volume": 10000}),
+    ]
+    for params, bar_kwargs in cases:
+        entry = PositiveDeltaDislocationEntry(
+            {
+                "bar_interval_minutes": 1,
+                "min_hour_delta": 500,
+                **params,
+            }
+        )
+        assert entry.on_bar_close(_positive_delta_dislocation_bar("2024-01-03 10:29", **bar_kwargs)) is None
 
 
 def test_morning_intraday_momentum_emits_long_and_short_from_rth_open_to_signal_return():

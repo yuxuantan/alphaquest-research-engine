@@ -295,7 +295,7 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
     }}
     .summary {{
       display: grid;
-      grid-template-columns: repeat(5, minmax(0, 1fr));
+      grid-template-columns: repeat(8, minmax(0, 1fr));
       gap: 10px;
       margin-bottom: 14px;
     }}
@@ -341,6 +341,9 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
       .summary {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }}
       canvas {{ height: 360px; }}
     }}
+    @media (min-width: 761px) and (max-width: 1100px) {{
+      .summary {{ grid-template-columns: repeat(4, minmax(0, 1fr)); }}
+    }}
   </style>
 </head>
 <body>
@@ -355,6 +358,9 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
       <div class="metric"><span>End</span><strong id="end">$0</strong></div>
       <div class="metric"><span>Net PnL</span><strong id="net">$0</strong></div>
       <div class="metric"><span>Max Drawdown</span><strong id="drawdown">$0</strong></div>
+      <div class="metric"><span>Win Rate</span><strong id="winRate">0%</strong></div>
+      <div class="metric"><span>PF</span><strong id="profitFactor">0.00</strong></div>
+      <div class="metric"><span>MAR</span><strong id="mar">0.00</strong></div>
     </section>
     <section class="chart-panel">
       <canvas id="chart" aria-label="Equity curve chart"></canvas>
@@ -397,6 +403,12 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
       return runs.find((item) => item.id === select.value) || runs[0];
     }}
 
+    function formatRatio(value) {{
+      if (value === "Infinity") return "∞";
+      if (value === "-Infinity") return "-∞";
+      return Number(value || 0).toFixed(2);
+    }}
+
     function resizeCanvas() {{
       const rect = chart.getBoundingClientRect();
       const scale = window.devicePixelRatio || 1;
@@ -420,6 +432,9 @@ def _equity_report_html(curve: pd.DataFrame, title: str) -> str:
       document.getElementById("net").textContent = money.format(run.summary.net);
       document.getElementById("drawdown").textContent =
         `${{money.format(run.summary.maxDrawdown)}} (${{percent.format(run.summary.maxDrawdownPct)}})`;
+      document.getElementById("winRate").textContent = percent.format(run.summary.winRate);
+      document.getElementById("profitFactor").textContent = formatRatio(run.summary.profitFactor);
+      document.getElementById("mar").textContent = formatRatio(run.summary.mar);
       document.getElementById("note").textContent = run.summary.note;
 
       const data = run.points;
@@ -650,6 +665,7 @@ def _html_payload(curve: pd.DataFrame) -> dict:
         end = float(group.iloc[-1]["equity"]) if len(group) else start
         max_drawdown = float(group["drawdown"].max()) if len(group) else 0.0
         max_drawdown_pct = float(group["drawdown_pct"].max()) if len(group) else 0.0
+        performance = _performance_summary(group, start, end, max_drawdown_pct)
         label = "All trades" if run_column is None else f"Run {run_id}"
         runs.append(
             {
@@ -663,11 +679,47 @@ def _html_payload(curve: pd.DataFrame) -> dict:
                     "net": end - start,
                     "maxDrawdown": max_drawdown,
                     "maxDrawdownPct": max_drawdown_pct,
+                    "winRate": performance["win_rate"],
+                    "profitFactor": _json_metric(performance["profit_factor"]),
+                    "mar": _json_metric(performance["mar"]),
                     "note": _summary_note(group),
                 },
             }
         )
     return {"runs": runs}
+
+
+def _performance_summary(group: pd.DataFrame, start: float, end: float, max_drawdown_pct: float) -> dict:
+    trades = group.loc[pd.to_numeric(group["point"], errors="coerce").fillna(0) > 0].copy()
+    if trades.empty:
+        return {"win_rate": 0.0, "profit_factor": 0.0, "mar": 0.0}
+    pnl = pd.to_numeric(trades["net_pnl"], errors="coerce").dropna()
+    if pnl.empty:
+        return {"win_rate": 0.0, "profit_factor": 0.0, "mar": 0.0}
+    wins = float(pnl[pnl > 0].sum())
+    losses = abs(float(pnl[pnl < 0].sum()))
+    profit_factor = wins / losses if losses > 0 else (math.inf if wins > 0 else 0.0)
+    win_rate = float((pnl > 0).mean())
+    cagr = _curve_cagr(group, start, end)
+    mar = cagr / max_drawdown_pct if max_drawdown_pct > 0 else (math.inf if cagr > 0 else 0.0)
+    return {"win_rate": win_rate, "profit_factor": profit_factor, "mar": mar}
+
+
+def _curve_cagr(group: pd.DataFrame, start: float, end: float) -> float:
+    years = _curve_elapsed_years(group)
+    if start <= 0 or years <= 0:
+        return 0.0
+    if end > 0:
+        return (end / start) ** (1 / years) - 1
+    return -1.0
+
+
+def _curve_elapsed_years(group: pd.DataFrame) -> float:
+    timestamps = pd.to_datetime(group["timestamp"], errors="coerce", utc=True).dropna()
+    if len(timestamps) < 2:
+        return 0.0
+    elapsed_days = max((timestamps.max() - timestamps.min()).total_seconds() / 86400.0, 1.0)
+    return elapsed_days / 365.25
 
 
 def _html_point(row: pd.Series) -> dict:
@@ -698,4 +750,11 @@ def _json_string(value) -> str:
 
 def _json_float(value) -> float:
     out = float(value)
+    return out if math.isfinite(out) else 0.0
+
+
+def _json_metric(value):
+    out = float(value)
+    if math.isinf(out):
+        return "Infinity" if out > 0 else "-Infinity"
     return out if math.isfinite(out) else 0.0

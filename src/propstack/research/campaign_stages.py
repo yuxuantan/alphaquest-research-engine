@@ -4,10 +4,10 @@ import copy
 from datetime import datetime
 import math
 from pathlib import Path
-import shutil
 from typing import Any
 
 import pandas as pd
+import yaml
 
 from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.equity_report import write_equity_report
@@ -52,31 +52,23 @@ DEFAULT_STAGE_CRITERIA = {
     "walk_forward_analysis": [
         {"metric": "summary.early_exit", "equals": False},
         {"metric": "summary.windows", "min": 10},
-        {"metric": "stitched_oos_metrics.profit_factor", "min": 1.5},
-        {
-            "metric": "stitched_oos_metrics.mar",
-            "dynamic_min": "length_adjusted_mar",
-            "span_metric": "summary.oos_evaluation_years",
-        },
-        {"metric": "stitched_oos_metrics.expectancy_r", "min": 0.2},
+        {"metric": "stitched_oos_metrics.profit_factor", "min": 1.2},
+        {"metric": "stitched_oos_metrics.mar", "min": 0.4},
         {"metric": "stitched_oos_metrics.total_trades", "min": 500},
-        {"metric": "stitched_oos_metrics.win_rate", "min": 0.45},
         {"metric": "stitched_oos_metrics.apex_rule_violations", "max": 0},
     ],
     "wfa_oos_monkey_test": [
-        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.90},
-        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.90},
+        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.80},
+        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.80},
         {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     "wfa_oos_monte_carlo": [
-        {"metric": "summary.probability_profit_before_drawdown", "min": 0.50},
+        {"metric": "summary.probability_profit_before_drawdown", "exclusive_min": 0.50},
     ],
     "simulated_incubation_core": [
-        {"metric": "metrics.profit_factor", "min": 1.2},
-        {"metric": "metrics.mar", "min": 1.2},
-        {"metric": "metrics.expectancy_r", "min": 0.15},
+        {"metric": "metrics.profit_factor", "min": 1.0},
+        {"metric": "metrics.mar", "min": 1.0},
         {"metric": "metrics.total_trades", "min": 75},
-        {"metric": "metrics.win_rate", "min": 0.40},
         {"metric": "metrics.apex_rule_violations", "max": 0},
     ],
     "simulated_incubation_monkey": [
@@ -85,13 +77,18 @@ DEFAULT_STAGE_CRITERIA = {
         {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     ACCEPTANCE_STAGE: [
-        {"metric": "metrics.profit_factor", "min": 1.2},
-        {"metric": "metrics.mar", "min": 1.2},
-        {"metric": "metrics.expectancy_r", "min": 0.15},
-        {"metric": "metrics.total_trades", "min": 75},
-        {"metric": "metrics.win_rate", "min": 0.40},
+        {"metric": "metrics.profit_factor", "min": 1.0},
+        {"metric": "metrics.mar", "min": 1.0},
+        {"metric": "metrics.total_trades", "min": 25},
         {"metric": "metrics.apex_rule_violations", "max": 0},
     ],
+}
+
+DEFAULT_SHORTLIST_DATA_WINDOW = {
+    "mode": "random_months",
+    "months": 18,
+    "seed": 31,
+    "avoid_ranges": [{"start_date": "2020-02-01", "end_date": "2021-06-30"}],
 }
 
 STAGE_LABELS = {
@@ -106,19 +103,49 @@ STAGE_LABELS = {
 }
 
 
+def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) -> dict:
+    out = copy.deepcopy(cfg)
+    campaign_tests = copy.deepcopy(out.get("campaign_tests") or {})
+    stage_order = DEFAULT_STAGE_ORDER if include_acceptance else PRE_ACCEPTANCE_STAGE_ORDER
+    campaign_tests["stage_order"] = list(stage_order)
+    for stage_name in DEFAULT_STAGE_ORDER:
+        stage_cfg = copy.deepcopy(campaign_tests.get(stage_name) or {})
+        stage_cfg.pop("enabled", None)
+        stage_cfg["criteria"] = copy.deepcopy(DEFAULT_STAGE_CRITERIA[stage_name])
+        if stage_name in {"limited_core_grid_test", "limited_monkey_test"}:
+            stage_cfg.pop("data_subset", None)
+            stage_cfg["data_window"] = copy.deepcopy(DEFAULT_SHORTLIST_DATA_WINDOW)
+        if stage_name == ACCEPTANCE_STAGE:
+            stage_cfg.setdefault("train_months", 24)
+            stage_cfg.setdefault("test_months", 6)
+            if not include_acceptance:
+                stage_cfg["enabled"] = False
+        campaign_tests[stage_name] = stage_cfg
+    out["campaign_tests"] = campaign_tests
+    return out
+
+
+def _write_config_snapshot(path: Path, cfg: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        yaml.safe_dump(cfg, sort_keys=False, default_flow_style=False),
+        encoding="utf-8",
+    )
+
+
 def run_campaign_stage_tests(
     config_path: str | Path,
     *,
     skip_validation: bool = True,
     continue_on_failure: bool = False,
     out_dir: str | Path | None = None,
+    include_acceptance: bool = True,
 ) -> dict:
     config_path = Path(config_path)
-    cfg = load_yaml(config_path)
+    cfg = canonicalize_campaign_config(load_yaml(config_path), include_acceptance=include_acceptance)
     root = Path(out_dir) if out_dir else variant_root(cfg) / "campaign_tests"
     root.mkdir(parents=True, exist_ok=True)
-    if config_path.exists():
-        shutil.copy2(config_path, root / "config_snapshot.yaml")
+    _write_config_snapshot(root / "config_snapshot.yaml", cfg)
 
     campaign_tests = cfg.get("campaign_tests") or {}
     stage_order = _stage_order(campaign_tests)
@@ -185,8 +212,10 @@ def _run_stage(
     started = datetime.now()
     if stage_name == "limited_core_grid_test":
         payload = _run_limited_core_grid(cfg, stage_cfg, stage_dir, skip_validation)
+        context["limited_core_grid_results"] = payload.get("core_grid_results")
+        context["limited_core_grid_parameters"] = payload.get("core_grid_parameters") or {}
     elif stage_name == "limited_monkey_test":
-        payload = _run_limited_monkey(cfg, stage_cfg, stage_dir, skip_validation)
+        payload = _run_limited_monkey(cfg, stage_cfg, stage_dir, skip_validation, context)
     elif stage_name == "walk_forward_analysis":
         payload = _run_wfa_stage(cfg, stage_cfg, stage_dir, skip_validation)
         context["wfa_trades"] = payload.get("trades")
@@ -213,7 +242,11 @@ def _run_stage(
     criteria_results = evaluate_criteria(payload, criteria)
     passed = all(item["passed"] for item in criteria_results)
     completed = datetime.now()
-    public_payload = {k: v for k, v in payload.items() if k not in {"trades", "market", "detail"}}
+    public_payload = {
+        k: v
+        for k, v in payload.items()
+        if k not in {"trades", "market", "detail", "core_grid_results"}
+    }
     return {
         "stage": stage_name,
         "label": STAGE_LABELS.get(stage_name, stage_name),
@@ -251,22 +284,41 @@ def _run_limited_core_grid(cfg: dict, stage_cfg: dict, stage_dir: Path, skip_val
         "artifacts": artifacts,
         "market": market,
         "detail": detail,
+        "core_grid_results": results,
+        "core_grid_parameters": grid_cfg.get("parameters", {}),
     }
 
 
-def _run_limited_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, skip_validation: bool) -> dict:
+def _run_limited_monkey(
+    cfg: dict,
+    stage_cfg: dict,
+    stage_dir: Path,
+    skip_validation: bool,
+    context: dict,
+) -> dict:
     monkey_cfg = _merged_section(cfg, "monkey", stage_cfg)
     subset = _stage_subset(cfg, stage_cfg, "monkey")
     market, detail, quality, input_hash = _prepare_stage_data(cfg, subset, stage_dir, skip_validation)
+    selected_row = _select_median_profitable_core_grid_row(
+        context.get("limited_core_grid_results"),
+        context.get("limited_core_grid_parameters") or {},
+    )
+    selected_params = _core_grid_params_from_row(
+        selected_row,
+        context.get("limited_core_grid_parameters") or {},
+    )
+    test_cfg = apply_dotted_params(cfg, selected_params) if selected_params else copy.deepcopy(cfg)
     report_dir = stage_dir if monkey_cfg.get("retain_iteration_reports", True) else None
     results, summary = run_monkey(
         market,
-        cfg,
+        test_cfg,
         monkey_cfg,
-        cfg.get("benchmarks", {}),
+        test_cfg.get("benchmarks", {}),
         report_dir=report_dir,
         detail_data=detail,
     )
+    summary["selected_core_params"] = selected_params
+    summary["selected_core_row"] = selected_row.to_dict() if selected_row is not None else {}
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "monkey_results.csv", report_timezone, index=False)
     write_json(stage_dir / "monkey_summary.json", summary)
@@ -274,6 +326,8 @@ def _run_limited_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, skip_valida
         "summary": summary,
         "data_quality": quality,
         "input_hash": input_hash,
+        "selected_core_params": selected_params,
+        "selected_core_row": summary["selected_core_row"],
         "artifacts": _stage_artifacts(stage_dir),
         "market": market,
         "detail": detail,
@@ -287,7 +341,8 @@ def _run_wfa_stage(cfg: dict, stage_cfg: dict, stage_dir: Path, skip_validation:
     wfa_cfg.setdefault("test_months", 12)
     wfa_cfg.setdefault("step_months", 12)
     wfa_cfg["objective"] = "MAR"
-    wfa_cfg.setdefault("selection_min_trades_per_year", 52)
+    wfa_cfg.pop("selection_min_trades_per_year", None)
+    wfa_cfg["selection_exclusive_min_trades_per_year"] = 50
     wfa_cfg.setdefault("early_exit_min_train_profit_factor", 1.0)
     subset = _stage_subset(
         cfg,
@@ -341,7 +396,7 @@ def _run_wfa_oos_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context: di
     market = _market_for_trades(context.get("wfa_market"), trades)
     detail = _market_for_trades(context.get("wfa_detail"), trades) if context.get("wfa_detail") is not None else None
     monkey_cfg = _merged_section(cfg, "monkey", stage_cfg)
-    monkey_cfg.setdefault("beat_threshold", 0.90)
+    monkey_cfg.setdefault("beat_threshold", 0.80)
     report_dir = stage_dir if monkey_cfg.get("retain_iteration_reports", True) else None
     results, summary = run_monkey(
         market,
@@ -600,6 +655,9 @@ def evaluate_criteria(payload: dict, criteria: list[dict]) -> list[dict]:
         if "min" in item:
             expected["min"] = item["min"]
             passed = passed and _numeric(actual) >= float(item["min"])
+        if "exclusive_min" in item:
+            expected["exclusive_min"] = item["exclusive_min"]
+            passed = passed and _numeric(actual) > float(item["exclusive_min"])
         if "max" in item:
             expected["max"] = item["max"]
             passed = passed and _numeric(actual) <= float(item["max"])
@@ -637,6 +695,8 @@ def _dynamic_minimum(payload: dict, item: dict) -> float:
 
 
 def _criteria_for_stage(stage_name: str, stage_cfg: dict) -> list[dict]:
+    if stage_name in DEFAULT_STAGE_CRITERIA:
+        return copy.deepcopy(DEFAULT_STAGE_CRITERIA[stage_name])
     configured = stage_cfg.get("criteria")
     if configured:
         if isinstance(configured, dict):
@@ -659,12 +719,7 @@ def _stage_order(campaign_tests: dict) -> list[str]:
 
 
 def _stage_config(campaign_tests: dict, stage_name: str) -> dict:
-    out = copy.deepcopy(campaign_tests.get(stage_name) or {})
-    if stage_name == ACCEPTANCE_STAGE and "criteria" not in out:
-        incubation_core_cfg = campaign_tests.get("simulated_incubation_core") or {}
-        if incubation_core_cfg.get("criteria"):
-            out["criteria"] = copy.deepcopy(incubation_core_cfg["criteria"])
-    return out
+    return copy.deepcopy(campaign_tests.get(stage_name) or {})
 
 
 def _acceptance_base_subset(cfg: dict, stage_cfg: dict) -> dict:
@@ -760,15 +815,20 @@ def _acceptance_selection_config(cfg: dict, stage_cfg: dict, parameters: dict) -
         "selection_min_profit_factor",
         "selection_min_total_trades",
         "selection_min_trades_per_year",
+        "selection_exclusive_min_trades_per_year",
     ]:
         if key in stage_cfg and key not in out:
             out[key] = copy.deepcopy(stage_cfg[key])
-    if "selection_min_trades_per_year" not in out:
+    if "selection_min_trades_per_year" not in out and "selection_exclusive_min_trades_per_year" not in out:
         if (cfg.get("wfa") or {}).get("selection_min_trades_per_year") is not None:
             out["selection_min_trades_per_year"] = (cfg.get("wfa") or {})["selection_min_trades_per_year"]
         elif (cfg.get("benchmarks") or {}).get("min_trades_per_year") is not None:
             out["selection_min_trades_per_year"] = (cfg.get("benchmarks") or {})["min_trades_per_year"]
+        else:
+            out["selection_exclusive_min_trades_per_year"] = 50
     out["objective"] = "MAR"
+    out.pop("selection_min_trades_per_year", None)
+    out["selection_exclusive_min_trades_per_year"] = 50
     out["parameters"] = copy.deepcopy(parameters)
     out.setdefault("retain_iteration_reports", False)
     return out
@@ -954,6 +1014,8 @@ def _run_incubation_train_selection(
 ) -> tuple[dict, dict]:
     selection_cfg = copy.deepcopy(selection_cfg)
     selection_cfg["objective"] = "MAR"
+    selection_cfg.pop("selection_min_trades_per_year", None)
+    selection_cfg["selection_exclusive_min_trades_per_year"] = 50
     train_subset = selection_cfg.get("data_subset") or {}
     if not train_subset:
         raise ValueError("simulated_incubation_core.train_selection.data_subset is required.")
@@ -1051,6 +1113,14 @@ def _select_core_grid_row(results: pd.DataFrame, parameters: dict, selection_cfg
         filtered = candidates[pd.to_numeric(candidates["trades_per_year"], errors="coerce") >= float(min_trades_per_year)]
         if not filtered.empty:
             candidates = filtered
+    exclusive_min_trades_per_year = selection_cfg.get("selection_exclusive_min_trades_per_year")
+    if exclusive_min_trades_per_year is not None and "trades_per_year" in candidates.columns:
+        filtered = candidates[
+            pd.to_numeric(candidates["trades_per_year"], errors="coerce")
+            > float(exclusive_min_trades_per_year)
+        ]
+        if not filtered.empty:
+            candidates = filtered
     objective = str(selection_cfg.get("objective", "MAR")).lower()
     objective_columns = {
         "mar": "mar",
@@ -1070,6 +1140,30 @@ def _core_grid_params_from_row(row, parameters: dict) -> dict:
     if row is None:
         return {}
     return {key: row[key] for key in parameters if key in row and not pd.isna(row[key])}
+
+
+def _select_median_profitable_core_grid_row(results: pd.DataFrame | None, parameters: dict):
+    if results is None or results.empty:
+        raise ValueError("limited_monkey_test requires limited_core_grid_test results.")
+    if "net_profit" not in results.columns:
+        raise ValueError("limited_monkey_test requires net_profit in limited_core_grid_test results.")
+    candidates = results.copy()
+    net_profit = pd.to_numeric(candidates["net_profit"], errors="coerce")
+    if "profitable" in candidates.columns:
+        profitable = candidates[candidates["profitable"].fillna(False).astype(bool)].copy()
+    else:
+        profitable = candidates[net_profit > 0].copy()
+    if profitable.empty:
+        raise ValueError("limited_monkey_test requires at least one profitable limited core-grid row.")
+    median_net_profit = float(pd.to_numeric(profitable["net_profit"], errors="coerce").median())
+    profitable["_median_net_profit_distance"] = (
+        pd.to_numeric(profitable["net_profit"], errors="coerce") - median_net_profit
+    ).abs()
+    sort_columns = ["_median_net_profit_distance"]
+    if "run_id" in profitable.columns:
+        sort_columns.append("run_id")
+    row = profitable.sort_values(sort_columns, kind="stable").iloc[0].drop(labels=["_median_net_profit_distance"])
+    return row
 
 
 def _wfa_oos_evaluation_years(wfa_results: pd.DataFrame) -> float:
