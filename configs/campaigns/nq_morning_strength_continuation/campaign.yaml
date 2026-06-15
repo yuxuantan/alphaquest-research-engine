@@ -1,0 +1,31 @@
+campaign_id: nq_morning_strength_continuation
+campaign_name: NQ Morning Strength Continuation
+status: research
+
+academic_sources:
+  - title: "Market Intraday Momentum"
+    authors: "Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou"
+    year: 2018
+    venue: "Journal of Financial Economics, 129(2), 394-414"
+    doi: "10.1016/j.jfineco.2018.05.009"
+    url: "https://www.sciencedirect.com/science/article/abs/pii/S0304405X18301351"
+    finding_used: "Opening-period market returns can predict later same-day market returns."
+    evidence_directness: "Source-backed but instrument-translated; this campaign tests a long-only NQ futures implementation rather than the paper's exact published portfolio."
+
+edge_thesis: >
+  NQ opening-session strength can persist through the regular session. The
+  variants enter long only after completed RTH-open-to-signal strength and
+  flatten before the futures daily close.
+
+translation_notes:
+  why_nq: "NQ has full-history 1-minute data in the repo and prior NQ screens showed stronger intraday momentum persistence than ES price-only variants."
+  no_lookahead: "Signals use only the completed RTH open-to-signal window and enter after that window closes."
+  expected_failure_regime: "Sharp opening squeezes that mean-revert before midday, and late-session reversals after morning trend exhaustion."
+
+variants:
+  - long_only_1000_strength
+  - long_only_1030_strength
+  - long_only_1130_strength
+
+timeframes:
+  - 5m

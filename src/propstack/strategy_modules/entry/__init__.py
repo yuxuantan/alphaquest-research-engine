@@ -4,6 +4,7 @@ from propstack.strategy_modules.entry.bankruptcy_distress_reversion import Bankr
 from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
 from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from propstack.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
+from propstack.strategy_modules.entry.connors_rsi2_mean_reversion import ConnorsRsi2MeanReversionEntry
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
 from propstack.strategy_modules.entry.gao_last_half_hour_orderflow import GaoLastHalfHourOrderflowEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
@@ -21,12 +22,15 @@ from propstack.strategy_modules.entry.opening_drive_inventory_combo import Openi
 from propstack.strategy_modules.entry.orderflow_regime import OrderflowRegimeEntry
 from propstack.strategy_modules.entry.orderflow_recent_pocket_combo import OrderflowRecentPocketComboEntry
 from propstack.strategy_modules.entry.overnight_return_late_day_momentum import OvernightReturnLateDayMomentumEntry
+from propstack.strategy_modules.entry.overnight_intraday_reversal import OvernightIntradayReversalEntry
 from propstack.strategy_modules.entry.overnight_inventory_reversion import OvernightInventoryReversionEntry
 from propstack.strategy_modules.entry.base import Signal
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.positive_delta_dislocation import PositiveDeltaDislocationEntry
+from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSessionIbsReversionEntry
 from propstack.strategy_modules.entry.quote_liquidity_sweep_reversion import QuoteLiquiditySweepReversionEntry
+from propstack.strategy_modules.entry.range_compression_breakout import RangeCompressionBreakoutEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
 from propstack.strategy_modules.entry.trade_orderflow_multi_pressure import TradeOrderflowMultiPressureEntry
@@ -45,6 +49,7 @@ ENTRY_MODULES = {
     CalendarSessionBiasEntry.name: CalendarSessionBiasEntry,
     CftcTffHedgingPressureEntry.name: CftcTffHedgingPressureEntry,
     CftcTffTieredHedgingPressureEntry.name: CftcTffTieredHedgingPressureEntry,
+    ConnorsRsi2MeanReversionEntry.name: ConnorsRsi2MeanReversionEntry,
     DailyTimeSeriesMomentumEntry.name: DailyTimeSeriesMomentumEntry,
     GaoLastHalfHourOrderflowEntry.name: GaoLastHalfHourOrderflowEntry,
     IntradayCapitulationMREntry.name: IntradayCapitulationMREntry,
@@ -62,11 +67,14 @@ ENTRY_MODULES = {
     OrderflowRegimeEntry.name: OrderflowRegimeEntry,
     OrderflowRecentPocketComboEntry.name: OrderflowRecentPocketComboEntry,
     OvernightReturnLateDayMomentumEntry.name: OvernightReturnLateDayMomentumEntry,
+    OvernightIntradayReversalEntry.name: OvernightIntradayReversalEntry,
     OvernightInventoryReversionEntry.name: OvernightInventoryReversionEntry,
     PdhPdlBreakoutContinuationEntry.name: PdhPdlBreakoutContinuationEntry,
     PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
     PositiveDeltaDislocationEntry.name: PositiveDeltaDislocationEntry,
+    PriorSessionIbsReversionEntry.name: PriorSessionIbsReversionEntry,
     QuoteLiquiditySweepReversionEntry.name: QuoteLiquiditySweepReversionEntry,
+    RangeCompressionBreakoutEntry.name: RangeCompressionBreakoutEntry,
     RthGapFadeEntry.name: RthGapFadeEntry,
     TurnOfMonthBiasEntry.name: TurnOfMonthBiasEntry,
     TradeOrderflowMultiPressureEntry.name: TradeOrderflowMultiPressureEntry,
@@ -94,6 +102,7 @@ __all__ = [
     "CalendarSessionBiasEntry",
     "CftcTffHedgingPressureEntry",
     "CftcTffTieredHedgingPressureEntry",
+    "ConnorsRsi2MeanReversionEntry",
     "DailyTimeSeriesMomentumEntry",
     "GaoLastHalfHourOrderflowEntry",
     "IntradayCapitulationMREntry",
@@ -111,11 +120,14 @@ __all__ = [
     "OrderflowRegimeEntry",
     "OrderflowRecentPocketComboEntry",
     "OvernightReturnLateDayMomentumEntry",
+    "OvernightIntradayReversalEntry",
     "OvernightInventoryReversionEntry",
     "PdhPdlBreakoutContinuationEntry",
     "PdhPdlSweepReclaimEntry",
     "PositiveDeltaDislocationEntry",
+    "PriorSessionIbsReversionEntry",
     "QuoteLiquiditySweepReversionEntry",
+    "RangeCompressionBreakoutEntry",
     "RthGapFadeEntry",
     "TurnOfMonthBiasEntry",
     "TradeOrderflowMultiPressureEntry",

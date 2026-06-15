@@ -53,6 +53,9 @@ def main() -> None:
         print(f"dry run wrote {artifact_stem}.json and {artifact_stem}.csv")
         return
 
+    archive_active_rejections(rows)
+    write_manifest(rows, artifact_stem)
+
     rerun_rows = [row for row in rows if row["decision"] == "retest_shortlist_likely"]
     if args.limit_reruns is not None:
         rerun_rows = rerun_rows[: args.limit_reruns]
@@ -195,6 +198,25 @@ def rerun_shortlist(row: dict[str, Any]) -> None:
         row["passed"] = False
         row["error"] = f"{type(exc).__name__}: {exc}"
         row["traceback"] = traceback.format_exc()
+
+
+def archive_active_rejections(rows: list[dict[str, Any]]) -> None:
+    for row in rows:
+        if row.get("decision") != "archive_not_shortlist_likely":
+            continue
+        if row.get("archived_variant_root"):
+            continue
+        active_variant = Path(row["active_variant_root"])
+        if not active_variant.exists():
+            continue
+        archived_variant = ARCHIVE_ROOT / active_variant.relative_to(REPORT_ROOT)
+        archived_variant.parent.mkdir(parents=True, exist_ok=True)
+        if archived_variant.exists():
+            shutil.rmtree(archived_variant)
+        shutil.move(str(active_variant), str(archived_variant))
+        row["archived_variant_root"] = str(archived_variant)
+        row["archived_campaign_tests_dir"] = str(archived_variant / "campaign_tests")
+        row["status"] = "archived"
 
 
 def _unarchive_variant(archived_variant: Path, active_variant: Path) -> None:

@@ -67,6 +67,73 @@ def test_length_adjusted_mar_requirement_anchors_and_clamps():
     assert campaign_stages.length_adjusted_mar_requirement(20.0) == 0.5
 
 
+def test_prepare_stage_data_reuses_cache_when_validation_is_skipped(tmp_path, monkeypatch):
+    calls = []
+    market = pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-02"], utc=True)})
+    execution = pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-02"], utc=True)})
+
+    def fake_prepare_data(data_config, output_dir, subset, timeframe=None, include_execution_data=False, show_progress=False):
+        calls.append((output_dir, subset, timeframe))
+        return market, {"rows": 1}, execution
+
+    monkeypatch.setattr(campaign_stages, "prepare_data", fake_prepare_data)
+    monkeypatch.setattr(campaign_stages, "data_source_hash", lambda data_config, subset: "hash-1")
+    cache = {}
+    cfg = {"timeframe": "5m", "data": {"source": "csv", "raw_csv": "sample.csv"}}
+    subset = {"start_date": "2024-01-01", "end_date": "2024-01-31"}
+
+    first = campaign_stages._prepare_stage_data(cfg, subset, tmp_path / "one", True, data_cache=cache)
+    second = campaign_stages._prepare_stage_data(cfg, subset, tmp_path / "two", True, data_cache=cache)
+
+    assert len(calls) == 1
+    assert first[0] is second[0]
+    assert first[1] is second[1]
+    assert first[3] == second[3] == "hash-1"
+    assert first[2]["prepared_data_cache"]["hit"] is False
+    assert second[2]["prepared_data_cache"]["hit"] is True
+
+
+def test_fast_runtime_defaults_enable_parallel_sections_without_mutating_input():
+    cfg = {
+        "core_grid": {"parallel": {"enabled": False, "workers": 1}},
+        "monkey": {},
+        "wfa": {},
+        "monte_carlo": {},
+        "campaign_tests": {
+            "limited_core_grid_test": {},
+            "limited_monkey_test": {},
+            "walk_forward_analysis": {},
+            "wfa_oos_monkey_test": {},
+            "wfa_oos_monte_carlo": {},
+            "simulated_incubation_core": {"train_selection": {}},
+            "simulated_incubation_monkey": {},
+            campaign_stages.ACCEPTANCE_STAGE: {},
+        },
+    }
+
+    out = campaign_stages.apply_fast_runtime_defaults(cfg, workers=4)
+
+    assert cfg["core_grid"]["parallel"] == {"enabled": False, "workers": 1}
+    assert out["core_grid"]["parallel"] == {"enabled": True, "workers": 4, "scope": "grid"}
+    assert out["monkey"]["parallel"] == {"enabled": True, "workers": 4, "scope": "runs"}
+    assert out["wfa"]["parallel"] == {"enabled": True, "workers": 4, "scope": "window_grid"}
+    assert out["monte_carlo"]["parallel"] == {
+        "enabled": True,
+        "workers": 4,
+        "scope": "runs",
+    }
+    campaign_tests = out["campaign_tests"]
+    assert campaign_tests["limited_core_grid_test"]["parallel"]["scope"] == "grid"
+    assert campaign_tests["limited_monkey_test"]["parallel"]["scope"] == "runs"
+    assert campaign_tests["walk_forward_analysis"]["parallel"]["scope"] == "window_grid"
+    assert campaign_tests["wfa_oos_monte_carlo"]["parallel"]["scope"] == "runs"
+    assert campaign_tests["simulated_incubation_core"]["train_selection"]["parallel"] == {
+        "enabled": True,
+        "workers": 4,
+        "scope": "grid",
+    }
+
+
 def test_default_stage_criteria_match_screenshot_benchmarks():
     limited_monkey = campaign_stages._criteria_for_stage("limited_monkey_test", {})
     wfa = campaign_stages._criteria_for_stage("walk_forward_analysis", {})

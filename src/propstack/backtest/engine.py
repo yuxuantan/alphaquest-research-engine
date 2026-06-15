@@ -130,6 +130,11 @@ class BacktestEngine:
         flatten_time = parse_time(self.strategy_config.get("flatten_time", self.core_config.get("flatten_time", "14:55:00")))
         bar_interval_minutes = self.timeframe_minutes
         net_liq = float(self.core_config.get("initial_balance", 0.0))
+        bar_delta = pd.Timedelta(minutes=bar_interval_minutes)
+        timestamps = [pd.Timestamp(timestamp) for timestamp in df["timestamp"]] if len(df) else []
+        bar_close_timestamps = [timestamp + bar_delta for timestamp in timestamps]
+        next_entry_timestamps = timestamps[1:] + [None] if timestamps else []
+        next_bar_close_timestamps = bar_close_timestamps[1:] + [None] if bar_close_timestamps else []
 
         pending_signal = None
         position = None
@@ -219,8 +224,8 @@ class BacktestEngine:
                 position["max_favorable_excursion"] = max(position["max_favorable_excursion"], mfe)
                 position["max_adverse_excursion"] = max(position["max_adverse_excursion"], mae)
 
-                bar_close_timestamp = pd.Timestamp(bar["timestamp"]) + pd.Timedelta(minutes=bar_interval_minutes)
-                next_bar_close_timestamp = self._next_bar_close_timestamp(df, i, bar_interval_minutes)
+                bar_close_timestamp = bar_close_timestamps[i]
+                next_bar_close_timestamp = next_bar_close_timestamps[i]
                 event_window = None
                 reason, raw_exit, exit_timestamp = self._resolve_stop_target_exit(
                     bar,
@@ -281,11 +286,11 @@ class BacktestEngine:
                     continue
 
             if position is None and risk.allow_new_trade(bar["session_date"]):
-                bar_close_timestamp = pd.Timestamp(bar["timestamp"]) + pd.Timedelta(minutes=bar_interval_minutes)
+                bar_close_timestamp = bar_close_timestamps[i]
                 signal = strategy.on_bar_close(bar, risk.trades_today(bar["session_date"]))
                 if signal is not None:
                     diagnostics["signals_generated"] += 1
-                    next_entry_timestamp = self._next_bar_entry_timestamp(df, i)
+                    next_entry_timestamp = next_entry_timestamps[i]
                     if (
                         next_entry_timestamp is not None
                         and self._apex_entry_allowed(next_entry_timestamp)
@@ -301,7 +306,7 @@ class BacktestEngine:
                             self._record_event_pending_cancel(diagnostics, next_entry_timestamp)
 
         if pending_signal is not None and self.apex_rules.enabled:
-            last_timestamp = df.iloc[-1]["timestamp"] if len(df) else pd.Timestamp.now(tz=self.apex_timezone)
+            last_timestamp = timestamps[-1] if timestamps else pd.Timestamp.now(tz=self.apex_timezone)
             self._record_apex_pending_cancel(diagnostics, last_timestamp)
             pending_signal = None
         if position is not None and self.apex_rules.enabled:
@@ -417,6 +422,8 @@ class BacktestEngine:
                 "trade_orderflow_signed_volume_60",
                 "trade_orderflow_volume_60",
             },
+            "prior_session_ibs_reversion": {"is_rth", "prev_rth_high", "prev_rth_low", "prev_rth_close"},
+            "range_compression_breakout": {"is_rth"},
             "rth_gap_fade": {"is_rth", "prev_rth_close", "vwap"},
             "turn_of_month_bias": {"is_rth"},
             "trade_orderflow_multi_pressure": {"is_rth"},

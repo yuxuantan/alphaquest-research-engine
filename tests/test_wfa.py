@@ -1,5 +1,6 @@
 import pandas as pd
 import pytest
+from concurrent.futures import Future
 
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
@@ -385,6 +386,22 @@ def test_wfa_can_reuse_existing_window_train_grid(monkeypatch, tmp_path):
             },
         ]
     )
+    grid_config = {
+        "objective": "mar",
+        "parallel": {"enabled": False, "scope": "grid"},
+        "parameters": {"entry.params.reclaim_window_bars": [2, 7]},
+        "selection_filter": {},
+    }
+    existing = wfa_module._annotate_train_grid(
+        existing,
+        1,
+        pd.Timestamp("2022-01-15"),
+        pd.Timestamp("2022-02-15"),
+        pd.Timestamp("2022-02-15"),
+        pd.Timestamp("2022-03-15"),
+        "mar",
+        wfa_module._train_grid_metadata(BASE_CFG, grid_config, None),
+    )
     existing.to_csv(tmp_path / "window_001_train_grid.csv", index=False)
 
     def fail_run_core_grid(*args, **kwargs):
@@ -436,6 +453,121 @@ def test_wfa_can_reuse_existing_window_train_grid(monkeypatch, tmp_path):
     assert summary["reused_existing_train_grids"] is True
     assert summary["train_grid_report_files"] == [str(tmp_path / "window_001_train_grid.csv")]
     assert engine_configs[0]["strategy"]["entry"]["params"]["reclaim_window_bars"] == 7
+
+
+def test_wfa_rejects_stale_reusable_train_grid(monkeypatch, tmp_path):
+    existing = pd.DataFrame(
+        [
+            {
+                "run_id": 1,
+                "entry.params.reclaim_window_bars": 7,
+                "net_profit": 20.0,
+                "profit_factor": 2.0,
+                "max_drawdown": 5.0,
+                "max_drawdown_pct": 0.01,
+                "cagr": 0.02,
+                "mar": 2.0,
+            }
+        ]
+    )
+    existing.to_csv(tmp_path / "window_001_train_grid.csv", index=False)
+    monkeypatch.setattr("propstack.research.wfa.run_core_grid", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+
+    data = pd.DataFrame({"timestamp": pd.to_datetime(["2022-01-15", "2022-02-15"], utc=True)})
+    with pytest.raises(ValueError, match="missing metadata column wfa_window_id"):
+        run_wfa(
+            data,
+            BASE_CFG,
+            {
+                "train_months": 1,
+                "test_months": 1,
+                "step_months": 1,
+                "objective": "MAR",
+                "reuse_existing_train_grids": True,
+                "parameters": {"entry.params.reclaim_window_bars": [7]},
+            },
+            {"min_trade_count": 0, "max_drawdown": 99999},
+            train_grid_dir=tmp_path,
+        )
+
+
+def test_wfa_window_grid_parallel_uses_pooled_worker_path(monkeypatch):
+    evaluated = []
+
+    class FakeExecutor:
+        def __init__(self, max_workers, initializer=None, initargs=()):
+            self.max_workers = max_workers
+            if initializer:
+                initializer(*initargs)
+
+        def submit(self, fn, *args):
+            future = Future()
+            future.set_result(fn(*args))
+            return future
+
+        def shutdown(self):
+            return None
+
+    def fake_evaluate(data, base_config, benchmarks, idx, combo, include_reports=False, detail_data=None):
+        evaluated.append((idx, combo))
+        value = combo["entry.params.reclaim_window_bars"]
+        return (
+            {
+                "run_id": idx,
+                "entry.params.reclaim_window_bars": value,
+                "net_profit": float(value),
+                "profit_factor": 2.0,
+                "max_drawdown": 5.0,
+                "max_drawdown_pct": 0.01,
+                "cagr": 0.05,
+                "mar": float(value),
+                "total_trades": 1,
+            },
+            pd.DataFrame(),
+            pd.DataFrame(),
+        )
+
+    class FakeBacktestEngine:
+        def __init__(self, config):
+            self.config = config
+
+        def run(self, data, detail_data=None):
+            return {
+                "metrics": {
+                    "net_profit": 25.0,
+                    "profit_factor": 1.5,
+                    "max_drawdown": 5.0,
+                    "max_drawdown_pct": 0.01,
+                    "cagr": 0.05,
+                    "mar": 5.0,
+                    "total_trades": 1,
+                }
+            }
+
+    monkeypatch.setattr(wfa_module, "ProcessPoolExecutor", FakeExecutor)
+    monkeypatch.setattr(wfa_module, "as_completed", lambda futures: list(futures))
+    monkeypatch.setattr(wfa_module, "_evaluate_core_grid_combo", fake_evaluate)
+    monkeypatch.setattr("propstack.research.wfa.run_core_grid", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    data = pd.DataFrame({"timestamp": pd.to_datetime(["2022-01-15", "2022-02-15"], utc=True)})
+
+    results, summary = run_wfa(
+        data,
+        BASE_CFG,
+        {
+            "train_months": 1,
+            "test_months": 1,
+            "step_months": 1,
+            "parallel": {"enabled": True, "workers": 2, "scope": "window_grid"},
+            "parameters": {"entry.params.reclaim_window_bars": [2, 7]},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+    )
+
+    assert summary["parallel"] == {"enabled": True, "scope": "window_grid", "workers": 2}
+    assert results.loc[0, "selected_params"] == {"entry.params.reclaim_window_bars": 7}
+    assert len(evaluated) == 2
+    assert "train_grid_compute" in summary["phase_timings_seconds"]
 
 
 def test_wfa_early_exits_when_selected_train_row_is_not_profitable(monkeypatch):

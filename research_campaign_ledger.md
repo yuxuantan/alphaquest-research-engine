@@ -2,7 +2,7 @@
 
 Created: 2026-06-05
 Last reorganized: 2026-06-13
-Last updated: 2026-06-14
+Last updated: 2026-06-15
 
 Purpose: this file is the canonical decision index for strategy research. Keep
 accepted systems, invalid-evidence rules, source/data gates, and compact
@@ -16,7 +16,14 @@ narratives in `research_artifacts/`, and keep generated reports under
 
 | Role | System | Config | Evidence | Decision |
 | --- | --- | --- | --- | --- |
-| none | n/a | n/a | `research_artifacts/campaign_benchmark_likely_refresh_20260614.{json,csv}` | No strategy is live-eligible under the 2026-06-14 screenshot benchmark. All prior campaign-test reports were archived as old-stack or not-likely evidence. |
+| none | n/a | n/a | `research_artifacts/acceptance_oos_shortlist_passes_20260615.{json,csv}` | No strategy is live-eligible. The two seven-test shortlist passes were run through terminal `acceptance_oos_test` on 2026-06-15 and both failed PF and MAR. |
+
+### Shortlist-Passed, Acceptance-Failed Systems
+
+| Campaign | Variant | Symbol | Timeframe | Evidence | Status |
+| --- | --- | --- | --- | --- | --- |
+| `nq_intraday_momentum_priority` | `short_first_1030_weakness_1130_strength_long50` | NQ | 5m | `data/reports/campaigns/nq_intraday_momentum_priority/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/short_first_1030_weakness_1130_strength_long50/campaign_tests/campaign_test_summary.json` | Failed acceptance OOS: PF `0.836`, MAR `-1.012`, trades `56`; not live-eligible. |
+| `morning_orderflow_momentum` | `two_sided_signed_flow_1515_flatten_continuation` | ES | 1m | `data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1515_flatten_continuation/campaign_tests/campaign_test_summary.json` | Failed acceptance OOS: PF `0.863`, MAR `-1.109`, trades `53`; not live-eligible. |
 
 ### Current Search Policy
 
@@ -27,12 +34,13 @@ narratives in `research_artifacts/`, and keep generated reports under
   bar-level features first. True bid/ask or book-depth orderflow remains
   blocked until reliable historical `trades` plus `mbp-1`/`tbbo`/`mbo` data
   and point-in-time reconstruction are available.
-- Do not use the old 15:15 ES flatten pass as proof of live eligibility or a
-  new independent alpha family. It failed the 2026-06-14 likely-pass audit on
-  the new WFA PF and acceptance gates.
-- Do not use the old NQ momentum pass as proof of live eligibility or a new
-  independent alpha family. It failed the 2026-06-14 likely-pass audit on the
-  new limited-monkey, WFA PF, and acceptance/incubation gates.
+- Do not use the ES 15:15 flatten or NQ long50 shortlist passes as proof of
+  live eligibility. They passed only the seven shortlist-selection tests under
+  the updated 2026-06-14 benchmark and both failed the fresh 2026-06-15
+  `acceptance_oos_test` on PF and MAR.
+- Do not use the base ES signed-flow continuation as a shortlist pass. Its
+  fresh rerun failed `limited_monkey_test`, `simulated_incubation_core`, and
+  `simulated_incubation_monkey` under the updated benchmark.
 - The historical no-new-data ES-only independent mean-reversion candidate
   `bankruptcy_distress_reversion/ES/1m/chapter11_yoy_prior_down_long` is now
   archived as not-likely under the 2026-06-14 screen. Do not treat it as an
@@ -43,10 +51,9 @@ narratives in `research_artifacts/`, and keep generated reports under
   after approved longer ES+MES `trades` history; second,
   `quote_liquidity_sweep_reversion/ES/1m/tbbo_failed_pdh_pdl_or30_sweep_reclaim`
   after an approved one-year ES `tbbo` pilot.
-- For production follow-up, there are no accepted configs to start from. Any
-  live candidate must be regenerated or retested under the 2026-06-14
-  screenshot benchmark and must write a fresh `campaign_test_summary.json`
-  with `passed: true`.
+- There are no current production follow-up rows from the shortlist refresh.
+  Any live candidate must include `acceptance_oos_test` and must write a fresh
+  full-stack `campaign_test_summary.json` with `passed: true`.
 
 ### Source-Validity Guardrails
 
@@ -76,7 +83,7 @@ narratives in `research_artifacts/`, and keep generated reports under
 - YAML schema: top-level `campaign_id`, `variant_id`, `strategy_name`, `symbol`, `dataset_id`, `timeframe`, `data`, `strategy`, `core`, `benchmarks`, `core_grid`, `monkey`, `wfa`, `prop_rules`, `monte_carlo`; report root is computed from campaign, symbol, dataset, timeframe, and variant by current code.
 - Test framework: `pytest`, configured in `pyproject.toml` with `pythonpath = ["src"]`.
 - End-to-end campaign script: `PYTHONPATH=src python3 -m propstack.run_campaign_stages --config PATH --skip-validation`.
-- Acceptance criteria: staged runner defaults in `src/propstack/research/campaign_stages.py`. The 2026-06-14 screenshot benchmark is canonical. A pass requires limited core grid >=100 combinations and >=70% profitable iterations; limited monkey >=90% beat net profit and >=90% beat max drawdown; WFA selected by MAR with trade count >50/year, no early exit, >=10 windows, stitched OOS PF >1.5, MAR >0.5, expectancy R >0.2, and total trades >500; WFA OOS monkey >=90% beat net profit and >=90% beat max drawdown; WFA OOS Monte Carlo probability profit before drawdown >50%; simulated incubation core PF >1.2, MAR >1.2, expectancy R >0.15, and total trades >75; simulated incubation monkey >=80% beat net profit and >=80% beat max drawdown; acceptance OOS PF >1.2, MAR >1.2, expectancy R >0.15, and total trades >25 on the latest 6-month OOS window trained on the prior 24 months.
+- Acceptance criteria: staged runner defaults in `src/propstack/research/campaign_stages.py`. The updated 2026-06-14 screenshot benchmark is canonical. A pass requires limited core grid >=100 combinations and >=70% profitable iterations; limited monkey >=90% beat net profit and >=90% beat max drawdown; WFA selected by MAR with trade count >50/year, no early exit, >=10 windows, stitched OOS PF >=1.2, MAR >=0.4, and total trades >=500; WFA OOS monkey >=80% beat net profit and >=80% beat max drawdown; WFA OOS Monte Carlo probability profit before drawdown >50%; simulated incubation core PF >=1.0, MAR >=1.0, and total trades >=75; simulated incubation monkey >=80% beat net profit and >=80% beat max drawdown; acceptance OOS PF >=1.0, MAR >=1.0, and total trades >=25 on the latest 6-month OOS window trained on the prior 24 months. Expectancy R is reported but is no longer a hard screenshot gate.
 - Data assumptions: ES Databento DBN 1-minute OHLCV remains available for legacy full-history price/volume tests, but aggregated bar-level orderflow research is valid only from corrected UTC-to-New-York Sierra caches or independently verified Databento/Rithmic-style sources. Prefer strategies using 1-minute OHLCV plus `BidVolume`, `AskVolume`, `NumberOfTrades`, signed volume, buy volume, and sell volume. Defer additional Databento individual-print history requests until corrected aggregated bar-level orderflow candidates are exhausted. Existing explicit ES roll calendar `configs/data/ES/motivewave_rithmic_roll_calendar.csv`, no price adjustment, spreads excluded, America/New_York timestamps, RTH/ETH sessions from config, roll-boundary reset of previous-day levels, and warmup rules still apply.
 - Execution assumptions: signals are evaluated on bar close and entered next bar open; ES tick size 0.25 and tick value 12.50; commission and slippage come from YAML and must not be reduced to force a pass.
 - Same-bar ambiguity: engine resolves stop/target conflicts with 1-minute detail data on higher-timeframe runs where available; otherwise fallback is conservative stop-first.
@@ -87,9 +94,38 @@ narratives in `research_artifacts/`, and keep generated reports under
 
 ## Historical Evidence Log
 
+- Acceptance OOS for shortlist passes 2026-06-15: ran the terminal
+  `acceptance_oos_test` only for the two active reports that had passed the
+  seven shortlist-selection tests. Manifest:
+  `research_artifacts/acceptance_oos_shortlist_passes_20260615.{json,csv}`.
+  Result: 2 tested, 0 passed, 2 failed. ES
+  `morning_orderflow_momentum/two_sided_signed_flow_1515_flatten_continuation`
+  failed PF `0.863 < 1.0` and MAR `-1.109 < 1.0` with 53 trades and zero Apex
+  violations. NQ
+  `nq_intraday_momentum_priority/short_first_1030_weakness_1130_strength_long50`
+  failed PF `0.836 < 1.0` and MAR `-1.012 < 1.0` with 56 trades and zero Apex
+  violations. Both `campaign_test_summary.json` files now include
+  `acceptance_oos_test` and have `passed: false`.
+- Campaign benchmark shortlist refresh 2026-06-14: replaced the earlier
+  stricter screenshot interpretation with the updated benchmark, reran only
+  reports likely to pass the seven shortlist-selection tests, and intentionally
+  excluded `acceptance_oos_test`. Manifest:
+  `research_artifacts/campaign_benchmark_shortlist_refresh_20260614.{json,csv}`.
+  Result: 194 report roots audited, 191 archived under
+  `data/reports/campaigns/archive_not_likely_20260614`, 3 rerun, 2 passed
+  shortlist, and 1 failed. Shortlist passes were
+  `nq_intraday_momentum_priority/short_first_1030_weakness_1130_strength_long50`
+  and
+  `morning_orderflow_momentum/two_sided_signed_flow_1515_flatten_continuation`.
+  The rerun failure was
+  `morning_orderflow_momentum/two_sided_signed_flow_continuation`, failing
+  limited-monkey max-drawdown beat rate, incubation MAR, and incubation
+  monkey net-profit beat rate. No result is live-eligible because acceptance
+  OOS was not included.
 - Campaign benchmark likely-pass refresh 2026-06-14: implemented the
-  screenshot benchmark globally and audited existing campaign-test reports
-  before rerunning. Manifest:
+  earlier stricter screenshot interpretation and audited existing
+  campaign-test reports before rerunning. This entry is superseded by the
+  shortlist refresh above. Manifest:
   `research_artifacts/campaign_benchmark_likely_refresh_20260614.{json,csv}`.
   Result: 189 report roots archived under
   `data/reports/campaigns/archive_not_likely_20260614`, 0 existing reports

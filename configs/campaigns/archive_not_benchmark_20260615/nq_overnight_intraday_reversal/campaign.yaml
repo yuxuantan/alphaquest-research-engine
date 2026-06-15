@@ -1,0 +1,31 @@
+campaign_id: nq_overnight_intraday_reversal
+campaign_name: NQ Overnight-Intraday Reversal
+status: research
+
+academic_sources:
+  - title: "Overnight-Intraday Reversal Everywhere"
+    authors: "Chun Liu, Yang Liu, Tianyu Wang, Guofu Zhou, Yingzi Zhu"
+    year: 2016
+    venue: SSRN working paper
+    url: "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2730304"
+    finding_used: "Assets with low overnight returns outperform intraday and assets with high overnight returns underperform intraday; the paper reports robustness across asset classes."
+    evidence_directness: "Indirect but relevant. The paper's futures evidence supports testing an intraday reversal after overnight index-futures moves; this campaign uses NQ as the liquid Nasdaq futures implementation."
+
+edge_thesis: >
+  Fade large NQ overnight/RTH-open gaps only after the first completed RTH window
+  confirms that price is reversing or at least failing to continue in the
+  overnight direction.
+
+translation_notes:
+  why_nq: "Prior local NQ scratch screens showed a stronger overnight-reversal shape than ES, and NQ has enough 1-minute history for full WFA/incubation/acceptance testing."
+  no_lookahead: "Signals use the previous RTH close, current RTH open, and completed first-window RTH bars only."
+  expected_working_regime: "Liquidity-provision sessions where overnight inventory is faded after the cash open."
+  expected_failure_regime: "Gap-and-go trend days, macro/news openings, and sessions where the first-window reversal is only a pause before continuation."
+
+variants:
+  - first5_reversal_1430
+  - first5_reversal_1230
+  - first15_reversal_1559
+
+timeframes:
+  - 5m

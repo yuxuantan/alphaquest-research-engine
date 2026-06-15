@@ -1,0 +1,41 @@
+campaign_id: nq_opening_range_breakout
+campaign_name: NQ Opening Range Breakout
+source:
+  title: NQ opening range breakout trade plan references
+  urls:
+  - https://www.tradethatswing.com/opening-range-breakout-strategy/
+  - https://www.amazon.com/Day-Trading-Short-Term-Patterns-Opening/dp/0934380171
+  - https://www.tradingview.com/script/ZOd0TyEg-15-Min-ORB-Strategy-for-NQ-w-5-min-Confirmation/
+status: researching
+
+idea:
+  summary: >
+    Test NQ RTH opening-range continuation breaks using source-backed ORB mechanics:
+    define the early 5- or 15-minute range, wait for a confirming close outside
+    that range, and trade in the breakout direction with same-session exits.
+  entry_thesis: >
+    The first RTH auction creates a visible high/low reference. Breaks through
+    that reference may identify directional auction acceptance, especially when
+    the break is confirmed by the close, current-bar participation, or session
+    VWAP alignment.
+  exit_thesis: >
+    Use the opposite opening-range edge as invalidation and cost-adjusted fixed-R
+    targets so the translation preserves a clear risk unit after NQ tick costs.
+
+mechanics:
+  market_timezone: America/New_York
+  session: RTH-only entries; all positions flatten before the cash-equity close.
+  variants:
+    five_min_volume_extension_1130: >
+      Five-minute opening range; require a volume-confirmed close outside the
+      range and flatten by late morning.
+    fifteen_min_close_breakout_1559: >
+      Fifteen-minute opening range with one 5-minute confirmation close, allowing
+      the position to carry through the RTH session.
+    vwap_volume_aligned_breakout_1430: >
+      Opening-range continuation only when the confirming close is aligned with
+      session VWAP and participation is above recent same-clock volume.
+
+notes:
+  - NQ ORB is not present in prior configs/reports at creation time.
+  - ES ORB variants exist historically, so this is a new NQ/source translation rather than a new engine module.

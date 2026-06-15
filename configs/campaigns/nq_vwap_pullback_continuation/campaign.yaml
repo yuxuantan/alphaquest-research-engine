@@ -1,0 +1,38 @@
+campaign_id: nq_vwap_pullback_continuation
+campaign_name: NQ VWAP Pullback Continuation
+status: research
+internet_sources:
+- title: Volume Weighted Average Price (VWAP) trading strategy overview
+  source: Investopedia
+  url: https://www.investopedia.com/ask/answers/031115/what-common-strategy-traders-implement-when-using-volume-weighted-average-price-vwap.asp
+  finding_used: VWAP is commonly used by intraday traders as a trend, support, and
+    resistance reference.
+- title: Anchored VWAP
+  source: AlphaTrends / Brian Shannon
+  url: https://alphatrends.net/anchored-vwap/
+  finding_used: VWAP is treated as a dynamic institutional reference level; this campaign
+    uses session VWAP only to avoid anchor discretion.
+- title: VWAP pullback trading strategy for day traders
+  source: TradeMomentum
+  url: https://www.trademomentum.org/blog/vwap-pullback-trading-strategy-for-day-traders
+  finding_used: 'Practitioner setup: identify trend, wait for a pullback to VWAP,
+    and enter on continuation/reclaim.'
+edge_thesis: 'In a strong intraday NQ trend, a pullback to session VWAP followed by
+  a reclaim may identify temporary liquidity absorption before continuation. The variants
+  differ by trend context: opening drive, multi-bar VWAP trend, and failed break below
+  VWAP.'
+translation_notes:
+  why_nq: NQ has long local 1-minute history and prior NQ tests showed stronger intraday
+    continuation than ES price-only variants.
+  no_lookahead: Signals use completed bars only; entries occur after the bar-close
+    reclaim condition.
+  risk_model: One fixed NQ contract, cost-adjusted fixed-R targets, sweep-extreme
+    stop from the VWAP pullback bar, and 15:59 ET flatten.
+  evidence_directness: Practitioner-source strategy translated into deterministic
+    futures rules; acceptance depends entirely on staged validation.
+variants:
+- opening_drive_long_vwap_pullback
+- trend_reclaim_long_vwap_pullback
+- failed_break_long_vwap_reclaim
+timeframes:
+- 5m

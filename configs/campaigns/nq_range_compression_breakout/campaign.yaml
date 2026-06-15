@@ -1,0 +1,51 @@
+campaign_id: nq_range_compression_breakout
+campaign_name: NQ Range Compression Breakout
+status: research
+internet_and_book_sources:
+- title: Narrow Range Day NR7
+  source: StockCharts ChartSchool
+  url: https://chartschool.stockcharts.com/table-of-contents/trading-strategies-and-models/trading-strategies/narrow-range-day-nr7
+  finding_used: NR4 and NR7 identify the narrowest range in four or seven sessions
+    and are commonly paired with opening-range breakouts.
+- title: NR7 Trading Strategy - Toby Crabels Narrow Range 7 Pattern
+  source: Quantified Strategies
+  url: https://www.quantifiedstrategies.com/nr7-trading-strategy-toby-crabel/
+  finding_used: Credits the NR7 pattern to Toby Crabel and frames it as a short-term
+    breakout setup after range contraction.
+- title: 'Short-Term Pattern: ID/NR4'
+  source: Traders.com Advantage
+  url: https://technical.traders.com/tradersonline/display.asp?art=2666
+  finding_used: Describes the ID/NR4 pattern from Raschke and Connors as an inside
+    day with the narrowest four-day range.
+edge_thesis: Prior-session range contraction can precede intraday volatility expansion.
+  This campaign tests whether NQ futures breakouts after NR4, ID/NR4, or NR7 conditions
+  survive costs, prop rules, WFA, monkey randomization, and acceptance OOS.
+translation_notes:
+  why_nq: NQ has full local 1-minute history and stronger recent intraday expansion
+    behavior than ES price-only variants.
+  no_lookahead: The compression condition uses only completed prior RTH sessions;
+    breakouts use completed intraday bars and enter next bar open.
+  risk_model: One fixed NQ contract, percent-from-entry stop, cost-adjusted fixed-R
+    target, and 15:59 ET flatten.
+  source_directness: Source-backed pattern translated into deterministic futures rules;
+    no source result is treated as acceptance evidence.
+variants:
+- nr4_prior_session_breakout
+- id_nr4_prior_session_breakout
+- nr7_opening_range_breakout
+- nr7_or30_confirmed_breakout_refined
+- nr7_or30_morning_topcluster
+- nr7_or30_morning_wider_stop
+- nr7_or30_morning_range_capped
+- nr7_or30_morning_range_capped_higher_r
+- nr7_or30_first_hour_range_band
+- nr7_or30_1045_relaxed_compression
+- nr7_or30_1045_rank_relaxed_120cap
+- nr7_or30_1045_rank_relaxed_130cap
+- nr7_or30_1040_rank_relaxed_135cap
+- nr7_or30_1040_rank_relaxed_138cap
+- nr7_or30_1040_rank_relaxed_140cap
+- nr7_or30_1045_rank_relaxed_135cap
+- nr7_or30_1045_rank_relaxed_140cap
+timeframes:
+- 5m

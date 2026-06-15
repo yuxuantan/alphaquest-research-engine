@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import math
 import os
 import random
 import pandas as pd
@@ -233,10 +234,15 @@ def _run_parallel_monte_carlo(
         initializer=_init_monte_carlo_worker,
         initargs=(trades, cfg, rules),
     ) as executor:
-        futures = {executor.submit(_run_monte_carlo_worker, run_id): run_id for run_id in range(1, total_runs + 1)}
-        for done, future in enumerate(as_completed(futures), start=1):
-            rows.append(future.result())
-            progress.update(done)
+        futures = {
+            executor.submit(_run_monte_carlo_batch_worker, batch): len(batch)
+            for batch in _run_id_batches(total_runs, workers)
+        }
+        completed = 0
+        for future in as_completed(futures):
+            rows.extend(future.result())
+            completed += futures[future]
+            progress.update(completed)
     return rows
 
 
@@ -260,19 +266,21 @@ def _run_parallel_monte_carlo_with_audit(
     ) as executor:
         futures = {
             executor.submit(
-                _run_audited_monte_carlo_worker,
-                run_id,
+                _run_audited_monte_carlo_batch_worker,
+                batch,
                 retain_path_trades,
                 retain_path_events,
-            ): run_id
-            for run_id in range(1, total_runs + 1)
+            ): len(batch)
+            for batch in _run_id_batches(total_runs, workers)
         }
-        for done, future in enumerate(as_completed(futures), start=1):
-            row, trade_rows, event_rows = future.result()
-            rows.append(row)
+        completed = 0
+        for future in as_completed(futures):
+            batch_rows, trade_rows, event_rows = future.result()
+            rows.extend(batch_rows)
             path_trade_rows.extend(trade_rows)
             path_event_rows.extend(event_rows)
-            progress.update(done)
+            completed += futures[future]
+            progress.update(completed)
     return rows, path_trade_rows, path_event_rows
 
 
@@ -287,6 +295,10 @@ def _run_monte_carlo_worker(run_id: int) -> dict:
     if _WORKER_TRADES is None or _WORKER_CFG is None or _WORKER_RULES is None:
         raise RuntimeError("Monte Carlo worker was not initialized.")
     return _evaluate_monte_carlo_run(run_id, _WORKER_TRADES, _WORKER_CFG, _WORKER_RULES)
+
+
+def _run_monte_carlo_batch_worker(run_ids: list[int]) -> list[dict]:
+    return [_run_monte_carlo_worker(run_id) for run_id in run_ids]
 
 
 def _run_audited_monte_carlo_worker(
@@ -304,6 +316,26 @@ def _run_audited_monte_carlo_worker(
         retain_path_trades,
         retain_path_events,
     )
+
+
+def _run_audited_monte_carlo_batch_worker(
+    run_ids: list[int],
+    retain_path_trades: bool,
+    retain_path_events: bool,
+) -> tuple[list[dict], list[dict], list[dict]]:
+    rows = []
+    path_trade_rows = []
+    path_event_rows = []
+    for run_id in run_ids:
+        row, trade_rows, event_rows = _run_audited_monte_carlo_worker(
+            run_id,
+            retain_path_trades,
+            retain_path_events,
+        )
+        rows.append(row)
+        path_trade_rows.extend(trade_rows)
+        path_event_rows.extend(event_rows)
+    return rows, path_trade_rows, path_event_rows
 
 
 def _evaluate_monte_carlo_run(run_id: int, trades: pd.DataFrame, cfg: dict, rules: PropRules) -> dict:
@@ -430,6 +462,21 @@ def _parallel_settings(cfg: dict, run_count: int) -> dict:
         "workers": workers,
         "scope": scope,
     }
+
+
+def _run_id_batches(total_runs: int, workers: int) -> list[list[int]]:
+    run_ids = list(range(1, int(total_runs) + 1))
+    if not run_ids:
+        return []
+    chunk_size = _parallel_chunk_size(len(run_ids), workers)
+    return [run_ids[start : start + chunk_size] for start in range(0, len(run_ids), chunk_size)]
+
+
+def _parallel_chunk_size(item_count: int, workers: int) -> int:
+    if item_count <= 0:
+        return 1
+    target_chunks = max(1, int(workers) * 4)
+    return max(1, min(128, math.ceil(item_count / target_chunks)))
 
 
 def _run_seed(seed: int, run_id: int) -> int:

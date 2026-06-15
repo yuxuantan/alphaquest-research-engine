@@ -3,7 +3,9 @@ from __future__ import annotations
 import copy
 from datetime import datetime
 import math
+import os
 from pathlib import Path
+import time
 from typing import Any
 
 import pandas as pd
@@ -20,6 +22,7 @@ from propstack.research.monkey import run_monkey
 from propstack.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
 from propstack.research.wfa import run_wfa
 from propstack.utils.config import config_timeframe, load_yaml, variant_root, write_json
+from propstack.utils.hashing import object_sha256
 from propstack.utils.params import apply_dotted_params
 from propstack.utils.reports import market_timezone, write_report_csv
 
@@ -125,6 +128,45 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
     return out
 
 
+def apply_fast_runtime_defaults(cfg: dict, workers: int | None = None) -> dict:
+    out = copy.deepcopy(cfg)
+    worker_count = max(1, int(workers or min(6, os.cpu_count() or 1)))
+    _enable_parallel(out, "core_grid", "grid", worker_count)
+    _enable_parallel(out, "monkey", "runs", worker_count)
+    _enable_parallel(out, "wfa", "window_grid", worker_count)
+    _enable_parallel(out, "monte_carlo", "runs", worker_count)
+
+    campaign_tests = out.get("campaign_tests") or {}
+    for stage_name, scope in [
+        ("limited_core_grid_test", "grid"),
+        ("limited_monkey_test", "runs"),
+        ("walk_forward_analysis", "window_grid"),
+        ("wfa_oos_monkey_test", "runs"),
+        ("wfa_oos_monte_carlo", "runs"),
+        ("simulated_incubation_monkey", "runs"),
+        (ACCEPTANCE_STAGE, "grid"),
+    ]:
+        stage_cfg = campaign_tests.get(stage_name)
+        if isinstance(stage_cfg, dict):
+            _enable_parallel(stage_cfg, None, scope, worker_count)
+    incubation = campaign_tests.get("simulated_incubation_core") or {}
+    train_selection = incubation.get("train_selection")
+    if isinstance(train_selection, dict):
+        _enable_parallel(train_selection, None, "grid", worker_count)
+    return out
+
+
+def _enable_parallel(container: dict, section: str | None, scope: str, workers: int) -> None:
+    target = container.setdefault(section, {}) if section else container
+    if not isinstance(target, dict):
+        return
+    parallel = copy.deepcopy(target.get("parallel") or {})
+    parallel["enabled"] = True
+    parallel["scope"] = scope
+    parallel["workers"] = max(int(parallel.get("workers") or 1), workers)
+    target["parallel"] = parallel
+
+
 def _write_config_snapshot(path: Path, cfg: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -140,16 +182,19 @@ def run_campaign_stage_tests(
     continue_on_failure: bool = False,
     out_dir: str | Path | None = None,
     include_acceptance: bool = True,
+    fast_runtime_defaults: bool = False,
 ) -> dict:
     config_path = Path(config_path)
     cfg = canonicalize_campaign_config(load_yaml(config_path), include_acceptance=include_acceptance)
+    if fast_runtime_defaults:
+        cfg = apply_fast_runtime_defaults(cfg)
     root = Path(out_dir) if out_dir else variant_root(cfg) / "campaign_tests"
     root.mkdir(parents=True, exist_ok=True)
     _write_config_snapshot(root / "config_snapshot.yaml", cfg)
 
     campaign_tests = cfg.get("campaign_tests") or {}
     stage_order = _stage_order(campaign_tests)
-    context: dict[str, Any] = {}
+    context: dict[str, Any] = {"_prepared_data_cache": {}}
     results = []
     halted = False
 
@@ -190,6 +235,8 @@ def run_campaign_stage_tests(
         "config_path": str(config_path),
         "output_dir": str(root),
         "created_at": datetime.now().isoformat(timespec="seconds"),
+        "skip_validation": skip_validation,
+        "fast_runtime_defaults": fast_runtime_defaults,
         "passed": all(result["passed"] or result["status"] == "skipped" for result in results)
         and any(result["status"] == "passed" for result in results),
         "halted": halted,
@@ -211,13 +258,13 @@ def _run_stage(
 ) -> dict:
     started = datetime.now()
     if stage_name == "limited_core_grid_test":
-        payload = _run_limited_core_grid(cfg, stage_cfg, stage_dir, skip_validation)
+        payload = _run_limited_core_grid(cfg, stage_cfg, stage_dir, skip_validation, context)
         context["limited_core_grid_results"] = payload.get("core_grid_results")
         context["limited_core_grid_parameters"] = payload.get("core_grid_parameters") or {}
     elif stage_name == "limited_monkey_test":
         payload = _run_limited_monkey(cfg, stage_cfg, stage_dir, skip_validation, context)
     elif stage_name == "walk_forward_analysis":
-        payload = _run_wfa_stage(cfg, stage_cfg, stage_dir, skip_validation)
+        payload = _run_wfa_stage(cfg, stage_cfg, stage_dir, skip_validation, context)
         context["wfa_trades"] = payload.get("trades")
         context["wfa_market"] = payload.get("market")
         context["wfa_detail"] = payload.get("detail")
@@ -234,7 +281,7 @@ def _run_stage(
     elif stage_name == "simulated_incubation_monkey":
         payload = _run_incubation_monkey(cfg, stage_cfg, stage_dir, context)
     elif stage_name == ACCEPTANCE_STAGE:
-        payload = _run_acceptance_oos(cfg, stage_cfg, stage_dir, skip_validation)
+        payload = _run_acceptance_oos(cfg, stage_cfg, stage_dir, skip_validation, context)
     else:
         raise ValueError(f"Unsupported campaign test stage: {stage_name}")
 
@@ -260,10 +307,22 @@ def _run_stage(
     }
 
 
-def _run_limited_core_grid(cfg: dict, stage_cfg: dict, stage_dir: Path, skip_validation: bool) -> dict:
+def _run_limited_core_grid(
+    cfg: dict,
+    stage_cfg: dict,
+    stage_dir: Path,
+    skip_validation: bool,
+    context: dict,
+) -> dict:
     grid_cfg = _merged_section(cfg, "core_grid", stage_cfg)
     subset = _stage_subset(cfg, stage_cfg, "core_grid")
-    market, detail, quality, input_hash = _prepare_stage_data(cfg, subset, stage_dir, skip_validation)
+    market, detail, quality, input_hash = _prepare_stage_data_cached(
+        cfg,
+        subset,
+        stage_dir,
+        skip_validation,
+        data_cache=context.get("_prepared_data_cache"),
+    )
     report_dir = stage_dir if grid_cfg.get("retain_iteration_reports", True) else None
     results, summary = run_core_grid(
         market,
@@ -298,7 +357,13 @@ def _run_limited_monkey(
 ) -> dict:
     monkey_cfg = _merged_section(cfg, "monkey", stage_cfg)
     subset = _stage_subset(cfg, stage_cfg, "monkey")
-    market, detail, quality, input_hash = _prepare_stage_data(cfg, subset, stage_dir, skip_validation)
+    market, detail, quality, input_hash = _prepare_stage_data_cached(
+        cfg,
+        subset,
+        stage_dir,
+        skip_validation,
+        data_cache=context.get("_prepared_data_cache"),
+    )
     selected_row = _select_median_profitable_core_grid_row(
         context.get("limited_core_grid_results"),
         context.get("limited_core_grid_parameters") or {},
@@ -334,7 +399,13 @@ def _run_limited_monkey(
     }
 
 
-def _run_wfa_stage(cfg: dict, stage_cfg: dict, stage_dir: Path, skip_validation: bool) -> dict:
+def _run_wfa_stage(
+    cfg: dict,
+    stage_cfg: dict,
+    stage_dir: Path,
+    skip_validation: bool,
+    context: dict,
+) -> dict:
     wfa_cfg = _merged_section(cfg, "wfa", stage_cfg)
     wfa_cfg.setdefault("mode", "unanchored")
     wfa_cfg.setdefault("train_months", 48)
@@ -349,7 +420,14 @@ def _run_wfa_stage(cfg: dict, stage_cfg: dict, stage_dir: Path, skip_validation:
         {"data_window": {"mode": "exclude_last_months", "months": 18}, **stage_cfg},
         "wfa",
     )
-    market, detail, quality, input_hash = _prepare_stage_data(cfg, subset, stage_dir, skip_validation, show_progress=True)
+    market, detail, quality, input_hash = _prepare_stage_data_cached(
+        cfg,
+        subset,
+        stage_dir,
+        skip_validation,
+        show_progress=True,
+        data_cache=context.get("_prepared_data_cache"),
+    )
     results, summary, trades = run_wfa(
         market,
         cfg,
@@ -358,6 +436,7 @@ def _run_wfa_stage(cfg: dict, stage_cfg: dict, stage_dir: Path, skip_validation:
         include_trade_log=True,
         train_grid_dir=stage_dir,
         detail_data=detail,
+        input_hash=input_hash,
     )
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "wfa_results.csv", report_timezone, index=False)
@@ -450,6 +529,7 @@ def _run_incubation_core(
             stage_cfg["train_selection"],
             stage_dir / "train_selection",
             skip_validation,
+            context.get("_prepared_data_cache"),
         )
     else:
         selected_params = stage_cfg.get("selected_params") or context.get("incubation_params") or {}
@@ -459,7 +539,13 @@ def _run_incubation_core(
         {"data_window": {"mode": "last_months", "months": 18}, **stage_cfg},
         "core",
     )
-    market, detail, quality, input_hash = _prepare_stage_data(test_cfg, subset, stage_dir, skip_validation)
+    market, detail, quality, input_hash = _prepare_stage_data_cached(
+        test_cfg,
+        subset,
+        stage_dir,
+        skip_validation,
+        data_cache=context.get("_prepared_data_cache"),
+    )
     result = BacktestEngine(test_cfg).run(market, detail_data=detail)
     trades = result["trades"]
     report_timezone = market_timezone(test_cfg)
@@ -493,7 +579,9 @@ def _run_acceptance_oos(
     stage_cfg: dict,
     stage_dir: Path,
     skip_validation: bool,
+    context: dict | None = None,
 ) -> dict:
+    context = context or {}
     train_months = int(stage_cfg.get("train_months", 24))
     test_months = int(stage_cfg.get("test_months", 6))
     if train_months <= 0 or test_months <= 0:
@@ -501,12 +589,13 @@ def _run_acceptance_oos(
 
     base_subset = _acceptance_base_subset(cfg, stage_cfg)
     bounded_subset, planned_window = _planned_acceptance_subset(base_subset, train_months, test_months)
-    market, detail, quality, input_hash = _prepare_stage_data(
+    market, detail, quality, input_hash = _prepare_stage_data_cached(
         cfg,
         bounded_subset,
         stage_dir,
         skip_validation,
         show_progress=True,
+        data_cache=context.get("_prepared_data_cache"),
     )
     window = _resolve_acceptance_window(market, planned_window, train_months, test_months)
     train = _slice_session_window(market, window["train_start"], window["train_end_exclusive"])
@@ -614,15 +703,45 @@ def _run_incubation_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context:
     return {"summary": summary, "artifacts": _stage_artifacts(stage_dir)}
 
 
+def _prepare_stage_data_cached(
+    cfg: dict,
+    subset: dict | None,
+    stage_dir: Path,
+    skip_validation: bool,
+    show_progress: bool = False,
+    data_cache: dict | None = None,
+) -> tuple[pd.DataFrame, pd.DataFrame | None, dict, str]:
+    kwargs = {"show_progress": show_progress}
+    code = getattr(_prepare_stage_data, "__code__", None)
+    if data_cache is not None and code is not None and "data_cache" in code.co_varnames:
+        kwargs["data_cache"] = data_cache
+    return _prepare_stage_data(cfg, subset, stage_dir, skip_validation, **kwargs)
+
+
 def _prepare_stage_data(
     cfg: dict,
     subset: dict | None,
     stage_dir: Path,
     skip_validation: bool,
     show_progress: bool = False,
+    data_cache: dict | None = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame | None, dict, str]:
     timeframe = config_timeframe(cfg)
     output_dir = None if skip_validation else stage_dir / "validation"
+    cache_key = _prepared_data_cache_key(cfg, subset, timeframe) if output_dir is None and data_cache is not None else None
+    if cache_key and cache_key in data_cache:
+        market, detail, quality, input_hash = data_cache[cache_key]
+        quality = {
+            **quality,
+            "prepared_data_cache": {
+                "enabled": True,
+                "hit": True,
+                "key": cache_key,
+            },
+        }
+        return market, detail, quality, input_hash
+
+    started = time.perf_counter()
     market, quality, execution_data = prepare_data(
         cfg["data"],
         output_dir,
@@ -633,7 +752,28 @@ def _prepare_stage_data(
     )
     detail = execution_data if timeframe != "1m" else None
     input_hash = data_source_hash(cfg["data"], subset)
+    quality = {
+        **quality,
+        "prepare_data_duration_seconds": round(time.perf_counter() - started, 6),
+        "prepared_data_cache": {
+            "enabled": cache_key is not None,
+            "hit": False,
+            "key": cache_key,
+        },
+    }
+    if cache_key:
+        data_cache[cache_key] = (market, detail, quality, input_hash)
     return market, detail, quality, input_hash
+
+
+def _prepared_data_cache_key(cfg: dict, subset: dict | None, timeframe: str) -> str:
+    return object_sha256(
+        {
+            "data": cfg.get("data", {}),
+            "subset": subset or {},
+            "timeframe": timeframe,
+        }
+    )
 
 
 def evaluate_criteria(payload: dict, criteria: list[dict]) -> list[dict]:
@@ -1011,6 +1151,7 @@ def _run_incubation_train_selection(
     selection_cfg: dict,
     train_dir: Path,
     skip_validation: bool,
+    data_cache: dict | None = None,
 ) -> tuple[dict, dict]:
     selection_cfg = copy.deepcopy(selection_cfg)
     selection_cfg["objective"] = "MAR"
@@ -1019,12 +1160,13 @@ def _run_incubation_train_selection(
     train_subset = selection_cfg.get("data_subset") or {}
     if not train_subset:
         raise ValueError("simulated_incubation_core.train_selection.data_subset is required.")
-    market, detail, quality, input_hash = _prepare_stage_data(
+    market, detail, quality, input_hash = _prepare_stage_data_cached(
         cfg,
         dict(train_subset),
         train_dir,
         skip_validation,
         show_progress=True,
+        data_cache=data_cache,
     )
     return _run_train_selection_grid(
         cfg,

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from itertools import product
+import math
 import os
 from pathlib import Path
 
@@ -121,12 +122,15 @@ def _run_parallel_core_grid(
         initargs=(data, detail_data, base_config, benchmarks, include_reports),
     ) as executor:
         futures = {
-            executor.submit(_run_core_grid_worker, idx, combo): idx
-            for idx, combo in enumerate(combos, start=1)
+            executor.submit(_run_core_grid_batch_worker, batch): len(batch)
+            for batch in _combo_batches(combos, workers)
         }
-        for done, future in enumerate(as_completed(futures), start=1):
-            results.append(future.result())
-            progress.update(done)
+        completed = 0
+        for future in as_completed(futures):
+            batch_results = future.result()
+            results.extend(batch_results)
+            completed += futures[future]
+            progress.update(completed)
     return results
 
 
@@ -157,6 +161,25 @@ def _run_core_grid_worker(idx: int, combo: dict) -> tuple[dict, pd.DataFrame, pd
         include_reports=_WORKER_INCLUDE_REPORTS,
         detail_data=_WORKER_DETAIL_DATA,
     )
+
+
+def _run_core_grid_batch_worker(batch: list[tuple[int, dict]]) -> list[tuple[dict, pd.DataFrame, pd.DataFrame]]:
+    return [_run_core_grid_worker(idx, combo) for idx, combo in batch]
+
+
+def _combo_batches(combos: list[dict], workers: int) -> list[list[tuple[int, dict]]]:
+    indexed = list(enumerate(combos, start=1))
+    if not indexed:
+        return []
+    chunk_size = _parallel_chunk_size(len(indexed), workers)
+    return [indexed[start : start + chunk_size] for start in range(0, len(indexed), chunk_size)]
+
+
+def _parallel_chunk_size(item_count: int, workers: int) -> int:
+    if item_count <= 0:
+        return 1
+    target_chunks = max(1, int(workers) * 4)
+    return max(1, min(32, math.ceil(item_count / target_chunks)))
 
 
 def _evaluate_core_grid_combo(

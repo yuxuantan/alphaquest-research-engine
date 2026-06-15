@@ -1,0 +1,276 @@
+campaign_id: nq_vwap_pullback_continuation
+variant_id: trend_reclaim_long_vwap_pullback
+strategy_name: nq_vwap_pullback_continuation
+symbol: NQ
+dataset_id: databento_nq_1m_20110103_20260529_dominant_session_volume
+timeframe: 5m
+research_metadata:
+  alpha_family: NQ VWAP pullback continuation
+  classification: source_screened_candidate
+  internet_sources:
+  - title: Volume Weighted Average Price (VWAP) trading strategy overview
+    source: Investopedia
+    url: https://www.investopedia.com/ask/answers/031115/what-common-strategy-traders-implement-when-using-volume-weighted-average-price-vwap.asp
+    finding_used: VWAP is commonly used by intraday traders as a trend, support, and
+      resistance reference.
+  - title: Anchored VWAP
+    source: AlphaTrends / Brian Shannon
+    url: https://alphatrends.net/anchored-vwap/
+    finding_used: VWAP is treated as a dynamic institutional reference level; this
+      campaign uses session VWAP only to avoid anchor discretion.
+  - title: VWAP pullback trading strategy for day traders
+    source: TradeMomentum
+    url: https://www.trademomentum.org/blog/vwap-pullback-trading-strategy-for-day-traders
+    finding_used: 'Practitioner setup: identify trend, wait for a pullback to VWAP,
+      and enter on continuation/reclaim.'
+  edge_thesis: 'In a strong intraday NQ trend, a pullback to session VWAP followed
+    by a reclaim may identify temporary liquidity absorption before continuation.
+    The variants differ by trend context: opening drive, multi-bar VWAP trend, and
+    failed break below VWAP.'
+  mechanic: After NQ sustains multiple closes above VWAP and remains above the RTH
+    open by the drive threshold, buy a VWAP pullback reclaim.
+  source_data: Databento NQ 1-minute OHLCV, dominant-session-volume continuous contract,
+    RTH-only decisions.
+  evidence_directness: Practitioner-source strategy translated into deterministic
+    futures rules; acceptance depends entirely on staged validation.
+data:
+  dataset_id: databento_nq_1m_20110103_20260529_dominant_session_volume
+  source_timeframe: 1m
+  source: databento_dbn
+  feature_set: intraday_capitulation_mr
+  raw_dir: data/raw/NQ/GLBX-20260601-RTF938NJSN
+  cache_dir: data/cache/databento/GLBX-20260601-RTF938NJSN
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  continuous_contract: dominant_session_volume
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
+  include_spreads: false
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '16:00:00'
+  eth_start: '16:00:00'
+  eth_end: 09:29:00
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: vwap_pullback_continuation
+    params:
+      rth_start: 09:30:00
+      start_time: 09:30:00
+      end_time: '14:30:00'
+      bar_interval_minutes: 5
+      required_trend_closes: 3
+      trend_vwap_buffer_ticks: 0
+      min_drive_points: 40.0
+      pullback_tolerance_ticks: 4
+      reclaim_buffer_ticks: 0
+      reclaim_window_bars: 1
+      max_trades_per_day: 1
+      allow_long: true
+      allow_short: false
+      tick_size: 0.25
+      setup_mode: trend_reclaim
+  tp:
+    module: cost_adjusted_fixed_r
+    params:
+      target_r_multiple: 2.0
+      tick_size: 0.25
+      tick_value: 5.0
+      commission_per_contract: 2.5
+      slippage_ticks: 1
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 8
+  flatten_time: '15:59:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:59:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.0
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_best_day_concentration: 0.5
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2024-12-31'
+    session_labels:
+    - RTH
+  objective: MAR
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id001
+    entry.params.min_drive_points:
+    - 20.0
+    - 30.0
+    - 40.0
+    - 60.0
+    entry.params.required_trend_closes:
+    - 2
+    - 3
+    - 4
+    entry.params.pullback_tolerance_ticks:
+    - 0
+    - 4
+    tp.params.target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+    - 3.0
+    sl.params.stop_offset_ticks:
+    - 4
+    - 8
+    - 12
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2024-12-31'
+    session_labels:
+    - RTH
+  runs: 500
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2024-12-31'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  early_exit_min_train_profit_factor: 1.0
+  early_exit_require_train_profitable: true
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: *id001
+campaign_tests:
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test: {}
+  limited_monkey_test: {}
+  walk_forward_analysis:
+    data_subset:
+      start_date: '2011-01-03'
+      end_date: '2024-12-31'
+      session_labels:
+      - RTH
+  wfa_oos_monkey_test: {}
+  wfa_oos_monte_carlo: {}
+  simulated_incubation_core:
+    data_subset:
+      start_date: '2025-01-01'
+      end_date: '2026-05-29'
+      session_labels:
+      - RTH
+    train_selection:
+      enabled: true
+      data_subset:
+        start_date: '2021-01-01'
+        end_date: '2024-12-31'
+        session_labels:
+        - RTH
+      objective: MAR
+      retain_iteration_reports: false
+      parallel:
+        enabled: true
+        workers: 6
+        scope: grid
+      parameters: *id001
+  simulated_incubation_monkey: {}
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 10000
+  trailing_drawdown: 10000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 2
+  payout_threshold: 50000
+  profit_target_pct: 0.3333333333
+  drawdown_limit_pct: 0.0666666667
+monte_carlo:
+  trade_source: core
+  runs: 500
+  seed: 11
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  path_months: 1
+  skip_trade_probability: 0.05
+  skip_winning_trade_probability: 0.0
+  adverse_slippage_per_trade: 0.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: false
+  retain_path_trades: false
+  retain_path_events: false

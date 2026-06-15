@@ -213,10 +213,15 @@ def _run_parallel_monkey(
         initializer=_init_monkey_worker,
         initargs=(market, base_config, benchmarks, constraints, core_profile, eligible, max_duration, seed, include_reports),
     ) as executor:
-        futures = {executor.submit(_run_monkey_worker, run_id): run_id for run_id in range(1, total_runs + 1)}
-        for done, future in enumerate(as_completed(futures), start=1):
-            results.append(future.result())
-            progress.update(done)
+        futures = {
+            executor.submit(_run_monkey_batch_worker, batch): len(batch)
+            for batch in _run_id_batches(total_runs, workers)
+        }
+        completed = 0
+        for future in as_completed(futures):
+            results.extend(future.result())
+            completed += futures[future]
+            progress.update(completed)
     return results
 
 
@@ -268,6 +273,10 @@ def _run_monkey_worker(run_id: int) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
         _WORKER_MAX_DURATION,
         include_reports=_WORKER_INCLUDE_REPORTS,
     )
+
+
+def _run_monkey_batch_worker(run_ids: list[int]) -> list[tuple[dict, pd.DataFrame, pd.DataFrame]]:
+    return [_run_monkey_worker(run_id) for run_id in run_ids]
 
 
 def _evaluate_monkey_run(
@@ -385,6 +394,21 @@ def _parallel_settings(monkey_config: dict, run_count: int) -> dict:
         "workers": workers,
         "scope": scope,
     }
+
+
+def _run_id_batches(total_runs: int, workers: int) -> list[list[int]]:
+    run_ids = list(range(1, int(total_runs) + 1))
+    if not run_ids:
+        return []
+    chunk_size = _parallel_chunk_size(len(run_ids), workers)
+    return [run_ids[start : start + chunk_size] for start in range(0, len(run_ids), chunk_size)]
+
+
+def _parallel_chunk_size(item_count: int, workers: int) -> int:
+    if item_count <= 0:
+        return 1
+    target_chunks = max(1, int(workers) * 4)
+    return max(1, min(128, math.ceil(item_count / target_chunks)))
 
 
 def _run_seed(seed: int, run_id: int) -> int:

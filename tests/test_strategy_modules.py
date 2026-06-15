@@ -7,6 +7,7 @@ from propstack.strategy_modules.entry.bankruptcy_distress_reversion import Bankr
 from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
 from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from propstack.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
+from propstack.strategy_modules.entry.connors_rsi2_mean_reversion import ConnorsRsi2MeanReversionEntry
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
 from propstack.strategy_modules.entry.gao_last_half_hour_orderflow import GaoLastHalfHourOrderflowEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
@@ -24,10 +25,13 @@ from propstack.strategy_modules.entry.opening_range_inverse_breakout import Open
 from propstack.strategy_modules.entry.orderflow_regime import OrderflowRegimeEntry
 from propstack.strategy_modules.entry.orderflow_recent_pocket_combo import OrderflowRecentPocketComboEntry
 from propstack.strategy_modules.entry.overnight_inventory_reversion import OvernightInventoryReversionEntry
+from propstack.strategy_modules.entry.overnight_intraday_reversal import OvernightIntradayReversalEntry
 from propstack.strategy_modules.entry.overnight_return_late_day_momentum import OvernightReturnLateDayMomentumEntry
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.positive_delta_dislocation import PositiveDeltaDislocationEntry
+from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSessionIbsReversionEntry
+from propstack.strategy_modules.entry.range_compression_breakout import RangeCompressionBreakoutEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
 from propstack.strategy_modules.entry.trade_orderflow_multi_pressure import TradeOrderflowMultiPressureEntry
@@ -127,6 +131,130 @@ def test_signal_stop_and_target_use_signal_metadata():
     fallback_stop = stop.price(SimpleNamespace(metadata={}), direction="short", tick_size=0.25, entry_price=100.0)
     assert fallback_stop == 100.5
     assert target.price(100.0, fallback_stop, "short", signal=SimpleNamespace(metadata={})) == 99.25
+
+
+def test_connors_rsi2_mean_reversion_emits_metadata_driven_long_signal():
+    entry = ConnorsRsi2MeanReversionEntry(
+        {
+            "setup_mode": "long_pullback_uptrend",
+            "trend_filter": "none",
+            "bar_interval_minutes": 5,
+            "moving_average_period": 3,
+            "oversold_rsi": 30,
+            "stop_pct": 0.004,
+            "target_r_multiple": 2.5,
+            "flatten_time": "12:30:00",
+        }
+    )
+
+    signal = None
+    for close in [100.0, 101.0, 102.0, 101.0, 100.0]:
+        signal = entry.on_bar_close(_connors_bar("2024-01-03 09:30", close))
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.metadata["stop_pct"] == 0.004
+    assert signal.metadata["target_r_multiple"] == 2.5
+    assert signal.metadata["flatten_time"] == "12:30:00"
+    assert signal.report_fields["rsi_value"] < 30
+
+
+def test_connors_rsi2_mean_reversion_requires_vwap_extension():
+    entry = ConnorsRsi2MeanReversionEntry(
+        {
+            "setup_mode": "short_bounce_downtrend",
+            "trend_filter": "vwap",
+            "bar_interval_minutes": 5,
+            "moving_average_period": 3,
+            "overbought_rsi": 70,
+            "min_vwap_extension_ticks": 4,
+            "tick_size": 0.25,
+        }
+    )
+
+    for close in [100.0, 99.0, 98.0, 99.0]:
+        assert entry.on_bar_close(_connors_bar("2024-01-03 09:30", close, vwap=99.5)) is None
+    signal = entry.on_bar_close(_connors_bar("2024-01-03 09:35", 100.75, vwap=99.5))
+
+    assert signal is not None
+    assert signal.direction == "short"
+
+
+def _connors_bar(timestamp, close, *, vwap=100.0):
+    ts = pd.Timestamp(timestamp)
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date().isoformat(),
+            "is_rth": True,
+            "open": close,
+            "high": close + 0.25,
+            "low": close - 0.25,
+            "close": close,
+            "volume": 1000,
+            "vwap": vwap,
+        }
+    )
+
+
+def test_prior_session_ibs_reversion_emits_low_ibs_long_signal():
+    entry = PriorSessionIbsReversionEntry(
+        {
+            "setup_mode": "low_ibs_long",
+            "signal_time": "09:35:00",
+            "bar_interval_minutes": 5,
+            "low_ibs_threshold": 0.2,
+            "stop_pct": 0.004,
+            "target_r_multiple": 2.0,
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _prior_ibs_bar("2024-01-03 09:30", prev_high=110.0, prev_low=100.0, prev_close=101.0)
+    )
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.report_fields["prior_session_ibs"] == 0.1
+    assert signal.metadata["stop_pct"] == 0.004
+    assert signal.metadata["target_r_multiple"] == 2.0
+
+
+def test_prior_session_ibs_reversion_emits_high_ibs_short_signal():
+    entry = PriorSessionIbsReversionEntry(
+        {
+            "setup_mode": "high_ibs_short",
+            "signal_time": "09:35:00",
+            "bar_interval_minutes": 5,
+            "high_ibs_threshold": 0.8,
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _prior_ibs_bar("2024-01-03 09:30", prev_high=110.0, prev_low=100.0, prev_close=109.0)
+    )
+
+    assert signal is not None
+    assert signal.direction == "short"
+
+
+def _prior_ibs_bar(timestamp, *, prev_high, prev_low, prev_close):
+    ts = pd.Timestamp(timestamp)
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date().isoformat(),
+            "is_rth": True,
+            "open": 105.0,
+            "high": 106.0,
+            "low": 104.0,
+            "close": 105.5,
+            "volume": 1000,
+            "prev_rth_high": prev_high,
+            "prev_rth_low": prev_low,
+            "prev_rth_close": prev_close,
+        }
+    )
 
 
 def _opening_gap_orderflow_bar(
@@ -229,6 +357,83 @@ def test_opening_gap_orderflow_fade_rejects_small_gap_and_same_direction_flow():
                 large20_signed_volume=250,
             )
         )
+    assert signal is None
+
+
+def _overnight_intraday_bar(
+    timestamp,
+    *,
+    open_=102.0,
+    high=102.25,
+    low=101.0,
+    close=101.0,
+    prev_rth_close=100.0,
+):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": True,
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "prev_rth_close": prev_rth_close,
+            "volume": 1000,
+        }
+    )
+
+
+def test_overnight_intraday_reversal_emits_gap_up_first_window_reversal_short():
+    entry = OvernightIntradayReversalEntry(
+        {
+            "entry_time": "09:35:00",
+            "bar_interval_minutes": 5,
+            "confirm_window_minutes": 5,
+            "min_abs_overnight_bps": 100,
+            "confirm_mode": "confirm_reversal",
+            "confirm_threshold_bps": 25,
+            "stop_pct": 0.0035,
+            "target_r_multiple": 3.0,
+        }
+    )
+
+    signal = entry.on_bar_close(_overnight_intraday_bar("2024-01-03 09:30"))
+
+    assert signal is not None
+    assert signal.direction == "short"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 09:35", tz="America/New_York")
+    assert signal.metadata["stop_pct"] == 0.0035
+    assert signal.metadata["target_r_multiple"] == 3.0
+    assert signal.metadata["flatten_time"] == "14:30:00"
+    assert round(signal.report_fields["overnight_return_bps"], 10) == 200.0
+    assert signal.report_fields["confirm_window_return_bps"] < -25
+
+
+def test_overnight_intraday_reversal_requires_confirmation_opposite_gap():
+    entry = OvernightIntradayReversalEntry(
+        {
+            "entry_time": "09:35:00",
+            "bar_interval_minutes": 5,
+            "confirm_window_minutes": 5,
+            "min_abs_overnight_bps": 100,
+            "confirm_mode": "confirm_reversal",
+            "confirm_threshold_bps": 25,
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _overnight_intraday_bar(
+            "2024-01-03 09:30",
+            open_=98.0,
+            high=98.0,
+            low=96.75,
+            close=97.0,
+            prev_rth_close=100.0,
+        )
+    )
+
     assert signal is None
 
 
@@ -975,6 +1180,143 @@ def test_turn_of_month_bias_first_or_last_only_modes():
     assert last_only.on_bar_close(_tom_bar("2024-02-27 10:55")) is not None
 
 
+def _range_compression_bar(timestamp, open_price=100.0, high=101.0, low=99.0, close=100.5, *, is_rth=True):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": is_rth,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+        },
+        name=ts.hour * 60 + ts.minute,
+    )
+
+
+def _seed_range_sessions(entry: RangeCompressionBreakoutEntry, rows: list[tuple[str, float, float]]) -> None:
+    for session_date, high, low in rows:
+        entry.on_bar_close(
+            _range_compression_bar(
+                f"{session_date} 15:55",
+                open_price=(high + low) / 2,
+                high=high,
+                low=low,
+                close=(high + low) / 2,
+            ),
+            trades_today=1,
+        )
+
+
+def test_range_compression_breakout_emits_after_nr4_prior_high_break():
+    entry = RangeCompressionBreakoutEntry(
+        {
+            "bar_interval_minutes": 5,
+            "start_time": "09:35:00",
+            "end_time": "12:00:00",
+            "lookback_days": 4,
+            "breakout_level_source": "prior_session",
+            "min_breakout_ticks": 0,
+        }
+    )
+    _seed_range_sessions(
+        entry,
+        [
+            ("2024-01-02", 110.0, 100.0),
+            ("2024-01-03", 108.0, 100.0),
+            ("2024-01-04", 106.0, 100.0),
+            ("2024-01-05", 104.0, 100.0),
+        ],
+    )
+
+    signal = entry.on_bar_close(_range_compression_bar("2024-01-08 09:30", high=105.0, low=102.0, close=104.25))
+
+    assert signal.direction == "long"
+    assert signal.level_type == "range_compression_nr_breakout_prior_session_long"
+    assert signal.report_fields["prior_session_range"] == 4.0
+    assert signal.report_fields["prior_session_range_rank_pct"] == 0.25
+    assert signal.report_fields["breakout_level"] == 104.0
+
+
+def test_range_compression_breakout_requires_inside_day_when_configured():
+    entry = RangeCompressionBreakoutEntry(
+        {
+            "setup_mode": "id_nr4",
+            "bar_interval_minutes": 5,
+            "lookback_days": 4,
+            "breakout_level_source": "prior_session",
+        }
+    )
+    _seed_range_sessions(
+        entry,
+        [
+            ("2024-01-02", 110.0, 100.0),
+            ("2024-01-03", 108.0, 100.0),
+            ("2024-01-04", 106.0, 100.0),
+            ("2024-01-05", 107.0, 103.0),
+        ],
+    )
+
+    assert entry.on_bar_close(_range_compression_bar("2024-01-08 09:30", high=108.0, low=104.0, close=107.25)) is None
+
+    inside = RangeCompressionBreakoutEntry(
+        {
+            "setup_mode": "id_nr4",
+            "bar_interval_minutes": 5,
+            "lookback_days": 4,
+            "breakout_level_source": "prior_session",
+        }
+    )
+    _seed_range_sessions(
+        inside,
+        [
+            ("2024-01-02", 110.0, 100.0),
+            ("2024-01-03", 108.0, 100.0),
+            ("2024-01-04", 106.0, 100.0),
+            ("2024-01-05", 105.0, 101.0),
+        ],
+    )
+
+    signal = inside.on_bar_close(_range_compression_bar("2024-01-08 09:30", high=106.0, low=102.0, close=105.25))
+    assert signal.direction == "long"
+    assert signal.report_fields["prior_session_inside_day"] is True
+
+
+def test_range_compression_opening_range_source_waits_for_or_breakout():
+    entry = RangeCompressionBreakoutEntry(
+        {
+            "setup_mode": "nr7_opening_range",
+            "bar_interval_minutes": 5,
+            "lookback_days": 4,
+            "max_range_rank_pct": 0.25,
+            "breakout_level_source": "opening_range",
+            "opening_range_minutes": 10,
+            "start_time": "09:40:00",
+            "end_time": "12:00:00",
+        }
+    )
+    _seed_range_sessions(
+        entry,
+        [
+            ("2024-01-02", 110.0, 100.0),
+            ("2024-01-03", 108.0, 100.0),
+            ("2024-01-04", 106.0, 100.0),
+            ("2024-01-05", 104.0, 100.0),
+        ],
+    )
+
+    assert entry.on_bar_close(_range_compression_bar("2024-01-08 09:30", high=102.0, low=100.0, close=101.0)) is None
+    assert entry.on_bar_close(_range_compression_bar("2024-01-08 09:35", high=103.0, low=101.0, close=102.0)) is None
+    signal = entry.on_bar_close(_range_compression_bar("2024-01-08 09:40", high=104.0, low=102.0, close=103.5))
+
+    assert signal.direction == "long"
+    assert signal.level_type == "range_compression_nr7_opening_range_opening_range_long"
+    assert signal.report_fields["breakout_level_source"] == "opening_range"
+    assert signal.report_fields["breakout_level"] == 103.0
+
+
 def _tsm_bar(timestamp, open_price, high, low, close, *, is_rth=True):
     ts = pd.Timestamp(timestamp, tz="America/New_York")
     return pd.Series(
@@ -1653,6 +1995,8 @@ def _positive_delta_dislocation_bar(
     hour_volume=10000,
     is_rth=True,
     prev_rth_high_fresh=True,
+    prev_rth_low=99.0,
+    prev_rth_low_fresh=True,
 ):
     ts = pd.Timestamp(timestamp)
     if ts.tzinfo is None:
@@ -1668,6 +2012,8 @@ def _positive_delta_dislocation_bar(
             "close": close,
             "prev_rth_high": prev_rth_high,
             "prev_rth_high_fresh": prev_rth_high_fresh,
+            "prev_rth_low": prev_rth_low,
+            "prev_rth_low_fresh": prev_rth_low_fresh,
             "trade_orderflow_return_points_60": hour_return,
             "trade_orderflow_signed_volume_60": hour_delta,
             "trade_orderflow_volume_60": hour_volume,
@@ -1698,6 +2044,59 @@ def test_positive_delta_dislocation_emits_long_on_completed_negative_hour_positi
     assert signal.report_fields["hour_signed_volume_delta"] == 600.0
     assert signal.report_fields["min_hour_delta"] == 500.0
     assert signal.metadata["flatten_time"] == "16:00:00"
+
+
+def test_positive_delta_dislocation_emits_short_when_configured():
+    entry = PositiveDeltaDislocationEntry(
+        {
+            "bar_interval_minutes": 1,
+            "hour_window_minutes": 60,
+            "min_close_above_prev_high_ticks": 1,
+            "min_negative_hour_ticks": 1,
+            "min_hour_delta": 500,
+            "setup_mode": "pdh_negative_hour_positive_delta_short",
+            "direction": "short",
+        }
+    )
+
+    signal = entry.on_bar_close(_positive_delta_dislocation_bar("2024-01-03 10:29"))
+
+    assert signal.direction == "short"
+    assert signal.level_type == "positive_delta_dislocation_pdh_negative_hour_positive_delta_short"
+    assert signal.report_fields["direction"] == "short"
+
+
+def test_positive_delta_dislocation_auto_direction_emits_long_at_pdl_absorption():
+    entry = PositiveDeltaDislocationEntry(
+        {
+            "bar_interval_minutes": 1,
+            "hour_window_minutes": 60,
+            "setup_mode": "prior_extreme_delta_absorption",
+            "reference_side": "both",
+            "direction": "auto",
+            "min_close_above_prev_high_ticks": 1,
+            "min_negative_hour_ticks": 1,
+            "min_hour_delta": 500,
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _positive_delta_dislocation_bar(
+            "2024-01-03 10:29",
+            close=98.75,
+            low=98.5,
+            prev_rth_high=101.0,
+            prev_rth_low=99.0,
+            hour_return=0.25,
+            hour_delta=-600,
+        )
+    )
+
+    assert signal.direction == "long"
+    assert signal.level_type == "positive_delta_dislocation_prior_extreme_delta_absorption_pdl_long"
+    assert signal.report_fields["reference_side"] == "pdl"
+    assert signal.report_fields["reference_level"] == 99.0
+    assert signal.report_fields["reference_distance_points"] == 0.25
 
 
 def test_positive_delta_dislocation_rejects_missing_setup_conditions():
@@ -2549,6 +2948,67 @@ def test_intraday_momentum_priority_allows_later_slot_only_when_first_slot_does_
     assert signals[-1].level_type == "intraday_momentum_priority_nq_1130_long_strength"
     assert round(signals[-1].report_fields["source_window_return_bps"], 6) == 60.0
     assert signals[-1].metadata["target_r_multiple"] == 2.5
+
+
+def test_intraday_momentum_priority_filters_source_window_shape():
+    weak_close_entry = IntradayMomentumPriorityEntry(
+        {
+            "bar_interval_minutes": 30,
+            "tick_size": 0.25,
+            "slots": [
+                {
+                    "slot_id": "nq_1030_long_strength",
+                    "direction": "long",
+                    "signal_time": "10:30:00",
+                    "min_signal_return_bps": 50,
+                    "min_close_location": 0.8,
+                    "min_source_efficiency": 0.6,
+                    "max_source_range_bps": 150,
+                }
+            ],
+        }
+    )
+    weak_close_bars = [
+        _mim_bar("2024-01-03 09:30", 100.0, 101.2, 99.8, 100.3),
+        _mim_bar("2024-01-03 10:00", 100.3, 100.8, 100.1, 100.7),
+    ]
+
+    signal = None
+    for bar in weak_close_bars:
+        signal = weak_close_entry.on_bar_close(bar)
+
+    assert signal is None
+
+    strong_close_entry = IntradayMomentumPriorityEntry(
+        {
+            "bar_interval_minutes": 30,
+            "tick_size": 0.25,
+            "slots": [
+                {
+                    "slot_id": "nq_1030_long_strength",
+                    "direction": "long",
+                    "signal_time": "10:30:00",
+                    "min_signal_return_bps": 50,
+                    "min_close_location": 0.8,
+                    "min_source_efficiency": 0.6,
+                    "max_source_range_bps": 150,
+                }
+            ],
+        }
+    )
+    strong_close_bars = [
+        _mim_bar("2024-01-03 09:30", 100.0, 101.2, 99.8, 100.6),
+        _mim_bar("2024-01-03 10:00", 100.6, 101.15, 100.5, 101.1),
+    ]
+
+    signal = None
+    for bar in strong_close_bars:
+        signal = strong_close_entry.on_bar_close(bar)
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert round(signal.report_fields["source_window_directional_close_location"], 6) == round(1.3 / 1.4, 6)
+    assert round(signal.report_fields["source_window_efficiency"], 6) == round(1.1 / 1.4, 6)
 
 
 def _orb_bar(timestamp, open_price, high, low, close, session_date=None, volume_ratio=1.0, vwap=100.0):

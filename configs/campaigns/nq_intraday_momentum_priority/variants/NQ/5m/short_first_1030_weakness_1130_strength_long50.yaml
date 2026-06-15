@@ -192,8 +192,8 @@ monkey:
   beat_threshold: 0.8
   retain_iteration_reports: false
   parallel:
-    enabled: false
-    workers: 1
+    enabled: true
+    workers: 6
     scope: runs
   constraints:
     trade_count_tolerance_pct: 0.05
@@ -217,7 +217,7 @@ wfa:
   parallel:
     enabled: true
     workers: 6
-    scope: grid
+    scope: window_grid
   parameters: *id002
 campaign_tests:
   stage_order:
@@ -381,8 +381,8 @@ monte_carlo:
   runs: 500
   seed: 11
   parallel:
-    enabled: false
-    workers: 1
+    enabled: true
+    workers: 6
     scope: runs
   path_months: 1
   skip_trade_probability: 0.05

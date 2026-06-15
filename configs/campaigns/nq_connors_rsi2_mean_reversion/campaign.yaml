@@ -1,0 +1,40 @@
+campaign_id: nq_connors_rsi2_mean_reversion
+campaign_name: NQ Connors RSI2 Mean Reversion
+source:
+  title: Connors RSI(2) short-term mean reversion
+  urls:
+  - https://chartschool.stockcharts.com/table-of-contents/trading-strategies-and-models/trading-strategies/rsi-2
+  - https://www.mql5.com/en/articles/17636
+  - https://www.whselfinvest.com/en-lu/trading-platform/free-trading-strategies/tradingsystem/31-rsi-2p
+status: researching
+
+idea:
+  summary: >
+    Test a day-trading translation of Larry Connors' RSI(2) mean-reversion idea:
+    buy short-horizon oversold conditions inside an uptrend and/or sell
+    short-horizon overbought conditions inside a downtrend.
+  entry_thesis: >
+    Very short RSI extremes can identify temporary pullbacks after an index
+    futures move becomes stretched. The original rule is daily, but one source
+    explicitly adapts RSI2 to two 30-minute bars for day trading.
+  exit_thesis: >
+    Use explicit same-session flattening plus signal-level percent stops and
+    fixed-R targets so the intraday translation stays prop-rule compatible.
+
+mechanics:
+  market_timezone: America/New_York
+  session: RTH-only entries; no overnight holds.
+  variants:
+    five_min_two_sided_vwap_extreme_1430: >
+      Two-sided 5-minute RSI2 extremes, requiring price to be stretched on the
+      reversal side of VWAP and aligned with a short intraday moving average.
+    thirty_min_classic_trend_pullback_1559: >
+      Two-sided 30-minute RSI2 translation using a moving-average trend filter
+      and close-to-close RSI2 extremes.
+    fifteen_min_long_uptrend_pullback_1559: >
+      Long-only 15-minute RSI2 pullbacks in an uptrend, matching the equity-index
+      long-bias form of the source rule.
+
+notes:
+  - This is distinct from existing capitulation/VWAP shock campaigns because RSI2 is the trigger, not volume shock or opening inventory structure.
+  - NQ is used because the source family is commonly discussed for QQQ/Nasdaq-style index products and NQ has full-history 1-minute bars in the repo.

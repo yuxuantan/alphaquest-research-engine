@@ -1219,6 +1219,8 @@ Each array under `core_grid.parameters` is combined with every other array, so t
 `core_grid.parallel.scope: grid` runs parameter combinations across worker
 processes. When iteration reports are retained, workers return trade/daily
 frames to the parent process and the parent writes the CSVs in `run_id` order.
+Parallel workers submit parameter combinations in bounded batches to reduce
+process scheduling overhead on larger grids.
 
 Prefer stable parameter regions over the single best row. `percentage_profitable_iterations` must meet `min_profitable_iteration_rate`, which defaults to `0.70` when omitted.
 
@@ -1285,7 +1287,8 @@ iterations.
 
 `monkey.parallel.scope: runs` runs independent monkey iterations across worker
 processes. Iteration reports are still written by the parent process in
-`run_id` order when `retain_iteration_reports` is true.
+`run_id` order when `retain_iteration_reports` is true. Parallel monkey runs
+are batched internally, so enabling this is recommended for full staged tests.
 
 How the constraints are enforced:
 
@@ -1415,7 +1418,7 @@ wfa:
   parallel:
     enabled: true
     workers: 6
-    scope: grid
+    scope: window_grid
   parameters:
     entry.params.reclaim_window_bars: [2, 3]
     tp.params.target_r_multiple: [1.0, 1.5]
@@ -1426,19 +1429,27 @@ WFA uses `wfa.parameters` for its train-window optimization. This is separate
 from `core_grid.parameters`, so core grid sweeps and walk-forward optimization
 can use different parameter spaces.
 
-`objective` supports `MAR` and `net_profit`. `MAR` selects the parameter set
-with the highest in-sample CAGR divided by max drawdown percent
-(`max_drawdown_pct`) for each train window.
+`objective` supports `MAR`, `net_profit`, and `profit_factor`. `MAR` selects
+the parameter set with the highest in-sample CAGR divided by max drawdown
+percent (`max_drawdown_pct`) for each train window.
 
 `mode: unanchored` keeps the train window length fixed and moves it forward by
 `step_months`, which defaults to `test_months` when omitted. `mode: anchored`
 keeps the first train start fixed and expands the train window through each
 new out-of-sample period.
 
-`parallel.enabled: true` runs the in-sample grid combinations for each
-walk-forward window across worker processes. WFA windows still run sequentially
-so memory usage and console output stay bounded. `scope: grid` is the only
-supported parallel scope.
+`parallel.enabled: true` supports two scopes:
+
+```text
+grid
+  Keeps the older behavior: each WFA train window calls the normal core-grid
+  runner, which creates its own worker pool for that window.
+
+window_grid
+  Reuses one worker pool across WFA train windows and batches the in-sample
+  grid work. This is preferred for long WFA runs because it avoids repeated
+  process-pool startup and keeps worker data initialized.
+```
 
 During the run, each completed window prints the selected in-sample objective
 value plus train and out-of-sample MAR, CAGR, max drawdown percent, and net
@@ -1477,6 +1488,8 @@ test_profit_factor
 test_max_drawdown
 profitable_window_rate
 meets_profitable_window_benchmark
+phase_timings_seconds
+window_timings_seconds
 ```
 
 `wfa/equity_curve.html` plots the stitched out-of-sample trade log across all
@@ -1486,6 +1499,12 @@ Each `window_###_train_grid.csv` file contains the full in-sample grid for one
 walk-forward train window. Rows are sorted with the same rule WFA uses to pick
 the winner, so `wfa_selection_rank == 1` and `wfa_selected == true` identify
 the parameter set applied to that window's out-of-sample test period.
+
+Set `reuse_existing_train_grids: true` only when rerunning the same WFA inputs.
+Reusable train-grid CSVs are validated against the WFA window dates, objective,
+base config hash, parameter-grid hash, selection-filter hash, and input data
+hash when available. The default `strict_train_grid_reuse: true` fails fast if
+an existing grid is stale or was written by an older unguarded runner.
 
 Target:
 
@@ -1731,7 +1750,8 @@ daily_pnl
 ```
 
 `monte_carlo.parallel.scope: runs` runs independent path simulations across
-worker processes.
+worker processes. Parallel Monte Carlo runs are batched internally to reduce
+per-run process scheduling overhead.
 
 Run:
 
@@ -1875,6 +1895,34 @@ The dataset-level index lets you compare variants under the same campaign, symbo
 ```text
 data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/runs_index.csv
 ```
+
+## Staged Campaign Test Runner
+
+The staged runner executes the full gate sequence under `campaign_tests/`:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --skip-validation
+```
+
+For exploratory iteration, use the runtime speed profile:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --fast-runtime-defaults
+PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --fast-runtime-defaults --no-acceptance
+```
+
+`--fast-runtime-defaults` enables conservative parallel defaults at runtime
+only: batched grid work, monkey and Monte Carlo run parallelism, and WFA
+`window_grid` pooling. It also skips staged validation outputs so prepared data
+can be cached across stages. It does not mutate the variant YAML. Use
+`--no-acceptance` only for exploratory runs; a promotion-ready campaign should
+include `acceptance_oos_test`.
+
+When `--skip-validation` is used, prepared market/detail data is cached in
+memory for the current staged run and reused by later stages with the same data
+config, timeframe, and subset. Each stage's `data_quality` includes
+`prepare_data_duration_seconds` and `prepared_data_cache` so cache hits are
+visible in `stage_result.json`.
 
 ## Recommended End-To-End Workflow
 
