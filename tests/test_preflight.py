@@ -1,0 +1,208 @@
+import subprocess
+import sys
+from pathlib import Path
+
+import pandas as pd
+import yaml
+
+from research.preflight import _is_archived_path, run_preflight
+
+
+def _write_csv(path, *, duplicate: bool = False) -> None:
+    rows = [
+        {
+            "timestamp": "2024-01-03 09:30:00-05:00",
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.5,
+            "volume": 100,
+        },
+        {
+            "timestamp": "2024-01-03 09:31:00-05:00",
+            "open": 100.5,
+            "high": 101.5,
+            "low": 100.0,
+            "close": 101.0,
+            "volume": 120,
+        },
+    ]
+    if duplicate:
+        rows.append(dict(rows[-1]))
+    pd.DataFrame(rows).to_csv(path, index=False)
+
+
+def _config(raw_csv, **overrides):
+    cfg = {
+        "campaign_id": "preflight_test",
+        "variant_id": "baseline",
+        "strategy_name": "calendar_session_bias",
+        "symbol": "ES",
+        "dataset_id": "unit_fixture",
+        "timeframe": "1m",
+        "data": {
+            "source": "csv",
+            "raw_csv": str(raw_csv),
+            "symbol": "ES",
+            "timezone": "America/New_York",
+            "rth_start": "09:30:00",
+            "rth_end": "16:00:00",
+            "eth_start": "17:00:00",
+            "eth_end": "09:29:00",
+        },
+        "strategy": {
+            "entry": {
+                "module": "calendar_session_bias",
+                "params": {
+                    "signal_time": "09:31:00",
+                    "weekday_directions": {2: "long"},
+                    "max_trades_per_day": 1,
+                },
+            },
+            "tp": {"module": "fixed_r", "params": {"target_r_multiple": 1.0}},
+            "sl": {"module": "percent_from_entry", "params": {"stop_pct": 0.01}},
+            "flatten_time": "15:55:00",
+        },
+        "core": {
+            "tick_size": 0.25,
+            "point_value": 50.0,
+            "tick_value": 12.5,
+            "commission_per_contract": 2.5,
+            "slippage_ticks": 1,
+            "contracts": 1,
+        },
+        "apex_rules": {
+            "enabled": True,
+            "latest_flat_time": "16:59:59",
+            "force_flatten_enabled": True,
+            "force_flatten_time": "16:58:30",
+            "latest_entry_time": "16:45:00",
+        },
+    }
+    for key, value in overrides.items():
+        if value is None:
+            cfg.pop(key, None)
+        else:
+            cfg[key] = value
+    return cfg
+
+
+def _write_config(path, cfg) -> None:
+    path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+
+
+def test_preflight_accepts_valid_config_and_timezone_aware_data(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    _write_config(config, _config(data))
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert result["passed"]
+    assert result["failures"] == []
+
+
+def test_preflight_default_discovery_treats_archive_paths_as_inactive():
+    assert _is_archived_path(Path("_archived/campaigns/foo/config.yaml"))
+    assert _is_archived_path(Path("configs/campaigns/archive_not_benchmark_20260615/foo.yaml"))
+    assert _is_archived_path(Path("data/reports/campaigns/archive_not_likely_20260614/foo/config.yaml"))
+    assert not _is_archived_path(Path("campaigns/es_active/variants/baseline/config.yaml"))
+
+
+def test_preflight_rejects_missing_timezone(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    cfg = _config(data)
+    cfg["data"].pop("timezone")
+    _write_config(config, cfg)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("timezone" in failure for failure in result["failures"])
+
+
+def test_preflight_rejects_duplicate_bars(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data, duplicate=True)
+    _write_config(config, _config(data))
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("duplicate bar" in failure for failure in result["failures"])
+
+
+def test_preflight_rejects_missing_forced_flatten_config(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    cfg = _config(data)
+    cfg["apex_rules"].pop("force_flatten_time")
+    _write_config(config, cfg)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("force_flatten_time" in failure for failure in result["failures"])
+
+
+def test_preflight_rejects_methodology_parameter_cap_violations(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    cfg = _config(data)
+    cfg["core_grid"] = {
+        "parameters": {
+            "entry.params.a": [1, 2],
+            "entry.params.b": [1, 2],
+            "entry.params.c": [1, 2],
+            "sl.params.stop_pct": [0.002, 0.003],
+            "tp.params.target_r_multiple": [1.0, 2.0],
+        }
+    }
+    _write_config(config, cfg)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("exceeds methodology tunable count" in failure for failure in result["failures"])
+
+
+def test_preflight_rejects_parameter_combination_cap(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    cfg = _config(data)
+    cfg["core_grid"] = {
+        "parameters": {
+            "entry.params.a": list(range(11)),
+            "entry.params.b": list(range(11)),
+            "sl.params.stop_pct": [0.002, 0.003],
+        }
+    }
+    _write_config(config, cfg)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("methodology cap is 120" in failure for failure in result["failures"])
+
+
+def test_preflight_cli_runs_from_repo_root_with_explicit_config(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    _write_config(config, _config(data))
+
+    proc = subprocess.run(
+        [sys.executable, "-m", "research.preflight", "--config", str(config), "--skip-tests"],
+        text=True,
+        capture_output=True,
+    )
+
+    assert proc.returncode == 0
+    assert "Preflight PASS" in proc.stdout

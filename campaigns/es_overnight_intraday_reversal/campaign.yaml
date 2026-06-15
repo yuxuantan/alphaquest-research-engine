@@ -1,0 +1,142 @@
+campaign_name: es_overnight_intraday_reversal
+campaign_id: es_overnight_intraday_reversal
+instrument: ES
+initial_decision: TEST
+reason_for_decision: >
+  Liu, Liu, Wang, Zhou, and Zhu document an overnight-intraday reversal effect
+  across asset classes, including futures. This campaign tests whether ES RTH
+  can express the same close-to-open reversal mechanism using only completed
+  prior RTH close, current RTH open, and completed opening-window confirmation.
+
+edge_hypothesis: >
+  A large ES overnight gap may be partly liquidity-provision compensation and
+  should reverse intraday. After a completed opening confirmation window, buy
+  downside overnight gaps and sell upside overnight gaps, then flatten before
+  the configured prop cutoff.
+
+why_it_may_apply_to_es_futures: >
+  ES is a deep equity-index futures market with high opening liquidity demand.
+  If market makers absorb overnight inventory pressure near the open, the RTH
+  session may show a same-day reversal from the prior RTH close-to-open move.
+
+research_sources:
+  - title: Overnight-Intraday Reversal Everywhere
+    author: Chun Liu, Yang Liu, Tianyu Wang, Guofu Zhou, Yingzi Zhu
+    year: 2016
+    link_or_doi: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2730304
+    expected_mechanism: Liquidity providers demand compensation for overnight price pressure and the effect reverses during the trading session.
+  - title: Overnight-Intraday Reversal Everywhere
+    author: Chun Liu, Yang Liu, Tianyu Wang, Guofu Zhou, Yingzi Zhu
+    year: 2016
+    link_or_doi: https://doi.org/10.2139/ssrn.2730304
+    expected_mechanism: The paper reports robustness across asset classes and motivates a futures-specific check rather than borrowing equity evidence.
+
+behavioural_or_microstructure_rationale: >
+  Overnight information and inventory pressure can produce opening price moves
+  that liquidity suppliers fade. The campaign requires the signal to wait for a
+  completed opening confirmation window so it does not trade on an unclosed bar.
+
+expected_failure_modes:
+  - ES overnight gaps may continue intraday rather than reverse.
+  - The effect may be cross-sectional while a single ES time-series expression is too weak.
+  - Costs and pessimistic same-bar stop/target handling can erase the edge.
+  - Signal frequency may be too low after overnight and confirmation thresholds.
+  - A small number of high-volatility years may dominate profit or drawdown.
+
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  planned_flatten_time: "15:55:00"
+  prop_force_flatten_time: "16:58:30"
+
+data_requirements:
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.validation.json
+
+forbidden_forms_of_lookahead:
+  - Use of current-session high or low outside the completed confirmation window.
+  - Entry before the confirmation-window bar has closed.
+  - Use of final current-session return, final VWAP, or future session range.
+  - Changing the overnight threshold, confirmation rule, stop, target, or direction split after stage results.
+
+data_needs:
+  source: local_sierra_rth_bar_cache
+  market_timezone: America/New_York
+  execution_detail: 1-minute OHLCV used for 5-minute fills
+  required_feature_set: pdh_pdl_sweep
+  latest_locked_holdout: final 6 months selected by acceptance_oos_test from configured data
+
+lookahead_risks:
+  prior_close_available_at: previous RTH close after that session completes
+  rth_open_available_at: current RTH opening bar start
+  confirmation_available_at: only after the configured completed opening window closes
+  signal_availability: signal uses a completed 5-minute bar close and enters at the next bar open
+  risk_control: stop target and flatten rules are predeclared in config
+
+variants:
+  - first5_confirm_reversal_1000
+  - first15_confirm_reversal_1000
+  - first30_noncontinuation_1000
+  - low_overnight_first15_long_1000
+  - high_overnight_first15_short_1000
+
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - rescue the same failed variant more than once
+    - core strategy mechanic
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: high_overnight_first15_short_1000
+      config: campaigns/es_overnight_intraday_reversal/rescue_attempts/parameter_space_rescue_1/high_overnight_first15_short_1000/config.yaml
+      report: backtest-campaigns/es_overnight_intraday_reversal/high_overnight_first15_short_1000/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_overnight_intraday_reversal_rescue_attempt_1_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.691358024691358 below required 0.70; zero benchmark-passing combinations
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: first15_confirm_reversal_1000
+      config: campaigns/es_overnight_intraday_reversal/rescue_attempts/parameter_space_rescue_1/first15_confirm_reversal_1000/config.yaml
+      report: backtest-campaigns/es_overnight_intraday_reversal/first15_confirm_reversal_1000/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.16049382716049382 below required 0.70; zero benchmark-passing combinations; top net 1403.75 with 83 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: first30_noncontinuation_1000
+      config: campaigns/es_overnight_intraday_reversal/rescue_attempts/parameter_space_rescue_1/first30_noncontinuation_1000/config.yaml
+      report: backtest-campaigns/es_overnight_intraday_reversal/first30_noncontinuation_1000/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70; zero benchmark-passing combinations; top net -1040.0 with 83 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: first5_confirm_reversal_1000
+      config: campaigns/es_overnight_intraday_reversal/rescue_attempts/parameter_space_rescue_1/first5_confirm_reversal_1000/config.yaml
+      report: backtest-campaigns/es_overnight_intraday_reversal/first5_confirm_reversal_1000/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70; zero benchmark-passing combinations; top net -826.25 with 94 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: low_overnight_first15_long_1000
+      config: campaigns/es_overnight_intraday_reversal/rescue_attempts/parameter_space_rescue_1/low_overnight_first15_long_1000/config.yaml
+      report: backtest-campaigns/es_overnight_intraday_reversal/low_overnight_first15_long_1000/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.04938271604938271 below required 0.70; zero benchmark-passing combinations; top net 677.5 with 52 trades

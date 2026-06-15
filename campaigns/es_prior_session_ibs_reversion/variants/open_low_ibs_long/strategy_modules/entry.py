@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSessionIbsReversionEntry
+
+ENTRY_MODULE = PriorSessionIbsReversionEntry

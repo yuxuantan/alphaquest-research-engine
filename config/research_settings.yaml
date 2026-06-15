@@ -1,0 +1,72 @@
+research_policy:
+  data_scope: local_only
+  primary_instrument: ES
+  market_timezone: America/New_York
+  no_paid_downloads: true
+  final_decision_values:
+    - PASS
+    - FAIL
+    - NEEDS MANUAL REVIEW
+  candidate_language: candidate strategy
+
+execution_defaults:
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+
+prop_flatten_rules:
+  enabled: true
+  latest_flat_time: "16:59:59"
+  force_flatten_enabled: true
+  force_flatten_time: "16:58:30"
+  latest_entry_time: "16:45:00"
+  no_overnight_positions: true
+
+random_seeds:
+  core_random_months: 31
+  monkey: 7
+  monte_carlo: 11
+  due_diligence_sample: 7
+
+methodology_caps:
+  max_entry_tunables: 2
+  max_stop_loss_tunables: 1
+  max_take_profit_tunables: 1
+  min_parameter_combinations: 8
+  max_parameter_combinations: 120
+
+stage_gates:
+  limited_core_grid_test:
+    min_total_combinations_tested: 8
+    min_profitable_iteration_rate: 0.70
+    max_apex_rule_violating_iterations: 0
+  limited_monkey_test:
+    min_net_profit_beat_rate: 0.90
+    min_max_drawdown_beat_rate: 0.90
+  walk_forward_analysis:
+    min_windows: 10
+    min_profit_factor: 1.20
+    min_mar: 0.40
+    min_total_trades: 500
+    max_apex_rule_violations: 0
+  wfa_oos_monkey_test:
+    min_net_profit_beat_rate: 0.80
+    min_max_drawdown_beat_rate: 0.80
+  wfa_oos_monte_carlo:
+    min_probability_profit_before_drawdown_exclusive: 0.50
+  simulated_incubation_core:
+    min_profit_factor: 1.00
+    min_mar: 1.00
+    min_total_trades: 75
+  simulated_incubation_monkey:
+    min_net_profit_beat_rate: 0.80
+    min_max_drawdown_beat_rate: 0.80
+  acceptance_oos_test:
+    min_profit_factor: 1.00
+    min_mar: 1.00
+    min_total_trades: 25

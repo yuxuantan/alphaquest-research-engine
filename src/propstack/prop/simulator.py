@@ -3,6 +3,7 @@ from __future__ import annotations
 import math
 import pandas as pd
 
+from propstack.backtest.sizing import tick_value_from_core
 from propstack.prop.rules import PropRules
 
 REFERENCE_POSITION_SIZING_MODES = {"reference", "source", "source_trade", "source_trade_log"}
@@ -478,13 +479,9 @@ def _dollar_risk_per_contract_from_trade(trade, sizing_config: dict, config_name
         core = sizing_config.get("core") or {}
         risk = float(risk_points)
         tick_size = float(core.get("tick_size", 0.25))
-        tick_value = float(core.get("tick_value", 12.5))
+        tick_value = tick_value_from_core(core, tick_size)
         if risk <= 0:
             raise ValueError("risk_points must be greater than 0 for risk-percent Monte Carlo position sizing.")
-        if tick_size <= 0:
-            raise ValueError("core.tick_size must be greater than 0.")
-        if tick_value <= 0:
-            raise ValueError("core.tick_value must be greater than 0.")
         return risk / tick_size * tick_value
     dollar_risk_per_contract = float(_trade_value(trade, "dollar_risk_per_contract", 0.0) or 0.0)
     if dollar_risk_per_contract <= 0:

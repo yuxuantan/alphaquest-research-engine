@@ -1,0 +1,192 @@
+{
+  "stage": "walk_forward_analysis",
+  "label": "Walk Forward Analysis (WFA)",
+  "status": "failed",
+  "passed": false,
+  "started_at": "2026-06-15T08:54:03",
+  "completed_at": "2026-06-15T09:38:52",
+  "duration_seconds": 2689.274371,
+  "criteria": [
+    {
+      "metric": "summary.early_exit",
+      "actual": false,
+      "expected": {
+        "equals": false
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.windows",
+      "actual": 10,
+      "expected": {
+        "min": 10
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.profit_factor",
+      "actual": 1.3030351642710472,
+      "expected": {
+        "min": 1.2
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.mar",
+      "actual": 0.336885583316949,
+      "expected": {
+        "min": 0.4
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.total_trades",
+      "actual": 524,
+      "expected": {
+        "min": 500
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "windows": 10,
+    "objective": "MAR",
+    "window_mode": "unanchored",
+    "train_months": 48,
+    "test_months": 12,
+    "step_months": 12,
+    "parallel": {
+      "enabled": true,
+      "scope": "grid",
+      "workers": 6
+    },
+    "selection_filter": {
+      "exclusive_min_trades_per_year": 50
+    },
+    "early_exit_min_train_profit_factor": 1.0,
+    "early_exit_require_train_profitable": true,
+    "early_exit": false,
+    "passing_windows": 0,
+    "profitable_windows": 7,
+    "profitable_window_rate": 0.7,
+    "meets_profitable_window_benchmark": true,
+    "median_test_net_profit": 2207.5,
+    "median_test_mar": 0.6942991481211148,
+    "median_test_cagr": 0.015206155602700333,
+    "median_test_max_drawdown_pct": 0.02503543465885774,
+    "train_grid_reports_retained": true,
+    "train_grid_report_files": [
+      "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_001_train_grid.csv",
+      "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_002_train_grid.csv",
+      "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_003_train_grid.csv",
+      "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_004_train_grid.csv",
+      "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_005_train_grid.csv",
+      "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_006_train_grid.csv",
+      "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_007_train_grid.csv",
+      "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_008_train_grid.csv",
+      "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_009_train_grid.csv",
+      "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_010_train_grid.csv"
+    ],
+    "reused_existing_train_grids": false,
+    "stitched_oos_trades": 524,
+    "stitched_oos_metrics": {
+      "total_trades": 524,
+      "trades_per_year": 53.042865899837466,
+      "net_profit": 47225.0,
+      "profit_factor": 1.3030351642710472,
+      "expectancy_r": 0.11845930981686253,
+      "max_drawdown": 16645.0,
+      "max_drawdown_pct": 0.08339387259199879,
+      "cagr": 0.02809419341321484,
+      "mar": 0.336885583316949,
+      "worst_day": -1675.0,
+      "best_day": 2935.0,
+      "best_day_concentration": 0.0621492853361567,
+      "max_consecutive_losses": 9,
+      "positive_month_rate": 0.5769230769230769,
+      "win_rate": 0.4904580152671756,
+      "average_trade": 90.12404580152672,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 16
+    },
+    "oos_evaluation_years": 10.001368925393566,
+    "required_oos_mar": 0.6593718606573377,
+    "incubation_selected_params": {
+      "entry.params.end_time": "10:30:00",
+      "entry.params.max_range_rank_pct": 0.45,
+      "entry.params.min_breakout_ticks": 4,
+      "sl.params.stop_pct": 0.004,
+      "tp.params.target_r_multiple": 1.75
+    },
+    "equity_curve_csv": "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/equity_curve.csv",
+    "equity_curve_html": "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/equity_curve.html",
+    "equity_curve_points": 525
+  },
+  "stitched_oos_metrics": {
+    "total_trades": 524,
+    "trades_per_year": 53.042865899837466,
+    "net_profit": 47225.0,
+    "profit_factor": 1.3030351642710472,
+    "expectancy_r": 0.11845930981686253,
+    "max_drawdown": 16645.0,
+    "max_drawdown_pct": 0.08339387259199879,
+    "cagr": 0.02809419341321484,
+    "mar": 0.336885583316949,
+    "worst_day": -1675.0,
+    "best_day": 2935.0,
+    "best_day_concentration": 0.0621492853361567,
+    "max_consecutive_losses": 9,
+    "positive_month_rate": 0.5769230769230769,
+    "win_rate": 0.4904580152671756,
+    "average_trade": 90.12404580152672,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 16
+  },
+  "incubation_selected_params": {
+    "entry.params.end_time": "10:30:00",
+    "entry.params.max_range_rank_pct": 0.45,
+    "entry.params.min_breakout_ticks": 4,
+    "sl.params.stop_pct": 0.004,
+    "tp.params.target_r_multiple": 1.75
+  },
+  "data_quality": {
+    "rows": 1335193,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 3599,
+    "first_timestamp": "2011-01-03 09:30:00-05:00",
+    "last_timestamp": "2024-12-31 15:59:00-05:00",
+    "roll_boundary_sessions_skipped": 172,
+    "loaded_rows": 4581415,
+    "strategy_rows": 267078,
+    "timeframe": "5m",
+    "timeframe_minutes": 5,
+    "source_timeframe": "1m"
+  },
+  "input_hash": "15d8e5935858139a685aabca97b9bfc74cdf563d082df1eb7d4878da052e6fc0",
+  "artifacts": [
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/equity_curve.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/equity_curve.html",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/wfa_oos_trade_log.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/wfa_results.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/wfa_summary.json",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_001_train_grid.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_002_train_grid.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_003_train_grid.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_004_train_grid.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_005_train_grid.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_006_train_grid.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_007_train_grid.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_008_train_grid.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_009_train_grid.csv",
+    "data/reports/campaigns/nq_range_compression_breakout/NQ/databento_nq_1m_20110103_20260529_dominant_session_volume/5m/nr7_or30_1045_rank_relaxed_135cap/campaign_tests/walk_forward_analysis/window_010_train_grid.csv"
+  ]
+}

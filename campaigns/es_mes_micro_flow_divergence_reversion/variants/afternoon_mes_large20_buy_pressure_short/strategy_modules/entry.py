@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.trade_orderflow_pressure import TradeOrderflowPressureEntry
+
+ENTRY_MODULE = TradeOrderflowPressureEntry

@@ -39,11 +39,11 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
-        help="Variant YAML. When set, only trade logs under that variant's report folder are rendered.",
+        help="Run config.yaml. When set, only trade logs under that campaign variant run folder are rendered.",
     )
     parser.add_argument(
         "--report-dir",
-        default="data/reports/campaigns",
+        default="backtest-campaigns",
         help="Report root to scan when --config and --trade-log are not set.",
     )
     parser.add_argument(
@@ -61,7 +61,8 @@ def main() -> None:
     args = parser.parse_args()
 
     explicit_config = load_yaml(args.config) if args.config else None
-    paths = _selected_trade_logs(args, explicit_config)
+    explicit_config_path = Path(args.config) if args.config else None
+    paths = _selected_trade_logs(args, explicit_config, explicit_config_path)
     if not paths:
         print("No supported trade logs found.")
         return
@@ -92,11 +93,15 @@ def discover_trade_logs(root: str | Path) -> list[Path]:
     return sorted(set(paths))
 
 
-def _selected_trade_logs(args: argparse.Namespace, explicit_config: dict | None) -> list[Path]:
+def _selected_trade_logs(
+    args: argparse.Namespace,
+    explicit_config: dict | None,
+    explicit_config_path: Path | None = None,
+) -> list[Path]:
     if args.trade_log:
         return [Path(path) for path in args.trade_log]
     if explicit_config:
-        return discover_trade_logs(variant_root(explicit_config))
+        return discover_trade_logs(variant_root(explicit_config, config_path=explicit_config_path))
     return discover_trade_logs(args.report_dir)
 
 
@@ -119,7 +124,7 @@ def _config_candidates_for_trade_log(path: Path) -> list[Path]:
     candidates = []
     seen = set()
     for parent in [path.parent, *path.parent.parents]:
-        for name in ["config_snapshot.yaml", "variant_config.yaml"]:
+        for name in ["config.yaml", "config_snapshot.yaml", "variant_config.yaml"]:
             candidate = parent / name
             if candidate in seen:
                 continue

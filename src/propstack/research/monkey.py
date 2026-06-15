@@ -14,7 +14,7 @@ import pandas as pd
 from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.fills import entry_price, exit_price
 from propstack.backtest.metrics import benchmark, calculate_metrics, daily_results
-from propstack.backtest.sizing import size_position
+from propstack.backtest.sizing import size_position, tick_value_from_core
 from propstack.utils.progress import progress_bar
 from propstack.utils.reports import market_timezone, write_report_csv
 from propstack.utils.time import parse_time
@@ -177,6 +177,393 @@ def run_monkey(
         },
     }
     return df, summary
+
+
+def run_trade_path_stress(
+    data: pd.DataFrame,
+    base_config: dict,
+    monkey_config: dict,
+    benchmarks: dict,
+    core_trades: pd.DataFrame,
+    report_dir: str | Path | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    """Stress the actual strategy trade path with execution perturbations."""
+
+    stress_config = _trade_path_stress_config(monkey_config)
+    if not stress_config["enabled"]:
+        return pd.DataFrame(), {"enabled": False}
+    if core_trades is None or core_trades.empty:
+        raise ValueError("Trade-path stress requires non-empty core_trades.")
+
+    market = data.sort_values("timestamp").reset_index(drop=True)
+    seed = int(stress_config["seed"])
+    total_runs = int(stress_config["runs"])
+    report_paths = _prepare_iteration_report_paths(report_dir, prefix="trade_path_stress_iteration")
+    report_timezone = market_timezone(base_config)
+
+    rows = []
+    progress = progress_bar(total_runs, "trade-path stress runs")
+    for run_id in range(1, total_runs + 1):
+        rng = random.Random(_run_seed(seed, run_id))
+        trades, counters = _build_stressed_trade_path(
+            market,
+            core_trades,
+            base_config,
+            stress_config,
+            rng=rng,
+            run_id=run_id,
+        )
+        row = _trade_path_stress_result_row(run_id, trades, counters, base_config, benchmarks)
+        rows.append(row)
+        daily = daily_results(trades)
+        _append_iteration_report(report_paths, "trades", trades, run_id, report_timezone)
+        _append_iteration_report(report_paths, "daily", daily, run_id, report_timezone)
+        progress.update(run_id)
+
+    df = pd.DataFrame(rows)
+    one_tick_trades, one_tick_counters = _build_stressed_trade_path(
+        market,
+        core_trades,
+        base_config,
+        stress_config,
+        rng=random.Random(_run_seed(seed, 0)),
+        run_id=0,
+        fixed_extra_slippage_ticks=1.0,
+        fixed_entry_delay_bars=0,
+        fixed_missed_trade_probability=0.0,
+        fixed_time_window_trim_minutes=0,
+    )
+    one_tick_row = _trade_path_stress_result_row(0, one_tick_trades, one_tick_counters, base_config, benchmarks)
+    summary = _trade_path_stress_summary(df, one_tick_row, stress_config, report_paths)
+    return df, summary
+
+
+def _trade_path_stress_config(monkey_config: dict) -> dict:
+    raw = dict(monkey_config.get("trade_path_stress") or {})
+    enabled = bool(raw.get("enabled", monkey_config.get("enable_trade_path_stress", True)))
+    runs = int(raw.get("runs", monkey_config.get("runs", 8000)))
+    seed = int(raw.get("seed", monkey_config.get("seed", 1))) + 97_531
+    return {
+        "enabled": enabled,
+        "runs": max(runs, 1),
+        "seed": seed,
+        "max_entry_delay_bars": max(int(raw.get("max_entry_delay_bars", 1)), 0),
+        "missed_trade_probability": min(max(float(raw.get("missed_trade_probability", 0.05)), 0.0), 1.0),
+        "max_extra_slippage_ticks": max(float(raw.get("max_extra_slippage_ticks", 1.0)), 0.0),
+        "time_window_jitter_minutes": max(int(raw.get("time_window_jitter_minutes", 5)), 0),
+    }
+
+
+def _build_stressed_trade_path(
+    data: pd.DataFrame,
+    core_trades: pd.DataFrame,
+    base_config: dict,
+    stress_config: dict,
+    rng: random.Random,
+    run_id: int,
+    fixed_extra_slippage_ticks: float | None = None,
+    fixed_entry_delay_bars: int | None = None,
+    fixed_missed_trade_probability: float | None = None,
+    fixed_time_window_trim_minutes: int | None = None,
+) -> tuple[pd.DataFrame, dict]:
+    core = base_config.get("core", {})
+    tick_size = float(core.get("tick_size", 0.25))
+    tick_value = tick_value_from_core(core, tick_size)
+    commission = float(core.get("commission_per_contract", 2.5))
+    base_slippage_ticks = float(core.get("slippage_ticks", 1))
+    max_extra_slippage = float(stress_config["max_extra_slippage_ticks"])
+    extra_slippage_ticks = (
+        float(fixed_extra_slippage_ticks)
+        if fixed_extra_slippage_ticks is not None
+        else rng.uniform(0.0, max_extra_slippage)
+    )
+    total_slippage_ticks = base_slippage_ticks + extra_slippage_ticks
+    missed_trade_probability = (
+        float(fixed_missed_trade_probability)
+        if fixed_missed_trade_probability is not None
+        else float(stress_config["missed_trade_probability"])
+    )
+    if fixed_time_window_trim_minutes is not None:
+        trim_start_minutes = int(fixed_time_window_trim_minutes)
+        trim_end_minutes = int(fixed_time_window_trim_minutes)
+    else:
+        jitter = int(stress_config["time_window_jitter_minutes"])
+        trim_start_minutes = rng.randint(0, jitter) if jitter else 0
+        trim_end_minutes = rng.randint(0, jitter) if jitter else 0
+
+    strategy = base_config.get("strategy", {})
+    entry_params = (strategy.get("entry") or {}).get("params", {})
+    start_time = parse_time(entry_params.get("start_time", "00:00:00"))
+    end_time = parse_time(entry_params.get("end_time", "23:59:59"))
+    timestamps = data["timestamp"].reset_index(drop=True)
+    apex_engine = BacktestEngine(base_config)
+
+    counters = {
+        "source_trades": int(len(core_trades)),
+        "missed_trades": 0,
+        "time_window_filtered_trades": 0,
+        "entry_delay_skipped_trades": 0,
+        "delayed_entries": 0,
+        "fill_order_conflicts": 0,
+        "extra_slippage_ticks": float(extra_slippage_ticks),
+        "total_slippage_ticks": float(total_slippage_ticks),
+        "time_window_trim_start_minutes": int(trim_start_minutes),
+        "time_window_trim_end_minutes": int(trim_end_minutes),
+    }
+    rows = []
+    for source in core_trades.to_dict("records"):
+        entry_ts = pd.Timestamp(source.get("entry_timestamp"))
+        if not _timestamp_in_trimmed_window(entry_ts, start_time, end_time, trim_start_minutes, trim_end_minutes):
+            counters["time_window_filtered_trades"] += 1
+            continue
+        if missed_trade_probability > 0 and rng.random() < missed_trade_probability:
+            counters["missed_trades"] += 1
+            continue
+
+        entry_pos = _bar_position_for_timestamp(timestamps, entry_ts)
+        exit_pos = _bar_position_for_timestamp(timestamps, pd.Timestamp(source.get("exit_timestamp")))
+        if entry_pos is None or exit_pos is None or exit_pos < entry_pos:
+            counters["entry_delay_skipped_trades"] += 1
+            continue
+        if fixed_entry_delay_bars is not None:
+            delay_bars = int(fixed_entry_delay_bars)
+        else:
+            delay_bars = rng.randint(0, int(stress_config["max_entry_delay_bars"]))
+        delayed_entry_pos = entry_pos + delay_bars
+        if delay_bars > 0:
+            counters["delayed_entries"] += 1
+        if delayed_entry_pos > exit_pos or data.at[delayed_entry_pos, "session_date"] != data.at[entry_pos, "session_date"]:
+            counters["entry_delay_skipped_trades"] += 1
+            continue
+
+        row, conflicts = _stressed_trade_row(
+            data,
+            source,
+            delayed_entry_pos,
+            exit_pos,
+            run_id,
+            len(rows) + 1,
+            tick_size,
+            tick_value,
+            commission,
+            total_slippage_ticks,
+            extra_slippage_ticks,
+            delay_bars,
+            apex_engine,
+        )
+        counters["fill_order_conflicts"] += int(conflicts)
+        rows.append(row)
+    return pd.DataFrame(rows), counters
+
+
+def _stressed_trade_row(
+    data: pd.DataFrame,
+    source: dict,
+    entry_pos: int,
+    original_exit_pos: int,
+    run_id: int,
+    trade_id: int,
+    tick_size: float,
+    tick_value: float,
+    commission: float,
+    total_slippage_ticks: float,
+    extra_slippage_ticks: float,
+    entry_delay_bars: int,
+    apex_engine: BacktestEngine,
+) -> tuple[dict, int]:
+    direction = str(source.get("direction"))
+    entry_bar = data.iloc[entry_pos]
+    entry = entry_price(float(entry_bar["open"]), direction, tick_size, total_slippage_ticks)
+    stop_price = _finite_float_or_none(source.get("stop_price"))
+    target_price = _finite_float_or_none(source.get("target_price"))
+    raw_exit, exit_reason, exit_pos, conflicts = _resolve_stressed_exit(
+        data,
+        entry_pos,
+        original_exit_pos,
+        direction,
+        stop_price,
+        target_price,
+        str(source.get("exit_reason", "stress_time_exit")),
+    )
+    exit_bar = data.iloc[exit_pos]
+    exit_value = exit_price(raw_exit, direction, tick_size, total_slippage_ticks)
+    point_pnl = exit_value - entry if direction == "long" else entry - exit_value
+    contracts = max(int(float(source.get("contracts", 1) or 1)), 1)
+    gross = point_pnl / tick_size * tick_value * contracts
+    total_commission = commission * contracts * 2
+    net = gross - total_commission
+    risk_points = max(float(source.get("risk_points") or tick_size), tick_size)
+    path = data.iloc[entry_pos : exit_pos + 1]
+    if direction == "long":
+        mfe = max(0.0, float(path["high"].max()) - entry)
+        mae = max(0.0, entry - float(path["low"].min()))
+    else:
+        mfe = max(0.0, entry - float(path["low"].min()))
+        mae = max(0.0, float(path["high"].max()) - entry)
+
+    row = dict(source)
+    row.update(
+        {
+            "source_trade_id": source.get("trade_id"),
+            "trade_id": trade_id,
+            "strategy_name": f"{source.get('strategy_name', 'strategy')}_trade_path_stress",
+            "stress_run_id": run_id,
+            "stress_extra_slippage_ticks": float(extra_slippage_ticks),
+            "stress_total_slippage_ticks": float(total_slippage_ticks),
+            "stress_entry_delay_bars": int(entry_delay_bars),
+            "stress_fill_order_conflicts": int(conflicts),
+            "session_date": entry_bar["session_date"],
+            "entry_timestamp": entry_bar["timestamp"],
+            "entry_price": entry,
+            "exit_timestamp": exit_bar["timestamp"],
+            "exit_price": exit_value,
+            "exit_reason": exit_reason,
+            "risk_points": risk_points,
+            "contracts": contracts,
+            "max_favorable_excursion": mfe,
+            "max_adverse_excursion": mae,
+            "gross_pnl": gross,
+            "net_pnl": net,
+            "r_multiple": point_pnl / risk_points if risk_points else 0.0,
+            "commission": total_commission,
+            "slippage_cost": total_slippage_ticks * tick_value * contracts * 2,
+        }
+    )
+    row.update(apex_engine._apex_trade_fields(row))
+    return row, conflicts
+
+
+def _resolve_stressed_exit(
+    data: pd.DataFrame,
+    entry_pos: int,
+    original_exit_pos: int,
+    direction: str,
+    stop_price: float | None,
+    target_price: float | None,
+    original_exit_reason: str,
+) -> tuple[float, str, int, int]:
+    conflicts = 0
+    for pos in range(entry_pos, original_exit_pos + 1):
+        bar = data.iloc[pos]
+        stop_hit = _price_hit(bar, direction, stop_price, "stop")
+        target_hit = _price_hit(bar, direction, target_price, "target")
+        if stop_hit and target_hit:
+            conflicts += 1
+            return float(stop_price), "stress_stop_target_conflict_stop", pos, conflicts
+        if stop_hit:
+            return float(stop_price), "stop", pos, conflicts
+        if target_hit:
+            return float(target_price), "target", pos, conflicts
+    return float(data.iloc[original_exit_pos]["close"]), original_exit_reason or "stress_time_exit", original_exit_pos, conflicts
+
+
+def _price_hit(bar: pd.Series, direction: str, price: float | None, kind: str) -> bool:
+    if price is None:
+        return False
+    if direction == "long":
+        return bool(bar["low"] <= price) if kind == "stop" else bool(bar["high"] >= price)
+    return bool(bar["high"] >= price) if kind == "stop" else bool(bar["low"] <= price)
+
+
+def _finite_float_or_none(value) -> float | None:
+    try:
+        out = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(out):
+        return None
+    return out
+
+
+def _timestamp_in_trimmed_window(timestamp, start_time, end_time, trim_start_minutes: int, trim_end_minutes: int) -> bool:
+    value = _time_to_minutes(pd.Timestamp(timestamp).time())
+    start = _time_to_minutes(start_time) + int(trim_start_minutes)
+    end = _time_to_minutes(end_time) - int(trim_end_minutes)
+    if start <= end:
+        return start <= value <= end
+    return value >= start or value <= end
+
+
+def _time_to_minutes(value) -> float:
+    return float(value.hour * 60 + value.minute + value.second / 60.0)
+
+
+def _trade_path_stress_result_row(
+    run_id: int,
+    trades: pd.DataFrame,
+    counters: dict,
+    base_config: dict,
+    benchmarks: dict,
+) -> dict:
+    metrics = calculate_metrics(
+        trades,
+        initial_balance=float(base_config.get("core", {}).get("initial_balance", 0)),
+    )
+    passed, reason = benchmark(metrics, benchmarks)
+    return {
+        "run_id": run_id,
+        "total_trades": metrics["total_trades"],
+        "net_profit": metrics["net_profit"],
+        "max_drawdown": metrics["max_drawdown"],
+        "max_drawdown_pct": metrics["max_drawdown_pct"],
+        "profit_factor": metrics["profit_factor"],
+        "expectancy_r": metrics["expectancy_r"],
+        "win_rate": metrics["win_rate"],
+        "apex_rule_violations": metrics.get("apex_rule_violations", 0),
+        "profitable": metrics["net_profit"] > 0,
+        "benchmark_passed": passed,
+        "failure_reason": reason,
+        **counters,
+    }
+
+
+def _trade_path_stress_summary(
+    df: pd.DataFrame,
+    one_tick_row: dict,
+    stress_config: dict,
+    report_paths: dict[str, Path] | None,
+) -> dict:
+    profitable = int(df["profitable"].sum()) if len(df) else 0
+    passing = int(df["benchmark_passed"].sum()) if len(df) else 0
+    apex_violating = int((df.get("apex_rule_violations", pd.Series(dtype=float)) > 0).sum()) if len(df) else 0
+    return {
+        "enabled": True,
+        "mode": "actual_trade_path_perturbation",
+        "number_of_runs": int(len(df)),
+        "profitable_iterations": profitable,
+        "percentage_profitable": float(profitable / len(df)) if len(df) else 0.0,
+        "number_passing_benchmark": passing,
+        "percentage_passing_benchmark": float(passing / len(df)) if len(df) else 0.0,
+        "median_net_profit": _quantile(df, "net_profit", 0.50),
+        "p5_net_profit": _quantile(df, "net_profit", 0.05),
+        "p95_net_profit": _quantile(df, "net_profit", 0.95),
+        "median_max_drawdown": _quantile(df, "max_drawdown", 0.50),
+        "p95_max_drawdown": _quantile(df, "max_drawdown", 0.95),
+        "median_total_trades": _quantile(df, "total_trades", 0.50),
+        "median_missed_trades": _quantile(df, "missed_trades", 0.50),
+        "median_delayed_entries": _quantile(df, "delayed_entries", 0.50),
+        "total_fill_order_conflicts": int(df.get("fill_order_conflicts", pd.Series(dtype=float)).sum()) if len(df) else 0,
+        "apex_rule_violating_iterations": apex_violating,
+        "one_tick_worse": {
+            "net_profit": float(one_tick_row.get("net_profit", 0.0)),
+            "profit_factor": float(one_tick_row.get("profit_factor", 0.0)),
+            "expectancy_r": float(one_tick_row.get("expectancy_r", 0.0)),
+            "max_drawdown": float(one_tick_row.get("max_drawdown", 0.0)),
+            "total_trades": int(one_tick_row.get("total_trades", 0)),
+            "profitable": bool(one_tick_row.get("profitable", False)),
+            "benchmark_passed": bool(one_tick_row.get("benchmark_passed", False)),
+            "apex_rule_violations": int(one_tick_row.get("apex_rule_violations", 0)),
+            "fill_order_conflicts": int(one_tick_row.get("fill_order_conflicts", 0)),
+        },
+        "stressors": {
+            "max_entry_delay_bars": int(stress_config["max_entry_delay_bars"]),
+            "missed_trade_probability": float(stress_config["missed_trade_probability"]),
+            "max_extra_slippage_ticks": float(stress_config["max_extra_slippage_ticks"]),
+            "time_window_jitter_minutes": int(stress_config["time_window_jitter_minutes"]),
+        },
+        "iteration_reports_retained": report_paths is not None,
+        "iteration_report_files": _iteration_report_files(report_paths),
+    }
 
 
 def _representative_profitable_run(df: pd.DataFrame) -> dict:
@@ -808,7 +1195,7 @@ def _build_trade_log(
 ) -> pd.DataFrame:
     core = base_config.get("core", {})
     tick_size = float(core.get("tick_size", 0.25))
-    tick_value = float(core.get("tick_value", 12.5))
+    tick_value = tick_value_from_core(core, tick_size)
     commission = float(core.get("commission_per_contract", 2.5))
     slippage_ticks = float(core.get("slippage_ticks", 1))
     risk_points = max(float(core_profile.get("average_risk_points", tick_size)), tick_size)
@@ -878,14 +1265,14 @@ def _build_trade_log(
     return pd.DataFrame(rows)
 
 
-def _prepare_iteration_report_paths(report_dir: str | Path | None) -> dict[str, Path] | None:
+def _prepare_iteration_report_paths(report_dir: str | Path | None, prefix: str = "monkey_iteration") -> dict[str, Path] | None:
     if report_dir is None:
         return None
     root = Path(report_dir)
     root.mkdir(parents=True, exist_ok=True)
     paths = {
-        "trades": root / "monkey_iteration_trades.csv",
-        "daily": root / "monkey_iteration_daily.csv",
+        "trades": root / f"{prefix}_trades.csv",
+        "daily": root / f"{prefix}_daily.csv",
     }
     for path in paths.values():
         if path.exists():

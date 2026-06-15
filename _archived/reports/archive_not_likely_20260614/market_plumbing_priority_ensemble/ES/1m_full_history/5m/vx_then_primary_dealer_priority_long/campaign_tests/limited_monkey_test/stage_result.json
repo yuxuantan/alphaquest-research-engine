@@ -1,0 +1,134 @@
+{
+  "stage": "limited_monkey_test",
+  "label": "Limited Monkey Test",
+  "status": "passed",
+  "passed": true,
+  "started_at": "2026-06-09T09:20:55",
+  "completed_at": "2026-06-09T09:30:56",
+  "duration_seconds": 601.174971,
+  "criteria": [
+    {
+      "metric": "summary.core_beats_monkey_net_profit_rate",
+      "actual": 1.0,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.core_beats_monkey_max_drawdown_rate",
+      "actual": 1.0,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.core_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "number_of_runs": 8000,
+    "core_metrics": {
+      "total_trades": 218,
+      "long_trades": 218,
+      "short_trades": 0,
+      "long_ratio": 1.0,
+      "average_bars_in_trade": 42.75229357798165,
+      "max_bars_in_trade": 61,
+      "net_profit": 64847.5,
+      "max_drawdown": 4937.5,
+      "max_drawdown_pct": 0.0267401383056774,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 4
+    },
+    "beat_threshold": 0.9,
+    "core_beats_monkey_net_profit_rate": 1.0,
+    "core_beats_monkey_max_drawdown_rate": 1.0,
+    "meets_monkey_goal": true,
+    "number_passing_benchmark": 0,
+    "percentage_passing_benchmark": 0.0,
+    "profitable_iterations": 4229,
+    "percentage_profitable": 0.528625,
+    "median_net_profit": 1322.5,
+    "p5_net_profit": -26829.624999999996,
+    "p95_net_profit": 29060.999999999985,
+    "median_max_drawdown": 20207.5,
+    "p5_max_drawdown": 10142.375,
+    "p95_max_drawdown": 38830.749999999985,
+    "median_average_bars_in_trade": 42.75229357798165,
+    "median_long_ratio": 0.973568281938326,
+    "representative_profitable_run": {
+      "run_id": 2106,
+      "total_trades": 209,
+      "long_trades": 200,
+      "short_trades": 9,
+      "long_ratio": 0.9569377990430622,
+      "average_bars_in_trade": 46.16746411483253,
+      "trade_count_delta": -9,
+      "long_ratio_delta": -0.0430622009569378,
+      "average_bars_delta": 3.41517053685088,
+      "net_profit": 11717.5,
+      "max_drawdown": 28032.5,
+      "max_drawdown_pct": 0.1627360202023134,
+      "profit_factor": 1.111914995224451,
+      "expectancy_r": 0.02631756306966425,
+      "win_rate": 0.569377990430622,
+      "apex_rule_violations": 0,
+      "profitable": true,
+      "core_net_profit_gt_monkey": true,
+      "core_max_drawdown_lt_monkey": true,
+      "benchmark_passed": false,
+      "failure_reason": "min_profit_factor;min_expectancy_r;max_drawdown_pct;min_cagr;min_mar;max_daily_loss;preferred_min_total_trades;max_best_day_concentration",
+      "profitable_median_net_profit": 11717.5
+    },
+    "constraints": {
+      "trade_count_tolerance_pct": 0.05,
+      "trade_count_tolerance": 0,
+      "long_short_ratio_tolerance": 0.05,
+      "average_bars_tolerance_pct": 0.1,
+      "duration_sampling": "core_distribution",
+      "duration_shape": 0.7,
+      "max_duration_bars": 61,
+      "max_feasible_duration_bars": 77,
+      "rth_only": true,
+      "enforce_non_overlapping": true,
+      "enforce_max_trades_per_day": false
+    },
+    "iteration_reports_retained": false,
+    "iteration_report_files": [],
+    "data_subset": {
+      "start_date": "2021-01-01",
+      "end_date": "2022-12-31"
+    },
+    "parallel": {
+      "enabled": false,
+      "workers": 1,
+      "scope": "runs"
+    }
+  },
+  "data_quality": {
+    "rows": 674957,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 431,
+    "first_timestamp": "2020-12-31 16:00:00-05:00",
+    "last_timestamp": "2022-12-30 16:59:00-05:00",
+    "roll_boundary_sessions_skipped": 27,
+    "loaded_rows": 688389,
+    "strategy_rows": 135015,
+    "timeframe": "5m",
+    "timeframe_minutes": 5,
+    "source_timeframe": "1m"
+  },
+  "input_hash": "a12c42a4a18cb28c22d06028796406e12848eecbcf8c61a1ae22672156d6adcd",
+  "artifacts": [
+    "data/reports/campaigns/market_plumbing_priority_ensemble/ES/1m_full_history/5m/vx_then_primary_dealer_priority_long/campaign_tests/limited_monkey_test/monkey_results.csv",
+    "data/reports/campaigns/market_plumbing_priority_ensemble/ES/1m_full_history/5m/vx_then_primary_dealer_priority_long/campaign_tests/limited_monkey_test/monkey_summary.json"
+  ]
+}

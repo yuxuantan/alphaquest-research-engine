@@ -435,7 +435,7 @@ def test_monte_carlo_loads_variant_wfa_oos_trade_source(tmp_path, monkeypatch):
     }
     trade_log = (
         tmp_path
-        / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/wfa/wfa_oos_trade_log.csv"
+        / "backtest-campaigns/sample_campaign/baseline/ES/run1/wfa/wfa_oos_trade_log.csv"
     )
     trade_log.parent.mkdir(parents=True)
     pd.DataFrame(
@@ -453,7 +453,7 @@ def test_monte_carlo_loads_variant_wfa_oos_trade_source(tmp_path, monkeypatch):
     trades, _, source = load_monte_carlo_trade_source(
         campaign,
         {"trade_source": "wfa_oos"},
-        tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/monte_carlo",
+        tmp_path / "backtest-campaigns/sample_campaign/baseline/ES/run1/monte_carlo",
         skip_validation=True,
     )
 
@@ -473,7 +473,7 @@ def test_monte_carlo_loads_variant_core_trade_source(tmp_path, monkeypatch):
     }
     trade_log = (
         tmp_path
-        / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/core/trade_log.csv"
+        / "backtest-campaigns/sample_campaign/baseline/ES/run1/core/trade_log.csv"
     )
     trade_log.parent.mkdir(parents=True)
     pd.DataFrame(
@@ -490,7 +490,7 @@ def test_monte_carlo_loads_variant_core_trade_source(tmp_path, monkeypatch):
     trades, _, source = load_monte_carlo_trade_source(
         campaign,
         {"trade_source": "core"},
-        tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/monte_carlo",
+        tmp_path / "backtest-campaigns/sample_campaign/baseline/ES/run1/monte_carlo",
         skip_validation=True,
     )
 
@@ -513,7 +513,7 @@ def test_monte_carlo_requires_explicit_report_trade_source(tmp_path, monkeypatch
         load_monte_carlo_trade_source(
             campaign,
             {},
-            tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/monte_carlo",
+            tmp_path / "backtest-campaigns/sample_campaign/baseline/ES/run1/monte_carlo",
             skip_validation=True,
         )
 
@@ -532,6 +532,6 @@ def test_monte_carlo_rejects_generic_trade_log_source(tmp_path, monkeypatch):
         load_monte_carlo_trade_source(
             campaign,
             {"trade_log": "some/path.csv"},
-            tmp_path / "data/reports/campaigns/sample_campaign/ES/1m_full_history/5m/baseline/monte_carlo",
+            tmp_path / "backtest-campaigns/sample_campaign/baseline/ES/run1/monte_carlo",
             skip_validation=True,
         )

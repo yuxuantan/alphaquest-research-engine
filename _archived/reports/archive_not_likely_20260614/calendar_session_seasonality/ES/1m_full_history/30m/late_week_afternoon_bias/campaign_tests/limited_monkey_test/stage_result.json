@@ -1,0 +1,123 @@
+{
+  "stage": "limited_monkey_test",
+  "label": "Limited Monkey Test",
+  "status": "failed",
+  "passed": false,
+  "started_at": "2026-06-06T14:30:24",
+  "completed_at": "2026-06-06T14:32:47",
+  "duration_seconds": 143.146899,
+  "criteria": [
+    {
+      "metric": "summary.core_beats_monkey_net_profit_rate",
+      "actual": 0.986625,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.core_beats_monkey_max_drawdown_rate",
+      "actual": 0.50575,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": false
+    }
+  ],
+  "summary": {
+    "number_of_runs": 8000,
+    "core_metrics": {
+      "total_trades": 45,
+      "long_trades": 45,
+      "short_trades": 0,
+      "long_ratio": 1.0,
+      "average_bars_in_trade": 4.844444444444444,
+      "max_bars_in_trade": 5,
+      "net_profit": 15650.0,
+      "max_drawdown": 5195.0,
+      "max_drawdown_pct": 0.03187947777794824
+    },
+    "beat_threshold": 0.9,
+    "core_beats_monkey_net_profit_rate": 0.986625,
+    "core_beats_monkey_max_drawdown_rate": 0.50575,
+    "meets_monkey_goal": false,
+    "number_passing_benchmark": 0,
+    "percentage_passing_benchmark": 0.0,
+    "profitable_iterations": 2772,
+    "percentage_profitable": 0.3465,
+    "median_net_profit": -3367.5,
+    "p5_net_profit": -5287.5,
+    "p95_net_profit": 10917.874999999995,
+    "median_max_drawdown": 5230.0,
+    "p5_max_drawdown": 3055.0,
+    "p95_max_drawdown": 9617.5,
+    "median_average_bars_in_trade": 4.8478260869565215,
+    "median_long_ratio": 0.9767441860465116,
+    "representative_profitable_run": {
+      "run_id": 3577,
+      "total_trades": 43,
+      "long_trades": 42,
+      "short_trades": 1,
+      "long_ratio": 0.9767441860465116,
+      "average_bars_in_trade": 4.883720930232558,
+      "trade_count_delta": -2,
+      "long_ratio_delta": -0.023255813953488413,
+      "average_bars_delta": 0.039276485788113824,
+      "net_profit": 5247.5,
+      "max_drawdown": 3965.0,
+      "max_drawdown_pct": 0.026178528984550375,
+      "profit_factor": 1.3823315118397086,
+      "expectancy_r": 0.08654912592644753,
+      "win_rate": 0.4186046511627907,
+      "profitable": true,
+      "core_net_profit_gt_monkey": true,
+      "core_max_drawdown_lt_monkey": false,
+      "benchmark_passed": false,
+      "failure_reason": "min_cagr;min_mar;min_win_rate;min_trades_per_year;max_daily_loss;preferred_min_total_trades;max_best_day_concentration;min_positive_month_rate",
+      "profitable_median_net_profit": 5248.75
+    },
+    "constraints": {
+      "trade_count_tolerance_pct": 0.05,
+      "trade_count_tolerance": 0,
+      "long_short_ratio_tolerance": 0.05,
+      "average_bars_tolerance_pct": 0.1,
+      "duration_sampling": "core_distribution",
+      "duration_shape": 0.7,
+      "max_duration_bars": 5,
+      "max_feasible_duration_bars": 13,
+      "rth_only": true,
+      "enforce_non_overlapping": true,
+      "enforce_max_trades_per_day": false
+    },
+    "iteration_reports_retained": false,
+    "iteration_report_files": [],
+    "data_subset": {
+      "start_date": "2021-01-01",
+      "end_date": "2022-12-31"
+    },
+    "parallel": {
+      "enabled": false,
+      "workers": 1,
+      "scope": "runs"
+    }
+  },
+  "data_quality": {
+    "rows": 674957,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 427,
+    "first_timestamp": "2020-12-31 16:00:00-05:00",
+    "last_timestamp": "2022-12-30 16:59:00-05:00",
+    "roll_boundary_sessions_skipped": 24,
+    "loaded_rows": 683889,
+    "strategy_rows": 22563,
+    "timeframe": "30m",
+    "timeframe_minutes": 30,
+    "source_timeframe": "1m"
+  },
+  "input_hash": "e05ff8830ac010ca0e4d644138ec695b2a18bf5b4dd258688ed5cc67cdfca7c8",
+  "artifacts": [
+    "data/reports/campaigns/calendar_session_seasonality/ES/1m_full_history/30m/late_week_afternoon_bias/campaign_tests/limited_monkey_test/monkey_results.csv",
+    "data/reports/campaigns/calendar_session_seasonality/ES/1m_full_history/30m/late_week_afternoon_bias/campaign_tests/limited_monkey_test/monkey_summary.json"
+  ]
+}

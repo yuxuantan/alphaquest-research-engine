@@ -1,0 +1,130 @@
+campaign_name: es_mes_micro_flow_divergence_reversion
+campaign_id: es_mes_micro_flow_divergence_reversion
+instrument: ES
+initial_decision: TEST
+reason_for_decision: >
+  Local one-year ES/MES trade-side cache exists, and prior one-year diagnostics
+  showed this edge family is the best local-only independent mean-reversion
+  lead. The campaign remains fail-closed because the local sample may be too
+  short for WFA and acceptance density.
+
+edge_hypothesis: >
+  ES may mean-revert when completed MES flow or short-horizon MES price movement
+  diverges from ES. MES is used only as a smaller-notional flow state variable;
+  ES is the traded instrument.
+
+why_it_may_apply_to_es_futures: >
+  ES and MES reference the same equity-index futures exposure, but their
+  participant mix and notional size differ. Completed MES pressure that is not
+  confirmed by ES can represent temporary liquidity demand rather than durable
+  ES information.
+
+research_sources:
+  - title: Individual Investor Trading and Stock Returns
+    author: Ron Kaniel, Gideon Saar, and Sheridan Titman
+    year: 2008
+    link_or_doi: 10.1111/j.1540-6261.2008.01316.x
+    expected_mechanism: Smaller-participant flow can relate to short-horizon liquidity provision and return reversal.
+  - title: Do Retail Trades Move Markets?
+    author: Brad M. Barber, Terrance Odean, and Ning Zhu
+    year: 2009
+    link_or_doi: 10.1093/rfs/hhn035
+    expected_mechanism: Small-trade imbalance can be informative about coordinated retail-like pressure.
+  - title: One Security, Many Markets
+    author: Joel Hasbrouck
+    year: 1995
+    link_or_doi: 10.1111/j.1540-6261.1995.tb04054.x
+    expected_mechanism: Linked markets can differ in short-run price discovery and create temporary dislocations.
+
+behavioural_or_microstructure_rationale: >
+  Completed MES pressure may proxy smaller-notional liquidity demand. If ES does
+  not confirm that pressure with matching price movement, ES can mean-revert
+  after the transient flow shock.
+
+expected_failure_modes:
+  - MES is the informed leading market rather than a liquidity-demand proxy.
+  - One-year local ES/MES history is too short for robust WFA windows.
+  - Profit depends on one month, one quarter, or a small number of trades.
+  - Fixed one-tick slippage understates live execution during fast afternoon moves.
+
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  latest_flat_time: "16:59:59"
+
+data_requirements:
+  - data/cache/orderflow/es_mes_flow_divergence_1m_20250610_20260608.csv
+  - data/cache/orderflow/es_mes_price_flow_divergence_1m_20250610_20260608.csv
+
+forbidden_forms_of_lookahead:
+  - Use of bars after the configured signal timestamp.
+  - Use of final-session VWAP, final daily range, future session high/low, or future roll information.
+  - Any paid/new data pull during this local-only run.
+
+variants:
+  - morning_mes_sell_pressure_reversion_long
+  - morning_mes_buy_pressure_reversion_short
+  - midday_mes_price_richness_fade
+  - afternoon_mes_large20_buy_pressure_short
+  - afternoon_mes_large20_sell_pressure_long
+
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - rescue the same failed variant more than once
+    - core strategy mechanic
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: midday_mes_price_richness_fade
+      config: campaigns/es_mes_micro_flow_divergence_reversion/rescue_attempts/parameter_space_rescue_1/midday_mes_price_richness_fade/config.yaml
+      report: backtest-campaigns/es_mes_micro_flow_divergence_reversion/midday_mes_price_richness_fade/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_mes_micro_flow_divergence_reversion_rescue_attempt_1_20260615.md
+      terminal_stage: limited_monkey_test
+      failure: random-placebo profitable rate 0.38666666666666666 and median net profit -5822.5
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: afternoon_mes_large20_sell_pressure_long
+      config: campaigns/es_mes_micro_flow_divergence_reversion/rescue_attempts/parameter_space_rescue_1/afternoon_mes_large20_sell_pressure_long/config.yaml
+      report: backtest-campaigns/es_mes_micro_flow_divergence_reversion/afternoon_mes_large20_sell_pressure_long/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_mes_micro_flow_divergence_reversion_afternoon_sell_rescue_attempt_1_20260615.md
+      terminal_stage: limited_monkey_test
+      failure: random-placebo profitable rate 0.43 and median net profit -1723.75; trade-path stress profitable rate 0.4866666666666667 and one-tick-worse net profit -532.5
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: morning_mes_buy_pressure_reversion_short
+      config: campaigns/es_mes_micro_flow_divergence_reversion/rescue_attempts/parameter_space_rescue_1/morning_mes_buy_pressure_reversion_short/config.yaml
+      report: backtest-campaigns/es_mes_micro_flow_divergence_reversion/morning_mes_buy_pressure_reversion_short/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_mes_micro_flow_divergence_reversion_morning_buy_short_rescue_attempt_1_20260615.md
+      terminal_stage: limited_monkey_test
+      failure: random-placebo profitable rate 0.36 and median net profit -2702.5; trade-path stress passed with profitable rate 0.9966666666666667 and one-tick-worse net profit 4467.5
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: afternoon_mes_large20_buy_pressure_short
+      config: campaigns/es_mes_micro_flow_divergence_reversion/rescue_attempts/parameter_space_rescue_1/afternoon_mes_large20_buy_pressure_short/config.yaml
+      report: backtest-campaigns/es_mes_micro_flow_divergence_reversion/afternoon_mes_large20_buy_pressure_short/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_mes_micro_flow_divergence_reversion_afternoon_buy_rescue_attempt_1_20260615.md
+      terminal_stage: limited_monkey_test
+      failure: random-placebo profitable rate 0.36666666666666664 and median net profit -1901.25; trade-path stress passed with profitable rate 1.0 and one-tick-worse net profit 10292.5
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: morning_mes_sell_pressure_reversion_long
+      config: campaigns/es_mes_micro_flow_divergence_reversion/rescue_attempts/parameter_space_rescue_1/morning_mes_sell_pressure_reversion_long/config.yaml
+      report: backtest-campaigns/es_mes_micro_flow_divergence_reversion/morning_mes_sell_pressure_reversion_long/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_mes_micro_flow_divergence_reversion_morning_sell_rescue_attempt_1_20260615.md
+      terminal_stage: limited_monkey_test
+      failure: random-placebo profitable rate 0.47 and median net profit -800.0; trade-path stress passed with profitable rate 0.9966666666666667 and one-tick-worse net profit 6807.5

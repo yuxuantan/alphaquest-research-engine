@@ -7,7 +7,7 @@ import pandas as pd
 from propstack.backtest.equity_report import write_equity_report
 from propstack.prop.rules import PropRules
 from propstack.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
-from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, variant_root, write_json
+from propstack.utils.config import create_run_dir, load_yaml, record_campaign_result, write_json
 from propstack.utils.hashing import file_sha256
 from propstack.utils.reports import market_timezone, write_report_csv
 
@@ -80,7 +80,7 @@ def load_monte_carlo_trade_source(
 ) -> tuple[pd.DataFrame, str, dict]:
     source = _monte_carlo_trade_source(mc_cfg)
     if source == "core":
-        path = _core_trade_log_path(campaign, mc_cfg)
+        path = _core_trade_log_path(campaign, mc_cfg, out)
         if not path.exists():
             raise FileNotFoundError(
                 f"Core trade log not found at {path}. "
@@ -88,10 +88,10 @@ def load_monte_carlo_trade_source(
             )
         trades = pd.read_csv(path)
         _validate_trade_log(trades, source)
-        return trades, file_sha256(path), {"type": source, "path": str(path)}
+        return trades, file_sha256(path), {"type": source, "path": _display_path(path)}
 
     if source == "wfa_oos":
-        path = _wfa_oos_trade_log_path(campaign, mc_cfg)
+        path = _wfa_oos_trade_log_path(campaign, mc_cfg, out)
         if not path.exists():
             raise FileNotFoundError(
                 f"WFA OOS trade log not found at {path}. "
@@ -99,7 +99,7 @@ def load_monte_carlo_trade_source(
             )
         trades = pd.read_csv(path)
         _validate_trade_log(trades, source)
-        return trades, file_sha256(path), {"type": source, "path": str(path)}
+        return trades, file_sha256(path), {"type": source, "path": _display_path(path)}
 
     raise ValueError("monte_carlo.trade_source must be one of: core, wfa_oos.")
 
@@ -122,18 +122,18 @@ def _monte_carlo_trade_source(mc_cfg: dict) -> str:
     raise ValueError("monte_carlo.trade_source must be one of: core, wfa_oos.")
 
 
-def _core_trade_log_path(campaign: dict, mc_cfg: dict) -> Path:
+def _core_trade_log_path(campaign: dict, mc_cfg: dict, out: Path) -> Path:
     explicit = mc_cfg.get("core_trade_log")
     if explicit:
         return Path(explicit)
-    return variant_root(campaign) / "core" / CORE_TRADE_LOG
+    return Path(out).parent / "core" / CORE_TRADE_LOG
 
 
-def _wfa_oos_trade_log_path(campaign: dict, mc_cfg: dict) -> Path:
+def _wfa_oos_trade_log_path(campaign: dict, mc_cfg: dict, out: Path) -> Path:
     explicit = mc_cfg.get("wfa_oos_trade_log")
     if explicit:
         return Path(explicit)
-    return variant_root(campaign) / "wfa" / WFA_OOS_TRADE_LOG
+    return Path(out).parent / "wfa" / WFA_OOS_TRADE_LOG
 
 
 def _validate_trade_log(trades: pd.DataFrame, source: str) -> None:
@@ -143,6 +143,13 @@ def _validate_trade_log(trades: pd.DataFrame, source: str) -> None:
     if missing:
         columns = ", ".join(sorted(missing))
         raise ValueError(f"Monte Carlo {source} trade log is missing required column(s): {columns}.")
+
+
+def _display_path(path: Path) -> str:
+    try:
+        return str(path.relative_to(Path.cwd()))
+    except ValueError:
+        return str(path)
 
 
 if __name__ == "__main__":

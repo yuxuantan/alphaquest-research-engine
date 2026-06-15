@@ -1,4 +1,8 @@
-from propstack.backtest.sizing import size_position
+from propstack.backtest.sizing import size_position, tick_value_from_core
+
+
+def test_tick_value_can_be_derived_from_point_value():
+    assert tick_value_from_core({"tick_size": 0.5, "point_value": 20.0}) == 10.0
 
 
 def test_risk_percent_sizing_floors_to_risk_ceiling():

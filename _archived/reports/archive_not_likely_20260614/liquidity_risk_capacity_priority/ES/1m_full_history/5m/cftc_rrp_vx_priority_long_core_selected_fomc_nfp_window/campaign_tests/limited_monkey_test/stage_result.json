@@ -1,0 +1,137 @@
+{
+  "stage": "limited_monkey_test",
+  "label": "Limited Monkey Test",
+  "status": "passed",
+  "passed": true,
+  "started_at": "2026-06-10T01:13:13",
+  "completed_at": "2026-06-10T01:27:57",
+  "duration_seconds": 883.604656,
+  "criteria": [
+    {
+      "metric": "summary.core_beats_monkey_net_profit_rate",
+      "actual": 0.9965,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.core_beats_monkey_max_drawdown_rate",
+      "actual": 0.99025,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.core_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "number_of_runs": 8000,
+    "core_metrics": {
+      "total_trades": 77,
+      "long_trades": 77,
+      "short_trades": 0,
+      "long_ratio": 1.0,
+      "average_bars_in_trade": 40.35064935064935,
+      "max_bars_in_trade": 72,
+      "net_profit": 28527.5,
+      "max_drawdown": 3842.5,
+      "max_drawdown_pct": 0.02154597644680881,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 3
+    },
+    "beat_threshold": 0.9,
+    "core_beats_monkey_net_profit_rate": 0.9965,
+    "core_beats_monkey_max_drawdown_rate": 0.99025,
+    "meets_monkey_goal": true,
+    "number_passing_benchmark": 0,
+    "percentage_passing_benchmark": 0.0,
+    "profitable_iterations": 4010,
+    "percentage_profitable": 0.50125,
+    "median_net_profit": 33.75,
+    "p5_net_profit": -18136.125,
+    "p95_net_profit": 17657.874999999993,
+    "median_max_drawdown": 11170.0,
+    "p5_max_drawdown": 5124.875,
+    "p95_max_drawdown": 23615.74999999999,
+    "median_average_bars_in_trade": 40.35064935064935,
+    "median_long_ratio": 0.974025974025974,
+    "representative_profitable_run": {
+      "run_id": 1386,
+      "total_trades": 76,
+      "long_trades": 72,
+      "short_trades": 4,
+      "long_ratio": 0.9473684210526315,
+      "average_bars_in_trade": 39.71052631578947,
+      "trade_count_delta": -1,
+      "long_ratio_delta": -0.052631578947368474,
+      "average_bars_delta": -0.6401230348598759,
+      "net_profit": 7395.0,
+      "max_drawdown": 9742.5,
+      "max_drawdown_pct": 0.06120910361725855,
+      "profit_factor": 1.2334833057068435,
+      "expectancy_r": 0.08528680613429636,
+      "win_rate": 0.5131578947368421,
+      "apex_rule_violations": 0,
+      "profitable": true,
+      "core_net_profit_gt_monkey": true,
+      "core_max_drawdown_lt_monkey": true,
+      "benchmark_passed": false,
+      "failure_reason": "min_profit_factor;max_drawdown_pct;min_cagr;min_mar;min_trades_per_year;max_daily_loss;preferred_min_total_trades;max_best_day_concentration",
+      "profitable_median_net_profit": 7395.0
+    },
+    "constraints": {
+      "trade_count_tolerance_pct": 0.05,
+      "trade_count_tolerance": 0,
+      "long_short_ratio_tolerance": 0.05,
+      "average_bars_tolerance_pct": 0.1,
+      "duration_sampling": "core_distribution",
+      "duration_shape": 0.7,
+      "max_duration_bars": 72,
+      "max_feasible_duration_bars": 76,
+      "rth_only": true,
+      "enforce_non_overlapping": true,
+      "enforce_max_trades_per_day": false
+    },
+    "iteration_reports_retained": false,
+    "iteration_report_files": [],
+    "data_subset": {
+      "start_date": "2021-01-01",
+      "end_date": "2022-12-31",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "parallel": {
+      "enabled": false,
+      "workers": 1,
+      "scope": "runs"
+    }
+  },
+  "data_quality": {
+    "rows": 189210,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 431,
+    "first_timestamp": "2021-01-04 09:30:00-05:00",
+    "last_timestamp": "2022-12-30 15:59:00-05:00",
+    "roll_boundary_sessions_skipped": 27,
+    "loaded_rows": 688389,
+    "strategy_rows": 37842,
+    "timeframe": "5m",
+    "timeframe_minutes": 5,
+    "source_timeframe": "1m"
+  },
+  "input_hash": "ffa72352845b83db91f032bdbd381933684d0539482ebfc3974799e8682eb090",
+  "artifacts": [
+    "data/reports/campaigns/liquidity_risk_capacity_priority/ES/1m_full_history/5m/cftc_rrp_vx_priority_long_core_selected_fomc_nfp_window/campaign_tests/limited_monkey_test/monkey_results.csv",
+    "data/reports/campaigns/liquidity_risk_capacity_priority/ES/1m_full_history/5m/cftc_rrp_vx_priority_long_core_selected_fomc_nfp_window/campaign_tests/limited_monkey_test/monkey_summary.json"
+  ]
+}

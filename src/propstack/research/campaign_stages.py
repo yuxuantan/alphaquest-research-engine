@@ -5,6 +5,7 @@ from datetime import datetime
 import math
 import os
 from pathlib import Path
+import shutil
 import time
 from typing import Any
 
@@ -18,11 +19,23 @@ from propstack.data.pipeline import prepare_data
 from propstack.data.source import data_source_hash
 from propstack.prop.rules import PropRules
 from propstack.research.core_grid import run_core_grid
-from propstack.research.monkey import run_monkey
+from propstack.research.monkey import run_monkey, run_trade_path_stress
 from propstack.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
 from propstack.research.wfa import run_wfa
-from propstack.utils.config import config_timeframe, load_yaml, variant_root, write_json
-from propstack.utils.hashing import object_sha256
+from propstack.utils.config import (
+    CAMPAIGN_CONFIG_FILENAME,
+    VARIANT_TEST_SUMMARY_FILENAME,
+    campaign_test_run_id,
+    campaign_metadata_info,
+    config_timeframe,
+    ensure_variant_metadata,
+    load_yaml,
+    update_runs_index,
+    validate_campaign_run_root,
+    variant_root,
+    write_json,
+)
+from propstack.utils.hashing import file_sha256, object_sha256
 from propstack.utils.params import apply_dotted_params
 from propstack.utils.reports import market_timezone, write_report_csv
 
@@ -43,13 +56,18 @@ DEFAULT_STAGE_ORDER = [*PRE_ACCEPTANCE_STAGE_ORDER, ACCEPTANCE_STAGE]
 
 DEFAULT_STAGE_CRITERIA = {
     "limited_core_grid_test": [
-        {"metric": "summary.total_combinations_tested", "min": 100},
+        {"metric": "summary.total_combinations_tested", "valid_parameter_combination_count": True},
         {"metric": "summary.percentage_profitable_iterations", "min": 0.70},
         {"metric": "summary.apex_rule_violating_iterations", "max": 0},
     ],
     "limited_monkey_test": [
-        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.90},
-        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.90},
+        {"metric": "summary.percentage_profitable", "min": 0.80},
+        {"metric": "summary.median_net_profit", "exclusive_min": 0.0},
+        {"metric": "summary.trade_path_stress.enabled", "equals": True},
+        {"metric": "summary.trade_path_stress.percentage_profitable", "min": 0.80},
+        {"metric": "summary.trade_path_stress.median_net_profit", "exclusive_min": 0.0},
+        {"metric": "summary.trade_path_stress.one_tick_worse.profitable", "equals": True},
+        {"metric": "summary.trade_path_stress.apex_rule_violating_iterations", "max": 0},
         {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     "walk_forward_analysis": [
@@ -57,12 +75,18 @@ DEFAULT_STAGE_CRITERIA = {
         {"metric": "summary.windows", "min": 10},
         {"metric": "stitched_oos_metrics.profit_factor", "min": 1.2},
         {"metric": "stitched_oos_metrics.mar", "min": 0.4},
-        {"metric": "stitched_oos_metrics.total_trades", "min": 500},
+        {"metric": "stitched_oos_metrics.trades_per_year", "min": 50},
+        {"metric": "stitched_oos_metrics.expectancy_r", "exclusive_min": 0.0},
         {"metric": "stitched_oos_metrics.apex_rule_violations", "max": 0},
     ],
     "wfa_oos_monkey_test": [
-        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.80},
-        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.80},
+        {"metric": "summary.percentage_profitable", "min": 0.80},
+        {"metric": "summary.median_net_profit", "exclusive_min": 0.0},
+        {"metric": "summary.trade_path_stress.enabled", "equals": True},
+        {"metric": "summary.trade_path_stress.percentage_profitable", "min": 0.80},
+        {"metric": "summary.trade_path_stress.median_net_profit", "exclusive_min": 0.0},
+        {"metric": "summary.trade_path_stress.one_tick_worse.profitable", "equals": True},
+        {"metric": "summary.trade_path_stress.apex_rule_violating_iterations", "max": 0},
         {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     "wfa_oos_monte_carlo": [
@@ -75,23 +99,27 @@ DEFAULT_STAGE_CRITERIA = {
         {"metric": "metrics.apex_rule_violations", "max": 0},
     ],
     "simulated_incubation_monkey": [
-        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.80},
-        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.80},
+        {"metric": "summary.percentage_profitable", "min": 0.80},
+        {"metric": "summary.median_net_profit", "exclusive_min": 0.0},
+        {"metric": "summary.trade_path_stress.enabled", "equals": True},
+        {"metric": "summary.trade_path_stress.percentage_profitable", "min": 0.80},
+        {"metric": "summary.trade_path_stress.median_net_profit", "exclusive_min": 0.0},
+        {"metric": "summary.trade_path_stress.one_tick_worse.profitable", "equals": True},
+        {"metric": "summary.trade_path_stress.apex_rule_violating_iterations", "max": 0},
         {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     ACCEPTANCE_STAGE: [
         {"metric": "metrics.profit_factor", "min": 1.0},
         {"metric": "metrics.mar", "min": 1.0},
         {"metric": "metrics.total_trades", "min": 25},
+        {"metric": "metrics.expectancy_r", "exclusive_min": 0.0},
         {"metric": "metrics.apex_rule_violations", "max": 0},
     ],
 }
 
 DEFAULT_SHORTLIST_DATA_WINDOW = {
-    "mode": "random_months",
+    "mode": "first_months",
     "months": 18,
-    "seed": 31,
-    "avoid_ranges": [{"start_date": "2020-02-01", "end_date": "2021-06-30"}],
 }
 
 STAGE_LABELS = {
@@ -188,9 +216,15 @@ def run_campaign_stage_tests(
     cfg = canonicalize_campaign_config(load_yaml(config_path), include_acceptance=include_acceptance)
     if fast_runtime_defaults:
         cfg = apply_fast_runtime_defaults(cfg)
-    root = Path(out_dir) if out_dir else variant_root(cfg) / "campaign_tests"
+    root = Path(out_dir) if out_dir else variant_root(cfg, config_path=config_path)
+    root = validate_campaign_run_root(root, cfg, config_path=config_path if out_dir is None else None)
     root.mkdir(parents=True, exist_ok=True)
-    _write_config_snapshot(root / "config_snapshot.yaml", cfg)
+    variant_metadata = ensure_variant_metadata(cfg, root_path=root)
+    config_snapshot_path = root / CAMPAIGN_CONFIG_FILENAME
+    if config_path.resolve() != config_snapshot_path.resolve():
+        shutil.copy2(config_path, config_snapshot_path)
+    elif not config_snapshot_path.exists():
+        _write_config_snapshot(config_snapshot_path, cfg)
 
     campaign_tests = cfg.get("campaign_tests") or {}
     stage_order = _stage_order(campaign_tests)
@@ -226,15 +260,27 @@ def run_campaign_stage_tests(
         if not result["passed"] and not continue_on_failure:
             halted = True
 
+    created_at = datetime.now().isoformat(timespec="seconds")
+    data_cfg = cfg.get("data") or {}
     summary = {
         "campaign_id": cfg.get("campaign_id"),
         "variant_id": cfg.get("variant_id"),
+        "test_run_id": campaign_test_run_id(cfg, config_path=config_path, root_path=root),
         "symbol": cfg.get("symbol") or (cfg.get("data") or {}).get("symbol"),
         "dataset_id": cfg.get("dataset_id") or (cfg.get("data") or {}).get("dataset_id"),
         "timeframe": config_timeframe(cfg),
-        "config_path": str(config_path),
+        "data_source": _data_source_name(data_cfg),
+        "raw_csv": str(data_cfg.get("raw_csv")) if data_cfg.get("raw_csv") else None,
+        "raw_parquet": str(data_cfg.get("raw_parquet")) if data_cfg.get("raw_parquet") else None,
+        "raw_dir": str(data_cfg.get("raw_dir")) if data_cfg.get("raw_dir") else None,
+        "campaign_metadata": campaign_metadata_info(cfg, root_path=root),
+        "variant_metadata": variant_metadata,
+        "config_path": str(config_snapshot_path),
+        "source_config_path": str(config_path),
+        "config_hash": file_sha256(config_snapshot_path),
         "output_dir": str(root),
-        "created_at": datetime.now().isoformat(timespec="seconds"),
+        "created_at": created_at,
+        "updated_at": created_at,
         "skip_validation": skip_validation,
         "fast_runtime_defaults": fast_runtime_defaults,
         "passed": all(result["passed"] or result["status"] == "skipped" for result in results)
@@ -242,9 +288,212 @@ def run_campaign_stage_tests(
         "halted": halted,
         "stages": results,
     }
+    write_json(
+        root / "run_manifest.json",
+        {
+            "campaign_id": summary["campaign_id"],
+            "variant_id": summary["variant_id"],
+            "test_run_id": summary["test_run_id"],
+            "symbol": summary["symbol"],
+            "dataset_id": summary["dataset_id"],
+            "timeframe": summary["timeframe"],
+            "data_source": summary["data_source"],
+            "raw_csv": summary["raw_csv"],
+            "raw_parquet": summary["raw_parquet"],
+            "raw_dir": summary["raw_dir"],
+            "campaign_metadata": summary["campaign_metadata"],
+            "variant_metadata": summary["variant_metadata"],
+            "config_source": str(config_path),
+            "config_hash": summary["config_hash"],
+            "created_at": created_at,
+            "updated_at": created_at,
+            "stage_order": stage_order,
+            "layout": "campaign_variant_symbol_run",
+        },
+    )
     write_json(root / "campaign_test_summary.json", summary)
+    write_json(root / VARIANT_TEST_SUMMARY_FILENAME, summary)
     (root / "campaign_test_summary.md").write_text(_markdown_summary(summary), encoding="utf-8")
+    if summary["passed"]:
+        _write_candidate_due_diligence_package(root, cfg, summary, config_snapshot_path)
+    update_runs_index(root)
     return summary
+
+
+def _write_candidate_due_diligence_package(
+    root: Path,
+    cfg: dict,
+    summary: dict,
+    config_snapshot_path: Path,
+) -> None:
+    """Write the promotion package only after the top-level staged summary passes."""
+
+    shutil.copy2(config_snapshot_path, root / "final_config.yaml")
+    _copy_if_exists(root / ACCEPTANCE_STAGE / "trade_log.csv", root / "final_trade_log.csv")
+    _copy_if_exists(root / ACCEPTANCE_STAGE / "trade_log.csv", root / "validation_trade_log.csv")
+    _copy_if_exists(root / ACCEPTANCE_STAGE / "equity_curve.csv", root / "final_equity_curve.csv")
+    _copy_if_exists(root / "walk_forward_analysis" / "wfa_oos_trade_log.csv", root / "WFA_trade_log.csv")
+    _copy_if_exists(root / "wfa_oos_monte_carlo" / "wfa_oos_monte_carlo_summary.json", root / "MonteCarlo_summary.json")
+    (root / "candidate_strategy_report.md").write_text(
+        _candidate_strategy_report(cfg, summary),
+        encoding="utf-8",
+    )
+    (root / "manual_due_diligence_checklist.md").write_text(
+        _manual_due_diligence_checklist(root, cfg, summary),
+        encoding="utf-8",
+    )
+
+
+def _copy_if_exists(source: Path, destination: Path) -> None:
+    if source.is_file():
+        shutil.copy2(source, destination)
+
+
+def _candidate_strategy_report(cfg: dict, summary: dict) -> str:
+    strategy = cfg.get("strategy") or {}
+    entry = strategy.get("entry") or {}
+    sl = strategy.get("sl") or {}
+    tp = strategy.get("tp") or {}
+    research = cfg.get("research_metadata") or {}
+    lines = [
+        "# Candidate Strategy Report",
+        "",
+        "Final decision: PASS - candidate for manual due diligence",
+        "",
+        "## Strategy Summary",
+        "",
+        f"- Campaign: `{cfg.get('campaign_id')}`",
+        f"- Variant: `{cfg.get('variant_id')}`",
+        f"- Instrument: `{summary.get('symbol')}`",
+        f"- Dataset: `{summary.get('dataset_id')}`",
+        f"- Timeframe: `{summary.get('timeframe')}`",
+        f"- Edge hypothesis: {research.get('edge_thesis', 'See campaign metadata.')}",
+        f"- Research basis: {research.get('academic_source', 'See campaign metadata.')}",
+        f"- Entry module: `{entry.get('module')}` with params `{entry.get('params', {})}`",
+        f"- Stop module: `{sl.get('module')}` with params `{sl.get('params', {})}`",
+        f"- Target module: `{tp.get('module')}` with params `{tp.get('params', {})}`",
+        f"- Forced flatten: `{strategy.get('flatten_time')}`",
+        "",
+        "## Evidence Summary",
+        "",
+    ]
+    for stage in summary.get("stages", []):
+        lines.append(
+            f"- {stage.get('stage')}: {stage.get('status')} "
+            f"({stage.get('duration_seconds', 0):.1f}s)"
+        )
+    lines.extend(
+        [
+            "",
+            "## Tradeability Assessment",
+            "",
+            "- This is a candidate strategy, not a live-trading approval.",
+            "- Manual chart review and paper/live incubation are still required before trading.",
+            "- Review forced-flatten timing, stop/target ordering, and worst drawdown trades before any deployment.",
+            "",
+            "## Final Decision",
+            "",
+            "PASS - candidate for manual due diligence",
+            "",
+        ]
+    )
+    return "\n".join(lines)
+
+
+def _manual_due_diligence_checklist(root: Path, cfg: dict, summary: dict) -> str:
+    trade_log = root / "final_trade_log.csv"
+    sections = _due_diligence_trade_sections(trade_log)
+    lines = [
+        "# Manual Due Diligence Checklist",
+        "",
+        f"Campaign: `{cfg.get('campaign_id')}`",
+        f"Variant: `{cfg.get('variant_id')}`",
+        f"Evidence: `{root / 'campaign_test_summary.json'}`",
+        "",
+        "Use these rows for manual chart review before paper/live incubation.",
+        "",
+    ]
+    for title, rows in sections.items():
+        lines.extend([f"## {title}", ""])
+        if not rows:
+            lines.extend(["- No trades available in this category.", ""])
+            continue
+        for row in rows:
+            lines.append(
+                "- "
+                f"timestamp={row.get('entry_timestamp', '')}; "
+                f"direction={row.get('direction', '')}; "
+                f"entry={row.get('entry_price', '')}; "
+                f"exit={row.get('exit_price', '')}; "
+                f"exit_reason={row.get('exit_reason', '')}; "
+                f"net_pnl={row.get('net_pnl', '')}; "
+                "chart_review_notes="
+            )
+        lines.append("")
+    lines.append("Final decision: PASS - candidate for manual due diligence")
+    lines.append("")
+    return "\n".join(lines)
+
+
+def _due_diligence_trade_sections(trade_log: Path) -> dict[str, list[dict]]:
+    if not trade_log.is_file():
+        return {
+            "20 Random Trades": [],
+            "10 Biggest Winners": [],
+            "10 Biggest Losers": [],
+            "10 Forced-Flatten / Late Exits": [],
+            "Worst Drawdown Sample": [],
+        }
+    trades = pd.read_csv(trade_log)
+    if trades.empty:
+        return {
+            "20 Random Trades": [],
+            "10 Biggest Winners": [],
+            "10 Biggest Losers": [],
+            "10 Forced-Flatten / Late Exits": [],
+            "Worst Drawdown Sample": [],
+        }
+    if "net_pnl" in trades.columns:
+        trades["net_pnl"] = pd.to_numeric(trades["net_pnl"], errors="coerce")
+    random_rows = trades.sample(min(20, len(trades)), random_state=7).to_dict("records")
+    winners = trades.sort_values("net_pnl", ascending=False).head(10).to_dict("records") if "net_pnl" in trades else []
+    losers = trades.sort_values("net_pnl", ascending=True).head(10).to_dict("records") if "net_pnl" in trades else []
+    late_mask = pd.Series(False, index=trades.index)
+    for column in ["was_forced_flatten", "exit_reason"]:
+        if column in trades.columns:
+            late_mask = late_mask | trades[column].astype(str).str.contains("flatten|eod", case=False, na=False)
+    late = trades[late_mask].tail(10).to_dict("records")
+    drawdown = _worst_drawdown_rows(trades).to_dict("records") if "net_pnl" in trades else []
+    return {
+        "20 Random Trades": random_rows,
+        "10 Biggest Winners": winners,
+        "10 Biggest Losers": losers,
+        "10 Forced-Flatten / Late Exits": late,
+        "Worst Drawdown Sample": drawdown,
+    }
+
+
+def _worst_drawdown_rows(trades: pd.DataFrame) -> pd.DataFrame:
+    ordered = _trade_order_for_due_diligence(trades)
+    equity = ordered["net_pnl"].fillna(0.0).cumsum()
+    peaks = equity.cummax()
+    drawdown = peaks - equity
+    if drawdown.empty:
+        return ordered.head(0)
+    trough_idx = int(drawdown.idxmax())
+    peak_value = peaks.loc[trough_idx]
+    prior = equity.loc[:trough_idx]
+    peak_matches = prior[prior == peak_value]
+    start_idx = int(peak_matches.index[-1]) if not peak_matches.empty else max(0, trough_idx - 20)
+    return ordered.loc[start_idx:trough_idx].tail(30)
+
+
+def _trade_order_for_due_diligence(trades: pd.DataFrame) -> pd.DataFrame:
+    if "exit_timestamp" not in trades.columns:
+        return trades.reset_index(drop=True)
+    out = trades.copy()
+    out["_exit_order"] = pd.to_datetime(out["exit_timestamp"], errors="coerce", utc=True)
+    return out.sort_values("_exit_order", kind="mergesort").drop(columns=["_exit_order"]).reset_index(drop=True)
 
 
 def _run_stage(
@@ -373,6 +622,8 @@ def _run_limited_monkey(
         context.get("limited_core_grid_parameters") or {},
     )
     test_cfg = apply_dotted_params(cfg, selected_params) if selected_params else copy.deepcopy(cfg)
+    core_result = BacktestEngine(test_cfg).run(market, detail_data=detail)
+    core_trades = core_result["trades"]
     report_dir = stage_dir if monkey_cfg.get("retain_iteration_reports", True) else None
     results, summary = run_monkey(
         market,
@@ -381,12 +632,24 @@ def _run_limited_monkey(
         test_cfg.get("benchmarks", {}),
         report_dir=report_dir,
         detail_data=detail,
+        core_trades=core_trades,
     )
+    stress_results, stress_summary = run_trade_path_stress(
+        market,
+        test_cfg,
+        monkey_cfg,
+        test_cfg.get("benchmarks", {}),
+        core_trades=core_trades,
+        report_dir=report_dir,
+    )
+    summary["trade_path_stress"] = stress_summary
     summary["selected_core_params"] = selected_params
     summary["selected_core_row"] = selected_row.to_dict() if selected_row is not None else {}
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "monkey_results.csv", report_timezone, index=False)
+    write_report_csv(stress_results, stage_dir / "trade_path_stress_results.csv", report_timezone, index=False)
     write_json(stage_dir / "monkey_summary.json", summary)
+    write_json(stage_dir / "trade_path_stress_summary.json", stress_summary)
     return {
         "summary": summary,
         "data_quality": quality,
@@ -486,9 +749,20 @@ def _run_wfa_oos_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context: di
         detail_data=detail,
         core_trades=trades,
     )
+    stress_results, stress_summary = run_trade_path_stress(
+        market,
+        cfg,
+        monkey_cfg,
+        cfg.get("benchmarks", {}),
+        core_trades=trades,
+        report_dir=report_dir,
+    )
+    summary["trade_path_stress"] = stress_summary
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "wfa_oos_monkey_results.csv", report_timezone, index=False)
+    write_report_csv(stress_results, stage_dir / "wfa_oos_trade_path_stress_results.csv", report_timezone, index=False)
     write_json(stage_dir / "wfa_oos_monkey_summary.json", summary)
+    write_json(stage_dir / "wfa_oos_trade_path_stress_summary.json", stress_summary)
     return {"summary": summary, "artifacts": _stage_artifacts(stage_dir)}
 
 
@@ -697,9 +971,20 @@ def _run_incubation_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context:
         detail_data=detail,
         core_trades=trades,
     )
+    stress_results, stress_summary = run_trade_path_stress(
+        market,
+        cfg,
+        monkey_cfg,
+        cfg.get("benchmarks", {}),
+        core_trades=trades,
+        report_dir=report_dir,
+    )
+    summary["trade_path_stress"] = stress_summary
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "incubation_monkey_results.csv", report_timezone, index=False)
+    write_report_csv(stress_results, stage_dir / "incubation_trade_path_stress_results.csv", report_timezone, index=False)
     write_json(stage_dir / "incubation_monkey_summary.json", summary)
+    write_json(stage_dir / "incubation_trade_path_stress_summary.json", stress_summary)
     return {"summary": summary, "artifacts": _stage_artifacts(stage_dir)}
 
 
@@ -804,6 +1089,9 @@ def evaluate_criteria(payload: dict, criteria: list[dict]) -> list[dict]:
         if "equals" in item:
             expected["equals"] = item["equals"]
             passed = passed and actual == item["equals"]
+        if item.get("valid_parameter_combination_count"):
+            expected["valid_parameter_combination_count"] = "1 fixed combo or 8-120 tunable combos"
+            passed = passed and _valid_parameter_combination_count(actual)
         out.append(
             {
                 "metric": metric,
@@ -813,6 +1101,17 @@ def evaluate_criteria(payload: dict, criteria: list[dict]) -> list[dict]:
             }
         )
     return out
+
+
+def _valid_parameter_combination_count(value) -> bool:
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return False
+    if not math.isfinite(numeric) or not numeric.is_integer():
+        return False
+    count = int(numeric)
+    return count == 1 or 8 <= count <= 120
 
 
 def length_adjusted_mar_requirement(years: float | int | None) -> float:
@@ -860,6 +1159,18 @@ def _stage_order(campaign_tests: dict) -> list[str]:
 
 def _stage_config(campaign_tests: dict, stage_name: str) -> dict:
     return copy.deepcopy(campaign_tests.get(stage_name) or {})
+
+
+def _data_source_name(data_cfg: dict) -> str | None:
+    if data_cfg.get("source"):
+        return str(data_cfg["source"])
+    if data_cfg.get("raw_dir"):
+        return "databento_dbn"
+    if data_cfg.get("raw_parquet"):
+        return "parquet"
+    if data_cfg.get("raw_csv"):
+        return "csv"
+    return None
 
 
 def _acceptance_base_subset(cfg: dict, stage_cfg: dict) -> dict:
@@ -1097,7 +1408,10 @@ def _subset_from_window(base_subset: dict, window: dict) -> dict:
     start = pd.Timestamp(base_subset.get("start_date")) if base_subset.get("start_date") else None
     end = pd.Timestamp(base_subset.get("end_date")) if base_subset.get("end_date") else None
     out = dict(base_subset)
-    if mode == "exclude_last_months" and end is not None:
+    if mode == "first_months" and start is not None:
+        first_end = start + pd.DateOffset(months=months)
+        out["end_date"] = min(first_end, end).date().isoformat() if end is not None else first_end.date().isoformat()
+    elif mode == "exclude_last_months" and end is not None:
         out["end_date"] = (end - pd.DateOffset(months=months)).date().isoformat()
     elif mode == "last_months" and end is not None:
         out["start_date"] = (end - pd.DateOffset(months=months)).date().isoformat()

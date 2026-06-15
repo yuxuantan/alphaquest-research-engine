@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>nq_intraday_momentum_priority / short_first_1030_weakness_1130_strength_long50 acceptance OOS equity curve</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --text: #17202a;
+      --muted: #697386;
+      --line: #2563eb;
+      --loss: #dc2626;
+      --grid: #e5e7eb;
+      --border: #d5dae3;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+    .control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    select {
+      min-width: 160px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 14px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .metric strong {
+      display: block;
+      font-size: 18px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+    .chart-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 460px;
+      cursor: crosshair;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    @media (max-width: 760px) {
+      main { padding: 16px; }
+      header { display: block; }
+      .control { margin-top: 12px; }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      canvas { height: 360px; }
+    }
+    @media (min-width: 761px) and (max-width: 1100px) {
+      .summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>nq_intraday_momentum_priority / short_first_1030_weakness_1130_strength_long50 acceptance OOS equity curve</h1>
+      <label class="control" id="runControl">Run <select id="runSelect"></select></label>
+    </header>
+    <section class="summary" aria-label="Equity summary">
+      <div class="metric"><span>Trades</span><strong id="trades">0</strong></div>
+      <div class="metric"><span>Start</span><strong id="start">$0</strong></div>
+      <div class="metric"><span>End</span><strong id="end">$0</strong></div>
+      <div class="metric"><span>Net PnL</span><strong id="net">$0</strong></div>
+      <div class="metric"><span>Max Drawdown</span><strong id="drawdown">$0</strong></div>
+      <div class="metric"><span>Win Rate</span><strong id="winRate">0%</strong></div>
+      <div class="metric"><span>PF</span><strong id="profitFactor">0.00</strong></div>
+      <div class="metric"><span>MAR</span><strong id="mar">0.00</strong></div>
+    </section>
+    <section class="chart-panel">
+      <canvas id="chart" aria-label="Equity curve chart"></canvas>
+      <div class="note" id="note"></div>
+    </section>
+  </main>
+  <script id="equity-data" type="application/json">{"runs":[{"id":"__all__","label":"All trades","points":[{"point":0,"timestamp":"2025-12-04 10:30:00-05:00","equity":150000.0,"drawdown":0.0,"drawdownPct":0.0},{"point":1,"timestamp":"2025-12-04 16:00:00-05:00","equity":149235.0,"drawdown":765.0,"drawdownPct":0.0051},{"point":2,"timestamp":"2025-12-12 16:00:00-05:00","equity":151420.0,"drawdown":0.0,"drawdownPct":0.0},{"point":3,"timestamp":"2025-12-19 16:00:00-05:00","equity":152180.0,"drawdown":0.0,"drawdownPct":0.0},{"point":4,"timestamp":"2026-01-02 10:40:00-05:00","equity":150385.0,"drawdown":1795.0,"drawdownPct":0.011795242476015246},{"point":5,"timestamp":"2026-01-09 16:00:00-05:00","equity":151745.0,"drawdown":435.0,"drawdownPct":0.002858457090287817},{"point":6,"timestamp":"2026-01-12 16:00:00-05:00","equity":151940.0,"drawdown":240.0,"drawdownPct":0.001577079773951899},{"point":7,"timestamp":"2026-01-14 16:00:00-05:00","equity":151445.0,"drawdown":735.0,"drawdownPct":0.004829806807727691},{"point":8,"timestamp":"2026-01-16 16:00:00-05:00","equity":151115.0,"drawdown":1065.0,"drawdownPct":0.006998291496911552},{"point":9,"timestamp":"2026-01-20 12:30:00-05:00","equity":149325.0,"drawdown":2855.0,"drawdownPct":0.018760678144302798},{"point":10,"timestamp":"2026-01-21 11:35:00-05:00","equity":147530.0,"drawdown":4650.0,"drawdownPct":0.030555920620318044},{"point":11,"timestamp":"2026-01-22 11:25:00-05:00","equity":145725.0,"drawdown":6455.0,"drawdownPct":0.04241687475358129},{"point":12,"timestamp":"2026-01-23 12:50:00-05:00","equity":143905.0,"drawdown":8275.0,"drawdownPct":0.05437639637271652},{"point":13,"timestamp":"2026-01-26 16:00:00-05:00","equity":142670.0,"drawdown":9510.0,"drawdownPct":0.062491786042844},{"point":14,"timestamp":"2026-01-29 12:20:00-05:00","equity":140855.0,"drawdown":11325.0,"drawdownPct":0.07441845183335524},{"point":15,"timestamp":"2026-02-02 16:00:00-05:00","equity":140115.0,"drawdown":12065.0,"drawdownPct":0.07928111446970693},{"point":16,"timestamp":"2026-02-03 14:00:00-05:00","equity":146370.0,"drawdown":5810.0,"drawdownPct":0.038178472861085555},{"point":17,"timestamp":"2026-02-04 11:50:00-05:00","equity":152555.0,"drawdown":0.0,"drawdownPct":0.0},{"point":18,"timestamp":"2026-02-05 10:35:00-05:00","equity":150820.0,"drawdown":1735.0,"drawdownPct":0.011372947461571237},{"point":19,"timestamp":"2026-02-06 16:00:00-05:00","equity":153605.0,"drawdown":0.0,"drawdownPct":0.0},{"point":20,"timestamp":"2026-02-09 16:00:00-05:00","equity":153230.0,"drawdown":375.0,"drawdownPct":0.0024413267797272226},{"point":21,"timestamp":"2026-02-11 10:35:00-05:00","equity":151460.0,"drawdown":2145.0,"drawdownPct":0.013964389180039713},{"point":22,"timestamp":"2026-02-17 11:00:00-05:00","equity":149730.0,"drawdown":3875.0,"drawdownPct":0.025227043390514632},{"point":23,"timestamp":"2026-02-18 13:50:00-05:00","equity":147960.0,"drawdown":5645.0,"drawdownPct":0.036750105790827124},{"point":24,"timestamp":"2026-02-20 12:20:00-05:00","equity":146200.0,"drawdown":7405.0,"drawdownPct":0.04820806614368022},{"point":25,"timestamp":"2026-02-24 16:00:00-05:00","equity":146480.0,"drawdown":7125.0,"drawdownPct":0.046385208814817225},{"point":26,"timestamp":"2026-02-25 16:00:00-05:00","equity":148145.0,"drawdown":5460.0,"drawdownPct":0.03554571791282836},{"point":27,"timestamp":"2026-02-26 10:45:00-05:00","equity":146385.0,"drawdown":7220.0,"drawdownPct":0.047003678265681456},{"point":28,"timestamp":"2026-02-27 13:20:00-05:00","equity":144625.0,"drawdown":8980.0,"drawdownPct":0.05846163861853455},{"point":29,"timestamp":"2026-03-02 14:15:00-05:00","equity":148977.5,"drawdown":4627.5,"drawdownPct":0.030125972461833926},{"point":30,"timestamp":"2026-03-03 10:35:00-05:00","equity":147257.5,"drawdown":6347.5,"drawdownPct":0.04132352462484945},{"point":31,"timestamp":"2026-03-04 16:00:00-05:00","equity":147527.5,"drawdown":6077.5,"drawdownPct":0.03956576934344585},{"point":32,"timestamp":"2026-03-06 12:40:00-05:00","equity":145777.5,"drawdown":7827.5,"drawdownPct":0.05095862764883956},{"point":33,"timestamp":"2026-03-09 15:20:00-04:00","equity":150092.5,"drawdown":3512.5,"drawdownPct":0.02286709417011165},{"point":34,"timestamp":"2026-03-10 14:10:00-04:00","equity":148317.5,"drawdown":5287.5,"drawdownPct":0.034422707594153834},{"point":35,"timestamp":"2026-03-12 10:45:00-04:00","equity":146582.5,"drawdown":7022.5,"drawdownPct":0.04571791282835845},{"point":36,"timestamp":"2026-03-20 12:00:00-04:00","equity":144872.5,"drawdown":8732.5,"drawdownPct":0.05685036294391459},{"point":37,"timestamp":"2026-03-27 11:20:00-04:00","equity":143217.5,"drawdown":10387.5,"drawdownPct":0.06762475179844406},{"point":38,"timestamp":"2026-03-30 11:00:00-04:00","equity":141572.5,"drawdown":12032.5,"drawdownPct":0.07833403860551415},{"point":39,"timestamp":"2026-04-01 14:20:00-04:00","equity":139862.5,"drawdown":13742.5,"drawdownPct":0.08946648872107028},{"point":40,"timestamp":"2026-04-02 11:50:00-04:00","equity":138157.5,"drawdown":15447.5,"drawdownPct":0.10056638781289672},{"point":41,"timestamp":"2026-04-07 12:00:00-04:00","equity":136457.5,"drawdown":17147.5,"drawdownPct":0.11163373588099346},{"point":42,"timestamp":"2026-04-08 12:45:00-04:00","equity":134692.5,"drawdown":18912.5,"drawdownPct":0.12312424725757624},{"point":43,"timestamp":"2026-04-14 16:00:00-04:00","equity":138022.5,"drawdown":15582.5,"drawdownPct":0.10144526545359851},{"point":44,"timestamp":"2026-04-15 16:00:00-04:00","equity":141457.5,"drawdown":12147.5,"drawdownPct":0.07908271215129715},{"point":45,"timestamp":"2026-04-17 13:20:00-04:00","equity":139567.5,"drawdown":14037.5,"drawdownPct":0.09138699912112236},{"point":46,"timestamp":"2026-04-30 10:50:00-04:00","equity":137647.5,"drawdown":15957.5,"drawdownPct":0.10388659223332573},{"point":47,"timestamp":"2026-05-01 16:00:00-04:00","equity":137107.5,"drawdown":16497.5,"drawdownPct":0.10740210279613294},{"point":48,"timestamp":"2026-05-05 16:00:00-04:00","equity":137217.5,"drawdown":16387.5,"drawdownPct":0.10668598027407962},{"point":49,"timestamp":"2026-05-06 16:00:00-04:00","equity":139852.5,"drawdown":13752.5,"drawdownPct":0.08953159076852966},{"point":50,"timestamp":"2026-05-08 16:00:00-04:00","equity":142957.5,"drawdown":10647.5,"drawdownPct":0.06931740503238827},{"point":51,"timestamp":"2026-05-14 13:10:00-04:00","equity":140862.5,"drawdown":12742.5,"drawdownPct":0.08295628397513102},{"point":52,"timestamp":"2026-05-18 16:00:00-04:00","equity":141952.5,"drawdown":11652.5,"drawdownPct":0.07586016080205722},{"point":53,"timestamp":"2026-05-19 11:00:00-04:00","equity":139932.5,"drawdown":13672.5,"drawdownPct":0.08901077438885453},{"point":54,"timestamp":"2026-05-20 16:00:00-04:00","equity":141972.5,"drawdown":11632.5,"drawdownPct":0.07572995670713845},{"point":55,"timestamp":"2026-05-27 10:40:00-04:00","equity":139867.5,"drawdown":13737.5,"drawdownPct":0.08943393769734058},{"point":56,"timestamp":"2026-05-28 16:00:00-04:00","equity":140727.5,"drawdown":12877.5,"drawdownPct":0.08383516161583282}],"summary":{"trades":56,"start":150000.0,"end":140727.5,"net":-9272.5,"maxDrawdown":18912.5,"maxDrawdownPct":0.12312424725757624,"winRate":0.35714285714285715,"profitFactor":0.8358413738160574,"mar":-1.011726207063023,"note":"56 closed trades from 2025-12-04 10:30:00-05:00 to 2026-05-28 16:00:00-04:00."}}]}</script>
+  <script>
+    const payload = JSON.parse(document.getElementById("equity-data").textContent);
+    const runs = payload.runs;
+    const select = document.getElementById("runSelect");
+    const control = document.getElementById("runControl");
+    const chart = document.getElementById("chart");
+    const ctx = chart.getContext("2d");
+    const ids = runs.map((run) => run.id);
+    const chartMargin = { left: 72, right: 20, top: 22, bottom: 42 };
+    let hoverIndex = null;
+
+    for (const run of runs) {
+      const option = document.createElement("option");
+      option.value = run.id;
+      option.textContent = run.label;
+      select.appendChild(option);
+    }
+    if (runs.length <= 1) {
+      control.style.display = "none";
+    }
+
+    const money = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0
+    });
+    const percent = new Intl.NumberFormat("en-US", {
+      style: "percent",
+      maximumFractionDigits: 2
+    });
+
+    function activeRun() {
+      return runs.find((item) => item.id === select.value) || runs[0];
+    }
+
+    function formatRatio(value) {
+      if (value === "Infinity") return "∞";
+      if (value === "-Infinity") return "-∞";
+      return Number(value || 0).toFixed(2);
+    }
+
+    function resizeCanvas() {
+      const rect = chart.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      chart.width = Math.max(1, Math.floor(rect.width * scale));
+      chart.height = Math.max(1, Math.floor(rect.height * scale));
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    }
+
+    function draw() {
+      const run = activeRun();
+      if (!run) return;
+      resizeCanvas();
+      const rect = chart.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      ctx.clearRect(0, 0, width, height);
+
+      document.getElementById("trades").textContent = run.summary.trades.toLocaleString("en-US");
+      document.getElementById("start").textContent = money.format(run.summary.start);
+      document.getElementById("end").textContent = money.format(run.summary.end);
+      document.getElementById("net").textContent = money.format(run.summary.net);
+      document.getElementById("drawdown").textContent =
+        `${money.format(run.summary.maxDrawdown)} (${percent.format(run.summary.maxDrawdownPct)})`;
+      document.getElementById("winRate").textContent = percent.format(run.summary.winRate);
+      document.getElementById("profitFactor").textContent = formatRatio(run.summary.profitFactor);
+      document.getElementById("mar").textContent = formatRatio(run.summary.mar);
+      document.getElementById("note").textContent = run.summary.note;
+
+      const data = run.points;
+      if (!data.length) return;
+      const margin = chartMargin;
+      const plotW = Math.max(1, width - margin.left - margin.right);
+      const plotH = Math.max(1, height - margin.top - margin.bottom);
+      const values = data.map((point) => point.equity);
+      let minY = Math.min(...values);
+      let maxY = Math.max(...values);
+      if (minY === maxY) {
+        minY -= Math.max(100, Math.abs(minY) * 0.01);
+        maxY += Math.max(100, Math.abs(maxY) * 0.01);
+      }
+      const pad = (maxY - minY) * 0.08;
+      minY -= pad;
+      maxY += pad;
+
+      function xAt(index) {
+        return margin.left + (data.length === 1 ? 0 : (index / (data.length - 1)) * plotW);
+      }
+      function yAt(value) {
+        return margin.top + ((maxY - value) / (maxY - minY)) * plotH;
+      }
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#e5e7eb";
+      ctx.fillStyle = "#697386";
+      ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      for (let i = 0; i <= 4; i++) {
+        const value = minY + ((maxY - minY) * i) / 4;
+        const y = yAt(value);
+        ctx.beginPath();
+        ctx.moveTo(margin.left, y);
+        ctx.lineTo(width - margin.right, y);
+        ctx.stroke();
+        ctx.fillText(money.format(value), margin.left - 10, y);
+      }
+
+      const startY = yAt(run.summary.start);
+      ctx.strokeStyle = "#94a3b8";
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(margin.left, startY);
+      ctx.lineTo(width - margin.right, startY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const gradient = ctx.createLinearGradient(0, margin.top, 0, height - margin.bottom);
+      gradient.addColorStop(0, "rgba(37, 99, 235, 0.16)");
+      gradient.addColorStop(1, "rgba(37, 99, 235, 0.00)");
+      ctx.beginPath();
+      data.forEach((point, index) => {
+        const x = xAt(index);
+        const y = yAt(point.equity);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.lineTo(xAt(data.length - 1), height - margin.bottom);
+      ctx.lineTo(xAt(0), height - margin.bottom);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      ctx.beginPath();
+      data.forEach((point, index) => {
+        const x = xAt(index);
+        const y = yAt(point.equity);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+
+      const end = data[data.length - 1];
+      ctx.fillStyle = end.equity >= run.summary.start ? "#16a34a" : "#dc2626";
+      ctx.beginPath();
+      ctx.arc(xAt(data.length - 1), yAt(end.equity), 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#697386";
+      ctx.textBaseline = "top";
+      ctx.textAlign = "left";
+      ctx.fillText(data[0].timestamp || "start", margin.left, height - margin.bottom + 14);
+      ctx.textAlign = "right";
+      ctx.fillText(end.timestamp || `trade ${end.point}`, width - margin.right, height - margin.bottom + 14);
+
+      if (hoverIndex !== null) {
+        const index = Math.max(0, Math.min(data.length - 1, hoverIndex));
+        const point = data[index];
+        const hoverX = xAt(index);
+        const hoverY = yAt(point.equity);
+        drawHoverMarker(point, hoverX, hoverY, margin, width, height);
+      }
+    }
+
+    function drawHoverMarker(point, x, y, margin, width, height) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(23, 32, 42, 0.35)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, margin.top);
+      ctx.lineTo(x, height - margin.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      const rows = [
+        ["Date", point.timestamp || `trade ${point.point}`],
+        ["Net liq", money.format(point.equity)],
+        ["Curr DD", percent.format(point.drawdownPct || 0)]
+      ];
+      drawTooltip(rows, x, y, margin, width, height);
+      ctx.restore();
+    }
+
+    function drawTooltip(rows, x, y, margin, width, height) {
+      const padX = 10;
+      const padY = 8;
+      const lineHeight = 18;
+      const gap = 12;
+      ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      const labelWidth = Math.max(...rows.map((row) => ctx.measureText(row[0]).width));
+      ctx.font = "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      const valueWidth = Math.max(...rows.map((row) => ctx.measureText(row[1]).width));
+      const boxWidth = Math.ceil(labelWidth + gap + valueWidth + padX * 2);
+      const boxHeight = padY * 2 + lineHeight * rows.length;
+      let boxX = x + 12;
+      let boxY = y - boxHeight - 12;
+      if (boxX + boxWidth > width - margin.right) boxX = x - boxWidth - 12;
+      if (boxX < margin.left) boxX = margin.left;
+      if (boxY < margin.top) boxY = y + 12;
+      if (boxY + boxHeight > height - margin.bottom) boxY = height - margin.bottom - boxHeight;
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
+      ctx.strokeStyle = "#d5dae3";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.rect(boxX, boxY, boxWidth, boxHeight);
+      ctx.fill();
+      ctx.stroke();
+
+      rows.forEach((row, index) => {
+        const textY = boxY + padY + index * lineHeight + lineHeight / 2;
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "left";
+        ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.fillStyle = "#697386";
+        ctx.fillText(row[0], boxX + padX, textY);
+        ctx.font = "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.fillStyle = "#17202a";
+        ctx.fillText(row[1], boxX + padX + labelWidth + gap, textY);
+      });
+    }
+
+    function updateHover(event) {
+      const run = activeRun();
+      const data = run ? run.points : [];
+      if (!data.length) {
+        clearHover();
+        return;
+      }
+      const rect = chart.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const margin = chartMargin;
+      if (
+        x < margin.left ||
+        x > width - margin.right ||
+        y < margin.top ||
+        y > height - margin.bottom
+      ) {
+        clearHover();
+        return;
+      }
+      const plotW = Math.max(1, width - margin.left - margin.right);
+      const rawIndex = data.length === 1 ? 0 : ((x - margin.left) / plotW) * (data.length - 1);
+      const nextIndex = Math.max(0, Math.min(data.length - 1, Math.round(rawIndex)));
+      if (hoverIndex !== nextIndex) {
+        hoverIndex = nextIndex;
+        draw();
+      }
+    }
+
+    function clearHover() {
+      if (hoverIndex !== null) {
+        hoverIndex = null;
+        draw();
+      }
+    }
+
+    select.addEventListener("change", () => {
+      hoverIndex = null;
+      draw();
+    });
+    chart.addEventListener("mousemove", updateHover);
+    chart.addEventListener("mouseleave", clearHover);
+    window.addEventListener("resize", draw);
+    select.value = ids[0] || "";
+    draw();
+  </script>
+</body>
+</html>

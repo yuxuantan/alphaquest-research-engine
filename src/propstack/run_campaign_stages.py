@@ -7,10 +7,10 @@ from propstack.research.campaign_stages import run_campaign_stage_tests
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", required=True, help="Variant YAML path.")
+    parser.add_argument("--config", required=True, help="Campaign run config.yaml path.")
     parser.add_argument(
         "--out",
-        help="Optional output directory. Defaults to the variant report root under campaign_tests/.",
+        help="Optional output directory. Defaults to backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/.",
     )
     parser.add_argument(
         "--skip-validation",

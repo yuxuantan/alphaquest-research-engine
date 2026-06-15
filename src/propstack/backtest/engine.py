@@ -10,7 +10,7 @@ import pandas as pd
 from propstack.backtest.fills import entry_price, exit_price, stop_target_hit
 from propstack.backtest.metrics import calculate_metrics, daily_results
 from propstack.backtest.risk import DailyRisk
-from propstack.backtest.sizing import size_position
+from propstack.backtest.sizing import size_position, tick_value_from_core
 from propstack.strategy import ModularStrategy
 from propstack.utils.config import config_timeframe_minutes
 from propstack.utils.progress import progress_bar
@@ -124,7 +124,7 @@ class BacktestEngine:
         entry_params = self.strategy_config.get("entry", {}).get("params", {})
         risk = DailyRisk({**self.core_config, **self.strategy_config, **entry_params})
         tick_size = float(self.core_config.get("tick_size", 0.25))
-        tick_value = float(self.core_config.get("tick_value", 12.5))
+        tick_value = tick_value_from_core(self.core_config, tick_size)
         commission = float(self.core_config.get("commission_per_contract", 2.5))
         slippage_ticks = float(self.core_config.get("slippage_ticks", 1))
         flatten_time = parse_time(self.strategy_config.get("flatten_time", self.core_config.get("flatten_time", "14:55:00")))
@@ -376,6 +376,7 @@ class BacktestEngine:
             "calendar_session_bias": {"is_rth"},
             "cftc_tff_hedging_pressure": {"is_rth"},
             "cftc_tff_tiered_hedging_pressure": {"is_rth"},
+            "connors_rsi2_mean_reversion": {"is_rth"},
             "daily_time_series_momentum": {"is_rth"},
             "pdh_pdl_sweep_reclaim": {"is_rth", "prev_rth_low", "prev_rth_high"},
             "opening_range_breakout": {"is_rth"},
@@ -412,6 +413,7 @@ class BacktestEngine:
             "liquidity_risk_capacity_priority": {"is_rth"},
             "morning_intraday_momentum": {"is_rth", "volume_ratio"},
             "morning_orderflow_momentum": {"is_rth", "signed_volume", "large20_signed_volume", "large20_volume"},
+            "overnight_intraday_reversal": {"is_rth", "prev_rth_close"},
             "overnight_return_late_day_momentum": {"is_rth", "prev_rth_close"},
             "overnight_inventory_reversion": {"is_rth", "overnight_high", "overnight_low", "vwap"},
             "pdh_pdl_breakout_continuation": {"is_rth", "prev_rth_high", "prev_rth_low", "volume_ratio"},
@@ -437,7 +439,14 @@ class BacktestEngine:
             },
             "vwap_pullback_continuation": {"is_rth", "vwap"},
         }
-        missing = sorted(required_by_module.get(module, set()) - set(data.columns))
+        required = set(required_by_module.get(module, set()))
+        if module == "connors_rsi2_mean_reversion":
+            params = self.strategy_config.get("entry", {}).get("params", {})
+            trend_filter = str(params.get("trend_filter", "ma")).lower()
+            min_vwap_extension_ticks = float(params.get("min_vwap_extension_ticks", 0.0) or 0.0)
+            if trend_filter in {"vwap", "ma_and_vwap"} or min_vwap_extension_ticks > 0:
+                required.add("vwap")
+        missing = sorted(required - set(data.columns))
         if missing:
             diagnostics["preflight"]["warnings"].append(
                 f"Entry module {module} is missing optional/strategy feature column(s): {missing}."

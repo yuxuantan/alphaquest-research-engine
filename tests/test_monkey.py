@@ -6,7 +6,7 @@ import pandas as pd
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
 import propstack.research.monkey as monkey_module
-from propstack.research.monkey import _sample_durations, run_monkey
+from propstack.research.monkey import _sample_durations, run_monkey, run_trade_path_stress
 from tests.test_backtest_engine import BASE_CFG
 from tests.test_data_pipeline import DATA_CFG
 
@@ -63,6 +63,37 @@ def test_monkey_can_use_supplied_core_trades():
 
     assert len(results) == 3
     assert summary["core_metrics"]["total_trades"] == len(core_trades)
+
+
+def test_trade_path_stress_perturbs_supplied_core_trades():
+    df, _, _ = clean_data(DATA_CFG)
+    data = build_features(df, DATA_CFG)
+    core_trades = monkey_module.BacktestEngine(BASE_CFG).run(data)["trades"]
+    cfg = {
+        "runs": 3,
+        "seed": 5,
+        "trade_path_stress": {
+            "max_entry_delay_bars": 1,
+            "missed_trade_probability": 0.25,
+            "max_extra_slippage_ticks": 1,
+            "time_window_jitter_minutes": 1,
+        },
+    }
+
+    results, summary = run_trade_path_stress(
+        data,
+        BASE_CFG,
+        cfg,
+        {"min_trade_count": 1, "max_drawdown": 99999},
+        core_trades=core_trades,
+    )
+
+    assert len(results) == 3
+    assert summary["enabled"] is True
+    assert summary["mode"] == "actual_trade_path_perturbation"
+    assert summary["one_tick_worse"]["total_trades"] <= len(core_trades)
+    assert summary["stressors"]["max_entry_delay_bars"] == 1
+    assert set(["missed_trades", "delayed_entries", "fill_order_conflicts"]).issubset(results.columns)
 
 
 def test_monkey_retains_iteration_reports(tmp_path):

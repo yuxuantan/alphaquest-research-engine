@@ -1,0 +1,418 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>positive_delta_dislocation / pdh_negative_hour_positive_delta_long_10000_bracket core equity curve</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f7f8fa;
+      --panel: #ffffff;
+      --text: #17202a;
+      --muted: #697386;
+      --line: #2563eb;
+      --loss: #dc2626;
+      --grid: #e5e7eb;
+      --border: #d5dae3;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      letter-spacing: 0;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px;
+    }
+    header {
+      display: flex;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    h1 {
+      margin: 0;
+      font-size: 24px;
+      line-height: 1.2;
+      font-weight: 700;
+    }
+    .control {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    select {
+      min-width: 160px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: #fff;
+      color: var(--text);
+      padding: 7px 10px;
+      font-size: 14px;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(8, minmax(0, 1fr));
+      gap: 10px;
+      margin-bottom: 14px;
+    }
+    .metric {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 12px;
+    }
+    .metric span {
+      display: block;
+      color: var(--muted);
+      font-size: 12px;
+      margin-bottom: 4px;
+    }
+    .metric strong {
+      display: block;
+      font-size: 18px;
+      line-height: 1.2;
+      overflow-wrap: anywhere;
+    }
+    .chart-panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    canvas {
+      display: block;
+      width: 100%;
+      height: 460px;
+      cursor: crosshair;
+    }
+    .note {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+    }
+    @media (max-width: 760px) {
+      main { padding: 16px; }
+      header { display: block; }
+      .control { margin-top: 12px; }
+      .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      canvas { height: 360px; }
+    }
+    @media (min-width: 761px) and (max-width: 1100px) {
+      .summary { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+  </style>
+</head>
+<body>
+  <main>
+    <header>
+      <h1>positive_delta_dislocation / pdh_negative_hour_positive_delta_long_10000_bracket core equity curve</h1>
+      <label class="control" id="runControl">Run <select id="runSelect"></select></label>
+    </header>
+    <section class="summary" aria-label="Equity summary">
+      <div class="metric"><span>Trades</span><strong id="trades">0</strong></div>
+      <div class="metric"><span>Start</span><strong id="start">$0</strong></div>
+      <div class="metric"><span>End</span><strong id="end">$0</strong></div>
+      <div class="metric"><span>Net PnL</span><strong id="net">$0</strong></div>
+      <div class="metric"><span>Max Drawdown</span><strong id="drawdown">$0</strong></div>
+      <div class="metric"><span>Win Rate</span><strong id="winRate">0%</strong></div>
+      <div class="metric"><span>PF</span><strong id="profitFactor">0.00</strong></div>
+      <div class="metric"><span>MAR</span><strong id="mar">0.00</strong></div>
+    </section>
+    <section class="chart-panel">
+      <canvas id="chart" aria-label="Equity curve chart"></canvas>
+      <div class="note" id="note"></div>
+    </section>
+  </main>
+  <script id="equity-data" type="application/json">{"runs":[{"id":"__all__","label":"All trades","points":[{"point":0,"timestamp":"2011-01-14 15:30:00-05:00","equity":150000.0,"drawdown":0.0,"drawdownPct":0.0},{"point":1,"timestamp":"2011-01-14 16:00:00-05:00","equity":150032.5,"drawdown":0.0,"drawdownPct":0.0},{"point":2,"timestamp":"2011-04-20 16:00:00-04:00","equity":150002.5,"drawdown":30.0,"drawdownPct":0.00019995667605352173},{"point":3,"timestamp":"2011-04-26 16:00:00-04:00","equity":149972.5,"drawdown":60.0,"drawdownPct":0.00039991335210704345},{"point":4,"timestamp":"2011-05-27 16:00:00-04:00","equity":149880.0,"drawdown":152.5,"drawdownPct":0.001016446436605402},{"point":5,"timestamp":"2011-05-31 16:00:00-04:00","equity":150212.5,"drawdown":0.0,"drawdownPct":0.0},{"point":6,"timestamp":"2011-06-09 16:00:00-04:00","equity":150020.0,"drawdown":192.5,"drawdownPct":0.0012815178497129066},{"point":7,"timestamp":"2011-06-14 16:00:00-04:00","equity":150040.0,"drawdown":172.5,"drawdownPct":0.001148373138054423},{"point":8,"timestamp":"2011-06-29 16:00:00-04:00","equity":150335.0,"drawdown":0.0,"drawdownPct":0.0},{"point":9,"timestamp":"2011-07-07 16:00:00-04:00","equity":150442.5,"drawdown":0.0,"drawdownPct":0.0},{"point":10,"timestamp":"2011-07-21 16:00:00-04:00","equity":150637.5,"drawdown":0.0,"drawdownPct":0.0},{"point":11,"timestamp":"2011-10-24 16:00:00-04:00","equity":150645.0,"drawdown":0.0,"drawdownPct":0.0},{"point":12,"timestamp":"2011-12-27 16:00:00-05:00","equity":150577.5,"drawdown":67.5,"drawdownPct":0.00044807328487503736},{"point":13,"timestamp":"2012-01-10 16:00:00-05:00","equity":150535.0,"drawdown":110.0,"drawdownPct":0.0007301935012778386},{"point":14,"timestamp":"2012-01-17 16:00:00-05:00","equity":150192.5,"drawdown":452.5,"drawdownPct":0.0030037505393474724},{"point":15,"timestamp":"2012-01-19 16:00:00-05:00","equity":150187.5,"drawdown":457.5,"drawdownPct":0.00303694115304192},{"point":16,"timestamp":"2012-02-21 16:00:00-05:00","equity":149957.5,"drawdown":687.5,"drawdownPct":0.0045637093829864915},{"point":17,"timestamp":"2012-03-26 16:00:00-04:00","equity":150240.0,"drawdown":405.0,"drawdownPct":0.002688439709250224},{"point":18,"timestamp":"2012-04-02 16:00:00-04:00","equity":150072.5,"drawdown":572.5,"drawdownPct":0.0038003252680142057},{"point":19,"timestamp":"2012-04-25 16:00:00-04:00","equity":150255.0,"drawdown":390.0,"drawdownPct":0.0025888678681668825},{"point":20,"timestamp":"2012-04-26 16:00:00-04:00","equity":150612.5,"drawdown":32.5,"drawdownPct":0.00021573898901390686},{"point":21,"timestamp":"2012-06-19 16:00:00-04:00","equity":150595.0,"drawdown":50.0,"drawdownPct":0.0003319061369444721},{"point":22,"timestamp":"2012-06-29 16:00:00-04:00","equity":150965.0,"drawdown":0.0,"drawdownPct":0.0},{"point":23,"timestamp":"2012-08-03 16:00:00-04:00","equity":150922.5,"drawdown":42.5,"drawdownPct":0.00028152220713410396},{"point":24,"timestamp":"2012-10-04 16:00:00-04:00","equity":150942.5,"drawdown":22.5,"drawdownPct":0.0001490411684827609},{"point":25,"timestamp":"2012-12-07 16:00:00-05:00","equity":151000.0,"drawdown":0.0,"drawdownPct":0.0},{"point":26,"timestamp":"2012-12-17 16:00:00-05:00","equity":151195.0,"drawdown":0.0,"drawdownPct":0.0},{"point":27,"timestamp":"2013-01-02 16:00:00-05:00","equity":151715.0,"drawdown":0.0,"drawdownPct":0.0},{"point":28,"timestamp":"2013-01-09 16:00:00-05:00","equity":151635.0,"drawdown":80.0,"drawdownPct":0.0005273044853837788},{"point":29,"timestamp":"2013-02-08 16:00:00-05:00","equity":151692.5,"drawdown":22.5,"drawdownPct":0.0001483043865141878},{"point":30,"timestamp":"2013-02-25 16:00:00-05:00","equity":150175.0,"drawdown":1540.0,"drawdownPct":0.010150611343637742},{"point":31,"timestamp":"2013-04-24 16:00:00-04:00","equity":150070.0,"drawdown":1645.0,"drawdownPct":0.010842698480703952},{"point":32,"timestamp":"2013-05-22 16:00:00-04:00","equity":148940.0,"drawdown":2775.0,"drawdownPct":0.018290874336749828},{"point":33,"timestamp":"2013-07-09 16:00:00-04:00","equity":148872.5,"drawdown":2842.5,"drawdownPct":0.01873578749629239},{"point":34,"timestamp":"2013-07-15 16:00:00-04:00","equity":148830.0,"drawdown":2885.0,"drawdownPct":0.019015918004152522},{"point":35,"timestamp":"2013-07-22 16:00:00-04:00","equity":148912.5,"drawdown":2802.5,"drawdownPct":0.018472135253600502},{"point":36,"timestamp":"2013-08-08 16:00:00-04:00","equity":148832.5,"drawdown":2882.5,"drawdownPct":0.01899943973898428},{"point":37,"timestamp":"2013-08-26 16:00:00-04:00","equity":148277.5,"drawdown":3437.5,"drawdownPct":0.022657614606334246},{"point":38,"timestamp":"2013-08-29 16:00:00-04:00","equity":148035.0,"drawdown":3680.0,"drawdownPct":0.024256006327653824},{"point":39,"timestamp":"2013-09-16 16:00:00-04:00","equity":147780.0,"drawdown":3935.0,"drawdownPct":0.02593678937481462},{"point":40,"timestamp":"2013-11-14 16:00:00-05:00","equity":148175.0,"drawdown":3540.0,"drawdownPct":0.02333322347823221},{"point":41,"timestamp":"2013-12-06 16:00:00-05:00","equity":148357.5,"drawdown":3357.5,"drawdownPct":0.022130310120950465},{"point":42,"timestamp":"2014-01-15 16:00:00-05:00","equity":148365.0,"drawdown":3350.0,"drawdownPct":0.022080875325445736},{"point":43,"timestamp":"2014-02-21 16:00:00-05:00","equity":147960.0,"drawdown":3755.0,"drawdownPct":0.024750354282701118},{"point":44,"timestamp":"2014-03-31 16:00:00-04:00","equity":147955.0,"drawdown":3760.0,"drawdownPct":0.024783310813037602},{"point":45,"timestamp":"2014-04-02 16:00:00-04:00","equity":148137.5,"drawdown":3577.5,"drawdownPct":0.02358039745575586},{"point":46,"timestamp":"2014-04-09 16:00:00-04:00","equity":148932.5,"drawdown":2782.5,"drawdownPct":0.018340309132254557},{"point":47,"timestamp":"2014-06-06 16:00:00-04:00","equity":148927.5,"drawdown":2787.5,"drawdownPct":0.01837326566259104},{"point":48,"timestamp":"2014-07-24 16:00:00-04:00","equity":148760.0,"drawdown":2955.0,"drawdownPct":0.01947730942886333},{"point":49,"timestamp":"2014-08-11 16:00:00-04:00","equity":148692.5,"drawdown":3022.5,"drawdownPct":0.019922222588405893},{"point":50,"timestamp":"2014-08-25 16:00:00-04:00","equity":148712.5,"drawdown":3002.5,"drawdownPct":0.019790396467059948},{"point":51,"timestamp":"2014-08-29 16:00:00-04:00","equity":148807.5,"drawdown":2907.5,"drawdownPct":0.01916422239066671},{"point":52,"timestamp":"2014-10-03 16:00:00-04:00","equity":148690.0,"drawdown":3025.0,"drawdownPct":0.019938700853574135},{"point":53,"timestamp":"2014-10-17 16:00:00-04:00","equity":148385.0,"drawdown":3330.0,"drawdownPct":0.02194904920409979},{"point":54,"timestamp":"2014-10-31 16:00:00-04:00","equity":148442.5,"drawdown":3272.5,"drawdownPct":0.0215700491052302},{"point":55,"timestamp":"2014-11-06 16:00:00-05:00","equity":148637.5,"drawdown":3077.5,"drawdownPct":0.020284744422107242},{"point":56,"timestamp":"2014-11-10 16:00:00-05:00","equity":148720.0,"drawdown":2995.0,"drawdownPct":0.01974096167155522},{"point":57,"timestamp":"2014-12-23 16:00:00-05:00","equity":148615.0,"drawdown":3100.0,"drawdownPct":0.02043304880862143},{"point":58,"timestamp":"2015-01-13 16:00:00-05:00","equity":147172.5,"drawdown":4542.5,"drawdownPct":0.029941007810697688},{"point":59,"timestamp":"2015-01-22 16:00:00-05:00","equity":148217.5,"drawdown":3497.5,"drawdownPct":0.02305309297037208},{"point":60,"timestamp":"2015-02-12 16:00:00-05:00","equity":148650.0,"drawdown":3065.0,"drawdownPct":0.020202353096266026},{"point":61,"timestamp":"2015-04-15 16:00:00-04:00","equity":148432.5,"drawdown":3282.5,"drawdownPct":0.021635962165903175},{"point":62,"timestamp":"2015-04-27 16:00:00-04:00","equity":147627.5,"drawdown":4087.5,"drawdownPct":0.026941963550077448},{"point":63,"timestamp":"2015-06-22 16:00:00-04:00","equity":147710.0,"drawdown":4005.0,"drawdownPct":0.026398180799525425},{"point":64,"timestamp":"2015-07-29 16:00:00-04:00","equity":147917.5,"drawdown":3797.5,"drawdownPct":0.02503048479056125},{"point":65,"timestamp":"2015-09-08 16:00:00-04:00","equity":148750.0,"drawdown":2965.0,"drawdownPct":0.019543222489536303},{"point":66,"timestamp":"2015-09-17 16:00:00-04:00","equity":148282.5,"drawdown":3432.5,"drawdownPct":0.02262465807599776},{"point":67,"timestamp":"2015-09-25 16:00:00-04:00","equity":147665.0,"drawdown":4050.0,"drawdownPct":0.026694789572553803},{"point":68,"timestamp":"2015-10-22 16:00:00-04:00","equity":147635.0,"drawdown":4080.0,"drawdownPct":0.02689252875457272},{"point":69,"timestamp":"2015-10-23 16:00:00-04:00","equity":147880.0,"drawdown":3835.0,"drawdownPct":0.025277658768084896},{"point":70,"timestamp":"2015-11-17 16:00:00-05:00","equity":147600.0,"drawdown":4115.0,"drawdownPct":0.027123224466928123},{"point":71,"timestamp":"2015-12-15 16:00:00-05:00","equity":147432.5,"drawdown":4282.5,"drawdownPct":0.02822726823320041},{"point":72,"timestamp":"2015-12-22 16:00:00-05:00","equity":148077.5,"drawdown":3637.5,"drawdownPct":0.023975875819793692},{"point":73,"timestamp":"2016-01-19 16:00:00-05:00","equity":147147.5,"drawdown":4567.5,"drawdownPct":0.03010579046238012},{"point":74,"timestamp":"2016-01-26 16:00:00-05:00","equity":147042.5,"drawdown":4672.5,"drawdownPct":0.03079787759944633},{"point":75,"timestamp":"2016-02-16 16:00:00-05:00","equity":147050.0,"drawdown":4665.0,"drawdownPct":0.0307484428039416},{"point":76,"timestamp":"2016-02-22 16:00:00-05:00","equity":147157.5,"drawdown":4557.5,"drawdownPct":0.03003987740170715},{"point":77,"timestamp":"2016-04-14 16:00:00-04:00","equity":147065.0,"drawdown":4650.0,"drawdownPct":0.030649573212932144},{"point":78,"timestamp":"2016-04-20 16:00:00-04:00","equity":146797.5,"drawdown":4917.5,"drawdownPct":0.032412747585934154},{"point":79,"timestamp":"2016-05-16 16:00:00-04:00","equity":146605.0,"drawdown":5110.0,"drawdownPct":0.03368157400388887},{"point":80,"timestamp":"2016-06-20 16:00:00-04:00","equity":145912.5,"drawdown":5802.5,"drawdownPct":0.03824605345549221},{"point":81,"timestamp":"2016-07-08 16:00:00-04:00","equity":145932.5,"drawdown":5782.5,"drawdownPct":0.03811422733414626},{"point":82,"timestamp":"2016-07-11 16:00:00-04:00","equity":145727.5,"drawdown":5987.5,"drawdownPct":0.039465445077942196},{"point":83,"timestamp":"2016-07-12 16:00:00-04:00","equity":145660.0,"drawdown":6055.0,"drawdownPct":0.03991035823748476},{"point":84,"timestamp":"2016-07-14 16:00:00-04:00","equity":145492.5,"drawdown":6222.5,"drawdownPct":0.04101440200375704},{"point":85,"timestamp":"2016-11-14 16:00:00-05:00","equity":145337.5,"drawdown":6377.5,"drawdownPct":0.04203605444418811},{"point":86,"timestamp":"2016-11-28 16:00:00-05:00","equity":145032.5,"drawdown":6682.5,"drawdownPct":0.04404640279471377},{"point":87,"timestamp":"2016-12-07 16:00:00-05:00","equity":146352.5,"drawdown":5362.5,"drawdownPct":0.03534587878588142},{"point":88,"timestamp":"2016-12-27 16:00:00-05:00","equity":146185.0,"drawdown":5530.0,"drawdownPct":0.03644992255215371},{"point":89,"timestamp":"2017-01-25 16:00:00-05:00","equity":146242.5,"drawdown":5472.5,"drawdownPct":0.03607092245328412},{"point":90,"timestamp":"2017-02-14 16:00:00-05:00","equity":146350.0,"drawdown":5365.0,"drawdownPct":0.03536235705104967},{"point":91,"timestamp":"2017-02-27 16:00:00-05:00","equity":146445.0,"drawdown":5270.0,"drawdownPct":0.03473618297465643},{"point":92,"timestamp":"2017-03-15 16:00:00-04:00","equity":147015.0,"drawdown":4700.0,"drawdownPct":0.030979138516297005},{"point":93,"timestamp":"2017-03-28 16:00:00-04:00","equity":146810.0,"drawdown":4905.0,"drawdownPct":0.03233035626009294},{"point":94,"timestamp":"2017-05-15 16:00:00-04:00","equity":146855.0,"drawdown":4860.0,"drawdownPct":0.032033747487064564},{"point":95,"timestamp":"2017-05-22 16:00:00-04:00","equity":146862.5,"drawdown":4852.5,"drawdownPct":0.03198431269155983},{"point":96,"timestamp":"2017-05-23 16:00:00-04:00","equity":146882.5,"drawdown":4832.5,"drawdownPct":0.03185248657021389},{"point":97,"timestamp":"2017-06-01 16:00:00-04:00","equity":147577.5,"drawdown":4137.5,"drawdownPct":0.02727152885344231},{"point":98,"timestamp":"2017-06-13 16:00:00-04:00","equity":147647.5,"drawdown":4067.5,"drawdownPct":0.026810137428731503},{"point":99,"timestamp":"2017-07-13 16:00:00-04:00","equity":147617.5,"drawdown":4097.5,"drawdownPct":0.02700787661075042},{"point":100,"timestamp":"2017-07-20 16:00:00-04:00","equity":147525.0,"drawdown":4190.0,"drawdownPct":0.027617572421975413},{"point":101,"timestamp":"2017-07-25 16:00:00-04:00","equity":147357.5,"drawdown":4357.5,"drawdownPct":0.0287216161882477},{"point":102,"timestamp":"2017-07-27 16:00:00-04:00","equity":147002.5,"drawdown":4712.5,"drawdownPct":0.03106152984213822},{"point":103,"timestamp":"2017-08-14 16:00:00-04:00","equity":146947.5,"drawdown":4767.5,"drawdownPct":0.031424051675839566},{"point":104,"timestamp":"2017-09-01 16:00:00-04:00","equity":146892.5,"drawdown":4822.5,"drawdownPct":0.031786573509540915},{"point":105,"timestamp":"2017-09-29 16:00:00-04:00","equity":146962.5,"drawdown":4752.5,"drawdownPct":0.03132518208483011},{"point":106,"timestamp":"2017-10-13 16:00:00-04:00","equity":146845.0,"drawdown":4870.0,"drawdownPct":0.03209966054773753},{"point":107,"timestamp":"2017-10-18 16:00:00-04:00","equity":146840.0,"drawdown":4875.0,"drawdownPct":0.03213261707807402},{"point":108,"timestamp":"2017-10-27 16:00:00-04:00","equity":146935.0,"drawdown":4780.0,"drawdownPct":0.03150644300168078},{"point":109,"timestamp":"2017-11-01 16:00:00-04:00","equity":146717.5,"drawdown":4997.5,"drawdownPct":0.032940052071317935},{"point":110,"timestamp":"2017-11-27 16:00:00-05:00","equity":146650.0,"drawdown":5065.0,"drawdownPct":0.03338496523086049},{"point":111,"timestamp":"2017-12-08 16:00:00-05:00","equity":146895.0,"drawdown":4820.0,"drawdownPct":0.03177009524437267},{"point":112,"timestamp":"2017-12-12 16:00:00-05:00","equity":146777.5,"drawdown":4937.5,"drawdownPct":0.032544573707280096},{"point":113,"timestamp":"2017-12-15 16:00:00-05:00","equity":146735.0,"drawdown":4980.0,"drawdownPct":0.03282470421514023},{"point":114,"timestamp":"2017-12-18 16:00:00-05:00","equity":146617.5,"drawdown":5097.5,"drawdownPct":0.03359918267804766},{"point":115,"timestamp":"2017-12-27 16:00:00-05:00","equity":146362.5,"drawdown":5352.5,"drawdownPct":0.03527996572520845},{"point":116,"timestamp":"2018-01-04 16:00:00-05:00","equity":146257.5,"drawdown":5457.5,"drawdownPct":0.03597205286227466},{"point":117,"timestamp":"2018-01-08 16:00:00-05:00","equity":146277.5,"drawdown":5437.5,"drawdownPct":0.03584022674092872},{"point":118,"timestamp":"2018-02-12 16:00:00-05:00","equity":146197.5,"drawdown":5517.5,"drawdownPct":0.03636753122631249},{"point":119,"timestamp":"2018-02-26 16:00:00-05:00","equity":147317.5,"drawdown":4397.5,"drawdownPct":0.02898526843093959},{"point":120,"timestamp":"2018-04-26 16:00:00-04:00","equity":147212.5,"drawdown":4502.5,"drawdownPct":0.0296773555680058},{"point":121,"timestamp":"2018-05-14 16:00:00-04:00","equity":146945.0,"drawdown":4770.0,"drawdownPct":0.03144052994100781},{"point":122,"timestamp":"2018-05-16 16:00:00-04:00","equity":146902.5,"drawdown":4812.5,"drawdownPct":0.03172066044886794},{"point":123,"timestamp":"2018-05-21 16:00:00-04:00","equity":147072.5,"drawdown":4642.5,"drawdownPct":0.030600138417427415},{"point":124,"timestamp":"2018-06-01 16:00:00-04:00","equity":147230.0,"drawdown":4485.0,"drawdownPct":0.029562007711828098},{"point":125,"timestamp":"2018-06-04 16:00:00-04:00","equity":147212.5,"drawdown":4502.5,"drawdownPct":0.0296773555680058},{"point":126,"timestamp":"2018-07-06 16:00:00-04:00","equity":147145.0,"drawdown":4570.0,"drawdownPct":0.030122268727548362},{"point":127,"timestamp":"2018-07-10 16:00:00-04:00","equity":147265.0,"drawdown":4450.0,"drawdownPct":0.029331311999472694},{"point":128,"timestamp":"2018-07-13 16:00:00-04:00","equity":147147.5,"drawdown":4567.5,"drawdownPct":0.03010579046238012},{"point":129,"timestamp":"2018-07-17 16:00:00-04:00","equity":147117.5,"drawdown":4597.5,"drawdownPct":0.030303529644399037},{"point":130,"timestamp":"2018-07-18 16:00:00-04:00","equity":147125.0,"drawdown":4590.0,"drawdownPct":0.030254094848894308},{"point":131,"timestamp":"2018-08-17 16:00:00-04:00","equity":147057.5,"drawdown":4657.5,"drawdownPct":0.030699008008436873},{"point":132,"timestamp":"2018-08-20 16:00:00-04:00","equity":146952.5,"drawdown":4762.5,"drawdownPct":0.03139109514550308},{"point":133,"timestamp":"2018-09-11 16:00:00-04:00","equity":146897.5,"drawdown":4817.5,"drawdownPct":0.03175361697920443},{"point":134,"timestamp":"2018-09-18 16:00:00-04:00","equity":146792.5,"drawdown":4922.5,"drawdownPct":0.03244570411627064},{"point":135,"timestamp":"2018-09-21 16:00:00-04:00","equity":146425.0,"drawdown":5290.0,"drawdownPct":0.03486800909600237},{"point":136,"timestamp":"2018-12-03 16:00:00-05:00","equity":146232.5,"drawdown":5482.5,"drawdownPct":0.03613683551395709},{"point":137,"timestamp":"2019-01-04 16:00:00-05:00","equity":147152.5,"drawdown":4562.5,"drawdownPct":0.030072833932043633},{"point":138,"timestamp":"2019-01-16 16:00:00-05:00","equity":146960.0,"drawdown":4755.0,"drawdownPct":0.03134166034999835},{"point":139,"timestamp":"2019-01-18 16:00:00-05:00","equity":147767.5,"drawdown":3947.5,"drawdownPct":0.026019180700655835},{"point":140,"timestamp":"2019-01-30 16:00:00-05:00","equity":147825.0,"drawdown":3890.0,"drawdownPct":0.025640180601786244},{"point":141,"timestamp":"2019-02-12 16:00:00-05:00","equity":147970.0,"drawdown":3745.0,"drawdownPct":0.024684441222028144},{"point":142,"timestamp":"2019-02-13 16:00:00-05:00","equity":148027.5,"drawdown":3687.5,"drawdownPct":0.024305441123158553},{"point":143,"timestamp":"2019-02-19 16:00:00-05:00","equity":147985.0,"drawdown":3730.0,"drawdownPct":0.024585571631018686},{"point":144,"timestamp":"2019-02-22 16:00:00-05:00","equity":148017.5,"drawdown":3697.5,"drawdownPct":0.024371354183831528},{"point":145,"timestamp":"2019-02-25 16:00:00-05:00","equity":147475.0,"drawdown":4240.0,"drawdownPct":0.027947137725340278},{"point":146,"timestamp":"2019-03-12 16:00:00-04:00","equity":147495.0,"drawdown":4220.0,"drawdownPct":0.027815311603994333},{"point":147,"timestamp":"2019-03-15 16:00:00-04:00","equity":147290.0,"drawdown":4425.0,"drawdownPct":0.029166529347790265},{"point":148,"timestamp":"2019-03-19 16:00:00-04:00","equity":146897.5,"drawdown":4817.5,"drawdownPct":0.03175361697920443},{"point":149,"timestamp":"2019-03-21 16:00:00-04:00","equity":146880.0,"drawdown":4835.0,"drawdownPct":0.03186896483538213},{"point":150,"timestamp":"2019-04-11 16:00:00-04:00","equity":146687.5,"drawdown":5027.5,"drawdownPct":0.03313779125333685},{"point":151,"timestamp":"2019-04-23 16:00:00-04:00","equity":146682.5,"drawdown":5032.5,"drawdownPct":0.033170747783673335},{"point":152,"timestamp":"2019-05-03 16:00:00-04:00","equity":146615.0,"drawdown":5100.0,"drawdownPct":0.0336156609432159},{"point":153,"timestamp":"2019-05-21 16:00:00-04:00","equity":146510.0,"drawdown":5205.0,"drawdownPct":0.034307748080282106},{"point":154,"timestamp":"2019-06-05 16:00:00-04:00","equity":146742.5,"drawdown":4972.5,"drawdownPct":0.0327752694196355},{"point":155,"timestamp":"2019-06-10 16:00:00-04:00","equity":146112.5,"drawdown":5602.5,"drawdownPct":0.036927792242032756},{"point":156,"timestamp":"2019-06-18 16:00:00-04:00","equity":145945.0,"drawdown":5770.0,"drawdownPct":0.038031836008305044},{"point":157,"timestamp":"2019-06-20 16:00:00-04:00","equity":146152.5,"drawdown":5562.5,"drawdownPct":0.03666413999934087},{"point":158,"timestamp":"2019-06-28 16:00:00-04:00","equity":146347.5,"drawdown":5367.5,"drawdownPct":0.03537883531621791},{"point":159,"timestamp":"2019-07-01 16:00:00-04:00","equity":146492.5,"drawdown":5222.5,"drawdownPct":0.034423095936459806},{"point":160,"timestamp":"2019-08-19 16:00:00-04:00","equity":146312.5,"drawdown":5402.5,"drawdownPct":0.03560953102857331},{"point":161,"timestamp":"2019-08-21 16:00:00-04:00","equity":146232.5,"drawdown":5482.5,"drawdownPct":0.03613683551395709},{"point":162,"timestamp":"2019-11-04 16:00:00-05:00","equity":145952.5,"drawdown":5762.5,"drawdownPct":0.03798240121280032},{"point":163,"timestamp":"2019-11-07 16:00:00-05:00","equity":145597.5,"drawdown":6117.5,"drawdownPct":0.040322314866690835},{"point":164,"timestamp":"2019-11-25 16:00:00-05:00","equity":145792.5,"drawdown":5922.5,"drawdownPct":0.03903701018356787},{"point":165,"timestamp":"2019-12-04 16:00:00-05:00","equity":145775.0,"drawdown":5940.0,"drawdownPct":0.03915235803974557},{"point":166,"timestamp":"2019-12-16 16:00:00-05:00","equity":145632.5,"drawdown":6082.5,"drawdownPct":0.04009161915433543},{"point":167,"timestamp":"2019-12-26 16:00:00-05:00","equity":145902.5,"drawdown":5812.5,"drawdownPct":0.038311966516165176},{"point":168,"timestamp":"2020-01-02 16:00:00-05:00","equity":146772.5,"drawdown":4942.5,"drawdownPct":0.032577530237616587},{"point":169,"timestamp":"2020-01-09 16:00:00-05:00","equity":147017.5,"drawdown":4697.5,"drawdownPct":0.03096266025112876},{"point":170,"timestamp":"2020-02-19 16:00:00-05:00","equity":146825.0,"drawdown":4890.0,"drawdownPct":0.03223148666908348},{"point":171,"timestamp":"2020-03-24 16:00:00-04:00","equity":148882.5,"drawdown":2832.5,"drawdownPct":0.01866987443561942},{"point":172,"timestamp":"2020-04-06 16:00:00-04:00","equity":150365.0,"drawdown":1350.0,"drawdownPct":0.008898263190851267},{"point":173,"timestamp":"2020-05-26 16:00:00-04:00","equity":149197.5,"drawdown":2517.5,"drawdownPct":0.01659361302442079},{"point":174,"timestamp":"2020-07-06 16:00:00-04:00","equity":149667.5,"drawdown":2047.5,"drawdownPct":0.013495699172791089},{"point":175,"timestamp":"2020-08-17 16:00:00-04:00","equity":149625.0,"drawdown":2090.0,"drawdownPct":0.013775829680651221},{"point":176,"timestamp":"2020-08-24 16:00:00-04:00","equity":150182.5,"drawdown":1532.5,"drawdownPct":0.010101176548133013},{"point":177,"timestamp":"2020-09-01 16:00:00-04:00","equity":150690.0,"drawdown":1025.0,"drawdownPct":0.006756088718979666},{"point":178,"timestamp":"2020-09-14 16:00:00-04:00","equity":150485.0,"drawdown":1230.0,"drawdownPct":0.008107306462775599},{"point":179,"timestamp":"2020-09-28 16:00:00-04:00","equity":150692.5,"drawdown":1022.5,"drawdownPct":0.0067396104538114225},{"point":180,"timestamp":"2020-11-03 16:00:00-05:00","equity":150062.5,"drawdown":1652.5,"drawdownPct":0.010892133276208681},{"point":181,"timestamp":"2020-11-11 16:00:00-05:00","equity":150395.0,"drawdown":1320.0,"drawdownPct":0.008700524008832351},{"point":182,"timestamp":"2020-12-03 16:00:00-05:00","equity":150127.5,"drawdown":1587.5,"drawdownPct":0.01046369838183436},{"point":183,"timestamp":"2020-12-14 16:00:00-05:00","equity":148647.5,"drawdown":3067.5,"drawdownPct":0.020218831361434268},{"point":184,"timestamp":"2020-12-17 16:00:00-05:00","equity":148767.5,"drawdown":2947.5,"drawdownPct":0.0194278746333586},{"point":185,"timestamp":"2020-12-28 16:00:00-05:00","equity":148837.5,"drawdown":2877.5,"drawdownPct":0.018966483208647793},{"point":186,"timestamp":"2021-01-28 16:00:00-05:00","equity":146970.0,"drawdown":4745.0,"drawdownPct":0.03127574728932538},{"point":187,"timestamp":"2021-02-08 16:00:00-05:00","equity":147652.5,"drawdown":4062.5,"drawdownPct":0.026777180898395016},{"point":188,"timestamp":"2021-03-09 16:00:00-05:00","equity":146660.0,"drawdown":5055.0,"drawdownPct":0.033319052170187526},{"point":189,"timestamp":"2021-03-22 16:00:00-04:00","equity":146367.5,"drawdown":5347.5,"drawdownPct":0.03524700919487196},{"point":190,"timestamp":"2021-03-31 16:00:00-04:00","equity":145975.0,"drawdown":5740.0,"drawdownPct":0.03783409682628613},{"point":191,"timestamp":"2021-04-16 16:00:00-04:00","equity":146370.0,"drawdown":5345.0,"drawdownPct":0.03523053092970372},{"point":192,"timestamp":"2021-04-23 16:00:00-04:00","equity":146165.0,"drawdown":5550.0,"drawdownPct":0.036581748673499656},{"point":193,"timestamp":"2021-06-10 16:00:00-04:00","equity":146085.0,"drawdown":5630.0,"drawdownPct":0.03710905315888343},{"point":194,"timestamp":"2021-06-22 16:00:00-04:00","equity":146380.0,"drawdown":5335.0,"drawdownPct":0.035164617869030745},{"point":195,"timestamp":"2021-07-20 16:00:00-04:00","equity":146362.5,"drawdown":5352.5,"drawdownPct":0.03527996572520845},{"point":196,"timestamp":"2021-08-20 16:00:00-04:00","equity":146895.0,"drawdown":4820.0,"drawdownPct":0.03177009524437267},{"point":197,"timestamp":"2021-08-25 16:00:00-04:00","equity":146790.0,"drawdown":4925.0,"drawdownPct":0.03246218238143888},{"point":198,"timestamp":"2021-08-27 16:00:00-04:00","equity":146735.0,"drawdown":4980.0,"drawdownPct":0.03282470421514023},{"point":199,"timestamp":"2021-10-15 16:00:00-04:00","equity":147430.0,"drawdown":4285.0,"drawdownPct":0.028243746498368652},{"point":200,"timestamp":"2021-11-04 16:00:00-04:00","equity":147837.5,"drawdown":3877.5,"drawdownPct":0.025557789275945028},{"point":201,"timestamp":"2021-12-22 16:00:00-05:00","equity":148957.5,"drawdown":2757.5,"drawdownPct":0.018175526480572125},{"point":202,"timestamp":"2022-01-26 16:00:00-05:00","equity":145240.0,"drawdown":6475.0,"drawdownPct":0.042678706785749594},{"point":203,"timestamp":"2022-02-15 16:00:00-05:00","equity":146047.5,"drawdown":5667.5,"drawdownPct":0.03735622713640708},{"point":204,"timestamp":"2022-03-16 16:00:00-04:00","equity":148492.5,"drawdown":3222.5,"drawdownPct":0.02124048380186534},{"point":205,"timestamp":"2022-05-23 16:00:00-04:00","equity":149350.0,"drawdown":2365.0,"drawdownPct":0.01558843884915796},{"point":206,"timestamp":"2022-05-25 16:00:00-04:00","equity":150170.0,"drawdown":1545.0,"drawdownPct":0.010183567873974227},{"point":207,"timestamp":"2022-07-15 16:00:00-04:00","equity":150765.0,"drawdown":950.0,"drawdownPct":0.006261740763932373},{"point":208,"timestamp":"2022-07-18 16:00:00-04:00","equity":147835.0,"drawdown":3880.0,"drawdownPct":0.02557426754111327},{"point":209,"timestamp":"2022-09-08 16:00:00-04:00","equity":148417.5,"drawdown":3297.5,"drawdownPct":0.021734831756912633},{"point":210,"timestamp":"2022-10-04 16:00:00-04:00","equity":148687.5,"drawdown":3027.5,"drawdownPct":0.01995517911874238},{"point":211,"timestamp":"2022-11-14 16:00:00-05:00","equity":146382.5,"drawdown":5332.5,"drawdownPct":0.035148139603862504},{"point":212,"timestamp":"2022-12-13 16:00:00-05:00","equity":146515.0,"drawdown":5200.0,"drawdownPct":0.03427479154994562},{"point":213,"timestamp":"2023-01-09 16:00:00-05:00","equity":144372.5,"drawdown":7342.5,"drawdownPct":0.04839666479912995},{"point":214,"timestamp":"2023-01-23 16:00:00-05:00","equity":144705.0,"drawdown":7010.0,"drawdownPct":0.046205055531753615},{"point":215,"timestamp":"2023-01-26 16:00:00-05:00","equity":145712.5,"drawdown":6002.5,"drawdownPct":0.039564314668951654},{"point":216,"timestamp":"2023-02-02 16:00:00-05:00","equity":146732.5,"drawdown":4982.5,"drawdownPct":0.03284118248030847},{"point":217,"timestamp":"2023-02-13 16:00:00-05:00","equity":147202.5,"drawdown":4512.5,"drawdownPct":0.029743268628678772},{"point":218,"timestamp":"2023-02-27 16:00:00-05:00","equity":146685.0,"drawdown":5030.0,"drawdownPct":0.03315426951850509},{"point":219,"timestamp":"2023-03-14 16:00:00-04:00","equity":147780.0,"drawdown":3935.0,"drawdownPct":0.02593678937481462},{"point":220,"timestamp":"2023-03-30 16:00:00-04:00","equity":147675.0,"drawdown":4040.0,"drawdownPct":0.02662887651188083},{"point":221,"timestamp":"2023-05-26 16:00:00-04:00","equity":147820.0,"drawdown":3895.0,"drawdownPct":0.02567313713212273},{"point":222,"timestamp":"2023-06-01 16:00:00-04:00","equity":147765.0,"drawdown":3950.0,"drawdownPct":0.026035658965824077},{"point":223,"timestamp":"2023-06-09 16:00:00-04:00","equity":147647.5,"drawdown":4067.5,"drawdownPct":0.026810137428731503},{"point":224,"timestamp":"2023-07-13 16:00:00-04:00","equity":148467.5,"drawdown":3247.5,"drawdownPct":0.02140526645354777},{"point":225,"timestamp":"2023-07-19 16:00:00-04:00","equity":148100.0,"drawdown":3615.0,"drawdownPct":0.023827571433279505},{"point":226,"timestamp":"2023-07-24 16:00:00-04:00","equity":147957.5,"drawdown":3757.5,"drawdownPct":0.02476683254786936},{"point":227,"timestamp":"2023-08-23 16:00:00-04:00","equity":148377.5,"drawdown":3337.5,"drawdownPct":0.02199848399960452},{"point":228,"timestamp":"2023-09-20 16:00:00-04:00","equity":145697.5,"drawdown":6017.5,"drawdownPct":0.03966318425996111},{"point":229,"timestamp":"2023-10-09 16:00:00-04:00","equity":145705.0,"drawdown":6010.0,"drawdownPct":0.03961374946445638},{"point":230,"timestamp":"2023-12-01 16:00:00-05:00","equity":145900.0,"drawdown":5815.0,"drawdownPct":0.03832844478133342},{"point":231,"timestamp":"2023-12-14 16:00:00-05:00","equity":145770.0,"drawdown":5945.0,"drawdownPct":0.039185314570082064},{"point":232,"timestamp":"2023-12-22 16:00:00-05:00","equity":145415.0,"drawdown":6300.0,"drawdownPct":0.04152522822397258},{"point":233,"timestamp":"2024-02-14 16:00:00-05:00","equity":146572.5,"drawdown":5142.5,"drawdownPct":0.03389579145107603},{"point":234,"timestamp":"2024-02-15 16:00:00-05:00","equity":147830.0,"drawdown":3885.0,"drawdownPct":0.025607224071449757},{"point":235,"timestamp":"2024-03-07 16:00:00-05:00","equity":147900.0,"drawdown":3815.0,"drawdownPct":0.02514583264673895},{"point":236,"timestamp":"2024-03-28 16:00:00-04:00","equity":147495.0,"drawdown":4220.0,"drawdownPct":0.027815311603994333},{"point":237,"timestamp":"2024-04-03 16:00:00-04:00","equity":146865.0,"drawdown":4850.0,"drawdownPct":0.03196783442639159},{"point":238,"timestamp":"2024-04-24 16:00:00-04:00","equity":146422.5,"drawdown":5292.5,"drawdownPct":0.03488448736117061},{"point":239,"timestamp":"2024-04-26 16:00:00-04:00","equity":146017.5,"drawdown":5697.5,"drawdownPct":0.037553966318425995},{"point":240,"timestamp":"2024-05-03 16:00:00-04:00","equity":146800.0,"drawdown":4915.0,"drawdownPct":0.03239626932076591},{"point":241,"timestamp":"2024-06-18 16:00:00-04:00","equity":147182.5,"drawdown":4532.5,"drawdownPct":0.029875094750024717},{"point":242,"timestamp":"2024-07-08 16:00:00-04:00","equity":147127.5,"drawdown":4587.5,"drawdownPct":0.030237616583726066},{"point":243,"timestamp":"2024-07-12 16:00:00-04:00","equity":145647.5,"drawdown":6067.5,"drawdownPct":0.03999274956332597},{"point":244,"timestamp":"2024-07-22 16:00:00-04:00","equity":145655.0,"drawdown":6060.0,"drawdownPct":0.039943314767821245},{"point":245,"timestamp":"2024-08-14 16:00:00-04:00","equity":146162.5,"drawdown":5552.5,"drawdownPct":0.0365982269386679},{"point":246,"timestamp":"2024-10-09 16:00:00-04:00","equity":146482.5,"drawdown":5232.5,"drawdownPct":0.03448900899713278},{"point":247,"timestamp":"2024-10-11 16:00:00-04:00","equity":146815.0,"drawdown":4900.0,"drawdownPct":0.032297399729756454},{"point":248,"timestamp":"2024-11-07 16:00:00-05:00","equity":147160.0,"drawdown":4555.0,"drawdownPct":0.030023399136538904},{"point":249,"timestamp":"2024-11-25 16:00:00-05:00","equity":147392.5,"drawdown":4322.5,"drawdownPct":0.028490920475892297},{"point":250,"timestamp":"2024-12-04 16:00:00-05:00","equity":148337.5,"drawdown":3377.5,"drawdownPct":0.02226213624229641},{"point":251,"timestamp":"2024-12-18 15:45:00-05:00","equity":138320.0,"drawdown":13395.0,"drawdownPct":0.08829054477144646},{"point":252,"timestamp":"2025-01-21 16:00:00-05:00","equity":139590.0,"drawdown":12125.0,"drawdownPct":0.07991958606597897},{"point":253,"timestamp":"2025-02-26 16:00:00-05:00","equity":137472.5,"drawdown":14242.5,"drawdownPct":0.09387667666348087},{"point":254,"timestamp":"2025-04-23 16:00:00-04:00","equity":136917.5,"drawdown":14797.5,"drawdownPct":0.09753485153083083},{"point":255,"timestamp":"2025-04-25 16:00:00-04:00","equity":137275.0,"drawdown":14440.0,"drawdownPct":0.09517845961177207},{"point":256,"timestamp":"2025-04-29 16:00:00-04:00","equity":136982.5,"drawdown":14732.5,"drawdownPct":0.09710641663645651},{"point":257,"timestamp":"2025-07-23 16:00:00-04:00","equity":138702.5,"drawdown":13012.5,"drawdownPct":0.08576937020070527},{"point":258,"timestamp":"2025-07-31 16:00:00-04:00","equity":135222.5,"drawdown":16492.5,"drawdownPct":0.10870711531489964},{"point":259,"timestamp":"2025-09-03 16:00:00-04:00","equity":135842.5,"drawdown":15872.5,"drawdownPct":0.10462050555317536},{"point":260,"timestamp":"2025-10-14 16:00:00-04:00","equity":134362.5,"drawdown":17352.5,"drawdownPct":0.11437563853277527},{"point":261,"timestamp":"2025-10-28 16:00:00-04:00","equity":134795.0,"drawdown":16920.0,"drawdownPct":0.11152489865866921},{"point":262,"timestamp":"2025-12-22 16:00:00-05:00","equity":134790.0,"drawdown":16925.0,"drawdownPct":0.1115578551890057},{"point":263,"timestamp":"2026-01-15 16:00:00-05:00","equity":133885.0,"drawdown":17830.0,"drawdownPct":0.1175229871799097},{"point":264,"timestamp":"2026-01-27 16:00:00-05:00","equity":133755.0,"drawdown":17960.0,"drawdownPct":0.11837985696865834},{"point":265,"timestamp":"2026-03-17 16:00:00-04:00","equity":133500.0,"drawdown":18215.0,"drawdownPct":0.12006064001581913},{"point":266,"timestamp":"2026-03-25 16:00:00-04:00","equity":132732.5,"drawdown":18982.5,"drawdownPct":0.12511946742246977},{"point":267,"timestamp":"2026-05-22 16:00:00-04:00","equity":132690.0,"drawdown":19025.0,"drawdownPct":0.1253995979303299},{"point":268,"timestamp":"2026-05-26 16:00:00-04:00","equity":133197.5,"drawdown":18517.5,"drawdownPct":0.12205451010117654}],"summary":{"trades":268,"start":150000.0,"end":133197.5,"net":-16802.5,"maxDrawdown":19025.0,"maxDrawdownPct":0.1253995979303299,"winRate":0.458955223880597,"profitFactor":0.753448275862069,"mar":-0.06143304805890755,"note":"268 closed trades from 2011-01-14 15:30:00-05:00 to 2026-05-26 16:00:00-04:00."}}]}</script>
+  <script>
+    const payload = JSON.parse(document.getElementById("equity-data").textContent);
+    const runs = payload.runs;
+    const select = document.getElementById("runSelect");
+    const control = document.getElementById("runControl");
+    const chart = document.getElementById("chart");
+    const ctx = chart.getContext("2d");
+    const ids = runs.map((run) => run.id);
+    const chartMargin = { left: 72, right: 20, top: 22, bottom: 42 };
+    let hoverIndex = null;
+
+    for (const run of runs) {
+      const option = document.createElement("option");
+      option.value = run.id;
+      option.textContent = run.label;
+      select.appendChild(option);
+    }
+    if (runs.length <= 1) {
+      control.style.display = "none";
+    }
+
+    const money = new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency: "USD",
+      maximumFractionDigits: 0
+    });
+    const percent = new Intl.NumberFormat("en-US", {
+      style: "percent",
+      maximumFractionDigits: 2
+    });
+
+    function activeRun() {
+      return runs.find((item) => item.id === select.value) || runs[0];
+    }
+
+    function formatRatio(value) {
+      if (value === "Infinity") return "∞";
+      if (value === "-Infinity") return "-∞";
+      return Number(value || 0).toFixed(2);
+    }
+
+    function resizeCanvas() {
+      const rect = chart.getBoundingClientRect();
+      const scale = window.devicePixelRatio || 1;
+      chart.width = Math.max(1, Math.floor(rect.width * scale));
+      chart.height = Math.max(1, Math.floor(rect.height * scale));
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
+    }
+
+    function draw() {
+      const run = activeRun();
+      if (!run) return;
+      resizeCanvas();
+      const rect = chart.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      ctx.clearRect(0, 0, width, height);
+
+      document.getElementById("trades").textContent = run.summary.trades.toLocaleString("en-US");
+      document.getElementById("start").textContent = money.format(run.summary.start);
+      document.getElementById("end").textContent = money.format(run.summary.end);
+      document.getElementById("net").textContent = money.format(run.summary.net);
+      document.getElementById("drawdown").textContent =
+        `${money.format(run.summary.maxDrawdown)} (${percent.format(run.summary.maxDrawdownPct)})`;
+      document.getElementById("winRate").textContent = percent.format(run.summary.winRate);
+      document.getElementById("profitFactor").textContent = formatRatio(run.summary.profitFactor);
+      document.getElementById("mar").textContent = formatRatio(run.summary.mar);
+      document.getElementById("note").textContent = run.summary.note;
+
+      const data = run.points;
+      if (!data.length) return;
+      const margin = chartMargin;
+      const plotW = Math.max(1, width - margin.left - margin.right);
+      const plotH = Math.max(1, height - margin.top - margin.bottom);
+      const values = data.map((point) => point.equity);
+      let minY = Math.min(...values);
+      let maxY = Math.max(...values);
+      if (minY === maxY) {
+        minY -= Math.max(100, Math.abs(minY) * 0.01);
+        maxY += Math.max(100, Math.abs(maxY) * 0.01);
+      }
+      const pad = (maxY - minY) * 0.08;
+      minY -= pad;
+      maxY += pad;
+
+      function xAt(index) {
+        return margin.left + (data.length === 1 ? 0 : (index / (data.length - 1)) * plotW);
+      }
+      function yAt(value) {
+        return margin.top + ((maxY - value) / (maxY - minY)) * plotH;
+      }
+
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#e5e7eb";
+      ctx.fillStyle = "#697386";
+      ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      ctx.textAlign = "right";
+      ctx.textBaseline = "middle";
+      for (let i = 0; i <= 4; i++) {
+        const value = minY + ((maxY - minY) * i) / 4;
+        const y = yAt(value);
+        ctx.beginPath();
+        ctx.moveTo(margin.left, y);
+        ctx.lineTo(width - margin.right, y);
+        ctx.stroke();
+        ctx.fillText(money.format(value), margin.left - 10, y);
+      }
+
+      const startY = yAt(run.summary.start);
+      ctx.strokeStyle = "#94a3b8";
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(margin.left, startY);
+      ctx.lineTo(width - margin.right, startY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      const gradient = ctx.createLinearGradient(0, margin.top, 0, height - margin.bottom);
+      gradient.addColorStop(0, "rgba(37, 99, 235, 0.16)");
+      gradient.addColorStop(1, "rgba(37, 99, 235, 0.00)");
+      ctx.beginPath();
+      data.forEach((point, index) => {
+        const x = xAt(index);
+        const y = yAt(point.equity);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.lineTo(xAt(data.length - 1), height - margin.bottom);
+      ctx.lineTo(xAt(0), height - margin.bottom);
+      ctx.closePath();
+      ctx.fillStyle = gradient;
+      ctx.fill();
+
+      ctx.beginPath();
+      data.forEach((point, index) => {
+        const x = xAt(index);
+        const y = yAt(point.equity);
+        if (index === 0) ctx.moveTo(x, y);
+        else ctx.lineTo(x, y);
+      });
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 2.4;
+      ctx.stroke();
+
+      const end = data[data.length - 1];
+      ctx.fillStyle = end.equity >= run.summary.start ? "#16a34a" : "#dc2626";
+      ctx.beginPath();
+      ctx.arc(xAt(data.length - 1), yAt(end.equity), 4, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.fillStyle = "#697386";
+      ctx.textBaseline = "top";
+      ctx.textAlign = "left";
+      ctx.fillText(data[0].timestamp || "start", margin.left, height - margin.bottom + 14);
+      ctx.textAlign = "right";
+      ctx.fillText(end.timestamp || `trade ${end.point}`, width - margin.right, height - margin.bottom + 14);
+
+      if (hoverIndex !== null) {
+        const index = Math.max(0, Math.min(data.length - 1, hoverIndex));
+        const point = data[index];
+        const hoverX = xAt(index);
+        const hoverY = yAt(point.equity);
+        drawHoverMarker(point, hoverX, hoverY, margin, width, height);
+      }
+    }
+
+    function drawHoverMarker(point, x, y, margin, width, height) {
+      ctx.save();
+      ctx.strokeStyle = "rgba(23, 32, 42, 0.35)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(x, margin.top);
+      ctx.lineTo(x, height - margin.bottom);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      ctx.fillStyle = "#ffffff";
+      ctx.strokeStyle = "#2563eb";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.arc(x, y, 4.5, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+
+      const rows = [
+        ["Date", point.timestamp || `trade ${point.point}`],
+        ["Net liq", money.format(point.equity)],
+        ["Curr DD", percent.format(point.drawdownPct || 0)]
+      ];
+      drawTooltip(rows, x, y, margin, width, height);
+      ctx.restore();
+    }
+
+    function drawTooltip(rows, x, y, margin, width, height) {
+      const padX = 10;
+      const padY = 8;
+      const lineHeight = 18;
+      const gap = 12;
+      ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      const labelWidth = Math.max(...rows.map((row) => ctx.measureText(row[0]).width));
+      ctx.font = "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      const valueWidth = Math.max(...rows.map((row) => ctx.measureText(row[1]).width));
+      const boxWidth = Math.ceil(labelWidth + gap + valueWidth + padX * 2);
+      const boxHeight = padY * 2 + lineHeight * rows.length;
+      let boxX = x + 12;
+      let boxY = y - boxHeight - 12;
+      if (boxX + boxWidth > width - margin.right) boxX = x - boxWidth - 12;
+      if (boxX < margin.left) boxX = margin.left;
+      if (boxY < margin.top) boxY = y + 12;
+      if (boxY + boxHeight > height - margin.bottom) boxY = height - margin.bottom - boxHeight;
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.96)";
+      ctx.strokeStyle = "#d5dae3";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.rect(boxX, boxY, boxWidth, boxHeight);
+      ctx.fill();
+      ctx.stroke();
+
+      rows.forEach((row, index) => {
+        const textY = boxY + padY + index * lineHeight + lineHeight / 2;
+        ctx.textBaseline = "middle";
+        ctx.textAlign = "left";
+        ctx.font = "12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.fillStyle = "#697386";
+        ctx.fillText(row[0], boxX + padX, textY);
+        ctx.font = "600 12px -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+        ctx.fillStyle = "#17202a";
+        ctx.fillText(row[1], boxX + padX + labelWidth + gap, textY);
+      });
+    }
+
+    function updateHover(event) {
+      const run = activeRun();
+      const data = run ? run.points : [];
+      if (!data.length) {
+        clearHover();
+        return;
+      }
+      const rect = chart.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+      const x = event.clientX - rect.left;
+      const y = event.clientY - rect.top;
+      const margin = chartMargin;
+      if (
+        x < margin.left ||
+        x > width - margin.right ||
+        y < margin.top ||
+        y > height - margin.bottom
+      ) {
+        clearHover();
+        return;
+      }
+      const plotW = Math.max(1, width - margin.left - margin.right);
+      const rawIndex = data.length === 1 ? 0 : ((x - margin.left) / plotW) * (data.length - 1);
+      const nextIndex = Math.max(0, Math.min(data.length - 1, Math.round(rawIndex)));
+      if (hoverIndex !== nextIndex) {
+        hoverIndex = nextIndex;
+        draw();
+      }
+    }
+
+    function clearHover() {
+      if (hoverIndex !== null) {
+        hoverIndex = null;
+        draw();
+      }
+    }
+
+    select.addEventListener("change", () => {
+      hoverIndex = null;
+      draw();
+    });
+    chart.addEventListener("mousemove", updateHover);
+    chart.addEventListener("mouseleave", clearHover);
+    window.addEventListener("resize", draw);
+    select.value = ids[0] || "";
+    draw();
+  </script>
+</body>
+</html>

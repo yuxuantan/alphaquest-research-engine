@@ -19,11 +19,12 @@ from propstack.research.campaign_stages import (
     _markdown_summary,
     _run_stage,
     _stage_config,
-    _write_config_snapshot,
 )
+from propstack.utils.config import VARIANT_TEST_SUMMARY_FILENAME, ensure_variant_metadata, update_runs_index
+from propstack.utils.hashing import file_sha256
 
 
-REPORT_ROOT = Path("data/reports/campaigns")
+REPORT_ROOT = Path("backtest-campaigns")
 ARCHIVE_DIR_NAME = "archive_not_likely_20260614"
 DEFAULT_ARTIFACT_STEM = Path("research_artifacts/acceptance_oos_shortlist_passes_20260615")
 
@@ -54,7 +55,7 @@ def main() -> None:
 
 def build_plan() -> list[dict[str, Any]]:
     rows: list[dict[str, Any]] = []
-    for summary_path in sorted(REPORT_ROOT.rglob("campaign_tests/campaign_test_summary.json")):
+    for summary_path in sorted(REPORT_ROOT.rglob("campaign_test_summary.json")):
         if ARCHIVE_DIR_NAME in summary_path.parts:
             continue
         campaign_tests_dir = summary_path.parent
@@ -115,8 +116,10 @@ def run_acceptance(row: dict[str, Any]) -> None:
 
     campaign_tests_dir = Path(row["campaign_tests_dir"])
     summary_path = campaign_tests_dir / "campaign_test_summary.json"
+    local_config = campaign_tests_dir / "config.yaml"
     try:
         cfg = canonicalize_campaign_config(load_yaml(source), include_acceptance=True)
+        variant_metadata = ensure_variant_metadata(cfg, root_path=campaign_tests_dir)
         campaign_tests = cfg.get("campaign_tests") or {}
         stage_cfg = _stage_config(campaign_tests, ACCEPTANCE_STAGE)
         stage_dir = campaign_tests_dir / ACCEPTANCE_STAGE
@@ -134,21 +137,28 @@ def run_acceptance(row: dict[str, Any]) -> None:
             {},
         )
         write_json(stage_dir / "stage_result.json", result)
-        _write_config_snapshot(campaign_tests_dir / "config_snapshot.yaml", cfg)
+        if source.resolve() != local_config.resolve():
+            shutil.copy2(source, local_config)
 
         summary = read_json(summary_path)
         stages = [stage for stage in summary.get("stages", []) if stage.get("stage") != ACCEPTANCE_STAGE]
         stages.append(result)
-        summary["config_path"] = str(source)
-        summary["created_at"] = datetime.now().isoformat(timespec="seconds")
-        summary["acceptance_oos_completed_at"] = datetime.now().isoformat(timespec="seconds")
+        summary["config_path"] = str(local_config)
+        summary["source_config_path"] = str(source)
+        completed_at = datetime.now().isoformat(timespec="seconds")
+        summary["config_hash"] = file_sha256(local_config)
+        summary["variant_metadata"] = variant_metadata
+        summary["updated_at"] = completed_at
+        summary["acceptance_oos_completed_at"] = completed_at
         summary["stages"] = _ordered_stages(stages)
         summary["halted"] = False
         summary["passed"] = all(
             stage.get("passed") or stage.get("status") == "skipped" for stage in summary["stages"]
         ) and any(stage.get("status") == "passed" for stage in summary["stages"])
         write_json(summary_path, summary)
+        write_json(campaign_tests_dir / VARIANT_TEST_SUMMARY_FILENAME, summary)
         (campaign_tests_dir / "campaign_test_summary.md").write_text(_markdown_summary(summary), encoding="utf-8")
+        update_runs_index(campaign_tests_dir)
 
         metrics = result.get("metrics") or {}
         row["status"] = "passed" if result.get("passed") else "failed"
@@ -224,7 +234,7 @@ def source_config_for(summary: dict, campaign_tests_dir: Path) -> Path | None:
     config_path = summary.get("config_path") if summary else None
     if config_path and Path(config_path).is_file():
         return Path(config_path)
-    snapshot = campaign_tests_dir / "config_snapshot.yaml"
+    snapshot = campaign_tests_dir / "config.yaml"
     if snapshot.is_file():
         return snapshot
     return None

@@ -99,6 +99,24 @@ def size_position(
     )
 
 
+def tick_value_from_core(core_config: dict, tick_size: float | None = None) -> float:
+    if tick_size is None:
+        tick_size = float(core_config.get("tick_size", 0.25))
+    else:
+        tick_size = float(tick_size)
+    if tick_size <= 0:
+        raise ValueError("core.tick_size must be greater than 0.")
+    if core_config.get("tick_value") is not None:
+        tick_value = float(core_config["tick_value"])
+    elif core_config.get("point_value") is not None:
+        tick_value = float(core_config["point_value"]) * tick_size
+    else:
+        tick_value = 12.5
+    if tick_value <= 0:
+        raise ValueError("core.tick_value or core.point_value must imply a positive tick value.")
+    return tick_value
+
+
 def _risk_pct(sizing: dict) -> float:
     if "risk_pct" in sizing:
         risk_pct = float(sizing["risk_pct"])

@@ -11,7 +11,7 @@ from typing import Any
 from propstack.research.campaign_stages import run_campaign_stage_tests
 
 
-REPORT_ROOT = Path("data/reports/campaigns")
+REPORT_ROOT = Path("backtest-campaigns")
 ARCHIVE_ROOT = REPORT_ROOT / "archive_not_likely_20260614"
 LEGACY_ARCHIVE_ROOT = REPORT_ROOT / "archive_not_close_20260614"
 DEFAULT_ARTIFACT_STEM = Path("research_artifacts/campaign_benchmark_likely_refresh_20260614")
@@ -98,7 +98,8 @@ def migrate_legacy_archive(archive_root: Path) -> None:
 
 def build_plan(archive_root: Path) -> list[dict[str, Any]]:
     rows = []
-    for campaign_tests_dir in sorted(REPORT_ROOT.rglob("campaign_tests")):
+    for summary_path in sorted(REPORT_ROOT.rglob("campaign_test_summary.json")):
+        campaign_tests_dir = summary_path.parent
         if _is_archive_path(campaign_tests_dir):
             rows.append(_row_for_archived(campaign_tests_dir))
             continue
@@ -108,7 +109,7 @@ def build_plan(archive_root: Path) -> list[dict[str, Any]]:
         rows.append(
             _base_row(
                 campaign_tests_dir=campaign_tests_dir,
-                archive_path=archive_root / campaign_tests_dir.parent.relative_to(REPORT_ROOT),
+                archive_path=archive_root / campaign_tests_dir.relative_to(REPORT_ROOT),
                 source_config=source_config,
                 summary=summary,
                 decision=decision,
@@ -124,7 +125,7 @@ def _row_for_archived(campaign_tests_dir: Path) -> dict[str, Any]:
     summary = read_summary(campaign_tests_dir)
     return _base_row(
         campaign_tests_dir=campaign_tests_dir,
-        archive_path=campaign_tests_dir.parent,
+        archive_path=campaign_tests_dir,
         source_config=source_config_for(summary, campaign_tests_dir),
         summary=summary,
         decision="archive_not_likely",
@@ -147,7 +148,7 @@ def _base_row(
 ) -> dict[str, Any]:
     return {
         "campaign_tests_dir": str(campaign_tests_dir),
-        "variant_root": str(campaign_tests_dir.parent),
+        "variant_root": str(campaign_tests_dir),
         "archive_path": str(archive_path),
         "source_config": str(source_config) if source_config else "",
         "campaign_id": summary.get("campaign_id"),
@@ -208,7 +209,7 @@ def source_config_for(summary: dict, campaign_tests_dir: Path) -> Path | None:
     config_path = summary.get("config_path") if summary else None
     if config_path and Path(config_path).is_file():
         return Path(config_path)
-    snapshot = campaign_tests_dir / "config_snapshot.yaml"
+    snapshot = campaign_tests_dir / "config.yaml"
     if snapshot.is_file():
         return snapshot
     return None

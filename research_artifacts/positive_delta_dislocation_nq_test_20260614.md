@@ -50,7 +50,7 @@ The cache builder was run with provisional output names, then the artifacts were
 ```bash
 PYTHONPATH=src python3 tools/build_sierra_trade_orderflow_cache.py \
   --raw-dir data/raw/NQ/sierra-nq-trades \
-  --roll-calendar configs/data/ES/motivewave_rithmic_roll_calendar.csv \
+  --roll-calendar data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv \
   --root-symbol NQ \
   --output-csv data/cache/orderflow/nq_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.csv \
   --output-parquet data/cache/orderflow/nq_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet \

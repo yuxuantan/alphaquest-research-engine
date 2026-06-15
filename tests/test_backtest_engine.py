@@ -1,6 +1,7 @@
 import pandas as pd
 
 from propstack.backtest.engine import BacktestEngine
+from propstack.backtest.equity_report import equity_curve_frame
 from propstack.backtest.fills import stop_target_hit
 from propstack.backtest.metrics import benchmark, calculate_metrics
 from propstack.data.clean import clean_data
@@ -57,6 +58,152 @@ def test_next_bar_entry_and_costs():
     assert "08:32:00" in str(first["entry_timestamp"])
     assert first["commission"] == 5.0
     assert first["slippage_cost"] == 25.0
+
+
+def test_bar_close_signal_enters_next_bar_open():
+    cfg = _calendar_apex_cfg(signal_time="09:31:00")
+    cfg["apex_rules"]["enabled"] = False
+    cfg["strategy"]["flatten_time"] = "09:35:00"
+
+    result = BacktestEngine(cfg).run(_calendar_rows("2024-01-03 09:30", 6))
+    trades = result["trades"]
+
+    assert len(trades) == 1
+    first = trades.iloc[0]
+    assert first["calendar_signal_timestamp"] == pd.Timestamp("2024-01-03 09:31", tz="America/New_York")
+    assert first["entry_timestamp"] == pd.Timestamp("2024-01-03 09:31", tz="America/New_York")
+
+
+def test_same_bar_stop_target_conflict_exits_at_stop_without_detail_data():
+    cfg = _calendar_apex_cfg(signal_time="09:31:00")
+    cfg["apex_rules"]["enabled"] = False
+    cfg["strategy"]["flatten_time"] = "09:35:00"
+    cfg["strategy"]["tp"] = {"module": "fixed_r", "params": {"target_r_multiple": 1.0}}
+    cfg["strategy"]["sl"] = {"module": "percent_from_entry", "params": {"stop_pct": 0.01}}
+    cfg["core"]["slippage_ticks"] = 0
+    rows = _calendar_rows("2024-01-03 09:30", 4)
+    rows.loc[1, ["open", "high", "low", "close"]] = [100.0, 101.50, 98.50, 100.0]
+
+    result = BacktestEngine(cfg).run(rows)
+    trades = result["trades"]
+
+    assert len(trades) == 1
+    first = trades.iloc[0]
+    assert first["entry_price"] == 100.0
+    assert first["stop_price"] == 99.0
+    assert first["target_price"] == 101.0
+    assert first["exit_reason"] == "stop"
+    assert first["exit_price"] == 99.0
+    assert result["diagnostics"]["stop_target_conflicts"] == 1
+    assert result["diagnostics"]["detail_conflicts_unresolved"] == 1
+
+
+def test_point_value_derives_tick_value_when_tick_value_absent():
+    cfg = _calendar_apex_cfg(signal_time="09:31:00")
+    cfg["apex_rules"]["enabled"] = False
+    cfg["strategy"]["flatten_time"] = "09:32:00"
+    cfg["core"]["tick_size"] = 0.5
+    cfg["core"]["point_value"] = 20.0
+    cfg["core"].pop("tick_value")
+    rows = _calendar_rows("2024-01-03 09:30", 4)
+    rows.loc[1, "close"] = 101.0
+
+    trades = BacktestEngine(cfg).run(rows)["trades"]
+
+    assert len(trades) == 1
+    assert trades.iloc[0]["net_pnl"] == 20.0
+
+
+def test_connors_rsi2_vwap_filter_warns_when_vwap_missing():
+    cfg = {
+        "strategy": {
+            "entry": {
+                "module": "connors_rsi2_mean_reversion",
+                "params": {
+                    "setup_mode": "long_pullback_uptrend",
+                    "trend_filter": "ma_and_vwap",
+                    "rsi_period": 2,
+                    "moving_average_period": 3,
+                    "bar_interval_minutes": 5,
+                    "min_vwap_extension_ticks": 1,
+                    "allow_long": True,
+                    "allow_short": False,
+                },
+            },
+            "sl": {"module": "percent_from_entry", "params": {"stop_pct": 0.01}},
+            "tp": {"module": "fixed_r", "params": {"target_r_multiple": 1.0}},
+            "flatten_time": "15:55:00",
+        },
+        "core": {
+            "tick_size": 0.25,
+            "tick_value": 12.5,
+            "commission_per_contract": 0.0,
+            "slippage_ticks": 0,
+        },
+    }
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2024-01-02 09:30", periods=8, freq="5min", tz="America/New_York"),
+            "open": [100.0] * 8,
+            "high": [101.0] * 8,
+            "low": [99.0] * 8,
+            "close": [100.0, 99.0, 98.5, 99.5, 100.0, 99.0, 98.0, 98.5],
+            "volume": [100] * 8,
+            "is_rth": [True] * 8,
+            "session_date": [pd.Timestamp("2024-01-02").date()] * 8,
+        }
+    )
+
+    diagnostics = BacktestEngine(cfg).run(rows)["diagnostics"]
+
+    assert (
+        "Entry module connors_rsi2_mean_reversion is missing optional/strategy feature column(s): ['vwap']."
+        in diagnostics["preflight"]["warnings"]
+    )
+
+
+def test_overnight_intraday_reversal_warns_when_prior_close_missing():
+    cfg = {
+        "strategy": {
+            "entry": {
+                "module": "overnight_intraday_reversal",
+                "params": {
+                    "entry_time": "09:35:00",
+                    "confirm_window_minutes": 5,
+                    "bar_interval_minutes": 5,
+                    "min_abs_overnight_bps": 5,
+                },
+            },
+            "sl": {"module": "percent_from_entry", "params": {"stop_pct": 0.01}},
+            "tp": {"module": "fixed_r", "params": {"target_r_multiple": 1.0}},
+            "flatten_time": "15:55:00",
+        },
+        "core": {
+            "tick_size": 0.25,
+            "tick_value": 12.5,
+            "commission_per_contract": 0.0,
+            "slippage_ticks": 0,
+        },
+    }
+    rows = pd.DataFrame(
+        {
+            "timestamp": pd.date_range("2024-01-02 09:30", periods=3, freq="5min", tz="America/New_York"),
+            "open": [100.0, 100.5, 100.75],
+            "high": [101.0, 101.0, 101.0],
+            "low": [99.0, 100.0, 100.5],
+            "close": [100.5, 100.75, 100.8],
+            "volume": [100] * 3,
+            "is_rth": [True] * 3,
+            "session_date": [pd.Timestamp("2024-01-02").date()] * 3,
+        }
+    )
+
+    diagnostics = BacktestEngine(cfg).run(rows)["diagnostics"]
+
+    assert (
+        "Entry module overnight_intraday_reversal is missing optional/strategy feature column(s): ['prev_rth_close']."
+        in diagnostics["preflight"]["warnings"]
+    )
 
 
 def test_opening_range_trade_log_uses_strategy_specific_report_columns():
@@ -393,6 +540,18 @@ def test_apex_rejects_pending_entry_after_latest_entry_time():
     assert result["metrics"]["apex_rule_violations"] == 0
 
 
+def test_apex_allows_late_entry_only_when_config_allows_it():
+    cfg = _calendar_apex_cfg(signal_time="16:46:00")
+    cfg["apex_rules"]["reject_if_entry_after_latest_entry_time"] = False
+
+    result = BacktestEngine(cfg).run(_calendar_rows("2024-01-03 16:45", 16))
+    trades = result["trades"]
+
+    assert len(trades) == 1
+    assert trades.iloc[0]["entry_timestamp"] == pd.Timestamp("2024-01-03 16:46", tz="America/New_York")
+    assert result["diagnostics"]["rejects"]["apex_latest_entry_time"] == 0
+
+
 def test_apex_cancels_pending_next_bar_entry_across_market_gap_before_deadline():
     cfg = _calendar_apex_cfg(signal_time="15:30:00")
     rows = []
@@ -519,6 +678,19 @@ def test_benchmark_treats_max_daily_loss_as_advisory():
 
     assert passed is True
     assert "max_daily_loss" not in reason
+
+
+def test_trade_log_reconciles_with_equity_curve():
+    result = BacktestEngine(BASE_CFG).run(_features())
+    trades = result["trades"]
+    initial_balance = float(BASE_CFG["core"].get("initial_balance", 0.0))
+
+    curve = equity_curve_frame(trades, initial_balance=initial_balance)
+
+    assert len(curve) == len(trades) + 1
+    assert curve.iloc[-1]["cumulative_net_pnl"] == trades["net_pnl"].sum()
+    assert curve.iloc[-1]["equity"] == initial_balance + trades["net_pnl"].sum()
+    assert curve.iloc[-1]["trade_id"] == trades.iloc[-1]["trade_id"]
 
 
 def test_event_no_trade_window_rejects_next_bar_entry_from_csv(tmp_path):

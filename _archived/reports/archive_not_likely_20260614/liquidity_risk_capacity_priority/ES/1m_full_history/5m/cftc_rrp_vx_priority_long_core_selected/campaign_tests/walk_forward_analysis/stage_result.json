@@ -1,0 +1,173 @@
+{
+  "stage": "walk_forward_analysis",
+  "label": "Walk Forward Analysis (WFA)",
+  "status": "failed",
+  "passed": false,
+  "started_at": "2026-06-09T07:26:40",
+  "completed_at": "2026-06-09T07:31:38",
+  "duration_seconds": 297.814821,
+  "criteria": [
+    {
+      "metric": "summary.early_exit",
+      "actual": true,
+      "expected": {
+        "equals": false
+      },
+      "passed": false
+    },
+    {
+      "metric": "summary.windows",
+      "actual": 1,
+      "expected": {
+        "min": 10
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.profit_factor",
+      "actual": 0.0,
+      "expected": {
+        "min": 1.5
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.mar",
+      "actual": 0.0,
+      "expected": {
+        "min": 1.5,
+        "dynamic_min": "length_adjusted_mar",
+        "span_metric": "summary.oos_evaluation_years",
+        "span_years": 0.5010266940451745
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.expectancy_r",
+      "actual": 0.0,
+      "expected": {
+        "min": 0.2
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.total_trades",
+      "actual": 0,
+      "expected": {
+        "min": 500
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.win_rate",
+      "actual": 0.0,
+      "expected": {
+        "min": 0.45
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "windows": 1,
+    "objective": "MAR",
+    "window_mode": "unanchored",
+    "train_months": 36,
+    "test_months": 6,
+    "step_months": 6,
+    "parallel": {
+      "enabled": true,
+      "scope": "grid",
+      "workers": 6
+    },
+    "selection_filter": {
+      "min_trades_per_year": 60
+    },
+    "early_exit_min_train_profit_factor": 1.0,
+    "early_exit": true,
+    "passing_windows": 0,
+    "profitable_windows": 0,
+    "profitable_window_rate": 0.0,
+    "meets_profitable_window_benchmark": false,
+    "median_test_net_profit": 0.0,
+    "median_test_mar": 0.0,
+    "median_test_cagr": 0.0,
+    "median_test_max_drawdown_pct": 0.0,
+    "train_grid_reports_retained": true,
+    "train_grid_report_files": [],
+    "stitched_oos_trades": 0,
+    "stitched_oos_metrics": {
+      "total_trades": 0,
+      "trades_per_year": 0.0,
+      "net_profit": 0.0,
+      "profit_factor": 0.0,
+      "expectancy_r": 0.0,
+      "max_drawdown": 0.0,
+      "max_drawdown_pct": 0.0,
+      "cagr": 0.0,
+      "mar": 0.0,
+      "worst_day": 0.0,
+      "best_day": 0.0,
+      "best_day_concentration": 0.0,
+      "max_consecutive_losses": 0,
+      "positive_month_rate": 0.0,
+      "win_rate": 0.0,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0
+    },
+    "oos_evaluation_years": 0.5010266940451745,
+    "required_oos_mar": 1.5,
+    "incubation_selected_params": {},
+    "equity_curve_csv": "data/reports/campaigns/liquidity_risk_capacity_priority/ES/1m_full_history/5m/cftc_rrp_vx_priority_long_core_selected/campaign_tests/walk_forward_analysis/equity_curve.csv",
+    "equity_curve_html": "data/reports/campaigns/liquidity_risk_capacity_priority/ES/1m_full_history/5m/cftc_rrp_vx_priority_long_core_selected/campaign_tests/walk_forward_analysis/equity_curve.html",
+    "equity_curve_points": 1
+  },
+  "stitched_oos_metrics": {
+    "total_trades": 0,
+    "trades_per_year": 0.0,
+    "net_profit": 0.0,
+    "profit_factor": 0.0,
+    "expectancy_r": 0.0,
+    "max_drawdown": 0.0,
+    "max_drawdown_pct": 0.0,
+    "cagr": 0.0,
+    "mar": 0.0,
+    "worst_day": 0.0,
+    "best_day": 0.0,
+    "best_day_concentration": 0.0,
+    "max_consecutive_losses": 0,
+    "positive_month_rate": 0.0,
+    "win_rate": 0.0,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "incubation_selected_params": {},
+  "data_quality": {
+    "rows": 5326357,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 3981,
+    "first_timestamp": "2010-06-06 18:00:00-04:00",
+    "last_timestamp": "2026-05-31 19:19:00-04:00",
+    "roll_boundary_sessions_skipped": 192,
+    "strategy_rows": 1071243,
+    "timeframe": "5m",
+    "timeframe_minutes": 5,
+    "source_timeframe": "1m"
+  },
+  "input_hash": "e7737bfcedc7f6c33e64385344950439e49c9ebbf4c480d1e6f542814490be63",
+  "artifacts": [
+    "data/reports/campaigns/liquidity_risk_capacity_priority/ES/1m_full_history/5m/cftc_rrp_vx_priority_long_core_selected/campaign_tests/walk_forward_analysis/equity_curve.csv",
+    "data/reports/campaigns/liquidity_risk_capacity_priority/ES/1m_full_history/5m/cftc_rrp_vx_priority_long_core_selected/campaign_tests/walk_forward_analysis/equity_curve.html",
+    "data/reports/campaigns/liquidity_risk_capacity_priority/ES/1m_full_history/5m/cftc_rrp_vx_priority_long_core_selected/campaign_tests/walk_forward_analysis/wfa_oos_trade_log.csv",
+    "data/reports/campaigns/liquidity_risk_capacity_priority/ES/1m_full_history/5m/cftc_rrp_vx_priority_long_core_selected/campaign_tests/walk_forward_analysis/wfa_results.csv",
+    "data/reports/campaigns/liquidity_risk_capacity_priority/ES/1m_full_history/5m/cftc_rrp_vx_priority_long_core_selected/campaign_tests/walk_forward_analysis/wfa_summary.json"
+  ]
+}

@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.overnight_intraday_reversal import OvernightIntradayReversalEntry
+
+EntryModule = OvernightIntradayReversalEntry

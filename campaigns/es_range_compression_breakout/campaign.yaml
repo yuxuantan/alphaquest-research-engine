@@ -1,0 +1,145 @@
+campaign_name: es_range_compression_breakout
+campaign_id: es_range_compression_breakout
+instrument: ES
+initial_decision: TEST
+reason_for_decision: >
+  Range-compression breakout patterns such as NR4, ID/NR4, and NR7 are
+  documented short-term breakout setups. ES has a long local Sierra RTH cache,
+  allowing a direct ES test without new data pulls. Archived NQ work in this
+  source family is treated only as source context, not as ES acceptance evidence.
+
+edge_hypothesis: >
+  A prior RTH session with compressed range can precede intraday volatility
+  expansion. ES may produce same-session continuation after breaking the prior
+  session or opening-range reference level.
+
+why_it_may_apply_to_es_futures: >
+  ES is a highly liquid equity-index futures contract where volatility can
+  cluster after compression. Breakouts after narrow prior sessions may capture
+  intraday inventory repricing or deferred directional participation while
+  remaining flat before the prop-rule cutoff.
+
+research_sources:
+  - title: Narrow Range Day NR7
+    author: StockCharts ChartSchool
+    year: 2024
+    link_or_doi: https://chartschool.stockcharts.com/table-of-contents/trading-strategies-and-models/trading-strategies/narrow-range-day-nr7
+    expected_mechanism: Narrowest-range sessions can precede expansion and are commonly paired with breakout triggers.
+  - title: Day Trading With Short Term Price Patterns and Opening Range Breakout
+    author: Toby Crabel
+    year: 1990
+    link_or_doi: book_reference
+    expected_mechanism: Opening-range and narrow-range patterns express volatility expansion after compression.
+  - title: Street Smarts
+    author: Linda Bradford Raschke and Laurence A. Connors
+    year: 1995
+    link_or_doi: book_reference
+    expected_mechanism: ID/NR4 patterns combine inside-day compression with short-term breakout follow-through.
+
+behavioural_or_microstructure_rationale: >
+  Narrow prior ranges can indicate a temporary balance of inventory and reduced
+  realized volatility. A later break of a completed reference level can mark the
+  point where resting liquidity and directional participation resolve the range.
+
+expected_failure_modes:
+  - Breakouts are already arbitraged in ES and fail after costs.
+  - The edge is dominated by crisis volatility or a small number of large trend days.
+  - Opening-range variants overtrade noise rather than genuine expansion.
+  - Same-bar OHLC ambiguity converts apparent target hits into pessimistic stop exits.
+  - Compression filters leave too few trades for WFA and acceptance.
+
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  planned_flatten_time: "15:55:00"
+  prop_force_flatten_time: "16:58:30"
+
+data_requirements:
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.validation.json
+
+forbidden_forms_of_lookahead:
+  - Use of current-session high/low before the completed breakout bar.
+  - Use of future session range, final current-session VWAP, or final current-session volume profile.
+  - Entry on the same close that creates a breakout signal.
+  - Parameter changes after any stage result is known.
+
+data_needs:
+  source: local_sierra_rth_bar_cache
+  market_timezone: America/New_York
+  execution_detail: 1-minute OHLCV used for 5-minute fills
+  latest_locked_holdout: final 6 months selected by acceptance_oos_test from configured data
+
+lookahead_risks:
+  prior_session_compression_available_at: next RTH session open after prior RTH high and low are complete
+  opening_range_available_at: only after the configured opening-range window is complete
+  breakout_signal_availability: signal uses a completed 5-minute bar close and must enter at the next bar open
+  risk_control: stop target and flatten rules are predeclared in config
+
+variants:
+  - nr4_prior_session_breakout
+  - id_nr4_prior_session_breakout
+  - nr7_opening_range_30_breakout
+  - nr7_opening_range_15_long_breakout
+  - nr7_opening_range_15_short_breakout
+
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - rescue the same failed variant more than once
+    - core strategy mechanic
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: id_nr4_prior_session_breakout
+      config: campaigns/es_range_compression_breakout/rescue_attempts/parameter_space_rescue_1/id_nr4_prior_session_breakout/config.yaml
+      report: backtest-campaigns/es_range_compression_breakout/id_nr4_prior_session_breakout/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_range_compression_breakout_rescue_attempt_1_20260615.md
+      terminal_stage: limited_monkey_test
+      failure: random-placebo profitable rate 0.2866666666666667 and median net profit -548.75
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: nr4_prior_session_breakout
+      config: campaigns/es_range_compression_breakout/rescue_attempts/parameter_space_rescue_1/nr4_prior_session_breakout/config.yaml
+      report: backtest-campaigns/es_range_compression_breakout/nr4_prior_session_breakout/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.4074074074074074 below required 0.70; zero benchmark-passing combinations; top net 1542.5 with 114 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: nr7_opening_range_15_long_breakout
+      config: campaigns/es_range_compression_breakout/rescue_attempts/parameter_space_rescue_1/nr7_opening_range_15_long_breakout/config.yaml
+      report: backtest-campaigns/es_range_compression_breakout/nr7_opening_range_15_long_breakout/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.4074074074074074 below required 0.70; zero benchmark-passing combinations; top net 1290.0 with 42 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: nr7_opening_range_15_short_breakout
+      config: campaigns/es_range_compression_breakout/rescue_attempts/parameter_space_rescue_1/nr7_opening_range_15_short_breakout/config.yaml
+      report: backtest-campaigns/es_range_compression_breakout/nr7_opening_range_15_short_breakout/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70; zero benchmark-passing combinations; top net -882.5 with 34 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: nr7_opening_range_30_breakout
+      config: campaigns/es_range_compression_breakout/rescue_attempts/parameter_space_rescue_1/nr7_opening_range_30_breakout/config.yaml
+      report: backtest-campaigns/es_range_compression_breakout/nr7_opening_range_30_breakout/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.07407407407407407 below required 0.70; zero benchmark-passing combinations; top net 192.5 with 64 trades

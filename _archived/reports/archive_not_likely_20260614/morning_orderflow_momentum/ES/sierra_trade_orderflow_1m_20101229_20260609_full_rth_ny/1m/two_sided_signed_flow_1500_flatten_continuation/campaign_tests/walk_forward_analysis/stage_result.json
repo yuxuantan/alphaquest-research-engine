@@ -1,0 +1,200 @@
+{
+  "stage": "walk_forward_analysis",
+  "label": "Walk Forward Analysis (WFA)",
+  "status": "failed",
+  "passed": false,
+  "started_at": "2026-06-13T03:55:17",
+  "completed_at": "2026-06-13T04:20:53",
+  "duration_seconds": 1535.513771,
+  "criteria": [
+    {
+      "metric": "summary.early_exit",
+      "actual": false,
+      "expected": {
+        "equals": false
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.windows",
+      "actual": 10,
+      "expected": {
+        "min": 10
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.profit_factor",
+      "actual": 1.3927432512607534,
+      "expected": {
+        "min": 1.4
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.mar",
+      "actual": 0.8382599687953914,
+      "expected": {
+        "min": 0.5
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.expectancy_r",
+      "actual": 0.2582086331915085,
+      "expected": {
+        "min": 0.2
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.total_trades",
+      "actual": 626,
+      "expected": {
+        "min": 500
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "windows": 10,
+    "objective": "MAR",
+    "window_mode": "unanchored",
+    "train_months": 48,
+    "test_months": 12,
+    "step_months": 12,
+    "parallel": {
+      "enabled": true,
+      "scope": "grid",
+      "workers": 8
+    },
+    "selection_filter": {
+      "min_trades_per_year": 50,
+      "min_profit_factor": 1.0
+    },
+    "early_exit_min_train_profit_factor": 1.0,
+    "early_exit_require_train_profitable": true,
+    "early_exit": false,
+    "passing_windows": 0,
+    "profitable_windows": 9,
+    "profitable_window_rate": 0.9,
+    "meets_profitable_window_benchmark": true,
+    "median_test_net_profit": 3788.75,
+    "median_test_mar": 1.4212459568224658,
+    "median_test_cagr": 0.02581461307595656,
+    "median_test_max_drawdown_pct": 0.024496615891481905,
+    "train_grid_reports_retained": true,
+    "train_grid_report_files": [
+      "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_001_train_grid.csv",
+      "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_002_train_grid.csv",
+      "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_003_train_grid.csv",
+      "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_004_train_grid.csv",
+      "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_005_train_grid.csv",
+      "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_006_train_grid.csv",
+      "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_007_train_grid.csv",
+      "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_008_train_grid.csv",
+      "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_009_train_grid.csv",
+      "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_010_train_grid.csv"
+    ],
+    "reused_existing_train_grids": false,
+    "stitched_oos_trades": 626,
+    "stitched_oos_metrics": {
+      "total_trades": 626,
+      "trades_per_year": 62.91811954388748,
+      "net_profit": 52957.5,
+      "profit_factor": 1.3927432512607534,
+      "expectancy_r": 0.2582086331915085,
+      "max_drawdown": 6617.5,
+      "max_drawdown_pct": 0.03680990126547073,
+      "cagr": 0.03085626668615493,
+      "mar": 0.8382599687953914,
+      "worst_day": -642.5,
+      "best_day": 2832.5,
+      "best_day_concentration": 0.05348628617287447,
+      "max_consecutive_losses": 10,
+      "positive_month_rate": 0.5470085470085471,
+      "win_rate": 0.3801916932907348,
+      "average_trade": 84.59664536741214,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0
+    },
+    "oos_evaluation_years": 10.001368925393566,
+    "required_oos_mar": 0.6593718606573377,
+    "incubation_selected_params": {
+      "entry.params.min_signal_return_ticks": 20,
+      "entry.params.min_orderflow_imbalance": 0.03,
+      "entry.params.stop_pct": 0.002,
+      "entry.params.target_r_multiple": 4.0
+    },
+    "equity_curve_csv": "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/equity_curve.csv",
+    "equity_curve_html": "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/equity_curve.html",
+    "equity_curve_points": 627
+  },
+  "stitched_oos_metrics": {
+    "total_trades": 626,
+    "trades_per_year": 62.91811954388748,
+    "net_profit": 52957.5,
+    "profit_factor": 1.3927432512607534,
+    "expectancy_r": 0.2582086331915085,
+    "max_drawdown": 6617.5,
+    "max_drawdown_pct": 0.03680990126547073,
+    "cagr": 0.03085626668615493,
+    "mar": 0.8382599687953914,
+    "worst_day": -642.5,
+    "best_day": 2832.5,
+    "best_day_concentration": 0.05348628617287447,
+    "max_consecutive_losses": 10,
+    "positive_month_rate": 0.5470085470085471,
+    "win_rate": 0.3801916932907348,
+    "average_trade": 84.59664536741214,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "incubation_selected_params": {
+    "entry.params.min_signal_return_ticks": 20,
+    "entry.params.min_orderflow_imbalance": 0.03,
+    "entry.params.stop_pct": 0.002,
+    "entry.params.target_r_multiple": 4.0
+  },
+  "data_quality": {
+    "rows": 1349790,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 0,
+    "first_timestamp": "2011-01-03 09:30:00-05:00",
+    "last_timestamp": "2024-12-31 15:59:00-05:00",
+    "roll_boundary_sessions_skipped": 0,
+    "loaded_rows": 1349790,
+    "strategy_rows": 1349790,
+    "timeframe": "1m",
+    "timeframe_minutes": 1,
+    "source_timeframe": "1m"
+  },
+  "input_hash": "4b878ec634d7bfad334902d112b9507cb60074e6f445dcd016ab18478d180c33",
+  "artifacts": [
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/equity_curve.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/equity_curve.html",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/stage_result.json",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/wfa_oos_trade_log.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/wfa_results.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/wfa_summary.json",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_001_train_grid.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_002_train_grid.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_003_train_grid.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_004_train_grid.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_005_train_grid.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_006_train_grid.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_007_train_grid.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_008_train_grid.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_009_train_grid.csv",
+    "data/reports/campaigns/morning_orderflow_momentum/ES/sierra_trade_orderflow_1m_20101229_20260609_full_rth_ny/1m/two_sided_signed_flow_1500_flatten_continuation/campaign_tests/walk_forward_analysis/window_010_train_grid.csv"
+  ]
+}

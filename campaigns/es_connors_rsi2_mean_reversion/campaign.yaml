@@ -1,0 +1,144 @@
+campaign_name: es_connors_rsi2_mean_reversion
+campaign_id: es_connors_rsi2_mean_reversion
+instrument: ES
+initial_decision: TEST
+reason_for_decision: >
+  Connors-style RSI(2) mean reversion is a documented practitioner research
+  edge for liquid equity-index products. ES has a local Sierra RTH cache covering
+  2011-01-03 through 2026-06-09, so this campaign can be tested without new data
+  pulls and without changing mechanics after results are observed.
+
+edge_hypothesis: >
+  Very short-horizon RSI extremes in the direction opposite a prevailing
+  intraday trend or VWAP stretch may mark temporary overextension. ES may then
+  mean-revert intraday before the configured flatten time.
+
+why_it_may_apply_to_es_futures: >
+  ES is a liquid equity-index futures contract with repeated intraday inventory
+  transfer and index-arbitrage participation. RSI(2) extremes can capture short
+  bursts of overextension; trend and VWAP context are used only to express
+  different predeclared mechanics of the same RSI2 reversion edge.
+
+research_sources:
+  - title: Short Term Trading Strategies That Work
+    author: Larry Connors and Cesar Alvarez
+    year: 2009
+    link_or_doi: https://www.tradingmarkets.com/help/short-term-trading-strategies-that-work
+    expected_mechanism: Short-period RSI extremes can identify temporary pullbacks and bounces in liquid index markets.
+  - title: RSI(2)
+    author: StockCharts ChartSchool
+    year: 2024
+    link_or_doi: https://chartschool.stockcharts.com/table-of-contents/trading-strategies-and-models/trading-strategies/rsi-2
+    expected_mechanism: A short-period RSI extreme inside a trend is a practitioner-documented mean-reversion setup.
+  - title: Testing Connors RSI(2) on Futures Contracts
+    author: Trader and practitioner literature
+    year: 2010
+    link_or_doi: https://www.whselfinvest.com/en-lu/trading-platform/free-trading-strategies/tradingsystem/31-rsi-2p
+    expected_mechanism: RSI2-style futures adaptations evaluate whether short-horizon overbought/oversold pressure mean-reverts intraday.
+
+behavioural_or_microstructure_rationale: >
+  Rapid intraday price moves can exhaust short-horizon liquidity demand. RSI2 is
+  a compact trigger for that exhaustion; moving-average and VWAP conditions are
+  predeclared context filters rather than result-driven rescue filters.
+
+expected_failure_modes:
+  - RSI2 signals are too frequent and noisy after ES commissions and one-tick slippage.
+  - Profit concentrates in a small number of volatile sessions.
+  - VWAP extension filters reduce trade count below the methodology threshold.
+  - Long and short sides behave asymmetrically and the two-sided version dilutes both.
+  - Same-bar OHLC ambiguity turns apparent snapback targets into pessimistic stop exits.
+
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  prop_force_flatten_time: "16:58:30"
+
+data_requirements:
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.validation.json
+
+forbidden_forms_of_lookahead:
+  - Use of a bar before it closes for RSI2, moving average, or VWAP context.
+  - Entry on the same close that creates a signal.
+  - Use of final-session VWAP or future session range.
+  - Parameter changes after core, monkey, WFA, Monte Carlo, or acceptance results are known.
+
+data_needs:
+  source: local_sierra_rth_bar_cache
+  market_timezone: America/New_York
+  execution_detail: 1-minute OHLCV used for higher-timeframe fills
+  latest_locked_holdout: final 6 months selected by acceptance_oos_test from configured data
+
+lookahead_risks:
+  rsi2_availability: computed only from completed bar closes
+  vwap_availability: running intraday VWAP available only through the completed signal bar
+  signal_entry: next-bar open or later after the signal bar close
+  risk_control: stop target and flatten rules are predeclared in config
+
+variants:
+  - five_min_long_vwap_extreme_1430
+  - five_min_short_vwap_extreme_1430
+  - fifteen_min_long_uptrend_pullback_1545
+  - fifteen_min_short_downtrend_bounce_1545
+  - thirty_min_two_sided_trend_reversion_1530
+
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - rescue the same failed variant more than once
+    - core strategy mechanic
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: fifteen_min_long_uptrend_pullback_1545
+      config: campaigns/es_connors_rsi2_mean_reversion/rescue_attempts/parameter_space_rescue_1/fifteen_min_long_uptrend_pullback_1545/config.yaml
+      report: backtest-campaigns/es_connors_rsi2_mean_reversion/fifteen_min_long_uptrend_pullback_1545/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.345679012345679 below required 0.70; zero benchmark-passing combinations; top net 2646.25 with 92 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: fifteen_min_short_downtrend_bounce_1545
+      config: campaigns/es_connors_rsi2_mean_reversion/rescue_attempts/parameter_space_rescue_1/fifteen_min_short_downtrend_bounce_1545/config.yaml
+      report: backtest-campaigns/es_connors_rsi2_mean_reversion/fifteen_min_short_downtrend_bounce_1545/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70; zero benchmark-passing combinations; top net -1432.5 with 19 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: five_min_long_vwap_extreme_1430
+      config: campaigns/es_connors_rsi2_mean_reversion/rescue_attempts/parameter_space_rescue_1/five_min_long_vwap_extreme_1430/config.yaml
+      report: backtest-campaigns/es_connors_rsi2_mean_reversion/five_min_long_vwap_extreme_1430/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.012345679012345678 below required 0.70; zero benchmark-passing combinations; top net 427.5 with 87 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: five_min_short_vwap_extreme_1430
+      config: campaigns/es_connors_rsi2_mean_reversion/rescue_attempts/parameter_space_rescue_1/five_min_short_vwap_extreme_1430/config.yaml
+      report: backtest-campaigns/es_connors_rsi2_mean_reversion/five_min_short_vwap_extreme_1430/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.19753086419753085 below required 0.70; zero benchmark-passing combinations; top net 3805.0 with 49 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: thirty_min_two_sided_trend_reversion_1530
+      config: campaigns/es_connors_rsi2_mean_reversion/rescue_attempts/parameter_space_rescue_1/thirty_min_two_sided_trend_reversion_1530/config.yaml
+      report: backtest-campaigns/es_connors_rsi2_mean_reversion/thirty_min_two_sided_trend_reversion_1530/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.24691358024691357 below required 0.70; zero benchmark-passing combinations; top net 2465.0 with 77 trades

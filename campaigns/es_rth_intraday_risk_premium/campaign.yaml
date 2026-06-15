@@ -1,0 +1,145 @@
+campaign_name: es_rth_intraday_risk_premium
+campaign_id: es_rth_intraday_risk_premium
+instrument: ES
+initial_decision: TEST
+reason_for_decision: >
+  Academic work documents persistent intraday return structure and separation
+  between overnight and intraday return components. This campaign tests a
+  deliberately simple ES RTH-only long-bias/session-premium expression without
+  tuning entry thresholds after prior results.
+
+edge_hypothesis: >
+  ES may earn a positive RTH intraday premium after a completed early-session
+  bar, with risk controlled by explicit stop, target, and 15:55 ET flattening.
+  If the equity-index premium is mostly overnight or concentrated in isolated
+  crisis sessions, the campaign should fail.
+
+why_it_may_apply_to_es_futures: >
+  ES is the liquid futures implementation of S&P 500 exposure. If institutional
+  rebalancing, benchmark participation, or intraday risk transfer creates a
+  persistent RTH drift, a simple fixed-time long entry should survive costs and
+  random-placebo stress without needing price-pattern filters.
+
+research_sources:
+  - title: Intraday Patterns in the Cross-section of Stock Returns
+    author: Steven L. Heston, Robert A. Korajczyk, Ronnie Sadka
+    year: 2010
+    link_or_doi: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2010.01573.x
+    expected_mechanism: Intraday returns exhibit persistent time-of-day structure linked to trading flows.
+  - title: "A Tug of War: Overnight Versus Intraday Expected Returns"
+    author: Dong Lou, Christopher Polk, Spyros Skouras
+    year: 2019
+    link_or_doi: https://ideas.repec.org/a/eee/jfinec/v134y2019i1p192-213.html
+    expected_mechanism: Overnight and intraday return components can differ persistently; ES RTH must be tested directly.
+  - title: "Intraday Time Series Momentum: International Evidence"
+    author: Andrew Urquhart and coauthors
+    year: 2021
+    link_or_doi: https://centaur.reading.ac.uk/95566/
+    expected_mechanism: Intraday timing effects can be economically meaningful but must be validated out of sample.
+
+behavioural_or_microstructure_rationale: >
+  A fixed RTH long entry can capture intraday risk transfer only if the premium
+  is broad rather than a fitted threshold effect. The five variants test entry
+  timing as distinct mechanics, not optimized thresholds.
+
+expected_failure_modes:
+  - ES equity premium is earned mostly overnight rather than during RTH.
+  - Apparent gains are dominated by a few crisis rebound days.
+  - The fixed stop/target cuts off long-run drift or creates adverse same-bar conflicts.
+  - Random-placebo monkey paths perform as well as or better than the proposed timing.
+  - The latest untouched holdout fails after 2025-12-09.
+
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  planned_flatten_time: "15:55:00"
+  prop_force_flatten_time: "16:58:30"
+
+data_requirements:
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.validation.json
+
+forbidden_forms_of_lookahead:
+  - Entry before the configured signal bar has closed.
+  - Use of future session high, low, VWAP, or final daily return.
+  - Optimizing signal time, stop, or target after any stage result.
+  - Allowing overnight exposure.
+
+data_needs:
+  source: local_sierra_rth_bar_cache
+  market_timezone: America/New_York
+  execution_detail: 1-minute OHLCV used for 5-minute fills
+  latest_locked_holdout: final 6 months selected by acceptance_oos_test from configured data
+
+lookahead_risks:
+  signal_availability: signal uses the completed 5-minute bar at the configured signal_time and enters next bar open
+  same_bar_execution: stop/target conflicts use pessimistic handling unless 1-minute detail resolves order
+  risk_control: stop target and flatten rules are predeclared in config
+
+variants:
+  - open_0935_long
+  - first_hour_1000_long
+  - midmorning_1030_long
+  - late_morning_1100_long
+  - early_afternoon_1300_long
+
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - rescue the same failed variant more than once
+    - core strategy mechanic
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: early_afternoon_1300_long
+      config: campaigns/es_rth_intraday_risk_premium/rescue_attempts/parameter_space_rescue_1/early_afternoon_1300_long/config.yaml
+      report: backtest-campaigns/es_rth_intraday_risk_premium/early_afternoon_1300_long/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70; zero benchmark-passing combinations; top net -6197.5 with 362 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: first_hour_1000_long
+      config: campaigns/es_rth_intraday_risk_premium/rescue_attempts/parameter_space_rescue_1/first_hour_1000_long/config.yaml
+      report: backtest-campaigns/es_rth_intraday_risk_premium/first_hour_1000_long/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70; zero benchmark-passing combinations; top net -7102.5 with 363 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: late_morning_1100_long
+      config: campaigns/es_rth_intraday_risk_premium/rescue_attempts/parameter_space_rescue_1/late_morning_1100_long/config.yaml
+      report: backtest-campaigns/es_rth_intraday_risk_premium/late_morning_1100_long/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70; zero benchmark-passing combinations; top net -2302.5 with 363 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: midmorning_1030_long
+      config: campaigns/es_rth_intraday_risk_premium/rescue_attempts/parameter_space_rescue_1/midmorning_1030_long/config.yaml
+      report: backtest-campaigns/es_rth_intraday_risk_premium/midmorning_1030_long/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70; zero benchmark-passing combinations; top net -8702.5 with 363 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: open_0935_long
+      config: campaigns/es_rth_intraday_risk_premium/rescue_attempts/parameter_space_rescue_1/open_0935_long/config.yaml
+      report: backtest-campaigns/es_rth_intraday_risk_premium/open_0935_long/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70; zero benchmark-passing combinations; top net -7085.0 with 362 trades

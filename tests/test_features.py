@@ -5,6 +5,7 @@ from propstack.data.quality import tradingview_comparison_report
 from propstack.data.features import (
     add_orderflow_recent_pocket_combo_features,
     add_trade_orderflow_features,
+    add_vwap,
     build_features,
 )
 from propstack.data.sessions import assign_sessions
@@ -71,6 +72,111 @@ def test_none_feature_set_can_add_gated_vpin_features():
     assert "prev_rth_high" not in features.columns
     assert "vpin_proxy_b500_l1" in features.columns
     assert "vpin_session_ret" in features.columns
+
+
+def test_previous_rth_levels_do_not_use_current_session_data():
+    cfg = {
+        "rth_start": "09:30:00",
+        "rth_end": "16:00:00",
+        "eth_start": "16:00:00",
+        "eth_end": "09:29:00",
+        "rolling_volume_window": 3,
+    }
+    df = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2024-01-02 09:30:00",
+                    "2024-01-02 09:31:00",
+                    "2024-01-03 09:30:00",
+                    "2024-01-03 09:31:00",
+                ]
+            ).tz_localize("America/New_York"),
+            "symbol": "ES",
+            "open": [100.0, 100.0, 200.0, 200.0],
+            "high": [101.0, 102.0, 999.0, 201.0],
+            "low": [99.0, 98.0, 199.0, 198.0],
+            "close": [100.5, 101.0, 200.5, 200.0],
+            "volume": [100, 100, 100, 100],
+        }
+    )
+
+    features = build_features(assign_sessions(df, cfg), cfg)
+    day_one = features[features["timestamp"] == pd.Timestamp("2024-01-02 09:30", tz="America/New_York")].iloc[0]
+    day_two = features[features["timestamp"] == pd.Timestamp("2024-01-03 09:30", tz="America/New_York")].iloc[0]
+
+    assert pd.isna(day_one["prev_rth_high"])
+    assert day_two["prev_rth_high"] == 102.0
+    assert day_two["prev_rth_low"] == 98.0
+    assert day_two["prev_rth_close"] == 101.0
+
+
+def test_overnight_levels_ignore_rth_bars_after_open():
+    cfg = {
+        "rth_start": "09:30:00",
+        "rth_end": "16:00:00",
+        "eth_start": "17:00:00",
+        "eth_end": "09:29:00",
+        "rolling_volume_window": 3,
+    }
+    df = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                [
+                    "2024-01-02 17:00:00",
+                    "2024-01-03 09:29:00",
+                    "2024-01-03 09:30:00",
+                    "2024-01-03 09:31:00",
+                ]
+            ).tz_localize("America/New_York"),
+            "symbol": "ES",
+            "open": [100.0, 100.0, 100.0, 100.0],
+            "high": [103.0, 105.0, 120.0, 121.0],
+            "low": [99.0, 98.0, 97.0, 96.0],
+            "close": [100.5, 100.0, 110.0, 111.0],
+            "volume": [100, 100, 100, 100],
+        }
+    )
+
+    features = build_features(assign_sessions(df, cfg), cfg)
+    first_eth = features[features["timestamp"] == pd.Timestamp("2024-01-02 17:00", tz="America/New_York")].iloc[0]
+    last_eth = features[features["timestamp"] == pd.Timestamp("2024-01-03 09:29", tz="America/New_York")].iloc[0]
+    rth_open = features[features["timestamp"] == pd.Timestamp("2024-01-03 09:30", tz="America/New_York")].iloc[0]
+    rth_next = features[features["timestamp"] == pd.Timestamp("2024-01-03 09:31", tz="America/New_York")].iloc[0]
+
+    assert first_eth["overnight_high"] == 103.0
+    assert first_eth["overnight_low"] == 99.0
+    assert last_eth["overnight_high"] == 105.0
+    assert last_eth["overnight_low"] == 98.0
+    assert rth_open["overnight_high"] == 105.0
+    assert rth_next["overnight_high"] == 105.0
+    assert rth_open["overnight_low"] == 98.0
+    assert rth_next["overnight_low"] == 98.0
+
+
+def test_vwap_uses_only_completed_volume_through_current_bar():
+    timestamps = pd.date_range("2024-01-03 09:30:00", periods=3, freq="1min", tz="America/New_York")
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "session_date": [timestamps[0].date()] * 3,
+            "session_label": ["RTH"] * 3,
+            "symbol": ["ES"] * 3,
+            "open": [100.0, 110.0, 200.0],
+            "high": [102.0, 112.0, 300.0],
+            "low": [98.0, 108.0, 100.0],
+            "close": [101.0, 111.0, 250.0],
+            "volume": [10.0, 20.0, 1_000_000.0],
+        }
+    )
+
+    features = add_vwap(df)
+    first_typical = (102.0 + 98.0 + 101.0) / 3.0
+    second_typical = (112.0 + 108.0 + 111.0) / 3.0
+    expected_second = ((first_typical * 10.0) + (second_typical * 20.0)) / 30.0
+
+    assert features.iloc[0]["vwap"] == first_typical
+    assert features.iloc[1]["vwap"] == expected_second
 
 
 def test_trade_orderflow_features_use_completed_bars_through_signal_close():

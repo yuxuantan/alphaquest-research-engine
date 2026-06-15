@@ -91,12 +91,37 @@ def add_previous_rth_freshness(df: pd.DataFrame) -> pd.DataFrame:
 
 def add_overnight_levels(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
-    eth = out[out["is_eth"]]
-    overnight = eth.groupby("session_date").agg(
+    out["overnight_high"] = pd.NA
+    out["overnight_low"] = pd.NA
+    if out.empty or "is_eth" not in out.columns:
+        return out
+
+    ordered = out.sort_values("timestamp")
+    eth_mask = ordered["is_eth"].fillna(False).astype(bool)
+    if not eth_mask.any():
+        return out
+
+    eth = ordered.loc[eth_mask]
+    cumulative_high = eth.groupby("session_date")["high"].cummax()
+    cumulative_low = eth.groupby("session_date")["low"].cummin()
+    out.loc[eth.index, "overnight_high"] = cumulative_high
+    out.loc[eth.index, "overnight_low"] = cumulative_low
+
+    completed = eth.groupby("session_date").agg(
         overnight_high=("high", "max"),
         overnight_low=("low", "min"),
     )
-    return out.merge(overnight, left_on="session_date", right_index=True, how="left")
+    rth_mask = out.get("is_rth", pd.Series(False, index=out.index)).fillna(False).astype(bool)
+    if rth_mask.any():
+        mapped = out.loc[rth_mask, ["session_date"]].merge(
+            completed,
+            left_on="session_date",
+            right_index=True,
+            how="left",
+        )
+        out.loc[rth_mask, "overnight_high"] = mapped["overnight_high"].to_numpy()
+        out.loc[rth_mask, "overnight_low"] = mapped["overnight_low"].to_numpy()
+    return out
 
 
 def add_vwap(df: pd.DataFrame) -> pd.DataFrame:

@@ -1,0 +1,140 @@
+campaign_name: es_prior_session_ibs_reversion
+campaign_id: es_prior_session_ibs_reversion
+instrument: ES
+initial_decision: TEST
+reason_for_decision: >
+  Prior-session Internal Bar Strength is a documented equity-index mean-reversion
+  effect and the local ES Sierra RTH cache covers 2011-01-03 through 2026-06-09.
+  This campaign tests whether the effect survives ES futures execution costs,
+  next-bar entry, pessimistic same-bar fill handling, WFA, monkey stress, Monte
+  Carlo, and latest-period frozen validation.
+
+edge_hypothesis: >
+  When the prior RTH close is near the prior RTH low, ES may mean-revert upward
+  during the next RTH session. When the prior RTH close is near the prior RTH
+  high, ES may mean-revert downward during the next RTH session.
+
+why_it_may_apply_to_es_futures: >
+  ES tracks a broad equity index and is continuously arbitraged against cash
+  index exposure. If daily equity-index IBS reflects short-horizon overreaction
+  or liquidity demand, a same-session ES futures expression can capture the
+  reversal while avoiding overnight exposure.
+
+research_sources:
+  - title: "The IBS Effect: Mean Reversion in Equity ETFs"
+    author: Alexander Pagonidis
+    year: 2014
+    link_or_doi: https://www.naaim.org/wp-content/uploads/2014/04/00V_Alexander_Pagonidis_The-IBS-Effect-Mean-Reversion-in-Equity-ETFs-1.pdf
+    expected_mechanism: Prior-day close location inside the daily range proxies short-horizon overreaction and next-day mean reversion.
+  - title: Internal Bar Strength as a Predictor in Equity ETFs
+    author: Thomas A. S. Ronnback
+    year: 2023
+    link_or_doi: https://arxiv.org/abs/2306.12434
+    expected_mechanism: Daily IBS can retain predictive information across equity-index-like instruments after accounting for persistence and cross-market effects.
+
+behavioural_or_microstructure_rationale: >
+  A close near the daily extreme can reflect late-session liquidity demand or
+  overreaction. The next RTH session may partially unwind that pressure. ES is
+  tested because it is the liquid futures expression of US equity-index beta.
+
+expected_failure_modes:
+  - The ETF-documented IBS edge does not transfer to ES futures after costs.
+  - The effect exists only on one side or only in narrow crisis regimes.
+  - The effect depends on overnight exposure that this campaign explicitly forbids.
+  - Stops and fixed-R exits truncate the edge or create one-trade/year domination.
+  - Same-bar OHLC ambiguity converts apparent target hits into pessimistic stop exits.
+
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  planned_flatten_time: "15:55:00"
+  prop_force_flatten_time: "16:58:30"
+
+data_requirements:
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.validation.json
+
+forbidden_forms_of_lookahead:
+  - Use of current-session high/low/close beyond the signal bar.
+  - Use of final current-session VWAP, final daily range, or future volume profile.
+  - Entry on the same close that creates a signal.
+  - Parameter changes after OOS, WFA, monkey, Monte Carlo, or acceptance results are known.
+
+data_needs:
+  source: local_sierra_rth_bar_cache
+  market_timezone: America/New_York
+  execution_detail: 1-minute OHLCV used for 5-minute strategy fills
+  latest_locked_holdout: final 6 months selected by acceptance_oos_test from configured data
+
+lookahead_risks:
+  prior_session_levels_available_at: next RTH session open after prior RTH high/low/close are complete
+  signal_availability: signal uses a completed 5-minute bar close and must enter at the next bar open
+  risk_control: stop, target, and flatten rules are predeclared in config
+
+variants:
+  - open_low_ibs_long
+  - open_high_ibs_short
+  - open_two_sided_ibs_reversion
+  - delayed_low_ibs_long_range_filtered
+  - delayed_high_ibs_short_range_filtered
+
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - rescue the same failed variant more than once
+    - core strategy mechanic
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: delayed_high_ibs_short_range_filtered
+      config: campaigns/es_prior_session_ibs_reversion/rescue_attempts/parameter_space_rescue_1/delayed_high_ibs_short_range_filtered/config.yaml
+      report: backtest-campaigns/es_prior_session_ibs_reversion/delayed_high_ibs_short_range_filtered/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.5061728395061729 below required 0.70; zero benchmark-passing combinations; top net 4650.0 with 30 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: delayed_low_ibs_long_range_filtered
+      config: campaigns/es_prior_session_ibs_reversion/rescue_attempts/parameter_space_rescue_1/delayed_low_ibs_long_range_filtered/config.yaml
+      report: backtest-campaigns/es_prior_session_ibs_reversion/delayed_low_ibs_long_range_filtered/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.43209876543209874 below required 0.70; zero benchmark-passing combinations; top net 1512.5 with 30 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: open_high_ibs_short
+      config: campaigns/es_prior_session_ibs_reversion/rescue_attempts/parameter_space_rescue_1/open_high_ibs_short/config.yaml
+      report: backtest-campaigns/es_prior_session_ibs_reversion/open_high_ibs_short/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.345679012345679 below required 0.70; zero benchmark-passing combinations; top net 1617.5 with 29 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: open_low_ibs_long
+      config: campaigns/es_prior_session_ibs_reversion/rescue_attempts/parameter_space_rescue_1/open_low_ibs_long/config.yaml
+      report: backtest-campaigns/es_prior_session_ibs_reversion/open_low_ibs_long/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70; zero benchmark-passing combinations; top net -227.5 with 18 trades
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: open_two_sided_ibs_reversion
+      config: campaigns/es_prior_session_ibs_reversion/rescue_attempts/parameter_space_rescue_1/open_two_sided_ibs_reversion/config.yaml
+      report: backtest-campaigns/es_prior_session_ibs_reversion/open_two_sided_ibs_reversion/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/all_failed_variant_rescue_audit_20260615.md
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.024691358024691357 below required 0.70; zero benchmark-passing combinations; top net 127.5 with 47 trades

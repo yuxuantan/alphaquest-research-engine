@@ -4,8 +4,8 @@ Research skeleton for futures prop-firm strategy testing. The project is organiz
 
 ```text
 campaign -> strategy idea found online or designed for research
-variant  -> one concrete test configuration for that idea
-reports  -> generated evidence for one variant
+variant  -> one concrete strategy shape for that idea
+run      -> one fixed/tunable parameter-space attempt for that variant
 ```
 
 The normal workflow is:
@@ -14,9 +14,9 @@ The normal workflow is:
 download/export data
 place raw data under data/raw/
 create or update one campaign
-create one variant YAML
+create one run config.yaml
 run validation/core/core_grid/monkey/WFA/Monte Carlo
-review variant_summary.json and runs_index.csv
+review variant_test_summary.json and runs_index.csv
 ```
 
 ## Install
@@ -29,38 +29,44 @@ python3 -m pytest
 ## Project Layout
 
 ```text
-configs/
-  campaigns/
-    pdh_pdl_sweep/
-      campaign.yaml
-      variants/
-        ES/
-          1m_20221201_20260529/
-            baseline.yaml
-
 data/
   raw/
     ES/
     NQ/
-  cleaned/
-  reports/
-    campaigns/
-      pdh_pdl_sweep/
-        ES/
-          1m_20221201_20260529/
-            baseline/
-              variant_config.yaml
-              variant_summary.json
-              config_hash.txt
-              input_data_hash.txt
-              run_manifest.json
-              validation/
-              core/
-              core_grid/
-              monkey/
-              wfa/
-              monte_carlo/
-            runs_index.csv
+  cache/
+  external/
+  reference/
+    ES/
+      roll_calendars/
+        motivewave_rithmic_roll_calendar.csv
+
+backtest-campaigns/
+  pdh_pdl_sweep/
+    campaign.yaml
+    variants_index.yaml
+    baseline/
+      variant.yaml
+      ES/
+        run1/
+          config.yaml
+          variant_test_summary.json
+          campaign_test_summary.json
+          config_hash.txt
+          input_data_hash.txt
+          run_manifest.json
+          validation/
+          core/
+          core_grid/
+          monkey/
+          wfa/
+          monte_carlo/
+        run2/
+          config.yaml
+          limited_core_grid_test/
+          limited_monkey_test/
+          walk_forward_analysis/
+          variant_test_summary.json
+        runs_index.csv
 
 src/
   propstack/
@@ -121,7 +127,7 @@ data:
   symbol: ES
   timezone: America/New_York
   continuous_contract: explicit_roll_calendar
-  roll_calendar: configs/data/ES/motivewave_rithmic_roll_calendar.csv
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
   price_adjustment: none
   roll_boundary_policy:
     reset_previous_day_levels: true
@@ -176,58 +182,92 @@ It intentionally does not create individual-print large-trade buckets, so use
 configs whose `data.trade_orderflow_features.large_trade_sizes` is empty for
 Sierra-first aggregated-orderflow tests.
 
+Do not treat raw Sierra `.scid` trade files as clean print-level truth for
+strategy validation. The ES archive used by this project included early
+contracts that were bar-like rather than individual prints, timestamp-order
+defects, a raw `open` field that can be sentinel-like or inconsistent, and
+sessions with weak bid/ask side-volume coverage.
+
+The backtestable SCID workflow is to canonicalize Sierra data into a validated
+aggregate orderflow cache with an explicit roll calendar, regular-session
+filtering, incomplete-session drops, and a strict side-volume coverage
+threshold. The SCID-derived minute OHLCV bars are reconstructed from sorted
+trade-price records: `open` is the first retained trade price in the minute,
+`high` and `low` are the max/min retained trade prices, `close` is the last
+retained trade price, and `volume` is summed volume. This is acceptable for
+completed-bar OHLCV and aggregate signed-volume research after validation.
+
+Treat Sierra signed volume as an aggregate bid/ask-volume proxy, not as
+vendor-grade aggressor labels or tick-replay data. Do not use the reconstructed
+minute bars for individual print sequencing, exact intra-minute stop/target
+ordering, trade-sequence assumptions, or large-print features unless a separate
+source-quality audit proves that specific archive supports that use. If a
+strategy needs those mechanics, mark the data basis `NEEDS MANUAL REVIEW` or
+use an independently verified tick/depth source.
+
 The included ES calendar at
-`configs/data/ES/motivewave_rithmic_roll_calendar.csv` covers 2010-2026. Rows
+`data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv` covers 2010-2026. Rows
 from 2022-2026 were inferred from the MotiveWave/Rithmic export; earlier rows
 use the same observed Tuesday-of-expiration-week roll rule and should be
 manually spot-checked if you use pre-2022 results for decisions.
 
-## 2. Create A Campaign And Variant Config
+## 2. Create A Campaign Variant Run
 
 A campaign is the strategy idea you are researching. It should stay the same while you test reasonable variations of that same idea: different parameters, slightly different entry/exit mechanics, symbols, timeframes, or datasets.
 
+A campaign can keep edge research and the planned variant list here:
+
 ```text
-configs/campaigns/{campaign_id}/campaign.yaml
+backtest-campaigns/{campaign_id}/campaign.yaml
+```
+
+Use `campaign.yaml` for the academic source, thesis, intended market, caveats, and exactly five planned trade-mechanics variants. The backtest runner does not use it as the executable strategy config, but run summaries and manifests record its path and hash when it exists.
+
+A variant is one concrete strategy shape under that campaign. It keeps its invariant mechanic here:
+
+```text
+backtest-campaigns/{campaign_id}/{variant_id}/variant.yaml
+```
+
+`variant.yaml` records the entry, take-profit, and stop-loss modules plus the rescue policy. The runner creates a scaffold when it is missing and rejects a run when an existing `variant.yaml` says the variant uses different entry, TP, or SL modules. Rescue runs can change fixed parameters, tunable parameter space, stage settings, and data windows, but not those modules.
+
+A run is one attempt to validate that variant with a specific fixed parameter set and tunable search space. Use `run1`, `run2`, and so on for rescue attempts of the same variant; for example, `run2` can narrow or shift the parameter space after `run1` fails.
+
+```text
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/config.yaml
 ```
 
 Example:
 
 ```text
-configs/campaigns/pdh_pdl_sweep/campaign.yaml
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/config.yaml
 ```
 
-A variant is one concrete test configuration under that campaign:
+This keeps the config and generated evidence together:
 
 ```text
-configs/campaigns/{campaign_id}/variants/{symbol}/{dataset_id}/{variant_id}.yaml
+pdh_pdl_sweep  campaign / strategy idea
+baseline       strategy variant
+ES             instrument
+run1           first test-run parameter-space attempt
 ```
 
-Example:
+The campaign root also maintains `variants_index.yaml`, a lightweight index of each variant's `variant.yaml` path, hash, and mechanics.
 
-```text
-configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml
-```
-
-This makes the path readable without opening the YAML:
-
-```text
-pdh_pdl_sweep         campaign / strategy idea
-ES                    instrument
-1m_20221201_20260529  timeframe and dataset date range
-baseline              exact variant being tested
-```
-
-Copy the baseline variant when you want a new version of the same strategy idea:
+Start a rescue run by copying the previous run config into the next run folder:
 
 ```bash
-cp configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/tp_2r.yaml
+mkdir -p backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2
+cp backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/config.yaml
 ```
 
-Edit the new file:
+Edit the new run config:
 
 ```yaml
 campaign_id: pdh_pdl_sweep
-variant_id: tp_2r
+variant_id: baseline
+test_run_id: run2
 strategy_name: pdh_pdl_sweep
 symbol: ES
 dataset_id: 1m_20221201_20260529
@@ -242,7 +282,7 @@ data:
   timezone: America/New_York
   exchange_timezone: America/New_York
   continuous_contract: explicit_roll_calendar
-  roll_calendar: configs/data/ES/motivewave_rithmic_roll_calendar.csv
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
   price_adjustment: none
   roll_boundary_policy:
     reset_previous_day_levels: true
@@ -269,13 +309,15 @@ core:
 warmup period before `start_date` so previous-session features remain available,
 then filters the prepared data to the requested test window.
 
-The `campaign_id`, `variant_id`, and `dataset_id` are mandatory. All runs using the same variant file write to:
+The `campaign_id`, `variant_id`, `dataset_id`, and `timeframe` are mandatory. `test_run_id` is optional when the config path is already under `.../{run_id}/config.yaml`; otherwise it defaults to `run1`. Outputs write to:
 
 ```text
-data/reports/campaigns/{campaign_id}/{symbol}/{dataset_id}/{variant_id}/
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/
 ```
 
-Use one variant YAML per concrete test configuration, not one YAML per report type. A single variant YAML can produce the core, core grid, monkey, WFA, and Monte Carlo reports for the same controlled setup.
+Use one run config per concrete fixed/tunable parameter-space attempt, not one YAML per report type. A single `config.yaml` can produce the core, core grid, monkey, WFA, Monte Carlo, and staged campaign-test reports for the same controlled setup.
+
+The runner rejects output paths that are not concrete run folders. Do not write summaries at `backtest-campaigns/{campaign_id}/{variant_id}/ES/` or `.../ES_1m/`; they must live under `.../ES/run1/`, `.../ES/run2/`, etc.
 
 Keep the same campaign when the core idea is still recognizable:
 
@@ -297,32 +339,24 @@ different setup concept
 old idea is no longer recognizable
 ```
 
-Create a new variant when you want to preserve and compare a meaningful version of the same campaign:
+Create a new variant when the strategy mechanics change enough that it is not just a rescue attempt of the same shape:
 
 ```text
-different important parameter set
 different entry, TP, or SL module
-different dataset or date range
-different symbol or timeframe
-different cost or benchmark assumptions
+different side logic or setup definition
+different economic edge inside the same campaign family
+different symbol-specific mechanics
+different benchmark assumption that changes the strategy's interpretation
 ```
 
-Do not create a new variant for a temporary crash check or one-off debugging edit. Reuse `baseline` or create a clearly disposable `scratch.yaml` in the same dataset folder.
-
-Use this naming rule:
+Create a new run under the same variant when only the parameter-space attempt changes:
 
 ```text
-folder path = stable context
-file name   = experiment variation
-```
-
-Examples:
-
-```text
-configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml
-configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/tp_2r.yaml
-configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/long_only.yaml
-configs/campaigns/pdh_pdl_sweep/variants/NQ/1m_20221201_20260529/baseline.yaml
+different fixed parameter set
+different tunable grid bounds
+different data date range
+different cost, slippage, or prop rule values
+run2 rescue after run1 fails
 ```
 
 ## 3. Configure Strategy Rules
@@ -360,7 +394,7 @@ tp    -> calculates target price
 sl    -> calculates stop price
 ```
 
-The simulation engine uses a generic `ModularStrategy` composer. There is no separate PDH/PDL strategy wrapper; the variant YAML is the source of truth for which entry, TP, and SL modules are combined.
+The simulation engine uses a generic `ModularStrategy` composer. There is no separate PDH/PDL strategy wrapper; the run `config.yaml` is the source of truth for which entry, TP, and SL modules are combined.
 
 Each module implementation lives in its own file:
 
@@ -402,7 +436,7 @@ The cleanest workflow is:
 ```text
 1. Define the strategy idea
 2. Build or reuse entry, TP, and SL modules
-3. Wire those modules in one variant YAML
+3. Wire those modules in one run config.yaml
 4. Set the exact data, costs, and risk assumptions
 5. Run the core test
 6. Validate data and sample trades
@@ -427,7 +461,7 @@ sl:    beyond the sweep candle extreme, offset by ticks
 tp:    fixed R multiple from entry to stop
 ```
 
-For normal one-entry, one-stop, one-target strategies, do not create a strategy file. Create or swap the relevant module and wire it in the variant YAML. A custom strategy orchestrator is only worth adding later if the engine needs behavior beyond this composition model, such as partial exits, trailing stops, pyramiding, or multiple simultaneous entry systems.
+For normal one-entry, one-stop, one-target strategies, do not create a strategy file. Create or swap the relevant module and wire it in the run `config.yaml`. A custom strategy orchestrator is only worth adding later if the engine needs behavior beyond this composition model, such as partial exits, trailing stops, pyramiding, or multiple simultaneous entry systems.
 
 ### Step 2: Create Or Reuse An Entry Module
 
@@ -575,33 +609,35 @@ TP_MODULES = {
 }
 ```
 
-### Step 5: Wire The Modules In A Variant Config
+### Step 5: Wire The Modules In A Run Config
 
-Campaign configs live under:
+Campaign run configs live under:
 
 ```text
-configs/campaigns/
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/config.yaml
 ```
 
-For a new single parameter run, copy an existing variant and give it a unique `variant_id`:
+For a new rescue run, copy the previous run config and update the fixed/tunable parameter space:
 
 ```bash
-cp configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/tp_2r.yaml
+mkdir -p backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2
+cp backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/config.yaml
 ```
 
-Set the campaign and variant identity:
+Set the campaign, variant, and run identity:
 
 ```yaml
 campaign_id: pdh_pdl_sweep
-variant_id: tp_2r
+variant_id: baseline
+test_run_id: run2
 strategy_name: pdh_pdl_sweep
 symbol: ES
 dataset_id: 1m_20221201_20260529
 ```
 
-Use a new `variant_id` for every result set you want to preserve. If you reuse the same variant id, the latest run writes to the same report folder.
+Use a new `test_run_id` for every rescue attempt you want to preserve under the same variant. Use a new `variant_id` only when the strategy mechanics change.
 
-Do not split one experiment into separate YAML files for core, core grid, monkey, WFA, and Monte Carlo. Keep those report sections together inside the same variant YAML so every report points back to the same data, modules, parameters, costs, and benchmarks.
+Do not split one experiment into separate YAML files for core, core grid, monkey, WFA, and Monte Carlo. Keep those report sections together inside the same run `config.yaml` so every report points back to the same data, modules, parameters, costs, and benchmarks.
 
 Then wire the modules and parameters:
 
@@ -663,7 +699,7 @@ data:
   timezone: America/New_York
   exchange_timezone: America/New_York
   continuous_contract: explicit_roll_calendar
-  roll_calendar: configs/data/ES/motivewave_rithmic_roll_calendar.csv
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
   price_adjustment: none
   roll_boundary_policy:
     reset_previous_day_levels: true
@@ -735,23 +771,23 @@ Do not compare variants unless these assumptions are intentionally identical or 
 
 ### Step 7: Run Core
 
-Run one exact variant config through the core test:
+Run one exact run config through the core test:
 
 ```bash
-VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/tp_2r.yaml
+VARIANT_CONFIG=backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/config.yaml
 PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
 ```
 
 The command prints the output folder. It will follow this layout:
 
 ```text
-data/reports/campaigns/{campaign_id}/{symbol}/{dataset_id}/{variant_id}/
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/
 ```
 
 For the example above:
 
 ```text
-data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/tp_2r/
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/
 ```
 
 ### Step 8: Validate Before Interpreting Performance
@@ -888,7 +924,7 @@ backtests:
 PYTHONPATH=src python3 -m propstack.run_equity_curves --config "$VARIANT_CONFIG"
 ```
 
-Omit `--config` to scan all supported trade logs under `data/reports/campaigns`.
+Omit `--config` to scan all supported trade logs under `backtest-campaigns`.
 Use `--trade-log path/to/trade_log.csv --initial-balance 150000` for a single
 standalone trade log.
 
@@ -943,7 +979,7 @@ average_trade
 
 ### Step 10: Interpret The Result Against Your Benchmarks
 
-Start with the benchmark fields in the variant config:
+Start with the benchmark fields in the run config:
 
 ```yaml
 benchmarks:
@@ -980,11 +1016,12 @@ sample trades do not match TradingView
 
 ### Step 11: Track Which Config Produced The Report
 
-The variant report folder records the config and input hashes:
+The variant and run folders record the mechanic, config, and input hashes:
 
 ```text
-variant_config.yaml
-variant_summary.json
+variant.yaml
+config.yaml
+variant_test_summary.json
 config_hash.txt
 input_data_hash.txt
 run_manifest.json
@@ -993,29 +1030,32 @@ run_manifest.json
 Use them like this:
 
 ```text
-variant_config.yaml
+variant.yaml
+  Variant-root file that locks the entry, take-profit, and stop-loss modules.
+
+config.yaml
   Snapshot of the exact YAML used for the run.
 
 config_hash.txt
-  Changes when the variant config changes.
+  Changes when the run config changes.
 
 input_data_hash.txt
   Changes when the selected raw input files or data window changes.
 
 run_manifest.json
-  Records which test sections have been run for this variant.
+  Records which test sections have been run for this variant test run, including campaign.yaml and variant.yaml hashes.
 
-variant_summary.json
+variant_test_summary.json
   Collects latest summary metrics for core, core grid, monkey, WFA, and Monte Carlo.
 ```
 
-The dataset-level index compares variants under the same campaign, symbol, and dataset:
+The symbol-level index compares `run1`, `run2`, and other test runs for the same campaign variant and symbol:
 
 ```text
-data/reports/campaigns/{campaign_id}/{symbol}/{dataset_id}/runs_index.csv
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/runs_index.csv
 ```
 
-Use a new `variant_id` whenever you want to compare a different version side by side. Use a new `dataset_id` whenever the raw data file or date range changes.
+Use a new `test_run_id` whenever you want to preserve a different fixed/tunable parameter-space attempt for the same variant.
 
 ## 4. Configure Core Costs And Risk
 
@@ -1104,14 +1144,14 @@ max_drawdown_pct: 0.20
 ## 6. Run Data Validation And Core
 
 ```bash
-VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml
+VARIANT_CONFIG=backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml
 PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
 
 ```text
-data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/baseline/
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/
   validation/
     cleaned_data.csv
     features_data.csv
@@ -1149,7 +1189,7 @@ PYTHONPATH=src python3 -m propstack.compare_data_sources \
   --csv data/raw/ES/es_1m_20221201-20260529.csv \
   --dbn-dir data/raw/ES/GLBX-20260601-U6S3S4F4GM \
   --continuous-contract explicit_roll_calendar \
-  --roll-calendar configs/data/ES/motivewave_rithmic_roll_calendar.csv \
+  --roll-calendar data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv \
   --out data/reports/data_compare/ES/rithmic_vs_databento_1m_20221201_20260529
 ```
 
@@ -1586,11 +1626,11 @@ Optional explicit path overrides are available for report artifacts:
 ```yaml
 monte_carlo:
   trade_source: core
-  core_trade_log: data/reports/campaigns/.../core/trade_log.csv
+  core_trade_log: backtest-campaigns/.../core/trade_log.csv
 
 monte_carlo:
   trade_source: wfa_oos
-  wfa_oos_trade_log: data/reports/campaigns/.../wfa/wfa_oos_trade_log.csv
+  wfa_oos_trade_log: backtest-campaigns/.../wfa/wfa_oos_trade_log.csv
 ```
 
 Monte Carlo mechanics:
@@ -1850,8 +1890,8 @@ probability_profit_before_drawdown >= 0.50
 Each runner updates:
 
 ```text
-variant_config.yaml
-variant_summary.json
+config.yaml
+variant_test_summary.json
 config_hash.txt
 input_data_hash.txt
 run_manifest.json
@@ -1890,15 +1930,15 @@ The variant summary accumulates results:
 }
 ```
 
-The dataset-level index lets you compare variants under the same campaign, symbol, and dataset:
+The symbol-level index lets you compare test runs under the same campaign, variant, and symbol:
 
 ```text
-data/reports/campaigns/pdh_pdl_sweep/ES/1m_20221201_20260529/runs_index.csv
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/runs_index.csv
 ```
 
 ## Staged Campaign Test Runner
 
-The staged runner executes the full gate sequence under `campaign_tests/`:
+The staged runner executes the full gate sequence directly under the run folder:
 
 ```bash
 PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --skip-validation
@@ -1914,7 +1954,7 @@ PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFI
 `--fast-runtime-defaults` enables conservative parallel defaults at runtime
 only: batched grid work, monkey and Monte Carlo run parallelism, and WFA
 `window_grid` pooling. It also skips staged validation outputs so prepared data
-can be cached across stages. It does not mutate the variant YAML. Use
+can be cached across stages. It does not mutate the run config. Use
 `--no-acceptance` only for exploratory runs; a promotion-ready campaign should
 include `acceptance_oos_test`.
 
@@ -1929,7 +1969,7 @@ visible in `stage_result.json`.
 For a serious strategy test:
 
 ```bash
-VARIANT_CONFIG=configs/campaigns/pdh_pdl_sweep/variants/ES/1m_20221201_20260529/baseline.yaml
+VARIANT_CONFIG=backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml
 
 PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
 PYTHONPATH=src python3 -m propstack.run_core_grid --config "$VARIANT_CONFIG"
@@ -1949,7 +1989,7 @@ Review in this order:
 6. monkey/monkey_summary.json
 7. wfa/wfa_summary.json
 8. monte_carlo/monte_carlo_summary.json
-9. variant_summary.json
+9. variant_test_summary.json
 10. runs_index.csv
 ```
 
@@ -1968,5 +2008,13 @@ order-book data
 machine learning
 broker reconciliation
 ```
+
+Sierra Chart data is supported only after conversion into validated aggregate
+bar/orderflow caches. Reconstructed Sierra minute OHLCV is acceptable for
+completed-bar research after validation, but raw Sierra `.scid` files and
+SCID-derived bars must not be used directly for print-level features,
+tick-replay fills, intra-minute stop/target ordering, or trade-sequence
+assumptions unless a separate source-quality audit proves that specific archive
+is clean.
 
 The first trust checkpoint is always manual data and trade validation against your charting platform.

@@ -1,0 +1,188 @@
+{
+  "campaign_id": "market_plumbing_priority_ensemble",
+  "variant_id": "vx_then_primary_dealer_priority_long_fomc_nfp_window_fixed_wfa",
+  "symbol": "ES",
+  "dataset_id": "1m_full_history",
+  "timeframe": "5m",
+  "config_path": "/private/tmp/event_filter_configs/market_plumbing_priority_ensemble__5m__vx_then_primary_dealer_priority_long_fomc_nfp_window_fixed_wfa.yaml",
+  "output_dir": "data/reports/campaigns/market_plumbing_priority_ensemble/ES/1m_full_history/5m/vx_then_primary_dealer_priority_long_fomc_nfp_window_fixed_wfa/campaign_tests",
+  "created_at": "2026-06-10T01:42:32",
+  "passed": false,
+  "halted": true,
+  "stages": [
+    {
+      "stage": "walk_forward_analysis",
+      "label": "Walk Forward Analysis (WFA)",
+      "status": "failed",
+      "passed": false,
+      "started_at": "2026-06-10T01:39:53",
+      "completed_at": "2026-06-10T01:42:32",
+      "duration_seconds": 159.162346,
+      "criteria": [
+        {
+          "metric": "summary.early_exit",
+          "actual": true,
+          "expected": {
+            "equals": false
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.windows",
+          "actual": 1,
+          "expected": {
+            "min": 10
+          },
+          "passed": false
+        },
+        {
+          "metric": "stitched_oos_metrics.profit_factor",
+          "actual": 0.0,
+          "expected": {
+            "min": 1.5
+          },
+          "passed": false
+        },
+        {
+          "metric": "stitched_oos_metrics.mar",
+          "actual": 0.0,
+          "expected": {
+            "min": 1.5,
+            "dynamic_min": "length_adjusted_mar",
+            "span_metric": "summary.oos_evaluation_years",
+            "span_years": 0.5010266940451745
+          },
+          "passed": false
+        },
+        {
+          "metric": "stitched_oos_metrics.expectancy_r",
+          "actual": 0.0,
+          "expected": {
+            "min": 0.2
+          },
+          "passed": false
+        },
+        {
+          "metric": "stitched_oos_metrics.total_trades",
+          "actual": 0,
+          "expected": {
+            "min": 500
+          },
+          "passed": false
+        },
+        {
+          "metric": "stitched_oos_metrics.win_rate",
+          "actual": 0.0,
+          "expected": {
+            "min": 0.45
+          },
+          "passed": false
+        },
+        {
+          "metric": "stitched_oos_metrics.apex_rule_violations",
+          "actual": 0,
+          "expected": {
+            "max": 0
+          },
+          "passed": true
+        }
+      ],
+      "summary": {
+        "windows": 1,
+        "objective": "MAR",
+        "window_mode": "unanchored",
+        "train_months": 36,
+        "test_months": 6,
+        "step_months": 6,
+        "parallel": {
+          "enabled": false,
+          "scope": "grid",
+          "workers": 1
+        },
+        "selection_filter": {
+          "min_trades_per_year": 60
+        },
+        "early_exit_min_train_profit_factor": 1.0,
+        "early_exit": true,
+        "passing_windows": 0,
+        "profitable_windows": 0,
+        "profitable_window_rate": 0.0,
+        "meets_profitable_window_benchmark": false,
+        "median_test_net_profit": 0.0,
+        "median_test_mar": 0.0,
+        "median_test_cagr": 0.0,
+        "median_test_max_drawdown_pct": 0.0,
+        "train_grid_reports_retained": true,
+        "train_grid_report_files": [],
+        "stitched_oos_trades": 0,
+        "stitched_oos_metrics": {
+          "total_trades": 0,
+          "trades_per_year": 0.0,
+          "net_profit": 0.0,
+          "profit_factor": 0.0,
+          "expectancy_r": 0.0,
+          "max_drawdown": 0.0,
+          "max_drawdown_pct": 0.0,
+          "cagr": 0.0,
+          "mar": 0.0,
+          "worst_day": 0.0,
+          "best_day": 0.0,
+          "best_day_concentration": 0.0,
+          "max_consecutive_losses": 0,
+          "positive_month_rate": 0.0,
+          "win_rate": 0.0,
+          "apex_rule_violations": 0,
+          "apex_forced_flatten_trades": 0
+        },
+        "oos_evaluation_years": 0.5010266940451745,
+        "required_oos_mar": 1.5,
+        "incubation_selected_params": {},
+        "equity_curve_csv": "data/reports/campaigns/market_plumbing_priority_ensemble/ES/1m_full_history/5m/vx_then_primary_dealer_priority_long_fomc_nfp_window_fixed_wfa/campaign_tests/walk_forward_analysis/equity_curve.csv",
+        "equity_curve_html": "data/reports/campaigns/market_plumbing_priority_ensemble/ES/1m_full_history/5m/vx_then_primary_dealer_priority_long_fomc_nfp_window_fixed_wfa/campaign_tests/walk_forward_analysis/equity_curve.html",
+        "equity_curve_points": 1
+      },
+      "stitched_oos_metrics": {
+        "total_trades": 0,
+        "trades_per_year": 0.0,
+        "net_profit": 0.0,
+        "profit_factor": 0.0,
+        "expectancy_r": 0.0,
+        "max_drawdown": 0.0,
+        "max_drawdown_pct": 0.0,
+        "cagr": 0.0,
+        "mar": 0.0,
+        "worst_day": 0.0,
+        "best_day": 0.0,
+        "best_day_concentration": 0.0,
+        "max_consecutive_losses": 0,
+        "positive_month_rate": 0.0,
+        "win_rate": 0.0,
+        "apex_rule_violations": 0,
+        "apex_forced_flatten_trades": 0
+      },
+      "incubation_selected_params": {},
+      "data_quality": {
+        "rows": 1362400,
+        "duplicate_count": 0,
+        "invalid_ohlc_count": 0,
+        "missing_session_segments": 3689,
+        "first_timestamp": "2010-06-07 09:30:00-04:00",
+        "last_timestamp": "2024-11-29 13:14:00-05:00",
+        "roll_boundary_sessions_skipped": 174,
+        "loaded_rows": 4824368,
+        "strategy_rows": 272495,
+        "timeframe": "5m",
+        "timeframe_minutes": 5,
+        "source_timeframe": "1m"
+      },
+      "input_hash": "190cfc9c3240e5939b8ee5c09e1f35c92a6966440e2b0f4a5ec34e97f5d7b0f5",
+      "artifacts": [
+        "data/reports/campaigns/market_plumbing_priority_ensemble/ES/1m_full_history/5m/vx_then_primary_dealer_priority_long_fomc_nfp_window_fixed_wfa/campaign_tests/walk_forward_analysis/equity_curve.csv",
+        "data/reports/campaigns/market_plumbing_priority_ensemble/ES/1m_full_history/5m/vx_then_primary_dealer_priority_long_fomc_nfp_window_fixed_wfa/campaign_tests/walk_forward_analysis/equity_curve.html",
+        "data/reports/campaigns/market_plumbing_priority_ensemble/ES/1m_full_history/5m/vx_then_primary_dealer_priority_long_fomc_nfp_window_fixed_wfa/campaign_tests/walk_forward_analysis/wfa_oos_trade_log.csv",
+        "data/reports/campaigns/market_plumbing_priority_ensemble/ES/1m_full_history/5m/vx_then_primary_dealer_priority_long_fomc_nfp_window_fixed_wfa/campaign_tests/walk_forward_analysis/wfa_results.csv",
+        "data/reports/campaigns/market_plumbing_priority_ensemble/ES/1m_full_history/5m/vx_then_primary_dealer_priority_long_fomc_nfp_window_fixed_wfa/campaign_tests/walk_forward_analysis/wfa_summary.json"
+      ]
+    }
+  ]
+}

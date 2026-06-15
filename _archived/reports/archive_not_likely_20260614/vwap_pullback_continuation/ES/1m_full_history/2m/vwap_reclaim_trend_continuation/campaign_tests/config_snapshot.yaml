@@ -1,0 +1,188 @@
+campaign_id: vwap_pullback_continuation
+variant_id: vwap_reclaim_trend_continuation
+strategy_name: vwap_pullback_continuation
+symbol: ES
+dataset_id: 1m_full_history
+timeframe: 2m
+
+data:
+  dataset_id: 1m_full_history
+  source_timeframe: 1m
+  source: databento_dbn
+  feature_set: full
+  raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
+  cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  continuous_contract: explicit_roll_calendar
+  roll_calendar: configs/data/ES/motivewave_rithmic_roll_calendar.csv
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
+  include_spreads: false
+  warmup_days: 10
+  rth_start: "09:30:00"
+  rth_end: "16:00:00"
+  eth_start: "16:00:00"
+  eth_end: "09:29:00"
+  rolling_volume_window: 20
+
+strategy:
+  entry:
+    module: vwap_pullback_continuation
+    params:
+      setup_mode: trend_reclaim
+      rth_start: "09:30:00"
+      start_time: "09:30:00"
+      end_time: "13:30:00"
+      bar_interval_minutes: 2
+      required_trend_closes: 3
+      trend_vwap_buffer_ticks: 0
+      min_drive_points: 2.0
+      pullback_tolerance_ticks: 2
+      reclaim_buffer_ticks: 0
+      reclaim_window_bars: 2
+      max_trades_per_day: 1
+      allow_long: true
+      allow_short: true
+      tick_size: 0.25
+  tp:
+    module: cost_adjusted_fixed_r
+    params:
+      target_r_multiple: 1.25
+      tick_size: 0.25
+      tick_value: 12.50
+      commission_per_contract: 2.50
+      slippage_ticks: 1
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 2
+  flatten_time: "15:30:00"
+
+core:
+  data_subset:
+    start_date: "2021-01-01"
+    end_date: "2022-12-31"
+  initial_balance: 150000
+  tick_size: 0.25
+  tick_value: 12.50
+  commission_per_contract: 2.50
+  slippage_ticks: 1
+  position_sizing:
+    mode: risk_percent_net_liq
+    risk_pct: 0.005
+    rounding: floor
+    min_contracts: 1
+  daily_loss_limit: 3000
+  daily_profit_stop: 5000
+  flatten_time: "15:30:00"
+
+benchmarks:
+  min_trades_per_year: 60
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.25
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.45
+  max_drawdown_pct: 0.05
+  min_cagr: 0.04
+  min_mar: 1.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.40
+  min_positive_month_rate: 0.50
+  min_wfa_profitable_window_rate: 0.70
+  min_monte_carlo_prop_pass_chance: 0.50
+
+core_grid:
+  data_subset:
+    start_date: "2021-01-01"
+    end_date: "2022-12-31"
+  objective: MAR
+  min_profitable_iteration_rate: 0.70
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: grid
+  parameters:
+    entry.params.min_drive_points: [1.0, 2.0, 4.0]
+    entry.params.reclaim_window_bars: [1, 2, 4]
+    tp.params.target_r_multiple: [0.75, 1.0, 1.25, 1.5]
+    sl.params.stop_offset_ticks: [1, 2, 4]
+
+monkey:
+  data_subset:
+    start_date: "2021-01-01"
+    end_date: "2022-12-31"
+  runs: 8000
+  seed: 7
+  beat_threshold: 0.90
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    trade_count_tolerance: 0
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.10
+    duration_shape: 0.70
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+
+wfa:
+  data_subset:
+    start_date: "2011-01-01"
+    end_date: "2026-05-29"
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_min_trades_per_year: 40
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: false
+    workers: 1
+    scope: grid
+  parameters:
+    entry.params.min_drive_points: [1.0, 2.0, 4.0]
+    entry.params.reclaim_window_bars: [1, 2, 4]
+    tp.params.target_r_multiple: [0.75, 1.0, 1.25, 1.5]
+    sl.params.stop_offset_ticks: [1, 2, 4]
+
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.50
+  min_trading_days: 2
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+
+monte_carlo:
+  trade_source: core
+  runs: 500
+  seed: 11
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  path_months: 1
+  skip_trade_probability: 0.05
+  skip_winning_trade_probability: 0.0
+  adverse_slippage_per_trade: 0.0
+  position_sizing:
+    mode: risk_percent_initial_balance
+    risk_pct: 0.005
+  cluster_losses: false
+  retain_path_trades: false
+  retain_path_events: false

@@ -178,7 +178,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--roll-calendar",
         type=Path,
-        default=Path("configs/data/ES/motivewave_rithmic_roll_calendar.csv"),
+        default=Path("data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv"),
         help="Explicit ES roll calendar.",
     )
     parser.add_argument(

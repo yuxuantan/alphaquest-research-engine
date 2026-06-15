@@ -1,0 +1,368 @@
+campaign_id: nq_late_day_intraday_momentum
+variant_id: first_and_penultimate_alignment_1530
+strategy_name: nq_late_day_intraday_momentum
+symbol: NQ
+dataset_id: databento_nq_1m_20110103_20260529_dominant_session_volume
+timeframe: 5m
+research_metadata:
+  academic_source: Gao, Han, Li, and Zhou (2018), Market Intraday Momentum, Journal
+    of Financial Economics
+  doi: 10.1016/j.jfineco.2018.05.009
+  edge_thesis: The first half-hour market return predicts the last half-hour return;
+    this variant translates the paper to NQ futures.
+  mechanic: NQ late-day momentum setup_mode=first_and_penultimate_alignment; enter
+    at 15:30 ET and flatten by 16:00 ET.
+  evidence_directness: Source-backed but instrument-translated; this NQ version had
+    not appeared in existing configs before this probe.
+data:
+  dataset_id: databento_nq_1m_20110103_20260529_dominant_session_volume
+  source_timeframe: 1m
+  source: databento_dbn
+  feature_set: full
+  raw_dir: data/raw/NQ/GLBX-20260601-RTF938NJSN
+  cache_dir: data/cache/databento/GLBX-20260601-RTF938NJSN
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  continuous_contract: dominant_session_volume
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
+  include_spreads: false
+  warmup_days: 10
+  rth_start: 09:30:00
+  rth_end: '16:00:00'
+  eth_start: '16:00:00'
+  eth_end: 09:29:00
+  rolling_volume_window: 20
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: late_day_intraday_momentum
+    params:
+      setup_mode: first_and_penultimate_alignment
+      rth_start: 09:30:00
+      first_window_minutes: 30
+      last_window_start: '15:30:00'
+      penultimate_window_minutes: 30
+      bar_interval_minutes: 5
+      min_signal_return_ticks: 20
+      min_penultimate_return_ticks: 0
+      min_first_window_volume_ratio: 1.0
+      min_first_window_range_points: 10.0
+      max_trades_per_day: 1
+      allow_long: true
+      allow_short: true
+      tick_size: 0.25
+  tp:
+    module: percent_from_entry
+    params:
+      target_pct: 0.003
+      tick_size: 0.25
+      round_to_tick: true
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.003
+      round_to_tick: true
+  flatten_time: '16:00:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '16:00:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.0
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_best_day_concentration: 0.5
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2024-12-31'
+    session_labels:
+    - RTH
+  objective: MAR
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.min_signal_return_ticks:
+    - 0
+    - 20
+    - 40
+    - 60
+    entry.params.min_penultimate_return_ticks:
+    - 0
+    - 20
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.0035
+    tp.params.target_pct:
+    - 0.0015
+    - 0.0025
+    - 0.0035
+    - 0.005
+    - 0.0065
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2024-12-31'
+    session_labels:
+    - RTH
+  runs: 500
+  seed: 7
+  beat_threshold: 0.8
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2024-12-31'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_min_trades_per_year: 50
+  selection_min_profit_factor: 1.0
+  early_exit_min_train_profit_factor: 1.0
+  early_exit_require_train_profitable: true
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.min_signal_return_ticks:
+    - 0
+    - 20
+    - 40
+    - 60
+    entry.params.min_penultimate_return_ticks:
+    - 0
+    - 20
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.0035
+    tp.params.target_pct:
+    - 0.0015
+    - 0.0025
+    - 0.0035
+    - 0.005
+    - 0.0065
+campaign_tests:
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    criteria:
+    - metric: summary.total_combinations_tested
+      min: 100
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+  limited_monkey_test:
+    data_window:
+      mode: random_months
+      months: 18
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  walk_forward_analysis:
+    data_subset:
+      start_date: '2011-01-03'
+      end_date: '2024-12-31'
+      session_labels:
+      - RTH
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: summary.windows
+      min: 10
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.total_trades
+      min: 500
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+  simulated_incubation_core:
+    data_subset:
+      start_date: '2025-01-01'
+      end_date: '2026-05-29'
+      session_labels:
+      - RTH
+    train_selection:
+      enabled: true
+      data_subset:
+        start_date: '2021-01-01'
+        end_date: '2024-12-31'
+        session_labels:
+        - RTH
+      objective: MAR
+      selection_min_trades_per_year: 50
+      retain_iteration_reports: false
+      parallel:
+        enabled: true
+        workers: 6
+        scope: grid
+      parameters:
+        entry.params.min_signal_return_ticks:
+        - 0
+        - 20
+        - 40
+        - 60
+        entry.params.min_penultimate_return_ticks:
+        - 0
+        - 20
+        sl.params.stop_pct:
+        - 0.0015
+        - 0.0025
+        - 0.0035
+        tp.params.target_pct:
+        - 0.0015
+        - 0.0025
+        - 0.0035
+        - 0.005
+        - 0.0065
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.total_trades
+      min: 75
+    - metric: metrics.apex_rule_violations
+      max: 0
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  acceptance_oos_test:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.total_trades
+      min: 25
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 10000
+  trailing_drawdown: 10000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 2
+  payout_threshold: 50000
+  profit_target_pct: 0.3333333333
+  drawdown_limit_pct: 0.0666666667
+monte_carlo:
+  trade_source: core
+  runs: 500
+  seed: 11
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  path_months: 1
+  skip_trade_probability: 0.05
+  skip_winning_trade_probability: 0.0
+  adverse_slippage_per_trade: 0.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: false
+  retain_path_trades: false
+  retain_path_events: false

@@ -1,0 +1,123 @@
+{
+  "stage": "limited_monkey_test",
+  "label": "Limited Monkey Test",
+  "status": "failed",
+  "passed": false,
+  "started_at": "2026-06-06T14:43:59",
+  "completed_at": "2026-06-06T14:48:13",
+  "duration_seconds": 254.026451,
+  "criteria": [
+    {
+      "metric": "summary.core_beats_monkey_net_profit_rate",
+      "actual": 0.994,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.core_beats_monkey_max_drawdown_rate",
+      "actual": 0.4345,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": false
+    }
+  ],
+  "summary": {
+    "number_of_runs": 8000,
+    "core_metrics": {
+      "total_trades": 45,
+      "long_trades": 45,
+      "short_trades": 0,
+      "long_ratio": 1.0,
+      "average_bars_in_trade": 24.377777777777776,
+      "max_bars_in_trade": 25,
+      "net_profit": 15650.0,
+      "max_drawdown": 5195.0,
+      "max_drawdown_pct": 0.03187947777794824
+    },
+    "beat_threshold": 0.9,
+    "core_beats_monkey_net_profit_rate": 0.994,
+    "core_beats_monkey_max_drawdown_rate": 0.4345,
+    "meets_monkey_goal": false,
+    "number_passing_benchmark": 0,
+    "percentage_passing_benchmark": 0.0,
+    "profitable_iterations": 2936,
+    "percentage_profitable": 0.367,
+    "median_net_profit": -3292.5,
+    "p5_net_profit": -5012.5,
+    "p95_net_profit": 9842.874999999995,
+    "median_max_drawdown": 4887.5,
+    "p5_max_drawdown": 2767.375,
+    "p95_max_drawdown": 8695.124999999998,
+    "median_average_bars_in_trade": 24.384615384615383,
+    "median_long_ratio": 0.9767441860465116,
+    "representative_profitable_run": {
+      "run_id": 1774,
+      "total_trades": 47,
+      "long_trades": 47,
+      "short_trades": 0,
+      "long_ratio": 1.0,
+      "average_bars_in_trade": 24.595744680851062,
+      "trade_count_delta": 2,
+      "long_ratio_delta": 0.0,
+      "average_bars_delta": 0.21796690307328603,
+      "net_profit": 4702.5,
+      "max_drawdown": 6955.0,
+      "max_drawdown_pct": 0.04389051037311667,
+      "profit_factor": 1.3241426848181974,
+      "expectancy_r": 0.07157295408056435,
+      "win_rate": 0.48936170212765956,
+      "profitable": true,
+      "core_net_profit_gt_monkey": true,
+      "core_max_drawdown_lt_monkey": true,
+      "benchmark_passed": false,
+      "failure_reason": "min_cagr;min_mar;min_trades_per_year;max_daily_loss;preferred_min_total_trades;max_best_day_concentration",
+      "profitable_median_net_profit": 4702.5
+    },
+    "constraints": {
+      "trade_count_tolerance_pct": 0.05,
+      "trade_count_tolerance": 0,
+      "long_short_ratio_tolerance": 0.05,
+      "average_bars_tolerance_pct": 0.1,
+      "duration_sampling": "core_distribution",
+      "duration_shape": 0.7,
+      "max_duration_bars": 25,
+      "max_feasible_duration_bars": 78,
+      "rth_only": true,
+      "enforce_non_overlapping": true,
+      "enforce_max_trades_per_day": false
+    },
+    "iteration_reports_retained": false,
+    "iteration_report_files": [],
+    "data_subset": {
+      "start_date": "2021-01-01",
+      "end_date": "2022-12-31"
+    },
+    "parallel": {
+      "enabled": false,
+      "workers": 1,
+      "scope": "runs"
+    }
+  },
+  "data_quality": {
+    "rows": 674957,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 427,
+    "first_timestamp": "2020-12-31 16:00:00-05:00",
+    "last_timestamp": "2022-12-30 16:59:00-05:00",
+    "roll_boundary_sessions_skipped": 24,
+    "loaded_rows": 683889,
+    "strategy_rows": 135015,
+    "timeframe": "5m",
+    "timeframe_minutes": 5,
+    "source_timeframe": "1m"
+  },
+  "input_hash": "e05ff8830ac010ca0e4d644138ec695b2a18bf5b4dd258688ed5cc67cdfca7c8",
+  "artifacts": [
+    "data/reports/campaigns/calendar_session_seasonality/ES/1m_full_history/5m/late_week_afternoon_bias/campaign_tests/limited_monkey_test/monkey_results.csv",
+    "data/reports/campaigns/calendar_session_seasonality/ES/1m_full_history/5m/late_week_afternoon_bias/campaign_tests/limited_monkey_test/monkey_summary.json"
+  ]
+}

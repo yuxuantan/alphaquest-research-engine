@@ -11,7 +11,7 @@ from typing import Any
 from propstack.research.campaign_stages import run_campaign_stage_tests
 
 
-REPORT_ROOT = Path("data/reports/campaigns")
+REPORT_ROOT = Path("backtest-campaigns")
 ARCHIVE_ROOT = REPORT_ROOT / "archive_not_likely_20260614"
 DEFAULT_ARTIFACT_STEM = Path("research_artifacts/campaign_benchmark_shortlist_refresh_20260614")
 SNAPSHOT_SOURCE_DIR = Path("research_artifacts/campaign_benchmark_shortlist_refresh_20260614_source_snapshots")
@@ -77,16 +77,16 @@ def build_plan() -> list[dict[str, Any]]:
         decision, reason, evidence, failures = classify_summary(summary, is_archived=is_archived)
         source_config = source_config_for(summary, campaign_tests_dir)
         if is_archived:
-            archived_variant_root = campaign_tests_dir.parent
-            active_variant_root = REPORT_ROOT / campaign_tests_dir.parent.relative_to(ARCHIVE_ROOT)
+            archived_variant_root = campaign_tests_dir
+            active_variant_root = REPORT_ROOT / campaign_tests_dir.relative_to(ARCHIVE_ROOT)
         else:
             archived_variant_root = None
-            active_variant_root = campaign_tests_dir.parent
+            active_variant_root = campaign_tests_dir
         rows.append(
             {
                 "archived_campaign_tests_dir": str(campaign_tests_dir),
                 "archived_variant_root": str(archived_variant_root) if archived_variant_root else "",
-                "active_campaign_tests_dir": str(active_variant_root / "campaign_tests"),
+                "active_campaign_tests_dir": str(active_variant_root),
                 "active_variant_root": str(active_variant_root),
                 "source_config": str(source_config) if source_config else "",
                 "campaign_id": summary.get("campaign_id"),
@@ -108,11 +108,11 @@ def build_plan() -> list[dict[str, Any]]:
 
 
 def _candidate_campaign_tests_dirs() -> list[Path]:
-    paths = set(ARCHIVE_ROOT.rglob("campaign_tests")) if ARCHIVE_ROOT.exists() else set()
-    for path in REPORT_ROOT.rglob("campaign_tests"):
-        if _path_is_inside(path, ARCHIVE_ROOT):
+    paths = {path.parent for path in ARCHIVE_ROOT.rglob("campaign_test_summary.json")} if ARCHIVE_ROOT.exists() else set()
+    for summary_path in REPORT_ROOT.rglob("campaign_test_summary.json"):
+        if _path_is_inside(summary_path, ARCHIVE_ROOT):
             continue
-        paths.add(path)
+        paths.add(summary_path.parent)
     return sorted(paths)
 
 
@@ -180,7 +180,7 @@ def rerun_shortlist(row: dict[str, Any]) -> None:
 
         if archived_variant is not None:
             _unarchive_variant(archived_variant, active_variant)
-        target = active_variant / "campaign_tests"
+        target = active_variant
         if target.is_dir():
             shutil.rmtree(target)
         summary = run_campaign_stage_tests(
@@ -215,7 +215,7 @@ def archive_active_rejections(rows: list[dict[str, Any]]) -> None:
             shutil.rmtree(archived_variant)
         shutil.move(str(active_variant), str(archived_variant))
         row["archived_variant_root"] = str(archived_variant)
-        row["archived_campaign_tests_dir"] = str(archived_variant / "campaign_tests")
+        row["archived_campaign_tests_dir"] = str(archived_variant)
         row["status"] = "archived"
 
 
@@ -258,7 +258,7 @@ def source_config_for(summary: dict, campaign_tests_dir: Path) -> Path | None:
     config_path = summary.get("config_path") if summary else None
     if config_path and Path(config_path).is_file():
         return Path(config_path)
-    snapshot = campaign_tests_dir / "config_snapshot.yaml"
+    snapshot = campaign_tests_dir / "config.yaml"
     if snapshot.is_file():
         return snapshot
     return None

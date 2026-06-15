@@ -61,7 +61,7 @@ PYTHONPATH=src python3 -m propstack.compare_data_sources \
   --symbol ES \
   --timezone America/New_York \
   --continuous-contract explicit_roll_calendar \
-  --roll-calendar configs/data/ES/motivewave_rithmic_roll_calendar.csv \
+  --roll-calendar data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv \
   --price-tolerance 0.0 \
   --volume-tolerance 0.0 \
   --detail-limit 100000

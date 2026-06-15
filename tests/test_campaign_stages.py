@@ -1,4 +1,7 @@
+from pathlib import Path
+
 import pandas as pd
+import pytest
 
 from propstack.research.campaign_stages import evaluate_criteria
 from propstack.research import campaign_stages
@@ -35,6 +38,16 @@ def test_stage_criteria_support_exclusive_min():
     assert results[0]["passed"] is False
     assert results[0]["expected"] == {"exclusive_min": 1.2}
     assert results[1]["passed"] is True
+
+
+def test_stage_criteria_allow_fixed_or_declared_grid_size():
+    criteria = [{"metric": "summary.total_combinations_tested", "valid_parameter_combination_count": True}]
+
+    assert evaluate_criteria({"summary": {"total_combinations_tested": 1}}, criteria)[0]["passed"] is True
+    assert evaluate_criteria({"summary": {"total_combinations_tested": 8}}, criteria)[0]["passed"] is True
+    assert evaluate_criteria({"summary": {"total_combinations_tested": 120}}, criteria)[0]["passed"] is True
+    assert evaluate_criteria({"summary": {"total_combinations_tested": 2}}, criteria)[0]["passed"] is False
+    assert evaluate_criteria({"summary": {"total_combinations_tested": 121}}, criteria)[0]["passed"] is False
 
 
 def test_default_stage_criteria_fail_apex_rule_violations():
@@ -134,7 +147,166 @@ def test_fast_runtime_defaults_enable_parallel_sections_without_mutating_input()
     }
 
 
+def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run2/config.yaml"
+    config_path.parent.mkdir(parents=True)
+    campaign_metadata = tmp_path / "backtest-campaigns/demo_campaign/campaign.yaml"
+    campaign_metadata.write_text(
+        "\n".join(
+            [
+                "campaign_id: demo_campaign",
+                "edge: demo academic edge",
+                "candidate_variants:",
+                "  - demo_variant",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    config_path.write_text(
+        "\n".join(
+            [
+                "campaign_id: demo_campaign",
+                "variant_id: demo_variant",
+                "strategy_name: demo_strategy",
+                "timeframe: 1m",
+                "data:",
+                "  symbol: ES",
+                "  dataset_id: sample_1m",
+                "  raw_csv: data/raw/ES/sample.csv",
+                "strategy:",
+                "  entry:",
+                "    module: demo_entry",
+                "  tp:",
+                "    module: demo_tp",
+                "  sl:",
+                "    module: demo_sl",
+                "core:",
+                "  initial_balance: 50000",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run_stage(stage_name, cfg, source_config, stage_cfg, stage_dir, skip_validation, context):
+        return {
+            "stage": stage_name,
+            "label": stage_name,
+            "status": "passed",
+            "passed": True,
+            "criteria": [],
+        }
+
+    monkeypatch.setattr(campaign_stages, "_run_stage", fake_run_stage)
+
+    summary = campaign_stages.run_campaign_stage_tests(
+        config_path,
+        include_acceptance=False,
+        skip_validation=True,
+    )
+
+    run_dir = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run2"
+    assert Path(summary["output_dir"]) == Path("backtest-campaigns/demo_campaign/demo_variant/ES/run2")
+    assert summary["test_run_id"] == "run2"
+    assert (run_dir / "config.yaml").is_file()
+    assert (run_dir / "limited_core_grid_test/stage_result.json").is_file()
+    assert (run_dir / "variant_test_summary.json").is_file()
+    assert (run_dir / "campaign_test_summary.json").is_file()
+    assert not (run_dir / "campaign_tests").exists()
+    assert (run_dir.parent / "runs_index.csv").is_file()
+    assert summary["campaign_metadata"]["path"] == "backtest-campaigns/demo_campaign/campaign.yaml"
+    assert summary["campaign_metadata"]["hash"]
+    assert summary["variant_metadata"]["path"] == "backtest-campaigns/demo_campaign/demo_variant/variant.yaml"
+    assert summary["variant_metadata"]["mechanic"]["entry_module"] == "demo_entry"
+    assert (tmp_path / "backtest-campaigns/demo_campaign/demo_variant/variant.yaml").is_file()
+    assert (tmp_path / "backtest-campaigns/demo_campaign/variants_index.yaml").is_file()
+
+
+def test_staged_campaign_can_write_external_config_to_explicit_run_folder(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "research_artifacts/demo_config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        "\n".join(
+            [
+                "campaign_id: demo_campaign",
+                "variant_id: demo_variant",
+                "strategy_name: demo_strategy",
+                "timeframe: 1m",
+                "data:",
+                "  symbol: ES",
+                "  dataset_id: sample_1m",
+                "  raw_csv: data/raw/ES/sample.csv",
+                "strategy:",
+                "  entry:",
+                "    module: demo_entry",
+                "  tp:",
+                "    module: demo_tp",
+                "  sl:",
+                "    module: demo_sl",
+                "core:",
+                "  initial_balance: 50000",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run_stage(stage_name, cfg, source_config, stage_cfg, stage_dir, skip_validation, context):
+        return {
+            "stage": stage_name,
+            "label": stage_name,
+            "status": "passed",
+            "passed": True,
+            "criteria": [],
+        }
+
+    monkeypatch.setattr(campaign_stages, "_run_stage", fake_run_stage)
+
+    summary = campaign_stages.run_campaign_stage_tests(
+        config_path,
+        include_acceptance=False,
+        skip_validation=True,
+        out_dir=tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run2",
+    )
+
+    run_dir = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run2"
+    assert summary["test_run_id"] == "run2"
+    assert summary["config_path"] == str(run_dir / "config.yaml")
+    assert summary["variant_metadata"]["path"] == str(tmp_path / "backtest-campaigns/demo_campaign/demo_variant/variant.yaml")
+    assert (run_dir / "config.yaml").read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
+
+
+def test_staged_campaign_rejects_symbol_level_output_dir(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run1/config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        "\n".join(
+            [
+                "campaign_id: demo_campaign",
+                "variant_id: demo_variant",
+                "strategy_name: demo_strategy",
+                "timeframe: 1m",
+                "data:",
+                "  symbol: ES",
+                "  dataset_id: sample_1m",
+                "  raw_csv: data/raw/ES/sample.csv",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Campaign run output must"):
+        campaign_stages.run_campaign_stage_tests(
+            config_path,
+            include_acceptance=False,
+            skip_validation=True,
+            out_dir=tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES",
+        )
+
+
 def test_default_stage_criteria_match_screenshot_benchmarks():
+    limited_core = campaign_stages._criteria_for_stage("limited_core_grid_test", {})
     limited_monkey = campaign_stages._criteria_for_stage("limited_monkey_test", {})
     wfa = campaign_stages._criteria_for_stage("walk_forward_analysis", {})
     incubation = campaign_stages._criteria_for_stage("simulated_incubation_core", {})
@@ -143,14 +315,22 @@ def test_default_stage_criteria_match_screenshot_benchmarks():
     def by_metric(criteria):
         return {item["metric"]: item for item in criteria}
 
-    assert by_metric(limited_monkey)["summary.core_beats_monkey_net_profit_rate"]["min"] == 0.90
+    assert by_metric(limited_core)["summary.total_combinations_tested"]["valid_parameter_combination_count"] is True
+    assert by_metric(limited_monkey)["summary.percentage_profitable"]["min"] == 0.80
+    assert by_metric(limited_monkey)["summary.median_net_profit"]["exclusive_min"] == 0.0
+    assert by_metric(limited_monkey)["summary.trade_path_stress.percentage_profitable"]["min"] == 0.80
+    assert by_metric(limited_monkey)["summary.trade_path_stress.median_net_profit"]["exclusive_min"] == 0.0
+    assert by_metric(limited_monkey)["summary.trade_path_stress.one_tick_worse.profitable"]["equals"] is True
     assert by_metric(wfa)["stitched_oos_metrics.profit_factor"]["min"] == 1.2
     assert by_metric(wfa)["stitched_oos_metrics.mar"]["min"] == 0.4
-    assert by_metric(wfa)["stitched_oos_metrics.total_trades"]["min"] == 500
-    assert "stitched_oos_metrics.expectancy_r" not in by_metric(wfa)
+    assert by_metric(wfa)["stitched_oos_metrics.trades_per_year"]["min"] == 50
+    assert by_metric(wfa)["stitched_oos_metrics.expectancy_r"]["exclusive_min"] == 0.0
     assert "stitched_oos_metrics.win_rate" not in by_metric(wfa)
     assert by_metric(campaign_stages._criteria_for_stage("wfa_oos_monkey_test", {}))[
-        "summary.core_beats_monkey_net_profit_rate"
+        "summary.percentage_profitable"
+    ]["min"] == 0.80
+    assert by_metric(campaign_stages._criteria_for_stage("wfa_oos_monkey_test", {}))[
+        "summary.trade_path_stress.percentage_profitable"
     ]["min"] == 0.80
     assert by_metric(incubation)["metrics.profit_factor"]["min"] == 1.0
     assert by_metric(incubation)["metrics.mar"]["min"] == 1.0
@@ -159,7 +339,7 @@ def test_default_stage_criteria_match_screenshot_benchmarks():
     assert by_metric(acceptance)["metrics.profit_factor"]["min"] == 1.0
     assert by_metric(acceptance)["metrics.mar"]["min"] == 1.0
     assert by_metric(acceptance)["metrics.total_trades"]["min"] == 25
-    assert "metrics.expectancy_r" not in by_metric(acceptance)
+    assert by_metric(acceptance)["metrics.expectancy_r"]["exclusive_min"] == 0.0
     assert "metrics.win_rate" not in by_metric(acceptance)
 
 
@@ -624,3 +804,12 @@ def test_last_months_stage_subset_uses_config_end_date():
     )
 
     assert subset == {"start_date": "2024-12-01", "end_date": "2026-06-01"}
+
+
+def test_first_months_stage_subset_uses_config_start_date():
+    subset = campaign_stages._subset_from_window(
+        {"start_date": "2021-01-01", "end_date": "2026-06-01"},
+        {"mode": "first_months", "months": 18},
+    )
+
+    assert subset == {"start_date": "2021-01-01", "end_date": "2022-07-01"}

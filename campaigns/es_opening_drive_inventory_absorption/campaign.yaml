@@ -1,0 +1,85 @@
+campaign_id: es_opening_drive_inventory_absorption
+title: ES opening-drive inventory absorption
+decision: pending
+created_at: 2026-06-15
+instrument: ES
+market_timezone: America/New_York
+edge_family: opening_drive_inventory_absorption
+hypothesis: >
+  A high-volume first-30/60-minute opening drive with aligned aggressive
+  orderflow can leave intraday inventory pressure. If price and cumulative
+  delta remain aligned, continuation may persist; if price stalls or diverges
+  from the opening pressure, the same inventory pressure may be absorbed and
+  fadeable.
+sources:
+  - title: Market Intraday Momentum
+    authors: Gao, Lei; Han, Yufeng; Li, Sophia Zhengzi; Zhou, Guofu
+    year: 2018
+    venue: Journal of Financial Economics
+    link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+    relevance: >
+      Documents that early intraday market returns contain predictive
+      information for later same-day market returns, especially on higher
+      volume and volatility days.
+  - title: Intraday Patterns in the Cross-Section of Stock Returns
+    authors: Heston, Steven L.; Korajczyk, Robert A.; Sadka, Ronnie
+    year: 2010
+    venue: Journal of Finance / working paper
+    link: https://arxiv.org/abs/1005.3535
+    relevance: >
+      Shows systematic intraday continuation and short-horizon reversal
+      patterns linked to trading-flow timing, volume, imbalance, volatility,
+      and bid-ask effects.
+  - title: The Price Impact of Order Book Events
+    authors: Cont, Rama; Kukanov, Arseniy; Stoikov, Sasha
+    year: 2014
+    venue: Journal of Financial Econometrics
+    link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+    doi: 10.1093/jjfinec/nbt003
+    relevance: >
+      Motivates using orderflow imbalance as a short-horizon price-pressure
+      proxy. This campaign uses aggregated trade-side flow, not full depth OFI.
+rationale: >
+  The campaign tests whether the RTH opening drive is useful only when paired
+  with same-session inventory/orderflow state. It is distinct from the active
+  fixed-time signed-flow persistence campaign because the signal is anchored
+  to first-30/60-minute opening drive state plus later absorption or
+  continuation context, not a rolling flow impulse at arbitrary intraday times.
+data_needs:
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  - 1-minute RTH bars with signed_volume, total volume, and completed-bar OHLC
+lookahead_risks:
+  - Opening-window return, imbalance, and volume are only used after the
+    relevant 30-minute or 60-minute window is complete.
+  - Entry signals are emitted at the completed bar close and filled at the next
+    bar open by the backtest engine.
+  - Opening-volume rank is computed from prior sessions only inside the entry
+    module; the current session is appended after the due slot is evaluated.
+  - VWAP and cumulative delta fields are built only from bars completed up to
+    the signal bar.
+  - No final-session high, low, VWAP, volume profile, or future range is used.
+failure_modes:
+  - Opening-drive effects may be absorbed by ES liquidity and vanish after
+    commissions/slippage.
+  - The edge may be concentrated in crisis or high-volatility years.
+  - Directional variants may be sparse after volume-rank and opening-pressure
+    filters.
+  - Continuation and fade mechanics may be regime-dependent and fail WFA.
+  - Aggregated signed-volume is a Sierra bar-level proxy, not quote-level OFI.
+rescue_policy:
+  allowed: true
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change edge thesis
+    - add filters or modules after seeing results
+    - alter costs, fills, sessions, data windows, or validation gates
+variants:
+  - open30_flow_continuation_1030
+  - open60_flow_continuation_1130
+  - open30_absorbed_pressure_fade_1015
+  - open60_exhaustion_fade_1300
+  - open30_price_flow_divergence_fade_1400
+
