@@ -1,0 +1,121 @@
+campaign_name: es_monthly_opex_pressure
+campaign_id: es_monthly_opex_pressure
+instrument: ES
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no non-quarterly monthly listed-option expiration pressure campaign outside _archived. The failed quarterly expiration campaign tests futures roll and quarterly expiration months; this campaign explicitly excludes March, June, September, and December.
+edge_hypothesis: Non-quarterly standard monthly listed-option expiration sessions may create intraday ES pressure or reversal effects from dealer hedging, pinning around option strikes, and post-expiration inventory unwind.
+why_it_may_apply_to_es_futures: ES tracks the S&P 500 index complex and is routinely used to hedge index, ETF, and equity-option exposure. Monthly OPEX effects documented in listed options may transmit to ES intraday returns through basket and futures hedging, but the test must survive costs, next-bar execution, and forced flattening.
+research_sources:
+- title: Program trading and expiration day effects
+  author: Hans R. Stoll and Robert E. Whaley
+  year: 1987
+  link_or_doi: https://rpc.cfainstitute.org/research/financial-analysts-journal/1987/program-trading-and-expiration-day-effects
+  expected_mechanism: Expiration-day program trading and liquidity demand can create abnormal index price effects near derivative expiration.
+- title: Stock price clustering on option expiration dates
+  author: Xiaoyan Ni, Neil D. Pearson, and Allen M. Poteshman
+  year: 2005
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2004.06.015
+  expected_mechanism: Option expiration can alter underlying prices and pull closes toward option strike concentrations.
+- title: SPX End-of-Month Options Contract Specifications
+  author: Cboe
+  year: 2026
+  link_or_doi: https://www.cboe.com/tradable_products/sp_500/spx_end_of_month_options/specifications/
+  expected_mechanism: Cboe distinguishes end-of-month expirations from standard third-Friday expirations, supporting an ex-ante monthly OPEX calendar definition.
+- title: Options Expiration Calendar
+  author: The Options Industry Council
+  year: 2026
+  link_or_doi: https://www.optionseducation.org/referencelibrary/expiration-calendar
+  expected_mechanism: Listed-option expiration processing is a deterministic calendar event; holiday adjustments must be known before testing.
+behavioural_or_microstructure_rationale: The campaign tests only predeclared third-Friday monthly expiration windows and excludes quarterly months so it does not duplicate the quarterly futures/options expiration edge. It does not use realized same-day option open interest, strike pins, volume spikes, future settlement prices, or post-signal outcomes.
+expected_failure_modes:
+- Monthly OPEX affects volatility, volume, or closing-location statistics but not tradable ES directional returns.
+- The dominant effect shifted to 0DTE and weekly options, weakening the older monthly calendar anomaly.
+- The effect is present in single stocks or SPX settlement but not the ES continuous RTH contract.
+- Trade count remains sparse and results are dominated by one or two expiration sessions.
+- Direction depends on unobserved option-positioning variables unavailable in local data.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/nyse_monthly_opex_sessions_20110103_20260609.csv
+calendar_construction:
+  builder: tools/build_nyse_monthly_opex_calendar.py
+  rule: third Friday of each calendar month, shifted to the prior regular NYSE session if the third Friday is a full NYSE holiday; early-close sessions are excluded.
+  quarterly_months_excluded: true
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+forbidden_forms_of_lookahead:
+- Changing the expiration calendar, signal type, direction, or entry time after seeing results.
+- Using realized option open interest, settlement level, session high/low, final VWAP, or volume spike to decide entry.
+- Including quarterly months in rescue attempts.
+- Adding filters after seeing which monthly expiration sessions worked.
+variants:
+- nonquarterly_opex_thursday_positioning_short_1330
+- nonquarterly_opex_open_short_1000
+- nonquarterly_opex_midday_long_1200
+- nonquarterly_opex_late_short_1500
+- nonquarterly_post_opex_monday_reversal_long_1000
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable stop/target parameter space inside existing modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - monthly OPEX calendar rule
+  - include_quarterly_months setting
+  - signal_type
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - attempt_id: parameter_space_rescue_1
+    variant_id: nonquarterly_opex_thursday_positioning_short_1330
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_monthly_opex_pressure/rescue_attempts/parameter_space_rescue_1/nonquarterly_opex_thursday_positioning_short_1330/config.yaml
+    reason: Original previous-session short failed core with 5/9 profitable combinations but below the 70% stability gate; rescue kept the same previous-session short mechanic and tested one adjacent stop/target grid.
+    report: backtest-campaigns/es_monthly_opex_pressure/nonquarterly_opex_thursday_positioning_short_1330/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_monthly_opex_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: nonquarterly_opex_open_short_1000
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_monthly_opex_pressure/rescue_attempts/parameter_space_rescue_1/nonquarterly_opex_open_short_1000/config.yaml
+    reason: Original OPEX-session 10:00 short failed core with zero profitable combinations; rescue kept the same OPEX-session short mechanic and tested one adjacent stop/target grid.
+    report: backtest-campaigns/es_monthly_opex_pressure/nonquarterly_opex_open_short_1000/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_monthly_opex_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: nonquarterly_opex_midday_long_1200
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_monthly_opex_pressure/rescue_attempts/parameter_space_rescue_1/nonquarterly_opex_midday_long_1200/config.yaml
+    reason: Original OPEX-session noon long failed core with 2/9 profitable combinations; rescue kept the same OPEX-session noon long mechanic and tested one adjacent stop/target grid.
+    report: backtest-campaigns/es_monthly_opex_pressure/nonquarterly_opex_midday_long_1200/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_monthly_opex_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: nonquarterly_opex_late_short_1500
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_monthly_opex_pressure/rescue_attempts/parameter_space_rescue_1/nonquarterly_opex_late_short_1500/config.yaml
+    reason: Original OPEX-session 15:00 short failed core with zero profitable combinations; rescue kept the same OPEX-session late short mechanic and tested one adjacent stop/target grid.
+    report: backtest-campaigns/es_monthly_opex_pressure/nonquarterly_opex_late_short_1500/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_monthly_opex_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: nonquarterly_post_opex_monday_reversal_long_1000
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_monthly_opex_pressure/rescue_attempts/parameter_space_rescue_1/nonquarterly_post_opex_monday_reversal_long_1000/config.yaml
+    reason: Original post-OPEX next-session long failed core with 1/9 profitable combinations; rescue kept the same post-OPEX long mechanic and tested one adjacent stop/target grid.
+    report: backtest-campaigns/es_monthly_opex_pressure/nonquarterly_post_opex_monday_reversal_long_1000/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_monthly_opex_pressure_rescue_attempt_1_20260616.md

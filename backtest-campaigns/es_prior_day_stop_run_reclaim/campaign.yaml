@@ -1,0 +1,128 @@
+campaign_id: es_prior_day_stop_run_reclaim
+title: ES Prior-Day Stop-Run Reclaim
+decision: failed
+created_at: '2026-06-15'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: ES may mean-revert after a completed 5-minute bar sweeps the prior
+  RTH high or low and then closes back inside that level, because the sweep can
+  trigger clustered stop orders while the reclaim/rejection indicates failed
+  continuation and liquidity absorption.
+rationale: This campaign tests a prior-session support/resistance stop-run
+  edge. It is not a prior-session IBS oscillator, range-compression breakout,
+  Connors/RSI2 short-term oscillator, fixed intraday risk-premium, overnight
+  gap reversal, signed-orderflow persistence, opening-drive inventory, calendar
+  seasonality, late-day intraday momentum, daily trend, or volume-shock edge.
+  Each variant uses only completed prior RTH levels and completed signal bars,
+  enters on the next bar open, and exits same day by stop, target, or forced
+  flatten.
+sources:
+- title: Currency Orders and Exchange Rate Dynamics
+  authors: Carol L. Osler
+  year: 2003
+  venue: Journal of Finance
+  link: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  relevance: Documents clustered stop-loss and take-profit orders around
+    technical support/resistance levels and links that order clustering to
+    reversals or momentum once levels are crossed.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Finds that support and resistance levels can coincide with peaks
+    in limit-order-book depth, supporting a liquidity-provision interpretation
+    of reactions around widely watched levels.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  venue: Journal of International Money and Finance
+  link: https://ideas.repec.org/a/eee/jimfin/v24y2005i2p219-241.html
+  relevance: Shows that clustered stop-loss orders can produce rapid price
+    moves around known levels, motivating a strict distinction between failed
+    sweeps and true breakout continuation.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- deterministic 5-minute aggregation from completed 1-minute bars
+- previous RTH high and low available only after that RTH session is complete
+- fresh-level flags so a prior high/low is only traded once per session side
+- exchange session labels and no-overnight prop-rule flatten checks
+data_quality_caveats:
+- The Sierra cache is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+- A 5-minute reclaim cannot identify hidden stop-order volume directly; it is a
+  bar-level proxy for a failed excursion through a prior-session level.
+lookahead_risks:
+- Prior RTH high/low are from the fully completed previous RTH session only.
+- Sweep and reclaim conditions use only the completed 5-minute signal bar.
+- Entry is next-bar open or later because the entry signal uses bar close.
+- No future high/low, final VWAP, final session return, or future session state
+  is used.
+- All variants flatten the same day before the configured prop cutoff.
+failure_modes:
+- A sweep through the prior RTH high/low may be informed breakout continuation,
+  not failed liquidity taking.
+- The edge may be asymmetric by side or may only work in a narrow volatility
+  regime, which should be rejected rather than overfit.
+- Bar-level reclaims may overstate fills during fast stop-run moves.
+- Apparent profits may be concentrated in a small number of crisis/event days.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_prior_session_ibs_reversion
+  - es_connors_rsi2_mean_reversion
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  - es_overnight_intraday_reversal
+  - es_signed_orderflow_persistence
+  - es_opening_drive_inventory_absorption
+  - es_turn_of_month_seasonality
+  - es_daily_time_series_momentum
+  - es_late_day_intraday_momentum
+  - es_volume_shock_liquidity_reversal
+  conclusion: Not a duplicate of active failed campaigns. This campaign tests
+    failed sweeps and reclaim/rejection of prior RTH high/low levels, not
+    prior-session IBS, range compression breakout, oscillator mean reversion,
+    overnight gap reversal, fixed-time drift, calendar seasonality, early/late
+    intraday momentum, volume shocks, ES/MES divergence, or signed-flow
+    persistence.
+variants:
+- full_session_two_sided_reclaim
+- morning_prior_low_reclaim_long
+- morning_prior_high_reject_short
+- midday_two_sided_reclaim
+- afternoon_two_sided_reclaim
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_prior_day_stop_run_reclaim/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached_runs: 1
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: >
+    All five original variants failed before WFA, and all five
+    per-failed-variant parameter-space-only rescues also failed. The strongest
+    rescue, `morning_prior_high_reject_short/rescue1`, passed the limited core
+    profitable-combo gate but failed limited monkey robustness.
+  best_rescue_profitable_combo_rate: 0.8641975308641975
+  best_rescue_terminal_stage: limited_monkey_test
+  best_rescue_monkey_profitable_rate: 0.32666666666666666
+  best_rescue_monkey_median_net_profit: -770.0

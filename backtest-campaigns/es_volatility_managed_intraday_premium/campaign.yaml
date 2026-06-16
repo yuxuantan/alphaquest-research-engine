@@ -1,0 +1,158 @@
+campaign_name: es_volatility_managed_intraday_premium
+campaign_id: es_volatility_managed_intraday_premium
+instrument: ES
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no lagged realized-volatility-managed
+  intraday premium campaign outside _archived. The edge uses local ES RTH data and
+  pre-session volatility features shifted by one session.
+edge_hypothesis: ES intraday long exposure may have better risk-adjusted performance
+  when lagged realized volatility, range, absolute movement, or downside semivolatility
+  is low or falling.
+why_it_may_apply_to_es_futures: ES is a liquid equity-index futures contract that
+  directly expresses the U.S. equity index premium. Volatility-management research
+  suggests reducing exposure in high-volatility states can improve risk-adjusted performance;
+  this campaign tests a fixed-contract intraday approximation with realistic ES costs.
+research_sources:
+- title: Volatility-Managed Portfolios
+  author: Alan Moreira and Tyler Muir
+  year: 2017
+  link_or_doi: https://doi.org/10.1111/jofi.12513
+  expected_mechanism: Lagged volatility states can condition factor exposure because
+    volatility changes are not fully offset by expected-return changes.
+- title: Volatility Managed Portfolios
+  author: Alan Moreira and Tyler Muir
+  year: 2016
+  link_or_doi: https://www.nber.org/papers/w22208
+  expected_mechanism: Working-paper version documents volatility-managed exposure
+    across equity and other risk premia.
+- title: The Economic Value of Volatility Timing
+  author: Jeff Fleming, Chris Kirby, and Barbara Ostdiek
+  year: 2001
+  link_or_doi: https://doi.org/10.1111/0022-1082.00327
+  expected_mechanism: Short-horizon volatility timing can add economic value under
+    realistic estimation and transaction-cost assumptions.
+- title: On the Performance of Volatility-Managed Portfolios
+  author: Scott Cederburg, Michael S. O Doherty, Feifei Wang, and Xuemin Yan
+  year: 2020
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2020.04.015
+  expected_mechanism: 'Out-of-sample caveat: volatility-managed portfolios can be
+    structurally unstable, so this campaign must fail closed unless robustness gates
+    pass.'
+behavioural_or_microstructure_rationale: The campaign treats lagged realized volatility
+  as an ex-ante state variable for sizing or suppressing equity-index risk exposure.
+  It does not use current-session realized range, future volatility, post-entry returns,
+  VIX, or unobservable risk premia.
+expected_failure_modes:
+- The unconditional ES intraday premium is too weak after costs even in low-volatility
+  states.
+- Volatility-management effects improve Sharpe in continuous sizing but not fixed
+  one-contract entry/exit tests.
+- Low-volatility state filters simply reduce trade count and create fragile sparse
+  winners.
+- Crisis or post-crisis years dominate performance.
+- The effect is not stable across neighbouring volatility thresholds or WFA windows.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/es_lagged_volatility_features_20110103_20260609.csv
+feature_construction:
+  builder: tools/build_es_lagged_volatility_features.py
+  output: data/external/es_lagged_volatility_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3739
+  lookahead_control: Every feature row is shifted one RTH session; a signal date can
+    only use information available after the prior RTH close.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+forbidden_forms_of_lookahead:
+- Use of current-session realized volatility, range, high, low, or close in the volatility
+  state.
+- Use of future sessions in volatility ranks or rolling windows.
+- Changing thresholds or feature definitions after seeing test results.
+- Holding overnight to capture daily close-to-close volatility timing returns.
+variants:
+- low_20d_vol_open_long_1000
+- low_10d_range_midmorning_long_1030
+- low_5d_abs_move_lunch_long_1200
+- low_downside20_afternoon_long_1330
+- vol_downshift_late_morning_long_1100
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - feature construction shift rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - attempt_id: parameter_space_rescue_1
+    variant_id: low_20d_vol_open_long_1000
+    status: failed
+    scope: parameter_space_only_no_mechanic_change
+    config: campaigns/es_volatility_managed_intraday_premium/rescue_attempts/parameter_space_rescue_1/low_20d_vol_open_long_1000/config.yaml
+    reason: Original low-20-day-vol 10:00 long failed core at 2/27 profitable combinations;
+      rescue keeps the same low-vol20 mechanic and tests a stricter adjacent volatility-rank
+      neighborhood with wider stops/targets around the strongest original row.
+    report: backtest-campaigns/es_volatility_managed_intraday_premium/low_20d_vol_open_long_1000/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.5277777777777778
+  - attempt_id: parameter_space_rescue_1
+    variant_id: low_10d_range_midmorning_long_1030
+    status: failed
+    scope: parameter_space_only_no_mechanic_change
+    config: campaigns/es_volatility_managed_intraday_premium/rescue_attempts/parameter_space_rescue_1/low_10d_range_midmorning_long_1030/config.yaml
+    reason: Original low-10-day-range 10:30 long failed the 70% core stability gate
+      despite 5 benchmark-passing combinations; rescue keeps the same low-range mechanic
+      and tests the adjacent broader low-range threshold neighborhood around the strongest
+      row.
+    report: backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_monkey_test
+    failure_reason: summary.percentage_profitable=0.24; summary.median_net_profit=-2081.25
+  - attempt_id: parameter_space_rescue_1
+    variant_id: low_5d_abs_move_lunch_long_1200
+    status: failed
+    scope: parameter_space_only_no_mechanic_change
+    config: campaigns/es_volatility_managed_intraday_premium/rescue_attempts/parameter_space_rescue_1/low_5d_abs_move_lunch_long_1200/config.yaml
+    reason: Original low-5-day-absolute-move noon long failed core with zero profitable
+      combinations; rescue keeps the same low-abs-move mechanic and tests a nearby
+      stricter/tighter-exit neighborhood.
+    report: backtest-campaigns/es_volatility_managed_intraday_premium/low_5d_abs_move_lunch_long_1200/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.07407407407407407
+  - attempt_id: parameter_space_rescue_1
+    variant_id: low_downside20_afternoon_long_1330
+    status: failed
+    scope: parameter_space_only_no_mechanic_change
+    config: campaigns/es_volatility_managed_intraday_premium/rescue_attempts/parameter_space_rescue_1/low_downside20_afternoon_long_1330/config.yaml
+    reason: Original low-downside-semivol afternoon long failed core with zero profitable
+      combinations; rescue keeps the same downside-semivol mechanic and tests a stricter
+      adjacent volatility-rank neighborhood with wider exits around the least-bad
+      row.
+    report: backtest-campaigns/es_volatility_managed_intraday_premium/low_downside20_afternoon_long_1330/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.037037037037037035
+  - attempt_id: parameter_space_rescue_1
+    variant_id: vol_downshift_late_morning_long_1100
+    status: failed
+    scope: parameter_space_only_no_mechanic_change
+    config: campaigns/es_volatility_managed_intraday_premium/rescue_attempts/parameter_space_rescue_1/vol_downshift_late_morning_long_1100/config.yaml
+    reason: Original volatility-downshift 11:00 long failed core with one profitable
+      combination and high profit concentration; rescue keeps the same 5-day/20-day
+      volatility ratio mechanic and tests adjacent ratio and wider-exit values around
+      the strongest row.
+    report: backtest-campaigns/es_volatility_managed_intraday_premium/vol_downshift_late_morning_long_1100/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.2222222222222222

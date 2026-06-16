@@ -1,0 +1,109 @@
+campaign_name: es_turn_of_year_effect
+campaign_id: es_turn_of_year_effect
+instrument: ES
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no turn-of-year/Santa-rally campaign outside _archived. This annual window is distinct from the active failed all-month turn-of-month, half-year Halloween, pre-holiday, FOMC, and quarterly-expiration calendar families.
+edge_hypothesis: ES may earn abnormal positive intraday returns around the turn of the year, especially during the Santa-rally window of the last five regular December sessions and first two regular January sessions.
+why_it_may_apply_to_es_futures: Szakmary and Kiefer test stock-index futures around the turn of the year. ES is the primary S&P 500 futures contract, so a direct intraday ES check is the clean local expression of the futures-linked anomaly.
+research_sources:
+- title: 'The Disappearing January/Turn of the Year Effect: Evidence From Stock Index Futures and Cash Markets'
+  author: Andrew C. Szakmary and Dean B. Kiefer
+  year: 2004
+  link_or_doi: https://doi.org/10.1002/fut.20103
+  expected_mechanism: Turn-of-year effects in stock index futures and cash markets may reflect seasonal risk bearing, tax-loss/rebalancing flows, or year-end liquidity/institutional behavior.
+- title: Are Seasonal Anomalies Real? A Ninety-Year Perspective
+  author: Josef Lakonishok and Seymour Smidt
+  year: 1988
+  link_or_doi: https://doi.org/10.1093/rfs/1.4.403
+  expected_mechanism: Long-sample evidence reports seasonal return anomalies including turn-of-year behavior.
+- title: 'High Stock Returns before Holidays: Existence and Evidence on Possible Causes'
+  author: Robert A. Ariel
+  year: 1990
+  link_or_doi: https://doi.org/10.1111/j.1540-6261.1990.tb03731.x
+  expected_mechanism: Holiday-adjacent positive returns motivate a separate check of the Christmas/New-Year window.
+behavioural_or_microstructure_rationale: The campaign treats turn-of-year membership as an ex-ante calendar state. It does not use future January returns, future high/low, future volume, tax-flow realizations, or post-signal outcomes. Early-close sessions are excluded to match the local RTH cache.
+expected_failure_modes:
+- The futures-specific effect may have disappeared after the sample period studied by Szakmary and Kiefer.
+- The effect may be close-to-close or overnight rather than same-session RTH.
+- The window is sparse and may fail trade-density or concentration gates.
+- The annual window may be dominated by one crisis or one year.
+- Costs and next-bar execution may erase any intraday residual edge.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/nyse_turn_of_year_sessions_20110103_20260609.csv
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  turn_of_year_rule: last five regular December sessions and first two regular January sessions; early-close sessions excluded
+forbidden_forms_of_lookahead:
+- Changing turn-of-year membership after results.
+- Using future January/holiday-window return, future volume, or future session high/low to decide entry.
+- Adding filters after seeing which years worked.
+- Holding overnight through the turn-of-year window.
+variants:
+- santa_window_open_long_1000
+- santa_window_midday_long_1200
+- december_window_long_1500
+- january_first2_open_long_1000
+- santa_momentum_confirmed_midday_long_1200
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable entry/stop/target parameter space inside existing modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - turn-of-year date rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - attempt_id: parameter_space_rescue_1
+    variant_id: santa_window_open_long_1000
+    status: failed
+    scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+    config: campaigns/es_turn_of_year_effect/rescue_attempts/parameter_space_rescue_1/santa_window_open_long_1000/config.yaml
+    reason: Original all-window 10:00 long failed core with only 1/9 profitable combinations and concentration; rescue keeps the same calendar window, entry time, direction, and modules while testing adjacent target values.
+    report: backtest-campaigns/es_turn_of_year_effect/santa_window_open_long_1000/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_turn_of_year_effect_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: santa_window_midday_long_1200
+    status: failed
+    scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+    config: campaigns/es_turn_of_year_effect/rescue_attempts/parameter_space_rescue_1/santa_window_midday_long_1200/config.yaml
+    reason: Original all-window 12:00 long failed core with zero profitable combinations; rescue keeps the same mechanic and tests tighter stop/target ranges around the least-bad row.
+    report: backtest-campaigns/es_turn_of_year_effect/santa_window_midday_long_1200/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_turn_of_year_effect_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: december_window_long_1500
+    status: failed
+    scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+    config: campaigns/es_turn_of_year_effect/rescue_attempts/parameter_space_rescue_1/december_window_long_1500/config.yaml
+    reason: Original December-only 15:00 long had only 3/9 profitable combinations and concentration; rescue keeps the same December late-session mechanic and tests adjacent tighter stop/target ranges.
+    report: backtest-campaigns/es_turn_of_year_effect/december_window_long_1500/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_turn_of_year_effect_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: january_first2_open_long_1000
+    status: failed
+    scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+    config: campaigns/es_turn_of_year_effect/rescue_attempts/parameter_space_rescue_1/january_first2_open_long_1000/config.yaml
+    reason: Original January-first-two 10:00 long had only 3/9 profitable combinations and sparse trades; rescue keeps the same January calendar mechanic and tests adjacent target values.
+    report: backtest-campaigns/es_turn_of_year_effect/january_first2_open_long_1000/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_turn_of_year_effect_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: santa_momentum_confirmed_midday_long_1200
+    status: failed
+    scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+    config: campaigns/es_turn_of_year_effect/rescue_attempts/parameter_space_rescue_1/santa_momentum_confirmed_midday_long_1200/config.yaml
+    reason: Original momentum-confirmed variant failed core with zero profitable combinations; rescue keeps the same momentum-confirmed turn-of-year mechanic and changes only the existing return-threshold plus stop/target parameter space.
+    report: backtest-campaigns/es_turn_of_year_effect/santa_momentum_confirmed_midday_long_1200/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_turn_of_year_effect_rescue_attempt_1_20260616.md

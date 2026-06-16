@@ -1,0 +1,122 @@
+campaign_id: es_vpin_toxicity_continuation
+title: ES VPIN Toxicity Continuation
+decision: failed
+created_at: '2026-06-16'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: Elevated order-flow-toxicity proxy states may identify sessions where
+  liquidity providers face adverse-selection pressure; if ES has already generated
+  a positive same-session return by 13:30 ET, the pressure may continue into the afternoon
+  after costs.
+rationale: This campaign tests a VPIN/order-flow-toxicity proxy edge, not raw signed-flow
+  persistence, ES/MES divergence, opening-drive inventory, VWAP pullback, prior-level
+  breakout/reclaim, calendar, or gap reversal. The local implementation is an OHLCV
+  volume-bucket proxy with shifted prior-session ranks, so it is deliberately treated
+  as a proxy test rather than a true tick-level VPIN estimate.
+sources:
+- title: Flow Toxicity and Liquidity in a High-frequency World
+  authors: David Easley, Marcos Lopez de Prado, and Maureen O'Hara
+  year: 2012
+  venue: Review of Financial Studies 25(5), 1457-1493
+  doi: 10.1093/rfs/hhs053
+  link: https://academic.oup.com/rfs/article-abstract/25/5/1457/1569929
+  relevance: Introduces VPIN as a volume-time flow-toxicity measure based on volume
+    imbalance and trade intensity.
+- title: Flow Toxicity and Liquidity in a High-frequency World
+  authors: David Easley, Marcos Lopez de Prado, and Maureen O'Hara
+  year: 2012
+  venue: SSRN working paper page
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1695596
+  relevance: Provides accessible abstract and working-paper metadata for the VPIN
+    toxicity mechanism.
+- title: Assessing Measures of Order Flow Toxicity and Early Warning Signals for Market
+    Turbulence
+  authors: Torben G. Andersen and Oleg Bondarenko
+  year: 2015
+  venue: Review of Finance 19(1), 1-54
+  link: https://ideas.repec.org/p/aah/create/2013-43.html
+  relevance: Uses E-mini S&P 500 futures and questions VPIN incremental forecast power,
+    a required failure-mode caveat for this campaign.
+data_needs:
+- timezone-aware ES RTH 1-minute bars aggregated to 5-minute strategy bars
+- volume and OHLC fields sufficient for the local VPIN proxy feature builder
+- shifted prior-session VPIN rank columns at 13:30 ET
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The local feature is an OHLCV volume-bucket toxicity proxy, not tick-level VPIN
+  with true buyer/seller classification.
+- VPIN ranks are shifted prior-session rolling ranks to avoid same-session rank lookahead.
+- Same-bar stop/target conflicts use pessimistic OHLC handling.
+- The Andersen-Bondarenko critique means failure is expected unless robustness is
+  strong.
+lookahead_risks:
+- The VPIN rank used at 13:30 is shifted from prior sessions only.
+- Current-session return is known only through the completed 13:25-13:30 ET bar.
+- Entry is next-bar open because the signal uses the completed 5-minute close.
+- No future volatility, final session return, final VWAP, or future volume bucket
+  is used.
+failure_modes:
+- The OHLCV proxy may be too crude versus true trade-classified VPIN.
+- Toxicity may predict volatility rather than positive directional continuation.
+- Any apparent edge may be dominated by a few crisis sessions.
+- The 13:30 signal may be too late after costs and slippage.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_prior_session_ibs_reversion
+  - es_connors_rsi2_mean_reversion
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  - es_overnight_intraday_reversal
+  - es_signed_orderflow_persistence
+  - es_opening_drive_inventory_absorption
+  - es_turn_of_month_seasonality
+  - es_daily_time_series_momentum
+  - es_late_day_intraday_momentum
+  - es_volume_shock_liquidity_reversal
+  - es_prior_day_stop_run_reclaim
+  - es_vwap_pullback_continuation
+  - es_cftc_tff_hedging_pressure
+  - es_market_plumbing_liquidity_capacity
+  - es_bankruptcy_distress_regime_reversion
+  - es_prior_session_level_breakout_continuation
+  conclusion: Not a duplicate of active failed campaigns. This is a VPIN/order-flow-toxicity
+    proxy state test, not raw signed-flow persistence or opening-drive inventory.
+    Archived tests are ignored and not used for tuning.
+variants:
+- baseline_high_toxicity_positive_ret_long_1330
+- extreme_toxicity_positive_ret_long_1330
+- drawdown_rank_confirmed_long_1330
+- fast_bucket_toxicity_long_1330
+- slow_bucket_toxicity_long_1330
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_vpin_toxicity_continuation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 2
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five VPIN toxicity originals and all five one-time parameter/fixed-parameter
+    rescues failed before WFA. Slow-bucket original and rescue reached limited monkey
+    but failed robustness; no run reached WFA, Monte Carlo, simulated incubation,
+    or frozen validation.
+  best_original_profitable_combo_rate: 0.8271604938271605
+  best_rescue_profitable_combo_rate: 1.0

@@ -1,0 +1,112 @@
+campaign_id: es_daily_time_series_momentum
+title: ES Daily Time-Series Momentum
+decision: failed
+created_at: '2026-06-15'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: ES may retain intraday continuation in the direction of its own prior
+  daily close-to-close trend, consistent with futures time-series momentum research.
+rationale: The edge is a prior-daily-return trend-following hypothesis, not an intraday
+  fixed-time premium, calendar anomaly, range breakout, mean reversion, or orderflow
+  edge. Each variant uses only RTH closes already completed before the signal session,
+  waits for a completed 5-minute bar, enters on the next bar open, and exits same
+  day by stop, target, or forced flatten.
+sources:
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2011.11.003
+  link: https://ideas.repec.org/a/eee/jfinec/v104y2012i2p228-250.html
+  relevance: Documents significant time-series momentum across equity index, currency,
+    commodity, and bond futures. This campaign tests a single-instrument ES intraday
+    implementation with explicit costs and no overnight exposure.
+- title: A Century of Evidence on Trend-Following Investing
+  authors: Brian Hurst, Yao Hua Ooi, Lasse Heje Pedersen
+  year: 2017
+  venue: Journal of Portfolio Management
+  link: https://www.aqr.com/Insights/Research/Journal-Article/A-Century-of-Evidence-on-Trend-Following-Investing
+  relevance: Extends trend-following evidence across a long historical sample. This
+    campaign treats that as a prior only and requires ES-specific staged validation.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen
+  year: 2011
+  venue: SSRN working paper
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2089463
+  relevance: Working-paper version explicitly discusses futures return persistence
+    over one- to twelve-month horizons and motivates the prior-close trend signal
+    family.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- deterministic 5-minute aggregation from completed 1-minute bars
+- prior completed RTH close history with enough warmup sessions
+- exchange session labels and no-overnight prop-rule flatten checks
+data_quality_caveats:
+- The Sierra cache is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+- The module records prior RTH closes only after the configured RTH close; missing
+  or malformed session labels invalidate the edge.
+lookahead_risks:
+- Trend direction uses only RTH closes recorded before the signal session.
+- A signal at 10:00 ET uses the completed 09:55-10:00 ET bar and enters no earlier
+  than the next bar open.
+- No final current-session close, future high/low, future VWAP, future volume, or
+  future monthly information is used.
+- All variants flatten the same day before the configured prop cutoff.
+failure_modes:
+- The daily time-series momentum anomaly may not survive when compressed into one
+  ES intraday holding period.
+- Long and short trend effects may be asymmetric; two-sided variants can lose to equity-index
+  drift.
+- Positive results may come from crisis trends or one-side concentration and must
+  fail if not stable across parameters and WFA windows.
+- Large daily trends may already be exhausted by the 10:00 ET intraday entry.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_prior_session_ibs_reversion
+  - es_connors_rsi2_mean_reversion
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  - es_overnight_intraday_reversal
+  - es_signed_orderflow_persistence
+  - es_opening_drive_inventory_absorption
+  - es_turn_of_month_seasonality
+  conclusion: Not a duplicate of the active failed campaigns. It tests prior daily
+    close-to-close time-series momentum, not micro-flow divergence, prior-session
+    IBS, Connors RSI2, compression breakout, unconditional fixed RTH drift, overnight
+    reversal, orderflow persistence, opening-drive absorption, or turn-of-month seasonality.
+variants:
+- twenty_day_trend_1000_two_sided
+- sixty_day_trend_1000_two_sided
+- vol_norm_trend_1000_two_sided
+- short_term_alignment_1000_two_sided
+- long_only_trend_1000
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_daily_time_series_momentum/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: >
+    All five original variants and all five per-failed-variant
+    parameter-space-only rescues failed the limited core-grid
+    profitable-combination gate before monkey, WFA, Monte Carlo, or frozen
+    validation.
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - add or remove filters after seeing results

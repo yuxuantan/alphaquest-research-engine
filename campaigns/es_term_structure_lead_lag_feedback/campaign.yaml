@@ -1,0 +1,137 @@
+campaign_name: es_term_structure_lead_lag_feedback
+campaign_id: es_term_structure_lead_lag_feedback
+instrument: ES
+initial_decision: TEST
+reason_for_decision: 'Active-only duplicate review found no ES front-vs-next-contract
+  term-structure lead-lag campaign outside _archived. This is distinct from active
+  ES/NQ cross-index lead-lag, ES/MES flow divergence, and quarterly-expiration calendar
+  pressure because it uses actual front/deferred ES contract price dislocation over
+  completed intraday windows.
+
+  '
+edge_hypothesis: 'Near roll, the front ES contract and next quarterly ES contract
+  can temporarily diverge over short completed windows. If the front contract moves
+  materially more than the next contract, the short-term calendar-spread feedback
+  may predict reversion in the front contract after the signal bar closes.
+
+  '
+why_it_may_apply_to_es_futures: 'ES quarterly contracts share the same underlying
+  index but differ in liquidity and maturity. Calendar-spread and outright traders
+  link the contracts, but near-roll liquidity transfer and order-flow timing can create
+  short-lived front-vs-deferred dislocations. The campaign trades only the front ES
+  contract.
+
+  '
+research_sources:
+- title: 'High-frequency lead-lag relationships in the Chinese stock index futures
+    market: tick-by-tick dynamics of calendar spreads'
+  author: Guanlin Li, Xiyan Chen, and Yingzheng Liu
+  year: 2025
+  link_or_doi: https://arxiv.org/abs/2501.03171
+  expected_mechanism: Near-month and longer-dated stock-index futures can show maturity-based
+    lead-lag and spread-feedback effects.
+- title: A GCN-LSTM Approach for ES-mini and VX Futures Forecasting
+  author: Nikolas Michael, Mihai Cucuringu, and Sam Howison
+  year: 2024
+  link_or_doi: https://arxiv.org/abs/2408.05659
+  expected_mechanism: ES-mini futures across expirations have connected return, volatility,
+    and volume structures that can support term-structure signal propagation.
+- title: High Frequency Lead/Lag Relationships - Empirical Facts
+  author: Nicolas Huth and Frederic Abergel
+  year: 2014
+  link_or_doi: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+  expected_mechanism: High-frequency lead-lag asymmetry is a documented market-microstructure
+    effect, but naive market-order strategies can fail after spread and costs.
+behavioural_or_microstructure_rationale: 'The variants do not assume the next contract
+  always leads. They test whether completed front-vs-deferred return gaps express
+  a short-term spread-feedback state in which the front contract is likely to revert
+  after moving too far relative to the next contract.
+
+  '
+expected_failure_modes:
+- Front and next ES contracts may be too synchronized at 1-minute resolution.
+- Deferred-contract overlap is available only near roll, reducing trade count.
+- The effect may be consumed by bid/ask spread, commission, and slippage.
+- Profit may concentrate in a few roll weeks, crisis periods, or single days.
+- The local data lacks ESU26, so the latest front period cannot be included.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_flat_time: '16:59:59'
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/raw/ES/sierra-es-trades/*.parquet
+- data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+- data/cache/orderflow/es_term_structure_lead_lag_1m_20110311_20260316_full_rth_ny.parquet
+derived_feature_cache:
+  builder: tools/build_es_term_structure_lead_lag_cache.py
+  output: data/cache/orderflow/es_term_structure_lead_lag_1m_20110311_20260316_full_rth_ny.parquet
+  validation: data/cache/orderflow/es_term_structure_lead_lag_1m_20110311_20260316_full_rth_ny.validation.json
+  rows: 111930
+  sessions: 287
+  first_timestamp: '2011-03-11 09:30:00'
+  last_timestamp: '2026-03-16 15:59:00'
+  missing_deferred_files:
+  - ESU26
+  timing_rule: 'Front-contract selection uses the prebuilt explicit-roll active-contract
+    cache. Deferred-contract selection uses the next explicit roll-calendar contract.
+    Rolling features use only completed current-or-prior minutes.
+
+    '
+forbidden_forms_of_lookahead:
+- Selecting the front or deferred contract from same-day volume after seeing the session.
+- Using the current unclosed signal bar or any bar after the configured signal timestamp.
+- Using final-session VWAP, final daily range, future high/low, or future roll information.
+- Adding a filter after seeing original or rescue results.
+variants:
+- front_premium_reversion_short_1000
+- front_discount_reversion_long_1000
+- late_morning_two_sided_spread_feedback_1130
+- afternoon_confirmed_spread_feedback_1400
+- late_day_two_sided_spread_feedback_1530
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - attempt_id: parameter_space_rescue_1
+    date: '2026-06-16'
+    scope: per_failed_variant
+    status: completed
+    changed_only:
+    - entry.params.min_front_return_bps grid/default
+    - entry.params.min_spread_gap_bps grid/default
+    - sl.params.stop_pct grid/default
+    - tp.params.target_r_multiple grid/default
+    unchanged:
+    - edge thesis
+    - entry module es_term_structure_lead_lag
+    - setup_mode per variant
+    - entry time per variant
+    - lookback_minutes per variant
+    - front/deferred contract selection method
+    - timeframe 1m
+    - data window
+    - costs and fill assumptions
+    - stop and target modules
+    - stage criteria
+    decision: FAIL
+    result: All five one-time parameter-space rescues failed limited_core_grid_test.
+      Best rescue was late_day_two_sided_spread_feedback_1530 with profitable combo
+      rate 0.2222222222222222, zero benchmark-pass combinations, top net 100.0, and
+      5 top-combo trades.

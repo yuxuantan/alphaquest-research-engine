@@ -1,0 +1,109 @@
+campaign_name: es_preholiday_effect
+campaign_id: es_preholiday_effect
+instrument: ES
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no pre-holiday futures/calendar campaign outside _archived. This is distinct from day-of-week, turn-of-month, Halloween, FOMC, and quarterly expiration because it conditions on the final regular session before full NYSE holidays.
+edge_hypothesis: U.S. equity-index futures may earn abnormal positive returns on regular trading sessions immediately preceding full exchange holidays, reflecting documented pre-holiday return premia, lower risk bearing, or holiday-period liquidity/sentiment effects.
+why_it_may_apply_to_es_futures: ES is the primary S&P 500 futures contract and Fabozzi, Ma, and Briley specifically document pre-holiday return effects in futures. The local test uses only regular RTH sessions before known full NYSE holidays and closes all positions intraday.
+research_sources:
+- title: Holiday Trading in Futures Markets
+  author: Frank J. Fabozzi, Christopher K. Ma, James E. Briley
+  year: 1994
+  link_or_doi: https://doi.org/10.1111/j.1540-6261.1994.tb04432.x
+  expected_mechanism: Futures contracts show significantly higher pre-holiday returns than nonholiday returns.
+- title: 'High Stock Returns before Holidays: Existence and Evidence on Possible Causes'
+  author: Robert A. Ariel
+  year: 1990
+  link_or_doi: https://doi.org/10.1111/j.1540-6261.1990.tb03731.x
+  expected_mechanism: U.S. stock-index returns are disproportionately positive on trading days before holidays.
+- title: Are Seasonal Anomalies Real? A Ninety-Year Perspective
+  author: Josef Lakonishok and Seymour Smidt
+  year: 1988
+  link_or_doi: https://doi.org/10.1093/rfs/1.4.403
+  expected_mechanism: Long-sample evidence reports persistent seasonal anomalies including returns around holidays.
+behavioural_or_microstructure_rationale: The campaign treats holidays as ex-ante calendar states. It does not use realized holiday-week returns, future volume, future volatility, settlement prices, or post-signal outcomes. Early-close sessions are excluded to match the validated local RTH cache.
+expected_failure_modes:
+- The pre-holiday premium may have decayed in large-cap equity index futures.
+- The effect may be close-to-close or overnight rather than same-session RTH.
+- Low holiday-event frequency may fail WFA trade-density or concentration gates.
+- Early-close exclusion can remove some historically strong sessions.
+- Costs and next-bar execution may erase the residual edge.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/nyse_preholiday_regular_sessions_20110103_20260609.csv
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  preholiday_rule: last regular RTH session before a full scheduled NYSE holiday; early-close sessions excluded
+forbidden_forms_of_lookahead:
+- Changing holiday membership after results.
+- Using realized holiday-week return, future volatility, or future session high/low to choose entry.
+- Adding filters after seeing which holidays worked.
+- Holding overnight into or through the holiday.
+variants:
+- preholiday_open_long_1000
+- preholiday_midday_long_1200
+- preholiday_late_long_1500
+- preholiday_low_range_midday_long_1200
+- preholiday_momentum_confirmed_midday_long_1200
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable stop/target parameter space inside existing modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - holiday-date rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - attempt_id: parameter_space_rescue_1
+    variant_id: preholiday_open_long_1000
+    status: failed
+    scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+    config: campaigns/es_preholiday_effect/rescue_attempts/parameter_space_rescue_1/preholiday_open_long_1000/config.yaml
+    reason: Original 10:00 unconditional pre-holiday long failed core with zero profitable combinations; rescue keeps the same signal date, entry time, direction, and modules while testing adjacent wider stop/target ranges around the least-bad row.
+    report: backtest-campaigns/es_preholiday_effect/preholiday_open_long_1000/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_preholiday_effect_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: preholiday_midday_long_1200
+    status: failed
+    scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+    config: campaigns/es_preholiday_effect/rescue_attempts/parameter_space_rescue_1/preholiday_midday_long_1200/config.yaml
+    reason: Original 12:00 unconditional pre-holiday long failed core with zero profitable combinations; rescue keeps the same mechanic and tests adjacent tighter stop/target ranges around the least-bad row.
+    report: backtest-campaigns/es_preholiday_effect/preholiday_midday_long_1200/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_preholiday_effect_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: preholiday_late_long_1500
+    status: failed
+    scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+    config: campaigns/es_preholiday_effect/rescue_attempts/parameter_space_rescue_1/preholiday_late_long_1500/config.yaml
+    reason: Original 15:00 pre-holiday long had only 3/9 profitable combinations and severe profit concentration; rescue keeps the same late-session mechanic and tests adjacent stop/target ranges.
+    report: backtest-campaigns/es_preholiday_effect/preholiday_late_long_1500/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_preholiday_effect_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: preholiday_low_range_midday_long_1200
+    status: failed
+    scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+    config: campaigns/es_preholiday_effect/rescue_attempts/parameter_space_rescue_1/preholiday_low_range_midday_long_1200/config.yaml
+    reason: Original low-range filter produced zero trades because the declared range thresholds were too restrictive; rescue keeps the low-range pre-holiday mechanic and changes only the existing range threshold parameter space plus stop/target grids.
+    report: backtest-campaigns/es_preholiday_effect/preholiday_low_range_midday_long_1200/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_preholiday_effect_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: preholiday_momentum_confirmed_midday_long_1200
+    status: failed
+    scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+    config: campaigns/es_preholiday_effect/rescue_attempts/parameter_space_rescue_1/preholiday_momentum_confirmed_midday_long_1200/config.yaml
+    reason: Original momentum-confirmed variant had only 7/27 profitable combinations and sparse best-row trades; rescue keeps the same momentum-confirmed pre-holiday mechanic and tests adjacent return-threshold plus stop/target parameter space.
+    report: backtest-campaigns/es_preholiday_effect/preholiday_momentum_confirmed_midday_long_1200/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_preholiday_effect_rescue_attempt_1_20260616.md

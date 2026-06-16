@@ -1,0 +1,116 @@
+campaign_id: es_late_day_intraday_momentum
+title: ES Late-Day Market Intraday Momentum
+decision: failed
+created_at: '2026-06-15'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: ES may exhibit market intraday momentum where the return from the
+  prior RTH close through the first completed opening window predicts late-day
+  direction.
+rationale: This campaign tests the Gao, Han, Li, and Zhou market intraday
+  momentum anomaly as a same-day ES futures implementation. It is not a daily
+  trend-following, overnight reversal, fixed RTH risk-premium, calendar,
+  compression-breakout, or orderflow-divergence campaign. Each variant uses only
+  completed bars before the signal timestamp, enters on the next bar open, and
+  exits before the configured prop cutoff.
+sources:
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2018.05.009
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  relevance: Documents that the first half-hour market return measured from the
+    prior close predicts the last half-hour return. This campaign tests whether
+    that ETF-level effect has a robust ES futures counterpart after realistic
+    costs and same-day flattening.
+- title: Intraday Momentum - The First Half-Hour Return Predicts the Last Half-Hour Return
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2015
+  venue: SSRN working paper
+  doi: 10.2139/ssrn.2440866
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2440866
+  relevance: Working-paper version motivates stronger effects on high-volume and
+    high-volatility days, which is represented by one predeclared conditioned
+    variant.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- deterministic 5-minute aggregation from completed 1-minute bars
+- previous RTH close available before the next session opens
+- volume-ratio feature for the conditioned variant
+- exchange session labels and no-overnight prop-rule flatten checks
+data_quality_caveats:
+- The Sierra cache is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+- The first-window return is invalid if previous RTH close, RTH labels, or
+  timezone conversion are ambiguous.
+lookahead_risks:
+- The first-window return uses only the previous RTH close and completed opening
+  bars before the 15:30 ET signal.
+- Penultimate-window alignment uses only bars completed by the 15:30 ET signal.
+- No current-session final close, future last-half-hour return, future daily
+  high/low, final VWAP, or future volume information is used.
+- All variants flatten the same day before the configured prop cutoff.
+failure_modes:
+- The ETF anomaly may not transfer to ES after futures costs and slippage.
+- The effect may be concentrated in a few crisis days or macro-news sessions.
+- Last-half-hour futures liquidity and volatility may make fixed stops/targets
+  unrealistic unless robustness tests survive worse slippage and missed fills.
+- Directional performance may be asymmetric; long-only strength can hide weak
+  short-side evidence.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_prior_session_ibs_reversion
+  - es_connors_rsi2_mean_reversion
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  - es_overnight_intraday_reversal
+  - es_signed_orderflow_persistence
+  - es_opening_drive_inventory_absorption
+  - es_turn_of_month_seasonality
+  - es_daily_time_series_momentum
+  conclusion: Not a duplicate of the active failed campaigns. This campaign
+    tests early-session market return predicting late-day return, not prior
+    daily trend, unconditional RTH drift, overnight reversal, prior-session IBS,
+    Connors RSI2, range compression, calendar seasonality, own-ES orderflow
+    persistence, ES/MES flow divergence, or opening-drive inventory absorption.
+variants:
+- first30_to_last30_two_sided
+- first30_to_last30_long_only
+- first30_volume_range_conditioned
+- first60_to_last30_two_sided
+- first30_penultimate_alignment
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_late_day_intraday_momentum/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: >
+    All five original variants and all five per-failed-variant
+    parameter-space-only rescues failed the limited core-grid
+    profitable-combination gate before monkey, WFA, Monte Carlo, or frozen
+    validation.
+  invalid_precheck_note: >
+    An initial zero-trade run caused by missing prev_rth_close and volume_ratio
+    feature configuration was discarded before rescue and rerun as corrected
+    run1; it is not counted as a strategy failure.
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results

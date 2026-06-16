@@ -373,11 +373,14 @@ class BacktestEngine:
     def _validate_strategy_feature_columns(self, data: pd.DataFrame, diagnostics: dict) -> None:
         module = str(self.strategy_config.get("entry", {}).get("module", ""))
         required_by_module = {
+            "bls_macro_release_day_drift": {"is_rth"},
             "calendar_session_bias": {"is_rth"},
             "cftc_tff_hedging_pressure": {"is_rth"},
             "cftc_tff_tiered_hedging_pressure": {"is_rth"},
             "connors_rsi2_mean_reversion": {"is_rth"},
             "daily_time_series_momentum": {"is_rth"},
+            "es_term_structure_lead_lag": {"is_rth"},
+            "fomc_pre_announcement_drift": {"is_rth"},
             "pdh_pdl_sweep_reclaim": {"is_rth", "prev_rth_low", "prev_rth_high"},
             "opening_range_breakout": {"is_rth"},
             "opening_drive_inventory_combo": {
@@ -409,8 +412,10 @@ class BacktestEngine:
             "intraday_capitulation_mr": {"is_rth", "vwap"},
             "intraday_momentum_priority": {"is_rth"},
             "gao_last_half_hour_orderflow": {"is_rth", "signed_volume", "large20_signed_volume", "large20_volume"},
+            "halloween_seasonal_premium": {"is_rth"},
             "late_day_intraday_momentum": {"is_rth", "prev_rth_close", "volume_ratio"},
             "liquidity_risk_capacity_priority": {"is_rth"},
+            "monthly_opex_pressure": {"is_rth"},
             "morning_intraday_momentum": {"is_rth", "volume_ratio"},
             "morning_orderflow_momentum": {"is_rth", "signed_volume", "large20_signed_volume", "large20_volume"},
             "overnight_intraday_reversal": {"is_rth", "prev_rth_close"},
@@ -424,12 +429,17 @@ class BacktestEngine:
                 "trade_orderflow_signed_volume_60",
                 "trade_orderflow_volume_60",
             },
+            "preholiday_effect": {"is_rth"},
             "prior_session_ibs_reversion": {"is_rth", "prev_rth_high", "prev_rth_low", "prev_rth_close"},
+            "quarterly_expiration_pressure": {"is_rth"},
             "range_compression_breakout": {"is_rth"},
             "rth_gap_fade": {"is_rth", "prev_rth_close", "vwap"},
             "turn_of_month_bias": {"is_rth"},
             "trade_orderflow_multi_pressure": {"is_rth"},
             "trade_orderflow_pressure": {"is_rth"},
+            "turn_of_year_effect": {"is_rth"},
+            "vix_expiration_pressure": {"is_rth"},
+            "volatility_managed_intraday_premium": {"is_rth"},
             "volume_conditioned_liquidity_reversal": {"is_rth", "volume_ratio"},
             "vpin_toxicity_continuation": {
                 "is_rth",

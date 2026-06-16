@@ -1,0 +1,108 @@
+campaign_name: es_quarterly_expiration_pressure
+campaign_id: es_quarterly_expiration_pressure
+instrument: ES
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no quarterly index futures/options expiration pressure campaign outside _archived. This deterministic calendar edge is distinct from day-of-week, turn-of-month, FOMC, Halloween, and generic intraday-premium families.
+edge_hypothesis: Quarterly index futures/options expiration and roll dates may create intraday ES price pressure or reversal effects from hedging, program trading, settlement, and roll activity.
+why_it_may_apply_to_es_futures: ES is the primary S&P 500 futures contract and is directly tied to quarterly equity-index expiration and roll mechanics. The campaign tests whether deterministic expiration-related sessions have exploitable same-day effects after costs and forced flattening.
+research_sources:
+- title: Program trading and expiration day effects
+  author: Hans R. Stoll and Robert E. Whaley
+  year: 1987
+  link_or_doi: Financial Analysts Journal 43(2), 16-28
+  expected_mechanism: Index futures/options expiration is associated with program trading and expiration-day effects.
+- title: 'Program trading and individual stock returns: Ingredients of the triple-witching brew'
+  author: Hans R. Stoll and Robert E. Whaley
+  year: 1990
+  link_or_doi: Journal of Business 63, S165-S192
+  expected_mechanism: Derivative expiration can affect underlying stock/index returns through program trading and settlement activity.
+- title: Equity Index Roll Dates
+  author: CME Group
+  year: 2026
+  link_or_doi: https://www.cmegroup.com/trading/equity-index/rolldates.html
+  expected_mechanism: CME identifies the equity-index roll date as the Monday prior to the third Friday of the expiration month.
+behavioural_or_microstructure_rationale: The campaign treats quarterly expiration and roll sessions as ex-ante calendar microstructure events. It does not use realized volume spikes, settlement prices, future contract rolls, or post-signal outcomes.
+expected_failure_modes:
+- Expiration effects are mostly volume/volatility, not directional returns.
+- The effect is in underlying stock baskets, not the continuous ES contract used here.
+- Quarterly frequency is sparse and may fail trade-count/profit-concentration gates.
+- Modern market structure has arbitraged away older expiration effects.
+- Direction differs by regime, creating unstable parameter neighborhoods.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  expiration_date_rule: third Friday of March, June, September, and December; non-trading holidays simply produce no session signal
+forbidden_forms_of_lookahead:
+- Changing expiration-date rule after results.
+- Using realized settlement price, volume spike, or same-day high/low to decide entry.
+- Holding overnight through expiration or roll.
+- Adding filters after seeing which expiration sessions worked.
+variants:
+- monday_prior_roll_week_long_1000
+- thursday_prior_positioning_short_1330
+- expiration_friday_open_short_1000
+- expiration_friday_midday_long_1200
+- monday_after_expiration_reversal_long_1000
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable stop/target parameter space inside existing modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - expiration-date rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - attempt_id: parameter_space_rescue_1
+    variant_id: monday_prior_roll_week_long_1000
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_quarterly_expiration_pressure/rescue_attempts/parameter_space_rescue_1/monday_prior_roll_week_long_1000/config.yaml
+    reason: Original Monday-prior roll-week long failed core with zero profitable combinations; rescue keeps the same deterministic roll-week Monday long mechanic and tests adjacent stop/target ranges.
+    report: backtest-campaigns/es_quarterly_expiration_pressure/monday_prior_roll_week_long_1000/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_quarterly_expiration_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: thursday_prior_positioning_short_1330
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_quarterly_expiration_pressure/rescue_attempts/parameter_space_rescue_1/thursday_prior_positioning_short_1330/config.yaml
+    reason: Original Thursday-prior short failed core with 3/9 profitable combinations but sparse trade count and concentration; rescue keeps the same Thursday-prior short mechanic and tests adjacent tighter stop/target ranges.
+    report: backtest-campaigns/es_quarterly_expiration_pressure/thursday_prior_positioning_short_1330/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_quarterly_expiration_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: expiration_friday_open_short_1000
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_quarterly_expiration_pressure/rescue_attempts/parameter_space_rescue_1/expiration_friday_open_short_1000/config.yaml
+    reason: Original expiration-Friday 10:00 short failed core with 3/9 profitable combinations but sparse trade count and concentration; rescue keeps the same expiration-Friday short mechanic and tests adjacent wider stop/target ranges.
+    report: backtest-campaigns/es_quarterly_expiration_pressure/expiration_friday_open_short_1000/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_quarterly_expiration_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: expiration_friday_midday_long_1200
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_quarterly_expiration_pressure/rescue_attempts/parameter_space_rescue_1/expiration_friday_midday_long_1200/config.yaml
+    reason: Original expiration-Friday noon long failed core with zero profitable combinations; rescue keeps the same expiration-Friday noon long mechanic and tests adjacent tighter stop/target ranges.
+    report: backtest-campaigns/es_quarterly_expiration_pressure/expiration_friday_midday_long_1200/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_quarterly_expiration_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: monday_after_expiration_reversal_long_1000
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_quarterly_expiration_pressure/rescue_attempts/parameter_space_rescue_1/monday_after_expiration_reversal_long_1000/config.yaml
+    reason: Original Monday-after long failed core at 6/9 profitable combinations but below stability and sparse trade-count gates; rescue keeps the same Monday-after long mechanic and tests adjacent stop/target ranges around the strongest row.
+    report: backtest-campaigns/es_quarterly_expiration_pressure/monday_after_expiration_reversal_long_1000/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_quarterly_expiration_pressure_rescue_attempt_1_20260616.md

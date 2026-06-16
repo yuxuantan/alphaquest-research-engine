@@ -1,0 +1,127 @@
+campaign_id: es_bankruptcy_distress_regime_reversion
+title: ES Bankruptcy Distress Regime Reversion
+decision: failed
+created_at: '2026-06-16'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: Realized bankruptcy/default-distress regimes may condition short-horizon
+  ES intraday reversal because aggregate distress changes risk appetite, dealer balance-sheet
+  tolerance, and compensation demanded after prior-session directional moves.
+rationale: This campaign tests an exogenous quarterly legal-distress state, not market-plumbing,
+  CFTC positioning, calendar seasonality, VWAP, prior-level sweeps, range compression,
+  own-ES orderflow, or a simple intraday price pattern. Archived bankruptcy tests
+  are ignored for duplicate checks under the active-only policy.
+sources:
+- title: In Search of Distress Risk
+  authors: John Y. Campbell, Jens Hilscher, Jan Szilagyi
+  year: 2008
+  venue: Journal of Finance 63(6), 2899-2939
+  doi: 10.1111/j.1540-6261.2008.01416.x
+  link: https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.2008.01416.x
+  relevance: Motivates default/distress state variables as predictors of equity-return
+    behavior and failure risk.
+- title: Default Risk in Equity Returns
+  authors: Maria Vassalou and Yuhang Xing
+  year: 2004
+  venue: Journal of Finance 59(2), 831-868
+  doi: 10.1111/j.1540-6261.2004.00650.x
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2004.00650.x
+  relevance: Supports default risk as a systematic equity-return state variable.
+- title: Bankruptcy Filings Statistics / Table F-2
+  authors: Administrative Office of the U.S. Courts
+  year: 2026
+  venue: U.S. Courts statistical data tables
+  link: https://www.uscourts.gov/data-news/reports/statistical-reports/bankruptcy-filings-statistics
+  relevance: Official source for quarterly business and nonbusiness bankruptcy filings
+    by chapter used in the local derived feature file.
+data_needs:
+- timezone-aware ES RTH 1-minute bars in America/New_York
+- 'U.S. Courts F-2 derived feature file with period_end and effective_date: data/external/uscourts_bankruptcy_f2_quarterly_features.csv'
+- deterministic 5-minute aggregation from completed 1-minute bars
+- next-bar-open entry when a completed 5-minute bar close emits a signal
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- Only derived YoY, share, and z-score columns are used; raw parsed count columns
+  include legacy-table anomalies and are not signal inputs.
+- Quarterly features are slow-moving and may be too stale for intraday ES use even
+  with stale_after_days capped.
+- 'The U.S. Courts table availability is modeled by the local effective_date column:
+  quarter end plus 45 calendar days, moved to next weekday when needed.'
+- The Sierra cache is aggregated bar-level data, not tick-path data. Same-bar stop/target
+  conflicts must use pessimistic OHLC assumptions.
+lookahead_risks:
+- Feature values are selected as-of session date using the module effective_date history;
+  future quarters are unavailable.
+- Signals use only completed 5-minute bars, prior recorded RTH session closes, and
+  the latest non-stale bankruptcy feature effective on or before the session date.
+- No future session return, final VWAP, final volume profile, future high/low, or
+  current-quarter unreleased bankruptcy table is used.
+failure_modes:
+- Quarterly legal-distress data may be too slow for same-day intraday ES execution.
+- Distress effects documented in equities may not transfer to ES futures RTH-only
+  trades after costs.
+- Signals may cluster by regime and fail yearly/neighboring-parameter stability despite
+  positive headline PnL.
+- Prior-session return conditioning may create sparse samples in high-distress regimes.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_prior_session_ibs_reversion
+  - es_connors_rsi2_mean_reversion
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  - es_overnight_intraday_reversal
+  - es_signed_orderflow_persistence
+  - es_opening_drive_inventory_absorption
+  - es_turn_of_month_seasonality
+  - es_daily_time_series_momentum
+  - es_late_day_intraday_momentum
+  - es_volume_shock_liquidity_reversal
+  - es_prior_day_stop_run_reclaim
+  - es_vwap_pullback_continuation
+  - es_cftc_tff_hedging_pressure
+  - es_market_plumbing_liquidity_capacity
+  conclusion: Not a duplicate of active failed campaigns. Archived bankruptcy/distress
+    tests are historical context only and do not block this fresh active campaign
+    under the current policy.
+variants:
+- total_ch11_growth_prior_down_long_1130
+- business_ch11_growth_prior_down_long_1130
+- chapter11_share_prior_down_long_1330
+- business_ch11_share_prior_down_long_1330
+- total_ch11_z_prior_up_short_1330
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_bankruptcy_distress_regime_reversion/campaign_test_summary.json
+  invalidated_run1_reason: Limited-core first-window sample started before shared
+    elevated bankruptcy/distress feature coverage; zero-trade artifacts are data-window
+    checks, not economic evidence. Corrected run2 changed only start_date to 2016-08-15
+    while retaining mechanics, parameters, timeframe, costs, and gates.
+  valid_original_run_id: run2
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five corrected bankruptcy-distress originals failed the limited
+    core-grid gate, and all five one-time parameter-space-only rescues also failed
+    core. No run reached monkey, WFA, Monte Carlo, simulated incubation, or acceptance
+    validation.
+  best_rescue_profitable_combo_rate: 0

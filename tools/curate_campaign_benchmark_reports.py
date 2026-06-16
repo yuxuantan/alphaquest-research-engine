@@ -14,8 +14,8 @@ from propstack.research.campaign_stages import run_campaign_stage_tests
 REPORT_ROOT = Path("backtest-campaigns")
 ARCHIVE_ROOT = REPORT_ROOT / "archive_not_likely_20260614"
 LEGACY_ARCHIVE_ROOT = REPORT_ROOT / "archive_not_close_20260614"
-DEFAULT_ARTIFACT_STEM = Path("research_artifacts/campaign_benchmark_likely_refresh_20260614")
-SNAPSHOT_SOURCE_DIR = Path("research_artifacts/campaign_benchmark_likely_refresh_20260614_source_snapshots")
+DEFAULT_ARTIFACT_STEM = Path("_archived/research_artifacts/campaign_benchmark_likely_refresh_20260614")
+SNAPSHOT_SOURCE_DIR = Path("_archived/research_artifacts/campaign_benchmark_likely_refresh_20260614_source_snapshots")
 
 
 LIKELY_GATES = [

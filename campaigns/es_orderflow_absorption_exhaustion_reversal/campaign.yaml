@@ -1,0 +1,173 @@
+campaign_id: es_orderflow_absorption_exhaustion_reversal
+title: ES Orderflow Absorption Exhaustion Reversal
+decision: failed
+created_at: '2026-06-16'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Extreme same-clock ES signed-flow rank with high effort-vs-result but
+  weak completed-window price displacement may identify liquidity absorption or exhausted
+  aggressive flow, making a same-day fade plausible after costs.
+rationale: This campaign tests orderflow absorption/exhaustion, not signed-flow persistence.
+  Active signed-flow persistence required flow and price return to agree and traded
+  continuation. Here the signal requires extreme flow/effort rank with weak price
+  movement and fades the flow direction. It is not prior-level dislocation, opening-drive
+  inventory, VPIN toxicity, volume-shock OHLC reversal, or ES/MES divergence.
+sources:
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow imbalance as a price-pressure proxy and the importance
+    of realized price response to order-flow events.
+- title: Trading Volume and Serial Correlation in Stock Returns
+  authors: John Y. Campbell, Sanford J. Grossman, and Jiang Wang
+  year: 1993
+  venue: Quarterly Journal of Economics
+  link: https://campbell.scholars.harvard.edu/publications/trading-volume-and-serial-correlation-stock-returns
+  relevance: Models how liquidity-trader pressure and market-maker inventory risk
+    can create reversal after high-volume pressure.
+- title: How Markets Slowly Digest Changes in Supply and Demand
+  authors: Jean-Philippe Bouchaud, J. Doyne Farmer, and Fabrizio Lillo
+  year: 2009
+  venue: Handbook of Financial Markets
+  link: https://arxiv.org/abs/0809.0822
+  relevance: Reviews persistent order flow and market impact, supporting explicit
+    tests of when flow pressure is absorbed rather than followed.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV/orderflow bars in America/New_York
+- Sierra signed_volume and volume fields
+- rolling trade_orderflow imbalance, return, and effort-vs-result features from completed
+  bars
+- same-clock prior ranks computed only from prior sessions at the same clock time
+- exchange session labels and same-day prop-rule flatten checks
+data_quality_caveats:
+- The Sierra cache is aggregated bar-level trade-side flow, not full depth order-book
+  OFI.
+- Same-bar stop/target conflicts must use pessimistic OHLC handling.
+- Same-clock ranks are historical distribution features and can be sparse early in
+  the sample.
+lookahead_risks:
+- Rolling orderflow and return windows use only completed 1-minute bars ending at
+  the signal timestamp.
+- Same-clock ranks use prior observations at that clock time only; the current observation
+  is ranked against prior history.
+- Signals use bar close and the engine enters at the next bar open or later.
+- No final session VWAP, final daily range, future orderflow, or future volume profile
+  is used.
+- All variants flatten the same day before the configured prop cutoff.
+failure_modes:
+- Extreme orderflow with weak displacement may be genuine hidden continuation rather
+  than exhaustion.
+- The effect may be too sparse or dominated by specific volatility regimes.
+- Aggregated signed-volume may not reliably identify aggressor-side pressure.
+- Fade variants can be highly sensitive to slippage and same-bar stop/target ordering.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_prior_session_ibs_reversion
+  - es_connors_rsi2_mean_reversion
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  - es_overnight_intraday_reversal
+  - es_signed_orderflow_persistence
+  - es_opening_drive_inventory_absorption
+  - es_turn_of_month_seasonality
+  - es_daily_time_series_momentum
+  - es_late_day_intraday_momentum
+  - es_volume_shock_liquidity_reversal
+  - es_prior_day_stop_run_reclaim
+  - es_vwap_pullback_continuation
+  - es_cftc_tff_hedging_pressure
+  - es_market_plumbing_liquidity_capacity
+  - es_bankruptcy_distress_regime_reversion
+  - es_prior_session_level_breakout_continuation
+  - es_vpin_toxicity_continuation
+  - es_overnight_return_late_day_momentum
+  - es_prior_level_delta_dislocation
+  conclusion: Not a duplicate in active scope. This campaign fades high same-clock
+    orderflow effort with weak price displacement. Active signed-flow persistence
+    followed same-sign flow and return; active opening-drive inventory is anchored
+    to the opening drive; active prior-level dislocation requires prior RTH extremes;
+    active VPIN uses toxicity proxy ranks.
+variants:
+- early_5m_absorption_fade_1000
+- late_morning_15m_absorption_fade_1130
+- midday_30m_absorption_fade_1230
+- afternoon_60m_absorption_fade_1400
+- late_30m_absorption_fade_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: early_5m_absorption_fade_1000
+    config: campaigns/es_orderflow_absorption_exhaustion_reversal/rescue_attempts/parameter_space_rescue_1/early_5m_absorption_fade_1000/config.yaml
+    report: backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/early_5m_absorption_fade_1000/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.3950617283950617 below required 0.70; top net
+      917.5; top trades 14
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: late_morning_15m_absorption_fade_1130
+    config: campaigns/es_orderflow_absorption_exhaustion_reversal/rescue_attempts/parameter_space_rescue_1/late_morning_15m_absorption_fade_1130/config.yaml
+    report: backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/late_morning_15m_absorption_fade_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.6296296296296297 below required 0.70; top net
+      772.5; top trades 13
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: midday_30m_absorption_fade_1230
+    config: campaigns/es_orderflow_absorption_exhaustion_reversal/rescue_attempts/parameter_space_rescue_1/midday_30m_absorption_fade_1230/config.yaml
+    report: backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/midday_30m_absorption_fade_1230/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -192.5; top trades
+      6
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: afternoon_60m_absorption_fade_1400
+    config: campaigns/es_orderflow_absorption_exhaustion_reversal/rescue_attempts/parameter_space_rescue_1/afternoon_60m_absorption_fade_1400/config.yaml
+    report: backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/afternoon_60m_absorption_fade_1400/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.012345679012345678 below required 0.70; top net
+      15.0; top trades 2
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: late_30m_absorption_fade_1500
+    config: campaigns/es_orderflow_absorption_exhaustion_reversal/rescue_attempts/parameter_space_rescue_1/late_30m_absorption_fade_1500/config.yaml
+    report: backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/late_30m_absorption_fade_1500/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.25925925925925924 below required 0.70; top net
+      117.5; top trades 4
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached_runs: 1
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five originals and all five one-time rescues failed before WFA.
+    Late-morning original passed core but failed limited monkey; all other originals/rescues
+    failed limited core grid.
+  best_original_variant: late_morning_15m_absorption_fade_1130
+  best_original_profitable_combo_rate: 0.9382716049382716
+  best_rescue_variant: late_morning_15m_absorption_fade_1130
+  best_rescue_profitable_combo_rate: 0.6296296296296297

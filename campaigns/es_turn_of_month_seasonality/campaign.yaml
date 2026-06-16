@@ -1,0 +1,119 @@
+campaign_id: es_turn_of_month_seasonality
+title: ES Turn-of-Month Seasonality
+decision: failed
+created_at: "2026-06-15"
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: >
+  ES may retain a positive equity-index turn-of-the-month premium during RTH
+  sessions around month-end and the first calendar days of the next month.
+rationale: >
+  The edge is a calendar-seasonality hypothesis, not an intraday fixed-time risk
+  premium. Each variant conditions long ES exposure on a predeclared
+  turn-of-month calendar window, waits for a completed RTH bar at the configured
+  signal time, enters on the next bar open, and exits the same day by stop,
+  target, or forced flatten.
+sources:
+  - title: Calendar Anomalies in Stock Index Futures
+    authors: Oscar Carchano, Angel Pardo
+    year: 2011
+    venue: SSRN working paper
+    link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1958587
+    relevance: >
+      Tests calendar anomalies directly in S&P 500, DAX, and Nikkei stock-index
+      futures. This campaign applies the turn-of-month family to ES futures with
+      explicit costs and prop-style intraday flattening.
+  - title: Are Seasonal Anomalies Real? A Ninety-Year Perspective
+    authors: Josef Lakonishok, Seymour Smidt
+    year: 1988
+    venue: Review of Financial Studies
+    link: https://www-2.rotman.utoronto.ca/~kan/3032/pdf/AssetPricingAnomalies/Lakonishok_Smidt_RFS_1988.pdf
+    relevance: >
+      Documents turn-of-period effects in long-run U.S. equity data, including
+      the turn-of-month interval. This campaign tests whether the related index
+      futures expression survives current futures costs and validation gates.
+  - title: A Monthly Effect in Stock Returns
+    authors: Robert A. Ariel
+    year: 1987
+    venue: Journal of Financial Economics
+    link: https://ideas.repec.org/a/eee/jfinec/v18y1987i1p161-174.html
+    relevance: >
+      Early evidence that equity returns are concentrated in recurring monthly
+      calendar windows. This campaign treats that as a weak prior requiring
+      fail-closed ES futures validation.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - deterministic 5-minute aggregation from completed 1-minute bars
+  - exchange session labels and no-overnight prop-rule flatten checks
+data_quality_caveats:
+  - The Sierra cache is an aggregated bar-level source; it is not tick-path data.
+  - Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+  - Calendar windows use calendar-day-of-month and days-to-calendar-month-end,
+    not exchange trading-day rank; this is declared before testing and may be
+    rejected if the edge requires exchange-day definitions.
+lookahead_risks:
+  - The calendar date is known before the session and does not require future
+    prices, volume, VWAP, profile, or final daily range.
+  - A signal at HH:MM uses only the completed bar ending at HH:MM and can only
+    enter at the next bar open.
+  - No final month return, future month-end close, future session high/low, or
+    future volume information is used.
+  - All variants flatten the same day before the configured prop cutoff.
+failure_modes:
+  - The turn-of-month anomaly may have decayed or may not transfer to ES futures
+    after commissions, slippage, and next-bar execution.
+  - Calendar-day windows may miss the original trading-day turn definition.
+  - Positive results could concentrate in a small number of crisis months or
+    quarter-end flows and must be rejected by concentration and WFA gates.
+  - Full-day variants can fail if intraday drawdowns overwhelm the calendar
+    premium before the close.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_mes_micro_flow_divergence_reversion
+    - es_prior_session_ibs_reversion
+    - es_connors_rsi2_mean_reversion
+    - es_range_compression_breakout
+    - es_rth_intraday_risk_premium
+    - es_overnight_intraday_reversal
+    - es_signed_orderflow_persistence
+    - es_opening_drive_inventory_absorption
+  conclusion: >
+    Not a duplicate of the active failed campaigns. It tests a monthly
+    calendar-seasonality edge, not micro-flow divergence, prior-session IBS,
+    Connors RSI2, compression breakout, unconditional fixed RTH drift,
+    overnight reversal, own-ES signed-flow persistence, or opening-drive
+    inventory/absorption.
+variants:
+  - classic_turn_window_1000_long
+  - early_month_first_days_1000_long
+  - month_end_last_days_1000_long
+  - opening_turn_window_0935_long
+  - late_turn_window_1300_long
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_turn_of_month_seasonality/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: >
+    All five original variants and all five per-failed-variant
+    parameter-space-only rescues failed the limited core-grid
+    profitable-combination gate before monkey, WFA, Monte Carlo, or frozen
+    validation.
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core economic edge
+    - add or remove filters after seeing results

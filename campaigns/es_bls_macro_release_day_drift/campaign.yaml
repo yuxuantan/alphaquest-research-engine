@@ -1,0 +1,123 @@
+campaign_name: es_bls_macro_release_day_drift
+campaign_id: es_bls_macro_release_day_drift
+instrument: ES
+initial_decision: TEST
+reason_for_decision: >
+  Active-only duplicate review found no CPI or Employment Situation release-day
+  campaign outside _archived. This is distinct from FOMC pre-announcement drift,
+  generic calendar seasonality, and own-ES order-flow persistence because it
+  conditions only on known 08:30 ET BLS macro release dates and does not use
+  release values or surprises.
+edge_hypothesis: >
+  On high-impact BLS macro release days, S&P 500 futures may earn a positive RTH
+  drift after the 08:30 ET release as macro uncertainty is resolved and prices
+  continue to incorporate public information. The strategy trades only after a
+  completed RTH bar and flattens intraday.
+why_it_may_apply_to_es_futures: >
+  ES is a primary venue for equity-index price discovery around U.S. macro news.
+  Published work on macro announcements studies stock-index futures directly, and
+  CPI plus Employment Situation releases are recurring, market-moving public
+  events known before the RTH session starts.
+research_sources:
+  - title: 'Price Drift Before U.S. Macroeconomic News: Private Information about Public Announcements?'
+    author: Alexander Kurov, Alessio Sancetta, Georg Strasser, Marketa Halova Wolfe
+    year: 2019
+    link_or_doi: https://doi.org/10.1017/S0022109018000625
+    expected_mechanism: Stock-index futures can drift around market-moving U.S. macro releases, motivating a strict post-release RTH check without using announcement surprises.
+  - title: Real-Time Price Discovery in Global Stock, Bond and Foreign Exchange Markets
+    author: Torben G. Andersen, Tim Bollerslev, Francis X. Diebold, Clara Vega
+    year: 2007
+    link_or_doi: https://doi.org/10.1016/j.jinteco.2007.02.004
+    expected_mechanism: U.S. macroeconomic news creates high-frequency jumps and price discovery in equity-index futures and related markets.
+  - title: ALFRED Release Dates for Employment Situation and Consumer Price Index
+    author: Federal Reserve Bank of St. Louis / U.S. Bureau of Labor Statistics
+    year: 2026
+    link_or_doi: https://alfred.stlouisfed.org/release/downloaddates
+    expected_mechanism: Provides historical release dates known before RTH; release values and surprises are intentionally unused.
+behavioural_or_microstructure_rationale: >
+  The event date is known ex ante and the information release occurs at 08:30 ET,
+  before the tested RTH entries. Variants express the same release-day drift
+  thesis through event subset, entry time, and predeclared completed-session
+  confirmation filters, while preserving next-bar-open execution.
+expected_failure_modes:
+  - The release-day effect may be concentrated at 08:30 ET and gone by RTH.
+  - ES may reverse early macro-news moves rather than drift positively.
+  - Release-day returns may be dominated by a small number of crisis or inflation-shock sessions.
+  - CPI and Employment Situation may have different signs, diluting combined variants.
+  - Costs, slippage, and next-bar execution may erase any residual RTH drift.
+data_requirements:
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  - data/external/bls_macro_release_dates_20110103_20260609.csv
+  - tools/build_bls_macro_release_calendar.py
+session_assumptions:
+  timezone: America/New_York
+  release_time: '08:30:00'
+  rth_start: '09:30:00'
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  planned_flatten_time: '15:55:00'
+forbidden_forms_of_lookahead:
+  - Using CPI or payroll released values, revisions, survey surprises, or post-release direction labels.
+  - Entering before the configured RTH signal bar has closed.
+  - Using future session high/low, final VWAP, final daily range, or final day return.
+  - Adding/removing event types, changing direction, or altering filters after seeing results.
+variants:
+  - employment_release_open_long_1000
+  - cpi_release_open_long_1000
+  - combined_bls_release_open_long_1000
+  - combined_bls_release_momentum_long_1130
+  - combined_bls_release_low_range_long_1200
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable stop/target/entry-threshold parameter space inside existing modules
+  forbidden_changes:
+    - rescue the same failed variant more than once
+    - core strategy mechanic
+    - release-date rule or release-type set
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - attempt_id: parameter_space_rescue_1
+      variant_id: employment_release_open_long_1000
+      status: failed
+      scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+      config: campaigns/es_bls_macro_release_day_drift/rescue_attempts/parameter_space_rescue_1/employment_release_open_long_1000/config.yaml
+      report: backtest-campaigns/es_bls_macro_release_day_drift/employment_release_open_long_1000/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_bls_macro_release_day_drift_rescue_attempt_1_20260616.md
+    - attempt_id: parameter_space_rescue_1
+      variant_id: cpi_release_open_long_1000
+      status: failed
+      scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+      config: campaigns/es_bls_macro_release_day_drift/rescue_attempts/parameter_space_rescue_1/cpi_release_open_long_1000/config.yaml
+      report: backtest-campaigns/es_bls_macro_release_day_drift/cpi_release_open_long_1000/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_bls_macro_release_day_drift_rescue_attempt_1_20260616.md
+    - attempt_id: parameter_space_rescue_1
+      variant_id: combined_bls_release_open_long_1000
+      status: failed
+      scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+      config: campaigns/es_bls_macro_release_day_drift/rescue_attempts/parameter_space_rescue_1/combined_bls_release_open_long_1000/config.yaml
+      report: backtest-campaigns/es_bls_macro_release_day_drift/combined_bls_release_open_long_1000/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_bls_macro_release_day_drift_rescue_attempt_1_20260616.md
+    - attempt_id: parameter_space_rescue_1
+      variant_id: combined_bls_release_momentum_long_1130
+      status: failed
+      scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+      config: campaigns/es_bls_macro_release_day_drift/rescue_attempts/parameter_space_rescue_1/combined_bls_release_momentum_long_1130/config.yaml
+      report: backtest-campaigns/es_bls_macro_release_day_drift/combined_bls_release_momentum_long_1130/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_bls_macro_release_day_drift_rescue_attempt_1_20260616.md
+    - attempt_id: parameter_space_rescue_1
+      variant_id: combined_bls_release_low_range_long_1200
+      status: failed
+      scope: parameter_space_or_fixed_parameters_only_no_mechanic_change
+      config: campaigns/es_bls_macro_release_day_drift/rescue_attempts/parameter_space_rescue_1/combined_bls_release_low_range_long_1200/config.yaml
+      report: backtest-campaigns/es_bls_macro_release_day_drift/combined_bls_release_low_range_long_1200/ES/rescue1/campaign_test_summary.json
+      audit: research_artifacts/es_bls_macro_release_day_drift_rescue_attempt_1_20260616.md

@@ -26,7 +26,7 @@ from propstack.utils.hashing import file_sha256
 
 REPORT_ROOT = Path("backtest-campaigns")
 ARCHIVE_DIR_NAME = "archive_not_likely_20260614"
-DEFAULT_ARTIFACT_STEM = Path("research_artifacts/acceptance_oos_shortlist_passes_20260615")
+DEFAULT_ARTIFACT_STEM = Path("_archived/research_artifacts/acceptance_oos_shortlist_passes_20260615")
 
 
 def main() -> None:

@@ -1,0 +1,27 @@
+variant_id: dealer_lending_pressure_long_1330
+campaign_id: es_market_plumbing_liquidity_capacity
+mechanic:
+  entry_module: market_plumbing_priority
+  stop_loss_module: percent_from_entry
+  take_profit_module: fixed_r
+  flatten_time: '15:55:00'
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+source_config_path: campaigns/es_market_plumbing_liquidity_capacity/variants/dealer_lending_pressure_long_1330/config.yaml
+status: failed
+latest_valid_original_run: run2
+rescue1_status: failed

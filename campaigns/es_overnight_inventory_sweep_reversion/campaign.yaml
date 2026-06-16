@@ -1,0 +1,136 @@
+campaign_id: es_overnight_inventory_sweep_reversion
+title: ES Overnight Inventory Sweep Reversion
+created_at: '2026-06-16'
+decision: failed
+symbol: ES
+dataset_id: es_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll
+timeframe: 5m
+hypothesis: ES may mean-revert after RTH sweeps and reclaims the completed overnight high or low, because
+  overnight extremes can concentrate stop orders, liquidity provision, and stale inventory reference points.
+rationale: The campaign tests completed overnight-range boundary sweeps and reclaims, not overnight return/gap
+  reversal, late-day continuation from overnight sign, or prior RTH high/low stop runs. The overnight
+  high/low are fully known before RTH begins, and every signal waits for a completed RTH bar before next-bar
+  execution.
+sources:
+- title: Currency Orders and Exchange Rate Dynamics
+  authors: Carol L. Osler
+  year: 2003
+  venue: Journal of Finance / NY Fed Staff Report 125
+  link: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  doi_or_reference: https://ideas.repec.org/a/bla/jfinan/v58y2003i5p1791-1819.html
+  relevance: Documents clustering of stop-loss and take-profit orders around technical support and resistance
+    levels, motivating strict tests around overnight extremes as observable reference levels.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz; Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v17y2004i4p1043-1071.html
+  relevance: Finds support and resistance levels can correspond to liquidity supply, supporting the idea
+    that widely watched highs/lows may produce either reversals or breakouts after interaction.
+- title: Stop-loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  venue: Journal of International Money and Finance
+  link: https://ideas.repec.org/a/eee/jimfin/v24y2005i2p219-241.html
+  relevance: Supports the failure-mode distinction between clustered stop cascades and failed sweeps that
+    reverse after liquidity is consumed.
+behavioural_or_microstructure_rationale: Overnight highs and lows are public, pre-RTH reference prices.
+  If ES briefly trades beyond them and closes back inside the overnight range, the excursion may have
+  consumed clustered stops or tested resting liquidity without attracting follow-through. The same mechanism
+  can fail if the level break is informed continuation, so the strategy must pass robustness gates rather
+  than rely on anecdotal chart behavior.
+expected_failure_modes:
+- Overnight high/low sweeps may be informed breakouts rather than failed stop runs.
+- Bar-level OHLC may overstate fill quality during fast RTH open moves.
+- The edge may require tick-level sequencing or market-depth information unavailable in this OHLCV campaign.
+- The effect may concentrate in crisis sessions or roll weeks, which must be rejected or flagged.
+- Skipping roll-boundary sessions may reduce trade count below WFA requirements.
+data_needs:
+- timezone-aware ES ETH and RTH 1-minute OHLCV bars in America/New_York
+- explicit ES roll-calendar selection with no same-day volume lookahead
+- completed ETH overnight high/low mapped to RTH bars only after the overnight session is complete
+- deterministic 5-minute aggregation and 1-minute detail data for higher-timeframe stop/target conflict
+  handling
+- same-day forced flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The local cache is OHLCV bar data, not tick path or order book data.
+- The explicit roll calendar is used instead of same-day volume front selection to avoid roll-selection
+  lookahead.
+- Sessions surrounding roll-boundary contract changes are skipped to avoid overnight ranges that straddle
+  contracts.
+- Same-bar stop/target conflicts must be resolved with 1-minute detail when available and pessimistic
+  fallback otherwise.
+lookahead_risks:
+- Overnight high/low are computed from ETH bars assigned to the current RTH session and are only used
+  on RTH bars after the ETH session has completed.
+- Sweep and reclaim conditions use only completed 5-minute bars; entries are next-bar open or later.
+- No final RTH high/low, final VWAP, future session return, future volume profile, or future order-flow
+  information is used.
+- Roll selection uses a fixed calendar, not same-day realized volume or future price action.
+- All variants flatten before the configured prop cutoff and disallow overnight positions.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_distinction: Not a duplicate of es_overnight_intraday_reversal, which traded overnight gap/return
+    reversal after the open; not a duplicate of es_overnight_return_late_day_momentum, which used overnight
+    return sign for late-day continuation; not a duplicate of es_prior_day_stop_run_reclaim, which used
+    prior RTH highs/lows. This campaign trades failed sweeps of completed ETH overnight extremes.
+variants:
+- morning_overnight_low_reclaim_long
+- morning_overnight_high_reject_short
+- midpoint_low_sweep_reclaim_long
+- midpoint_high_sweep_reject_short
+- open_outside_range_two_sided_reversion
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - min_overnight_range_points
+  - reclaim_buffer_ticks
+  stop_tunables:
+  - stop_pct
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.min_overnight_range_points:
+    - 4.0
+    - 8.0
+    - 12.0
+    entry.params.reclaim_buffer_ticks:
+    - 0
+    - 1
+    - 2
+    sl.params.stop_pct:
+    - 0.002
+    - 0.0035
+    - 0.005
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_overnight_inventory_sweep_reversion/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached_runs: 1
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five originals and all five one-time parameter-space rescues failed before WFA.
+    One original passed core but failed limited_monkey_test; the other nine valid runs failed limited_core_grid_test.
+  best_original: morning_overnight_low_reclaim_long/run1 top_net=3997.5
+  best_rescue: midpoint_low_sweep_reclaim_long/rescue1 top_net=2996.875

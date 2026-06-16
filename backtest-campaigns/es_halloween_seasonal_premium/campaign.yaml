@@ -1,0 +1,129 @@
+campaign_name: es_halloween_seasonal_premium
+campaign_id: es_halloween_seasonal_premium
+instrument: ES
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no half-year Halloween / Sell-in-May
+  seasonal premium campaign outside _archived. This is distinct from active day-of-week,
+  turn-of-month, FOMC event, and unconditional RTH premium families.
+edge_hypothesis: ES may earn stronger intraday long returns in November-April than
+  in May-October, and May-October underperformance may support short-only variants.
+why_it_may_apply_to_es_futures: ES tracks the S&P 500 index, the same broad equity
+  risk premium family studied in Halloween / Sell-in-May research. Intraday-only variants
+  test whether the seasonal effect survives ES costs and no-overnight prop-style flattening.
+research_sources:
+- title: 'The Halloween Indicator, Sell in May and Go Away: Another Puzzle'
+  author: Sven Bouman and Ben Jacobsen
+  year: 2002
+  link_or_doi: https://doi.org/10.1257/000282802762024683
+  expected_mechanism: Equity-index returns are documented as higher in November-April
+    than May-October across markets.
+- title: 'The Halloween indicator, Sell in May and Go Away: Everywhere and all the
+    time'
+  author: Cherry Y. Zhang and Ben Jacobsen
+  year: 2021
+  link_or_doi: https://doi.org/10.1016/j.jimonfin.2020.102268
+  expected_mechanism: Large cross-market long-history evidence is used as a robustness
+    reference, while the ES campaign still must pass local OOS gates.
+behavioural_or_microstructure_rationale: The campaign treats the calendar half-year
+  as an ex-ante seasonal risk-premium state. It does not use future returns, realized
+  monthly performance, or current-session outcome data.
+expected_failure_modes:
+- The anomaly is mostly overnight/monthly and does not survive intraday-only ES exposure.
+- The effect has decayed after publication.
+- May-October returns are lower but not negative, so short variants may lose after
+  costs.
+- Profit is concentrated in a small number of crisis or rebound months.
+- The edge overlaps generic equity beta and fails monkey/WFA robustness.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+forbidden_forms_of_lookahead:
+- Changing seasonal month definitions after results.
+- Using realized month-to-date or future monthly returns.
+- Holding overnight to capture the original monthly effect.
+- Adding filters after seeing which half-year works.
+variants:
+- winter_open_long_1000
+- winter_midday_long_1200
+- winter_afternoon_long_1330
+- summer_open_short_1000
+- summer_afternoon_short_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable stop/target parameter space inside existing modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - month definitions
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - attempt_id: parameter_space_rescue_1
+    variant_id: winter_open_long_1000
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_halloween_seasonal_premium/rescue_attempts/parameter_space_rescue_1/winter_open_long_1000/config.yaml
+    reason: Original winter 10:00 long failed core with zero profitable combinations;
+      rescue keeps November-April long mechanic and tests wider adjacent stop/target
+      ranges around least-bad row.
+    report: backtest-campaigns/es_halloween_seasonal_premium/winter_open_long_1000/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.0
+  - attempt_id: parameter_space_rescue_1
+    variant_id: winter_midday_long_1200
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_halloween_seasonal_premium/rescue_attempts/parameter_space_rescue_1/winter_midday_long_1200/config.yaml
+    reason: Original winter noon long failed core with 1/9 profitable combinations
+      and concentration; rescue keeps November-April noon long mechanic and tests
+      wider adjacent stop/target ranges around strongest row.
+    report: backtest-campaigns/es_halloween_seasonal_premium/winter_midday_long_1200/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.5
+  - attempt_id: parameter_space_rescue_1
+    variant_id: winter_afternoon_long_1330
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_halloween_seasonal_premium/rescue_attempts/parameter_space_rescue_1/winter_afternoon_long_1330/config.yaml
+    reason: Original winter 13:30 long failed core with zero profitable combinations;
+      rescue keeps November-April afternoon long mechanic and tests wider adjacent
+      stop/target ranges around least-bad row.
+    report: backtest-campaigns/es_halloween_seasonal_premium/winter_afternoon_long_1330/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.0
+  - attempt_id: parameter_space_rescue_1
+    variant_id: summer_open_short_1000
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_halloween_seasonal_premium/rescue_attempts/parameter_space_rescue_1/summer_open_short_1000/config.yaml
+    reason: Original summer 10:00 short failed core with zero profitable combinations;
+      rescue keeps May-October short mechanic and tests wider adjacent stop/target
+      ranges around least-bad row.
+    report: backtest-campaigns/es_halloween_seasonal_premium/summer_open_short_1000/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.0
+  - attempt_id: parameter_space_rescue_1
+    variant_id: summer_afternoon_short_1330
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_halloween_seasonal_premium/rescue_attempts/parameter_space_rescue_1/summer_afternoon_short_1330/config.yaml
+    reason: Original summer 13:30 short failed core with zero profitable combinations;
+      rescue keeps May-October afternoon short mechanic and tests wider adjacent stop/target
+      ranges around least-bad row.
+    report: backtest-campaigns/es_halloween_seasonal_premium/summer_afternoon_short_1330/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.0

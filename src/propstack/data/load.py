@@ -153,6 +153,7 @@ def load_raw_parquet(
         column
         for column in df.columns
         if column not in {"timestamp", "symbol", "contract_symbol", "timestamp_utc", "session_date", "session_label"}
+        and not str(column).endswith("_contract_symbol")
     ]
     for col in numeric_columns:
         df[col] = pd.to_numeric(df[col], errors="coerce")

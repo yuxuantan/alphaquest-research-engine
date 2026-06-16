@@ -1,0 +1,127 @@
+campaign_id: es_market_plumbing_liquidity_capacity
+title: ES Market Plumbing Liquidity Capacity
+decision: failed
+created_at: '2026-06-16'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: Tail states in market-plumbing and funding-liquidity capacity proxies
+  may condition same-day ES intraday risk premia because liquidity providers require
+  compensation when funding or volatility-risk intermediation is constrained.
+rationale: This is not an intraday price pattern, VWAP, prior-level sweep, CFTC/TFF
+  positioning, calendar seasonality, or signed-orderflow edge. It tests exogenous
+  daily/weekly market-plumbing state variables with next-bar RTH execution and a conservative
+  lagged feature file.
+sources:
+- title: Market Liquidity and Funding Liquidity
+  authors: Markus K. Brunnermeier and Lasse Heje Pedersen
+  year: 2009
+  venue: The Review of Financial Studies 22(6), 2201-2238
+  doi: 10.1093/rfs/hhn098
+  link: https://academic.oup.com/rfs/article-abstract/22/6/2201/1592184
+  relevance: Provides the funding-liquidity and market-liquidity mechanism motivating
+    a predeclared test of ES risk premia under constrained intermediation states.
+- title: Primary Dealer Statistics
+  authors: Federal Reserve Bank of New York
+  year: 2026
+  venue: New York Fed Markets Data
+  link: https://www.newyorkfed.org/markets/counterparties/primary-dealers-statistics
+  relevance: Official source family for weekly primary-dealer activity data; the campaign
+    uses a lagged Treasury securities-lending derived feature as a market-plumbing
+    pressure proxy.
+- title: Cboe Futures Exchange Daily Market Statistics
+  authors: Cboe Global Markets
+  year: 2026
+  venue: CFE Market Statistics
+  link: https://www.cboe.com/markets/us/futures/market-statistics/daily/futures/
+  relevance: Official CFE source family for VX futures volume/open-interest statistics;
+    Cboe states the data is available around 10:00 CT the following trading day.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV/orderflow bars in America/New_York
+- 'lagged no-lookahead market-plumbing feature file: data/external/market_plumbing_priority_features_lag1_no_lookahead.csv'
+- deterministic 5-minute aggregation from completed 1-minute bars
+- next-bar-open entry when a completed 5-minute bar close emits a signal
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The market-plumbing features are daily/weekly exogenous states, not tick-level liquidity
+  observations.
+- The campaign-generated feature file lags all source rows by one listed trade_date;
+  this can understate timeliness but avoids same-row lookahead.
+- The Sierra cache is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+lookahead_risks:
+- CFE daily statistics are not treated as tradable until after the next listed feature
+  row and after 11:00 ET.
+- Signals use only completed 5-minute bars plus lagged external feature rows keyed
+  to the current session date.
+- No future session return, final VWAP, final volume profile, future high/low, or
+  same-row external feature value is used.
+failure_modes:
+- Market-plumbing state variables may be too slow or too indirect for same-day ES
+  RTH execution after costs.
+- The dealer-lending and VX open-interest proxies may measure activity rather than
+  constrained risk-bearing capacity.
+- Any apparent edge may require overnight exposure, which this campaign forbids.
+- Tail thresholds may produce enough trades but no stable neighboring-parameter profitability.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_prior_session_ibs_reversion
+  - es_connors_rsi2_mean_reversion
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  - es_overnight_intraday_reversal
+  - es_signed_orderflow_persistence
+  - es_opening_drive_inventory_absorption
+  - es_turn_of_month_seasonality
+  - es_daily_time_series_momentum
+  - es_late_day_intraday_momentum
+  - es_volume_shock_liquidity_reversal
+  - es_prior_day_stop_run_reclaim
+  - es_vwap_pullback_continuation
+  - es_cftc_tff_hedging_pressure
+  conclusion: Not a duplicate of active failed campaigns. Archived market-plumbing
+    tests are historical context only and do not block this fresh active campaign
+    under the current policy; this version also uses a conservative lagged feature
+    file and excludes CFTC/TFF positioning legs.
+variants:
+- dealer_lending_pressure_long_1130
+- dealer_lending_pressure_long_1330
+- vx_oi_stress_long_1330
+- vx_oi_crowding_short_1330
+- dual_pressure_priority_long_1130
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_market_plumbing_liquidity_capacity/campaign_test_summary.json
+  invalidated_run1_reason: Unsupported descriptive data.feature_set label caused data-loader
+    errors; run1 artifacts are infrastructure checks, not economic evidence. Corrected
+    run2 changed only data.feature_set to none while keeping mechanics, parameters,
+    timeframe, and data window unchanged.
+  valid_original_run_id: run2
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 2
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five corrected market-plumbing liquidity-capacity originals
+    failed before WFA, and all five one-time parameter-space-only rescues also failed.
+    Dealer-lending 13:30 original and dual-priority rescue reached limited monkey,
+    but both failed the profitability/median robustness gate. No run reached WFA,
+    Monte Carlo, simulated incubation, or acceptance validation.
+  best_rescue_profitable_combo_rate: 0.8888888888888888

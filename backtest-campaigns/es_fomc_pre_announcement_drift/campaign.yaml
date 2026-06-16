@@ -1,0 +1,173 @@
+campaign_name: es_fomc_pre_announcement_drift
+campaign_id: es_fomc_pre_announcement_drift
+instrument: ES
+initial_decision: TEST
+reason_for_decision: 'Active-only duplicate review found no scheduled-FOMC pre-announcement
+  drift campaign outside _archived. The edge is event-calendar based and distinct
+  from active day-of-week, turn-of-month, overnight/gap, order-flow, and cross-index
+  lead-lag failures. It uses local ES RTH data plus an official Federal Reserve scheduled-meeting
+  calendar.
+
+  '
+edge_hypothesis: 'ES may earn positive intraday returns before scheduled FOMC policy
+  decisions. The anomaly is tested only in windows known before the event date. Decision-day
+  variants flatten before noon ET to avoid historical ambiguity around exact statement
+  release times.
+
+  '
+why_it_may_apply_to_es_futures: 'Lucca and Moench document large positive U.S. equity
+  excess returns before scheduled FOMC announcements. ES is a liquid S&P 500 futures
+  contract and is a direct vehicle for testing whether that equity-index pre-announcement
+  drift is robust after futures costs, next-bar execution, slippage, and same-day
+  flatten constraints.
+
+  '
+research_sources:
+- title: The Pre-FOMC Announcement Drift
+  author: David O. Lucca and Emanuel Moench
+  year: 2015
+  link_or_doi: https://doi.org/10.1111/jofi.12196
+  expected_mechanism: Scheduled FOMC decisions are associated with positive equity-index
+    returns in the pre-announcement window.
+- title: The Pre-FOMC Announcement Drift
+  author: David O. Lucca and Emanuel Moench
+  year: 2011
+  link_or_doi: https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr512.pdf
+  expected_mechanism: Staff-report version documents timing, robustness, and possible
+    state dependence of pre-FOMC equity returns.
+- title: Meeting calendars and information
+  author: Board of Governors of the Federal Reserve System
+  year: 2026
+  link_or_doi: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+  expected_mechanism: Official scheduled FOMC meeting dates provide the ex-ante event
+    calendar used for signal dates.
+- title: Historical Materials by Year
+  author: Board of Governors of the Federal Reserve System
+  year: 2026
+  link_or_doi: https://www.federalreserve.gov/monetarypolicy/fomc_historical_year.htm
+  expected_mechanism: Official historical FOMC pages provide 2011-2020 scheduled decision
+    dates.
+behavioural_or_microstructure_rationale: 'The campaign treats scheduled FOMC decisions
+  as macro risk events with a possible pre-announcement equity premium or information-resolution
+  drift. It does not use the policy decision, statement text, surprise, future returns,
+  or post-announcement price movement.
+
+  '
+expected_failure_modes:
+- The documented drift disappeared after publication or is not tradable after ES costs.
+- The intraday-only/no-overnight expression misses most of the original 24-hour effect.
+- Low event frequency makes WFA and frozen validation underpowered.
+- A small number of crisis-era FOMC meetings dominates performance.
+- Historical FOMC statement times differ; the noon decision-day flatten avoids leakage
+  but may remove useful drift.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  decision_day_latest_flatten: '12:00:00'
+  prior_day_latest_flatten: '15:55:00'
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/fomc_scheduled_decision_dates_20110101_20260609.csv
+event_calendar:
+  builder: tools/build_fomc_event_calendar.py
+  output: data/external/fomc_scheduled_decision_dates_20110101_20260609.csv
+  rows: 122
+  first_event_date: '2011-01-26'
+  last_event_date: '2026-04-29'
+  exclusions:
+  - unscheduled meetings
+  - cancelled meetings
+  - notation votes
+  - conference calls
+forbidden_forms_of_lookahead:
+- Use of FOMC statement text, policy decision, press conference, minutes, or surprise
+  data.
+- Use of bars after the configured signal timestamp.
+- Holding decision-day variants through historical statement release windows.
+- Tuning event dates, exclusion rules, signal times, or flatten times after seeing
+  results.
+variants:
+- decision_day_open_long_1000
+- decision_day_late_morning_long_1130
+- decision_day_momentum_confirmed_long_1130
+- decision_day_low_range_long_1130
+- prior_day_late_long_1500
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - event calendar inclusion/exclusion rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - attempt_id: parameter_space_rescue_1
+    variant_id: decision_day_open_long_1000
+    status: failed
+    scope: parameter_space_only_no_mechanic_change
+    config: campaigns/es_fomc_pre_announcement_drift/rescue_attempts/parameter_space_rescue_1/decision_day_open_long_1000/config.yaml
+    reason: Original 10:00 decision-day long failed core with 5/9 profitable combinations
+      and no benchmark passes; rescue keeps the same 10:00 event-day drift mechanic
+      and tests an adjacent wider stop/target neighborhood around the strongest original
+      rows.
+    report: backtest-campaigns/es_fomc_pre_announcement_drift/decision_day_open_long_1000/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_monkey_test
+    failure_reason: summary.percentage_profitable=0.33666666666666667; summary.median_net_profit=-298.75;
+      summary.trade_path_stress.percentage_profitable=0.6166666666666667; summary.trade_path_stress.one_tick_worse.profitable=False
+  - attempt_id: parameter_space_rescue_1
+    variant_id: decision_day_late_morning_long_1130
+    status: failed
+    scope: parameter_space_only_no_mechanic_change
+    config: campaigns/es_fomc_pre_announcement_drift/rescue_attempts/parameter_space_rescue_1/decision_day_late_morning_long_1130/config.yaml
+    reason: Original 11:30 unconditional decision-day long failed core with 0/9 profitable
+      combinations; rescue keeps the same 11:30 event-day drift mechanic and tests
+      tighter intraday stop/target ranges.
+    report: backtest-campaigns/es_fomc_pre_announcement_drift/decision_day_late_morning_long_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.0
+  - attempt_id: parameter_space_rescue_1
+    variant_id: decision_day_momentum_confirmed_long_1130
+    status: failed
+    scope: parameter_space_only_no_mechanic_change
+    config: campaigns/es_fomc_pre_announcement_drift/rescue_attempts/parameter_space_rescue_1/decision_day_momentum_confirmed_long_1130/config.yaml
+    reason: Original 11:30 momentum-confirmed decision-day long failed core with 0/27
+      profitable combinations; rescue keeps the same momentum-confirmed event-day
+      mechanic and tests looser completed-session return thresholds with tighter exits.
+    report: backtest-campaigns/es_fomc_pre_announcement_drift/decision_day_momentum_confirmed_long_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.0
+  - attempt_id: parameter_space_rescue_1
+    variant_id: decision_day_low_range_long_1130
+    status: failed
+    scope: parameter_space_only_no_mechanic_change
+    config: campaigns/es_fomc_pre_announcement_drift/rescue_attempts/parameter_space_rescue_1/decision_day_low_range_long_1130/config.yaml
+    reason: Original 11:30 low-range decision-day long failed core with zero profitable
+      combinations and overly sparse signals; rescue keeps the same low-range event-day
+      mechanic and tests broader completed-session range caps.
+    report: backtest-campaigns/es_fomc_pre_announcement_drift/decision_day_low_range_long_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.0
+  - attempt_id: parameter_space_rescue_1
+    variant_id: prior_day_late_long_1500
+    status: failed
+    scope: parameter_space_only_no_mechanic_change
+    config: campaigns/es_fomc_pre_announcement_drift/rescue_attempts/parameter_space_rescue_1/prior_day_late_long_1500/config.yaml
+    reason: Original 15:00 prior-day long failed core with 1/9 profitable combinations
+      and no benchmark passes; rescue keeps the same prior-calendar-day drift mechanic
+      and tests a wider stop/higher target neighborhood around the strongest original
+      row.
+    report: backtest-campaigns/es_fomc_pre_announcement_drift/prior_day_late_long_1500/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure_reason: summary.percentage_profitable_iterations=0.6666666666666666

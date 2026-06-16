@@ -1,0 +1,157 @@
+campaign_id: es_vix_expiration_pressure
+variant_id: prior_session_late_hedge_unwind_long_1500
+test_run_id: rescue1
+strategy_name: vix_expiration_pressure
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Griffin and Shams (2018); Cboe VIX options specifications; Alexander and Korovilas (2012)
+  edge_thesis: VIX derivatives settlement can create transitory SPX option demand and volatility-hedging pressure that spills into ES.
+  mechanic: On the regular session before VIX settlement, enter long ES at 15:00 ET next bar open and flatten by 15:55 ET.
+  timeframe_rationale: 1-minute bars preserve completed-bar calendar signals and next-bar-open execution while avoiding overnight exposure.
+  rescue_reason: Original prior-session late long failed core with 0/9 profitable combinations; rescue keeps the same signal type, time, direction, and modules while testing one adjacent stop/target grid.
+  rescue_scope: stop_target_parameter_space_only_no_mechanic_change
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  exchange_timezone: America/New_York
+  feature_set: none
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  rth_end: "15:59:00"
+  rth_start: "09:30:00"
+  source: parquet
+  source_timeframe: 1m
+  symbol: ES
+  timezone: America/New_York
+  warmup_days: 0
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: "16:59:59"
+  force_flatten_enabled: true
+  force_flatten_time: "16:58:30"
+  latest_entry_time: "16:45:00"
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: vix_expiration_pressure
+    params:
+      setup_mode: prior_session_late_hedge_unwind_long
+      event_calendar_csv: data/external/vix_expiration_sessions_20110103_20260609.csv
+      signal_type: previous_regular_session
+      signal_time: "15:00:00"
+      flatten_time: "15:55:00"
+      bar_interval_minutes: 1
+      max_trades_per_day: 1
+      direction: long
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0025
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: "15:55:00"
+core:
+  data_subset: &data_subset
+    start_date: "2011-01-03"
+    end_date: "2026-06-09"
+    session_labels: [RTH]
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: "15:55:00"
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 5
+  preferred_min_total_trades: 20
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *data_subset
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel: {enabled: true, workers: 6, scope: grid}
+  parameters: &grid_parameters
+    sl.params.stop_pct: [0.001, 0.002, 0.003, 0.005]
+    tp.params.target_r_multiple: [0.75, 1.25, 1.75]
+monkey:
+  data_subset: *data_subset
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel: {enabled: true, workers: 6, scope: runs}
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *data_subset
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 5
+  early_exit_min_train_profit_factor: 1.0
+  parallel: {enabled: true, workers: 6, scope: window_grid}
+  parameters: *grid_parameters
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel: {enabled: true, workers: 6, scope: runs}

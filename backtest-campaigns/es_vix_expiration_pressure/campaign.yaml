@@ -1,0 +1,113 @@
+campaign_name: es_vix_expiration_pressure
+campaign_id: es_vix_expiration_pressure
+instrument: ES
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no VIX derivatives settlement pressure campaign outside _archived. This is distinct from monthly and quarterly equity/index OPEX because the event is VIX derivatives settlement, driven by SPX option SOQ mechanics, not listed equity-option third-Friday expiration or ES quarterly roll.
+edge_hypothesis: Monthly VIX futures/options settlement may create transitory SPX option demand, volatility-hedging pressure, and post-settlement unwind that can spill into intraday ES returns.
+why_it_may_apply_to_es_futures: ES is the primary S&P 500 futures hedge. VIX settlement is computed from SPX option opening prices, so abnormal SPX option demand and hedging around settlement can plausibly transmit to ES through index arbitrage and portfolio hedge adjustments.
+research_sources:
+- title: Manipulation in the VIX?
+  author: John M. Griffin and Amin Shams
+  year: 2018
+  link_or_doi: https://doi.org/10.1093/rfs/hhx085
+  expected_mechanism: VIX settlement is associated with abnormal SPX option trading and price pressure around the settlement auction.
+- title: Cboe Volatility Index Options Product Specifications
+  author: Cboe
+  year: 2026
+  link_or_doi: https://www.cboe.com/tradable_products/vix/vix_options/specifications/
+  expected_mechanism: VIX option expiration and settlement are deterministic calendar events tied to SPX option settlement.
+- title: The VIX Futures Basis - Evidence and Trading Strategies
+  author: Carol Alexander and Dimitris Korovilas
+  year: 2012
+  link_or_doi: https://doi.org/10.2139/ssrn.2048545
+  expected_mechanism: VIX futures markets are linked to equity-index volatility risk premia and hedging flows.
+behavioural_or_microstructure_rationale: The campaign uses only the ex-ante VIX standard expiration calendar. It does not use VIX levels, VIX futures basis, SOQ values, realized SPX option imbalances, final session VWAP, or same-day high/low to decide entry.
+expected_failure_modes:
+- VIX settlement pressure affects SPX option prices or volatility marks but not directional ES returns.
+- The effect is concentrated in the opening auction and cannot be captured by 1-minute ES RTH bars after costs.
+- Direction depends on unobserved VIX option/futures positioning unavailable in local data.
+- Calendar frequency is sparse and may fail trade-count or concentration gates.
+- Modern settlement surveillance/arbitrage reduced any older settlement pressure.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/vix_expiration_sessions_20110103_20260609.csv
+calendar_construction:
+  builder: tools/build_vix_expiration_calendar.py
+  rule: monthly VIX expiration is 30 calendar days before the following-month SPX standard expiration session, shifted to the prior regular NYSE session when needed; early closes are excluded.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+forbidden_forms_of_lookahead:
+- Changing the VIX expiration calendar, signal type, direction, or entry time after seeing results.
+- Using VIX level, VIX futures basis, SOQ value, realized option volume, final VWAP, or same-day high/low to decide entry.
+- Adding filters after seeing which settlement months worked.
+variants:
+- prior_session_late_hedge_unwind_long_1500
+- vix_settlement_open_pressure_short_1000
+- vix_settlement_midday_reversal_long_1200
+- vix_settlement_late_reversal_long_1500
+- post_vix_settlement_next_session_long_1000
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable stop/target parameter space inside existing modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - VIX expiration calendar rule
+  - signal_type
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - attempt_id: parameter_space_rescue_1
+    variant_id: prior_session_late_hedge_unwind_long_1500
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_vix_expiration_pressure/rescue_attempts/parameter_space_rescue_1/prior_session_late_hedge_unwind_long_1500/config.yaml
+    reason: Original prior-session late long failed core with zero profitable combinations; rescue kept the same previous-session late long mechanic and tested one adjacent stop/target grid.
+    report: backtest-campaigns/es_vix_expiration_pressure/prior_session_late_hedge_unwind_long_1500/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_vix_expiration_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: vix_settlement_open_pressure_short_1000
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_vix_expiration_pressure/rescue_attempts/parameter_space_rescue_1/vix_settlement_open_pressure_short_1000/config.yaml
+    reason: Original VIX settlement open short failed core with 6/9 profitable combinations but below the 70% stability gate; rescue kept the same settlement-day 10:00 short mechanic and tested one adjacent stop/target grid.
+    report: backtest-campaigns/es_vix_expiration_pressure/vix_settlement_open_pressure_short_1000/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_vix_expiration_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: vix_settlement_midday_reversal_long_1200
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_vix_expiration_pressure/rescue_attempts/parameter_space_rescue_1/vix_settlement_midday_reversal_long_1200/config.yaml
+    reason: Original VIX settlement noon long failed core with zero profitable combinations; rescue kept the same settlement-day noon long mechanic and tested one adjacent stop/target grid.
+    report: backtest-campaigns/es_vix_expiration_pressure/vix_settlement_midday_reversal_long_1200/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_vix_expiration_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: vix_settlement_late_reversal_long_1500
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_vix_expiration_pressure/rescue_attempts/parameter_space_rescue_1/vix_settlement_late_reversal_long_1500/config.yaml
+    reason: Original VIX settlement 15:00 long failed core with zero profitable combinations; rescue kept the same settlement-day late long mechanic and tested one adjacent stop/target grid.
+    report: backtest-campaigns/es_vix_expiration_pressure/vix_settlement_late_reversal_long_1500/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_vix_expiration_pressure_rescue_attempt_1_20260616.md
+  - attempt_id: parameter_space_rescue_1
+    variant_id: post_vix_settlement_next_session_long_1000
+    status: failed
+    scope: stop_target_parameter_space_only_no_mechanic_change
+    config: campaigns/es_vix_expiration_pressure/rescue_attempts/parameter_space_rescue_1/post_vix_settlement_next_session_long_1000/config.yaml
+    reason: Original post-settlement next-session long failed core with 1/9 profitable combinations; rescue kept the same next-session long mechanic and tested one adjacent stop/target grid.
+    report: backtest-campaigns/es_vix_expiration_pressure/post_vix_settlement_next_session_long_1000/ES/rescue1/campaign_test_summary.json
+    audit: research_artifacts/es_vix_expiration_pressure_rescue_attempt_1_20260616.md

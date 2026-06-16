@@ -1,0 +1,114 @@
+campaign_id: es_cftc_tff_hedging_pressure
+title: ES CFTC TFF Hedging Pressure
+decision: failed
+created_at: '2026-06-15'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: CFTC Traders in Financial Futures positioning pressure in S&P 500 futures
+  may proxy slow-moving hedging demand; ES intraday returns may compensate traders
+  who take the other side of that risk-transfer pressure after the weekly report is
+  available.
+rationale: This campaign tests a slow-moving positioning/hedging-pressure anomaly,
+  not an intraday price pattern, VWAP, prior-day level, calendar, gap, or orderflow-persistence
+  edge. Archived tests are ignored for duplicate checks; active rejected families
+  are checked explicitly.
+sources:
+- title: Hedging Pressure Effects in Futures Markets
+  authors: Frans A. de Roon, Theo E. Nijman, Chris Veld
+  year: 2000
+  venue: Journal of Finance 55(3), 1437-1456
+  doi: 10.1111/0022-1082.00253
+  link: https://ideas.repec.org/a/bla/jfinan/v55y2000i3p1437-1456.html
+  relevance: Documents futures risk premia related to hedging pressure, motivating
+    a predeclared test of CFTC positioning pressure in equity-index futures.
+- title: Traders in Financial Futures - Futures Only Positions
+  authors: U.S. Commodity Futures Trading Commission
+  year: 2026
+  venue: CFTC Commitments of Traders / TFF report
+  link: https://www.cftc.gov/dea/futures/financial_lf.htm
+  relevance: Official source family for the financial-futures positioning data used
+    to construct the local shifted SPX open-interest change feature.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- local shifted CFTC TFF feature file with trade_date availability no earlier than
+  the following Monday RTH
+- deterministic 5-minute aggregation from completed 1-minute bars
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The CFTC feature is weekly and shifted to tradable dates; it cannot model intraweek
+  revisions or release delays beyond the encoded availability rule.
+- The Sierra cache is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+- The first tradable non-null shifted CFTC feature date is 2013-04-15; earlier staged
+  run1 artifacts are invalid zero-signal data-window checks and are not economic evidence.
+lookahead_risks:
+- CFTC Tuesday positions are traded only from shifted trade_date rows after the feature
+  is available.
+- Signals use only the current completed 5-minute bar and the precomputed shifted
+  CFTC feature for the session date.
+- No future session return, final VWAP, final volume profile, or future high/low is
+  used.
+failure_modes:
+- Weekly CFTC positioning may be too slow for same-day ES intraday execution after
+  costs.
+- The SPX open-interest change proxy may not isolate actual hedging pressure.
+- The apparent premium may be carried by overnight exposure, which this campaign forbids.
+- Signals may be too sparse for WFA trade-density gates at extreme thresholds.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_prior_session_ibs_reversion
+  - es_connors_rsi2_mean_reversion
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  - es_overnight_intraday_reversal
+  - es_signed_orderflow_persistence
+  - es_opening_drive_inventory_absorption
+  - es_turn_of_month_seasonality
+  - es_daily_time_series_momentum
+  - es_late_day_intraday_momentum
+  - es_volume_shock_liquidity_reversal
+  - es_prior_day_stop_run_reclaim
+  - es_vwap_pullback_continuation
+  conclusion: Not a duplicate of active failed campaigns. This campaign tests slow-moving
+    CFTC/TFF hedging-pressure positioning, not intraday momentum, VWAP, gap reversal,
+    calendar seasonality, prior-level sweeps, range compression, volume-shock reversion,
+    or signed-flow persistence.
+variants:
+- broad_positive_pressure_long_1100
+- high_positive_pressure_long_0935
+- extreme_positive_pressure_long_1330
+- broad_negative_pressure_short_1100
+- extreme_negative_pressure_short_1330
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_cftc_tff_hedging_pressure/campaign_test_summary.json
+  invalidated_run1_reason: first limited-core window predates non-null shifted CFTC
+    feature coverage
+  valid_original_run_id: run2
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five corrected CFTC/TFF hedging-pressure originals failed the
+    limited core-grid gate, and all five one-time parameter-space-only rescues also
+    failed core. No run reached monkey, WFA, Monte Carlo, or frozen validation.
+  best_rescue_profitable_combo_rate: 0.3333333333333333

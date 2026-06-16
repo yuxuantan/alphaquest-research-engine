@@ -1,0 +1,180 @@
+campaign_id: es_prior_level_delta_dislocation
+title: ES Prior-Level Delta Dislocation
+decision: failed
+created_at: '2026-06-16'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: At prior RTH high/low levels, a completed rolling 60-minute disagreement
+  between price progress and aggressive trade-side signed volume may identify absorption
+  or exhaustion around clustered liquidity, creating a same-day ES opportunity after
+  costs.
+rationale: This campaign tests prior-level price/orderflow dislocation. It is distinct
+  from the active prior-day stop-run reclaim campaign, which requires a completed
+  close back inside the level, and from the active prior-session breakout continuation
+  campaign, which follows confirmed breaks without requiring opposing signed trade
+  flow. It is also distinct from fixed-time signed-flow persistence because the signal
+  only exists at prior RTH levels.
+sources:
+- title: Currency Orders and Exchange Rate Dynamics
+  authors: Carol L. Osler
+  year: 2003
+  venue: Journal of Finance
+  link: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  relevance: Documents clustering of stop-loss and take-profit orders around support/resistance
+    levels and the dual possibility of reversal at levels or rapid continuation after
+    levels break.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Finds that support/resistance levels can align with limit-order-book
+    depth, motivating prior-session high/low as liquidity reference points rather
+    than arbitrary price levels.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow imbalance as a short-horizon price-pressure proxy.
+    This campaign uses Sierra aggregated trade-side signed volume, not full quote-level
+    OFI.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV and Sierra aggregated trade-side orderflow
+  bars in America/New_York
+- previous RTH high/low available only after the prior RTH session is complete
+- fresh prior-level flags computed without future bars
+- completed rolling 60-minute return and signed-volume windows on 1-minute bars
+- exchange session labels and no-overnight prop-rule flatten checks
+data_quality_caveats:
+- The Sierra cache is aggregated bar-level trade-side flow, not full depth order-book
+  OFI.
+- Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+- The rolling delta signal is a proxy for aggressive trade pressure and cannot observe
+  hidden liquidity directly.
+lookahead_risks:
+- Prior RTH high/low are from the fully completed previous RTH session only.
+- The rolling 60-minute return and signed volume use completed 1-minute bars ending
+  at the signal bar close.
+- Signals use bar close and the engine must enter on the next bar open or later.
+- No final current-session high/low, final VWAP, final volume profile, future orderflow,
+  or future daily range is used.
+- All variants flatten the same day before the configured prop cutoff.
+failure_modes:
+- Orderflow dislocation may be noise in aggregated signed-volume bars and may not
+  survive realistic ES costs.
+- Prior-level reactions may be dominated by macro/news days or a small number of volatility
+  regimes.
+- Long and short resolution of price/orderflow disagreement may be asymmetric.
+- Fresh-level filters may make variants too sparse to satisfy trade-count requirements.
+- Bar-level OHLC may overstate fills during fast prior-level breaks, requiring pessimistic
+  same-bar ordering.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_prior_session_ibs_reversion
+  - es_connors_rsi2_mean_reversion
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  - es_overnight_intraday_reversal
+  - es_signed_orderflow_persistence
+  - es_opening_drive_inventory_absorption
+  - es_turn_of_month_seasonality
+  - es_daily_time_series_momentum
+  - es_late_day_intraday_momentum
+  - es_volume_shock_liquidity_reversal
+  - es_prior_day_stop_run_reclaim
+  - es_vwap_pullback_continuation
+  - es_cftc_tff_hedging_pressure
+  - es_market_plumbing_liquidity_capacity
+  - es_bankruptcy_distress_regime_reversion
+  - es_prior_session_level_breakout_continuation
+  - es_vpin_toxicity_continuation
+  - es_overnight_return_late_day_momentum
+  conclusion: Not a duplicate in active scope. This campaign requires a completed
+    rolling price/orderflow dislocation at prior RTH extremes. Active prior-level
+    campaigns tested reclaim fade and breakout continuation without opposing signed
+    trade-flow; active orderflow campaigns were fixed-time persistence, opening-drive
+    inventory, ES/MES divergence, or toxicity proxies rather than prior-level dislocation.
+variants:
+- pdh_buy_absorption_long
+- pdh_buy_exhaustion_short
+- pdl_sell_absorption_long
+- pdl_sell_pressure_short
+- two_sided_auto_level_fade
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: pdh_buy_absorption_long
+    config: campaigns/es_prior_level_delta_dislocation/rescue_attempts/parameter_space_rescue_1/pdh_buy_absorption_long/config.yaml
+    report: backtest-campaigns/es_prior_level_delta_dislocation/pdh_buy_absorption_long/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.06172839506172839 below required 0.70; top net
+      102.5; top trades 12
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: pdh_buy_exhaustion_short
+    config: campaigns/es_prior_level_delta_dislocation/rescue_attempts/parameter_space_rescue_1/pdh_buy_exhaustion_short/config.yaml
+    report: backtest-campaigns/es_prior_level_delta_dislocation/pdh_buy_exhaustion_short/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -107.5; top trades
+      9
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: pdl_sell_absorption_long
+    config: campaigns/es_prior_level_delta_dislocation/rescue_attempts/parameter_space_rescue_1/pdl_sell_absorption_long/config.yaml
+    report: backtest-campaigns/es_prior_level_delta_dislocation/pdl_sell_absorption_long/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.5555555555555556 below required 0.70; top net
+      437.5; top trades 15
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: pdl_sell_pressure_short
+    config: campaigns/es_prior_level_delta_dislocation/rescue_attempts/parameter_space_rescue_1/pdl_sell_pressure_short/config.yaml
+    report: backtest-campaigns/es_prior_level_delta_dislocation/pdl_sell_pressure_short/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -717.5; top trades
+      16
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: two_sided_auto_level_fade
+    config: campaigns/es_prior_level_delta_dislocation/rescue_attempts/parameter_space_rescue_1/two_sided_auto_level_fade/config.yaml
+    report: backtest-campaigns/es_prior_level_delta_dislocation/two_sided_auto_level_fade/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -114.375; top
+      trades 16
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_prior_level_delta_dislocation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five originals and all five one-time parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test. Originals produced zero trades because
+    the fixed fresh-level requirement only allowed signals if first breach aligned
+    with a 60-minute boundary; rescues removed that fixed requirement but still failed
+    the 0.70 profitable-combo gate and trade-count expectations.
+  best_rescue_variant: pdl_sell_absorption_long
+  best_rescue_profitable_combo_rate: 0.5555555555555556
+  best_rescue_top_trades: 15
+  best_rescue_top_net_profit: 437.5

@@ -1,0 +1,135 @@
+campaign_name: es_nq_cross_index_lead_lag
+campaign_id: es_nq_cross_index_lead_lag
+instrument: ES
+initial_decision: TEST
+reason_for_decision: >
+  Active-only duplicate review found no ES/NQ lead-lag campaign outside
+  _archived, and local full-RTH ES and NQ Sierra order-flow caches are available
+  without buying TBBO or external data. This is a cross-index information
+  leadership test, not same-underlying MES/ES micro-flow reversion.
+
+edge_hypothesis: >
+  Completed NQ price movement can lead short-horizon ES movement when Nasdaq
+  index futures absorb equity-index information faster than ES. If NQ moves
+  materially over a completed intraday window and ES has not fully followed,
+  ES may continue in the NQ direction after the signal bar closes.
+
+why_it_may_apply_to_es_futures: >
+  ES and NQ are both liquid CME equity-index futures, share macro/news shocks,
+  and are traded by overlapping participants. NQ can react more strongly to
+  growth/technology information, and that information may propagate to ES over
+  short horizons. ES is still the only traded instrument in this campaign.
+
+research_sources:
+  - title: High Frequency Lead/Lag Relationships - Empirical Facts
+    author: Nicolas Huth and Frederic Abergel
+    year: 2014
+    link_or_doi: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+    expected_mechanism: High-frequency lead-lag asymmetry can arise when more liquid or faster-reacting instruments incorporate information before related instruments.
+  - title: Lead-Lag Relationships in Market Microstructure
+    author: Julian Schmidt, Tino Cestonaro, and Micha Bender
+    year: 2024
+    link_or_doi: https://doi.org/10.2139/ssrn.5043260
+    expected_mechanism: Cross-asset transaction prices and best-quote information can predict short-horizon behavior in related markets.
+  - title: A GCN-LSTM Approach for ES-Mini and VX Futures Forecasting
+    author: Nikolas Michael, Mihai Cucuringu, and Sam Howison
+    year: 2024
+    link_or_doi: https://arxiv.org/abs/2408.05659
+    expected_mechanism: Futures-market signals can propagate across related futures contracts and motivate a futures-specific ES forecasting check.
+
+behavioural_or_microstructure_rationale: >
+  NQ leadership is treated as an information-transfer signal, not a liquidity
+  shock to fade. The variants follow the NQ direction only after the relevant
+  NQ and ES bars are complete, and require ES to lag by a predeclared return
+  gap so the trade is not simply own-ES momentum.
+
+expected_failure_modes:
+  - The apparent lead-lag is already arbitraged at 1-minute resolution.
+  - Trading costs overwhelm any short-horizon propagation.
+  - NQ leadership only works in a narrow technology-led regime or isolated year.
+  - NQ and ES move simultaneously inside the same minute, so next-bar ES entry is too late.
+  - A single macro event, month, or year dominates reported performance.
+
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  latest_flat_time: "16:59:59"
+
+data_requirements:
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  - data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  - data/cache/orderflow/es_nq_lead_lag_1m_20110103_20260609_full_rth_ny.parquet
+
+derived_feature_cache:
+  builder: tools/build_es_nq_lead_lag_cache.py
+  output: data/cache/orderflow/es_nq_lead_lag_1m_20110103_20260609_full_rth_ny.parquet
+  rows_aligned: 1484730
+  feature_windows_minutes:
+    - 5
+    - 15
+    - 30
+    - 60
+  timing_rule: >
+    Rolling ES and NQ return features are grouped by RTH session date and use
+    only the current completed minute plus earlier minutes. Entry modules emit
+    signals at the configured bar close, and the engine enters at the next ES
+    bar open.
+
+forbidden_forms_of_lookahead:
+  - Use of NQ or ES bars after the configured signal timestamp.
+  - Use of final-session VWAP, final daily range, future session high/low, or future roll information.
+  - Random bar sampling or any post-result change to direction, signal time, lookback, or mechanics.
+  - Any paid/new data pull during this local-only run.
+
+variants:
+  - morning_nq_up_es_lag_long_1000
+  - morning_nq_down_es_lag_short_1000
+  - late_morning_nq_two_sided_lag_follow_1130
+  - afternoon_nq_confirmed_follow_1400
+  - late_day_nq_two_sided_lag_follow_1530
+
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - rescue the same failed variant more than once
+    - core strategy mechanic
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - attempt_id: parameter_space_rescue_1
+      date: "2026-06-16"
+      scope: per_failed_variant
+      status: completed
+      changed_only:
+        - entry.params.min_nq_return_bps grid/default
+        - entry.params.min_lead_gap_bps grid/default
+        - sl.params.stop_pct grid/default
+        - tp.params.target_r_multiple grid/default
+      unchanged:
+        - edge thesis
+        - entry module es_nq_lead_lag
+        - setup_mode per variant
+        - entry time per variant
+        - lookback_minutes per variant
+        - timeframe 1m
+        - data window
+        - costs and fill assumptions
+        - stop and target modules
+      decision: FAIL
+      result: >
+        All five one-time parameter-space rescues failed limited_core_grid_test.
+        Best rescue was afternoon_nq_confirmed_follow_1400 with profitable
+        combo rate 0.037037037037037035, zero benchmark-pass combinations,
+        top net 868.75, and 60 top-combo trades.

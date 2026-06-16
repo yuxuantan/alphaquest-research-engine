@@ -10,9 +10,9 @@ No strategy is currently live-eligible under the active campaign test stack.
 
 The active stack now ends with `acceptance_oos_test`: latest 6 months out-of-sample, trained on the 24 months immediately before that, with parameter selection by MAR. A strategy must pass that terminal gate and the 2026-06-14 screenshot benchmark before it can be listed as live-eligible here.
 
-2026-06-14 shortlist benchmark refresh: `research_artifacts/campaign_benchmark_shortlist_refresh_20260614.{json,csv}` audited 194 report roots, archived 191 not-likely report roots under `data/reports/campaigns/archive_not_likely_20260614`, reran 3 likely shortlist candidates, and produced 2 shortlist-only passes. Acceptance OOS was intentionally excluded, so the live roster remains empty.
+2026-06-14 shortlist benchmark refresh: `_archived/research_artifacts/campaign_benchmark_shortlist_refresh_20260614.{json,csv}` audited 194 report roots, archived 191 not-likely report roots under `data/reports/campaigns/archive_not_likely_20260614`, reran 3 likely shortlist candidates, and produced 2 shortlist-only passes. Acceptance OOS was intentionally excluded, so the live roster remains empty.
 
-2026-06-15 acceptance OOS: `research_artifacts/acceptance_oos_shortlist_passes_20260615.{json,csv}` ran the terminal gate for the two shortlist-only passes. Both failed PF and MAR, so the live roster remains empty.
+2026-06-15 acceptance OOS: `_archived/research_artifacts/acceptance_oos_shortlist_passes_20260615.{json,csv}` ran the terminal gate for the two shortlist-only passes. Both failed PF and MAR, so the live roster remains empty.
 
 Acceptance OOS failures:
 

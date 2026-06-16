@@ -1,0 +1,111 @@
+campaign_id: es_day_of_week_seasonality
+title: ES Day-of-Week Seasonality
+created_at: "2026-06-16"
+decision: failed
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: >
+  ES may retain a day-of-week calendar anomaly during regular trading hours:
+  Monday weakness after weekend information processing and Friday strength
+  before the weekend. The campaign tests that calendar effect intraday with
+  no overnight exposure, next-bar execution, and fixed prop-style flattening.
+rationale: >
+  Day-of-week effects are known before the session opens and do not require
+  future price, volume, VWAP, range, or profile information. This campaign is
+  distinct from the active unconditional RTH risk-premium campaign because it
+  conditions direction on weekday, and distinct from turn-of-month seasonality
+  because it tests weekly rather than monthly calendar timing.
+sources:
+  - title: Calendar Anomalies in Stock Index Futures
+    authors: Oscar Carchano; Angel Pardo
+    year: 2011
+    venue: SSRN working paper
+    link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1958587
+    relevance: >
+      Tests cyclical calendar effects, including day-of-week effects, directly in S&P 500 and other stock-index futures.
+  - title: Stock Returns and the Weekend Effect
+    authors: Kenneth R. French
+    year: 1980
+    venue: Journal of Financial Economics
+    link: https://ideas.repec.org/a/eee/jfinec/v8y1980i1p55-69.html
+    doi: "10.1016/0304-405X(80)90021-5"
+    relevance: >
+      Documents the weekend/Monday return anomaly in U.S. equity returns, motivating Monday-specific ES tests.
+  - title: Day of the Week Effects and Asset Returns
+    authors: Michael R. Gibbons; Patrick Hess
+    year: 1981
+    venue: The Journal of Business
+    link: https://ideas.repec.org/a/ucp/jnlbus/v54y1981i4p579-96.html
+    doi: "10.1086/296147"
+    relevance: >
+      Broadens day-of-week evidence across asset returns, motivating a fail-closed futures implementation.
+behavioural_or_microstructure_rationale: >
+  Weekend information arrival, investor risk reduction before and after the
+  weekend, settlement/rebalance timing, and institutional flow scheduling can
+  create systematic weekday return differences. ES is the liquid futures venue
+  for S&P 500 exposure, so any effect must survive futures costs, slippage,
+  next-bar execution, pessimistic same-bar ordering, and RTH-only flattening.
+expected_failure_modes:
+  - The historical weekday effect may have decayed after publication and after futures market maturation.
+  - ES futures may arbitrage away cash-equity weekday effects.
+  - Any apparent edge may be concentrated in crisis Mondays or a few large Fridays.
+  - Single-weekday variants may fail WFA trade-density requirements after holidays.
+  - Monkey stress may show that random weekday-like timing performs as well as the proposed rule.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - deterministic 5-minute aggregation from completed 1-minute bars
+  - exchange session labels and no-overnight prop-rule flatten checks
+data_quality_caveats:
+  - The Sierra cache is an aggregated bar-level source; it is not tick-path data.
+  - Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+  - Weekday is based on the RTH session timestamp in America/New_York.
+lookahead_risks:
+  - Weekday is known before the session and does not use future market data.
+  - A signal at HH:MM uses only the completed bar ending at HH:MM and can only enter at the next bar open.
+  - No future daily close, session high/low, final VWAP, final range, or final volume is used.
+  - All variants flatten before the configured prop cutoff and do not allow overnight exposure.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_distinction: >
+    Not a duplicate of es_rth_intraday_risk_premium, which tested unconditional
+    all-weekday long RTH exposure at fixed times. Not a duplicate of
+    es_turn_of_month_seasonality, which tested monthly calendar windows. This
+    campaign tests weekday-conditioned direction and weekly calendar timing.
+variants:
+  - monday_open_weekend_short_0935
+  - monday_late_weekend_short_1100
+  - friday_open_preweekend_long_0935
+  - friday_late_preweekend_long_1300
+  - mon_fri_polarity_pair_1000
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core economic edge
+    - change timeframe or data window
+    - add or remove filters after seeing results
+    - alter costs, fills, sessions, validation gates, or prop rules
+
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_day_of_week_seasonality/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: >
+    All five original day-of-week variants and all five per-failed-variant
+    stop/target parameter-space rescues failed limited_core_grid_test with
+    0.0 profitable-combo rate. No run reached monkey, WFA, Monte Carlo,
+    simulated incubation, or frozen validation.
+  best_original: monday_open_weekend_short_0935/run1 top_net=-800.0
+  best_rescue: friday_open_preweekend_long_0935/rescue1 top_net=-1314.375

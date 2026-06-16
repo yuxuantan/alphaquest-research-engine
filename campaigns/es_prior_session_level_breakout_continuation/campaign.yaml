@@ -1,0 +1,122 @@
+campaign_id: es_prior_session_level_breakout_continuation
+title: ES Prior-Session Level Breakout Continuation
+decision: failed
+created_at: '2026-06-16'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: Confirmed ES breaks beyond the prior RTH high or low may continue intraday
+  because widely watched support/resistance levels concentrate liquidity and stop
+  orders; a completed close beyond the level can mark informed directional participation
+  rather than a failed stop run.
+rationale: This campaign tests prior-session support/resistance breakout continuation.
+  It is distinct from the active prior-day stop-run reclaim campaign, which faded
+  failed sweeps that closed back inside the level. These variants require a completed
+  close or hold outside the prior RTH high/low and enter only on the next bar open.
+sources:
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  authors: William Brock, Josef Lakonishok, and Blake LeBaron
+  year: 1992
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1992.tb04681.x
+  link: https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04681.x
+  relevance: Tests trading-range break rules based on support/resistance levels and
+    motivates a strict prior-level breakout continuation test.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Finds support/resistance levels can coincide with limit-order-book depth,
+    giving a liquidity mechanism for reactions around prior-session reference levels.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  venue: Journal of International Money and Finance
+  link: https://www.newyorkfed.org/research/staff_reports/sr150.html
+  relevance: Documents stop-order cascades around levels; the campaign tests whether
+    confirmed ES breaks beyond prior RTH levels continue after costs.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV/orderflow bars in America/New_York
+- deterministic 5-minute aggregation from completed 1-minute bars
+- previous RTH high and low available only after the prior RTH session is complete
+- fresh-level flags so a prior high/low is not repeatedly traded after the first break
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The Sierra cache is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+- Breakout confirmation is bar-close based; actual stop-order cascades are only proxied
+  by 5-minute OHLCV bars.
+lookahead_risks:
+- Prior RTH high/low are from the fully completed previous RTH session only.
+- Fresh close-break and retest-hold signals use only completed 5-minute signal bars.
+- Gap-hold variants use the RTH open plus completed hold bars; entries are next-bar
+  open after the hold condition is known.
+- No future session high/low, final VWAP, final current-session range, or future order-flow
+  state is used.
+- All variants flatten the same day before the configured prop cutoff.
+failure_modes:
+- Prior high/low breakouts may be false breaks that reverse after costs.
+- The effect may be confined to a narrow volatility regime or a few crisis trend days.
+- Gap-hold continuation may duplicate overnight information without same-day follow-through.
+- Bar-level OHLC may overstate fills during fast cascades, so pessimistic same-bar
+  ordering is required.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_prior_session_ibs_reversion
+  - es_connors_rsi2_mean_reversion
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  - es_overnight_intraday_reversal
+  - es_signed_orderflow_persistence
+  - es_opening_drive_inventory_absorption
+  - es_turn_of_month_seasonality
+  - es_daily_time_series_momentum
+  - es_late_day_intraday_momentum
+  - es_volume_shock_liquidity_reversal
+  - es_prior_day_stop_run_reclaim
+  - es_vwap_pullback_continuation
+  - es_cftc_tff_hedging_pressure
+  - es_market_plumbing_liquidity_capacity
+  - es_bankruptcy_distress_regime_reversion
+  conclusion: Not a duplicate of active failed campaigns. The active prior-day stop-run
+    reclaim campaign faded failed prior-level sweeps; this campaign enters only with
+    confirmed breaks/holds outside prior RTH high/low. Archived tests are ignored
+    for duplicate checks and are not used for tuning.
+variants:
+- morning_prior_high_breakout_long
+- morning_prior_low_breakout_short
+- midday_two_sided_close_break
+- retest_hold_two_sided_breakout
+- gap_hold_two_sided_continuation
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_prior_session_level_breakout_continuation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 4
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five original prior-session level breakout-continuation variants
+    failed before WFA, and all five one-time parameter-space-only rescues also failed.
+    No run passed limited monkey; no run reached WFA, Monte Carlo, simulated incubation,
+    or frozen validation.
+  best_original_profitable_combo_rate: 0.691358024691358
+  best_rescue_profitable_combo_rate: 1.0

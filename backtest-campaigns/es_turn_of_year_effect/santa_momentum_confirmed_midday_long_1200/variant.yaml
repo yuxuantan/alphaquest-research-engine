@@ -1,0 +1,25 @@
+campaign_id: es_turn_of_year_effect
+variant_id: santa_momentum_confirmed_midday_long_1200
+strategy_name: turn_of_year_effect
+mechanic:
+  entry_module: turn_of_year_effect
+  take_profit_module: fixed_r
+  stop_loss_module: percent_from_entry
+  flatten_time: '15:55:00'
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: scaffold

@@ -1,17 +1,23 @@
 from __future__ import annotations
 
 from propstack.strategy_modules.entry.bankruptcy_distress_reversion import BankruptcyDistressReversionEntry
+from propstack.strategy_modules.entry.bls_macro_release_day_drift import BlsMacroReleaseDayDriftEntry
 from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
 from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from propstack.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
 from propstack.strategy_modules.entry.connors_rsi2_mean_reversion import ConnorsRsi2MeanReversionEntry
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
+from propstack.strategy_modules.entry.es_nq_lead_lag import EsNqLeadLagEntry
+from propstack.strategy_modules.entry.es_term_structure_lead_lag import EsTermStructureLeadLagEntry
+from propstack.strategy_modules.entry.fomc_pre_announcement_drift import FomcPreAnnouncementDriftEntry
 from propstack.strategy_modules.entry.gao_last_half_hour_orderflow import GaoLastHalfHourOrderflowEntry
+from propstack.strategy_modules.entry.halloween_seasonal_premium import HalloweenSeasonalPremiumEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
 from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import LiquidityRiskCapacityPriorityEntry
 from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
+from propstack.strategy_modules.entry.monthly_opex_pressure import MonthlyOpexPressureEntry
 from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIntradayMomentumEntry
 from propstack.strategy_modules.entry.morning_orderflow_momentum import MorningOrderflowMomentumEntry
 from propstack.strategy_modules.entry.opening_range_breakout import OpeningRangeBreakoutEntry
@@ -28,7 +34,9 @@ from propstack.strategy_modules.entry.base import Signal
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.positive_delta_dislocation import PositiveDeltaDislocationEntry
+from propstack.strategy_modules.entry.preholiday_effect import PreholidayEffectEntry
 from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSessionIbsReversionEntry
+from propstack.strategy_modules.entry.quarterly_expiration_pressure import QuarterlyExpirationPressureEntry
 from propstack.strategy_modules.entry.quote_liquidity_sweep_reversion import QuoteLiquiditySweepReversionEntry
 from propstack.strategy_modules.entry.range_compression_breakout import RangeCompressionBreakoutEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
@@ -37,6 +45,11 @@ from propstack.strategy_modules.entry.trade_orderflow_multi_pressure import Trad
 from propstack.strategy_modules.entry.trade_orderflow_multi_state_rank import TradeOrderflowMultiStateRankEntry
 from propstack.strategy_modules.entry.trade_orderflow_pressure import TradeOrderflowPressureEntry
 from propstack.strategy_modules.entry.trade_orderflow_state_rank import TradeOrderflowStateRankEntry
+from propstack.strategy_modules.entry.turn_of_year_effect import TurnOfYearEffectEntry
+from propstack.strategy_modules.entry.vix_expiration_pressure import VixExpirationPressureEntry
+from propstack.strategy_modules.entry.volatility_managed_intraday_premium import (
+    VolatilityManagedIntradayPremiumEntry,
+)
 from propstack.strategy_modules.entry.volume_conditioned_liquidity_reversal import (
     VolumeConditionedLiquidityReversalEntry,
 )
@@ -46,17 +59,23 @@ from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPull
 
 ENTRY_MODULES = {
     BankruptcyDistressReversionEntry.name: BankruptcyDistressReversionEntry,
+    BlsMacroReleaseDayDriftEntry.name: BlsMacroReleaseDayDriftEntry,
     CalendarSessionBiasEntry.name: CalendarSessionBiasEntry,
     CftcTffHedgingPressureEntry.name: CftcTffHedgingPressureEntry,
     CftcTffTieredHedgingPressureEntry.name: CftcTffTieredHedgingPressureEntry,
     ConnorsRsi2MeanReversionEntry.name: ConnorsRsi2MeanReversionEntry,
     DailyTimeSeriesMomentumEntry.name: DailyTimeSeriesMomentumEntry,
+    EsNqLeadLagEntry.name: EsNqLeadLagEntry,
+    EsTermStructureLeadLagEntry.name: EsTermStructureLeadLagEntry,
+    FomcPreAnnouncementDriftEntry.name: FomcPreAnnouncementDriftEntry,
     GaoLastHalfHourOrderflowEntry.name: GaoLastHalfHourOrderflowEntry,
+    HalloweenSeasonalPremiumEntry.name: HalloweenSeasonalPremiumEntry,
     IntradayCapitulationMREntry.name: IntradayCapitulationMREntry,
     IntradayMomentumPriorityEntry.name: IntradayMomentumPriorityEntry,
     LateDayIntradayMomentumEntry.name: LateDayIntradayMomentumEntry,
     LiquidityRiskCapacityPriorityEntry.name: LiquidityRiskCapacityPriorityEntry,
     MarketPlumbingPriorityEntry.name: MarketPlumbingPriorityEntry,
+    MonthlyOpexPressureEntry.name: MonthlyOpexPressureEntry,
     MorningIntradayMomentumEntry.name: MorningIntradayMomentumEntry,
     MorningOrderflowMomentumEntry.name: MorningOrderflowMomentumEntry,
     OpeningRangeBreakoutEntry.name: OpeningRangeBreakoutEntry,
@@ -72,7 +91,9 @@ ENTRY_MODULES = {
     PdhPdlBreakoutContinuationEntry.name: PdhPdlBreakoutContinuationEntry,
     PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
     PositiveDeltaDislocationEntry.name: PositiveDeltaDislocationEntry,
+    PreholidayEffectEntry.name: PreholidayEffectEntry,
     PriorSessionIbsReversionEntry.name: PriorSessionIbsReversionEntry,
+    QuarterlyExpirationPressureEntry.name: QuarterlyExpirationPressureEntry,
     QuoteLiquiditySweepReversionEntry.name: QuoteLiquiditySweepReversionEntry,
     RangeCompressionBreakoutEntry.name: RangeCompressionBreakoutEntry,
     RthGapFadeEntry.name: RthGapFadeEntry,
@@ -81,6 +102,9 @@ ENTRY_MODULES = {
     TradeOrderflowMultiStateRankEntry.name: TradeOrderflowMultiStateRankEntry,
     TradeOrderflowPressureEntry.name: TradeOrderflowPressureEntry,
     TradeOrderflowStateRankEntry.name: TradeOrderflowStateRankEntry,
+    TurnOfYearEffectEntry.name: TurnOfYearEffectEntry,
+    VixExpirationPressureEntry.name: VixExpirationPressureEntry,
+    VolatilityManagedIntradayPremiumEntry.name: VolatilityManagedIntradayPremiumEntry,
     VolumeConditionedLiquidityReversalEntry.name: VolumeConditionedLiquidityReversalEntry,
     VpinToxicityContinuationEntry.name: VpinToxicityContinuationEntry,
     VwapPullbackContinuationEntry.name: VwapPullbackContinuationEntry,
@@ -99,17 +123,23 @@ def build_entry_module(config: dict):
 __all__ = [
     "Signal",
     "BankruptcyDistressReversionEntry",
+    "BlsMacroReleaseDayDriftEntry",
     "CalendarSessionBiasEntry",
     "CftcTffHedgingPressureEntry",
     "CftcTffTieredHedgingPressureEntry",
     "ConnorsRsi2MeanReversionEntry",
     "DailyTimeSeriesMomentumEntry",
+    "EsNqLeadLagEntry",
+    "EsTermStructureLeadLagEntry",
+    "FomcPreAnnouncementDriftEntry",
     "GaoLastHalfHourOrderflowEntry",
+    "HalloweenSeasonalPremiumEntry",
     "IntradayCapitulationMREntry",
     "IntradayMomentumPriorityEntry",
     "LateDayIntradayMomentumEntry",
     "LiquidityRiskCapacityPriorityEntry",
     "MarketPlumbingPriorityEntry",
+    "MonthlyOpexPressureEntry",
     "MorningIntradayMomentumEntry",
     "MorningOrderflowMomentumEntry",
     "OpeningRangeBreakoutEntry",
@@ -125,7 +155,9 @@ __all__ = [
     "PdhPdlBreakoutContinuationEntry",
     "PdhPdlSweepReclaimEntry",
     "PositiveDeltaDislocationEntry",
+    "PreholidayEffectEntry",
     "PriorSessionIbsReversionEntry",
+    "QuarterlyExpirationPressureEntry",
     "QuoteLiquiditySweepReversionEntry",
     "RangeCompressionBreakoutEntry",
     "RthGapFadeEntry",
@@ -134,6 +166,9 @@ __all__ = [
     "TradeOrderflowMultiStateRankEntry",
     "TradeOrderflowPressureEntry",
     "TradeOrderflowStateRankEntry",
+    "TurnOfYearEffectEntry",
+    "VixExpirationPressureEntry",
+    "VolatilityManagedIntradayPremiumEntry",
     "VolumeConditionedLiquidityReversalEntry",
     "VpinToxicityContinuationEntry",
     "VwapPullbackContinuationEntry",
