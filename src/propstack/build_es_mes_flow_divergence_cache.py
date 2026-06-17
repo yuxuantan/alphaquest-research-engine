@@ -9,8 +9,8 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Build an ES trading cache with completed MES-vs-ES flow-divergence features."
     )
-    parser.add_argument("--es-csv", required=True, help="ES 1-minute trade-orderflow cache CSV.")
-    parser.add_argument("--mes-csv", required=True, help="MES 1-minute trade-orderflow cache CSV.")
+    parser.add_argument("--es-csv", required=True, help="ES 1-minute trade-orderflow cache CSV or Parquet.")
+    parser.add_argument("--mes-csv", required=True, help="MES 1-minute trade-orderflow cache CSV or Parquet.")
     parser.add_argument("--out-csv", required=True, help="Output ES trading cache CSV.")
     parser.add_argument("--windows", default="3,5,15,30,60", help="Comma-separated completed-bar windows.")
     parser.add_argument("--large-trade-sizes", default="10,20", help="Comma-separated large-trade thresholds.")

@@ -1,0 +1,140 @@
+campaign_id: es_mes_participation_crowding_reversion
+title: ES/MES Participation Crowding Reversion
+decision: pending
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+hypothesis: >
+  ES may mean-revert intraday after directional ES moves that occur while MES
+  notional-equivalent participation or MES trade-count participation is unusually
+  high for the same clock time.
+rationale: >
+  This campaign treats MES as a smaller-contract participation proxy, not as a
+  directional order-flow leader. It tests whether heavy smaller-contract
+  participation during a completed ES move marks crowding or temporary price
+  pressure that ES later fades. The traded instrument is always ES.
+sources:
+  - title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+    authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+    year: 2024
+    venue: Journal of Financial and Quantitative Analysis
+    link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+    relevance: Retail order-flow predictability depends on retail trading intensity; this motivates conditioning on smaller-contract participation intensity.
+  - title: Retail Traders in Futures Markets
+    authors: CFTC Office of the Chief Economist
+    year: 2024
+    venue: CFTC staff research report
+    link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+    relevance: Documents retail futures trading and includes Micro E-mini examples, supporting MES as a relevant smaller-contract futures participation venue.
+  - title: Micro E-mini futures and options
+    authors: CME Group
+    year: 2026
+    venue: CME product documentation
+    link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+    relevance: CME states Micro E-mini products provide lower-capital access and convert with classic E-mini futures at a 1:10 ratio.
+data_needs:
+  - local Sierra ES and MES completed 1-minute RTH OHLCV/trade-count cache
+  - aligned ES/MES active-contract minutes from 2019-05-06 through 2026-06-09
+  - MES notional-equivalent share using the 1:10 MES-to-ES contract ratio
+  - same-clock prior ranks shifted by one prior session; no current or future session rank information
+data_quality_caveats:
+  - Sierra cache is completed-bar aggregate data, not tick-path or LOB data.
+  - MES participation is a proxy for smaller-contract activity, not an account-classified retail feed.
+  - Same-bar stop/target conflicts require pessimistic OHLC ordering.
+lookahead_risks:
+  - Entry uses only completed 1-minute bars; a 10:30 entry uses the completed 10:29-10:30 bar and executes next bar open.
+  - Same-clock ranks use only prior same-clock observations and are unavailable during the rank warmup period.
+  - No future ES return, final session high/low, final VWAP, or post-entry MES/ES data is used.
+failure_modes:
+  - MES participation may not isolate retail or less-informed flow.
+  - High MES share may coincide with valid information shocks rather than crowding.
+  - The apparent edge may disappear after ES commission, slippage, and pessimistic stop/target ordering.
+  - The 2019 MES launch date shortens WFA history compared with the full ES cache.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_mes_micro_flow_divergence_reversion
+    - es_trade_size_stealth_orderflow
+    - es_trade_fragmentation_liquidity_reversion
+    - es_signed_orderflow_persistence
+    - es_vpin_toxicity_continuation
+    - es_volume_shock_liquidity_reversal
+    - es_vwap_pullback_continuation
+    - es_connors_rsi2_mean_reversion
+  conclusion: >
+    Not a duplicate of the active ES/MES micro-flow divergence campaign because
+    this edge ignores MES signed imbalance leadership and tests relative MES
+    participation intensity conditional on an ES price move.
+variants:
+  - morning_notional_down_reversal_long_1030
+  - morning_notional_up_reversal_short_1030
+  - midday_notional_two_sided_reversal_1200
+  - afternoon_trade_down_reversal_long_1400
+  - afternoon_trade_up_reversal_short_1400
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core economic edge
+    - change MES participation feature definition
+    - change timeframe or data window
+    - add or remove filters after seeing results
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_mes_participation_crowding_reversion/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  frozen_validation_reached: 0
+  failure_reason: >
+    All five original variants failed limited_core_grid_test. Each failed
+    variant received exactly one parameter-space-only rescue. Three rescues
+    failed limited_core_grid_test. Two rescues passed limited core but failed
+    limited_monkey_test; no run reached WFA, WFA OOS monkey, Monte Carlo,
+    simulated incubation, frozen validation, or candidate reporting.
+  best_original:
+    variant: midday_notional_two_sided_reversal_1200
+    profitable_combo_rate: 0.6419753086419753
+    terminal_stage: limited_core_grid_test
+  best_rescue:
+    variant: morning_notional_down_reversal_long_1030
+    profitable_combo_rate: 0.8395061728395061
+    terminal_stage: limited_monkey_test
+    monkey_net_beat_rate: 0.8566666666666667
+    monkey_drawdown_beat_rate: 0.6833333333333333
+rescue_attempts:
+  - variant_id: morning_notional_down_reversal_long_1030
+    config: campaigns/es_mes_participation_crowding_reversion/rescue_attempts/parameter_space_rescue_1/morning_notional_down_reversal_long_1030/config.yaml
+    report: backtest-campaigns/es_mes_participation_crowding_reversion/morning_notional_down_reversal_long_1030/ES/rescue1/campaign_test_summary.json
+    decision: FAIL
+    terminal_stage: limited_monkey_test
+  - variant_id: morning_notional_up_reversal_short_1030
+    config: campaigns/es_mes_participation_crowding_reversion/rescue_attempts/parameter_space_rescue_1/morning_notional_up_reversal_short_1030/config.yaml
+    report: backtest-campaigns/es_mes_participation_crowding_reversion/morning_notional_up_reversal_short_1030/ES/rescue1/campaign_test_summary.json
+    decision: FAIL
+    terminal_stage: limited_core_grid_test
+  - variant_id: midday_notional_two_sided_reversal_1200
+    config: campaigns/es_mes_participation_crowding_reversion/rescue_attempts/parameter_space_rescue_1/midday_notional_two_sided_reversal_1200/config.yaml
+    report: backtest-campaigns/es_mes_participation_crowding_reversion/midday_notional_two_sided_reversal_1200/ES/rescue1/campaign_test_summary.json
+    decision: FAIL
+    terminal_stage: limited_monkey_test
+  - variant_id: afternoon_trade_down_reversal_long_1400
+    config: campaigns/es_mes_participation_crowding_reversion/rescue_attempts/parameter_space_rescue_1/afternoon_trade_down_reversal_long_1400/config.yaml
+    report: backtest-campaigns/es_mes_participation_crowding_reversion/afternoon_trade_down_reversal_long_1400/ES/rescue1/campaign_test_summary.json
+    decision: FAIL
+    terminal_stage: limited_core_grid_test
+  - variant_id: afternoon_trade_up_reversal_short_1400
+    config: campaigns/es_mes_participation_crowding_reversion/rescue_attempts/parameter_space_rescue_1/afternoon_trade_up_reversal_short_1400/config.yaml
+    report: backtest-campaigns/es_mes_participation_crowding_reversion/afternoon_trade_up_reversal_short_1400/ES/rescue1/campaign_test_summary.json
+    decision: FAIL
+    terminal_stage: limited_core_grid_test

@@ -1,0 +1,188 @@
+campaign_name: es_realized_jump_variation_premium
+campaign_id: es_realized_jump_variation_premium
+instrument: ES
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no non-archived realized jump-variation
+  campaign. The edge uses local ES RTH bars only and produces dense prior-session
+  jump-state signals.
+edge_hypothesis: Lagged discontinuous realized jump variation, separated from continuous
+  variation using bipower variation, may predict same-day ES intraday returns through
+  jump-risk compensation or short-horizon reversal after extreme downside or upside
+  jump shocks.
+why_it_may_apply_to_es_futures: ES is the liquid futures expression of S&P 500 equity-index
+  risk. Equity-index investors demand compensation for jump and tail risk, but same-day
+  no-overnight futures execution must be tested directly under costs, slippage, and
+  forced flatten rules.
+research_sources:
+- title: Power and Bipower Variation with Stochastic Volatility and Jumps
+  author: Ole E. Barndorff-Nielsen and Neil Shephard
+  year: 2004
+  link_or_doi: https://doi.org/10.1093/jjfinec/nbh001
+  expected_mechanism: Bipower variation separates continuous variation from jump variation,
+    giving a no-lookahead prior-session jump-state feature.
+- title: Threshold Bipower Variation and the Impact of Jumps on Volatility Forecasting
+  author: Fulvio Corsi, Davide Pirino, and Roberto Reno
+  year: 2010
+  link_or_doi: https://doi.org/10.1016/j.jeconom.2010.07.008
+  expected_mechanism: Realized jumps contain information distinct from continuous
+    volatility and can affect subsequent short-horizon risk forecasts.
+- title: Tail Risk Premia and Return Predictability
+  author: Tim Bollerslev, Viktor Todorov, and Lai Xu
+  year: 2015
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2015.02.010
+  expected_mechanism: Tail and jump-risk compensation can predict aggregate equity
+    returns; this campaign tests a no-overnight ES intraday approximation.
+behavioural_or_microstructure_rationale: A completed RTH session with unusually high
+  discontinuous price movement may leave risk-transfer demand, dealer inventory, or
+  short-horizon reversal pressure. The campaign distinguishes jump variation from
+  ordinary realized-volatility, realized-skewness, and implied-minus-realized VRP
+  families already tested.
+expected_failure_modes:
+- Jump-risk premia may require overnight or multi-day exposure rather than a same-day
+  intraday ES hold.
+- Bipower jump variation estimated from 1-minute OHLC bars is an approximation and
+  may be noisy relative to tick returns.
+- Negative and positive jump states may be dominated by crisis sessions or a few large
+  days.
+- The signal may overlap economically with broad volatility or realized-skewness states
+  and fail neighboring-parameter stability.
+- Any apparent edge may disappear under one-tick-worse slippage, missed trades, or
+  WFA selection.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/es_realized_jump_variation_features_20110103_20260609.csv
+feature_construction:
+  builder: tools/build_es_realized_jump_variation_features.py
+  output: data/external/es_realized_jump_variation_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3759
+  lookahead_control: Realized variance, bipower variation, jump variation, signed
+    large-return jump proxies, and rolling ranks are shifted one completed RTH session
+    before any signal can use them.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+forbidden_forms_of_lookahead:
+- Use of current-session jump variation, high/low/close, realized variance, or post-entry
+  returns in the signal state.
+- Use of future sessions in rolling ranks.
+- Changing jump definitions, thresholds, entry times, or directions after seeing test
+  results.
+- Holding overnight to match longer-horizon source literature.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  not_duplicate_of:
+  - es_volatility_managed_intraday_premium
+  - es_realized_skewness_reversal
+  - es_variance_risk_premium_intraday
+  - es_vpin_toxicity_continuation
+  - es_daily_time_series_momentum
+  conclusion: This campaign uses discontinuous jump variation and signed large-return
+    jump proxies separated from continuous variation by bipower variation. It is not
+    a realized-volatility rank, realized-skewness rank, implied-minus-realized VRP,
+    toxicity/orderflow, or own-return trend campaign.
+variants:
+- high_jump_var_open_long_1000
+- high_jump_share_midmorning_long_1030
+- negative_jump_rebound_long_1130
+- positive_jump_reversal_short_1200
+- two_sided_signed_jump_extreme_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - feature construction shift rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - variant: high_jump_share_midmorning_long_1030
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_jump_variation_premium/rescue_attempts/parameter_space_rescue_1/high_jump_share_midmorning_long_1030/config.yaml
+    result_path: backtest-campaigns/es_realized_jump_variation_premium/high_jump_share_midmorning_long_1030/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -573.75
+    top_profit_factor: 0.9502923976608187
+    top_trades: 96
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;min_positive_month_rate
+  - variant: high_jump_var_open_long_1000
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_jump_variation_premium/rescue_attempts/parameter_space_rescue_1/high_jump_var_open_long_1000/config.yaml
+    result_path: backtest-campaigns/es_realized_jump_variation_premium/high_jump_var_open_long_1000/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -1236.25
+    top_profit_factor: 0.414792899408284
+    top_trades: 51
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;min_trades_per_year;preferred_min_total_trades;min_positive_month_rate
+  - variant: negative_jump_rebound_long_1130
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_jump_variation_premium/rescue_attempts/parameter_space_rescue_1/negative_jump_rebound_long_1130/config.yaml
+    result_path: backtest-campaigns/es_realized_jump_variation_premium/negative_jump_rebound_long_1130/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -1165.0
+    top_profit_factor: 0.7076537013801757
+    top_trades: 63
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;preferred_min_total_trades;min_positive_month_rate
+  - variant: positive_jump_reversal_short_1200
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_jump_variation_premium/rescue_attempts/parameter_space_rescue_1/positive_jump_reversal_short_1200/config.yaml
+    result_path: backtest-campaigns/es_realized_jump_variation_premium/positive_jump_reversal_short_1200/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.1111111111111111
+    top_net_profit: 2304.375
+    top_profit_factor: 1.3012254901960785
+    top_trades: 66
+    failure_reason: preferred_min_total_trades
+  - variant: two_sided_signed_jump_extreme_1330
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_jump_variation_premium/rescue_attempts/parameter_space_rescue_1/two_sided_signed_jump_extreme_1330/config.yaml
+    result_path: backtest-campaigns/es_realized_jump_variation_premium/two_sided_signed_jump_extreme_1330/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -4508.125
+    top_profit_factor: 0.36505281690140845
+    top_trades: 151
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;max_consecutive_losses;min_positive_month_rate
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_realized_jump_variation_premium/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five original realized jump-variation variants failed limited_core_grid_test.
+    Each failed variant received exactly one parameter-space/fixed-parameter rescue,
+    preserving the same jump-feature construction, setup mode, direction, entry time,
+    entry module, stop module, take-profit module, timeframe, data window, costs,
+    and stage criteria. All five rescues also failed limited_core_grid_test; no run
+    reached monkey, WFA, Monte Carlo, simulated incubation, or frozen validation.
+  best_original_profitable_combo_rate: 0.0
+  best_rescue_profitable_combo_rate: 0.1111111111111111

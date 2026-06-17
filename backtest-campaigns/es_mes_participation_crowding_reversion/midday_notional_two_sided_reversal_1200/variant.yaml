@@ -1,0 +1,25 @@
+campaign_id: es_mes_participation_crowding_reversion
+variant_id: midday_notional_two_sided_reversal_1200
+strategy_name: mes_participation_crowding
+mechanic:
+  entry_module: mes_participation_crowding
+  take_profit_module: fixed_r
+  stop_loss_module: percent_from_entry
+  flatten_time: '14:00:00'
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: scaffold

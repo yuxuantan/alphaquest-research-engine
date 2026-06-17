@@ -59,8 +59,18 @@ def _simulate_prop_path(
     max_dd = 0.0
     profit_before_drawdown = False
     drawdown_before_profit = False
-    profit_target = rules.starting_balance * (1 + getattr(rules, "profit_target_pct", 0.06))
-    drawdown_limit = rules.starting_balance * (1 - getattr(rules, "drawdown_limit_pct", 0.03))
+    profit_target_amount = getattr(rules, "profit_target_amount", None)
+    drawdown_limit_amount = getattr(rules, "drawdown_limit_amount", None)
+    profit_target = (
+        rules.starting_balance + float(profit_target_amount)
+        if profit_target_amount is not None
+        else rules.starting_balance * (1 + getattr(rules, "profit_target_pct", 0.06))
+    )
+    drawdown_limit = (
+        rules.starting_balance - float(drawdown_limit_amount)
+        if drawdown_limit_amount is not None
+        else rules.starting_balance * (1 - getattr(rules, "drawdown_limit_pct", 0.03))
+    )
     payout_target = rules.starting_balance + rules.payout_threshold
     payout_eligible = False
     drawdown_before_payout = False

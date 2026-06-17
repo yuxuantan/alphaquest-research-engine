@@ -1,0 +1,138 @@
+campaign_id: es_vvix_tail_risk_intraday
+title: ES VVIX Tail Risk Intraday
+decision: FAIL
+created_at: "2026-06-16"
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Cboe VVIX states, measuring option-implied volatility of
+  volatility and tail-risk uncertainty, may identify intraday ES risk-off or
+  risk-on pressure after the cash open.
+rationale: This campaign tests volatility-of-volatility / tail-risk state
+  information from VVIX. It is not a VIX expiration calendar, VIX-minus-realized
+  variance-risk-premium rule, realized-volatility-only timing rule, OFR systemic
+  stress state, Treasury-rate shock, CFTC positioning, ORB, VWAP, prior-level,
+  or order-flow persistence campaign.
+sources:
+  - title: Volatility of Volatility and Tail Risk Premiums
+    authors: Yang-Ho Park
+    year: 2013
+    venue: Federal Reserve Board Finance and Economics Discussion Series 2013-54
+    link: https://www.federalreserve.gov/pubs/feds/2013/201354/index.html
+    relevance: Introduces VVIX as a model-free risk-neutral volatility-of-volatility
+      / tail-risk measure and documents forecasting power for tail-risk hedge returns.
+  - title: Volatility-of-Volatility Risk
+    authors: Darien Huang, Christian Schlag, Ivan Shaliastovich, and Julian Thimme
+    year: 2019
+    venue: Journal of Financial and Quantitative Analysis
+    link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2497759
+    relevance: Shows volatility-of-volatility is a priced risk factor distinct
+      from volatility itself and uses VIX/VVIX as model-free measures.
+  - title: Historical Data for Cboe VIX Index and Other Volatility Indices
+    authors: Cboe Global Markets
+    year: 2026
+    venue: Official Cboe historical index data page
+    link: https://www.cboe.com/tradable_products/vix/vix_historical_data
+    relevance: Official free source for daily VVIX and VIX history used in this campaign.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - official free Cboe VVIX and VIX daily historical CSVs
+  - derived session feature file using only Cboe observations strictly before the ES session date
+  - same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+  - VVIX/VIX are daily closing index values, not intraday option snapshots.
+  - Same-day Cboe closes are unavailable to intraday ES signals and must not be used.
+  - Sierra data is aggregated bar-level data, not tick-path data.
+  - Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+  - Using the Cboe close from the same ES session date would leak unavailable data; forbidden.
+  - Signals use only a completed ES bar at the configured timestamp and lagged Cboe daily state.
+  - Rolling ranks are computed over the lagged session feature sequence only.
+  - No final session high/low, final VWAP, future returns, or post-entry VVIX values are used.
+failure_modes:
+  - VVIX predictability in the literature may apply to option hedge returns, not same-day ES futures.
+  - High tail-risk states may imply higher forward risk premia but still coincide with intraday sell pressure.
+  - Daily VVIX states may be too slow for intraday ES timing.
+  - Performance may concentrate in crisis windows, single years, or isolated volatility events.
+  - The signal may overlap with broad VIX or volatility regimes and fail WFA stability.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_variance_risk_premium_intraday
+    - es_volatility_managed_intraday_premium
+    - es_vix_expiration_pressure
+    - es_ofr_financial_stress_intraday
+    - es_treasury_rate_shock_intraday
+    - es_market_plumbing_liquidity_capacity
+    - es_realized_skewness_reversal
+    - es_realized_jump_variation_premium
+  conclusion: Not a duplicate of active failed campaigns. This tests lagged
+    VVIX volatility-of-volatility/tail-risk state and VVIX/VIX relative state,
+    not VIX-minus-realized variance risk premium, realized-volatility management,
+    VIX settlement calendar pressure, OFR systemic stress, Treasury shocks,
+    dealer-lending/VX OI plumbing proxies, realized skewness, or realized jump variation.
+feature_construction:
+  builder: tools/build_es_vvix_tail_risk_features.py
+  vvix_source: https://cdn.cboe.com/api/global/us_indices/daily_prices/VVIX_History.csv
+  vix_source: https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv
+  vvix_cache: data/external/cboe_vvix_history.csv
+  vix_cache: data/external/cboe_vix_history.csv
+  output: data/external/es_vvix_tail_risk_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3759
+  lookahead_control: latest Cboe VVIX/VIX close strictly before ES session_date
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  latest_variant_flatten: "15:55:00"
+parameter_space:
+  upper_tail_thresholds: [0.55, 0.60, 0.65]
+  lower_tail_thresholds: [0.45, 0.40, 0.35]
+  stop_pct: [0.0015, 0.0025, 0.004]
+  target_r_multiple: [1.0, 1.5, 2.0]
+  combinations_per_variant: 27
+variants:
+  - high_vvix_short_1000
+  - low_vvix_long_1030
+  - rising_vvix_short_1130
+  - falling_vvix_long_1200
+  - high_vvix_vix_ratio_short_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space only
+  forbidden_changes:
+    - core strategy mechanic
+    - Cboe availability lag rule
+    - setup mode
+    - direction
+    - entry time
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+outcome:
+  completed_at: "2026-06-16"
+  decision: FAIL
+  terminal_stage: limited_monkey_test
+  original_runs: 5
+  rescue_runs: 5
+  summary: All five original variants failed limited_core_grid_test. Each failed
+    variant received exactly one parameter-space-only rescue, preserving the
+    Cboe prior-close feature construction, setup mode, direction, entry time,
+    entry module, stop module, take-profit module, timeframe, data window,
+    costs, and validation gates. Four rescues failed limited_core_grid_test.
+    The low_vvix_long_1030 rescue passed core but failed limited_monkey_test
+    with a 0.31666666666666665 random-placebo profitable rate and negative
+    median net profit. No run reached WFA, Monte Carlo, simulated incubation,
+    or frozen validation.
+  aggregate_report: backtest-campaigns/es_vvix_tail_risk_intraday/campaign_test_summary.json

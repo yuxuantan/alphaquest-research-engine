@@ -1,0 +1,164 @@
+campaign_id: es_sector_rotation_risk_appetite
+title: ES Sector-Rotation Risk-Appetite Intraday
+decision: TEST
+created_at: "2026-06-17"
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: >
+  Lagged sector ETF leadership may proxy equity risk-appetite rotation. When
+  cyclical, growth, financial, or industrial sectors outperform defensive
+  sectors into the prior close, ES may have positive same-day intraday drift;
+  when defensives lead, ES may have negative drift.
+rationale: >
+  This campaign tests cross-sector allocation/risk-appetite information, not
+  ES own-return momentum, ES/NQ relative value, Treasury-rate state, Cboe
+  option-implied volatility, sentiment surveys, or local orderflow. Each
+  variant uses only the latest sector ETF adjusted close available on or before
+  one business day before the ES session, then enters at a fixed completed RTH
+  bar and flattens same day.
+sources:
+  - title: "Do Industries Explain Momentum?"
+    authors: Tobias J. Moskowitz and Mark Grinblatt
+    year: 1999
+    venue: Journal of Finance
+    doi: 10.1111/0022-1082.00146
+    link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00146
+    relevance: >
+      Documents industry momentum as a major component of stock momentum,
+      motivating a direct test of whether lagged sector leadership contains
+      broad ES risk-appetite information.
+  - title: "Momentum, Business Cycle, and Time-varying Expected Returns"
+    authors: Tarun Chordia and Lakshmanan Shivakumar
+    year: 2002
+    venue: Journal of Finance
+    doi: 10.1111/1540-6261.00449
+    link: https://onlinelibrary.wiley.com/doi/abs/10.1111/1540-6261.00449
+    relevance: >
+      Links momentum payoffs to time-varying expected returns and macro state,
+      supporting sector rotation as a risk-state proxy rather than a standalone
+      technical pattern.
+  - title: "The myth of business cycle sector rotation"
+    authors: Alexander Molchanov and Jeffrey Stangl
+    year: 2024
+    venue: International Journal of Finance and Economics
+    doi: 10.1002/ijfe.2882
+    link: https://onlinelibrary.wiley.com/doi/10.1002/ijfe.2882
+    relevance: >
+      Provides a cautionary source: common sector-rotation rules may fail after
+      timing error and costs, so this campaign must pass robustness gates rather
+      than assume the anomaly transfers to ES.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - no-cost public Yahoo chart daily adjusted close data for SPY and SPDR sector ETFs
+  - derived session feature file using only sector ETF closes at least one business day old
+  - 252-observation rolling ranks computed from lagged sector-spread features
+  - same-day stop, target, forced-flatten, and no-overnight checks
+data_quality_caveats:
+  - Yahoo chart data is a public adjusted-close source, not an exchange-grade point-in-time archive.
+  - ETF adjusted closes may be revised for dividends or corporate actions.
+  - The implementation uses a one-business-day availability lag to avoid same-day close leakage.
+  - Sierra ES data is completed bar-level OHLCV/orderflow data, not tick-path truth.
+  - Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+  - A session dated D can only use sector ETF observations on or before D minus one business day.
+  - Rolling sector ranks are computed before the session-level as-of join.
+  - Signals use a completed ES bar and enter at the next bar open or later.
+  - No future ES bar, final session VWAP, final range, future ETF close, or post-entry sector information is used.
+failure_modes:
+  - Sector leadership may be contemporaneous risk appetite already priced before ES RTH.
+  - Daily ETF closes may be too slow for intraday ES holds.
+  - Growth/cyclical sector leadership can invert during inflation or rate-shock regimes.
+  - Results may concentrate in crisis windows or one sector leadership side.
+  - Adjusted ETF data rights or revision risk may require manual rejection even if a backtest passes.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_nq_cross_index_lead_lag
+    - es_nq_relative_value_reversion
+    - es_dollar_risk_appetite_intraday
+    - es_treasury_rate_shock_intraday
+    - es_aqr_bab_factor_state
+    - es_naaim_exposure_sentiment
+    - es_consumer_sentiment_state_intraday
+    - es_cboe_vxn_vix_dispersion_intraday
+    - es_daily_time_series_momentum
+    - es_intraday_periodicity_persistence
+  conclusion: >
+    Eligible as a fresh active campaign. This uses lagged cross-sector ETF
+    rotation spreads to proxy equity risk appetite. It is not NQ-vs-ES
+    leadership, broad-dollar/rates/volatility state, survey sentiment, BAB
+    factor state, or ES own-return momentum.
+feature_construction:
+  builder: tools/build_es_sector_rotation_features.py
+  source: Yahoo public chart endpoint, cached in data/external/yahoo_sector_etfs/
+  output: data/external/es_sector_rotation_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3817
+  availability_lag_business_days: 1
+  density_audit: research_artifacts/es_sector_rotation_risk_appetite_density_audit_20260617.md
+variants:
+  - cyclical_lead_long_1000
+  - defensive_lead_short_1000
+  - growth_lead_long_1030
+  - defensive_rotation_short_1130
+  - financial_industrial_lead_long_1330
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core economic edge
+    - change timeframe or data window
+    - add or remove filters after seeing results
+    - alter costs, fills, sessions, validation gates, or prop rules
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      scope: per_failed_variant
+      variants:
+        - cyclical_lead_long_1000
+        - defensive_lead_short_1000
+        - growth_lead_long_1030
+        - defensive_rotation_short_1130
+        - financial_industrial_lead_long_1330
+      changed_only:
+        - entry threshold parameter space
+        - stop percentage parameter space
+        - fixed-R target parameter space
+      unchanged:
+        - sector-rotation edge thesis
+        - entry module sector_rotation_risk_appetite
+        - setup mode per variant
+        - signal time per variant
+        - one-business-day sector ETF availability rule
+        - data source and data window
+        - costs and fill assumptions
+        - validation gates
+        - prop rules
+      audit: research_artifacts/es_sector_rotation_risk_appetite_rescue_attempt_1_20260617.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_sector_rotation_risk_appetite/campaign_test_summary.json
+  results_csv: backtest-campaigns/es_sector_rotation_risk_appetite/campaign_results.csv
+  density_audit: research_artifacts/es_sector_rotation_risk_appetite_density_audit_20260617.md
+  rescue_audit: research_artifacts/es_sector_rotation_risk_appetite_rescue_attempt_1_20260617.md
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: >
+    All five original variants failed limited_core_grid_test. Each failed
+    variant received exactly one parameter-space-only rescue preserving the same
+    sector-rotation mechanic, setup mode, signal time, modules, data, costs,
+    sessions, prop rules, and validation gates. All five rescues also failed
+    limited_core_grid_test. No run reached monkey, WFA, Monte Carlo, simulated
+    incubation, frozen validation, or candidate reporting.

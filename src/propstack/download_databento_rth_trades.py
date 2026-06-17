@@ -66,10 +66,23 @@ def main() -> None:
         help="Write manifest and print plan without downloading.",
     )
     parser.add_argument(
+        "--paid-data-approved",
+        action="store_true",
+        help=(
+            "Required for any non-dry-run Databento request. This flag records "
+            "that the user explicitly approved paid data download for this run."
+        ),
+    )
+    parser.add_argument(
         "--manifest",
         help="Manifest JSON path. Defaults to <out-dir>/download_manifest.json.",
     )
     args = parser.parse_args()
+    if not args.dry_run and not args.paid_data_approved:
+        raise SystemExit(
+            "Refusing paid Databento download: rerun with --paid-data-approved only "
+            "after explicit user permission for this exact paid data pull."
+        )
 
     config = DownloadConfig(
         output_dir=Path(args.out_dir),

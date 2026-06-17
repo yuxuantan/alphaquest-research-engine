@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.oil_price_shock_spillover import OilPriceShockSpilloverEntry
+
+__all__ = ["OilPriceShockSpilloverEntry"]

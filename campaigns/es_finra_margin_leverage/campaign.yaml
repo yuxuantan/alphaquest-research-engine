@@ -1,0 +1,133 @@
+campaign_id: es_finra_margin_leverage
+title: ES FINRA Margin Leverage State
+decision: FAIL
+created_at: "2026-06-17"
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: >
+  Public monthly FINRA customer margin balances may proxy speculative leverage
+  and funding-liquidity pressure. Rapid margin-debt expansion or deterioration
+  in debit/free-credit balance may indicate crowded equity exposure vulnerable
+  to same-day ES downside pressure; sharp deleveraging may mark post-pressure
+  rebound capacity.
+rationale: >
+  The campaign tests a slow-moving leverage/funding state mapped conservatively
+  into intraday ES entries. It is not a duplicate of active VIX/Cboe sentiment,
+  OFR stress, treasury-rate shock, market-plumbing dealer-liquidity, CFTC
+  positioning, or technical intraday orderflow campaigns. Each signal uses only
+  a FINRA monthly observation at least 35 calendar days old plus a completed
+  intraday ES bar, then enters on the next bar open and flattens same day.
+sources:
+  - title: Margin Statistics
+    authors: Financial Industry Regulatory Authority
+    year: 2026
+    venue: FINRA
+    link: https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics
+    relevance: Official free monthly customer margin balance data used to build the campaign features.
+  - title: Market Liquidity and Funding Liquidity
+    authors: Markus K. Brunnermeier and Lasse Heje Pedersen
+    year: 2009
+    venue: Review of Financial Studies
+    doi: 10.1093/rfs/hhn098
+    link: https://academic.oup.com/rfs/article-abstract/22/6/2201/1590848
+    relevance: Supports the funding-liquidity spiral mechanism linking leverage and forced trading pressure.
+  - title: Liquidity and Leverage
+    authors: Tobias Adrian and Hyun Song Shin
+    year: 2010
+    venue: Journal of Financial Intermediation
+    doi: 10.1016/j.jfi.2008.12.002
+    link: https://www.sciencedirect.com/science/article/abs/pii/S1042957308000443
+    relevance: Supports the procyclical leverage mechanism behind margin expansion and contraction states.
+  - title: Asset Fire Sales and Purchases in Equity Markets
+    authors: Joshua D. Coval and Erik Stafford
+    year: 2007
+    venue: Journal of Financial Economics
+    doi: 10.1016/j.jfineco.2006.05.007
+    link: https://www.sciencedirect.com/science/article/abs/pii/S0304405X06001300
+    relevance: Motivates price pressure from investor flows and constrained selling, a related channel for leverage-state stress.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - official FINRA monthly margin statistics XLSX
+  - deterministic session-level feature file with a 35-calendar-day availability lag
+  - exchange session labels and same-day prop-rule flatten checks
+data_quality_caveats:
+  - FINRA margin data is monthly, so this is a slow state variable, not an intraday flow measurement.
+  - The 35-day lag is conservative but approximate; exact historical posting timestamps are not modeled.
+  - Same-bar stop/target conflicts must use pessimistic OHLC handling.
+  - The Sierra cache is completed-bar OHLCV/orderflow data, not tick-path truth.
+lookahead_risks:
+  - FINRA observation for month M is unavailable until at least 35 calendar days after month-end.
+  - Rolling ranks are computed on the FINRA monthly series before session mapping, using only observations available under the lag.
+  - Signal decisions occur at a configured completed 1-minute bar; entries must be next-bar open or later.
+  - No final session VWAP, final daily range, future margin observation, or future ES bar is used.
+failure_modes:
+  - Monthly leverage state may be too stale for intraday ES prediction.
+  - Margin debt may mostly follow equity prices rather than lead them.
+  - Rapid margin expansion can coincide with momentum instead of reversal.
+  - Deleveraging rebound can fail if funding stress continues.
+  - Any apparent edge may be concentrated in crisis regimes or one side.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_cboe_vix_level_state_intraday
+    - es_cboe_vix_term_structure_intraday
+    - es_cboe_put_call_sentiment_intraday
+    - es_cboe_skew_tail_risk_intraday
+    - es_vvix_tail_risk_intraday
+    - es_ofr_financial_stress_intraday
+    - es_market_plumbing_liquidity_capacity
+    - es_cftc_tff_hedging_pressure
+    - es_treasury_rate_shock_intraday
+    - es_dollar_risk_appetite_intraday
+    - es_daily_time_series_momentum
+    - es_daily_short_term_reversal
+  conclusion: >
+    Not a duplicate in active scope. This campaign uses public customer-margin
+    leverage/free-credit balance state, not implied-volatility sentiment,
+    put/call ratios, OFR stress, dealer balance-sheet plumbing, futures
+    positioning, treasury-rate shocks, dollar state, or price-only momentum and
+    reversal.
+variants:
+  - rapid_margin_1m_expansion_short_1030
+  - rapid_margin_3m_expansion_short_1130
+  - persistent_margin_12m_expansion_short_1200
+  - debit_credit_ratio_expansion_short_1330
+  - margin_deleveraging_rebound_long_1430
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+    - correct data_subset.start_date only to the first non-null feature date when the original slice predates feature availability
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core economic edge
+    - make performance-based timeframe or data-window exclusions
+    - add or remove filters after seeing results
+    - alter costs, fills, sessions, validation gates, or prop rules
+result_summary:
+  tested_at: "2026-06-17"
+  decision: FAIL
+  original_runs: 5
+  rescue_runs: 5
+  terminal_stage: limited_core_grid_test
+  summary: >
+    All five original variants failed limited_core_grid_test because the
+    earliest limited-core slice preceded non-null 120-month FINRA rank features,
+    producing zero trades. Each failed variant received exactly one
+    data-availability fixed-parameter rescue that moved only data_subset.start_date
+    to the first non-null feature session while preserving setup mode, direction,
+    entry time, stop/target modules, parameter grid, costs, fills, session rules,
+    prop rules, and validation gates. All five rescues also failed
+    limited_core_grid_test, so no variant reached monkey, WFA, Monte Carlo,
+    frozen validation, or candidate reporting.
+  artifacts:
+    campaign_summary: backtest-campaigns/es_finra_margin_leverage/campaign_test_summary.json
+    campaign_results: backtest-campaigns/es_finra_margin_leverage/campaign_results.csv
+    rescue_audit: research_artifacts/es_finra_margin_leverage_rescue_attempt_1_20260617.md

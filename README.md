@@ -205,6 +205,25 @@ source-quality audit proves that specific archive supports that use. If a
 strategy needs those mechanics, mark the data basis `NEEDS MANUAL REVIEW` or
 use an independently verified tick/depth source.
 
+The 2026-06-16 ES Databento-vs-Sierra audit is the current data-source
+checkpoint for this rule:
+`research_artifacts/databento_sierra_es_trades_discrepancy_20260616.md`. The
+completed one-year Databento ES trade-orderflow cache matched the validated
+Sierra cache on all timestamps, and after excluding four roll-selection dates
+there were zero OHLC mismatches and only three total-volume mismatches totaling
+seven contracts. The interrupted daily Databento pull in
+`data/raw/ES/databento-es-trades-2020-2026` is not a validated full-history
+input: it contains five partial files, two completed files that stop early, and
+additional timestamp coverage defects. Do not use that stopped daily directory
+as a complete ES input unless a later run resumes, completes, and validates it.
+
+That audit also confirmed that `trades`, `large10_*`, and `large20_*` are not
+vendor-equivalent between Databento and Sierra SCID-derived caches. Databento
+aggregates individual prints; Sierra aggregates SCID records with Sierra
+`num_trades`, side-volume, and record-volume semantics. Strategies based on
+trade count, trade fragmentation, or large-print behavior must therefore use an
+independently verified print source or be marked `NEEDS MANUAL REVIEW`.
+
 The included ES calendar at
 `data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv` covers 2010-2026. Rows
 from 2022-2026 were inferred from the MotiveWave/Rithmic export; earlier rows

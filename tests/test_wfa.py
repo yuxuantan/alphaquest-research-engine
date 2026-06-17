@@ -877,6 +877,75 @@ def test_wfa_profit_factor_objective_can_filter_by_trade_frequency():
     assert best["run_id"] == 2
 
 
+def test_wfa_early_exits_when_selection_filter_removes_all_rows(monkeypatch):
+    def fake_run_core_grid(
+        data,
+        base_config,
+        grid_config,
+        benchmarks,
+        report_dir=None,
+        parameter_label="core_grid.parameters",
+        detail_data=None,
+    ):
+        return (
+            pd.DataFrame(
+                [
+                    {
+                        "run_id": 1,
+                        "entry.params.reclaim_window_bars": 2,
+                        "net_profit": 100.0,
+                        "profit_factor": 1.5,
+                        "max_drawdown": 10.0,
+                        "trades_per_year": 40.0,
+                        "mar": 1.0,
+                    },
+                    {
+                        "run_id": 2,
+                        "entry.params.reclaim_window_bars": 7,
+                        "net_profit": 80.0,
+                        "profit_factor": 1.4,
+                        "max_drawdown": 8.0,
+                        "trades_per_year": 50.0,
+                        "mar": 1.2,
+                    },
+                ]
+            ),
+            {},
+        )
+
+    class FailBacktestEngine:
+        def __init__(self, config):
+            raise AssertionError("OOS backtest should not run when no in-sample row is eligible")
+
+    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FailBacktestEngine)
+    data = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2022-01-15", "2022-02-15"], utc=True
+            )
+        }
+    )
+
+    results, summary = run_wfa(
+        data,
+        BASE_CFG,
+        {
+            "train_months": 1,
+            "test_months": 1,
+            "step_months": 1,
+            "selection_exclusive_min_trades_per_year": 50,
+            "parameters": {"entry.params.reclaim_window_bars": [2, 7]},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+    )
+
+    assert summary["early_exit"] is True
+    assert bool(results.loc[0, "early_exit"]) is True
+    assert results.loc[0, "early_exit_reason"] == "no_in_sample_rows_after_selection_filter"
+    assert results.loc[0, "selected_params"] == {}
+
+
 def test_wfa_can_early_exit_on_low_selected_train_profit_factor(monkeypatch):
     def fake_run_core_grid(
         data,

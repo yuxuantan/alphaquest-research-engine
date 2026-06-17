@@ -1,0 +1,138 @@
+campaign_id: es_dollar_risk_appetite_intraday
+title: ES Dollar Risk-Appetite Intraday Spillover
+decision: failed
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: 'Lagged broad U.S. dollar strength may proxy global risk-capacity contraction and risk-off
+  pressure. When the dollar strengthens sharply, ES may have negative same-day intraday drift; when the
+  dollar weakens sharply, ES may have positive same-day intraday drift.
+
+  '
+rationale: 'This campaign tests cross-asset macro risk-appetite spillover, not ES realized volatility,
+  Treasury rates, oil shocks, Cboe option sentiment, OFR financial stress, or calendar seasonality. Each
+  variant uses only the latest FRED/Federal Reserve nominal broad dollar-index observation available on
+  or before the prior business day, then emits one fixed-time ES RTH signal that enters on the next 1-minute
+  bar open and flattens before the configured prop cutoff.
+
+  '
+sources:
+- title: The Dollar, Bank Leverage, and Deviations from Covered Interest Parity
+  authors: Stefan Avdjiev, Wenxin Du, Catherine Koch, Hyun Song Shin
+  year: 2019
+  venue: American Economic Review Insights
+  doi: 10.1257/aeri.20180322
+  link: https://www.aeaweb.org/articles?id=10.1257/aeri.20180322
+  relevance: 'Argues that the dollar is a barometer of risk-taking capacity in global capital markets.
+    This campaign tests whether that risk-capacity proxy has an ES intraday spillover when used with a
+    conservative prior-observation lag.
+
+    '
+- title: Common Risk Factors in Currency Markets
+  authors: Hanno Lustig, Nikolai Roussanov, Adrien Verdelhan
+  year: 2011
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/hhr068
+  link: https://ideas.repec.org/a/oup/rfinst/v24yi11p3731-3777.html
+  relevance: 'Documents common currency risk factors and motivates treating broad dollar moves as risk-state
+    information rather than isolated FX noise.
+
+    '
+- title: Nominal Broad U.S. Dollar Index [DTWEXBGS]
+  authors: Board of Governors of the Federal Reserve System via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/DTWEXBGS
+  relevance: 'Free point-in-time daily broad dollar index used to build strictly lagged ES session features.
+
+    '
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- free FRED DTWEXBGS nominal broad U.S. dollar index CSV
+- deterministic session-date merge using only observations available no later than one business day before
+  the ES session
+- 252-observation rolling ranks computed from the lagged dollar feature series
+- exchange session labels and same-day prop-rule flatten checks
+data_quality_caveats:
+- DTWEXBGS is a daily broad dollar index and may be revised; this implementation uses a conservative one-business-day
+  lag rather than same-day observations.
+- The Sierra ES cache is completed-bar OHLCV/orderflow data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC handling.
+- Macro daily features can be stale on holidays; the builder carries forward the latest eligible prior
+  observation through `merge_asof`.
+lookahead_risks:
+- The signal never uses same-session ES future bars or same-day dollar-index observations.
+- Dollar-index ranks are computed after applying the one-business-day availability lag to ES session dates.
+- A fixed-time signal uses the 1-minute bar that closes at the configured entry time and can only enter
+  on that next bar open.
+- No final session close, future daily high/low, final VWAP, final volume profile, or future dollar observation
+  is used.
+- All variants flatten same day before the configured prop cutoff.
+failure_modes:
+- Dollar risk-appetite effects may be slower than intraday ES holding windows.
+- The relationship may be dominated by crisis regimes, FOMC/macro release days, or one side of the market.
+- A one-business-day data availability lag may remove any usable short-horizon lead.
+- Dollar strength can reflect U.S.-specific growth optimism rather than global risk-off pressure.
+- Fixed stop/target exits may be too sensitive to ES intraday noise and slippage.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_treasury_rate_shock_intraday
+  - es_oil_price_shock_spillover
+  - es_ofr_financial_stress_intraday
+  - es_cboe_put_call_sentiment_intraday
+  - es_vvix_tail_risk_intraday
+  - es_variance_risk_premium_intraday
+  - es_volatility_managed_intraday_premium
+  - es_market_plumbing_liquidity_capacity
+  - es_nq_cross_index_lead_lag
+  - es_term_structure_lead_lag_feedback
+  - es_daily_time_series_momentum
+  - es_rth_intraday_risk_premium
+  conclusion: 'Not a duplicate in active scope. This campaign tests lagged broad-dollar risk-appetite
+    information. Active Treasury, oil, OFR, option-sentiment, VVIX/VRP, futures-term-structure, NQ lead-lag,
+    calendar, and ES-only momentum/volatility campaigns do not use broad dollar-index state.
+
+    '
+feature_build:
+  builder: tools/build_es_dollar_risk_appetite_features.py
+  bars_input: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  fred_source: https://fred.stlouisfed.org/series/DTWEXBGS
+  dollar_cache: data/external/fred_dtwexbgs_nominal_broad_dollar_2006_2026.csv
+  output: data/external/es_dollar_risk_appetite_features_20110103_20260609.csv
+  availability_lag_business_days: 1
+  rows: 3817
+  valid_rank_rows: 3760
+variants:
+- dollar_up_risk_off_short_1000
+- dollar_down_risk_on_long_1030
+- high_dollar_up_short_1130
+- five_day_dollar_up_short_1200
+- five_day_dollar_down_long_1330
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_dollar_risk_appetite_intraday/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five originals and all five per-failed-variant parameter-space-only rescues failed
+    limited_core_grid_test with zero profitable combinations and zero benchmark-passing combinations.
+    No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.

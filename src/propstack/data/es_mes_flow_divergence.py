@@ -67,7 +67,11 @@ def build_es_mes_flow_divergence_cache(
 
 
 def _load_source_csv(path: str | Path, expected_symbol: str) -> pd.DataFrame:
-    df = pd.read_csv(path)
+    source_path = Path(path)
+    if source_path.suffix.lower() == ".parquet":
+        df = pd.read_parquet(source_path)
+    else:
+        df = pd.read_csv(source_path)
     required = {"timestamp", "open", "high", "low", "close", "volume", "signed_volume"}
     missing = required - set(df.columns)
     if missing:

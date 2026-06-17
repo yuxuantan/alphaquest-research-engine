@@ -1,0 +1,162 @@
+campaign_id: es_treasury_rate_shock_intraday
+title: ES Treasury Rate Shock Intraday
+decision: TEST
+created_at: "2026-06-16"
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: >
+  Lagged U.S. Treasury yield shocks and curve-shape changes may condition
+  same-day ES intraday returns because equity-index futures reprice discount-rate
+  news, risk-bearing capacity, and stock-bond allocation pressure after large
+  rate moves.
+rationale: >
+  This campaign tests an exogenous daily Treasury-rate state. It is not ES own
+  price momentum, orderflow, volume shock, VIX/VRP, CFTC positioning,
+  market-plumbing dealer lending, calendar seasonality, or event-day drift.
+  Each variant reads only the latest DGS10/DGS2 observation strictly before the
+  ES session date, then enters on a fixed completed RTH bar and flattens same
+  day.
+sources:
+  - title: What Explains the Stock Market's Reaction to Federal Reserve Policy?
+    authors: Ben S. Bernanke and Kenneth N. Kuttner
+    year: 2005
+    venue: Journal of Finance
+    doi: 10.1111/j.1540-6261.2005.00760.x
+    relevance: >
+      Documents the equity-market sensitivity to interest-rate and discount-rate
+      news. This campaign uses lagged Treasury yield changes rather than
+      intraday policy surprises.
+  - title: Measuring the Reaction of Monetary Policy to the Stock Market
+    authors: Roberto Rigobon and Brian Sack
+    year: 2003
+    venue: Quarterly Journal of Economics
+    doi: 10.1162/003355303322552810
+    relevance: >
+      Supports the macro link between interest-rate changes and equity prices;
+      the implementation treats rates as a lagged state variable, not a
+      contemporaneous announcement surprise.
+  - title: Daily Treasury Rates
+    authors: U.S. Department of the Treasury
+    year: 2026
+    venue: Treasury Resource Center
+    link: https://home.treasury.gov/resource-center/data-chart-center/interest-rates
+    relevance: >
+      Free official source for daily 2-year and 10-year Treasury yield
+      observations used to build the no-lookahead rate-state feature file.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV/orderflow bars in America/New_York
+  - lagged Treasury 10-year and 2-year daily observations from U.S. Treasury Daily Treasury Rates
+  - feature file built with latest Treasury observation strictly before each ES session
+  - next-bar-open execution after the configured completed signal bar
+  - same-day forced flatten and no-overnight prop-rule checks
+data_quality_caveats:
+  - Treasury yields are daily observations, not intraday tick data.
+  - The feature builder intentionally excludes same-session Treasury observations,
+    which can be conservative if a rate value was publicly known earlier.
+  - Sierra bars are validated completed-bar OHLCV/orderflow bars, not tick-path
+    proof for intra-minute stop/target ordering.
+lookahead_risks:
+  - A row dated D may only use a Treasury observation date earlier than D.
+  - Yield and curve ranks are computed from the lagged feature series available
+    before the signal session.
+  - No current-session ES high/low/close, final VWAP, final daily range, or future
+    Treasury value is used by the signal.
+  - Signals use bar close and enter at the next bar open or later.
+failure_modes:
+  - Lagged daily Treasury states may be fully incorporated before ES RTH opens.
+  - Rate-equity relations can change sign across inflation, growth, and crisis regimes.
+  - Threshold states may be dense enough but still too weak after ES costs and slippage.
+  - Any apparent result may be concentrated in 2020 inflation/COVID or 2022 tightening regimes.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_mes_micro_flow_divergence_reversion
+    - es_signed_orderflow_persistence
+    - es_orderflow_absorption_exhaustion_reversal
+    - es_daily_time_series_momentum
+    - es_variance_risk_premium_intraday
+    - es_market_plumbing_liquidity_capacity
+    - es_vix_expiration_pressure
+    - es_fomc_pre_announcement_drift
+    - es_bls_macro_release_day_drift
+    - es_realized_skewness_reversal
+    - es_realized_jump_variation_premium
+  conclusion: >
+    Not a duplicate in active scope. The edge variable is lagged Treasury yield
+    and curve movement, distinct from ES price/flow, VIX/variance, event-date,
+    market-plumbing dealer lending, and CFTC positioning campaigns.
+variants:
+  - rate_up_short_1000
+  - rate_down_long_1000
+  - rate_up_high_level_short_1030
+  - bear_steepening_short_1130
+  - bull_flattening_long_1130
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core economic edge
+    - change timeframe or data window
+    - add or remove filters after seeing results
+    - alter costs, fills, sessions, validation gates, or prop rules
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: rate_up_short_1000
+      config: campaigns/es_treasury_rate_shock_intraday/rescue_attempts/parameter_space_rescue_1/rate_up_short_1000/config.yaml
+      report: backtest-campaigns/es_treasury_rate_shock_intraday/rate_up_short_1000/ES/rescue1/campaign_test_summary.json
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: rate_down_long_1000
+      config: campaigns/es_treasury_rate_shock_intraday/rescue_attempts/parameter_space_rescue_1/rate_down_long_1000/config.yaml
+      report: backtest-campaigns/es_treasury_rate_shock_intraday/rate_down_long_1000/ES/rescue1/campaign_test_summary.json
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: rate_up_high_level_short_1030
+      config: campaigns/es_treasury_rate_shock_intraday/rescue_attempts/parameter_space_rescue_1/rate_up_high_level_short_1030/config.yaml
+      report: backtest-campaigns/es_treasury_rate_shock_intraday/rate_up_high_level_short_1030/ES/rescue1/campaign_test_summary.json
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.08333333333333333 below required 0.70
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: bear_steepening_short_1130
+      config: campaigns/es_treasury_rate_shock_intraday/rescue_attempts/parameter_space_rescue_1/bear_steepening_short_1130/config.yaml
+      report: backtest-campaigns/es_treasury_rate_shock_intraday/bear_steepening_short_1130/ES/rescue1/campaign_test_summary.json
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70
+    - id: parameter_space_rescue_1
+      status: failed
+      variant_id: bull_flattening_long_1130
+      config: campaigns/es_treasury_rate_shock_intraday/rescue_attempts/parameter_space_rescue_1/bull_flattening_long_1130/config.yaml
+      report: backtest-campaigns/es_treasury_rate_shock_intraday/bull_flattening_long_1130/ES/rescue1/campaign_test_summary.json
+      terminal_stage: limited_core_grid_test
+      failure: profitable-combo rate 0.0 below required 0.70
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_treasury_rate_shock_intraday/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: >
+    All five originals and all five one-time parameter-space-only rescues failed
+    limited_core_grid_test. Best original was
+    rate_up_high_level_short_1030/run1 with profitable-combo rate
+    0.027777777777777776 and top net 30.0. Best rescue was
+    rate_up_high_level_short_1030/rescue1 with profitable-combo rate
+    0.08333333333333333 and top net 114.375. No run reached monkey, WFA,
+    Monte Carlo, simulated incubation, or frozen validation.

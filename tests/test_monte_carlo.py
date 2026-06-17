@@ -69,6 +69,45 @@ def test_payout_not_eligible_when_drawdown_limit_reached_before_threshold():
     assert result["payout_eligible"] is False
 
 
+def test_absolute_profit_target_and_drawdown_limit_override_percent_rules():
+    trades = pd.DataFrame(
+        [
+            {"session_date": "2024-01-02", "contracts": 1, "net_pnl": 49000.0},
+            {"session_date": "2024-01-03", "contracts": 1, "net_pnl": 1000.0},
+        ]
+    )
+
+    result = simulate_prop_path(
+        trades,
+        PropRules(
+            starting_balance=100000,
+            profit_target_pct=0.01,
+            drawdown_limit_pct=0.99,
+            profit_target_amount=50000,
+            drawdown_limit_amount=10000,
+            trailing_drawdown=100000,
+            daily_loss_limit=100000,
+        ),
+    )
+
+    assert result["profit_before_drawdown"] is True
+
+    drawdown_first = simulate_prop_path(
+        pd.DataFrame([{"session_date": "2024-01-02", "contracts": 1, "net_pnl": -10000.0}]),
+        PropRules(
+            starting_balance=100000,
+            profit_target_pct=0.01,
+            drawdown_limit_pct=0.99,
+            profit_target_amount=50000,
+            drawdown_limit_amount=10000,
+            trailing_drawdown=100000,
+            daily_loss_limit=100000,
+        ),
+    )
+
+    assert drawdown_first["drawdown_before_profit"] is True
+
+
 def test_max_contracts_caps_contract_count_instead_of_breaching():
     trades = pd.DataFrame(
         [

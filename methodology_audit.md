@@ -9,11 +9,12 @@ Reason: the engine/preflight path now passes focused sanity checks, but no ES st
 ## Engine And Methodology Fixes
 
 - Point value handling: `BacktestEngine`, monkey trade-log construction, and Monte Carlo prop-rule sizing now derive `tick_value` from `core.point_value * core.tick_size` when `core.tick_value` is absent. This closes the preflight/engine mismatch where non-ES configs could be accepted but valued with ES's default tick value.
-- Monkey gate: staged campaign criteria now require `summary.percentage_profitable >= 0.80` and `summary.median_net_profit > 0` for limited monkey, WFA OOS monkey, and incubation monkey. The previous proxy only checked whether the core run beat randomized paths.
-- Actual trade-path stress: monkey stages now also write `trade_path_stress_results.csv` / `trade_path_stress_summary.json` and require actual strategy trades to survive missed trades, one-bar entry delays, one-tick worse slippage, time-window trims, stop-first same-bar fill ordering, and prop-rule checks.
-- WFA gate: staged WFA now checks `stitched_oos_metrics.trades_per_year >= 50` and `stitched_oos_metrics.expectancy_r > 0`, matching the research rule's per-year trade-density and positive-expectancy requirements.
-- Acceptance gate: frozen acceptance now requires positive `metrics.expectancy_r` in addition to PF, MAR, trade count, and Apex-rule compliance.
-- Shortlist data window: limited core/monkey stages now use a deterministic contiguous first-window sample instead of a seeded random-month sample.
+- Benchmark-table alignment: staged campaign defaults now match the 2026-06-17 benchmark sheet. Limited core uses a seeded random 10% contiguous period, excludes the latest 10% holdout, and avoids the configured Covid range. WFA uses the first 90% of available data with unanchored 4-year IS / 1-year OOS windows. Simulated incubation uses latest 1-year OOS after 4-year IS, and live acceptance uses latest 0.5-year OOS after 2-year IS.
+- Monkey gate: limited monkey now selects the core-grid run closest to the median net profit among all profitable core-grid runs, then requires random-monkey beat rates of at least 90% for net profit and max drawdown. WFA OOS and incubation monkey require at least 80% for the same two beat rates.
+- Actual trade-path stress: monkey stages still write `trade_path_stress_results.csv` / `trade_path_stress_summary.json` for missed trades, entry delay, one-tick worse slippage, time-window trims, and pessimistic same-bar stop/target handling. These outputs are diagnostic unless explicitly added as a separate criterion.
+- WFA gate: staged WFA now checks no early exit, stitched OOS PF >= 1.2, MAR >= 0.4, trades/year >= 50, and zero Apex/flatten rule violations. In-sample selection is max MAR from rows with trades/year > 50, with early exit if the selected in-sample PF is below 1.0.
+- Monte Carlo gate: WFA OOS Monte Carlo now defaults to the benchmark-sheet prop-style test of chance of $50,000 profit before $10,000 drawdown greater than 50%, unless an explicit stage prop-rule override is supplied.
+- Incubation and acceptance gates: simulated incubation and acceptance now check OOS PF >= 1.0, MAR >= 1.0, trades/year >= 50, and zero Apex/flatten rule violations.
 - Connors RSI2 preflight: `BacktestEngine` now warns when `connors_rsi2_mean_reversion` requests a VWAP trend/extension filter but the prepared data lacks `vwap`.
 - Fixed-combo handling: staged core-grid criteria now accept exactly one combination only when the strategy declares no tunable parameters; tunable grids still must stay in the 8 to 120 combination range.
 - Variants index hardening: campaign variant metadata updates now use a lock-protected atomic writer, preventing concurrent staged runs from corrupting `variants_index.yaml`.
@@ -27,8 +28,39 @@ Reason: the engine/preflight path now passes focused sanity checks, but no ES st
 - Apex/prop-style forced flatten, latest-entry, no-overnight, and pending-order cancellation diagnostics are config driven.
 - Preflight fails closed on missing timezone, duplicate bars, missing forced-flatten config, parameter-count violations, and excessive parameter combinations.
 - Rescue governance now scopes rescues to a failed variant: each failed variant can use at most one logged rescue, and rescues may change only existing fixed parameters or tunable parameter space inside existing modules.
+- Composite-edge governance: after explicit user approval on 2026-06-17,
+  future campaigns may combine one primary edge with at most two independently
+  justified secondary conditions, such as a fixed multi-timeframe direction
+  filter. The staged benchmarks are unchanged. A new filter cannot be added as
+  a rescue after a failed run; it must be logged as a new composite campaign
+  with a predeclared thesis, density audit, duplicate check, and unchanged
+  tunable caps. Policy artifact:
+  `research_artifacts/composite_edge_policy_20260617.md`.
+- Pre-test variant mechanics review: new variant configs created after
+  2026-06-17 must document how entry, stop, and target express the edge and why
+  the mechanics are convincing enough to test. If the mechanics are not
+  convincing before results, reformulate before testing. The staged campaign
+  runner now fails before creating a run when the review is absent or lacks
+  `pre_test_decision: approve_for_testing`; preflight also enforces the review
+  when `research_metadata.mechanics_review_required` is set. Policy artifact:
+  `research_artifacts/pretest_variant_mechanics_review_policy_20260617.md`.
 
 ## Campaign Results
+
+### `es_spx_0dte_trend_aligned_pressure`
+
+Decision: FAIL.
+
+- Created a composite campaign with exactly five variants using `spx_0dte_trend_aligned_pressure`, `percent_from_entry`, and `fixed_r`.
+- Primary edge: SPX 0DTE calendar pressure. Secondary condition: fixed ES 30-minute and 120-minute completed-bar high/low trend alignment. The filter was declared before PnL testing and is not eligible as a rescue modification.
+- Reformulated before PnL from post-2022 full-week-only sessions to all locally known SPX 0DTE sessions from `2016-02-24` through `2026-06-09`, excluding standard monthly OPEX, because the longer history is needed for the benchmark 4-year IS / 1-year OOS WFA structure.
+- Pre-test density audit passed: all five final variants cleared 50 signals/year in the raw signal count. Artifact: `research_artifacts/es_spx_0dte_trend_aligned_pressure_density_audit_20260617.md`.
+- Every variant config includes the required pre-test mechanics review with `pre_test_decision: approve_for_testing`; staged runner and preflight both enforce this gate.
+- Originals: all five failed. `all_0dte_trend_only_1330` and `all_0dte_trend_continuation_1330` were closest at `0.6666666666666666` profitable-combo rate, below the required `0.70`; the other three failed limited core more decisively.
+- Rescues: all five one-time parameter-space rescues were run and logged. Two rescues passed limited core; `all_0dte_trend_only_1330/rescue1` failed limited monkey, and `all_0dte_trend_only_1500/rescue1` passed limited monkey but failed WFA by early exit because the first in-sample grid had no row satisfying the trade-density selection filter.
+- No run reached WFA OOS monkey, WFA OOS Monte Carlo, simulated incubation, frozen acceptance, or candidate packaging.
+- Aggregate artifacts: `backtest-campaigns/es_spx_0dte_trend_aligned_pressure/campaign_test_summary.json`, `campaign_results.csv`, `wfa_table.csv`, `trade_logs_manifest.csv`, `equity_curves_manifest.csv`, and `monte_carlo_summary.json`.
+- Verification: targeted preflight for five originals PASS; targeted preflight for five rescues PASS; `PYTHONPATH=src python3 -m pytest tests/test_spx_0dte_trend_aligned_pressure.py tests/test_spx_0dte_expiration_pressure.py tests/test_preflight.py -q` PASS.
 
 ### `es_mes_micro_flow_divergence_reversion`
 
@@ -909,3 +941,1109 @@ Decision: FAIL.
 - Rescues: all five one-time stop/target parameter-space rescues completed and failed `limited_core_grid_test`. Best rescue was `vix_settlement_open_pressure_short_1000/rescue1` with profitable-combo rate `0.5833333333333334`, zero benchmark-passing combinations, top net `2208.75`, PF `2.2004076086956523`, and only `17` top-combo trades.
 - No run reached monkey, WFA, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
 - Verification: `python3 -m pytest tests/test_vix_expiration_pressure.py` PASS; targeted preflight for five originals PASS; targeted preflight for five rescues PASS; `python3 -m research.preflight --skip-tests` PASS with `543` configs checked. Active sweep after aggregation found `35` active campaigns, `175` source variants, `175` rescue configs, `368` raw variant-level reports, `0` passes, and no active variants missing any original run or `rescue1` report.
+
+
+## ES Realized Skewness Reversal - 2026-06-16
+
+Decision: FAIL.
+
+- Created `campaigns/es_realized_skewness_reversal/campaign.yaml` and exactly five variants using `realized_skewness_reversal`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_lagged_realized_skewness_features_20110103_20260609.csv` from local ES Sierra RTH 1-minute bars. It contains `3817` sessions and `3755` valid rolling-rank rows. Every tradable feature is shifted one completed RTH session to avoid current-session lookahead.
+- Duplicate-edge scope was active-only and ignored `_archived`. This edge is distinct from active failed volatility-managed, daily momentum, RSI pullback, volume shock, and IBS reversion campaigns because it tests lagged third-moment asymmetry ranks rather than return trend, volatility level, or prior close-location.
+- Originals: all five failed `limited_core_grid_test`. Best original was `high_1d_skew_open_short_1000/run1` with profitable-combo rate `0.037037037037037035`, zero benchmark-passing combinations, top net `112.5`, PF `1.0221021611001964`, and `80` top-combo trades.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues completed and failed `limited_core_grid_test`. Best rescue was `high_1d_skew_open_short_1000/rescue1` with profitable-combo rate `0.07407407407407407`, zero benchmark-passing combinations, top net `365.0`, PF `1.0882175226586104`, and `67` top-combo trades.
+- No run reached monkey, WFA, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_realized_skewness_reversal.py` PASS; targeted preflight for five originals and five rescues PASS with `10` configs checked. Repo-wide `python3 -m research.preflight --skip-tests` was manually interrupted after about 2.5 minutes while loading parquet data and did not produce a pass/fail result. Active sweep after aggregation found `36` active campaigns, `180` source variants, `180` rescue configs, `378` raw variant-level reports, `0` passes, and no active variants missing any original run or `rescue1` report.
+
+
+## ES Variance Risk Premium Intraday - 2026-06-16
+
+Decision: FAIL.
+
+- Created `campaigns/es_variance_risk_premium_intraday/campaign.yaml` and exactly five variants using `variance_risk_premium_intraday`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_variance_risk_premium_features_20110103_20260609.csv` from free Cboe VIX daily history plus local ES Sierra RTH 1-minute bars. It contains `3817` sessions and `3735` valid rolling-rank rows. VIX close and ES realized variance are shifted one completed RTH session to avoid current-session lookahead.
+- Duplicate-edge scope was active-only and ignored `_archived`. This edge is distinct from active failed realized-volatility-managed, market-plumbing, VIX-expiration, skewness, and daily-momentum families because it tests lagged option-implied variance minus realized variance.
+- Originals: all five failed `limited_core_grid_test`. Best original was `low_vrp_open_short_1000/run1` with profitable-combo rate `0.1111111111111111`, zero benchmark-passing combinations, top net `877.5`, PF `1.2184194150591163`, and only `52` top-combo trades with `45.437723555084474` trades/year.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues completed and failed `limited_core_grid_test`. Best rescue was `high_vrp_low_realized_midmorning_long_1030/rescue1` with profitable-combo rate `0.12345679012345678`, zero benchmark-passing combinations, top net `1220.0`, PF `1.3388888888888888`, and only `36` top-combo trades.
+- No run reached monkey, WFA, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_variance_risk_premium_intraday.py` PASS; targeted preflight for five originals PASS; targeted preflight for five rescues PASS. Active sweep after aggregation found `37` active campaigns, `185` source variants, `185` rescue configs, `388` raw variant-level reports, `0` passes, and no active variants missing any original run or `rescue1` report.
+
+
+## ES Realized Jump Variation Premium - 2026-06-16
+
+Decision: FAIL.
+
+- Created `campaigns/es_realized_jump_variation_premium/campaign.yaml` and exactly five variants using `realized_jump_variation_premium`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_realized_jump_variation_features_20110103_20260609.csv` from local ES Sierra RTH 1-minute bars. It contains `3817` sessions and `3759` valid rolling-rank rows. Realized variance, bipower variation, jump variation, signed large-return jump proxies, and ranks are shifted one completed RTH session before use.
+- Duplicate-edge scope was active-only and ignored `_archived`. This edge is distinct from active failed volatility-managed, realized-skewness, variance-risk-premium, VPIN/toxicity, and daily-momentum families because it tests discontinuous jump variation separated from continuous variation using bipower variation.
+- Originals: all five failed `limited_core_grid_test` with `0.0` profitable-combo rate. Best original was `positive_jump_reversal_short_1200/run1` with top net `-110.0`, PF `0.98661800486618`, and `87` top-combo trades.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues completed and failed `limited_core_grid_test`. Best rescue was `positive_jump_reversal_short_1200/rescue1` with profitable-combo rate `0.1111111111111111`, zero benchmark-passing combinations, top net `2304.375`, PF `1.3012254901960785`, and `66` top-combo trades; it failed the required `0.70` profitable-combo core gate and `preferred_min_total_trades`.
+- No run reached monkey, WFA, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_realized_jump_variation_premium.py` PASS; targeted preflight for five originals PASS; targeted preflight for five rescues PASS. Active sweep after aggregation found `38` active campaigns, `190` source variants, `190` rescue configs, `398` raw variant-level reports, `0` passes, and no active variants missing any original run or `rescue1` report.
+
+
+## Limited Core Grid Period Reporting - 2026-06-16
+
+Decision: INFRASTRUCTURE FIX.
+
+- Clarified limited-core grid reporting after review of `long_only_trend_1000/ES/rescue1`: the current shortlist stage is a fixed first-18-month window, not a dynamic 10 percent sample.
+- Updated new limited-core, limited-monkey, WFA, acceptance, and train-selection summary outputs to include `configured_data_subset`, `resolved_data_subset`, and `actual_data_period` with first/last timestamps, row counts, and timeframe metadata where a stage prepares a bounded data subset.
+- Existing run artifacts still expose the authoritative period through stage-level `data_quality.first_timestamp` and `data_quality.last_timestamp`; new runs will also expose the period directly in the relevant stage summaries.
+- Verification: `python3 -m pytest tests/test_campaign_stages.py` PASS; `python3 -m pytest tests/test_core_grid.py::test_core_grid_summary_and_iteration_audit_reports` PASS.
+
+
+## Paid Data Consent Guard - 2026-06-16
+
+Decision: INFRASTRUCTURE FIX.
+
+- User policy is now explicit: never download data that costs money unless the
+  user explicitly approves the exact paid data pull.
+- Added `research_artifacts/paid_data_consent_policy_20260616.md`.
+- Updated `python3 -m propstack.download_databento_rth_trades` to refuse any
+  non-dry-run Databento request unless `--paid-data-approved` is passed after
+  explicit user permission.
+- Dry-run metadata/cost checks and free public-data downloads remain allowed for
+  research triage.
+- Confirmed no Databento downloader process was running after the stopped ES
+  `trades` pull.
+
+
+## ES Active Set Data-Gate Refresh - 2026-06-16
+
+Decision: FAIL.
+
+- Refreshed the active inventory after the latest local-only campaigns and the limited-core reporting fix. Current active sweep found `38` active campaigns, `190` source variants, `190` rescue configs, `398` raw variant-level reports, `0` passes, and no active variants missing an original or `rescue1` report.
+- Added `research_artifacts/es_active_set_data_gate_refresh_20260616.md` and a `research_ledger.csv` continuation-audit row.
+- Verified the retained external-data branch inputs are still missing: `data/cache/orderflow/es_mes_flow_divergence_1m_20200101_20260609.csv`, `data/cache/orderflow/es_mes_price_flow_divergence_1m_20200101_20260609.csv`, and `data/cache/orderflow/es_tbbo_liquidity_1m_20250609_20260609.csv`.
+- No paid data was downloaded. The current local active campaign set has no ES candidate strategy; continuing without weakening the methodology requires either approved external data or a genuinely new dense point-in-time local source that is not a duplicate of an active failed edge.
+
+
+## ES Treasury Rate Shock Intraday - 2026-06-16
+
+Decision: FAIL.
+
+- Created `campaigns/es_treasury_rate_shock_intraday/campaign.yaml` and exactly five variants using `treasury_rate_state`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_treasury_rate_state_features_20110103_20260609.csv` from the free U.S. Treasury Daily Treasury Rates CSV endpoint plus local ES Sierra RTH bars. The feature builder maps each ES session to the latest Treasury observation date strictly before the ES session date.
+- Pre-backtest signal-density audit passed after adjusting one two-condition grid before performance testing: `research_artifacts/es_treasury_rate_shock_intraday_density_audit_20260616.md`. All declared entry grid cells clear 50 trades/year.
+- Originals: all five failed `limited_core_grid_test`. Best original was `rate_up_high_level_short_1030/run1` with profitable-combo rate `0.027777777777777776` and top net `30.0`.
+- Rescues: all five one-time parameter-space rescues completed and failed `limited_core_grid_test`. Best rescue was `rate_up_high_level_short_1030/rescue1` with profitable-combo rate `0.08333333333333333` and top net `114.375`.
+- No run reached monkey, WFA, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
+- The user-provided video edge list was reviewed in `research_artifacts/es_video_edge_queue_review_20260616.md`; no immediate non-duplicate ES campaign was queued from that list.
+- Verification: `python3 -m pytest tests/test_treasury_rate_state.py` PASS; targeted preflight for five originals PASS; targeted preflight for five rescues PASS; Databento paid-download guard refused a non-dry-run command without `--paid-data-approved`.
+
+
+## ES OFR Financial Stress Intraday - 2026-06-16
+
+Decision: FAIL.
+
+- Created `campaigns/es_ofr_financial_stress_intraday/campaign.yaml` and exactly five variants using `ofr_financial_stress`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_ofr_financial_stress_features_20110103_20260609.csv` from the free official OFR Financial Stress Index CSV plus local ES Sierra RTH bars. The feature builder maps each ES session to the latest OFR observation on or before `session_date - 2 business days`.
+- Pre-backtest signal-density audit passed: `research_artifacts/es_ofr_financial_stress_intraday_density_audit_20260616.md`. Declared grids cleared the 50 trades/year density gate before performance testing.
+- Originals: all five failed `limited_core_grid_test` with `0.0` profitable-combo rate.
+- Rescues: all five one-time parameter-space rescues completed and failed `limited_core_grid_test`. Best rescue profitable-combo rate was `0.5185185185185185`, below the required `0.70`, with zero benchmark-passing combinations.
+- No run reached monkey, WFA, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_ofr_financial_stress.py` PASS; targeted preflight for five originals PASS; targeted preflight for five rescues PASS; active sweep found 40 campaigns, 200 source variants, 200 rescue configs, 418 raw variant-level reports, 0 passes, and no missing `rescue1` reports.
+
+
+## ES VVIX Tail Risk Intraday - 2026-06-16
+
+Decision: FAIL.
+
+- Created `campaigns/es_vvix_tail_risk_intraday/campaign.yaml` and exactly five variants using `vvix_tail_risk`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_vvix_tail_risk_features_20110103_20260609.csv` from free official Cboe VVIX and VIX daily index CSVs plus local ES Sierra RTH bars. The feature builder maps each ES session to the latest Cboe observation strictly before the ES session date.
+- Pre-backtest signal-density audit passed: `research_artifacts/es_vvix_tail_risk_intraday_density_audit_20260616.md`. Declared original and rescue grids cleared the 50 trades/year density gate before performance testing.
+- Originals: all five failed `limited_core_grid_test`. Best original was `low_vvix_long_1030/run1` with profitable-combo rate `0.5185185185185185`, but it remained below the required `0.70` and failed trade-count/concentration gates.
+- Rescues: all five one-time parameter-space rescues completed. Four failed `limited_core_grid_test`. `low_vvix_long_1030/rescue1` passed core with profitable-combo rate `0.9629629629629629`, but failed `limited_monkey_test` with random-placebo profitable rate `0.31666666666666665` and median net profit `-1482.5`.
+- No run reached WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_vvix_tail_risk.py` PASS; targeted preflight for five originals PASS; targeted preflight for five rescues PASS.
+
+
+## ES EPU Policy Uncertainty Intraday - 2026-06-16
+
+Decision: FAIL.
+
+- Created `campaigns/es_epu_policy_uncertainty_intraday/campaign.yaml` and exactly five variants using `epu_policy_uncertainty`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_epu_policy_uncertainty_features_20110103_20260609.csv` from the free public Daily U.S. EPU CSV plus local ES Sierra RTH bars. The feature builder maps each ES session to the latest EPU observation on or before `session_date - 30 calendar days` to avoid recent-revision leakage.
+- Pre-backtest signal-density audit passed: `research_artifacts/es_epu_policy_uncertainty_intraday_density_audit_20260616.md`. Declared original and rescue entry grids cleared the 50 trades/year density gate before performance testing.
+- Originals: all five failed `limited_core_grid_test`. Best original was `low_epu_long_1030/run1` with profitable-combo rate `0.1111111111111111`, zero benchmark-passing combinations, top net `922.5`, and top PF `1.0687406855439643`.
+- Rescues: all five one-time parameter-space rescues completed and failed `limited_core_grid_test`. Best rescue was `low_epu_long_1030/rescue1` with profitable-combo rate `0.4074074074074074`, zero benchmark-passing combinations, top net `2170.625`, and top PF `1.1913709499669385`.
+- No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_epu_policy_uncertainty.py` PASS; targeted preflight for five originals PASS; targeted preflight for five rescues PASS.
+
+
+## ES Consumer Sentiment State Intraday - 2026-06-16
+
+Decision: FAIL.
+
+- Created `campaigns/es_consumer_sentiment_state_intraday/campaign.yaml` and exactly five variants using `consumer_sentiment_state`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_consumer_sentiment_features_20110103_20260609.csv` from the free public FRED/University of Michigan `UMCSENT` CSV plus local ES Sierra RTH bars. The feature builder maps each ES session to the latest UMCSENT observation on or before `session_date - 45 calendar days`.
+- Pre-backtest signal-density audit passed: `research_artifacts/es_consumer_sentiment_state_intraday_density_audit_20260616.md`. Declared original grids cleared the 50 trades/year density gate before performance testing.
+- Originals: all five failed `limited_core_grid_test`. Best original was `falling_sentiment_short_1200/run1` with profitable-combo rate `0.0`, zero benchmark-passing combinations, top net `-507.5`, and top PF `0.9586136595310907`.
+- Rescues: all five one-time parameter-space rescues completed and failed `limited_core_grid_test`. Best rescue was `high_sentiment_short_1030/rescue1` with profitable-combo rate `0.07407407407407407`, zero benchmark-passing combinations, top net `140.0`, top PF `1.1454545454545455`, and only `12` top-combo trades.
+- No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_consumer_sentiment_state.py` PASS; targeted preflight for five originals PASS; targeted preflight for five rescues PASS.
+
+
+## ES Cboe Put/Call Sentiment Intraday - 2026-06-16
+
+Decision: FAIL.
+
+- Created `campaigns/es_cboe_put_call_sentiment_intraday/campaign.yaml` and exactly five variants using `cboe_put_call_sentiment`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_cboe_put_call_features_20110103_20260609.csv` from free public Cboe equity/index/total put-call ratio CSVs plus local ES Sierra RTH bars. The feature builder maps each ES session to the latest Cboe observation strictly before the ES session date.
+- Pre-backtest signal-density audit passed: `research_artifacts/es_cboe_put_call_sentiment_intraday_density_audit_20260616.md`. Declared original grids cleared the 50 trades/year density gate before performance testing.
+- Originals: all five failed `limited_core_grid_test`. Best original was `falling_total_pc_long_1130/run1` with profitable-combo rate `0.5185185185185185`, one benchmark-passing combination, top net `3262.5`, top PF `1.2238805970149254`, and top MAR `1.5534026510713692`.
+- Rescues: all five one-time parameter-space rescues completed. Three failed `limited_core_grid_test`. `falling_total_pc_long_1130/rescue1` passed core with profitable-combo rate `1.0` but failed `limited_monkey_test` with random-monkey profitable rate `0.19666666666666666` and median net `-2727.5`. `high_total_vs_equity_pc_short_1330/rescue1` passed core with profitable-combo rate `0.8888888888888888` but failed `limited_monkey_test` with random-monkey profitable rate `0.06666666666666667`, median net `-3923.75`, and one-tick-worse stress not profitable.
+- No run reached WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_cboe_put_call_sentiment.py` PASS; targeted preflight for five originals PASS; targeted preflight for five rescues PASS.
+
+
+## ES Oil Price Shock Spillover - 2026-06-17
+
+Decision: FAIL.
+
+- Created `campaigns/es_oil_price_shock_spillover/campaign.yaml` and exactly five variants using `oil_price_shock_spillover`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_oil_price_shock_features_20110103_20260609.csv` from free public EIA WTI and Brent daily spot-price XLS files plus local ES Sierra RTH bars. The feature builder maps each ES session to the latest EIA oil observation on or before `session_date - 2` business days.
+- Pre-backtest signal-density audit passed: `research_artifacts/es_oil_price_shock_spillover_density_audit_20260617.md`. Declared original and rescue grids cleared the 50 trades/year density gate before performance testing.
+- Originals: all five failed `limited_core_grid_test`. Best original was `wti_up_risk_off_short_1030/run1` with profitable-combo rate `0.07407407407407407`, zero benchmark-passing combinations, top net `1250.0`, top PF `1.0855871276959945`, and top MAR `0.23116690498374848`.
+- Rescues: all five one-time parameter-space rescues completed. Four failed `limited_core_grid_test`. `wti_up_risk_off_short_1030/rescue1` passed core with profitable-combo rate `0.7777777777777778`, but failed `limited_monkey_test` with random-monkey profitable rate `0.17`, median net `-3905.0`, trade-path stress profitable rate `0.15666666666666668`, and one-tick-worse stress not profitable.
+- No run reached WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_oil_price_shock_spillover.py` PASS; targeted preflight for five originals PASS; targeted preflight for five rescues PASS.
+
+
+## Staged Core/Monkey Gate Correction - 2026-06-17
+
+Decision: INFRASTRUCTURE FIX; prior active core/monkey artifacts require manual
+review when they depended on the corrected gates.
+
+- Corrected `limited_core_grid_test` so a core stage must have at least one
+  benchmark-passing parameter combination in addition to the existing valid combo
+  count, `>=70%` profitable-combo rate, and zero prop-rule violations.
+- Corrected monkey-stage criteria so random-placebo monkey comparisons are
+  diagnostic output only, while actual trade-path stress is the pass/fail gate:
+  `>=80%` profitable, median positive, one-tick-worse profitable, and zero
+  prop-rule violations.
+- Limited monkey parameter handoff now prefers profitable benchmark-passing core
+  grid rows when available, rather than any profitable core row.
+- Active artifact scan after the fix found `27` prior core-stage passes now
+  invalid because `number_passing_benchmark=0`, and `2` prior limited-monkey
+  failures that should advance under the corrected monkey gate.
+- Reran the two affected valid-core rescues without changing mechanics or
+  parameter space:
+  - `es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/rescue1`
+    passed corrected core and monkey, then failed WFA early exit because selected
+    first-window IS PF was `0.87 < 1.00`.
+  - `es_cboe_put_call_sentiment_intraday/falling_total_pc_long_1130/ES/rescue1`
+    passed corrected core and monkey, then failed WFA early exit because selected
+    first-window IS PF was `0.99 < 1.00`.
+- Updated affected aggregate summaries and appended research-ledger rows. No
+  strategy mechanics, signal definitions, parameter spaces, or data sources were
+  changed. No paid data was downloaded.
+- Verification: `python3 -m pytest tests/test_campaign_stages.py` PASS; `python3
+  -m pytest tests/test_monkey.py tests/test_core_grid.py` PASS; affected variant
+  JSON summaries validate with `python3 -m json.tool`.
+
+
+## Active Aggregate Backfill - 2026-06-17
+
+Decision: INFRASTRUCTURE / BOOKKEEPING FIX.
+
+- Backfilled missing campaign-level aggregate summaries from existing run
+  artifacts only:
+  - `backtest-campaigns/es_connors_rsi2_mean_reversion/campaign_test_summary.json`
+  - `backtest-campaigns/es_mes_micro_flow_divergence_reversion/campaign_test_summary.json`
+  - `backtest-campaigns/es_prior_session_ibs_reversion/campaign_test_summary.json`
+- Normalized older aggregate summaries with `decision: FAIL` but no explicit
+  status to `status: completed`.
+- Under corrected gates, Connors RSI2 and prior-session IBS fail
+  `limited_core_grid_test`; ES/MES divergence reports that historically reached
+  monkey are corrected-core failures where benchmark-passing combinations are
+  zero.
+- Active authored campaigns now have matching aggregate summaries. No strategy
+  mechanics, signal definitions, parameter spaces, or data sources were changed.
+  No paid data was downloaded.
+
+
+## ES Dollar Risk-Appetite Intraday Spillover - 2026-06-17
+
+Decision: FAIL.
+
+- Created `campaigns/es_dollar_risk_appetite_intraday/campaign.yaml` and
+  exactly five variants using `dollar_risk_appetite`,
+  `percent_from_entry`, and `fixed_r`.
+- Built `data/external/es_dollar_risk_appetite_features_20110103_20260609.csv`
+  from the free official FRED/Federal Reserve `DTWEXBGS` nominal broad dollar
+  index plus local ES Sierra RTH bars. The feature builder maps each ES session
+  to the latest dollar observation on or before `session_date - 1` business day.
+- Pre-backtest density audit passed:
+  `research_artifacts/es_dollar_risk_appetite_intraday_density_audit_20260617.md`.
+  The narrowest declared condition still had about `53.53` eligible sessions per
+  year before performance testing.
+- Originals: all five failed `limited_core_grid_test` with `0.0` profitable
+  combinations and zero benchmark-passing combinations. Best original was
+  `high_dollar_up_short_1130/run1` with top net `-295.0`, top PF
+  `0.9749362786745964`, and `79` top-combo trades.
+- Rescues: all five one-time parameter-space rescues completed and all failed
+  `limited_core_grid_test` with `0.0` profitable combinations and zero
+  benchmark-passing combinations. Best rescue was
+  `dollar_down_risk_on_long_1030/rescue1` with top net `-1880.625`, top PF
+  `0.7975100942126514`, and `118` top-combo trades.
+- No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated
+  incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_dollar_risk_appetite.py` PASS;
+  targeted preflight for five originals PASS; targeted preflight for five
+  rescues PASS.
+
+
+## ES Trade-Size Segmented Stealth Orderflow - 2026-06-17
+
+Decision: FAIL.
+
+- Added `trade_size_segment_orderflow`, a completed-bar entry module that
+  computes large-trade and residual smaller-flow imbalance from existing local
+  Sierra aggregate orderflow features. It follows the larger-trade direction
+  only when the large-vs-residual disagreement is large enough.
+- Created `campaigns/es_trade_size_stealth_orderflow/campaign.yaml` and exactly
+  five variants, each with `trade_size_segment_orderflow`,
+  `percent_from_entry`, `fixed_r`, README, and config.
+- Pre-backtest density audit passed:
+  `research_artifacts/es_trade_size_stealth_orderflow_density_audit_20260617.md`.
+  Every frozen variant shape had a predeclared threshold point near or above 50
+  signals/year before performance testing.
+- Originals: all five failed `limited_core_grid_test`. Best original was
+  `large20_loose_short_1030/run1` with profitable-combo rate
+  `0.5061728395061729`, zero benchmark-passing combinations, top net `1920.0`,
+  top PF `1.3251481795088909`, and `101` top-combo trades.
+- Rescues: all five one-time parameter-space rescues completed and all failed
+  `limited_core_grid_test`. Best rescue was `large20_loose_short_1030/rescue1`
+  with profitable-combo rate `0.19753086419753085`, zero benchmark-passing
+  combinations, top net `1670.0`, top PF `1.2616529573051312`, and `106`
+  top-combo trades.
+- No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated
+  incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_trade_size_segment_orderflow.py
+  tests/test_strategy_modules.py -q` PASS; targeted preflight for five
+  originals PASS; targeted preflight for five rescues PASS.
+
+
+## ES Trade Fragmentation Liquidity Reversion - 2026-06-17
+
+Decision: FAIL.
+
+- Added `trade_fragmentation_liquidity_reversion`, a completed-bar entry module
+  that combines high same-clock rolling trade-count rank with low same-clock
+  rolling average-trade-size rank, then fades a completed 15, 30, or 60 minute
+  price move using next-bar-open execution.
+- Created `campaigns/es_trade_fragmentation_liquidity_reversion/campaign.yaml`
+  and exactly five variants, each with `trade_fragmentation_liquidity_reversion`,
+  `percent_from_entry`, `fixed_r`, README, and config.
+- Pre-backtest density audit passed:
+  `research_artifacts/es_trade_fragmentation_liquidity_reversion_density_audit_20260617.md`.
+  The frozen base thresholds produced plausible signal density above 50
+  signals/year before any PnL testing.
+- Originals: all five failed `limited_core_grid_test` with `0.0` profitable
+  combinations and zero benchmark-passing combinations. Best original by
+  top-combo net profit was `morning_15m_fragmented_up_fade_short/run1` with top
+  net `-1984.375`, top PF `0.7422052614485223`, and `105` top-combo trades.
+- Rescues: all five one-time parameter-space rescues completed and all failed
+  `limited_core_grid_test` with `0.0` profitable combinations and zero
+  benchmark-passing combinations. Best rescue by top-combo net profit was
+  `midday_30m_fragmented_down_fade_long/rescue1` with top net `-3803.75`, top PF
+  `0.45854092526690393`, and `167` top-combo trades.
+- No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated
+  incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_trade_fragmentation_liquidity_reversion.py
+  tests/test_strategy.py tests/test_preflight.py tests/test_campaign_stages.py
+  tests/test_core_grid.py tests/test_monkey.py -q` PASS with `64` tests;
+  targeted preflight for five originals and five rescues PASS.
+
+
+## ES Realized Semivariance Asymmetry - 2026-06-17
+
+Decision: FAIL.
+
+- Added `realized_semivariance_asymmetry`, a completed-bar entry module that
+  uses lagged prior-session downside semivariance, upside semivariance,
+  downside share, and bad-minus-good semivariance balance ranks.
+- Added `tools/build_es_realized_semivariance_features.py`, which builds
+  `data/external/es_realized_semivariance_features_20110103_20260609.csv` from
+  local Sierra ES RTH bars and shifts every tradable feature one completed RTH
+  session before use.
+- Created `campaigns/es_realized_semivariance_asymmetry/campaign.yaml` and
+  exactly five variants, each with `realized_semivariance_asymmetry`,
+  `percent_from_entry`, `fixed_r`, README, and config.
+- Pre-backtest density audit passed:
+  `research_artifacts/es_realized_semivariance_asymmetry_density_audit_20260617.md`.
+  Every declared threshold had expected signal density above 50 trades/year.
+- Originals: all five failed `limited_core_grid_test`. Best original was
+  `high_1d_badvol_continuation_short_1030/run1` with profitable-combo rate
+  `0.2222222222222222`, zero benchmark-passing combinations, top net `2302.5`,
+  top PF `1.1168336927565647`, and `132` top-combo trades.
+- Rescues: all five one-time parameter-space rescues completed. Four failed
+  `limited_core_grid_test`. `high_1d_badvol_continuation_short_1030/rescue1`
+  passed core and limited monkey, then failed `walk_forward_analysis` with
+  `early_exit=true`, stitched OOS net `-9625.0`, PF `0.6356926570779712`, MAR
+  `-0.7825314922408811`, and expectancy R `-0.24698221123551944`.
+- No run reached WFA OOS monkey, Monte Carlo, simulated incubation, or frozen
+  validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_realized_semivariance_asymmetry.py
+  tests/test_strategy.py tests/test_preflight.py tests/test_campaign_stages.py -q`
+  PASS with `53` tests; targeted preflight for five originals PASS; targeted
+  preflight for five rescues PASS.
+
+
+## ES Amihud Illiquidity Price Impact - 2026-06-17
+
+Decision: FAIL.
+
+- Added `amihud_illiquidity_state`, a completed-bar entry module that uses
+  lagged daily Amihud-style price impact, computed as absolute RTH return
+  divided by ES notional volume, with every tradable feature shifted one
+  completed RTH session before use.
+- Added `tools/build_es_amihud_illiquidity_features.py`, which builds
+  `data/external/es_amihud_illiquidity_features_20110103_20260609.csv` from
+  the local Sierra ES RTH aggregate cache. The build produced `3817` rows and
+  `3740` rank-complete rows. No paid data was downloaded.
+- Created `campaigns/es_amihud_illiquidity_price_impact/campaign.yaml` and
+  exactly five variants, each with `amihud_illiquidity_state`,
+  `percent_from_entry`, `fixed_r`, README, config, and strategy-module shims.
+- Pre-backtest density audit passed:
+  `research_artifacts/es_amihud_illiquidity_price_impact_density_audit_20260617.md`.
+  Every declared threshold had expected signal density above 50 trades/year.
+- Originals: all five failed `limited_core_grid_test`. Best original was
+  `high_1d_illiq_stress_short_1030/run1` with profitable-combo rate
+  `0.14814814814814814`, zero benchmark-passing combinations, top net
+  `2115.0`, top PF `1.1749741468459152`, and `87` top-combo trades.
+- Rescues: all five one-time parameter-space rescues completed and all failed
+  `limited_core_grid_test`. Best rescue was
+  `high_1d_illiq_premium_long_1000/rescue1` with profitable-combo rate
+  `0.1111111111111111`, zero benchmark-passing combinations, top net
+  `1663.75`, top PF `1.1705972827480133`, and `71` top-combo trades.
+- No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated
+  incubation, or frozen validation. No candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_amihud_illiquidity_state.py
+  tests/test_strategy.py tests/test_preflight.py tests/test_campaign_stages.py
+  tests/test_core_grid.py tests/test_monkey.py -q` PASS with `65` tests;
+  targeted preflight for five originals and five rescues PASS.
+
+
+## ES realized volatility-of-volatility state campaign - 2026-06-17
+
+- Added local feature builder `tools/build_es_realized_vol_of_vol_features.py`; output `data/external/es_realized_vol_of_vol_features_20110103_20260609.csv` contains 3,817 sessions and 3,740 valid rolling-rank rows. All tradable fields are shifted one completed RTH session.
+- Added entry module `realized_vol_of_vol_state` with RTH-only requirement and focused tests in `tests/test_realized_vol_of_vol_state.py`.
+- Preflight: `python3 -m research.preflight --skip-tests --config <all 10 es_realized_vol_of_vol_state configs>` PASS.
+- Staged tests: all five originals failed `limited_core_grid_test`; all five parameter-space-only rescues also failed `limited_core_grid_test`.
+- Aggregate report: `backtest-campaigns/es_realized_vol_of_vol_state/campaign_test_summary.json`.
+- Final decision: FAIL. No candidate strategy report was created.
+
+
+## ES round-number barrier reaction campaign - 2026-06-17
+
+- Added entry module `round_number_barrier` with RTH-only requirement and focused tests in `tests/test_round_number_barrier.py`.
+- Source campaign: `campaigns/es_round_number_barrier_reaction/campaign.yaml`.
+- Density gate: `research_artifacts/es_round_number_barrier_reaction_density_audit_20260617.md`; final declared original/rescue grids have minimum pre-test density of 61.3 signals/year.
+- Preflight: `python3 -m research.preflight --skip-tests --config <all 10 es_round_number_barrier_reaction configs>` PASS.
+- Staged tests: all five originals failed `limited_core_grid_test`; all five parameter-space-only rescues also failed `limited_core_grid_test`.
+- Aggregate report: `backtest-campaigns/es_round_number_barrier_reaction/campaign_test_summary.json`.
+- Final decision: FAIL. No candidate strategy report was created.
+
+
+## ES daily short-term return reversal campaign - 2026-06-17
+
+- Added entry module `daily_short_term_reversal` with focused tests in
+  `tests/test_daily_short_term_reversal.py`.
+- Source campaign: `campaigns/es_daily_short_term_reversal/campaign.yaml`.
+- Edge thesis: fade recent completed RTH close-to-close ES returns as a
+  liquidity-provision short-term reversal effect. This is distinct from active
+  daily time-series momentum because it is contrarian, and distinct from
+  prior-session IBS because it uses close-to-close return magnitude and sign
+  rather than close location inside the prior RTH range.
+- Density gate:
+  `research_artifacts/es_daily_short_term_reversal_density_audit_20260617.md`;
+  declared original grids had expected signal density near or above the 50
+  trades/year methodology floor.
+- Preflight: full active-config preflight passed after scaffold with
+  `python3 -m research.preflight --skip-tests` (`803` configs checked). After
+  rescue scaffolding, targeted preflight across all ten new configs passed with
+  `python3 -m research.preflight --skip-tests --config <all 10 es_daily_short_term_reversal configs>`
+  (`10` configs checked). Focused tests passed with `python3 -m pytest
+  tests/test_daily_short_term_reversal.py tests/test_strategy_modules.py
+  tests/test_preflight.py -q` (`145` tests), and final focused regression passed
+  with `191` tests.
+- Staged tests: all five originals failed `limited_core_grid_test` with zero
+  profitable grid combinations.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving the same close-to-close reversal mechanic, direction mode,
+  lookback, signal time, modules, timeframe, data window, costs, fill rules,
+  session rules, prop rules, and validation gates. All five rescues also failed
+  `limited_core_grid_test` with zero profitable grid combinations.
+- Aggregate report:
+  `backtest-campaigns/es_daily_short_term_reversal/campaign_test_summary.json`.
+- Final decision: FAIL. No run reached monkey, WFA, WFA OOS monkey, Monte
+  Carlo, simulated incubation, frozen validation, or candidate reporting. No
+  candidate strategy report was created.
+
+
+## ES SPX 0DTE Expiration Pressure - 2026-06-17
+
+- Created `campaigns/es_spx_0dte_expiration_pressure/campaign.yaml` and exactly five variants using `spx_0dte_expiration_pressure`, `percent_from_entry`, and `fixed_r`.
+- Built `data/external/spx_0dte_calendar_sessions_20110103_20260609.csv` from the local Sierra ES RTH cache and public Cboe SPX Weeklys listing rules. No paid data was downloaded.
+- Pre-test density audit: `research_artifacts/es_spx_0dte_expiration_pressure_density_audit_20260617.md`; all declared original and rescue threshold spaces cleared the 50 expected signals/year screen before performance testing.
+- Verification: `python3 -m pytest tests/test_spx_0dte_expiration_pressure.py tests/test_strategy_modules.py tests/test_preflight.py -q` PASS (`146` tests). Targeted preflight for five originals and five rescues PASS.
+- Originals: all five failed before WFA. Best original by top limited-core net was `full_week_down_move_fade_long_1000/run1` with top net `12640.0`, profitable-combo rate `0.25925925925925924`, and `0` benchmark-passing combinations.
+- Rescues: all five failed variants received one parameter-space-only rescue. Four rescues failed `limited_core_grid_test`. `full_week_late_move_continuation_1430/rescue1` reached WFA after core/monkey but failed `walk_forward_analysis` by early exit; stitched OOS net `-4122.5`, PF `0.5265575653172553`, MAR `-1.5399289192985244`, trades/year `64.18426923443607`.
+- Aggregate report: `backtest-campaigns/es_spx_0dte_expiration_pressure/campaign_test_summary.json`.
+- Final decision: FAIL. No run reached WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No candidate strategy report was created.
+
+
+## ES Treasury Auction Pressure - 2026-06-17
+
+- Added entry module `treasury_auction_pressure` with focused tests in `tests/test_treasury_auction_pressure.py`.
+- Built free official FiscalData auction calendar with `tools/build_es_treasury_auction_calendar.py`; output `data/external/es_treasury_coupon_auction_sessions_20110103_20260609.csv` has 1,324 all-coupon auction sessions and 1,036 note days. No paid data was downloaded.
+- Source campaign: `campaigns/es_treasury_auction_pressure/campaign.yaml`, exactly five variants.
+- Preflight: targeted originals and rescues PASS. Focused tests PASS.
+- Staged tests: all five originals failed `limited_core_grid_test`; all five parameter-space-only rescues also failed `limited_core_grid_test`.
+- Aggregate report: `backtest-campaigns/es_treasury_auction_pressure/campaign_test_summary.json`.
+- Final decision: FAIL. No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No candidate strategy report was created.
+
+## ES Cboe SKEW Tail Risk Intraday - 2026-06-17
+
+- Created `campaigns/es_cboe_skew_tail_risk_intraday/campaign.yaml` and exactly five variants using the new `cboe_skew_tail_risk` entry module with `percent_from_entry` stops and `fixed_r` targets.
+- Built `data/external/es_cboe_skew_tail_risk_features_20110103_20260609.csv` from the free official Cboe SKEW daily CSV and local ES Sierra RTH sessions. No paid data was downloaded. Every tradable feature uses the latest Cboe SKEW close strictly before the ES session date.
+- Original runs: all five failed `limited_core_grid_test`; best original was `high_skew_short_1000/run1` with profitable-combo rate `0.07407407407407407`, zero benchmark-pass combinations, top net `$565.00`, PF `1.0800283286118981`, and `87` top-combo trades.
+- Rescues: all five one-time parameter-space-only rescues completed and failed `limited_core_grid_test`; best rescue was `high_skew_short_1000/rescue1` with profitable-combo rate `0.14814814814814814`, zero benchmark-pass combinations, top net `$565.00`, PF `1.0800283286118981`, and `87` top-combo trades.
+- No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+- Verification: `python3 -m pytest tests/test_cboe_skew_tail_risk.py -q` PASS; targeted preflight for five originals and five rescues PASS.
+
+## ES Cboe Implied Correlation Intraday - 2026-06-17
+
+- Created `campaigns/es_cboe_implied_correlation_intraday/campaign.yaml` and exactly five variants using the new `cboe_implied_correlation` entry module with `percent_from_entry` stops and `fixed_r` targets.
+- Built `data/external/es_cboe_implied_correlation_features_20110103_20260609.csv` from free official Cboe COR1M/COR3M daily CSVs and local ES Sierra RTH sessions. No paid data was downloaded. Every tradable feature uses the latest Cboe implied-correlation close strictly before the ES session date.
+- Original runs: all five failed `limited_core_grid_test`; best original was `high_short_term_correlation_short_1330/run1` with profitable-combo rate `0.2222222222222222`, zero benchmark-pass combinations, top net `$1980.00`, PF `1.1112984822934233`, and `144` top-combo trades.
+- Rescues: all five one-time parameter-space-only rescues completed and failed `limited_core_grid_test`; best rescue was `high_short_term_correlation_short_1330/rescue1` with profitable-combo rate `0.9259259259259259`, zero benchmark-pass combinations, top net `$2656.25`, PF `1.1317747736574475`, and `150` top-combo trades.
+- No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## ES Cboe VIX Term Structure Intraday - 2026-06-17
+
+- Created `campaigns/es_cboe_vix_term_structure_intraday/campaign.yaml` and exactly five variants using the new `cboe_vix_term_structure` entry module with `percent_from_entry` stops and `fixed_r` targets.
+- Built `data/external/es_cboe_vix_term_structure_features_20110103_20260609.csv` from free official Cboe VIX9D, VIX, VIX3M, and VIX6M daily CSVs and local ES Sierra RTH sessions. No paid data was downloaded. Every tradable feature uses the latest Cboe volatility-index close strictly before the ES session date.
+- Original runs: all five failed `limited_core_grid_test`; best original was `contango_long_1030/run1` with profitable-combo rate `0.07407407407407407`, zero benchmark-pass combinations, top net `$180.00`, PF `1.012591815320042`, and `119` top-combo trades.
+- Rescues: all five one-time parameter-space-only rescues completed and failed `limited_core_grid_test`. `contango_long_1030/rescue1` improved to profitable-combo rate `0.8888888888888888`, but still had zero benchmark-pass combinations and top PF `1.1840448554003542`, below the 1.2 gate. Best rescue by top net was `curve_flattening_short_1200/rescue1` with profitable-combo rate `0.7037037037037037`, zero benchmark-pass combinations, top net `$2997.50`, PF `1.1856899488926746`, and `123` top-combo trades.
+- No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## ES Cboe VIX Level State Intraday - 2026-06-17
+
+- Created `campaigns/es_cboe_vix_level_state_intraday/campaign.yaml` and exactly five variants using the new `cboe_vix_level_state` entry module with `percent_from_entry` stops and `fixed_r` targets.
+- Built `data/external/es_cboe_vix_level_features_20110103_20260609.csv` from the existing local free Cboe VIX daily-history cache and local ES Sierra RTH sessions. No paid data was downloaded. Every tradable feature uses the latest Cboe VIX close strictly before the ES session date.
+- Original runs: all five failed `limited_core_grid_test`; best original was `vix_spike_riskoff_short_1130/run1` with profitable-combo rate `0.14814814814814814`, zero benchmark-pass combinations, top net `$1212.50`, PF `1.0590383444917832`, and `165` top-combo trades.
+- Rescues: all five one-time parameter-space-only rescues completed and failed `limited_core_grid_test`; best rescue was `vix_spike_riskoff_short_1130/rescue1` with profitable-combo rate `0.5555555555555556`, zero benchmark-pass combinations, top net `$2618.75`, PF `1.1243766326288294`, and `165` top-combo trades.
+- No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## ES Credit Spread State Intraday Data Gate - 2026-06-17
+
+- Added and tested a potential `credit_spread_state` entry module plus
+  `tools/build_es_credit_spread_features.py`.
+- Downloaded only free public FRED graph CSVs for ICE BofA HY OAS
+  `BAMLH0A0HYM2` and IG OAS `BAMLC0A0CM`; no paid market data was downloaded.
+- Built `data/external/es_credit_spread_features_20110103_20260609.csv` using
+  local ES Sierra RTH sessions and a conservative two-business-day availability
+  lag for credit-spread observations.
+- Data gate failed before campaign scaffolding: current free FRED/ICE OAS
+  caches start on `2023-06-19`; valid ranked ES sessions span only
+  `2023-09-13` to `2026-06-09` (`680` rows).
+- Because the staged methodology requires at least 10 WFA windows under the
+  48-month train / 12-month test / 12-month step setup, this edge cannot pass
+  with the currently available no-cost history. No five-variant campaign was
+  launched, and no candidate strategy report was created.
+- Verification: `python3 -m pytest tests/test_credit_spread_state.py
+  tests/test_strategy_modules.py tests/test_preflight.py -q` PASS (`145`
+  tests).
+## ES Intraday Periodicity Persistence - 2026-06-17
+
+- Added `intraday_periodicity_persistence`, a local Sierra-only campaign testing
+  prior sessions' same-clock half-hour return persistence on ES.
+- Built `data/external/es_intraday_periodicity_features_20110103_20260609.csv`
+  from the local ES RTH Sierra 1-minute cache. Feature construction uses
+  `shift(1)` within each slot so current-session slot outcomes are excluded.
+- Pre-test density audit:
+  `research_artifacts/es_intraday_periodicity_persistence_density_audit_20260617.md`.
+  The frozen original grid was expected to clear the 50 trades/year density rule.
+- Authored exactly five variants under
+  `campaigns/es_intraday_periodicity_persistence/variants/`, each with entry,
+  stop, target module shims, `config.yaml`, and `README.md`.
+- Parameter count: 2 entry tunables, 1 stop tunable, 1 target tunable, 81
+  combinations per variant.
+- Verification before staged runs:
+  `python3 -m pytest tests/test_intraday_periodicity_persistence.py tests/test_strategy_modules.py tests/test_preflight.py -q`
+  passed with 144 tests; targeted preflight over the five original configs
+  passed. Broad active-tree preflight was stopped because it was loading every
+  unrelated active campaign config and consuming several minutes/memory.
+- Original outcome: all five variants failed `limited_core_grid_test` with zero
+  profitable combinations and zero benchmark-passing combinations.
+- Rescue outcome: each failed variant received exactly one parameter-space-only
+  rescue. All five rescues also failed `limited_core_grid_test` with zero
+  profitable combinations and zero benchmark-passing combinations.
+- Aggregate artifacts:
+  `backtest-campaigns/es_intraday_periodicity_persistence/campaign_test_summary.json`,
+  `backtest-campaigns/es_intraday_periodicity_persistence/campaign_results.csv`,
+  `backtest-campaigns/es_intraday_periodicity_persistence/wfa_table.csv`, and
+  `backtest-campaigns/es_intraday_periodicity_persistence/monte_carlo_summary.json`.
+- Decision: FAIL. No candidate strategy report was created.
+
+## Staged Runner Screening Gate Fix - 2026-06-17
+
+- Added `research_artifacts/core_grid_monkey_vs_archived_audit_20260617.md`
+  after comparing current core-grid/monkey gates with archived staged-run
+  artifacts.
+- Fixed run traceability: new staged runs write the effective canonical config
+  to run-level `config.yaml` and retain the original input config as
+  `source_config.yaml`.
+- Fixed limited core-grid benchmark pass counting: the stage now uses a
+  screening benchmark that keeps trade-density, drawdown/concentration, and
+  rule-compliance checks, but leaves full PF/MAR/expectancy gates for WFA and
+  later stages.
+- Full-span absolute trade-count thresholds are scaled to the actual limited
+  screen period and recorded in `benchmark_thresholds` /
+  `benchmark_threshold_adjustments`.
+- Monkey pass/fail criteria now match the stated methodology: stressed actual
+  trade path must be at least 80% profitable, median-positive, survive a
+  one-tick-worse slippage path, and show no Apex/flatten violations. The random
+  monkey comparison remains diagnostic output, not the pass/fail gate.
+- Verification:
+  `python3 -m pytest tests/test_campaign_stages.py -q` PASS (`34` tests);
+  `python3 -m pytest tests/test_campaign_stages.py tests/test_backtest_engine.py tests/test_preflight.py tests/test_wfa.py -q`
+  PASS (`96` tests);
+  `python3 -m pytest tests/test_monkey.py tests/test_core_grid.py -q` PASS
+  (`12` tests);
+  `python3 -m py_compile src/propstack/research/campaign_stages.py src/propstack/research/core_grid.py src/propstack/research/monkey.py`
+  PASS.
+- Methodology-fix reruns are documented in
+  `research_artifacts/methodology_fix_reruns_20260617.md`.
+  `es_cboe_implied_correlation_intraday/high_short_term_correlation_short_1330`,
+  `es_cboe_vix_term_structure_intraday/contango_long_1030`, and
+  `es_cboe_vix_term_structure_intraday/curve_flattening_short_1200` all passed
+  the corrected limited core-grid gate, then failed `limited_monkey_test`
+  because stressed actual trade paths were below the 80% profitable threshold
+  and the one-tick-worse slippage path was unprofitable. Decision: FAIL for all
+  three retests.
+- `es_market_plumbing_liquidity_capacity/dual_pressure_priority_long_1130`
+  was also rerun under the corrected gate. It failed corrected
+  `limited_core_grid_test`: profitable-combo rate was
+  `0.8888888888888888`, but benchmark-pass combinations remained `0` because
+  the screening benchmark rejected the top rows for max consecutive losses.
+  Decision: FAIL.
+- `es_vwap_pullback_continuation/midday_trend_reclaim_two_sided` was rerun
+  under the corrected gate. It passed corrected limited core grid
+  (`0.8148148148148148` profitable-combo rate, `9` screening benchmark-pass
+  combinations) but failed `limited_monkey_test` because the one-tick-worse
+  path was unprofitable (`-203.75`) despite the broader stress distribution
+  being median-positive. Decision: FAIL.
+- `es_oil_price_shock_spillover/wti_up_risk_off_short_1030` was rerun under
+  the corrected gate. It passed corrected limited core grid
+  (`0.7777777777777778` profitable-combo rate, `3` screening benchmark-pass
+  combinations) and corrected `limited_monkey_test`, then failed
+  `walk_forward_analysis` by early exit because the selected first-window
+  in-sample PF was `0.93 < 1.00`. Decision: FAIL.
+- `es_spx_0dte_expiration_pressure/full_week_late_move_continuation_1430` was
+  rerun under the corrected gate after the false-negative scan found its
+  original limited core-grid profitable rate was `0.7037037037037037` but old
+  full-stage benchmark pass count was `0`. The corrected rerun passed limited
+  core grid (`15` screening benchmark-pass combinations) and corrected
+  `limited_monkey_test` (`0.8133333333333334` stress profitable rate,
+  one-tick-worse net `1647.5`), then failed `walk_forward_analysis` by early
+  exit at window 4 because the selected in-sample PF was `0.91 < 1.00`.
+  Stitched OOS PF was `0.5178719866999169`, MAR was `-1.368206562790248`, and
+  expectancy R was negative. Decision: FAIL.
+
+## ES FINRA Margin Leverage State - 2026-06-17
+
+- Launched one non-duplicate ES campaign using official FINRA monthly margin
+  statistics with a 35-calendar-day availability lag and local Sierra ES RTH
+  1-minute bars.
+- Built features with `tools/build_es_finra_margin_features.py` and wrote
+  `data/external/es_finra_margin_leverage_features_20110103_20260609.csv`.
+  Signals use only lagged monthly FINRA observations plus a completed intraday
+  bar; entries remain next-bar-open through the engine.
+- Added entry module `finra_margin_leverage` and targeted tests in
+  `tests/test_finra_margin_leverage.py`. Verification:
+  `python3 -m pytest tests/test_finra_margin_leverage.py tests/test_strategy_modules.py tests/test_preflight.py -q`
+  PASS (`144` tests); targeted preflight over the five original configs PASS.
+- Authored exactly five variants under
+  `campaigns/es_finra_margin_leverage/variants/`, each with entry, stop,
+  target module shims, `config.yaml`, and `README.md`.
+- Original outcome: all five variants failed `limited_core_grid_test`. The
+  earliest limited-core slice ran from `2011-01-03` into `2012`, before the
+  120-month FINRA rank features were non-null, producing zero trades.
+- Rescue outcome: each failed variant received exactly one rescue. The only
+  changed fixed value was `data_subset.start_date`, moved to the first session
+  where that variant's frozen FINRA rank feature was non-null. Entry module,
+  setup mode, direction, entry time, stop/target modules, parameter grid,
+  costs, fills, session rules, prop rules, and validation gates were unchanged.
+- All five rescues failed `limited_core_grid_test`. No rescue reached monkey,
+  WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or
+  candidate reporting.
+- Aggregate artifacts:
+  `backtest-campaigns/es_finra_margin_leverage/campaign_test_summary.json`,
+  `backtest-campaigns/es_finra_margin_leverage/campaign_results.csv`,
+  `backtest-campaigns/es_finra_margin_leverage/wfa_table.csv`,
+  `backtest-campaigns/es_finra_margin_leverage/monte_carlo_summary.json`, and
+  `research_artifacts/es_finra_margin_leverage_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No candidate strategy report was created.
+
+
+## ES AQR BAB Factor State Campaign - 2026-06-17
+
+- Added free-public-data campaign `es_aqr_bab_factor_state` using AQR Betting Against Beta daily U.S. factor returns with a conservative 45-calendar-day publication lag. No paid data was downloaded.
+- Source data: local Sierra ES RTH cache plus `data/external/aqr_bab_equity_factors_daily.xlsx`; feature output `data/external/es_aqr_bab_features_20110103_20260609.csv` has 3,817 ES sessions and uses AQR observations through 2026-03-31 for the latest 2026-06-09 ES session.
+- Preflight: originals and rescues passed. Focused tests: `python3 -m pytest tests/test_aqr_bab_factor_state.py tests/test_campaign_stages.py tests/test_monkey.py tests/test_core_grid.py -q` PASS with 50 tests.
+- Staged tests: all five originals failed `limited_core_grid_test`; all five failed variants received exactly one parameter-space-only rescue. Four rescues failed `limited_core_grid_test`. `low_bab_z63_rebound_long_1100/rescue1` passed core and limited monkey, then failed `walk_forward_analysis` by early exit on window 2 because selected IS PF was `0.99 < 1.00`; stitched OOS PF was `0.8619637937819756`, MAR `-0.3811286271107167`, and trades/year `71.7246404539663`.
+- Final decision: FAIL. No run reached WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+
+## Staged Selection Filter Enforcement - 2026-06-17
+
+- Fixed WFA selection so configured in-sample filters are hard eligibility rules. If `trades/year > 50` removes every train-grid row, WFA now early-exits with `no_in_sample_rows_after_selection_filter` instead of selecting a sparse fallback row.
+- Fixed simulated incubation and acceptance train-selection so they fail closed when no parameter row satisfies configured selection filters. This prevents the OOS stages from running base/default parameters after an empty eligible set.
+- Verification: `python3 -m pytest tests/test_campaign_stages.py tests/test_wfa.py tests/test_monte_carlo.py tests/test_monkey.py tests/test_backtest_engine.py tests/test_preflight.py -q` passed 127 tests.
+- Verification: `python3 -m py_compile src/propstack/research/wfa.py src/propstack/research/campaign_stages.py src/propstack/prop/rules.py src/propstack/prop/simulator.py` passed.
+
+
+## ES/NQ Relative-Value Reversion - 2026-06-17
+
+- Added active non-duplicate campaign `es_nq_relative_value_reversion` using the existing local ES/NQ aligned RTH 1-minute completed return-spread cache. No paid data was downloaded.
+- Edge distinction: this campaign fades ES-specific divergence versus NQ. It rejects plain NQ-following signals and is distinct from the active failed `es_nq_cross_index_lead_lag` continuation campaign.
+- Authored exactly five variants with one entry tunable, one stop tunable, one target tunable, and 27 combinations per variant.
+- Signal-density audit: all 15 entry-threshold cells cleared the 50 signals/year screen before performance testing; see `research_artifacts/es_nq_relative_value_reversion_density_audit_20260617.md`.
+- Verification before staged runs: `python3 -m pytest tests/test_es_nq_relative_value_reversion.py tests/test_es_nq_lead_lag.py tests/test_strategy_modules.py tests/test_preflight.py -q` passed 150 tests; targeted preflight for the five originals and five rescues passed.
+- Originals: all five failed `limited_core_grid_test`. Best original was `thirty_min_divergence_fade_1130/run1` with profitable-combo rate `0.18518518518518517`, top net `447.50`, top PF `1.069676511954993`, and 93 top-combo trades.
+- Rescues: all five failed variants received exactly one parameter-space/fixed-parameter rescue. All five rescues failed `limited_core_grid_test`. Best rescue was `thirty_min_divergence_fade_1030/rescue1` with profitable-combo rate `0.14814814814814814`, top net `601.25`, top PF `1.0508127196404086`, and 131 top-combo trades.
+- Aggregate artifacts: `backtest-campaigns/es_nq_relative_value_reversion/campaign_test_summary.json`, `campaign_results.csv`, `wfa_table.csv`, and `monte_carlo_summary.json`.
+- Final decision: FAIL. No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+## ES NAAIM Active-Manager Exposure Sentiment - 2026-06-17
+
+- Campaign: `es_naaim_exposure_sentiment`
+- Source data: local Sierra ES RTH 1-minute cache plus free public NAAIM Exposure
+  Index workbook cached at `data/external/naaim_exposure_index_20260610.xlsx`.
+- Feature construction: `tools/build_es_naaim_exposure_features.py`; signal
+  sessions use the first ES RTH session at least two business days after the
+  NAAIM observation date.
+- Density audit: `research_artifacts/es_naaim_exposure_sentiment_density_audit_20260617.md`;
+  all five proposed setup modes had 805 eligible weekly signals, about 52.21/year.
+- Original runs: all five failed `limited_core_grid_test` with 0.0 profitable
+  combo rate.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue changing only stop/target grids. All five rescues also failed
+  `limited_core_grid_test` with 0.0 profitable combo rate.
+- Aggregate artifacts: `backtest-campaigns/es_naaim_exposure_sentiment/campaign_test_summary.json`,
+  `backtest-campaigns/es_naaim_exposure_sentiment/campaign_results.csv`,
+  `backtest-campaigns/es_naaim_exposure_sentiment/wfa_table.csv`, and
+  `backtest-campaigns/es_naaim_exposure_sentiment/monte_carlo_summary.json`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation,
+  frozen validation, or candidate reporting.
+
+
+## ES Leveraged ETF Rebalance Pressure - 2026-06-17
+
+- Added active non-duplicate campaign `es_leveraged_etf_rebalance_pressure`
+  using the local Sierra ES RTH 1-minute cache. No paid data was downloaded.
+- Edge distinction: this campaign tests LETF same-day close rebalance pressure
+  after large completed current-day moves from the prior RTH close. It is not a
+  rerun of the active failed first-half-hour-to-last-half-hour market intraday
+  momentum campaign or same-clock periodicity campaign.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, and `README.md`.
+- Added entry module `leveraged_etf_rebalance_pressure`, registered it in the
+  entry registry, and added required-feature warnings for `prev_rth_close`.
+- Density audit:
+  `research_artifacts/es_leveraged_etf_rebalance_pressure_density_audit_20260617.md`;
+  all declared 20/30/40 bp one-sided and two-sided late-day thresholds cleared
+  50 prospective signals/year before performance testing.
+- Verification before staged runs:
+  `python3 -m pytest tests/test_leveraged_etf_rebalance_pressure.py tests/test_strategy_modules.py tests/test_preflight.py -q`
+  passed 145 tests; targeted preflight for the five originals and five rescues
+  passed.
+- Originals: all five failed `limited_core_grid_test` with 0.0 profitable-combo
+  rate and zero benchmark-passing combinations.
+- Rescues: all five failed variants received exactly one
+  parameter-space/fixed-parameter rescue. The rescue preserved edge thesis,
+  entry module, setup mode, signal time, direction rule, data, costs, fills,
+  sessions, prop rules, and validation gates. All five rescues also failed
+  `limited_core_grid_test` with 0.0 profitable-combo rate.
+- Best rescue by top-row net was `up_day_rebalance_long_1500/rescue1`: top net
+  `-1522.50`, top PF `0.8378594249201278`, 142 top-combo trades, and
+  92.78322390692647 trades/year.
+- Aggregate artifacts:
+  `backtest-campaigns/es_leveraged_etf_rebalance_pressure/campaign_test_summary.json`,
+  `backtest-campaigns/es_leveraged_etf_rebalance_pressure/campaign_results.csv`,
+  `backtest-campaigns/es_leveraged_etf_rebalance_pressure/wfa_table.csv`,
+  `backtest-campaigns/es_leveraged_etf_rebalance_pressure/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_leveraged_etf_rebalance_pressure_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation,
+  frozen validation, or candidate reporting. No `candidate_strategy_report.md`
+  was created.
+
+
+## ES Chicago Fed CFNAI Activity Pullback - 2026-06-17
+
+- Added active non-duplicate campaign `es_chicagofed_cfnai_activity_pullback`
+  using local Sierra ES RTH 1-minute bars plus a local no-paid-data Chicago Fed
+  CFNAI feature cache.
+- Every variant YAML included a detailed pre-test mechanics review and
+  `pre_test_decision: approve_for_testing` before staged testing.
+- Density audit:
+  `research_artifacts/es_chicagofed_cfnai_activity_pullback_density_audit_20260617.md`;
+  all original and rescue parameter-space corners cleared 50 signals/year before
+  PnL testing.
+- Originals: all five variants failed `limited_core_grid_test`.
+  `headline_activity_weak_pullback_long_1100/run1` had the best original
+  profitable-combo rate at 0.4444. No original reached monkey.
+- Rescues: all five failed variants received exactly one
+  parameter-space-only rescue preserving the CFNAI availability rule, driver
+  column, long direction, entry time, entry module, stop module, target module,
+  data window, timeframe, costs, fill assumptions, and validation gates.
+- All five rescues failed `limited_core_grid_test`. Best rescue by
+  profitable-combo rate was `headline_activity_weak_pullback_long_1100/rescue1`
+  at 0.6049, below the required 0.70. Best top-combo net was
+  `production_income_weak_pullback_long_1100/rescue1` at 4712.5, but only
+  0.5432 of combinations were profitable.
+- Aggregate artifacts:
+  `backtest-campaigns/es_chicagofed_cfnai_activity_pullback/campaign_test_summary.json`,
+  `backtest-campaigns/es_chicagofed_cfnai_activity_pullback/campaign_results.csv`,
+  `backtest-campaigns/es_chicagofed_cfnai_activity_pullback/wfa_table.csv`,
+  `backtest-campaigns/es_chicagofed_cfnai_activity_pullback/trade_logs_manifest.csv`,
+  `backtest-campaigns/es_chicagofed_cfnai_activity_pullback/equity_curves_manifest.csv`,
+  and
+  `backtest-campaigns/es_chicagofed_cfnai_activity_pullback/monte_carlo_summary.json`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation,
+  frozen validation, or candidate reporting. No `candidate_strategy_report.md`
+  was created.
+- User priority update on 2026-06-17: next new campaigns should prioritize
+  local ES/MES price action and aggregated-orderflow mechanics over slow
+  macro-state filters unless explicitly redirected.
+
+
+## ES Sector-Rotation Risk-Appetite Intraday - 2026-06-17
+
+- Added active non-duplicate campaign `es_sector_rotation_risk_appetite`
+  using local Sierra ES RTH 1-minute bars plus no-cost public Yahoo chart daily
+  adjusted-close data for SPY and SPDR sector ETFs. No paid data was
+  downloaded.
+- Edge distinction: this campaign tests lagged cross-sector ETF rotation as an
+  equity risk-appetite state. It is not ES/NQ lead-lag or relative value,
+  broad-dollar/rates/volatility state, survey sentiment, BAB factor state, or
+  ES own-return momentum.
+- Feature construction: `tools/build_es_sector_rotation_features.py` wrote
+  `data/external/es_sector_rotation_features_20110103_20260609.csv` with 3,817
+  ES sessions and 3,817 valid rank rows. Every tradable sector feature uses the
+  latest ETF close available on or before `session_date - 1` business day.
+- Density audit:
+  `research_artifacts/es_sector_rotation_risk_appetite_density_audit_20260617.md`;
+  all five original threshold spaces cleared the 50 signals/year pre-PnL screen.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, and `README.md`.
+- Verification before staged runs:
+  `PYTHONPATH=src python3 -m pytest tests/test_sector_rotation_risk_appetite.py tests/test_strategy_modules.py tests/test_preflight.py -q`
+  passed 143 tests; targeted preflight for the five originals and five rescues
+  passed.
+- Originals: all five failed `limited_core_grid_test`. Four variants had zero
+  profitable combinations. Best original was `growth_lead_long_1030/run1` with
+  1/27 profitable combinations, top net `25.0`, top PF `1.00154012012937`, and
+  zero benchmark-passing combinations.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, setup mode, signal time,
+  direction rule, data, costs, fills, sessions, prop rules, and validation
+  gates. All five rescues also failed `limited_core_grid_test`.
+- Best rescues were `growth_lead_long_1030/rescue1` with 16/27 profitable
+  combinations, five benchmark-passing combinations, top net `4127.5`, top PF
+  `1.3940334128878282`, and `financial_industrial_lead_long_1330/rescue1` with
+  14/27 profitable combinations, three benchmark-passing combinations, top net
+  `2372.5`, top PF `1.312891526541378`. Both failed the 70% profitable-combo
+  stability gate.
+- Aggregate artifacts:
+  `backtest-campaigns/es_sector_rotation_risk_appetite/campaign_test_summary.json`,
+  `backtest-campaigns/es_sector_rotation_risk_appetite/campaign_results.csv`,
+  `backtest-campaigns/es_sector_rotation_risk_appetite/wfa_table.csv`,
+  `backtest-campaigns/es_sector_rotation_risk_appetite/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_sector_rotation_risk_appetite_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached monkey, WFA, WFA OOS monkey, Monte Carlo,
+  simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+
+## ES/MES Micro-Flow Divergence Data Refresh Retry - 2026-06-17
+
+- User confirmed MES data was in; retried
+  `es_mes_micro_flow_divergence_reversion` using local Sierra parquet only. No
+  paid data was downloaded.
+- Built MES active-contract RTH orderflow cache
+  `data/cache/orderflow/mes_sierra_trade_orderflow_1m_20190506_20260616_full_rth_ny.parquet`:
+  687,180 full-session RTH minute bars, 1,762 sessions, zero duplicate
+  timestamps, zero invalid OHLC rows, zero missing session segments, minimum
+  side-volume coverage 1.0; 74 sessions dropped by regular/full-session policy.
+- Built merged ES/MES completed-bar feature cache
+  `data/cache/orderflow/es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny.csv`:
+  685,230 aligned ES/MES minute bars, 1,757 sessions, first `2019-05-06
+  09:30:00`, last `2026-06-09 15:59:00`, zero duplicate timestamps, zero
+  invalid OHLC rows, zero zero-volume ES/MES rows.
+- Created data-refresh run configs under
+  `campaigns/es_mes_micro_flow_divergence_reversion/data_refresh_20260617/`.
+  The refresh configs changed only data path/dataset/run metadata and benchmark
+  window settings needed for the corrected methodology: WFA 48-month IS /
+  12-month OOS / 12-month step, simulated incubation 48/12, acceptance 24/6.
+  Entry mechanics, stop modules, target modules, parameter grids, costs,
+  slippage, tick size, point value, sessions, and flatten rules were unchanged
+  from the original and existing rescue configs.
+- Verification: targeted preflight passed for all ten refresh configs.
+  `PYTHONPATH=src python3 -m pytest tests/test_es_mes_flow_divergence.py -q`
+  passed after adding parquet-input support to the ES/MES merge builder.
+- The limited shortlist window resolved to `2021-07-13` through `2022-03-28`
+  for all refresh runs under the benchmark random 10% contiguous-window rule.
+- All five refreshed originals failed before WFA. Each failed original received
+  exactly one rerun of its existing parameter-space rescue config.
+- Terminal results: four original/rescue runs failed `limited_core_grid_test`;
+  six reached `limited_monkey_test` and failed the 90% random net-profit
+  beat-rate gate. The failing monkey net-profit beat rates were 0.83 to 0.86;
+  one run also failed the max-drawdown beat-rate gate at 0.8766666666666667.
+- Aggregate artifacts:
+  `backtest-campaigns/es_mes_micro_flow_divergence_reversion/campaign_test_summary.json`,
+  `backtest-campaigns/es_mes_micro_flow_divergence_reversion/campaign_results.csv`,
+  `backtest-campaigns/es_mes_micro_flow_divergence_reversion/wfa_table.csv`,
+  `backtest-campaigns/es_mes_micro_flow_divergence_reversion/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_mes_micro_flow_divergence_reversion_mes_data_refresh_20260617.md`.
+- Decision: FAIL. No refreshed original or rescue run reached WFA, WFA OOS
+  monkey, Monte Carlo, simulated incubation, frozen validation, or candidate
+  reporting. No `candidate_strategy_report.md` was created.
+
+## ES/MES Participation Crowding Reversion - 2026-06-17
+
+- Edge thesis: unusually high MES notional-equivalent or trade-count
+  participation during a completed ES move may proxy for smaller-contract
+  crowding and temporary ES price pressure. This is distinct from the failed
+  ES/MES micro-flow divergence campaign because it ignores MES signed imbalance
+  leadership and uses only relative participation intensity plus completed ES
+  return direction.
+- Data: local Sierra ES/MES aligned RTH 1-minute cache
+  `data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv`,
+  built from the refreshed ES/MES completed-bar cache; no paid data was
+  downloaded.
+- Density-only audit: `research_artifacts/es_mes_participation_crowding_density_audit_20260617.md`.
+  The five variants had enough expected trade density in at least part of their
+  declared grids before any PnL testing.
+- Exactly five variants were created under
+  `campaigns/es_mes_participation_crowding_reversion/variants/`, each with an
+  entry wrapper, stop wrapper, target wrapper, config, and README. Each variant
+  used two entry tunables, one stop tunable, and one target tunable for 81
+  declared combinations.
+- Verification before staged tests:
+  `PYTHONPATH=src python3 -m pytest tests/test_es_mes_participation.py tests/test_es_mes_flow_divergence.py -q`
+  passed, YAML parse passed for the campaign and five configs, and
+  `PYTHONPATH=src python3 -m research.preflight --skip-tests --config <five configs>`
+  passed.
+- Original result: all five variants failed `limited_core_grid_test`.
+- Rescue: each failed variant received exactly one parameter-space-only rescue
+  under
+  `campaigns/es_mes_participation_crowding_reversion/rescue_attempts/parameter_space_rescue_1/`.
+  Rescue configs passed YAML validation, focused tests, and targeted preflight.
+- Rescue result: three rescues failed `limited_core_grid_test`; two rescues
+  passed limited core but failed `limited_monkey_test`. The best rescue was
+  `morning_notional_down_reversal_long_1030/rescue1`, with profitable-combo
+  rate `0.8395061728395061`, but monkey net-profit beat rate
+  `0.8566666666666667` and max-drawdown beat rate `0.6833333333333333`, both
+  below the `0.90` limited monkey benchmark. The midday rescue had profitable
+  combo rate `0.8024691358024691` but failed monkey with net/drawdown beat
+  rates `0.79` and `0.8666666666666667`.
+- Final decision: FAIL. No run reached WFA, WFA OOS monkey, Monte Carlo,
+  simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+
+## ES USD/JPY Safe-Haven Spillover - 2026-06-17
+
+- Added active non-duplicate campaign `es_usdjpy_safe_haven_spillover` using the
+  local Sierra ES RTH 1-minute cache plus free FRED DEXJPUS USD/JPY daily data.
+  No paid data was downloaded.
+- Edge distinction: this campaign tests JPY-specific safe-haven/carry-unwind
+  state, not the active failed broad-dollar index risk-appetite campaign.
+- Feature construction: `tools/build_es_usdjpy_safe_haven_features.py` wrote
+  `data/external/es_usdjpy_safe_haven_features_20110103_20260609.csv` with
+  3817 rows and 3760 valid rank rows. Every tradable feature uses the latest
+  FRED DEXJPUS observation available no later than one business day before the
+  ES session.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, and `README.md`.
+- Verification before staged runs:
+  `PYTHONPATH=src python3 -m pytest tests/test_usdjpy_safe_haven.py tests/test_dollar_risk_appetite.py tests/test_campaign_stages.py -q`
+  passed 45 tests; targeted preflight for the five originals and five rescues
+  passed.
+- Originals: all five failed `limited_core_grid_test`. Best original was
+  `weak_yen_long_1200/run1`, top net `1207.50`, top PF `1.215625`, but only
+  0.25925925925925924 profitable-combo rate and zero benchmark-passing combos.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, setup mode, signal time,
+  direction rule, data, costs, fills, sessions, prop rules, and validation
+  gates. Four rescues failed `limited_core_grid_test`.
+- `weak_yen_long_1200/rescue1` passed limited core with 1.0 profitable-combo
+  rate and top PF `1.3466307277628031`, but failed `limited_monkey_test` because
+  core-vs-monkey net-profit beat rate was 0.8333333333333334, below the 0.9
+  gate.
+- Aggregate artifacts:
+  `backtest-campaigns/es_usdjpy_safe_haven_spillover/campaign_test_summary.json`,
+  `backtest-campaigns/es_usdjpy_safe_haven_spillover/campaign_results.csv`,
+  `backtest-campaigns/es_usdjpy_safe_haven_spillover/wfa_table.csv`,
+  `backtest-campaigns/es_usdjpy_safe_haven_spillover/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_usdjpy_safe_haven_spillover_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached WFA, WFA OOS monkey, Monte Carlo, simulated
+  incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+
+## ES Cboe VXN/VIX Dispersion Intraday - 2026-06-17
+
+- Added active non-duplicate campaign `es_cboe_vxn_vix_dispersion_intraday`
+  using the local Sierra ES RTH 1-minute cache plus free official Cboe VIX and
+  VXN daily histories. No paid data was downloaded.
+- Edge distinction: this campaign tests relative Nasdaq-versus-S&P option-implied
+  volatility dispersion through VXN/VIX and VXN-minus-VIX states. It is not a
+  rerun of standalone VIX level/change, VIX term structure, VVIX, SKEW, implied
+  SPX component correlation, variance risk premium, ES/NQ price lead-lag, or
+  realized-volatility state.
+- Feature construction:
+  `tools/build_es_cboe_vxn_vix_dispersion_features.py` wrote
+  `data/external/es_cboe_vxn_vix_dispersion_features_20110103_20260609.csv`
+  with 3817 rows and 3817 valid rank rows. Every tradable feature uses the
+  latest Cboe VIX and VXN closes strictly before the ES session date.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, and `README.md`.
+- Density audit:
+  `research_artifacts/es_cboe_vxn_vix_dispersion_density_audit_20260617.md`;
+  all original and rescue threshold grids cleared the rough 50 signals/year
+  density screen before fills.
+- Verification before staged runs:
+  `PYTHONPATH=src python3 -m pytest tests/test_cboe_vxn_vix_dispersion.py tests/test_cboe_vix_level_state.py tests/test_campaign_stages.py -q`
+  passed 48 tests; targeted preflight for the five originals and five rescues
+  passed.
+- Originals: all five failed `limited_core_grid_test`. Best original was
+  `falling_vxn_vix_ratio_long_1200/run1`, top net `1320.00`, top PF
+  `1.0866425992779782`, 136 trades, 88.69290276343247 trades/year, but only
+  0.1111111111111111 profitable-combo rate and one benchmark-passing combo.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, setup mode, signal time,
+  direction rule, data, costs, fills, sessions, prop rules, and validation
+  gates. All five rescues also failed `limited_core_grid_test`.
+- Best rescue was `falling_vxn_vix_ratio_long_1200/rescue1`, top net `2012.50`,
+  top PF `1.2277227722772277`, 85 trades, 55.63172506305864 trades/year, but
+  only 0.25925925925925924 profitable-combo rate and six benchmark-passing
+  combinations, below the 70% limited-core stability gate.
+- Aggregate artifacts:
+  `backtest-campaigns/es_cboe_vxn_vix_dispersion_intraday/campaign_test_summary.json`,
+  `backtest-campaigns/es_cboe_vxn_vix_dispersion_intraday/campaign_results.csv`,
+  `backtest-campaigns/es_cboe_vxn_vix_dispersion_intraday/wfa_table.csv`,
+  `backtest-campaigns/es_cboe_vxn_vix_dispersion_intraday/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_cboe_vxn_vix_dispersion_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation,
+  frozen validation, or candidate reporting. No `candidate_strategy_report.md`
+  was created.
+
+
+## ES Realized Sector Dispersion State - 2026-06-17
+
+- Added active non-duplicate campaign `es_sector_dispersion_state` using the
+  local Sierra ES RTH 1-minute cache plus the existing no-cost Yahoo sector ETF
+  adjusted-close cache. No paid data was downloaded.
+- Edge distinction: this campaign tests realized cross-sector ETF return
+  dispersion and dispersion changes. It is not directional sector leadership,
+  option-implied correlation, VXN/VIX implied-volatility dispersion, rates or
+  dollar state, ES own-return state, or realized ES volatility-of-volatility.
+- Feature construction:
+  `tools/build_es_sector_dispersion_features.py` wrote
+  `data/external/es_sector_dispersion_features_20110103_20260609.csv` with
+  3817 rows and 3817 valid rank rows. Every tradable feature uses sector ETF
+  closes available on or before session date minus one business day.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, and `README.md`.
+- Density audit:
+  `research_artifacts/es_sector_dispersion_state_density_audit_20260617.md`;
+  all five original threshold grids cleared the rough 50 signals/year density
+  screen before fills.
+- Verification before staged runs:
+  `PYTHONPATH=src python3 -m pytest tests/test_sector_dispersion_state.py tests/test_strategy_modules.py tests/test_preflight.py -q`
+  passed 143 tests; targeted preflight for the five originals and five rescues
+  passed.
+- Originals: all five failed `limited_core_grid_test`. Four originals had a
+  0.0 profitable-combo rate; `falling_5d_dispersion_long_1330/run1` had
+  0.07407407407407407 profitable-combo rate and zero benchmark-passing
+  combinations.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, setup mode, signal time,
+  direction rule, data, costs, fills, sessions, prop rules, and validation
+  gates. All five rescues also failed `limited_core_grid_test`.
+- Best rescue was `rising_1d_dispersion_short_1130/rescue1`, top net `1945.00`,
+  top PF `1.1158600148920328`, 111 trades, 72.37936784423603 trades/year, but
+  only 0.25925925925925924 profitable-combo rate and zero benchmark-passing
+  combinations, below the 70% limited-core stability gate.
+- Aggregate artifacts:
+  `backtest-campaigns/es_sector_dispersion_state/campaign_test_summary.json`,
+  `backtest-campaigns/es_sector_dispersion_state/campaign_results.csv`,
+  `backtest-campaigns/es_sector_dispersion_state/wfa_table.csv`,
+  `backtest-campaigns/es_sector_dispersion_state/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_sector_dispersion_state_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation,
+  frozen validation, or candidate reporting. No `candidate_strategy_report.md`
+  was created.
+
+
+## ES Opening Range Orderflow Breakout - 2026-06-17
+
+- Added active price-action plus aggregate-orderflow campaign
+  `es_opening_range_orderflow_breakout` using only the local Sierra ES RTH
+  1-minute orderflow cache. No paid data was downloaded.
+- Edge distinction: this campaign tests completed opening-range breakout
+  continuation confirmed by same-bar aggregate orderflow. It is not the prior
+  NR4/NR7 range-compression breakout campaign, not the opening-drive inventory
+  absorption campaign, and not standalone signed-flow persistence.
+- Added entry module
+  `src/propstack/strategy_modules/entry/opening_range_orderflow_breakout.py`
+  plus registration and engine feature-column checks. Signals use completed
+  opening-range levels and completed 5-minute confirmation bars; engine entry
+  remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `or15_signed_flow_breakout_1030`, `or30_signed_flow_breakout_1100`,
+  `or15_large10_flow_breakout_1030`, `or30_large20_flow_breakout_1100`, and
+  `or60_signed_flow_breakout_1200`.
+- Density audit:
+  `research_artifacts/es_opening_range_orderflow_breakout_density_audit_20260617.md`;
+  every declared entry corner exceeded 50 signals/year, and the strictest
+  entry corner remained above 50/year even with the tightest declared 16-point
+  OR-edge stop cap.
+- Verification before staged runs:
+  `PYTHONPATH=src python3 -m pytest tests/test_opening_range_orderflow_breakout.py tests/test_strategy.py tests/test_data_pipeline.py tests/test_campaign_stages.py tests/test_preflight.py -q`
+  passed 68 tests; targeted preflight for the five originals and five rescues
+  passed.
+- Originals: all five failed `limited_core_grid_test`. Four originals had a
+  0.0 profitable-combo rate. The best original was
+  `or60_signed_flow_breakout_1200/run1` with 0.07407407407407407 profitable
+  combinations; its top row made `267.50`, PF `1.0201127819548872`, 94 trades,
+  and 61.52153056462903 trades/year, but failed concentration and expectancy
+  quality.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, stop module, target module,
+  timeframe, data, costs, fills, sessions, prop rules, and validation gates.
+  The rescue tested smaller breakout buffers, lower flow thresholds, and
+  smaller fixed-R targets; all five rescues failed `limited_core_grid_test`
+  with 0.0 profitable-combo rate.
+- Aggregate artifacts:
+  `backtest-campaigns/es_opening_range_orderflow_breakout/campaign_test_summary.json`,
+  `backtest-campaigns/es_opening_range_orderflow_breakout/campaign_results.csv`,
+  `backtest-campaigns/es_opening_range_orderflow_breakout/wfa_table.csv`,
+  `backtest-campaigns/es_opening_range_orderflow_breakout/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_opening_range_orderflow_breakout_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation,
+  frozen validation, or candidate reporting. No `candidate_strategy_report.md`
+  was created.

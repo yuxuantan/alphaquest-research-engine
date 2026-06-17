@@ -600,3 +600,342 @@ different thesis approved before testing.
 Current verified active sweep: 35 campaigns, 175 source variants, 175 rescue
 configs, 368 raw variant-level reports, 0 passes, and no active variants
 missing any original run or `rescue1`.
+
+## 2026-06-16 Realized Skewness Reversal Campaign
+
+Added `es_realized_skewness_reversal` as a local active-only non-duplicate
+campaign. The edge tests whether lagged ES intraday realized skewness can act
+as a dense third-moment state variable: low skewness should earn subsequent ES
+compensation and high skewness should underperform. It uses only local ES Sierra
+RTH bars and a feature cache shifted by one completed RTH session.
+
+Outcome: FAIL. All five originals failed `limited_core_grid_test`. Each failed
+variant received exactly one parameter-space/fixed-parameter rescue, and all
+five rescues also failed `limited_core_grid_test`. Best original was
+`high_1d_skew_open_short_1000/run1` with `0.037037037037037035`
+profitable-combo rate, zero benchmark-passing combinations, top net `112.5`,
+PF `1.0221021611001964`, and `80` top-combo trades. Best rescue was
+`high_1d_skew_open_short_1000/rescue1` with `0.07407407407407407`
+profitable-combo rate, zero benchmark-passing combinations, top net `365.0`,
+PF `1.0882175226586104`, and `67` top-combo trades. No run reached monkey,
+WFA, Monte Carlo, simulated incubation, or frozen validation.
+
+This lagged realized-skewness edge is now an active failed family and should not
+be relaunched under a new active campaign name without a materially different
+thesis approved before testing.
+
+Current verified active sweep: 36 campaigns, 180 source variants, 180 rescue
+configs, 378 raw variant-level reports, 0 passes, and no active variants
+missing any original run or `rescue1`.
+
+## 2026-06-16 Variance Risk Premium Intraday Campaign
+
+Added `es_variance_risk_premium_intraday` as a local-plus-free-public-data
+active-only non-duplicate campaign. The edge tests whether lagged VIX-implied
+variance minus ES realized variance can condition same-day ES intraday returns.
+It uses free Cboe VIX daily history and local ES Sierra RTH bars, with every
+tradable VRP feature shifted one completed RTH session.
+
+Outcome: FAIL. All five originals failed `limited_core_grid_test`. Each failed
+variant received exactly one parameter-space/fixed-parameter rescue, and all
+five rescues also failed `limited_core_grid_test`. Best original was
+`low_vrp_open_short_1000/run1` with `0.1111111111111111` profitable-combo
+rate, zero benchmark-passing combinations, top net `877.5`, PF
+`1.2184194150591163`, and only `52` top-combo trades with
+`45.437723555084474` trades/year. Best rescue was
+`high_vrp_low_realized_midmorning_long_1030/rescue1` with
+`0.12345679012345678` profitable-combo rate, zero benchmark-passing
+combinations, top net `1220.0`, PF `1.3388888888888888`, and only `36`
+top-combo trades. No run reached monkey, WFA, Monte Carlo, simulated
+incubation, or frozen validation.
+
+This variance-risk-premium intraday edge is now an active failed family and
+should not be relaunched under a new active campaign name without a materially
+different thesis approved before testing.
+
+Current verified active sweep: 37 campaigns, 185 source variants, 185 rescue
+configs, 388 raw variant-level reports, 0 passes, and no active variants
+missing any original run or `rescue1`.
+
+
+## 2026-06-16 Realized Jump Variation Premium Continuation
+
+Added and completed `es_realized_jump_variation_premium` as a local-only dense
+campaign using prior-session realized jump variation separated from continuous
+variation by bipower variation. The campaign used exactly five variants and one
+parameter-space/fixed-parameter rescue per failed variant. All ten runs failed
+`limited_core_grid_test`; no run reached monkey, WFA, Monte Carlo, simulated
+incubation, or frozen validation.
+
+Verification after this campaign: 38 active campaigns, 190 source variants, 190
+rescue configs, 398 raw variant-level reports, 0 passes, 0 active variants
+missing an original run, and 0 active variants missing `rescue1`.
+
+## 2026-06-16 EPU Policy Uncertainty Intraday Continuation
+
+Added and completed `es_epu_policy_uncertainty_intraday` as a free-public-data
+dense campaign using Daily U.S. Economic Policy Uncertainty observations lagged
+by 30 calendar days to avoid recent-revision leakage. The campaign used exactly
+five variants and one parameter-space rescue per failed variant. All ten runs
+failed `limited_core_grid_test`; no run reached monkey, WFA, Monte Carlo,
+simulated incubation, or frozen validation.
+
+Best original: `low_epu_long_1030/run1`, profitable-combo rate
+`0.1111111111111111`, zero benchmark-passing combinations, top net `922.5`,
+and top PF `1.0687406855439643`.
+
+Best rescue: `low_epu_long_1030/rescue1`, profitable-combo rate
+`0.4074074074074074`, zero benchmark-passing combinations, top net `2170.625`,
+and top PF `1.1913709499669385`.
+
+This lagged EPU edge is now an active failed family and should not be
+relaunched under a new active campaign name without a materially different
+thesis approved before testing.
+
+Current verified active sweep: 42 campaigns, 210 source variants, 210 rescue
+configs, 438 raw variant-level reports, 0 aggregate passes, and no EPU variants
+missing any original run or `rescue1`.
+
+## 2026-06-16 Consumer Sentiment State Intraday Continuation
+
+Added and completed `es_consumer_sentiment_state_intraday` as a free-public-data
+dense campaign using University of Michigan `UMCSENT` observations from FRED
+lagged by 45 calendar days. The campaign used exactly five variants and one
+parameter-space rescue per failed variant. All ten runs failed
+`limited_core_grid_test`; no run reached monkey, WFA, Monte Carlo, simulated
+incubation, or frozen validation.
+
+Best original: `falling_sentiment_short_1200/run1`, profitable-combo rate
+`0.0`, zero benchmark-passing combinations, top net `-507.5`, and top PF
+`0.9586136595310907`.
+
+Best rescue: `high_sentiment_short_1030/rescue1`, profitable-combo rate
+`0.07407407407407407`, zero benchmark-passing combinations, top net `140.0`,
+top PF `1.1454545454545455`, and only `12` top-combo trades.
+
+This lagged consumer-sentiment edge is now an active failed family and should
+not be relaunched under a new active campaign name without a materially
+different thesis approved before testing.
+
+Current verified active sweep: 43 campaigns, 215 source variants, 215 rescue
+configs, 448 raw variant-level reports, 0 aggregate passes, and no
+consumer-sentiment variants missing any original run or `rescue1`.
+
+## 2026-06-16 Cboe Put/Call Sentiment Intraday Continuation
+
+Added and completed `es_cboe_put_call_sentiment_intraday` as a free-public-data
+dense campaign using Cboe equity/index/total put-call ratio observations with a
+strict prior-Cboe-date availability rule. The campaign used exactly five
+variants and one parameter-space rescue per failed variant.
+
+All five originals failed `limited_core_grid_test`. Three rescues failed
+`limited_core_grid_test`; two rescues passed core but failed
+`limited_monkey_test`. `falling_total_pc_long_1130/rescue1` had core
+profitable-combo rate `1.0` but random-monkey profitable rate
+`0.19666666666666666` and median net `-2727.5`.
+`high_total_vs_equity_pc_short_1330/rescue1` had core profitable-combo rate
+`0.8888888888888888` but random-monkey profitable rate
+`0.06666666666666667`, median net `-3923.75`, and failed one-tick-worse stress.
+
+This lagged Cboe put/call option-volume sentiment edge is now an active failed
+family and should not be relaunched under a new active campaign name without a
+materially different thesis approved before testing.
+
+Current verified active sweep: 44 campaigns, 220 source variants, 220 rescue
+configs, 458 raw variant-level reports, 0 aggregate passes, and no Cboe
+put/call variants missing any original run or `rescue1`.
+
+## 2026-06-17 Oil Price Shock Spillover Continuation
+
+Added and completed `es_oil_price_shock_spillover` as a free-public-data dense
+campaign using EIA WTI and Brent daily spot prices with a conservative
+two-business-day availability lag. The campaign used exactly five variants and
+one parameter-space rescue per failed variant.
+
+All five originals failed `limited_core_grid_test`. Four rescues failed
+`limited_core_grid_test`; `wti_up_risk_off_short_1030/rescue1` passed core but
+failed `limited_monkey_test`. Its core profitable-combo rate was
+`0.7777777777777778`, but random-monkey profitable rate was `0.17`, median net
+was `-3905.0`, trade-path stress profitable rate was
+`0.15666666666666668`, and one-tick-worse stress was not profitable.
+
+This lagged crude-oil price shock spillover edge is now an active failed family
+and should not be relaunched under a new active campaign name without a
+materially different thesis approved before testing.
+
+## 2026-06-17 Dollar Risk-Appetite Intraday Continuation
+
+Added and completed `es_dollar_risk_appetite_intraday` as a free-public-data
+dense campaign using the FRED DTWEXBGS nominal broad dollar index with a
+one-business-day availability lag. The campaign used exactly five variants and
+one parameter-space rescue per failed variant.
+
+All five originals failed `limited_core_grid_test`. All five rescues also
+failed `limited_core_grid_test`. Every original and rescue had zero profitable
+parameter combinations and zero benchmark-passing combinations. No run reached
+monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen
+validation, or candidate reporting.
+
+Best original: `high_dollar_up_short_1130/run1`, profitable-combo rate `0.0`,
+zero benchmark-passing combinations, top net `-295.0`, top PF
+`0.9749362786745964`, and top trades/year `97.42306547025902`.
+
+Best rescue: `dollar_down_risk_on_long_1030/rescue1`, profitable-combo rate
+`0.0`, zero benchmark-passing combinations, top net `-1880.625`, top PF
+`0.7975100942126514`, and top trades/year `95.3468700502826`.
+
+This lagged broad-dollar risk-appetite edge is now an active failed family and
+should not be relaunched under a new active campaign name without a materially
+different thesis approved before testing.
+
+Current verified active sweep: 46 campaigns, 230 source variants, 230 rescue
+configs, 478 raw variant-level reports, 0 aggregate passes, and no active
+variants missing any original run or `rescue1`.
+
+## 2026-06-17 Trade-Size Segmented Stealth Orderflow Continuation
+
+Added and completed `es_trade_size_stealth_orderflow` as a local-only dense
+campaign using the Sierra ES RTH aggregate orderflow cache. The campaign used
+exactly five variants and one parameter-space rescue per failed variant.
+
+All five originals failed `limited_core_grid_test`. All five rescues also
+failed `limited_core_grid_test`. No run reached monkey, WFA, WFA OOS monkey,
+Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+
+Best original: `large20_loose_short_1030/run1`, profitable-combo rate
+`0.5061728395061729`, zero benchmark-passing combinations, top net `1920.0`,
+top PF `1.3251481795088909`, and top trades/year `70.13809247799352`.
+
+Best rescue: `large20_loose_short_1030/rescue1`, profitable-combo rate
+`0.19753086419753085`, zero benchmark-passing combinations, top net `1670.0`,
+top PF `1.2616529573051312`, and top trades/year `73.6102752739338`.
+
+This trade-size segmented stealth-orderflow edge is now an active failed family
+and should not be relaunched under a new active campaign name without a
+materially different thesis approved before testing.
+
+Current verified active sweep: 47 campaigns, 235 source variants, 235 rescue
+configs, 488 raw variant-level reports, 0 aggregate passes, and no active
+variants missing any original run or `rescue1`.
+
+## 2026-06-17 Trade Fragmentation Liquidity Reversion Continuation
+
+Added and completed `es_trade_fragmentation_liquidity_reversion` as a local-only
+dense campaign using the Sierra ES RTH aggregate trade-orderflow cache. The
+campaign used exactly five variants and one parameter-space rescue per failed
+variant.
+
+All five originals failed `limited_core_grid_test`. All five rescues also
+failed `limited_core_grid_test`. Every original and rescue had zero profitable
+parameter combinations and zero benchmark-passing combinations. No run reached
+monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen
+validation, or candidate reporting.
+
+Best original: `morning_15m_fragmented_up_fade_short/run1`, profitable-combo
+rate `0.0`, zero benchmark-passing combinations, top net `-1984.375`, top PF
+`0.7422052614485223`, and top trades/year `73.89549742423229`.
+
+Best rescue: `midday_30m_fragmented_down_fade_long/rescue1`,
+profitable-combo rate `0.0`, zero benchmark-passing combinations, top net
+`-3803.75`, top PF `0.45854092526690393`, and top trades/year
+`116.4337866857552`.
+
+This trade-fragmentation liquidity-state reversion edge is now an active failed
+family and should not be relaunched under a new active campaign name without a
+materially different thesis approved before testing.
+
+Current verified active sweep: 48 campaigns, 240 source variants, 240 rescue
+configs, 498 raw variant-level reports, 48 aggregate reports, 0 aggregate or
+variant passes, 0 bad JSON files, and no active variants missing any original
+run or `rescue1`.
+
+## 2026-06-17 Realized Semivariance Asymmetry Continuation
+
+Added and completed `es_realized_semivariance_asymmetry` as a local-only dense
+campaign using lagged downside/upside realized-semivariance features built from
+the Sierra ES RTH aggregate cache. The campaign used exactly five variants and
+one parameter-space rescue per failed variant.
+
+All five originals failed `limited_core_grid_test`. All five rescues were run.
+Four rescues failed `limited_core_grid_test`. The strongest rescue,
+`high_1d_badvol_continuation_short_1030/rescue1`, passed core and limited
+monkey, then failed `walk_forward_analysis`.
+
+WFA failure evidence for `high_1d_badvol_continuation_short_1030/rescue1`:
+`early_exit=true`, stitched OOS net `-9625.0`, PF `0.6356926570779712`, MAR
+`-0.7825314922408811`, trades/year `119.6389788870296`, and expectancy R
+`-0.24698221123551944`.
+
+Best original: `high_1d_badvol_continuation_short_1030/run1`,
+profitable-combo rate `0.2222222222222222`, zero benchmark-passing
+combinations, top net `2302.5`, top PF `1.1168336927565647`, and top
+trades/year `109.55528834774047`.
+
+Best rescue: `high_1d_badvol_continuation_short_1030/rescue1`,
+profitable-combo rate `0.7407407407407407`, three benchmark-passing
+combinations, top net `5526.25`, top PF `1.3376355582709638`, and top
+trades/year `92.12618330379841`, but rejected by WFA.
+
+This lagged realized-semivariance asymmetry edge is now an active failed family
+and should not be relaunched under a new active campaign name without a
+materially different thesis approved before testing.
+
+Current verified active sweep: 49 campaigns, 245 source variants, 245 rescue
+configs, 508 raw variant-level reports, 49 aggregate reports, 0 aggregate or
+variant passes, 0 bad JSON files, and no active variants missing any original
+run or `rescue1`.
+
+
+## 2026-06-17 Amihud Illiquidity Price Impact Continuation
+
+Added and completed `es_amihud_illiquidity_price_impact` as a local-only dense
+campaign using lagged Amihud-style daily price-impact features built from the
+Sierra ES RTH aggregate cache. The campaign used exactly five variants and one
+parameter-space rescue per failed variant. No paid data was downloaded.
+
+All five originals failed `limited_core_grid_test`. All five one-time rescues
+were run and also failed `limited_core_grid_test`. No run reached monkey, WFA,
+WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or
+candidate reporting.
+
+Best original: `high_1d_illiq_stress_short_1030/run1`, profitable-combo rate
+`0.14814814814814814`, zero benchmark-passing combinations, top net `2115.0`,
+top PF `1.1749741468459152`, and top trades/year `72.68587440313372`.
+
+Best rescue: `high_1d_illiq_premium_long_1000/rescue1`, profitable-combo rate
+`0.1111111111111111`, zero benchmark-passing combinations, top net `1663.75`,
+top PF `1.1705972827480133`, and top trades/year `59.309218833133485`.
+
+This lagged Amihud illiquidity price-impact edge is now an active failed family
+and should not be relaunched under a new active campaign name without a
+materially different thesis approved before testing.
+
+
+## ES realized volatility-of-volatility state campaign - 2026-06-17
+
+- Added local feature builder `tools/build_es_realized_vol_of_vol_features.py`; output `data/external/es_realized_vol_of_vol_features_20110103_20260609.csv` contains 3,817 sessions and 3,740 valid rolling-rank rows. All tradable fields are shifted one completed RTH session.
+- Added entry module `realized_vol_of_vol_state` with RTH-only requirement and focused tests in `tests/test_realized_vol_of_vol_state.py`.
+- Preflight: `python3 -m research.preflight --skip-tests --config <all 10 es_realized_vol_of_vol_state configs>` PASS.
+- Staged tests: all five originals failed `limited_core_grid_test`; all five parameter-space-only rescues also failed `limited_core_grid_test`.
+- Aggregate report: `backtest-campaigns/es_realized_vol_of_vol_state/campaign_test_summary.json`.
+- Final decision: FAIL. No candidate strategy report was created.
+
+
+## ES round-number barrier reaction campaign - 2026-06-17
+
+- Added entry module `round_number_barrier` with RTH-only requirement and focused tests in `tests/test_round_number_barrier.py`.
+- Source campaign: `campaigns/es_round_number_barrier_reaction/campaign.yaml`.
+- Density gate: `research_artifacts/es_round_number_barrier_reaction_density_audit_20260617.md`; final declared original/rescue grids have minimum pre-test density of 61.3 signals/year.
+- Preflight: `python3 -m research.preflight --skip-tests --config <all 10 es_round_number_barrier_reaction configs>` PASS.
+- Staged tests: all five originals failed `limited_core_grid_test`; all five parameter-space-only rescues also failed `limited_core_grid_test`.
+- Aggregate report: `backtest-campaigns/es_round_number_barrier_reaction/campaign_test_summary.json`.
+- Final decision: FAIL. No candidate strategy report was created.
+
+
+## ES AQR BAB Factor State Campaign - 2026-06-17
+
+- Added free-public-data campaign `es_aqr_bab_factor_state` using AQR Betting Against Beta daily U.S. factor returns with a conservative 45-calendar-day publication lag. No paid data was downloaded.
+- Source data: local Sierra ES RTH cache plus `data/external/aqr_bab_equity_factors_daily.xlsx`; feature output `data/external/es_aqr_bab_features_20110103_20260609.csv` has 3,817 ES sessions and uses AQR observations through 2026-03-31 for the latest 2026-06-09 ES session.
+- Preflight: originals and rescues passed. Focused tests: `python3 -m pytest tests/test_aqr_bab_factor_state.py tests/test_campaign_stages.py tests/test_monkey.py tests/test_core_grid.py -q` PASS with 50 tests.
+- Staged tests: all five originals failed `limited_core_grid_test`; all five failed variants received exactly one parameter-space-only rescue. Four rescues failed `limited_core_grid_test`. `low_bab_z63_rebound_long_1100/rescue1` passed core and limited monkey, then failed `walk_forward_analysis` by early exit on window 2 because selected IS PF was `0.99 < 1.00`; stitched OOS PF was `0.8619637937819756`, MAR `-0.3811286271107167`, and trades/year `71.7246404539663`.
+- Final decision: FAIL. No run reached WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.

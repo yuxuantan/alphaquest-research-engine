@@ -1,0 +1,1 @@
+from propstack.strategy_modules.entry.consumer_sentiment_state import ConsumerSentimentStateEntry

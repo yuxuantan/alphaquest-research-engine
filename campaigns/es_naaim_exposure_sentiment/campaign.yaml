@@ -1,0 +1,179 @@
+campaign_id: es_naaim_exposure_sentiment
+title: ES NAAIM Active-Manager Exposure Sentiment
+decision: TEST
+created_at: "2026-06-17"
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: >
+  Public NAAIM Exposure Index observations proxy active equity risk-manager
+  positioning. High exposure may indicate crowded optimism and lower subsequent
+  intraday ES returns, while low or falling exposure may indicate under-positioning
+  or fear that can support contrarian ES rebounds.
+rationale: >
+  This campaign tests active-manager equity-exposure sentiment, not consumer
+  confidence, Cboe option put/call volume, margin leverage, implied volatility,
+  or local ES price/action. Each variant trades one weekly ES RTH signal only
+  after a conservative two-business-day availability lag.
+sources:
+  - title: Investor Sentiment and the Cross-Section of Stock Returns
+    authors: Malcolm Baker and Jeffrey Wurgler
+    year: 2006
+    venue: Journal of Finance 61(4), 1645-1680
+    link: https://doi.org/10.1111/j.1540-6261.2006.00885.x
+    relevance: Documents that sentiment proxies can forecast subsequent equity
+      returns in hard-to-arbitrage segments, motivating a predeclared ES test of
+      a public sentiment/positioning proxy.
+  - title: Investor Sentiment and Asset Valuation
+    authors: Gregory W. Brown and Michael T. Cliff
+    year: 2005
+    venue: Journal of Business 78(2), 405-440
+    link: https://econpapers.repec.org/RePEc:ucp:jnlbus:v:78:y:2005:i:2:p:405-440
+    relevance: Provides survey-based evidence that high sentiment is associated
+      with valuation errors and weaker later returns, supporting the contrarian
+      direction tested here.
+  - title: NAAIM Exposure Index
+    authors: National Association of Active Investment Managers
+    year: 2026
+    venue: Public NAAIM workbook
+    link: https://naaim.org/programs/naaim-exposure-index/
+    relevance: Official source for weekly active-manager equity exposure survey
+      values used in the feature file.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - public NAAIM Exposure Index workbook
+  - derived session feature file using only NAAIM observations available at least
+    two business days before the ES signal session
+  - same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+  - NAAIM is a weekly survey and may reflect member composition, response timing,
+    and survey noise.
+  - The historical workbook is not a point-in-time vintage archive; this campaign
+    uses a conservative availability lag but cannot prove that historical rows
+    were never revised.
+  - NAAIM notes commercial use requires permission; this repo use is internal
+    research only and does not imply live/commercial use rights.
+  - Sierra data is completed bar-level aggregate data, not tick-path data.
+  - Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+  - Using the same Wednesday NAAIM value before it is reported would leak survey
+    data; this campaign forbids it.
+  - Signals use only a completed ES bar at the configured timestamp plus the
+    NAAIM observation whose availability date is at least two business days old.
+  - Rolling ranks and z-scores are computed on NAAIM observations up to and
+    including the available observation, never future observations.
+  - No final session high/low, final VWAP, future return, or post-entry NAAIM
+    observation is used.
+failure_modes:
+  - Active-manager exposure may be coincident with trend rather than contrarian.
+  - Weekly signal density is barely above 50/year, leaving little room for filters.
+  - Broad sentiment literature may not transfer to intraday ES futures.
+  - Survey revisions or data-rights ambiguity may require manual rejection even
+    if the backtest passes.
+  - The edge may need multi-day holding periods, which this intraday campaign
+    forbids.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_consumer_sentiment_state_intraday
+    - es_cboe_put_call_sentiment_intraday
+    - es_finra_margin_leverage
+    - es_cboe_vix_level_state_intraday
+    - es_vvix_tail_risk_intraday
+    - es_ofr_financial_stress_intraday
+    - es_aqr_bab_factor_state
+    - es_dollar_risk_appetite_intraday
+  conclusion: >
+    Not a duplicate of active failed campaigns. This tests weekly active-manager
+    equity-exposure positioning from NAAIM, not monthly consumer sentiment,
+    option-volume put/call sentiment, margin leverage, volatility/tail-risk
+    states, financial stress, factor state, or FX risk appetite.
+feature_construction:
+  builder: tools/build_es_naaim_exposure_features.py
+  naaim_source: https://naaim.org/programs/naaim-exposure-index/
+  naaim_cache: data/external/naaim_exposure_index_20260610.xlsx
+  output: data/external/es_naaim_exposure_features_20110103_20260609.csv
+  rows: 805
+  first_signal_session: "2011-01-03"
+  last_signal_session: "2026-06-05"
+  annualized_signal_rate: 52.21
+  lookahead_control: first ES RTH session at least two business days after NAAIM observation_date
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  latest_variant_flatten: "15:55:00"
+parameter_space:
+  entry: fixed per variant
+  stop_pct: [0.0015, 0.0025, 0.004]
+  target_r_multiple: [1.0, 1.5, 2.0]
+  combinations_per_variant: 9
+variants:
+  - level_median_contrarian_1000
+  - level_rank_contrarian_1030
+  - weekly_change_contrarian_1130
+  - zscore_sign_contrarian_1200
+  - ma_distance_contrarian_1400
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space only
+  forbidden_changes:
+    - core strategy mechanic
+    - NAAIM two-business-day availability rule
+    - setup mode
+    - entry time
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - attempt_id: parameter_space_rescue_1
+      date: "2026-06-17"
+      scope: per_failed_variant
+      status: completed_failed
+      changed_only:
+        - sl.params.stop_pct parameter spaces
+        - tp.params.target_r_multiple parameter spaces
+      unchanged:
+        - edge thesis
+        - entry module naaim_exposure_sentiment
+        - setup mode per variant
+        - entry time per variant
+        - NAAIM two-business-day availability rule
+        - data source and data window
+        - costs and fill assumptions
+        - validation gates
+        - prop rules
+      decision: FAIL
+      result: >
+        All five rescue variants failed limited_core_grid_test. Best rescue by
+        top net was ma_distance_contrarian_1400/rescue1 with profitable-combo
+        rate 0.0, top net -1525.0, top PF 0.6351674641148325, and 80
+        top-combo trades.
+outcome:
+  completed_at: "2026-06-17"
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  frozen_validation_reached: 0
+  summary: >
+    All five original NAAIM active-manager exposure sentiment variants failed
+    limited_core_grid_test with zero profitable combinations. Each failed
+    variant received exactly one stop/target parameter-space rescue preserving
+    the same NAAIM mechanic, setup mode, signal time, two-business-day
+    availability rule, data, costs, sessions, and gates. All five rescues also
+    failed limited_core_grid_test. No run reached monkey, WFA, WFA OOS monkey,
+    Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  aggregate_report: backtest-campaigns/es_naaim_exposure_sentiment/campaign_test_summary.json

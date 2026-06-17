@@ -1,0 +1,220 @@
+campaign_id: es_cboe_put_call_sentiment_intraday
+title: ES Cboe Put/Call Sentiment Intraday
+decision: FAIL
+created_at: "2026-06-16"
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged public Cboe put/call volume imbalance can proxy option-market
+  directional demand or sentiment pressure that may spill into same-day ES RTH
+  returns after the cash open.
+rationale: This campaign tests option-volume imbalance from completed prior Cboe
+  sessions. It is not an implied-volatility/variance-risk-premium campaign, not
+  VVIX volatility-of-volatility, not VIX settlement calendar pressure, not
+  consumer survey sentiment, and not an ES price/action pattern.
+sources:
+  - title: The Information in Option Volume for Future Stock Prices
+    authors: Jun Pan and Allen M. Poteshman
+    year: 2006
+    venue: Review of Financial Studies 19(3), 871-908
+    link: https://doi.org/10.1093/rfs/hhj024
+    relevance: Shows option volume put/call measures contain information about
+      future equity returns, motivating a predeclared test of aggregate Cboe
+      put/call imbalance as an ES directional state.
+  - title: Cboe Equity Volume and Put/Call Ratios
+    authors: Cboe Global Markets
+    year: 2026
+    venue: Official Cboe CSV
+    link: https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv
+    relevance: Free public daily equity-option volume and put/call ratio source.
+  - title: Cboe Index Volume and Put/Call Ratios Archive
+    authors: Cboe Global Markets
+    year: 2026
+    venue: Official Cboe CSV
+    link: https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/indexpcarchive.csv
+    relevance: Free public daily index-option volume and put/call ratio source.
+  - title: Cboe Total Volume and Put/Call Ratios
+    authors: Cboe Global Markets
+    year: 2026
+    venue: Official Cboe CSV
+    link: https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/totalpc.csv
+    relevance: Free public daily total Cboe option volume and put/call ratio source.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - free public Cboe equity/index/total put-call ratio CSVs
+  - derived session feature file using only Cboe observations strictly before the ES session date
+  - same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+  - Cboe states the volume and put/call ratio data is provided for convenience
+    and may use preliminary volume.
+  - Equity volume methodology changed in 2012 when exchange-traded products were
+    excluded from equity option products.
+  - Cboe put/call ratios are completed daily summaries, not intraday option-flow
+    observations.
+  - Sierra data is aggregated bar-level data, not tick-path data.
+  - Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+  - Using same-day Cboe put/call volume would leak unavailable end-of-day data;
+    this campaign forbids it.
+  - Signals use only a completed ES bar at the configured timestamp plus lagged
+    Cboe daily ratios from strictly prior Cboe trade dates.
+  - Rolling ranks are computed over lagged session features only.
+  - No final session high/low, final VWAP, future returns, or post-entry option
+    volume is used.
+failure_modes:
+  - Single-name option-volume predictability may not transfer to aggregate ES
+    futures returns.
+  - Public put/call ratios may be too noisy versus buyer-initiated open-buy
+    option volume used in the source paper.
+  - Aggregate put/call extremes may behave contrarian in some regimes and
+    directional in others, failing parameter stability.
+  - Cboe methodology changes and preliminary-volume caveats may make results
+    fragile or unsuitable for promotion.
+  - The edge may require overnight exposure, which this intraday campaign forbids.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_variance_risk_premium_intraday
+    - es_vvix_tail_risk_intraday
+    - es_vix_expiration_pressure
+    - es_consumer_sentiment_state_intraday
+    - es_epu_policy_uncertainty_intraday
+    - es_ofr_financial_stress_intraday
+    - es_market_plumbing_liquidity_capacity
+    - es_realized_skewness_reversal
+    - es_realized_jump_variation_premium
+  conclusion: Not a duplicate of active failed campaigns. This tests lagged
+    Cboe option volume put/call imbalance, not option-implied variance, VVIX,
+    deterministic VIX settlement dates, macro/survey sentiment, systemic stress,
+    dealer-lending/VX OI plumbing proxies, or realized higher moments.
+feature_construction:
+  builder: tools/build_es_cboe_put_call_features.py
+  equity_source: https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv
+  index_source: https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/indexpcarchive.csv
+  total_source: https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/totalpc.csv
+  equity_cache: data/external/cboe_equity_put_call_ratio_2006_2026.csv
+  index_cache: data/external/cboe_index_put_call_ratio_2003_2026.csv
+  total_cache: data/external/cboe_total_put_call_ratio_2006_2026.csv
+  output: data/external/es_cboe_put_call_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3759
+  lookahead_control: latest Cboe put/call observation strictly before ES session_date
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  latest_variant_flatten: "15:55:00"
+parameter_space:
+  entry_thresholds:
+    low_rank_max: [0.50, 0.45, 0.40]
+    high_rank_min: [0.55, 0.60, 0.65]
+    high_change_rank_min: [0.55, 0.60, 0.625]
+  stop_pct: [0.0015, 0.0025, 0.004]
+  target_r_multiple: [1.0, 1.5, 2.0]
+  combinations_per_variant: 27
+variants:
+  - low_equity_pc_long_1000
+  - high_equity_pc_short_1030
+  - falling_total_pc_long_1130
+  - rising_total_pc_short_1200
+  - high_total_vs_equity_pc_short_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space only
+  forbidden_changes:
+    - core strategy mechanic
+    - Cboe strict-prior-date availability rule
+    - setup mode
+    - direction
+    - entry time
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - variant: low_equity_pc_long_1000
+      attempt_id: rescue1
+      scope: parameter_space_only_no_mechanic_change
+      config_path: campaigns/es_cboe_put_call_sentiment_intraday/rescue_attempts/parameter_space_rescue_1/low_equity_pc_long_1000/config.yaml
+      result_path: backtest-campaigns/es_cboe_put_call_sentiment_intraday/low_equity_pc_long_1000/ES/rescue1/campaign_test_summary.json
+      status: failed
+      terminal_stage: limited_core_grid_test
+      profitable_combo_rate: 0.037037037037037035
+      top_net_profit: 85.0
+      top_profit_factor: 1.005031074282332
+      top_trades: 108
+    - variant: high_equity_pc_short_1030
+      attempt_id: rescue1
+      scope: parameter_space_only_no_mechanic_change
+      config_path: campaigns/es_cboe_put_call_sentiment_intraday/rescue_attempts/parameter_space_rescue_1/high_equity_pc_short_1030/config.yaml
+      result_path: backtest-campaigns/es_cboe_put_call_sentiment_intraday/high_equity_pc_short_1030/ES/rescue1/campaign_test_summary.json
+      status: failed
+      terminal_stage: limited_core_grid_test
+      profitable_combo_rate: 0.6296296296296297
+      top_net_profit: 3870.0
+      top_profit_factor: 1.138560687432868
+      top_trades: 146
+    - variant: falling_total_pc_long_1130
+      attempt_id: rescue1
+      scope: parameter_space_only_no_mechanic_change
+      config_path: campaigns/es_cboe_put_call_sentiment_intraday/rescue_attempts/parameter_space_rescue_1/falling_total_pc_long_1130/config.yaml
+      result_path: backtest-campaigns/es_cboe_put_call_sentiment_intraday/falling_total_pc_long_1130/ES/rescue1/campaign_test_summary.json
+      status: failed
+      terminal_stage: limited_monkey_test
+      profitable_combo_rate: 1.0
+      top_net_profit: 5652.5
+      top_profit_factor: 1.353060587133042
+      top_trades: 117
+      monkey_profitable_rate: 0.19666666666666666
+      monkey_median_net_profit: -2727.5
+      trade_path_stress_profitable_rate: 0.98
+    - variant: rising_total_pc_short_1200
+      attempt_id: rescue1
+      scope: parameter_space_only_no_mechanic_change
+      config_path: campaigns/es_cboe_put_call_sentiment_intraday/rescue_attempts/parameter_space_rescue_1/rising_total_pc_short_1200/config.yaml
+      result_path: backtest-campaigns/es_cboe_put_call_sentiment_intraday/rising_total_pc_short_1200/ES/rescue1/campaign_test_summary.json
+      status: failed
+      terminal_stage: limited_core_grid_test
+      profitable_combo_rate: 0.5925925925925926
+      top_net_profit: 4730.0
+      top_profit_factor: 1.2826411711980878
+      top_trades: 114
+    - variant: high_total_vs_equity_pc_short_1330
+      attempt_id: rescue1
+      scope: parameter_space_only_no_mechanic_change
+      config_path: campaigns/es_cboe_put_call_sentiment_intraday/rescue_attempts/parameter_space_rescue_1/high_total_vs_equity_pc_short_1330/config.yaml
+      result_path: backtest-campaigns/es_cboe_put_call_sentiment_intraday/high_total_vs_equity_pc_short_1330/ES/rescue1/campaign_test_summary.json
+      status: failed
+      terminal_stage: limited_monkey_test
+      profitable_combo_rate: 0.8888888888888888
+      top_net_profit: 4675.0
+      top_profit_factor: 1.2595780122154359
+      top_trades: 135
+      monkey_profitable_rate: 0.06666666666666667
+      monkey_median_net_profit: -3923.75
+      one_tick_worse_profitable: false
+outcome:
+  completed_at: "2026-06-16"
+  decision: FAIL
+  terminal_stage: limited_monkey_test
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  frozen_validation_reached: 0
+  summary: All five original Cboe put/call sentiment variants failed
+    limited_core_grid_test. Each failed variant received exactly one
+    parameter-space-only rescue. Three rescues failed limited_core_grid_test.
+    The falling_total_pc_long_1130 and high_total_vs_equity_pc_short_1330
+    rescues passed core but failed limited_monkey_test. No run reached WFA,
+    WFA OOS monkey, Monte Carlo, simulated incubation, or frozen validation.
+  aggregate_report: backtest-campaigns/es_cboe_put_call_sentiment_intraday/campaign_test_summary.json

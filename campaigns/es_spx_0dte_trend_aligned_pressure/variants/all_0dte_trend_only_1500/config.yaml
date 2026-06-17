@@ -1,0 +1,217 @@
+campaign_id: es_spx_0dte_trend_aligned_pressure
+variant_id: all_0dte_trend_only_1500
+strategy_name: spx_0dte_trend_aligned_pressure
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Cboe SPX Weeklys launch history; Brogaard, Han, and Won (SSRN 4426358);
+    Moskowitz, Ooi, and Pedersen (2012)
+  edge_thesis: SPX 0DTE sessions may create intraday ES pressure; ES should be traded
+    only when completed short and medium intraday trend structure agree.
+  mechanic: Trade all known SPX 0DTE sessions from 2016 onward, excluding standard
+    monthly OPEX, at 15:00 ET only when completed 30-minute and 120-minute ES high/low
+    trend states align. Long requires higher highs and higher lows in both windows;
+    short requires lower highs and lower lows in both windows.
+  timeframe_rationale: 1-minute bars preserve completed-bar signal timing and next-bar-open
+    execution while allowing same-day flattening.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-17'
+  mechanics_review:
+    mechanic_expresses_edge: The primary 0DTE edge is expressed through known SPX
+      same-day-expiration sessions, while the later fixed ES trend filter tests whether
+      pressure persists into the final trading hour when both completed trend windows
+      agree.
+    entry_logic_rationale: The entry waits until the 14:59 ES bar has closed, then
+      uses only the completed bar history ending at 15:00 ET and the pre-known SPX
+      0DTE calendar. The engine must execute no earlier than the next bar open.
+    stop_loss_rationale: 'A fixed percent-from-entry stop is appropriate because the
+      hypothesis is an intraday pressure continuation, not a precise structural level.
+      The stop caps failed trend alignment without using future range information.
+
+      '
+    target_exit_rationale: 'The fixed-R target keeps reward linked to the predeclared
+      stop distance and avoids optimizing exits around observed session highs, lows,
+      VWAP, option strikes, or other future-derived levels.
+
+      '
+    profitability_rationale: This variant is convincing enough to test because late-day
+      0DTE hedging and trend persistence could reinforce each other, and the density
+      audit shows more than 50 expected signals per year before costs are examined.
+    known_failure_modes: 'It should fail if 0DTE pressure is directionally irrelevant
+      to ES, if the trend filter enters exhausted late moves, if costs dominate the
+      average move, or if profits concentrate in a small number of volatility events.
+
+      '
+    pre_test_decision: approve_for_testing
+data:
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  source_timeframe: 1m
+  feature_set: none
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  warmup_days: 0
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: spx_0dte_trend_aligned_pressure
+    params:
+      setup_mode: all_0dte_trend_only_1500
+      event_calendar_csv: data/external/spx_0dte_calendar_sessions_20110103_20260609.csv
+      calendar_bucket: all_available
+      trigger_mode: calendar_only
+      direction: two_sided
+      signal_time: '15:00:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 1
+      max_trades_per_day: 1
+      tick_size: 0.25
+      min_abs_move_ticks: 0
+      trend_short_minutes: 30
+      trend_long_minutes: 120
+      exclude_standard_monthly: true
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0025
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2016-02-24'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 150
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 10
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 43
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  simulated_incubation_core:
+    train_months: 48
+    test_months: 12
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 47
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

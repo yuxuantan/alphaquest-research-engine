@@ -1,0 +1,166 @@
+campaign_id: es_spx_0dte_expiration_pressure
+title: ES SPX 0DTE Expiration Pressure
+decision: FAIL
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: The expansion of SPX same-day-expiring options may create intraday ES
+  futures pressure through dealer hedging, gamma feedback, pinning, and expiry-day
+  liquidity demand. ES is the liquid hedge for S&P 500 index exposure, so a same-day
+  SPX option-flow regime could transmit to ES RTH returns.
+rationale: This campaign tests a predeclared SPX 0DTE calendar-regime edge from official
+  Cboe listing dates. It does not use option volume, open interest, strike gamma,
+  same-day SPX option prices, final VWAP, future ES highs/lows, or paid data. Standard
+  monthly/quarterly OPEX Fridays are excluded from the signal by default to avoid
+  duplicating active monthly and quarterly OPEX campaigns.
+sources:
+- title: The Evolution of Same Day Options Trading
+  authors: Cboe Global Markets
+  year: 2023
+  venue: Cboe Insights
+  link: https://www.cboe.com/insights/posts/the-evolution-of-same-day-options-trading/
+  relevance: 'Documents the SPX Weeklys launch path: Wednesday and Monday expirations
+    in 2016 and weekday coverage by 2022, supporting an ex-ante 0DTE calendar-regime
+    definition.'
+- title: Cboe to Add Tuesday and Thursday Expirations for SPX Weeklys Options
+  authors: Cboe Global Markets
+  year: 2022
+  venue: Cboe press release
+  link: https://ir.cboe.com/news/news-details/2022/Cboe-to-Add-Tuesday-and-Thursday-Expirations-for-SPX-Weeklys-Options-04-13-2022/default.aspx
+  relevance: Official launch dates for Tuesday-expiring SPX Weeklys beginning April
+    18, 2022 and Thursday-expiring SPX Weeklys beginning May 11, 2022.
+- title: Does 0DTE Options Trading Increase Volatility?
+  authors: Jonathan Brogaard, Jaehee Han, and Peter Y. Won
+  year: 2023
+  venue: SSRN 4426358
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4426358
+  relevance: Research evidence that zero-day index-option trading is linked to underlying
+    volatility and hedging channels, motivating intraday ES pressure tests.
+- title: The Rise and Impacts of Zero Days-to-Expiration Options
+  authors: Christian Madtzog Fagerlid and Bendik Skarpnes
+  year: 2024
+  venue: SSRN 4724972
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4724972
+  relevance: Investigates 0DTE options and the S&P 500 with theory and historical
+    data, supporting a fail-closed test of same-day ES futures effects.
+- title: 'Volatility Insights: Much Ado About 0DTEs - Evaluating the Market Impact
+    of SPX 0DTE Options'
+  authors: Mandy Xu, Cboe Global Markets
+  year: 2023
+  venue: Cboe Insights
+  link: https://www.cboe.com/insights/posts/volatility-insights-evaluating-the-market-impact-of-spx-0-dte-options/
+  relevance: Practitioner/venue analysis of SPX 0DTE growth and market-impact questions,
+    useful for failure modes and mechanism caveats.
+data_needs:
+- timezone-aware local ES RTH 1-minute OHLCV/orderflow bars in America/New_York
+- local deterministic SPX 0DTE session calendar generated from Cboe launch rules and
+  local ES sessions
+- next-bar-open entry when a completed 1-minute bar close emits a signal
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The SPX 0DTE calendar is a deterministic proxy and does not contain option open
+  interest, dealer gamma, or real-time option-flow direction.
+- The local Sierra cache is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC ordering.
+- Post-May-2022 full-week 0DTE history is shorter than older ES intraday datasets;
+  any pass would require manual review for regime/sample stability.
+lookahead_risks:
+- Using realized option flow, realized strike pins, or final same-day option volume
+  is forbidden.
+- Signals use only the completed ES bar at the configured timestamp plus ex-ante calendar
+  membership.
+- The open-to-signal move is computed from the current RTH open and the completed
+  signal-bar close, with engine entry at the next bar open.
+- No final session high/low, final VWAP, future returns, or post-entry option information
+  is used.
+failure_modes:
+- The 0DTE effect may affect volatility/volume but not directional ES returns after
+  costs.
+- Direction may depend on unavailable option-positioning or dealer-gamma sign, making
+  calendar-only pressure unstable.
+- The post-2022 sample may be too short or too regime-specific for robust WFA and
+  frozen validation.
+- The fade and continuation expressions may simply duplicate generic intraday mean-reversion/momentum
+  once stressed by monkey tests.
+- Any apparent result may be dominated by 2022 bear-market volatility or a few macro-event
+  days.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_monthly_opex_pressure
+  - es_quarterly_expiration_pressure
+  - es_vix_expiration_pressure
+  - es_day_of_week_seasonality
+  - es_late_day_intraday_momentum
+  - es_volume_shock_liquidity_reversal
+  - es_range_compression_breakout
+  - es_rth_intraday_risk_premium
+  conclusion: Not a duplicate in active scope. This tests the dense SPX same-day option-expiration
+    regime and explicitly excludes standard monthly/quarterly OPEX Fridays. It is
+    not VIX settlement, monthly listed-option OPEX, quarterly futures/options roll,
+    generic Monday/Friday weekday seasonality, or unconditional intraday drift.
+feature_construction:
+  builder: tools/build_spx_0dte_calendar.py
+  source_cache: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  output: data/external/spx_0dte_calendar_sessions_20110103_20260609.csv
+  lookahead_control: calendar membership is known from Cboe listing rules before each
+    session; no option-flow or same-day settlement data is used
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  start_date: '2022-05-11'
+  end_date: '2026-06-09'
+parameter_space:
+  entry_min_abs_move_ticks: 3 values per variant
+  stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 27
+variants:
+- full_week_down_move_fade_long_1000
+- full_week_up_move_fade_short_1000
+- tue_thu_two_sided_fade_1030
+- mwf_two_sided_fade_1030
+- full_week_late_move_continuation_1430
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - alter costs, fills, sessions, validation gates, or prop rules
+  - add or remove filters after seeing results
+outcome:
+  completed_at: '2026-06-17'
+  decision: FAIL
+  original_runs: 5
+  rescue_runs: 5
+  terminal_stage: walk_forward_analysis
+  monkey_reached: 1
+  wfa_reached: 1
+  monte_carlo_reached: 0
+  summary: All five original SPX 0DTE expiration-pressure variants failed before WFA.
+    Each failed variant received exactly one parameter-space-only rescue. Four rescues
+    failed limited_core_grid_test. The late-session full-week continuation rescue
+    passed core and limited monkey/trade-path stress, then failed walk_forward_analysis
+    by early exit with negative stitched OOS performance; no run reached WFA OOS monkey,
+    Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  aggregate_report: backtest-campaigns/es_spx_0dte_expiration_pressure/campaign_test_summary.json
+  best_original: full_week_down_move_fade_long_1000/run1 top_net=12640.0
+  best_rescue: full_week_down_move_fade_long_1000/rescue1 top_net=18540.0

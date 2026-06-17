@@ -1,0 +1,177 @@
+campaign_name: es_realized_semivariance_asymmetry
+campaign_id: es_realized_semivariance_asymmetry
+instrument: ES
+decision: FAIL
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no non-archived realized-semivariance
+  or good-vs-bad volatility ES campaign. The edge uses dense daily lagged features
+  from local ES RTH bars and is not a calendar/event effect.
+edge_hypothesis: Lagged realized semivariance separates bad volatility from good volatility.
+  ES may either require short-horizon compensation after bad-volatility states or
+  continue risk-off after downside-volatility dominance; upside semivariance may identify
+  good-volatility states with weaker subsequent expected return.
+why_it_may_apply_to_es_futures: ES is the liquid futures expression of U.S. equity-index
+  risk. Prior research formalizes realized semivariance from high-frequency data and
+  finds negative-return volatility has different predictive content from positive-return
+  volatility. This campaign tests whether an ES-only, prior-session semivariance state
+  has standalone intraday signal after realistic ES costs.
+research_sources:
+- title: Measuring Downside Risk - Realized Semivariance
+  author: Ole E. Barndorff-Nielsen, Silvia Kinnebrock, and Neil Shephard
+  year: 2010
+  link_or_doi: https://academic.oup.com/book/5659/chapter/148715572
+  expected_mechanism: Introduces realized semivariance as a high-frequency measure
+    separating downside and upside variation, motivating bad-vs-good realized volatility
+    state variables.
+- title: 'Good Volatility, Bad Volatility: Signed Jumps and the Persistence of Volatility'
+  author: Andrew J. Patton and Kevin Sheppard
+  year: 2015
+  link_or_doi: https://doi.org/10.1162/REST_a_00503
+  expected_mechanism: Shows future volatility is more strongly related to volatility
+    from past negative returns than from positive returns, supporting asymmetric semivariance
+    features.
+- title: 'Good and Bad Uncertainty: Macroeconomic and Financial Market Implications'
+  author: Gill Segal, Ivan Shaliastovich, and Amir Yaron
+  year: 2015
+  link_or_doi: https://www.gillsegal.com/research
+  expected_mechanism: Documents that good and bad uncertainty have opposite implications
+    for growth, asset prices, and risk premia, supporting separate tests of upside
+    and downside volatility states.
+behavioural_or_microstructure_rationale: The campaign treats prior-session ES realized
+  semivariance as an ex-ante risk-state variable. Downside semivariance may reflect
+  bad volatility that either earns compensation after forced selling or persists as
+  risk-off pressure. Upside semivariance may reflect good-volatility states that are
+  overpaid or have weaker subsequent risk premia. Every variant uses only completed
+  prior RTH sessions.
+expected_failure_modes:
+- The semivariance literature forecasts volatility more directly than intraday ES
+  return direction.
+- Bad-volatility compensation and risk-off continuation may cancel across regimes.
+- The signal may be a hidden duplicate of realized variance, skewness, jump variation,
+  or trend states already rejected by active campaigns.
+- The effect may require multi-day holding periods, which this no-overnight methodology
+  forbids.
+- Performance may be concentrated in crisis years, isolated months, or a narrow threshold.
+- The effect may fail after commissions, slippage, pessimistic same-bar ordering,
+  monkey stress, WFA selection, or one-tick-worse slippage.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/es_realized_semivariance_features_20110103_20260609.csv
+feature_construction:
+  builder: tools/build_es_realized_semivariance_features.py
+  output: data/external/es_realized_semivariance_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3755
+  lookahead_control: Every tradable semivariance feature is shifted one completed
+    RTH session; a signal date can only use information available after the prior
+    RTH close.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+forbidden_forms_of_lookahead:
+- Use of current-session realized semivariance, high, low, close, or post-entry returns
+  in the signal state.
+- Use of future sessions in rolling ranks.
+- Changing semivariance definitions, thresholds, entry times, or direction after seeing
+  test results.
+- Holding overnight to approximate the volatility-forecasting horizon in the source
+  papers.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_campaign_count_checked: 48
+  not_duplicate_of:
+  - es_realized_skewness_reversal
+  - es_realized_jump_variation_premium
+  - es_variance_risk_premium_intraday
+  - es_volatility_managed_intraday_premium
+  - es_volume_shock_liquidity_reversal
+  - es_trade_fragmentation_liquidity_reversion
+  conclusion: This campaign uses lagged second-moment downside/upside semivariance
+    asymmetry. It is not realized skewness, jump variation, variance risk premium,
+    low-volatility exposure, volume shock, or trade-fragmentation liquidity state.
+variants:
+- high_1d_badvol_rebound_long_1000
+- high_1d_badvol_continuation_short_1030
+- high_downside_share_rebound_long_1130
+- high_goodvol_fade_short_1200
+- two_sided_5d_bad_good_balance_1330
+density_audit:
+  artifact: research_artifacts/es_realized_semivariance_asymmetry_density_audit_20260617.md
+  conclusion: All five variant shapes have plausible pre-test signal density above
+    50 trades/year across the declared threshold grid.
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - feature construction shift rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - variant: high_1d_badvol_rebound_long_1000
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_semivariance_asymmetry/rescue_attempts/parameter_space_rescue_1/high_1d_badvol_rebound_long_1000/config.yaml
+    result_path: backtest-campaigns/es_realized_semivariance_asymmetry/high_1d_badvol_rebound_long_1000/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: high_1d_badvol_continuation_short_1030
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_semivariance_asymmetry/rescue_attempts/parameter_space_rescue_1/high_1d_badvol_continuation_short_1030/config.yaml
+    result_path: backtest-campaigns/es_realized_semivariance_asymmetry/high_1d_badvol_continuation_short_1030/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: walk_forward_analysis
+  - variant: high_downside_share_rebound_long_1130
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_semivariance_asymmetry/rescue_attempts/parameter_space_rescue_1/high_downside_share_rebound_long_1130/config.yaml
+    result_path: backtest-campaigns/es_realized_semivariance_asymmetry/high_downside_share_rebound_long_1130/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: high_goodvol_fade_short_1200
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_semivariance_asymmetry/rescue_attempts/parameter_space_rescue_1/high_goodvol_fade_short_1200/config.yaml
+    result_path: backtest-campaigns/es_realized_semivariance_asymmetry/high_goodvol_fade_short_1200/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: two_sided_5d_bad_good_balance_1330
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_semivariance_asymmetry/rescue_attempts/parameter_space_rescue_1/two_sided_5d_bad_good_balance_1330/config.yaml
+    result_path: backtest-campaigns/es_realized_semivariance_asymmetry/two_sided_5d_bad_good_balance_1330/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-17'
+  aggregate_report: backtest-campaigns/es_realized_semivariance_asymmetry/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached_runs: 1
+  wfa_reached_runs: 1
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: >
+    All five original variants failed limited_core_grid_test. Each failed variant
+    received exactly one parameter-space-only rescue. Four rescues failed
+    limited_core_grid_test. One rescue passed core and limited monkey, then
+    failed walk_forward_analysis with early_exit=true, stitched OOS net
+    -9625.0, PF 0.6356926570779712, MAR -0.7825314922408811, and expectancy R
+    -0.24698221123551944. No run reached WFA OOS monkey, Monte Carlo,
+    simulated incubation, frozen validation, or candidate reporting.

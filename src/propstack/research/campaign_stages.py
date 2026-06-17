@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import copy
 from datetime import datetime
+import hashlib
 import math
 import os
 from pathlib import Path
+import random
 import shutil
 import time
 from typing import Any
@@ -61,32 +63,20 @@ DEFAULT_STAGE_CRITERIA = {
         {"metric": "summary.apex_rule_violating_iterations", "max": 0},
     ],
     "limited_monkey_test": [
-        {"metric": "summary.percentage_profitable", "min": 0.80},
-        {"metric": "summary.median_net_profit", "exclusive_min": 0.0},
-        {"metric": "summary.trade_path_stress.enabled", "equals": True},
-        {"metric": "summary.trade_path_stress.percentage_profitable", "min": 0.80},
-        {"metric": "summary.trade_path_stress.median_net_profit", "exclusive_min": 0.0},
-        {"metric": "summary.trade_path_stress.one_tick_worse.profitable", "equals": True},
-        {"metric": "summary.trade_path_stress.apex_rule_violating_iterations", "max": 0},
+        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.90},
+        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.90},
         {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     "walk_forward_analysis": [
         {"metric": "summary.early_exit", "equals": False},
-        {"metric": "summary.windows", "min": 10},
         {"metric": "stitched_oos_metrics.profit_factor", "min": 1.2},
         {"metric": "stitched_oos_metrics.mar", "min": 0.4},
         {"metric": "stitched_oos_metrics.trades_per_year", "min": 50},
-        {"metric": "stitched_oos_metrics.expectancy_r", "exclusive_min": 0.0},
         {"metric": "stitched_oos_metrics.apex_rule_violations", "max": 0},
     ],
     "wfa_oos_monkey_test": [
-        {"metric": "summary.percentage_profitable", "min": 0.80},
-        {"metric": "summary.median_net_profit", "exclusive_min": 0.0},
-        {"metric": "summary.trade_path_stress.enabled", "equals": True},
-        {"metric": "summary.trade_path_stress.percentage_profitable", "min": 0.80},
-        {"metric": "summary.trade_path_stress.median_net_profit", "exclusive_min": 0.0},
-        {"metric": "summary.trade_path_stress.one_tick_worse.profitable", "equals": True},
-        {"metric": "summary.trade_path_stress.apex_rule_violating_iterations", "max": 0},
+        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.80},
+        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.80},
         {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     "wfa_oos_monte_carlo": [
@@ -95,31 +85,49 @@ DEFAULT_STAGE_CRITERIA = {
     "simulated_incubation_core": [
         {"metric": "metrics.profit_factor", "min": 1.0},
         {"metric": "metrics.mar", "min": 1.0},
-        {"metric": "metrics.total_trades", "min": 75},
+        {"metric": "metrics.trades_per_year", "min": 50},
         {"metric": "metrics.apex_rule_violations", "max": 0},
     ],
     "simulated_incubation_monkey": [
-        {"metric": "summary.percentage_profitable", "min": 0.80},
-        {"metric": "summary.median_net_profit", "exclusive_min": 0.0},
-        {"metric": "summary.trade_path_stress.enabled", "equals": True},
-        {"metric": "summary.trade_path_stress.percentage_profitable", "min": 0.80},
-        {"metric": "summary.trade_path_stress.median_net_profit", "exclusive_min": 0.0},
-        {"metric": "summary.trade_path_stress.one_tick_worse.profitable", "equals": True},
-        {"metric": "summary.trade_path_stress.apex_rule_violating_iterations", "max": 0},
+        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.80},
+        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.80},
         {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     ACCEPTANCE_STAGE: [
         {"metric": "metrics.profit_factor", "min": 1.0},
         {"metric": "metrics.mar", "min": 1.0},
-        {"metric": "metrics.total_trades", "min": 25},
-        {"metric": "metrics.expectancy_r", "exclusive_min": 0.0},
+        {"metric": "metrics.trades_per_year", "min": 50},
         {"metric": "metrics.apex_rule_violations", "max": 0},
     ],
 }
 
 DEFAULT_SHORTLIST_DATA_WINDOW = {
-    "mode": "first_months",
-    "months": 18,
+    "mode": "random_fraction",
+    "fraction": 0.10,
+    "avoid_last_fraction": 0.10,
+    "seed": 31,
+    "avoid_ranges": [
+        {
+            "start_date": "2020-02-01",
+            "end_date": "2021-06-30",
+        }
+    ],
+}
+
+DEFAULT_WFA_DATA_WINDOW = {
+    "mode": "first_fraction",
+    "fraction": 0.90,
+}
+
+LIMITED_CORE_GRID_BENCHMARK_KEYS = {
+    "min_total_net_profit",
+    "max_drawdown",
+    "max_drawdown_pct",
+    "min_trades_per_year",
+    "max_consecutive_losses",
+    "min_trade_count",
+    "preferred_min_total_trades",
+    "max_best_day_concentration",
 }
 
 STAGE_LABELS = {
@@ -132,6 +140,16 @@ STAGE_LABELS = {
     "simulated_incubation_monkey": "Simulated Incubation (OOS) Monkey",
     ACCEPTANCE_STAGE: "Acceptance OOS Test",
 }
+
+REQUIRED_MECHANICS_REVIEW_FIELDS = (
+    "mechanic_expresses_edge",
+    "entry_logic_rationale",
+    "stop_loss_rationale",
+    "target_exit_rationale",
+    "profitability_rationale",
+    "known_failure_modes",
+)
+MECHANICS_REVIEW_MIN_CHARS = 80
 
 
 def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) -> dict:
@@ -146,6 +164,12 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
         if stage_name in {"limited_core_grid_test", "limited_monkey_test"}:
             stage_cfg.pop("data_subset", None)
             stage_cfg["data_window"] = copy.deepcopy(DEFAULT_SHORTLIST_DATA_WINDOW)
+        if stage_name == "walk_forward_analysis":
+            stage_cfg.pop("data_subset", None)
+            stage_cfg["data_window"] = copy.deepcopy(DEFAULT_WFA_DATA_WINDOW)
+        if stage_name == "simulated_incubation_core":
+            stage_cfg.setdefault("train_months", 48)
+            stage_cfg.setdefault("test_months", 12)
         if stage_name == ACCEPTANCE_STAGE:
             stage_cfg.setdefault("train_months", 24)
             stage_cfg.setdefault("test_months", 6)
@@ -213,7 +237,10 @@ def run_campaign_stage_tests(
     fast_runtime_defaults: bool = False,
 ) -> dict:
     config_path = Path(config_path)
+    source_config_text = config_path.read_text(encoding="utf-8")
+    source_config_hash = hashlib.sha256(source_config_text.encode("utf-8")).hexdigest()
     cfg = canonicalize_campaign_config(load_yaml(config_path), include_acceptance=include_acceptance)
+    _validate_pre_test_mechanics_review(cfg, config_path)
     if fast_runtime_defaults:
         cfg = apply_fast_runtime_defaults(cfg)
     root = Path(out_dir) if out_dir else variant_root(cfg, config_path=config_path)
@@ -221,10 +248,10 @@ def run_campaign_stage_tests(
     root.mkdir(parents=True, exist_ok=True)
     variant_metadata = ensure_variant_metadata(cfg, root_path=root)
     config_snapshot_path = root / CAMPAIGN_CONFIG_FILENAME
-    if config_path.resolve() != config_snapshot_path.resolve():
-        shutil.copy2(config_path, config_snapshot_path)
-    elif not config_snapshot_path.exists():
-        _write_config_snapshot(config_snapshot_path, cfg)
+    source_config_snapshot_path = root / "source_config.yaml"
+    _write_config_snapshot(config_snapshot_path, cfg)
+    if config_path.resolve() != source_config_snapshot_path.resolve():
+        source_config_snapshot_path.write_text(source_config_text, encoding="utf-8")
 
     campaign_tests = cfg.get("campaign_tests") or {}
     stage_order = _stage_order(campaign_tests)
@@ -276,8 +303,11 @@ def run_campaign_stage_tests(
         "campaign_metadata": campaign_metadata_info(cfg, root_path=root),
         "variant_metadata": variant_metadata,
         "config_path": str(config_snapshot_path),
+        "effective_config_path": str(config_snapshot_path),
         "source_config_path": str(config_path),
+        "source_config_snapshot_path": str(source_config_snapshot_path),
         "config_hash": file_sha256(config_snapshot_path),
+        "source_config_hash": source_config_hash,
         "output_dir": str(root),
         "created_at": created_at,
         "updated_at": created_at,
@@ -304,7 +334,9 @@ def run_campaign_stage_tests(
             "campaign_metadata": summary["campaign_metadata"],
             "variant_metadata": summary["variant_metadata"],
             "config_source": str(config_path),
+            "source_config_snapshot": str(source_config_snapshot_path),
             "config_hash": summary["config_hash"],
+            "source_config_hash": source_config_hash,
             "created_at": created_at,
             "updated_at": created_at,
             "stage_order": stage_order,
@@ -318,6 +350,39 @@ def run_campaign_stage_tests(
         _write_candidate_due_diligence_package(root, cfg, summary, config_snapshot_path)
     update_runs_index(root)
     return summary
+
+
+def _validate_pre_test_mechanics_review(cfg: dict, config_path: Path) -> None:
+    """Require the pre-result mechanics rationale before any staged test starts."""
+
+    failures: list[str] = []
+    prefix = str(config_path)
+    research = cfg.get("research_metadata")
+    if not isinstance(research, dict):
+        failures.append(f"{prefix}: research_metadata must include a pre-test mechanics review.")
+    else:
+        if not bool(research.get("mechanics_review_required") or research.get("mechanics_review_version")):
+            failures.append(
+                f"{prefix}: research_metadata.mechanics_review_required must be true before staged testing."
+            )
+        review = research.get("mechanics_review")
+        if not isinstance(review, dict):
+            failures.append(f"{prefix}: research_metadata.mechanics_review must be configured before staged testing.")
+        else:
+            for field in REQUIRED_MECHANICS_REVIEW_FIELDS:
+                value = review.get(field)
+                if not isinstance(value, str) or len(value.strip()) < MECHANICS_REVIEW_MIN_CHARS:
+                    failures.append(
+                        f"{prefix}: research_metadata.mechanics_review.{field} must be a detailed pre-test rationale."
+                    )
+            decision = str(review.get("pre_test_decision", "")).strip().lower()
+            if decision != "approve_for_testing":
+                failures.append(
+                    f"{prefix}: research_metadata.mechanics_review.pre_test_decision must be approve_for_testing."
+                )
+
+    if failures:
+        raise ValueError("Pre-test mechanics review failed:\n- " + "\n- ".join(failures))
 
 
 def _write_candidate_due_diligence_package(
@@ -527,6 +592,7 @@ def _run_stage(
         context["incubation_trades"] = payload.get("trades")
         context["incubation_market"] = payload.get("market")
         context["incubation_detail"] = payload.get("detail")
+        context["incubation_config"] = payload.get("test_config")
     elif stage_name == "simulated_incubation_monkey":
         payload = _run_incubation_monkey(cfg, stage_cfg, stage_dir, context)
     elif stage_name == ACCEPTANCE_STAGE:
@@ -541,7 +607,7 @@ def _run_stage(
     public_payload = {
         k: v
         for k, v in payload.items()
-        if k not in {"trades", "market", "detail", "core_grid_results"}
+        if k not in {"trades", "market", "detail", "core_grid_results", "test_config"}
     }
     return {
         "stage": stage_name,
@@ -565,6 +631,7 @@ def _run_limited_core_grid(
 ) -> dict:
     grid_cfg = _merged_section(cfg, "core_grid", stage_cfg)
     subset = _stage_subset(cfg, stage_cfg, "core_grid")
+    benchmarks, benchmark_adjustments = _limited_core_grid_benchmarks(cfg, subset)
     market, detail, quality, input_hash = _prepare_stage_data_cached(
         cfg,
         subset,
@@ -577,10 +644,13 @@ def _run_limited_core_grid(
         market,
         cfg,
         grid_cfg,
-        cfg.get("benchmarks", {}),
+        benchmarks,
         report_dir=report_dir,
         detail_data=detail,
     )
+    summary["benchmark_thresholds"] = benchmarks
+    summary["benchmark_threshold_adjustments"] = benchmark_adjustments
+    _annotate_stage_data_period(summary, subset, quality)
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "core_grid_results.csv", report_timezone, index=False)
     write_json(stage_dir / "core_grid_summary.json", summary)
@@ -595,6 +665,87 @@ def _run_limited_core_grid(
         "core_grid_results": results,
         "core_grid_parameters": grid_cfg.get("parameters", {}),
     }
+
+
+def _limited_core_grid_benchmarks(cfg: dict, resolved_subset: dict | None) -> tuple[dict, dict]:
+    base = copy.deepcopy(cfg.get("benchmarks") or {})
+    out = {key: copy.deepcopy(base[key]) for key in LIMITED_CORE_GRID_BENCHMARK_KEYS if key in base}
+    adjustments: dict[str, Any] = {"mode": "limited_core_grid_screen"}
+    stage_years = _subset_span_years(resolved_subset)
+    full_subset = (cfg.get("core") or {}).get("data_subset") or (cfg.get("data") or {}).get("data_subset") or {}
+    full_years = _subset_span_years(full_subset)
+    adjustments["stage_years"] = stage_years
+    adjustments["configured_full_years"] = full_years
+
+    min_count_candidates = []
+    min_trades_per_year = _positive_float(base.get("min_trades_per_year"))
+    if min_trades_per_year is not None and stage_years is not None:
+        min_count_candidates.append(math.ceil(min_trades_per_year * stage_years))
+
+    for key in ("min_trade_count", "preferred_min_total_trades"):
+        value = _positive_float(base.get(key))
+        if value is None:
+            continue
+        adjusted = value
+        if stage_years is not None and full_years is not None and 0 < stage_years < full_years:
+            adjusted = value * stage_years / full_years
+        adjusted_count = max(1, int(math.ceil(adjusted)))
+        if key in out:
+            out[key] = adjusted_count
+        min_count_candidates.append(adjusted_count)
+        adjustments[key] = {
+            "original": value,
+            "adjusted": adjusted_count,
+        }
+
+    if min_count_candidates:
+        out["preferred_min_total_trades"] = max(int(value) for value in min_count_candidates)
+        adjustments["effective_preferred_min_total_trades"] = out["preferred_min_total_trades"]
+
+    adjustments["included_thresholds"] = sorted(out)
+    adjustments["excluded_full_stage_thresholds"] = sorted(
+        key for key in base if key not in out and key != "min_trades_per_year"
+    )
+    return out, adjustments
+
+
+def _positive_float(value) -> float | None:
+    if value is None:
+        return None
+    try:
+        numeric = float(value)
+    except (TypeError, ValueError):
+        return None
+    if not math.isfinite(numeric) or numeric <= 0:
+        return None
+    return numeric
+
+
+def _subset_span_years(subset: dict | None) -> float | None:
+    if not subset:
+        return None
+    start = _subset_start_date(subset)
+    end = _subset_end_date(subset)
+    if start is None or end is None:
+        return None
+    days = max((end - start).days + 1, 1)
+    return float(days / 365.25)
+
+
+def _annotate_stage_data_period(summary: dict, resolved_subset: dict | None, quality: dict) -> None:
+    configured_subset = copy.deepcopy(summary.get("data_subset") or {})
+    actual_period = {
+        "first_timestamp": quality.get("first_timestamp"),
+        "last_timestamp": quality.get("last_timestamp"),
+        "rows": quality.get("rows"),
+        "strategy_rows": quality.get("strategy_rows"),
+        "timeframe": quality.get("timeframe"),
+        "source_timeframe": quality.get("source_timeframe"),
+    }
+    summary["configured_data_subset"] = configured_subset
+    summary["resolved_data_subset"] = copy.deepcopy(resolved_subset or {})
+    summary["data_subset"] = copy.deepcopy(resolved_subset or {})
+    summary["actual_data_period"] = actual_period
 
 
 def _run_limited_monkey(
@@ -645,6 +796,8 @@ def _run_limited_monkey(
     summary["trade_path_stress"] = stress_summary
     summary["selected_core_params"] = selected_params
     summary["selected_core_row"] = selected_row.to_dict() if selected_row is not None else {}
+    _annotate_stage_data_period(summary, subset, quality)
+    _annotate_stage_data_period(stress_summary, subset, quality)
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "monkey_results.csv", report_timezone, index=False)
     write_report_csv(stress_results, stage_dir / "trade_path_stress_results.csv", report_timezone, index=False)
@@ -680,7 +833,7 @@ def _run_wfa_stage(
     wfa_cfg.setdefault("early_exit_min_train_profit_factor", 1.0)
     subset = _stage_subset(
         cfg,
-        {"data_window": {"mode": "exclude_last_months", "months": 18}, **stage_cfg},
+        {"data_window": DEFAULT_WFA_DATA_WINDOW, **stage_cfg},
         "wfa",
     )
     market, detail, quality, input_hash = _prepare_stage_data_cached(
@@ -710,6 +863,7 @@ def _run_wfa_stage(
     summary["oos_evaluation_years"] = _wfa_oos_evaluation_years(results)
     summary["required_oos_mar"] = length_adjusted_mar_requirement(summary["oos_evaluation_years"])
     summary["incubation_selected_params"] = _select_incubation_params(results)
+    _annotate_stage_data_period(summary, subset, quality)
     summary.update(
         write_equity_report(
             trades,
@@ -770,7 +924,16 @@ def _run_wfa_oos_monte_carlo(cfg: dict, stage_cfg: dict, stage_dir: Path, contex
     trades = _required_context_frame(context, "wfa_trades", "WFA OOS Monte Carlo requires walk_forward_analysis trades.")
     mc_cfg = {**cfg.get("benchmarks", {}), **copy.deepcopy(cfg.get("monte_carlo", {})), **stage_cfg}
     mc_cfg["_core"] = cfg.get("core", {})
-    rules = PropRules.from_dict(cfg.get("prop_rules", {}))
+    rules_cfg = copy.deepcopy(cfg.get("prop_rules") or {})
+    monte_carlo_rules = (cfg.get("monte_carlo") or {}).get("prop_rules")
+    if isinstance(monte_carlo_rules, dict):
+        _deep_update(rules_cfg, copy.deepcopy(monte_carlo_rules))
+    stage_rules = stage_cfg.get("prop_rules")
+    if isinstance(stage_rules, dict):
+        _deep_update(rules_cfg, copy.deepcopy(stage_rules))
+    rules_cfg.setdefault("profit_target_amount", 50000.0)
+    rules_cfg.setdefault("drawdown_limit_amount", 10000.0)
+    rules = PropRules.from_dict(rules_cfg)
     retain_path_trades = bool(mc_cfg.get("retain_path_trades", False))
     retain_path_events = bool(mc_cfg.get("retain_path_events", False))
     if retain_path_trades or retain_path_events:
@@ -779,6 +942,7 @@ def _run_wfa_oos_monte_carlo(cfg: dict, stage_cfg: dict, stage_dir: Path, contex
         results, summary = run_monte_carlo(trades, mc_cfg, rules)
         path_trades = pd.DataFrame()
         path_events = pd.DataFrame()
+    summary["prop_rules_used"] = rules_cfg
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "wfa_oos_monte_carlo_results.csv", report_timezone, index=False)
     if retain_path_trades:
@@ -796,37 +960,93 @@ def _run_incubation_core(
     skip_validation: bool,
     context: dict,
 ) -> dict:
-    train_selection_payload = {}
-    if (stage_cfg.get("train_selection") or {}).get("enabled", False):
-        selected_params, train_selection_payload = _run_incubation_train_selection(
-            cfg,
-            stage_cfg["train_selection"],
-            stage_dir / "train_selection",
-            skip_validation,
-            context.get("_prepared_data_cache"),
-        )
-    else:
-        selected_params = stage_cfg.get("selected_params") or context.get("incubation_params") or {}
-    test_cfg = apply_dotted_params(cfg, selected_params) if selected_params else copy.deepcopy(cfg)
-    subset = _stage_subset(
-        test_cfg,
-        {"data_window": {"mode": "last_months", "months": 18}, **stage_cfg},
-        "core",
+    train_months = int(stage_cfg.get("train_months", 48))
+    test_months = int(stage_cfg.get("test_months", 12))
+    if train_months <= 0 or test_months <= 0:
+        raise ValueError("simulated_incubation_core train_months and test_months must be greater than zero.")
+
+    base_subset = _acceptance_base_subset(cfg, stage_cfg)
+    bounded_subset, planned_window = _planned_acceptance_subset(
+        base_subset,
+        train_months,
+        test_months,
+        stage_label="simulated_incubation_core",
     )
     market, detail, quality, input_hash = _prepare_stage_data_cached(
-        test_cfg,
-        subset,
+        cfg,
+        bounded_subset,
         stage_dir,
         skip_validation,
+        show_progress=True,
         data_cache=context.get("_prepared_data_cache"),
     )
-    result = BacktestEngine(test_cfg).run(market, detail_data=detail)
+    window = _resolve_acceptance_window(
+        market,
+        planned_window,
+        train_months,
+        test_months,
+        stage_label="simulated_incubation_core",
+    )
+    train = _slice_session_window(market, window["train_start"], window["train_end_exclusive"])
+    test = _slice_session_window(market, window["test_start"], window["test_end_exclusive"])
+    train_detail = (
+        _slice_session_window(detail, window["train_start"], window["train_end_exclusive"])
+        if detail is not None
+        else None
+    )
+    test_detail = (
+        _slice_session_window(detail, window["test_start"], window["test_end_exclusive"])
+        if detail is not None
+        else None
+    )
+    if train.empty or test.empty:
+        raise ValueError(
+            "simulated_incubation_core requires non-empty in-sample and out-of-sample slices "
+            f"for train={_format_acceptance_period(window, 'train')} "
+            f"test={_format_acceptance_period(window, 'test')}."
+        )
+
+    parameters = (
+        stage_cfg.get("parameters")
+        or (stage_cfg.get("train_selection") or {}).get("parameters")
+        or (cfg.get("wfa") or {}).get("parameters")
+        or (cfg.get("core_grid") or {}).get("parameters")
+        or {}
+    )
+    if not parameters:
+        raise ValueError("simulated_incubation_core requires a parameter grid.")
+
+    selection_cfg = _acceptance_selection_config(cfg, stage_cfg, parameters)
+    selection_cfg["data_subset"] = _window_subset(base_subset, window["train_start"], window["train_end_exclusive"])
+    selected_params, train_selection_payload = _run_train_selection_grid(
+        cfg,
+        selection_cfg,
+        stage_dir / "train_selection",
+        skip_validation,
+        train_data=train,
+        train_detail=train_detail,
+        data_quality=quality,
+        input_hash=input_hash,
+        parameter_label="simulated_incubation_core.parameters",
+        result_prefix="incubation",
+    )
+    test_cfg = apply_dotted_params(cfg, selected_params) if selected_params else copy.deepcopy(cfg)
+    result = BacktestEngine(test_cfg).run(test, detail_data=test_detail)
     trades = result["trades"]
     report_timezone = market_timezone(test_cfg)
     write_report_csv(trades, stage_dir / "trade_log.csv", report_timezone, index=False)
     write_report_csv(result["daily"], stage_dir / "daily_results.csv", report_timezone, index=False)
     metrics = {**result["metrics"], "diagnostics": result.get("diagnostics", {})}
     write_json(stage_dir / "metrics.json", metrics)
+    incubation_summary = _acceptance_summary(window, train, test, selected_params, train_selection_payload, result)
+    _annotate_stage_data_period(incubation_summary, bounded_subset, quality)
+    write_report_csv(
+        pd.DataFrame([_acceptance_result_row(incubation_summary)]),
+        stage_dir / "incubation_oos_results.csv",
+        report_timezone,
+        index=False,
+    )
+    write_json(stage_dir / "incubation_oos_summary.json", incubation_summary)
     write_equity_report(
         trades,
         stage_dir,
@@ -835,6 +1055,7 @@ def _run_incubation_core(
         title=f"{test_cfg.get('campaign_id')} / {test_cfg.get('variant_id')} incubation equity curve",
     )
     return {
+        "summary": incubation_summary,
         "metrics": result["metrics"],
         "diagnostics": result.get("diagnostics", {}),
         "selected_params": selected_params,
@@ -843,8 +1064,9 @@ def _run_incubation_core(
         "input_hash": input_hash,
         "artifacts": _stage_artifacts(stage_dir),
         "trades": trades,
-        "market": market,
-        "detail": detail,
+        "market": test,
+        "detail": test_detail,
+        "test_config": test_cfg,
     }
 
 
@@ -924,6 +1146,7 @@ def _run_acceptance_oos(
     metrics = {**result["metrics"], "diagnostics": result.get("diagnostics", {})}
     write_json(stage_dir / "metrics.json", metrics)
     acceptance_summary = _acceptance_summary(window, train, test, selected_params, train_selection_payload, result)
+    _annotate_stage_data_period(acceptance_summary, bounded_subset, quality)
     write_report_csv(
         pd.DataFrame([_acceptance_result_row(acceptance_summary)]),
         stage_dir / "acceptance_oos_results.csv",
@@ -959,23 +1182,24 @@ def _run_incubation_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context:
     if market is None or market.empty:
         raise ValueError("Incubation monkey requires simulated_incubation_core market data.")
     detail = context.get("incubation_detail")
+    test_cfg = context.get("incubation_config") or cfg
     monkey_cfg = _merged_section(cfg, "monkey", stage_cfg)
     monkey_cfg.setdefault("beat_threshold", 0.80)
     report_dir = stage_dir if monkey_cfg.get("retain_iteration_reports", True) else None
     results, summary = run_monkey(
         market,
-        cfg,
+        test_cfg,
         monkey_cfg,
-        cfg.get("benchmarks", {}),
+        test_cfg.get("benchmarks", {}),
         report_dir=report_dir,
         detail_data=detail,
         core_trades=trades,
     )
     stress_results, stress_summary = run_trade_path_stress(
         market,
-        cfg,
+        test_cfg,
         monkey_cfg,
-        cfg.get("benchmarks", {}),
+        test_cfg.get("benchmarks", {}),
         core_trades=trades,
         report_dir=report_dir,
     )
@@ -1183,6 +1407,8 @@ def _planned_acceptance_subset(
     base_subset: dict,
     train_months: int,
     test_months: int,
+    *,
+    stage_label: str = "acceptance_oos_test",
 ) -> tuple[dict | None, dict | None]:
     end = _subset_end_date(base_subset)
     if end is None:
@@ -1191,7 +1417,7 @@ def _planned_acceptance_subset(
     start = _subset_start_date(base_subset)
     if start is not None and start > window["train_start"]:
         raise ValueError(
-            "acceptance_oos_test requires the configured data range to cover the full "
+            f"{stage_label} requires the configured data range to cover the full "
             f"{train_months}-month in-sample window starting {window['train_start'].date().isoformat()}; "
             f"configured start_date is {start.date().isoformat()}."
         )
@@ -1206,14 +1432,16 @@ def _resolve_acceptance_window(
     planned_window: dict | None,
     train_months: int,
     test_months: int,
+    *,
+    stage_label: str = "acceptance_oos_test",
 ) -> dict:
     if planned_window is not None:
         return planned_window
     if market.empty or "session_date" not in market.columns:
-        raise ValueError("acceptance_oos_test cannot infer latest data date from an empty market slice.")
+        raise ValueError(f"{stage_label} cannot infer latest data date from an empty market slice.")
     sessions = pd.to_datetime(market["session_date"], errors="coerce").dropna()
     if sessions.empty:
-        raise ValueError("acceptance_oos_test cannot infer latest data date from session_date.")
+        raise ValueError(f"{stage_label} cannot infer latest data date from session_date.")
     return _acceptance_window_from_end(pd.Timestamp(sessions.max()).normalize(), train_months, test_months)
 
 
@@ -1411,6 +1639,11 @@ def _subset_from_window(base_subset: dict, window: dict) -> dict:
     if mode == "first_months" and start is not None:
         first_end = start + pd.DateOffset(months=months)
         out["end_date"] = min(first_end, end).date().isoformat() if end is not None else first_end.date().isoformat()
+    elif mode == "first_fraction" and start is not None and end is not None:
+        fraction = _bounded_fraction(window.get("fraction", 1.0))
+        days = max(int((end - start).days) + 1, 1)
+        selected_days = max(1, int(math.floor(days * fraction)))
+        out["end_date"] = min(start + pd.Timedelta(days=selected_days - 1), end).date().isoformat()
     elif mode == "exclude_last_months" and end is not None:
         out["end_date"] = (end - pd.DateOffset(months=months)).date().isoformat()
     elif mode == "last_months" and end is not None:
@@ -1423,7 +1656,48 @@ def _subset_from_window(base_subset: dict, window: dict) -> dict:
             chosen = candidates[seed % len(candidates)]
             out["start_date"] = chosen.date().isoformat()
             out["end_date"] = (chosen + pd.DateOffset(months=months)).date().isoformat()
+    elif mode == "random_fraction" and start is not None and end is not None:
+        fraction = _bounded_fraction(window.get("fraction", 0.10))
+        avoid_last_fraction = max(0.0, min(1.0, float(window.get("avoid_last_fraction", 0.0))))
+        days = max(int((end - start).days) + 1, 1)
+        selected_days = max(1, int(math.floor(days * fraction)))
+        avoid_last_days = int(math.ceil(days * avoid_last_fraction))
+        latest_allowed_end = end - pd.Timedelta(days=avoid_last_days)
+        latest_start = latest_allowed_end - pd.Timedelta(days=selected_days - 1)
+        if latest_start < start:
+            raise ValueError("random_fraction data_window cannot fit inside the configured data range.")
+        candidates = pd.date_range(start, latest_start, freq="D")
+        candidates = _exclude_avoid_day_ranges(candidates, window.get("avoid_ranges", []), selected_days)
+        if not len(candidates):
+            raise ValueError("random_fraction data_window has no candidates after avoid_ranges exclusions.")
+        chosen = random.Random(int(window.get("seed", 1))).choice(list(candidates))
+        out["start_date"] = chosen.date().isoformat()
+        out["end_date"] = (chosen + pd.Timedelta(days=selected_days - 1)).date().isoformat()
     return out
+
+
+def _bounded_fraction(value) -> float:
+    fraction = float(value)
+    if not math.isfinite(fraction) or fraction <= 0:
+        raise ValueError("data_window fraction must be greater than zero.")
+    return min(fraction, 1.0)
+
+
+def _exclude_avoid_day_ranges(candidates: pd.DatetimeIndex, avoid_ranges: list[dict], days: int) -> pd.DatetimeIndex:
+    if not avoid_ranges or candidates.empty:
+        return candidates
+    keep = []
+    for candidate in candidates:
+        candidate_end = candidate + pd.Timedelta(days=max(int(days) - 1, 0))
+        overlaps = False
+        for item in avoid_ranges:
+            start = pd.Timestamp(item["start_date"]).normalize()
+            end = pd.Timestamp(item["end_date"]).normalize()
+            if candidate <= end and candidate_end >= start:
+                overlaps = True
+                break
+        keep.append(not overlaps)
+    return candidates[keep]
 
 
 def _exclude_avoid_ranges(candidates: pd.DatetimeIndex, avoid_ranges: list[dict], months: int) -> pd.DatetimeIndex:
@@ -1534,11 +1808,14 @@ def _run_train_selection_grid(
         detail_data=train_detail,
     )
     selected_row = _select_core_grid_row(results, parameters, selection_cfg)
+    if selected_row is None:
+        raise ValueError("train selection found no parameter rows satisfying the configured selection filters.")
     selected_params = _core_grid_params_from_row(selected_row, parameters)
     report_timezone = market_timezone(cfg)
     write_report_csv(results, train_dir / f"{result_prefix}_train_grid_results.csv", report_timezone, index=False)
     summary["selected_params"] = selected_params
     summary["selected_row"] = selected_row.to_dict() if selected_row is not None else {}
+    _annotate_stage_data_period(summary, train_subset, data_quality)
     write_json(train_dir / f"{result_prefix}_train_grid_summary.json", summary)
     write_json(train_dir / f"{result_prefix}_selected_params.json", selected_params)
     return selected_params, {
@@ -1552,7 +1829,10 @@ def _run_train_selection_grid(
 
 
 def _select_core_grid_params(results: pd.DataFrame, parameters: dict, selection_cfg: dict) -> dict:
-    return _core_grid_params_from_row(_select_core_grid_row(results, parameters, selection_cfg), parameters)
+    selected_row = _select_core_grid_row(results, parameters, selection_cfg)
+    if selected_row is None:
+        raise ValueError("core grid selection found no parameter rows satisfying the configured selection filters.")
+    return _core_grid_params_from_row(selected_row, parameters)
 
 
 def _select_core_grid_row(results: pd.DataFrame, parameters: dict, selection_cfg: dict):
@@ -1560,23 +1840,29 @@ def _select_core_grid_row(results: pd.DataFrame, parameters: dict, selection_cfg
         return None
     candidates = results.copy()
     min_total_trades = selection_cfg.get("selection_min_total_trades")
-    if min_total_trades is not None and "total_trades" in candidates.columns:
-        filtered = candidates[pd.to_numeric(candidates["total_trades"], errors="coerce") >= float(min_total_trades)]
-        if not filtered.empty:
-            candidates = filtered
+    if min_total_trades is not None:
+        if "total_trades" not in candidates.columns:
+            return None
+        candidates = candidates[pd.to_numeric(candidates["total_trades"], errors="coerce") >= float(min_total_trades)]
+        if candidates.empty:
+            return None
     min_trades_per_year = selection_cfg.get("selection_min_trades_per_year")
-    if min_trades_per_year is not None and "trades_per_year" in candidates.columns:
-        filtered = candidates[pd.to_numeric(candidates["trades_per_year"], errors="coerce") >= float(min_trades_per_year)]
-        if not filtered.empty:
-            candidates = filtered
+    if min_trades_per_year is not None:
+        if "trades_per_year" not in candidates.columns:
+            return None
+        candidates = candidates[pd.to_numeric(candidates["trades_per_year"], errors="coerce") >= float(min_trades_per_year)]
+        if candidates.empty:
+            return None
     exclusive_min_trades_per_year = selection_cfg.get("selection_exclusive_min_trades_per_year")
-    if exclusive_min_trades_per_year is not None and "trades_per_year" in candidates.columns:
-        filtered = candidates[
+    if exclusive_min_trades_per_year is not None:
+        if "trades_per_year" not in candidates.columns:
+            return None
+        candidates = candidates[
             pd.to_numeric(candidates["trades_per_year"], errors="coerce")
             > float(exclusive_min_trades_per_year)
         ]
-        if not filtered.empty:
-            candidates = filtered
+        if candidates.empty:
+            return None
     objective = str(selection_cfg.get("objective", "MAR")).lower()
     objective_columns = {
         "mar": "mar",

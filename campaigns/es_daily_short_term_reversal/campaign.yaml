@@ -1,0 +1,137 @@
+campaign_id: es_daily_short_term_reversal
+title: ES Daily Short-Term Return Reversal
+decision: TEST
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: >
+  Recent completed RTH close-to-close ES returns may partly reverse intraday as
+  liquidity demand is absorbed and liquidity providers unwind inventory.
+rationale: >
+  This campaign tests a short-horizon contrarian return-reversal edge. It is
+  the opposite economic thesis from the active failed daily time-series
+  momentum campaign, which followed prior close-to-close returns. It is also
+  distinct from prior-session IBS because it uses close-to-close return
+  magnitude and sign, not close location inside the prior daily range.
+sources:
+  - title: Fads, Martingales, and Market Efficiency
+    authors: Bruce N. Lehmann
+    year: 1990
+    venue: Quarterly Journal of Economics 105(1), 1-28
+    doi: 10.2307/2937816
+    link: https://ideas.repec.org/a/oup/qjecon/v105y1990i1p1-28..html
+    relevance: >
+      Documents sizeable short-horizon return reversals and links them to
+      liquidity around large price changes. This campaign tests whether a
+      same-day ES futures implementation survives costs and robustness gates.
+  - title: Evaporating Liquidity
+    authors: Stefan Nagel
+    year: 2012
+    venue: Review of Financial Studies 25(7), 2005-2039
+    doi: 10.1093/rfs/hhs066
+    link: https://ideas.repec.org/a/oup/rfinst/v25y2012i7p2005-2039.html
+    relevance: >
+      Interprets short-term reversal strategy returns as liquidity-provision
+      compensation. ES is tested as a liquid futures expression, not assumed to
+      inherit the equity result.
+  - title: Reversals and the Returns to Liquidity Provision
+    authors: Wei Dai, Mamdouh Medhat, Robert Novy-Marx, Savina Rizova
+    year: 2023
+    venue: NBER Working Paper 30917
+    doi: 10.3386/w30917
+    link: https://www.nber.org/papers/w30917
+    relevance: >
+      Shows that liquidity conditions influence the speed and persistence of
+      short-run reversals. This motivates testing both raw and volatility-normalized
+      ES reversal variants.
+why_it_may_apply_to_es_futures: >
+  ES is the most liquid US equity-index futures contract and frequently absorbs
+  institutional beta demand. If recent RTH price pressure includes a liquidity
+  premium rather than only information, a same-session contrarian expression may
+  capture partial reversal while avoiding overnight exposure.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - deterministic 5-minute aggregation from completed 1-minute bars
+  - prior completed RTH closes with enough warmup history
+  - same-day stop, target, and forced-flatten checks
+data_quality_caveats:
+  - The Sierra cache is aggregated bar-level data, not tick-path data.
+  - Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+  - The strategy must not use the current session close when generating the signal.
+lookahead_risks:
+  - Return direction uses only RTH closes recorded before the signal session.
+  - A signal at 10:00, 11:30, 12:00, or 13:30 ET uses the completed bar and enters no earlier than the next bar open.
+  - No final current-session close, future high/low, final VWAP, or future volume is used.
+  - Rescue attempts may change only parameter space or fixed parameters, not the reversal mechanic.
+failure_modes:
+  - Short-term equity reversal evidence may not transfer to ES after costs.
+  - The return reversal may require holding overnight, which this campaign forbids.
+  - The signal may be dominated by crisis years or one side only.
+  - Daily equity-index drift may overpower short-side reversal variants.
+  - Tight same-day stops/targets may truncate any slow reversal.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_adjacent_edges_checked:
+    - es_daily_time_series_momentum
+    - es_prior_session_ibs_reversion
+    - es_connors_rsi2_mean_reversion
+    - es_overnight_intraday_reversal
+    - es_overnight_return_late_day_momentum
+  conclusion: >
+    Eligible as a fresh active campaign. It fades recent completed RTH
+    close-to-close returns, unlike daily time-series momentum which followed
+    them, prior-session IBS which uses close-in-range location, and overnight
+    campaigns which key off prior close-to-RTH-open returns.
+variants:
+  - prior_1d_loss_reversal_long_1000
+  - prior_1d_gain_reversal_short_1000
+  - prior_3d_two_sided_reversal_1130
+  - prior_5d_two_sided_reversal_1330
+  - vol_norm_5d_two_sided_reversal_1200
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - core strategy mechanic
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      variants:
+        - prior_1d_loss_reversal_long_1000
+        - prior_1d_gain_reversal_short_1000
+        - prior_3d_two_sided_reversal_1130
+        - prior_5d_two_sided_reversal_1330
+        - vol_norm_5d_two_sided_reversal_1200
+      audit: research_artifacts/es_daily_short_term_reversal_rescue_attempt_1_20260617.md
+      scope: parameter_space_only
+      terminal_stage: limited_core_grid_test
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_daily_short_term_reversal/campaign_test_summary.json
+  results_csv: backtest-campaigns/es_daily_short_term_reversal/campaign_results.csv
+  density_audit: research_artifacts/es_daily_short_term_reversal_density_audit_20260617.md
+  rescue_audit: research_artifacts/es_daily_short_term_reversal_rescue_attempt_1_20260617.md
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: >
+    All five originals and all five one-time parameter-space-only rescues failed
+    limited_core_grid_test with zero profitable grid combinations. No run
+    reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation,
+    frozen validation, or candidate reporting.

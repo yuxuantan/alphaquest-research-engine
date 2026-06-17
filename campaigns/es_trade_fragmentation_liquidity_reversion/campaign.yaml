@@ -1,0 +1,137 @@
+campaign_id: es_trade_fragmentation_liquidity_reversion
+title: ES Trade Fragmentation Liquidity Reversion
+decision: FAIL
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: >
+  Intraday periods with unusually high trade count but unusually low average
+  trade size may identify fragmented algorithmic/liquidity-provision activity.
+  After a completed short-window price move, that fragmented activity can mark
+  transitory price pressure that mean reverts after next-bar execution.
+rationale: >
+  This campaign tests trade fragmentation, not signed-flow persistence, VPIN
+  toxicity, large-vs-residual stealth flow, volume shock, prior-level
+  dislocation, or opening-drive inventory. Each variant requires both high
+  same-clock rolling trade-count rank and low same-clock rolling average-trade
+  size rank, then fades a completed 15, 30, or 60 minute price move.
+sources:
+  - title: Does Algorithmic Trading Improve Liquidity?
+    authors: Terrence Hendershott, Charles M. Jones, and Albert J. Menkveld
+    year: 2011
+    venue: Journal of Finance
+    doi: 10.1111/j.1540-6261.2010.01624.x
+    link: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2010.01624.x
+    relevance: >
+      Documents that algorithmic trading is related to liquidity and market
+      quality, motivating a bar-level proxy based on trade count and average
+      trade size rather than raw volume alone.
+  - title: Low-Latency Trading
+    authors: Joel Hasbrouck and Gideon Saar
+    year: 2013
+    venue: Journal of Financial Markets
+    doi: 10.1016/j.finmar.2013.05.003
+    link: https://ideas.repec.org/a/eee/finmar/v16y2013i4p646-679.html
+    relevance: >
+      Defines low-latency activity and studies high-message/high-activity
+      microstructure behavior, supporting trade fragmentation as an observable
+      liquidity-state proxy.
+  - title: High-Frequency Trading and Price Discovery
+    authors: Jonathan Brogaard, Terrence Hendershott, and Ryan Riordan
+    year: 2014
+    venue: Review of Financial Studies
+    doi: 10.1093/rfs/hht045
+    link: https://academic.oup.com/rfs/article-abstract/27/8/2267/1582754
+    relevance: >
+      Separates HFT participation in permanent price discovery from transitory
+      pricing errors, supporting explicit tests of whether fragmented activity
+      after short-window price movement is continuation or reversion.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - Sierra aggregate bar-level volume and trade-count fields
+  - completed rolling trade_orderflow_trades_N and trade_orderflow_avg_trade_size_N features
+  - prior same-clock ranks computed without current-day future data
+  - exchange session labels and config-driven no-overnight forced flatten checks
+data_quality_caveats:
+  - Sierra trade count is used only as a completed-bar aggregate, not as a print-sequence audit trail.
+  - Average trade size is volume divided by bar-level trade count; it is not a parent-order reconstruction.
+  - The edge is invalid for intra-minute fill ordering, tick-replay sequencing, or queue-position claims without a separate data audit.
+lookahead_risks:
+  - Rolling trade count, average trade size, and return use only completed bars ending at the signal bar close.
+  - Same-clock ranks are computed against prior same-clock observations only, excluding the current value from the ranking history.
+  - A signal at HH:MM uses the bar that closed at HH:MM and can enter only at the next bar open.
+  - No final current-session VWAP, final daily range, future orderflow, future volume profile, or future session totals are used.
+  - All variants flatten on the same RTH session before the configured prop cutoff.
+failure_modes:
+  - High trade count and low average size may reflect liquidity competition that improves efficiency rather than causing reversion.
+  - Sierra aggregate trade counts may be too coarse to proxy algorithmic fragmentation in ES.
+  - The effect may be present only during specific volatility regimes, which would risk overfitting if filtered after results.
+  - Multi-slot variants may suffer overlapping-signal suppression or profit concentration by time of day.
+  - Pessimistic same-bar stop/target handling can erase short-horizon reversion edge.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_campaign_count_checked: 47
+  key_active_rejected_edges_checked:
+    - es_signed_orderflow_persistence
+    - es_trade_size_stealth_orderflow
+    - es_orderflow_absorption_exhaustion_reversal
+    - es_vpin_toxicity_continuation
+    - es_opening_drive_inventory_absorption
+    - es_volume_shock_liquidity_reversal
+    - es_market_plumbing_liquidity_capacity
+    - es_mes_micro_flow_divergence_reversion
+    - es_prior_level_delta_dislocation
+    - es_vwap_pullback_continuation
+  conclusion: >
+    Not a duplicate in active scope. Active signed-flow and trade-size campaigns
+    test directional signed-volume information. Active absorption and volume
+    shock campaigns test volume/flow pressure versus price displacement. This
+    campaign tests a different observable: high trade-count rank combined with
+    low average-trade-size rank as a fragmented liquidity-state proxy.
+variants:
+  - morning_15m_fragmented_up_fade_short
+  - morning_15m_fragmented_down_fade_long
+  - midday_30m_fragmented_up_fade_short
+  - midday_30m_fragmented_down_fade_long
+  - day_60m_fragmented_two_sided_fade
+density_audit:
+  artifact: research_artifacts/es_trade_fragmentation_liquidity_reversion_density_audit_20260617.md
+  conclusion: >
+    Pre-test density screen used only local Sierra aggregate data and no PnL.
+    Multi-slot variants have plausible signal density above the 50 trades/year
+    methodology threshold at the frozen starting thresholds.
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core economic edge
+    - change timeframe or data window
+    - add or remove filters after seeing results
+    - alter costs, fills, sessions, validation gates, or prop rules
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-17'
+  aggregate_report: backtest-campaigns/es_trade_fragmentation_liquidity_reversion/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  terminal_stage: limited_core_grid_test
+  monkey_reached_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: >
+    All five original variants failed limited_core_grid_test with zero
+    profitable combinations and zero benchmark-passing combinations. Each
+    failed variant received exactly one parameter-space-only rescue. All five
+    rescues also failed limited_core_grid_test with zero profitable combinations
+    and zero benchmark-passing combinations. No run reached monkey, WFA, Monte
+    Carlo, simulated incubation, frozen validation, or candidate reporting.

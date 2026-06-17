@@ -1,0 +1,193 @@
+campaign_id: es_treasury_auction_pressure
+title: ES Treasury Auction Pressure
+decision: FAIL
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Anticipated nominal Treasury Note/Bond auction supply can create temporary
+  risk-capacity and discount-rate pressure that spills into ES intraday returns on
+  auction days, with possible post-auction recovery after inventory is absorbed.
+rationale: This campaign tests the announced Treasury coupon-auction calendar as the
+  edge variable. It does not use Treasury yield moves, auction outcomes, same-day
+  high yield/tail/bid-to-cover, ES own momentum filters, option-expiration calendars,
+  VIX/variance states, or paid market data.
+sources:
+- title: Anticipated and Repeated Shocks in Liquid Markets
+  authors: Dong Lou, Hongjun Yan, and Jinfan Zhang
+  year: 2013
+  venue: Review of Financial Studies 26(8), 1891-1912
+  doi: 10.1093/rfs/hht035
+  link: https://academic.oup.com/rfs/article-abstract/26/8/1891/1589893
+  relevance: Documents Treasury auction price pressure and reversal around anticipated
+    repeated Treasury supply events, linked to dealer risk-bearing capacity and slow-moving
+    capital.
+- title: Treasury Securities Auctions Data
+  authors: U.S. Department of the Treasury, FiscalData
+  year: 2026
+  venue: FiscalData official dataset
+  link: https://fiscaldata.treasury.gov/datasets/treasury-securities-auctions-data/
+  relevance: Free official source for announced and auctioned marketable Treasury
+    securities used to build the no-lookahead auction calendar.
+- title: Announcements, Data and Results
+  authors: U.S. TreasuryDirect
+  year: 2026
+  venue: TreasuryDirect
+  link: https://www.treasurydirect.gov/auctions/announcements-data-results/
+  relevance: Documents that Treasury auction schedules are released ahead of time
+    at quarterly refunding and in auction announcements, supporting prior-known event-date
+    treatment.
+- title: Intraday Price Pressure and Order Flow Around U.S. Treasury Auctions
+  authors: Michael J. Fleming and coauthors
+  year: 2026
+  venue: Federal Reserve Bank of New York Staff Report
+  link: https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr1188.pdf
+  relevance: Related high-frequency Treasury-auction evidence. Used only as mechanism
+    support; no Treasury tick data or auction outcome variables are used.
+data_needs:
+- timezone-aware local ES RTH 1-minute OHLCV/orderflow bars in America/New_York
+- free official FiscalData Treasury auction rows with announcement dates before auction
+  dates
+- nominal Note/Bond auction calendar joined to ES RTH sessions
+- next-bar-open entry after completed signal bar
+- same-day forced flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The Treasury auction calendar is event-date data, not Treasury tick/order-book data.
+- Bond-only auction dates are too sparse for standalone variants under the 50 trades/year
+  rule.
+- The local Sierra cache is completed-bar OHLCV/orderflow, not tick-path proof for
+  intra-minute stop/target ordering.
+- This is a cross-asset spillover proxy; the edge may exist in Treasuries without
+  translating to directional ES returns.
+lookahead_risks:
+- Auction rows are included only when announcement date is before auction date.
+- Signals cannot use auction outcome fields such as high yield, tails, total accepted,
+  bid-to-cover, or dealer award data.
+- Signals use only ex-ante calendar membership and the completed configured ES bar
+  time.
+- No final session high/low, final VWAP, future returns, or post-entry Treasury outcome
+  is used.
+failure_modes:
+- Treasury auction pressure may be fully contained in Treasury securities and rates
+  rather than ES.
+- ES direction can depend on inflation/growth regime, making a fixed long/short auction-day
+  expression unstable.
+- Auction-day effects may be concentrated in refunding weeks, crisis regimes, or a
+  few macro-event days.
+- Calendar-only entries may be too blunt without using disallowed outcome or order-flow
+  information.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_treasury_rate_shock_intraday
+  - es_market_plumbing_liquidity_capacity
+  - es_vix_expiration_pressure
+  - es_spx_0dte_expiration_pressure
+  - es_monthly_opex_pressure
+  - es_quarterly_expiration_pressure
+  - es_bls_macro_release_day_drift
+  - es_fomc_pre_announcement_drift
+  conclusion: Not a duplicate in active scope. This campaign uses preannounced nominal
+    Treasury auction dates as the edge, distinct from lagged Treasury yield shocks,
+    market-plumbing liquidity, macro-release drift, and option-expiration calendars.
+feature_construction:
+  builder: tools/build_es_treasury_auction_calendar.py
+  free_source_cache: data/external/treasury_auctions_query_20110101_20260609.csv
+  output: data/external/es_treasury_coupon_auction_sessions_20110103_20260609.csv
+  lookahead_control: calendar includes only Note/Bond rows whose announcement date
+    is earlier than auction date; signal modules cannot read outcome fields
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  start_date: '2011-01-03'
+  end_date: '2026-06-09'
+parameter_space:
+  entry_parameters: 'fixed per variant: auction_scope, signal_time, direction'
+  stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 9
+variants:
+- all_coupon_pre_auction_short_1130
+- all_coupon_post_auction_short_1305
+- all_coupon_late_reversal_long_1430
+- note_only_post_auction_short_1305
+- all_coupon_late_pressure_short_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - alter costs, fills, sessions, validation gates, or prop rules
+  - add or remove filters after seeing results
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: all_coupon_pre_auction_short_1130
+    config: campaigns/es_treasury_auction_pressure/rescue_attempts/parameter_space_rescue_1/all_coupon_pre_auction_short_1130/config.yaml
+    report: backtest-campaigns/es_treasury_auction_pressure/all_coupon_pre_auction_short_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; benchmark-passing combinations
+      0
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: all_coupon_post_auction_short_1305
+    config: campaigns/es_treasury_auction_pressure/rescue_attempts/parameter_space_rescue_1/all_coupon_post_auction_short_1305/config.yaml
+    report: backtest-campaigns/es_treasury_auction_pressure/all_coupon_post_auction_short_1305/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; benchmark-passing combinations
+      0
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: all_coupon_late_reversal_long_1430
+    config: campaigns/es_treasury_auction_pressure/rescue_attempts/parameter_space_rescue_1/all_coupon_late_reversal_long_1430/config.yaml
+    report: backtest-campaigns/es_treasury_auction_pressure/all_coupon_late_reversal_long_1430/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; benchmark-passing combinations
+      0
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: note_only_post_auction_short_1305
+    config: campaigns/es_treasury_auction_pressure/rescue_attempts/parameter_space_rescue_1/note_only_post_auction_short_1305/config.yaml
+    report: backtest-campaigns/es_treasury_auction_pressure/note_only_post_auction_short_1305/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; benchmark-passing combinations
+      0
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: all_coupon_late_pressure_short_1500
+    config: campaigns/es_treasury_auction_pressure/rescue_attempts/parameter_space_rescue_1/all_coupon_late_pressure_short_1500/config.yaml
+    report: backtest-campaigns/es_treasury_auction_pressure/all_coupon_late_pressure_short_1500/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; benchmark-passing combinations
+      0
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_treasury_auction_pressure/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: All five original Treasury auction-pressure variants failed limited_core_grid_test.
+    Each failed variant received exactly one stop/target-parameter-space rescue preserving
+    the same auction calendar, auction scope, signal time, direction, modules, data,
+    costs, session rules, prop rules, and validation gates. All five rescues also
+    failed limited_core_grid_test. No run reached monkey, WFA, WFA OOS monkey, Monte
+    Carlo, simulated incubation, frozen validation, or candidate reporting.

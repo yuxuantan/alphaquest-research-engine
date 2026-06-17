@@ -40,6 +40,10 @@ _WFA_WORKER_BENCHMARKS = None
 _WFA_WORKER_SLICE_CACHE = None
 
 
+class NoEligibleWfaSelectionError(ValueError):
+    """Raised when the WFA in-sample grid has no row eligible for selection."""
+
+
 def create_windows(
     data: pd.DataFrame,
     train_months: int,
@@ -204,7 +208,33 @@ def run_wfa(
                     }
                 )
                 continue
-            best = _select_best_in_sample(grid_df, objective, selection_filter)
+            try:
+                best = _select_best_in_sample(grid_df, objective, selection_filter)
+            except NoEligibleWfaSelectionError as exc:
+                _log_window_skip(wid, len(windows), f"early exit: {exc}")
+                rows.append(
+                    _early_exit_row(
+                        wid,
+                        tr_s,
+                        tr_e,
+                        te_s,
+                        te_e,
+                        objective,
+                        {},
+                        "no_in_sample_rows_after_selection_filter",
+                    )
+                )
+                progress.update(wid, force=True)
+                window_timings.append(
+                    {
+                        "window_id": wid,
+                        "slice_seconds": slice_seconds,
+                        "train_grid_seconds": train_grid_seconds,
+                        "total_seconds": _elapsed(window_started),
+                        "early_exit": True,
+                    }
+                )
+                break
             if early_exit_require_train_profitable and _metric_value(best, "net_profit") <= 0.0:
                 _log_window_skip(
                     wid,
@@ -850,6 +880,8 @@ def _select_best_in_sample(grid_df: pd.DataFrame, objective: str, selection_filt
         raise ValueError(f"wfa.objective '{_objective_label(objective)}' is not available in grid results.")
 
     candidates = _apply_selection_filter(grid_df, selection_filter or {})
+    if candidates.empty:
+        raise NoEligibleWfaSelectionError("no in-sample grid row satisfies the configured selection_filter")
     sort_columns, ascending = _selection_sort_spec(candidates, objective)
     return candidates.sort_values(sort_columns, ascending=ascending, na_position="last").iloc[0]
 
@@ -893,11 +925,11 @@ def _apply_selection_filter(grid_df: pd.DataFrame, selection_filter: dict) -> pd
         ("profit_factor", "min_profit_factor", lambda series, value: series >= value),
     ]
     for column, key, predicate in filters:
-        if key not in selection_filter or column not in candidates.columns:
+        if key not in selection_filter:
             continue
+        if column not in candidates.columns:
+            return candidates.iloc[0:0].copy()
         candidates = candidates[predicate(pd.to_numeric(candidates[column], errors="coerce"), float(selection_filter[key]))]
-    if candidates.empty:
-        return grid_df
     return candidates
 
 

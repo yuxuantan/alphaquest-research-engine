@@ -1,0 +1,193 @@
+campaign_id: es_cboe_skew_tail_risk_intraday
+title: ES Cboe SKEW Tail Risk Intraday
+decision: FAIL
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Cboe SKEW states, measuring SPX option-implied downside-tail asymmetry, may identify
+  ES intraday risk-off or risk-on pressure after the cash open.
+rationale: This campaign tests option-implied skew/tail-risk state from Cboe SKEW. It is distinct from
+  realized ES skewness, VVIX volatility-of-volatility, VIX-minus-realized variance risk premium, VIX expiration
+  calendar pressure, put/call volume sentiment, OFR stress, Treasury shocks, ORB, VWAP, prior-level, and
+  aggregate order-flow campaigns.
+sources:
+- title: 'Risk-Neutral Skewness: Evidence from Stock Options'
+  authors: Patrick Dennis and Stewart Mayhew
+  year: 2002
+  venue: Journal of Financial and Quantitative Analysis, 37(3), 471-493
+  link: https://ideas.repec.org/a/cup/jfinqa/v37y2002i03p471-493_00.html
+  relevance: Documents option-implied risk-neutral skewness from Cboe options and connects negative skewness
+    to market risk pricing.
+- title: 'The Cboe SKEW Index: Extracting What Has Been Left'
+  authors: Liuren Wu and related Cboe SKEW literature
+  year: 2020
+  venue: SSRN working paper on Cboe SKEW decomposition
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3121027
+  relevance: Studies the Cboe SKEW index as SPX option-implied skewness and separates downside-tail information
+    from other skew components.
+- title: Cboe SKEW Index Dashboard and Historical Data
+  authors: Cboe Global Markets
+  year: 2026
+  venue: Official Cboe index page and daily historical CSV endpoint
+  link: https://www.cboe.com/us/indices/dashboard/skew/
+  relevance: Official free source and definition for SKEW, which estimates skewness of S&P 500 returns
+    at a 30-day horizon.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- official free Cboe SKEW daily historical CSV
+- derived session feature file using only Cboe observations strictly before the ES session date
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- SKEW is a daily closing SPX option-implied index, not an intraday options snapshot.
+- Same-day Cboe closes are unavailable to intraday ES signals and must not be used.
+- Sierra data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+- Using the Cboe close from the same ES session date would leak unavailable data and is forbidden.
+- Signals use only a completed ES bar at the configured timestamp and lagged Cboe daily state.
+- Rolling ranks are computed over the lagged session feature sequence only.
+- No final session high/low, final VWAP, future returns, or post-entry SKEW values are used.
+failure_modes:
+- Option-implied skewness may price longer-horizon tail insurance rather than same-day ES futures direction.
+- High SKEW may imply either bearish pressure or a compensated risk premium; the predeclared variants
+  test only the stated directions.
+- Daily SKEW states may be too slow for intraday ES timing.
+- Performance may concentrate in crisis windows, single years, or isolated volatility events.
+- The signal may overlap with broad volatility regimes and fail WFA stability.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_realized_skewness_reversal
+  - es_vvix_tail_risk_intraday
+  - es_variance_risk_premium_intraday
+  - es_cboe_put_call_sentiment_intraday
+  - es_volatility_managed_intraday_premium
+  - es_vix_expiration_pressure
+  - es_realized_jump_variation_premium
+  conclusion: Not a duplicate of active failed campaigns. This tests lagged Cboe SKEW option-implied SPX
+    return skew/tail asymmetry, not realized ES return skewness, VVIX volatility-of-volatility, VIX-minus-realized
+    variance premium, option-volume put/call sentiment, or VIX settlement calendar pressure.
+feature_construction:
+  builder: tools/build_es_cboe_skew_tail_risk_features.py
+  skew_source: https://cdn.cboe.com/api/global/us_indices/daily_prices/SKEW_History.csv
+  skew_cache: data/external/cboe_skew_history.csv
+  output: data/external/es_cboe_skew_tail_risk_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3758
+  lookahead_control: latest Cboe SKEW close strictly before ES session_date
+density_check:
+  sample_start: '2011-01-03'
+  sample_end: '2026-06-09'
+  threshold_trade_density_per_year: planned rank thresholds produce about 83 to 119 eligible sessions/year
+    before bar availability checks
+  tradecount_rule: expected to clear the 50 trades/year gate before strategy filters and fills
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+parameter_space:
+  upper_tail_thresholds:
+  - 0.55
+  - 0.6
+  - 0.65
+  lower_tail_thresholds:
+  - 0.45
+  - 0.4
+  - 0.35
+  stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 27
+variants:
+- high_skew_short_1000
+- low_skew_long_1030
+- rising_skew_short_1130
+- falling_skew_long_1200
+- persistent_high_skew_short_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space only
+  forbidden_changes:
+  - core strategy mechanic
+  - Cboe availability lag rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+outcome:
+  completed_at: '2026-06-17'
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  rescue_runs: 5
+  summary: All five original Cboe SKEW tail-risk variants failed limited_core_grid_test. Each failed variant
+    received exactly one parameter-space-only rescue preserving the same Cboe prior-close feature construction,
+    setup mode, direction, entry time, modules, data, costs, session rules, prop rules, and validation
+    gates. All five rescues also failed limited_core_grid_test. No run reached monkey, WFA, WFA OOS monkey,
+    Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  aggregate_report: backtest-campaigns/es_cboe_skew_tail_risk_intraday/campaign_test_summary.json
+  best_original:
+    variant: high_skew_short_1000
+    top_net_profit: 565.0
+    profitable_combo_rate: 0.07407407407407407
+    benchmark_pass_combos: 0
+  best_rescue:
+    variant: high_skew_short_1000
+    top_net_profit: 565.0
+    profitable_combo_rate: 0.14814814814814814
+    benchmark_pass_combos: 0
+rescue_attempts:
+- variant: high_skew_short_1000
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_skew_tail_risk_intraday/rescue_attempts/parameter_space_rescue_1/high_skew_short_1000/config.yaml
+  result_path: backtest-campaigns/es_cboe_skew_tail_risk_intraday/high_skew_short_1000/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: low_skew_long_1030
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_skew_tail_risk_intraday/rescue_attempts/parameter_space_rescue_1/low_skew_long_1030/config.yaml
+  result_path: backtest-campaigns/es_cboe_skew_tail_risk_intraday/low_skew_long_1030/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: rising_skew_short_1130
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_skew_tail_risk_intraday/rescue_attempts/parameter_space_rescue_1/rising_skew_short_1130/config.yaml
+  result_path: backtest-campaigns/es_cboe_skew_tail_risk_intraday/rising_skew_short_1130/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: falling_skew_long_1200
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_skew_tail_risk_intraday/rescue_attempts/parameter_space_rescue_1/falling_skew_long_1200/config.yaml
+  result_path: backtest-campaigns/es_cboe_skew_tail_risk_intraday/falling_skew_long_1200/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: persistent_high_skew_short_1330
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_skew_tail_risk_intraday/rescue_attempts/parameter_space_rescue_1/persistent_high_skew_short_1330/config.yaml
+  result_path: backtest-campaigns/es_cboe_skew_tail_risk_intraday/persistent_high_skew_short_1330/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL

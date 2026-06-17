@@ -1,0 +1,177 @@
+campaign_name: es_amihud_illiquidity_price_impact
+campaign_id: es_amihud_illiquidity_price_impact
+instrument: ES
+decision: FAIL
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no non-archived Amihud illiquidity
+  or daily price-impact ES campaign. The edge uses dense lagged daily absolute-return-per-notional-volume
+  features from local ES RTH bars and is not an intraday volume-shock, orderflow,
+  fragmentation, or external funding-liquidity proxy.
+edge_hypothesis: Lagged Amihud-style illiquidity, computed as absolute RTH return
+  divided by ES notional volume, may proxy daily price impact. High expected illiquidity
+  can require a liquidity premium, while acute high illiquidity can also mark persistent
+  stress.
+why_it_may_apply_to_es_futures: ES is the primary liquid futures expression of U.S.
+  equity-index risk. Although Amihud was introduced in equities, its return-per-dollar-volume
+  construct is a simple price-impact proxy that can be computed from long ES bar history
+  without paid tick or book data.
+research_sources:
+- title: 'Illiquidity and Stock Returns: Cross-Section and Time-Series Effects'
+  author: Yakov Amihud
+  year: 2002
+  link_or_doi: https://doi.org/10.1016/S1386-4181(01)00024-6
+  expected_mechanism: Defines ILLIQ as absolute return divided by dollar volume and
+    interprets it as a rough price-impact measure; expected market illiquidity is
+    positively related to expected excess returns.
+- title: Asset Pricing with Liquidity Risk
+  author: Viral V. Acharya and Lasse Heje Pedersen
+  year: 2005
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2004.06.007
+  expected_mechanism: Liquidity-adjusted CAPM motivates expected return compensation
+    for expected illiquidity and covariation with market liquidity.
+- title: Liquidity and Asset Prices
+  author: Yakov Amihud, Haim Mendelson, and Lasse Heje Pedersen
+  year: 2005
+  link_or_doi: https://econpapers.repec.org/RePEc:now:fntfin:0500000003
+  expected_mechanism: Surveys why liquidity and liquidity risk are priced, supporting
+    tests of lagged liquidity-state variables.
+behavioural_or_microstructure_rationale: The campaign treats prior completed RTH price
+  impact as an ex-ante state. High price impact can mean market makers require compensation
+  for immediacy, but it can also represent unresolved stress. Therefore the five variants
+  intentionally test both premium and stress interpretations without changing the
+  feature after results.
+expected_failure_modes:
+- Amihud illiquidity was developed for equity cross-sections and may not forecast
+  same-day ES direction.
+- Liquidity premium and liquidity-stress continuation may cancel across regimes.
+- The effect may require multi-day holding periods, which this no-overnight methodology
+  forbids.
+- Daily notional volume may mostly proxy volatility or trend already rejected by active
+  realized-volatility campaigns.
+- Performance may concentrate in crisis years or a narrow threshold.
+- Performance may fail after commissions, slippage, pessimistic same-bar ordering,
+  monkey stress, WFA selection, or one-tick-worse slippage.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/es_amihud_illiquidity_features_20110103_20260609.csv
+feature_construction:
+  builder: tools/build_es_amihud_illiquidity_features.py
+  output: data/external/es_amihud_illiquidity_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3740
+  lookahead_control: Every tradable Amihud illiquidity feature is shifted one completed
+    RTH session; a signal date can only use information available after the prior
+    RTH close.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+forbidden_forms_of_lookahead:
+- Use of current-session Amihud illiquidity, volume, high, low, close, or post-entry
+  returns in the signal state.
+- Use of future sessions in rolling ranks.
+- Changing illiquidity definitions, thresholds, entry times, or direction after seeing
+  test results.
+- Holding overnight to approximate a liquidity-risk horizon that is outside the configured
+  methodology.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_campaign_count_checked: 49
+  not_duplicate_of:
+  - es_volume_shock_liquidity_reversal
+  - es_market_plumbing_liquidity_capacity
+  - es_trade_fragmentation_liquidity_reversion
+  - es_trade_size_stealth_orderflow
+  - es_mes_micro_flow_divergence_reversion
+  - es_signed_orderflow_persistence
+  - es_vpin_toxicity_continuation
+  - es_realized_semivariance_asymmetry
+  - es_realized_skewness_reversal
+  - es_realized_jump_variation_premium
+  conclusion: This campaign uses lagged daily return-per-notional-volume price impact.
+    It is not an intraday volume shock, orderflow persistence, trade-size/fragmentation
+    state, external funding-liquidity proxy, or realized-volatility shape campaign.
+variants:
+- high_1d_illiq_premium_long_1000
+- high_1d_illiq_stress_short_1030
+- high_5d_illiq_premium_long_1130
+- high_20d_illiq_premium_long_1200
+- two_sided_5d_illiq_state_1330
+density_audit:
+  artifact: research_artifacts/es_amihud_illiquidity_price_impact_density_audit_20260617.md
+  conclusion: All five variant shapes have plausible pre-test signal density above
+    50 trades/year across the declared threshold grid.
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - feature construction shift rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - variant: high_1d_illiq_premium_long_1000
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_amihud_illiquidity_price_impact/rescue_attempts/parameter_space_rescue_1/high_1d_illiq_premium_long_1000/config.yaml
+    result_path: backtest-campaigns/es_amihud_illiquidity_price_impact/high_1d_illiq_premium_long_1000/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: high_1d_illiq_stress_short_1030
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_amihud_illiquidity_price_impact/rescue_attempts/parameter_space_rescue_1/high_1d_illiq_stress_short_1030/config.yaml
+    result_path: backtest-campaigns/es_amihud_illiquidity_price_impact/high_1d_illiq_stress_short_1030/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: high_5d_illiq_premium_long_1130
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_amihud_illiquidity_price_impact/rescue_attempts/parameter_space_rescue_1/high_5d_illiq_premium_long_1130/config.yaml
+    result_path: backtest-campaigns/es_amihud_illiquidity_price_impact/high_5d_illiq_premium_long_1130/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: high_20d_illiq_premium_long_1200
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_amihud_illiquidity_price_impact/rescue_attempts/parameter_space_rescue_1/high_20d_illiq_premium_long_1200/config.yaml
+    result_path: backtest-campaigns/es_amihud_illiquidity_price_impact/high_20d_illiq_premium_long_1200/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: two_sided_5d_illiq_state_1330
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_amihud_illiquidity_price_impact/rescue_attempts/parameter_space_rescue_1/two_sided_5d_illiq_state_1330/config.yaml
+    result_path: backtest-campaigns/es_amihud_illiquidity_price_impact/two_sided_5d_illiq_state_1330/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-17'
+  aggregate_report: backtest-campaigns/es_amihud_illiquidity_price_impact/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five original Amihud illiquidity price-impact variants failed
+    limited_core_grid_test. Each failed variant received exactly one parameter-space-only
+    rescue preserving the same Amihud feature, direction mode, entry time, rank/value
+    columns, entry module, stop module, take-profit module, timeframe, data window,
+    costs, fill rules, session rules, prop rules, and validation gates. All five rescues
+    also failed limited_core_grid_test. No run reached monkey, WFA, WFA OOS monkey,
+    Monte Carlo, simulated incubation, frozen validation, or candidate reporting.

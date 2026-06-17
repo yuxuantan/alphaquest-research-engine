@@ -1,0 +1,170 @@
+campaign_name: es_aqr_bab_factor_state
+campaign_id: es_aqr_bab_factor_state
+instrument: ES
+decision: FAIL
+reason_for_decision: Active-only duplicate review found no non-archived AQR BAB factor-state
+  ES campaign. The edge uses a free public defensive-factor dataset with a conservative
+  publication lag and is distinct from price-only momentum/reversal, volatility-state,
+  option-state, Treasury, dollar, oil, and local orderflow families.
+edge_hypothesis: Lagged U.S. Betting Against Beta factor weakness may identify leverage-constraint
+  or defensive-factor stress states that condition same-day ES intraday risk appetite
+  after the public data availability lag.
+why_it_may_apply_to_es_futures: ES is the liquid futures expression of broad U.S.
+  equity risk. The BAB anomaly links leverage constraints and high-beta overpricing
+  to defensive-factor returns; stale but public BAB stress states may proxy risk-capacity
+  regimes that affect intraday ES exposure demand.
+research_sources:
+- title: Betting Against Beta
+  author: Andrea Frazzini and Lasse H. Pedersen
+  year: 2014
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2013.10.005
+  expected_mechanism: Documents the BAB anomaly and its link to leverage constraints,
+    high-beta demand, and funding-liquidity pressure.
+- title: 'Betting Against Beta: Equity Factors, Daily'
+  author: AQR Capital Management
+  year: 2026
+  link_or_doi: https://www.aqr.com/Insights/Datasets/Betting-Against-Beta-Equity-Factors-Daily
+  expected_mechanism: Provides free public daily long/short BAB equity factor returns
+    for U.S. equities and international markets, updated monthly.
+behavioural_or_microstructure_rationale: A poor lagged BAB state may reflect recent
+  pressure in low-beta-versus-high-beta relative value and leverage-constrained positioning.
+  ES trades test whether that state carries into liquid index-futures risk demand
+  without requiring overnight exposure.
+expected_failure_modes:
+- The BAB anomaly is cross-sectional and may not predict broad ES direction.
+- AQR daily factor values are updated monthly, so the 45-calendar-day publication
+  lag may make the state too stale.
+- The public dataset is reconstructed by AQR over time; historical publication snapshots
+  are not available locally.
+- Signals may only work in narrow crisis periods or concentrate in a few high-volatility
+  days.
+- Costs, one-tick-worse slippage, missed trades, WFA selection, or prop-style drawdown
+  rules may erase any apparent edge.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/aqr_bab_equity_factors_daily.xlsx
+- data/external/es_aqr_bab_features_20110103_20260609.csv
+feature_construction:
+  builder: tools/build_es_aqr_bab_features.py
+  output: data/external/es_aqr_bab_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3817
+  lookahead_control: Each ES session uses only the latest AQR BAB observation at least
+    45 calendar days old; no same-day or prior-day AQR values are used because the
+    public file is updated monthly.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+forbidden_forms_of_lookahead:
+- Using an AQR BAB observation that is not at least 45 calendar days old on the ES
+  session date.
+- Using current-session ES OHLCV, final RTH close, or post-entry data to form the
+  signal.
+- Changing BAB feature columns, entry times, direction, threshold grids, stop grids,
+  or target grids after seeing results.
+- Treating archived scratch screens as validation evidence for this campaign.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_campaign_count_checked: 61
+  not_duplicate_of:
+  - es_daily_time_series_momentum
+  - es_daily_short_term_reversal
+  - es_volatility_managed_intraday_premium
+  - es_realized_semivariance_asymmetry
+  - es_cboe_vix_level_state_intraday
+  - es_dollar_risk_appetite_intraday
+  - es_market_plumbing_liquidity_capacity
+  - es_trade_size_stealth_orderflow
+  - es_trade_fragmentation_liquidity_reversion
+  conclusion: This campaign is an external defensive-factor/leverage-constraint state
+    test, not an ES price-momentum, local liquidity, volatility-only, option-sentiment,
+    Treasury, dollar, oil, or orderflow campaign.
+variants:
+- low_bab_daily_rebound_long_0935
+- low_bab_21d_rebound_long_1000
+- low_bab_63d_rebound_long_1030
+- low_bab_z63_rebound_long_1100
+- bab_63d_extreme_two_sided_1330
+density_audit:
+  artifact: research_artifacts/es_aqr_bab_factor_state_density_audit_20260617.md
+  conclusion: All declared variant threshold grids have at least one dense setting
+    above 50 trades/year; the selected grids avoid obviously sparse edge definitions.
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - feature construction availability lag
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - variant: bab_63d_extreme_two_sided_1330
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_aqr_bab_factor_state/rescue_attempts/parameter_space_rescue_1/bab_63d_extreme_two_sided_1330/config.yaml
+    result_path: backtest-campaigns/es_aqr_bab_factor_state/bab_63d_extreme_two_sided_1330/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: low_bab_21d_rebound_long_1000
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_aqr_bab_factor_state/rescue_attempts/parameter_space_rescue_1/low_bab_21d_rebound_long_1000/config.yaml
+    result_path: backtest-campaigns/es_aqr_bab_factor_state/low_bab_21d_rebound_long_1000/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: low_bab_63d_rebound_long_1030
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_aqr_bab_factor_state/rescue_attempts/parameter_space_rescue_1/low_bab_63d_rebound_long_1030/config.yaml
+    result_path: backtest-campaigns/es_aqr_bab_factor_state/low_bab_63d_rebound_long_1030/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: low_bab_daily_rebound_long_0935
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_aqr_bab_factor_state/rescue_attempts/parameter_space_rescue_1/low_bab_daily_rebound_long_0935/config.yaml
+    result_path: backtest-campaigns/es_aqr_bab_factor_state/low_bab_daily_rebound_long_0935/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: low_bab_z63_rebound_long_1100
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_aqr_bab_factor_state/rescue_attempts/parameter_space_rescue_1/low_bab_z63_rebound_long_1100/config.yaml
+    result_path: backtest-campaigns/es_aqr_bab_factor_state/low_bab_z63_rebound_long_1100/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: walk_forward_analysis
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-17'
+  aggregate_report: backtest-campaigns/es_aqr_bab_factor_state/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached_runs: 1
+  wfa_reached_runs: 1
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five original AQR BAB factor-state variants failed limited_core_grid_test.
+    Each failed variant received exactly one parameter-space-only rescue. Four rescues
+    failed limited_core_grid_test. One rescue, low_bab_z63_rebound_long_1100/rescue1,
+    passed limited core and limited monkey but failed walk_forward_analysis by early
+    exit on window 2 because selected in-sample profit factor was 0.99 < 1.00; stitched
+    OOS PF was 0.8619637937819756 and MAR was -0.3811286271107167. No run reached
+    WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate
+    reporting.
+  best_original: low_bab_z63_rebound_long_1100/run1 top_net=1785.0 profitable_combo_rate=0.4074074074074074
+  best_rescue: low_bab_z63_rebound_long_1100/rescue1 top_net=3053.75 profitable_combo_rate=0.8888888888888888
+    terminal=walk_forward_analysis

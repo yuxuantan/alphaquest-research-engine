@@ -1,0 +1,136 @@
+campaign_id: es_nq_relative_value_reversion
+title: ES/NQ cross-index relative-value reversion
+decision: TEST
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_nq_lead_lag_1m_20110103_20260609_full_rth_ny
+timeframe: 1m
+hypothesis: >
+  ES and NQ are closely related equity-index futures. When completed intraday
+  ES returns diverge materially from completed NQ returns, and ES is the leg
+  that moved away from the pair, ES may mean-revert toward the cross-index
+  relative-value relationship after the signal bar closes.
+rationale: >
+  This campaign tests cross-index relative-value convergence, not NQ-led ES
+  continuation. The active failed `es_nq_cross_index_lead_lag` campaign followed
+  the NQ direction when ES lagged. This campaign instead requires ES to have
+  moved adversely relative to NQ, then fades ES: long ES after ES underperforms
+  NQ with a negative completed ES return, and short ES after ES outperforms NQ
+  with a positive completed ES return.
+sources:
+  - title: 'Pairs Trading: Performance of a Relative-Value Arbitrage Rule'
+    authors: 'Evan Gatev, William N. Goetzmann, and K. Geert Rouwenhorst'
+    year: 2006
+    venue: Review of Financial Studies
+    link: https://academic.oup.com/rfs/article-abstract/19/3/797/1585302
+    relevance: >
+      Provides the relative-value/pairs-trading foundation: related securities
+      can temporarily diverge and later converge.
+  - title: High Frequency Lead/Lag Relationships - Empirical Facts
+    authors: Nicolas Huth and Frederic Abergel
+    year: 2014
+    venue: Empirical market microstructure working paper
+    link: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+    relevance: >
+      Documents high-frequency dependencies between related assets, motivating
+      ES/NQ cross-market state variables.
+  - title: Lead-Lag Relationships in Market Microstructure
+    authors: Julian Schmidt, Tino Cestonaro, and Micha Bender
+    year: 2024
+    venue: SSRN
+    link: https://doi.org/10.2139/ssrn.5043260
+    relevance: >
+      Reviews predictive relationships across transaction and quote series in
+      related markets; this campaign uses completed 1-minute bar returns only.
+expected_mechanism: >
+  Temporary ES-specific dislocations versus NQ can arise from basket flow,
+  hedging pressure, or asynchronous liquidity provision. The strategy trades
+  only ES and tests whether the ES leg mean-reverts enough to overcome costs.
+data_needs:
+  - data/cache/orderflow/es_nq_lead_lag_1m_20110103_20260609_full_rth_ny.parquet
+  - completed ES and NQ RTH 1-minute OHLCV aligned in America/New_York
+  - precomputed rolling ES/NQ return-spread columns for 30-minute and 60-minute windows
+lookahead_risks:
+  - Rolling ES/NQ return-spread features are computed from completed bars only.
+  - A signal at HH:MM uses the bar that closes at HH:MM and enters ES at the next bar open through the engine.
+  - No future NQ bars, future ES bars, final-session VWAP, final daily range, or future volume profile is used.
+  - All variants flatten before their configured same-day cutoff and do not hold overnight.
+failure_modes:
+  - ES/NQ divergences may be information-driven rather than temporary dislocations.
+  - The profitable side may be dominated by one regime, one year, or one macro event cluster.
+  - The edge may disappear after next-bar execution, commissions, slippage, and pessimistic stop/target ordering.
+  - A single ES leg may not monetize pair convergence cleanly without trading NQ.
+  - Later-day variants may be more sensitive to forced flatten than to relative-value convergence.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_nq_cross_index_lead_lag
+    - es_mes_micro_flow_divergence_reversion
+    - es_signed_orderflow_persistence
+    - es_opening_drive_inventory_absorption
+    - es_orderflow_absorption_exhaustion_reversal
+    - es_term_structure_lead_lag_feedback
+    - es_daily_short_term_reversal
+    - es_vwap_pullback_continuation
+  conclusion: >
+    Not a duplicate in active scope. This is a cross-index relative-value fade
+    of ES-specific return divergence versus NQ. The active ES/NQ lead-lag
+    campaign followed NQ directional leadership; this campaign rejects plain
+    NQ-following signals unless ES has moved adversely relative to the spread.
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change core strategy mechanic
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - add filters after seeing results
+    - alter costs, fills, sessions, validation gates, or prop rules
+  attempts:
+    - attempt_id: parameter_space_rescue_1
+      date: '2026-06-17'
+      scope: per_failed_variant
+      status: completed_failed
+      changed_only:
+        - fixed entry.params.min_abs_es_return_bps from 0 to 1
+        - entry.params.min_spread_bps parameter spaces
+        - sl.params.stop_pct parameter spaces
+        - tp.params.target_r_multiple parameter spaces
+      unchanged:
+        - edge thesis
+        - entry module es_nq_relative_value_reversion
+        - setup mode two_sided_divergence_fade
+        - lookback and entry time per variant
+        - data source and data window
+        - costs and fill assumptions
+        - validation gates
+        - prop rules
+      decision: FAIL
+      result: >
+        All five rescue variants failed limited_core_grid_test. Best rescue was
+        thirty_min_divergence_fade_1030/rescue1 with profitable-combo rate
+        0.14814814814814814, top net 601.25, top PF 1.0508127196404086,
+        and 131 top-combo trades.
+variants:
+  - thirty_min_divergence_fade_1000
+  - thirty_min_divergence_fade_1030
+  - thirty_min_divergence_fade_1130
+  - sixty_min_divergence_fade_1030
+  - sixty_min_divergence_fade_1400
+result_summary:
+  decision: FAIL
+  report_path: backtest-campaigns/es_nq_relative_value_reversion/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  failure_reason: >
+    All five originals failed limited_core_grid_test. Each failed variant
+    received exactly one parameter-space/fixed-parameter rescue preserving the
+    same ES/NQ relative-value reversion mechanic. All five rescues also failed
+    limited_core_grid_test. No run reached monkey, WFA, Monte Carlo, simulated
+    incubation, frozen validation, or candidate reporting.

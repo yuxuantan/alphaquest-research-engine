@@ -110,3 +110,12 @@ result_summary:
   best_rescue_terminal_stage: limited_monkey_test
   best_rescue_monkey_profitable_rate: 0.18
   best_rescue_monkey_median_net_profit: -3210.0
+benchmark_table_reruns:
+- variant: midday_trend_reclaim_two_sided
+  source_run: rescue1
+  test_run_id: benchmark_table_rerun1
+  config_path: research_artifacts/benchmark_table_rerun_configs/es_vwap_pullback_midday_trend_reclaim_two_sided_benchmark_table_rerun1.yaml
+  result_path: backtest-campaigns/es_vwap_pullback_continuation/midday_trend_reclaim_two_sided/ES/benchmark_table_rerun1/campaign_test_summary.json
+  decision: FAIL
+  terminal_stage: walk_forward_analysis
+  note: Passed corrected limited-core and random-monkey gates, then failed WFA by early exit on window 4; stitched OOS PF 0.8266659739540039 and MAR -0.20148578165818817.

@@ -1,0 +1,173 @@
+campaign_name: es_variance_risk_premium_intraday
+campaign_id: es_variance_risk_premium_intraday
+instrument: ES
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no non-archived implied-minus-realized
+  variance-risk-premium campaign. The edge uses free Cboe VIX history plus local ES
+  RTH bars and is dense enough for the 50 trades/year rule.
+edge_hypothesis: High lagged variance risk premium, measured as VIX-implied annualized
+  variance minus ES realized variance, may predict positive same-day ES intraday returns
+  because investors require compensation for bearing volatility-of-volatility and
+  crash-variance risk. Low lagged VRP may predict weak or negative ES intraday returns.
+why_it_may_apply_to_es_futures: ES is the liquid futures expression of S&P 500 equity-index
+  risk. The source literature studies aggregate market returns and variance risk premia,
+  while VIX is an SPX option-implied volatility index; this campaign tests a no-overnight,
+  one-contract ES approximation under realistic costs.
+research_sources:
+- title: Expected Stock Returns and Variance Risk Premia
+  author: Tim Bollerslev, George Tauchen, and Hao Zhou
+  year: 2009
+  link_or_doi: https://doi.org/10.1093/rfs/hhp008
+  expected_mechanism: The difference between implied and realized variation predicts
+    aggregate market returns, with high variance-risk premia associated with higher
+    subsequent returns.
+- title: Historical Price Data for VIX Index
+  author: Cboe Global Markets
+  year: 2026
+  link_or_doi: https://www.cboe.com/tradable_products/vix/vix_historical_data
+  expected_mechanism: Free official daily VIX history provides the option-implied
+    volatility input for the lagged VRP feature.
+- title: 'CBOE Volatility Index: VIX (VIXCLS)'
+  author: Federal Reserve Bank of St. Louis / Cboe
+  year: 2026
+  link_or_doi: https://fred.stlouisfed.org/series/VIXCLS
+  expected_mechanism: FRED documents VIX as a daily close series measuring near-term
+    volatility expectations from stock-index option prices.
+behavioural_or_microstructure_rationale: The campaign treats lagged VRP as an ex-ante
+  compensation state, not as a realized-volatility filter. VIX close and ES realized
+  variance are shifted one completed RTH session before any signal can fire.
+expected_failure_modes:
+- The monthly/quarterly return predictability in the literature may not transfer to
+  a same-day intraday ES holding period.
+- A simple VIX-squared minus ES RTH realized variance proxy may be too crude relative
+  to model-free option-implied variance.
+- The edge may overlap with broad volatility or crisis regimes and fail neighboring-parameter
+  stability.
+- High-VRP signals may be concentrated in crisis years or single drawdown/rebound
+  windows.
+- The signal may require overnight exposure, which this campaign forbids.
+- Any apparent edge may fail one-tick-worse slippage, WFA selection, or monkey time-window
+  stress.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/cboe_vix_history.csv
+- data/external/es_variance_risk_premium_features_20110103_20260609.csv
+feature_construction:
+  builder: tools/build_es_variance_risk_premium_features.py
+  raw_vix_source: https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv
+  output: data/external/es_variance_risk_premium_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3735
+  lookahead_control: VIX close and ES realized variance are shifted one completed
+    RTH session; a signal date can only use information known after the prior RTH
+    close.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+forbidden_forms_of_lookahead:
+- Use of current-session VIX, current-session realized variance, current-session high/low/close,
+  or post-entry returns in the signal state.
+- Use of future sessions in rolling ranks.
+- Changing VRP definition, thresholds, entry times, or direction after seeing test
+  results.
+- Holding overnight to match the source literature horizon.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  not_duplicate_of:
+  - es_volatility_managed_intraday_premium
+  - es_market_plumbing_liquidity_capacity
+  - es_vix_expiration_pressure
+  - es_realized_skewness_reversal
+  - es_daily_time_series_momentum
+  conclusion: This campaign uses lagged option-implied variance minus realized variance.
+    It is not a realized-volatility-only timing rule, VIX expiration calendar rule,
+    VX open-interest/dealer-capacity proxy, skewness state, or own-return trend campaign.
+variants:
+- high_vrp_open_long_1000
+- low_vrp_open_short_1000
+- high_vrp_low_realized_midmorning_long_1030
+- high_vrp_ratio_midday_long_1200
+- vrp_rising_afternoon_long_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - feature construction shift rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - variant: high_vrp_open_long_1000
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_variance_risk_premium_intraday/rescue_attempts/parameter_space_rescue_1/high_vrp_open_long_1000/config.yaml
+    result_path: backtest-campaigns/es_variance_risk_premium_intraday/high_vrp_open_long_1000/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -202.5
+    top_profit_factor: 0.981645139360979
+    top_trades: 103
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar
+  - variant: low_vrp_open_short_1000
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_variance_risk_premium_intraday/rescue_attempts/parameter_space_rescue_1/low_vrp_open_short_1000/config.yaml
+    result_path: backtest-campaigns/es_variance_risk_premium_intraday/low_vrp_open_short_1000/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.25925925925925924
+    top_net_profit: 695.0
+    top_profit_factor: 1.1578648495173196
+    top_trades: 56
+    failure_reason: min_profit_factor;min_mar;min_trades_per_year;preferred_min_total_trades
+  - variant: high_vrp_low_realized_midmorning_long_1030
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_variance_risk_premium_intraday/rescue_attempts/parameter_space_rescue_1/high_vrp_low_realized_midmorning_long_1030/config.yaml
+    result_path: backtest-campaigns/es_variance_risk_premium_intraday/high_vrp_low_realized_midmorning_long_1030/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.12345679012345678
+    top_net_profit: 1220.0
+    top_profit_factor: 1.3388888888888888
+    top_trades: 36
+    failure_reason: min_trades_per_year;preferred_min_total_trades
+  - variant: high_vrp_ratio_midday_long_1200
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_variance_risk_premium_intraday/rescue_attempts/parameter_space_rescue_1/high_vrp_ratio_midday_long_1200/config.yaml
+    result_path: backtest-campaigns/es_variance_risk_premium_intraday/high_vrp_ratio_midday_long_1200/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -640.0
+    top_profit_factor: 0.9146951016327891
+    top_trades: 103
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;min_win_rate
+  - variant: vrp_rising_afternoon_long_1330
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_variance_risk_premium_intraday/rescue_attempts/parameter_space_rescue_1/vrp_rising_afternoon_long_1330/config.yaml
+    result_path: backtest-campaigns/es_variance_risk_premium_intraday/vrp_rising_afternoon_long_1330/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -1051.25
+    top_profit_factor: 0.7170255720053835
+    top_trades: 79
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;preferred_min_total_trades;min_positive_month_rate

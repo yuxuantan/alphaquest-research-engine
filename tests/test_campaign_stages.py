@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -5,6 +6,21 @@ import pytest
 
 from propstack.research.campaign_stages import evaluate_criteria
 from propstack.research import campaign_stages
+
+
+def _mechanics_review_yaml() -> list[str]:
+    return [
+        "research_metadata:",
+        "  mechanics_review_required: true",
+        "  mechanics_review:",
+        "    mechanic_expresses_edge: The variant maps the stated edge into a deterministic staged-test entry using only information available before the order can be placed.",
+        "    entry_logic_rationale: The entry is fixed before testing and waits for the configured signal condition, so the run cannot choose direction or timing after seeing results.",
+        "    stop_loss_rationale: The stop is a predeclared risk bound attached to the entry and does not depend on future highs, lows, or realized trade path information.",
+        "    target_exit_rationale: The target is predeclared with the strategy configuration and links reward to the risk module instead of optimizing an observed exit level.",
+        "    profitability_rationale: The variant is allowed to enter staged testing because the hypothesized behavior could repeat often enough to overcome costs under realistic fills.",
+        "    known_failure_modes: The idea should be rejected if costs erase the effect, if profits concentrate in a few trades, or if robustness tests expose fragile timing.",
+        "    pre_test_decision: approve_for_testing",
+    ]
 
 
 def test_stage_criteria_reports_pass_and_fail():
@@ -48,6 +64,55 @@ def test_stage_criteria_allow_fixed_or_declared_grid_size():
     assert evaluate_criteria({"summary": {"total_combinations_tested": 120}}, criteria)[0]["passed"] is True
     assert evaluate_criteria({"summary": {"total_combinations_tested": 2}}, criteria)[0]["passed"] is False
     assert evaluate_criteria({"summary": {"total_combinations_tested": 121}}, criteria)[0]["passed"] is False
+
+
+def test_limited_core_grid_does_not_require_benchmark_passing_combo():
+    criteria = campaign_stages._criteria_for_stage("limited_core_grid_test", {})
+    results = evaluate_criteria(
+        {
+            "summary": {
+                "total_combinations_tested": 81,
+                "percentage_profitable_iterations": 0.90,
+                "number_passing_benchmark": 0,
+                "apex_rule_violating_iterations": 0,
+            }
+        },
+        criteria,
+    )
+
+    by_metric = {item["metric"]: item for item in results}
+    assert by_metric["summary.percentage_profitable_iterations"]["passed"] is True
+    assert "summary.number_passing_benchmark" not in by_metric
+    assert all(item["passed"] for item in results)
+
+
+def test_limited_monkey_separates_random_placebo_from_trade_path_stress():
+    criteria = campaign_stages._criteria_for_stage("limited_monkey_test", {})
+    criteria_metrics = {item["metric"] for item in criteria}
+    payload = {
+        "summary": {
+            "percentage_profitable": 0.10,
+            "median_net_profit": -1000.0,
+            "core_beats_monkey_net_profit_rate": 0.95,
+            "core_beats_monkey_max_drawdown_rate": 0.91,
+            "core_metrics": {"apex_rule_violations": 0},
+            "trade_path_stress": {
+                "enabled": True,
+                "percentage_profitable": 0.80,
+                "median_net_profit": 25.0,
+                "apex_rule_violating_iterations": 0,
+                "one_tick_worse": {"profitable": True},
+            },
+        },
+    }
+
+    assert criteria_metrics == {
+        "summary.core_beats_monkey_net_profit_rate",
+        "summary.core_beats_monkey_max_drawdown_rate",
+        "summary.core_metrics.apex_rule_violations",
+    }
+    assert "summary.trade_path_stress.percentage_profitable" not in criteria_metrics
+    assert all(item["passed"] for item in evaluate_criteria(payload, criteria))
 
 
 def test_default_stage_criteria_fail_apex_rule_violations():
@@ -104,6 +169,171 @@ def test_prepare_stage_data_reuses_cache_when_validation_is_skipped(tmp_path, mo
     assert first[3] == second[3] == "hash-1"
     assert first[2]["prepared_data_cache"]["hit"] is False
     assert second[2]["prepared_data_cache"]["hit"] is True
+
+
+def test_limited_core_summary_records_resolved_data_period(tmp_path, monkeypatch):
+    base_subset = {"start_date": "2011-01-03", "end_date": "2026-06-09", "session_labels": ["RTH"]}
+    expected_resolved_subset = {"start_date": "2011-02-22", "end_date": "2012-09-06", "session_labels": ["RTH"]}
+    quality = {
+        "rows": 141570,
+        "strategy_rows": 28314,
+        "first_timestamp": "2011-02-22 09:30:00-05:00",
+        "last_timestamp": "2012-09-06 15:59:00-04:00",
+        "timeframe": "5m",
+        "source_timeframe": "1m",
+    }
+    market = pd.DataFrame({"timestamp": pd.to_datetime(["2011-01-03 14:30:00"], utc=True)})
+    detail = pd.DataFrame({"timestamp": pd.to_datetime(["2011-01-03 14:30:00"], utc=True)})
+    seen = {}
+
+    def fake_prepare_stage_data_cached(cfg, subset, stage_dir, skip_validation, data_cache=None):
+        seen["subset"] = subset
+        return market, detail, quality, "input-hash"
+
+    def fake_run_core_grid(data, cfg, grid_cfg, benchmarks, report_dir=None, detail_data=None):
+        seen["benchmarks"] = dict(benchmarks)
+        return (
+            pd.DataFrame([{"run_id": 1, "net_profit": 10.0}]),
+            {"total_combinations_tested": 1, "data_subset": dict(grid_cfg.get("data_subset") or {})},
+        )
+
+    monkeypatch.setattr(campaign_stages, "_prepare_stage_data_cached", fake_prepare_stage_data_cached)
+    monkeypatch.setattr(campaign_stages, "run_core_grid", fake_run_core_grid)
+
+    payload = campaign_stages._run_limited_core_grid(
+        {
+            "timeframe": "5m",
+            "data": {"timezone": "America/New_York"},
+            "core": {"data_subset": base_subset},
+            "benchmarks": {
+                "min_trades_per_year": 50,
+                "preferred_min_total_trades": 500,
+                "min_profit_factor": 1.3,
+                "min_expectancy_r": 0.05,
+                "min_mar": 0.5,
+                "max_best_day_concentration": 0.4,
+            },
+            "core_grid": {"data_subset": base_subset, "parameters": {"entry.params.threshold": [1]}},
+        },
+        {"data_window": campaign_stages.DEFAULT_SHORTLIST_DATA_WINDOW},
+        tmp_path,
+        skip_validation=True,
+        context={},
+    )
+
+    written_summary = json.loads((tmp_path / "core_grid_summary.json").read_text(encoding="utf-8"))
+    assert seen["subset"] == expected_resolved_subset
+    assert payload["summary"]["configured_data_subset"] == base_subset
+    assert payload["summary"]["resolved_data_subset"] == expected_resolved_subset
+    assert payload["summary"]["data_subset"] == expected_resolved_subset
+    assert payload["summary"]["actual_data_period"] == quality
+    assert seen["benchmarks"]["preferred_min_total_trades"] == 78
+    assert seen["benchmarks"]["max_best_day_concentration"] == 0.4
+    assert "min_profit_factor" not in seen["benchmarks"]
+    assert "min_expectancy_r" not in seen["benchmarks"]
+    assert "min_mar" not in seen["benchmarks"]
+    assert written_summary["benchmark_thresholds"]["preferred_min_total_trades"] == 78
+    assert written_summary["actual_data_period"] == quality
+
+
+def test_limited_monkey_summary_records_resolved_data_period(tmp_path, monkeypatch):
+    base_subset = {"start_date": "2011-01-03", "end_date": "2026-06-09", "session_labels": ["RTH"]}
+    expected_resolved_subset = {"start_date": "2011-02-22", "end_date": "2012-09-06", "session_labels": ["RTH"]}
+    quality = {
+        "rows": 141570,
+        "strategy_rows": 28314,
+        "first_timestamp": "2011-02-22 09:30:00-05:00",
+        "last_timestamp": "2012-09-06 15:59:00-04:00",
+        "timeframe": "5m",
+        "source_timeframe": "1m",
+    }
+    market = pd.DataFrame({"timestamp": pd.to_datetime(["2011-01-03 14:30:00"], utc=True)})
+    detail = pd.DataFrame({"timestamp": pd.to_datetime(["2011-01-03 14:30:00"], utc=True)})
+
+    def fake_prepare_stage_data_cached(cfg, subset, stage_dir, skip_validation, data_cache=None):
+        return market, detail, quality, "input-hash"
+
+    class FakeBacktestEngine:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        def run(self, market_data, detail_data=None):
+            return {"trades": pd.DataFrame([{"net_pnl": 10.0}])}
+
+    def fake_run_monkey(data, cfg, monkey_cfg, benchmarks, report_dir=None, detail_data=None, core_trades=None):
+        return pd.DataFrame([{"run_id": 1, "net_profit": 10.0}]), {
+            "number_of_runs": 1,
+            "data_subset": dict(monkey_cfg.get("data_subset") or {}),
+        }
+
+    def fake_run_trade_path_stress(data, cfg, monkey_cfg, benchmarks, core_trades=None, report_dir=None):
+        return pd.DataFrame([{"run_id": 1, "net_profit": 10.0}]), {"enabled": True}
+
+    monkeypatch.setattr(campaign_stages, "_prepare_stage_data_cached", fake_prepare_stage_data_cached)
+    monkeypatch.setattr(campaign_stages, "BacktestEngine", FakeBacktestEngine)
+    monkeypatch.setattr(campaign_stages, "run_monkey", fake_run_monkey)
+    monkeypatch.setattr(campaign_stages, "run_trade_path_stress", fake_run_trade_path_stress)
+
+    payload = campaign_stages._run_limited_monkey(
+        {
+            "timeframe": "5m",
+            "data": {"timezone": "America/New_York"},
+            "monkey": {"data_subset": base_subset},
+        },
+        {"data_window": campaign_stages.DEFAULT_SHORTLIST_DATA_WINDOW},
+        tmp_path,
+        skip_validation=True,
+        context={
+            "limited_core_grid_parameters": {"entry.params.threshold": [1]},
+            "limited_core_grid_results": pd.DataFrame(
+                [{"run_id": 1, "net_profit": 10.0, "profitable": True, "entry.params.threshold": 1}]
+            ),
+        },
+    )
+
+    monkey_summary = json.loads((tmp_path / "monkey_summary.json").read_text(encoding="utf-8"))
+    stress_summary = json.loads((tmp_path / "trade_path_stress_summary.json").read_text(encoding="utf-8"))
+    assert payload["summary"]["configured_data_subset"] == base_subset
+    assert payload["summary"]["resolved_data_subset"] == expected_resolved_subset
+    assert payload["summary"]["data_subset"] == expected_resolved_subset
+    assert payload["summary"]["actual_data_period"] == quality
+    assert monkey_summary["actual_data_period"] == quality
+    assert stress_summary["resolved_data_subset"] == expected_resolved_subset
+    assert payload["summary"]["trade_path_stress"]["actual_data_period"] == quality
+
+
+def test_limited_monkey_selects_median_profitable_row_without_benchmark_preference():
+    row = campaign_stages._select_median_profitable_core_grid_row(
+        pd.DataFrame(
+            [
+                {
+                    "run_id": 1,
+                    "net_profit": 300.0,
+                    "profitable": True,
+                    "benchmark_passed": False,
+                    "entry.params.threshold": 1,
+                },
+                {
+                    "run_id": 2,
+                    "net_profit": 100.0,
+                    "profitable": True,
+                    "benchmark_passed": True,
+                    "entry.params.threshold": 2,
+                },
+                {
+                    "run_id": 3,
+                    "net_profit": 500.0,
+                    "profitable": True,
+                    "benchmark_passed": True,
+                    "entry.params.threshold": 3,
+                },
+            ]
+        ),
+        {"entry.params.threshold": [1, 2, 3]},
+    )
+
+    assert row["run_id"] == 1
+    assert row["entry.params.threshold"] == 1
 
 
 def test_fast_runtime_defaults_enable_parallel_sections_without_mutating_input():
@@ -170,6 +400,7 @@ def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, m
                 "variant_id: demo_variant",
                 "strategy_name: demo_strategy",
                 "timeframe: 1m",
+                *_mechanics_review_yaml(),
                 "data:",
                 "  symbol: ES",
                 "  dataset_id: sample_1m",
@@ -209,6 +440,7 @@ def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, m
     assert Path(summary["output_dir"]) == Path("backtest-campaigns/demo_campaign/demo_variant/ES/run2")
     assert summary["test_run_id"] == "run2"
     assert (run_dir / "config.yaml").is_file()
+    assert (run_dir / "source_config.yaml").is_file()
     assert (run_dir / "limited_core_grid_test/stage_result.json").is_file()
     assert (run_dir / "variant_test_summary.json").is_file()
     assert (run_dir / "campaign_test_summary.json").is_file()
@@ -216,10 +448,17 @@ def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, m
     assert (run_dir.parent / "runs_index.csv").is_file()
     assert summary["campaign_metadata"]["path"] == "backtest-campaigns/demo_campaign/campaign.yaml"
     assert summary["campaign_metadata"]["hash"]
+    assert summary["effective_config_path"] == "backtest-campaigns/demo_campaign/demo_variant/ES/run2/config.yaml"
+    assert summary["source_config_snapshot_path"] == "backtest-campaigns/demo_campaign/demo_variant/ES/run2/source_config.yaml"
     assert summary["variant_metadata"]["path"] == "backtest-campaigns/demo_campaign/demo_variant/variant.yaml"
     assert summary["variant_metadata"]["mechanic"]["entry_module"] == "demo_entry"
     assert (tmp_path / "backtest-campaigns/demo_campaign/demo_variant/variant.yaml").is_file()
     assert (tmp_path / "backtest-campaigns/demo_campaign/variants_index.yaml").is_file()
+    effective_config = (run_dir / "config.yaml").read_text(encoding="utf-8")
+    source_config = (run_dir / "source_config.yaml").read_text(encoding="utf-8")
+    assert "stage_order:" in effective_config
+    assert "limited_core_grid_test:" in effective_config
+    assert "stage_order:" not in source_config
 
 
 def test_staged_campaign_can_write_external_config_to_explicit_run_folder(tmp_path, monkeypatch):
@@ -233,6 +472,7 @@ def test_staged_campaign_can_write_external_config_to_explicit_run_folder(tmp_pa
                 "variant_id: demo_variant",
                 "strategy_name: demo_strategy",
                 "timeframe: 1m",
+                *_mechanics_review_yaml(),
                 "data:",
                 "  symbol: ES",
                 "  dataset_id: sample_1m",
@@ -273,7 +513,8 @@ def test_staged_campaign_can_write_external_config_to_explicit_run_folder(tmp_pa
     assert summary["test_run_id"] == "run2"
     assert summary["config_path"] == str(run_dir / "config.yaml")
     assert summary["variant_metadata"]["path"] == str(tmp_path / "backtest-campaigns/demo_campaign/demo_variant/variant.yaml")
-    assert (run_dir / "config.yaml").read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
+    assert (run_dir / "source_config.yaml").read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
+    assert "stage_order:" in (run_dir / "config.yaml").read_text(encoding="utf-8")
 
 
 def test_staged_campaign_rejects_symbol_level_output_dir(tmp_path, monkeypatch):
@@ -287,6 +528,7 @@ def test_staged_campaign_rejects_symbol_level_output_dir(tmp_path, monkeypatch):
                 "variant_id: demo_variant",
                 "strategy_name: demo_strategy",
                 "timeframe: 1m",
+                *_mechanics_review_yaml(),
                 "data:",
                 "  symbol: ES",
                 "  dataset_id: sample_1m",
@@ -305,6 +547,43 @@ def test_staged_campaign_rejects_symbol_level_output_dir(tmp_path, monkeypatch):
         )
 
 
+def test_staged_campaign_requires_pre_test_mechanics_review(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run1/config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        "\n".join(
+            [
+                "campaign_id: demo_campaign",
+                "variant_id: demo_variant",
+                "strategy_name: demo_strategy",
+                "timeframe: 1m",
+                "data:",
+                "  symbol: ES",
+                "  dataset_id: sample_1m",
+                "  raw_csv: data/raw/ES/sample.csv",
+                "strategy:",
+                "  entry:",
+                "    module: demo_entry",
+                "  tp:",
+                "    module: demo_tp",
+                "  sl:",
+                "    module: demo_sl",
+                "core:",
+                "  initial_balance: 50000",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Pre-test mechanics review failed"):
+        campaign_stages.run_campaign_stage_tests(
+            config_path,
+            include_acceptance=False,
+            skip_validation=True,
+        )
+
+
 def test_default_stage_criteria_match_screenshot_benchmarks():
     limited_core = campaign_stages._criteria_for_stage("limited_core_grid_test", {})
     limited_monkey = campaign_stages._criteria_for_stage("limited_monkey_test", {})
@@ -316,30 +595,47 @@ def test_default_stage_criteria_match_screenshot_benchmarks():
         return {item["metric"]: item for item in criteria}
 
     assert by_metric(limited_core)["summary.total_combinations_tested"]["valid_parameter_combination_count"] is True
-    assert by_metric(limited_monkey)["summary.percentage_profitable"]["min"] == 0.80
-    assert by_metric(limited_monkey)["summary.median_net_profit"]["exclusive_min"] == 0.0
-    assert by_metric(limited_monkey)["summary.trade_path_stress.percentage_profitable"]["min"] == 0.80
-    assert by_metric(limited_monkey)["summary.trade_path_stress.median_net_profit"]["exclusive_min"] == 0.0
-    assert by_metric(limited_monkey)["summary.trade_path_stress.one_tick_worse.profitable"]["equals"] is True
+    assert by_metric(limited_core)["summary.percentage_profitable_iterations"]["min"] == 0.70
+    assert "summary.number_passing_benchmark" not in by_metric(limited_core)
+    assert by_metric(limited_monkey)["summary.core_beats_monkey_net_profit_rate"]["min"] == 0.90
+    assert by_metric(limited_monkey)["summary.core_beats_monkey_max_drawdown_rate"]["min"] == 0.90
+    assert "summary.percentage_profitable" not in by_metric(limited_monkey)
+    assert "summary.median_net_profit" not in by_metric(limited_monkey)
+    assert "summary.trade_path_stress.percentage_profitable" not in by_metric(limited_monkey)
     assert by_metric(wfa)["stitched_oos_metrics.profit_factor"]["min"] == 1.2
     assert by_metric(wfa)["stitched_oos_metrics.mar"]["min"] == 0.4
     assert by_metric(wfa)["stitched_oos_metrics.trades_per_year"]["min"] == 50
-    assert by_metric(wfa)["stitched_oos_metrics.expectancy_r"]["exclusive_min"] == 0.0
+    assert "stitched_oos_metrics.expectancy_r" not in by_metric(wfa)
+    assert "summary.windows" not in by_metric(wfa)
     assert "stitched_oos_metrics.win_rate" not in by_metric(wfa)
     assert by_metric(campaign_stages._criteria_for_stage("wfa_oos_monkey_test", {}))[
-        "summary.percentage_profitable"
+        "summary.core_beats_monkey_net_profit_rate"
     ]["min"] == 0.80
     assert by_metric(campaign_stages._criteria_for_stage("wfa_oos_monkey_test", {}))[
-        "summary.trade_path_stress.percentage_profitable"
+        "summary.core_beats_monkey_max_drawdown_rate"
+    ]["min"] == 0.80
+    assert "summary.percentage_profitable" not in by_metric(
+        campaign_stages._criteria_for_stage("wfa_oos_monkey_test", {})
+    )
+    assert "summary.trade_path_stress.percentage_profitable" not in by_metric(
+        campaign_stages._criteria_for_stage("wfa_oos_monkey_test", {})
+    )
+    assert by_metric(campaign_stages._criteria_for_stage("simulated_incubation_monkey", {}))[
+        "summary.core_beats_monkey_net_profit_rate"
+    ]["min"] == 0.80
+    assert by_metric(campaign_stages._criteria_for_stage("simulated_incubation_monkey", {}))[
+        "summary.core_beats_monkey_max_drawdown_rate"
     ]["min"] == 0.80
     assert by_metric(incubation)["metrics.profit_factor"]["min"] == 1.0
     assert by_metric(incubation)["metrics.mar"]["min"] == 1.0
-    assert by_metric(incubation)["metrics.total_trades"]["min"] == 75
+    assert by_metric(incubation)["metrics.trades_per_year"]["min"] == 50
+    assert "metrics.total_trades" not in by_metric(incubation)
     assert "metrics.expectancy_r" not in by_metric(incubation)
     assert by_metric(acceptance)["metrics.profit_factor"]["min"] == 1.0
     assert by_metric(acceptance)["metrics.mar"]["min"] == 1.0
-    assert by_metric(acceptance)["metrics.total_trades"]["min"] == 25
-    assert by_metric(acceptance)["metrics.expectancy_r"]["exclusive_min"] == 0.0
+    assert by_metric(acceptance)["metrics.trades_per_year"]["min"] == 50
+    assert "metrics.total_trades" not in by_metric(acceptance)
+    assert "metrics.expectancy_r" not in by_metric(acceptance)
     assert "metrics.win_rate" not in by_metric(acceptance)
 
 
@@ -356,6 +652,7 @@ def test_wfa_mar_default_criteria_use_fixed_screenshot_threshold():
                 "profit_factor": 1.2,
                 "mar": 0.4,
                 "total_trades": 600,
+                "trades_per_year": 50,
                 "win_rate": 0.50,
                 "apex_rule_violations": 0,
             },
@@ -381,6 +678,7 @@ def test_wfa_monte_carlo_probability_remains_exclusive():
                 "profit_factor": 1.2,
                 "mar": 0.4,
                 "total_trades": 600,
+                "trades_per_year": 50,
                 "win_rate": 0.50,
                 "apex_rule_violations": 0,
             },
@@ -396,6 +694,37 @@ def test_wfa_monte_carlo_probability_remains_exclusive():
     mc_results = evaluate_criteria({"summary": {"probability_profit_before_drawdown": 0.5}}, mc_criteria)
     assert mc_results[0]["passed"] is False
     assert mc_results[0]["expected"] == {"exclusive_min": 0.5}
+
+
+def test_wfa_oos_monte_carlo_defaults_to_50k_target_before_10k_drawdown(tmp_path, monkeypatch):
+    trades = pd.DataFrame(
+        [{"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 100.0}]
+    )
+    seen = {}
+
+    def fake_run_monte_carlo(source_trades, mc_cfg, rules):
+        seen["trades"] = source_trades
+        seen["mc_cfg"] = mc_cfg
+        seen["rules"] = rules
+        return pd.DataFrame([{"run_id": 1, "net_pnl": 100.0}]), {
+            "probability_profit_before_drawdown": 0.6
+        }
+
+    monkeypatch.setattr(campaign_stages, "run_monte_carlo", fake_run_monte_carlo)
+
+    payload = campaign_stages._run_wfa_oos_monte_carlo(
+        {"data": {"timezone": "America/New_York"}, "core": {"initial_balance": 100000}},
+        {},
+        tmp_path,
+        {"wfa_trades": trades},
+    )
+
+    assert seen["trades"].equals(trades)
+    assert seen["rules"].profit_target_amount == 50000.0
+    assert seen["rules"].drawdown_limit_amount == 10000.0
+    assert payload["summary"]["prop_rules_used"]["profit_target_amount"] == 50000.0
+    assert payload["summary"]["prop_rules_used"]["drawdown_limit_amount"] == 10000.0
+    assert (tmp_path / "wfa_oos_monte_carlo_summary.json").exists()
 
 
 def test_incubation_params_are_selected_from_best_wfa_oos_window():
@@ -458,11 +787,47 @@ def test_incubation_train_selection_selects_best_core_grid_row():
     }
 
 
+def test_train_selection_rejects_when_no_row_meets_trade_density_filter():
+    results = pd.DataFrame(
+        [
+            {
+                "entry.params.stop_pct": 0.0035,
+                "mar": 2.0,
+                "profit_factor": 1.5,
+                "net_profit": 1000.0,
+                "trades_per_year": 50.0,
+            },
+            {
+                "entry.params.stop_pct": 0.005,
+                "mar": 1.0,
+                "profit_factor": 1.8,
+                "net_profit": 1200.0,
+                "trades_per_year": 20.0,
+            },
+        ]
+    )
+
+    with pytest.raises(ValueError, match="no parameter rows satisfying"):
+        campaign_stages._select_core_grid_params(
+            results,
+            {"entry.params.stop_pct": [0.0035, 0.005]},
+            {"objective": "MAR", "selection_exclusive_min_trades_per_year": 50},
+        )
+
+
 def test_incubation_train_selection_forces_mar_objective(tmp_path, monkeypatch):
     seen = {}
+    quality = {
+        "rows": 100,
+        "strategy_rows": 20,
+        "first_timestamp": "2024-01-02 09:30:00-05:00",
+        "last_timestamp": "2024-01-31 15:59:00-05:00",
+        "timeframe": "5m",
+        "source_timeframe": "1m",
+    }
 
     def fake_prepare_stage_data(cfg, subset, stage_dir, skip_validation, show_progress=False):
-        return pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-02"], utc=True)}), None, {"rows": 1}, "hash"
+        return pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-02"], utc=True)}), None, quality, "hash"
 
     def fake_run_core_grid(
         data,
@@ -522,6 +887,8 @@ def test_incubation_train_selection_forces_mar_objective(tmp_path, monkeypatch):
     assert seen["selection_exclusive_min_trades_per_year"] == 50
     assert selected_params == {"entry.params.stop_pct": 0.005}
     assert payload["selected_params"] == {"entry.params.stop_pct": 0.005}
+    assert payload["summary"]["resolved_data_subset"] == {"start_date": "2024-01-01", "end_date": "2024-01-31"}
+    assert payload["summary"]["actual_data_period"] == quality
 
 
 def test_default_stage_order_runs_acceptance_last():
@@ -535,6 +902,11 @@ def test_canonicalize_campaign_config_can_exclude_acceptance():
 
     assert campaign_tests["stage_order"] == campaign_stages.PRE_ACCEPTANCE_STAGE_ORDER
     assert campaign_tests[campaign_stages.ACCEPTANCE_STAGE]["enabled"] is False
+    assert campaign_tests["limited_core_grid_test"]["data_window"] == campaign_stages.DEFAULT_SHORTLIST_DATA_WINDOW
+    assert campaign_tests["limited_monkey_test"]["data_window"] == campaign_stages.DEFAULT_SHORTLIST_DATA_WINDOW
+    assert campaign_tests["walk_forward_analysis"]["data_window"] == campaign_stages.DEFAULT_WFA_DATA_WINDOW
+    assert campaign_tests["simulated_incubation_core"]["train_months"] == 48
+    assert campaign_tests["simulated_incubation_core"]["test_months"] == 12
     assert campaign_stages._stage_order(campaign_tests) == campaign_stages.PRE_ACCEPTANCE_STAGE_ORDER
 
 
@@ -588,6 +960,25 @@ def test_acceptance_window_uses_latest_six_months_after_two_year_train():
     assert window["train_end"] == pd.Timestamp("2025-11-28")
     assert window["test_start"] == pd.Timestamp("2025-11-29")
     assert window["test_end"] == pd.Timestamp("2026-05-29")
+
+
+def test_incubation_window_uses_latest_one_year_after_four_year_train():
+    subset, window = campaign_stages._planned_acceptance_subset(
+        {"start_date": "2011-01-03", "end_date": "2026-06-09", "session_labels": ["RTH"]},
+        train_months=48,
+        test_months=12,
+        stage_label="simulated_incubation_core",
+    )
+
+    assert subset == {
+        "start_date": "2021-06-09",
+        "end_date": "2026-06-09",
+        "session_labels": ["RTH"],
+    }
+    assert window["train_start"] == pd.Timestamp("2021-06-09")
+    assert window["train_end"] == pd.Timestamp("2025-06-08")
+    assert window["test_start"] == pd.Timestamp("2025-06-09")
+    assert window["test_end"] == pd.Timestamp("2026-06-09")
 
 
 def test_acceptance_selection_forces_mar_objective():
@@ -667,6 +1058,116 @@ def test_configured_stale_criteria_are_ignored_for_canonical_stage():
     assert {"metric": "stitched_oos_metrics.profit_factor", "min": 1.2} in criteria
 
 
+def test_incubation_core_stage_uses_four_year_train_latest_one_year_oos(tmp_path, monkeypatch):
+    dates = pd.date_range("2021-06-09", "2026-06-09", freq="D", tz="America/New_York")
+    market = pd.DataFrame(
+        {
+            "timestamp": dates,
+            "session_date": [ts.date() for ts in dates],
+            "open": 100.0,
+            "high": 101.0,
+            "low": 99.0,
+            "close": 100.5,
+            "volume": 1000,
+        }
+    )
+    seen = {}
+
+    def fake_prepare_stage_data(cfg, subset, stage_dir, skip_validation, show_progress=False):
+        seen["subset"] = subset
+        return market, None, {"rows": len(market)}, "incubation-hash"
+
+    def fake_run_core_grid(data, base_config, grid_config, benchmarks, report_dir=None, parameter_label=None, detail_data=None):
+        seen["train_start"] = str(data["session_date"].min())
+        seen["train_end"] = str(data["session_date"].max())
+        seen["parameter_label"] = parameter_label
+        seen["objective"] = grid_config["objective"]
+        seen["selection_exclusive_min_trades_per_year"] = grid_config["selection_exclusive_min_trades_per_year"]
+        return (
+            pd.DataFrame(
+                [
+                    {
+                        "run_id": 1,
+                        "entry.params.threshold": 1,
+                        "total_trades": 300,
+                        "trades_per_year": 75.0,
+                        "net_profit": 1000.0,
+                        "profit_factor": 1.5,
+                        "mar": 1.2,
+                        "apex_rule_violations": 0,
+                    }
+                ]
+            ),
+            {"total_combinations_tested": 1},
+        )
+
+    class FakeBacktestEngine:
+        def __init__(self, config):
+            seen["selected_threshold"] = config["strategy"]["entry"]["params"]["threshold"]
+
+        def run(self, data, detail_data=None):
+            seen["test_start"] = str(data["session_date"].min())
+            seen["test_end"] = str(data["session_date"].max())
+            trade_ts = pd.Timestamp("2025-06-10 10:00", tz="America/New_York")
+            trades = pd.DataFrame(
+                [
+                    {
+                        "trade_id": 1,
+                        "session_date": trade_ts.date(),
+                        "entry_timestamp": trade_ts,
+                        "exit_timestamp": trade_ts + pd.Timedelta(minutes=5),
+                        "net_pnl": 100.0,
+                        "gross_pnl": 100.0,
+                        "r_multiple": 1.0,
+                        "contracts": 1,
+                    }
+                ]
+            )
+            return {
+                "trades": trades,
+                "daily": pd.DataFrame([{"session_date": trade_ts.date(), "net_pnl": 100.0}]),
+                "metrics": {
+                    "profit_factor": 1.2,
+                    "mar": 1.1,
+                    "trades_per_year": 55.0,
+                    "total_trades": 55,
+                    "apex_rule_violations": 0,
+                },
+                "diagnostics": {"entries_opened": 1},
+            }
+
+    monkeypatch.setattr(campaign_stages, "_prepare_stage_data", fake_prepare_stage_data)
+    monkeypatch.setattr(campaign_stages, "run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr(campaign_stages, "BacktestEngine", FakeBacktestEngine)
+    cfg = {
+        "campaign_id": "demo",
+        "variant_id": "incubation",
+        "data": {"timezone": "America/New_York"},
+        "core": {
+            "initial_balance": 100000,
+            "data_subset": {"start_date": "2011-01-03", "end_date": "2026-06-09", "session_labels": ["RTH"]},
+        },
+        "strategy": {"entry": {"params": {"threshold": 0}}},
+        "core_grid": {"parameters": {"entry.params.threshold": [1]}},
+    }
+
+    payload = campaign_stages._run_incubation_core(cfg, {}, tmp_path, skip_validation=True, context={})
+
+    assert payload["selected_params"] == {"entry.params.threshold": 1}
+    assert seen["subset"]["start_date"] == "2021-06-09"
+    assert seen["train_start"] == "2021-06-09"
+    assert seen["train_end"] == "2025-06-08"
+    assert seen["test_start"] == "2025-06-09"
+    assert seen["test_end"] == "2026-06-09"
+    assert seen["selected_threshold"] == 1
+    assert seen["parameter_label"] == "simulated_incubation_core.parameters"
+    assert seen["objective"] == "MAR"
+    assert seen["selection_exclusive_min_trades_per_year"] == 50
+    assert (tmp_path / "incubation_oos_results.csv").exists()
+    assert (tmp_path / "incubation_oos_summary.json").exists()
+    assert (tmp_path / "train_selection" / "incubation_train_grid_results.csv").exists()
+
+
 def test_acceptance_oos_stage_writes_core_like_artifacts(tmp_path, monkeypatch):
     dates = pd.date_range("2023-11-29", "2026-05-29", freq="D", tz="America/New_York")
     market = pd.DataFrame(
@@ -697,7 +1198,7 @@ def test_acceptance_oos_stage_writes_core_like_artifacts(tmp_path, monkeypatch):
                         "run_id": 1,
                         "entry.params.threshold": 1,
                         "total_trades": 100,
-                        "trades_per_year": 50.0,
+                        "trades_per_year": 75.0,
                         "net_profit": 1000.0,
                         "profit_factor": 1.5,
                         "expectancy_r": 0.2,
@@ -712,7 +1213,7 @@ def test_acceptance_oos_stage_writes_core_like_artifacts(tmp_path, monkeypatch):
                         "run_id": 2,
                         "entry.params.threshold": 2,
                         "total_trades": 100,
-                        "trades_per_year": 50.0,
+                        "trades_per_year": 75.0,
                         "net_profit": 900.0,
                         "profit_factor": 2.0,
                         "expectancy_r": 0.2,
@@ -813,3 +1314,22 @@ def test_first_months_stage_subset_uses_config_start_date():
     )
 
     assert subset == {"start_date": "2021-01-01", "end_date": "2022-07-01"}
+
+
+def test_first_fraction_stage_subset_uses_first_ninety_percent():
+    subset = campaign_stages._subset_from_window(
+        {"start_date": "2011-01-03", "end_date": "2026-06-09", "session_labels": ["RTH"]},
+        campaign_stages.DEFAULT_WFA_DATA_WINDOW,
+    )
+
+    assert subset == {"start_date": "2011-01-03", "end_date": "2024-11-22", "session_labels": ["RTH"]}
+
+
+def test_random_fraction_stage_subset_uses_seeded_ten_percent_avoiding_covid_and_latest_holdout():
+    subset = campaign_stages._subset_from_window(
+        {"start_date": "2011-01-03", "end_date": "2026-06-09", "session_labels": ["RTH"]},
+        campaign_stages.DEFAULT_SHORTLIST_DATA_WINDOW,
+    )
+
+    assert subset == {"start_date": "2011-02-22", "end_date": "2012-09-06", "session_labels": ["RTH"]}
+    assert pd.Timestamp(subset["end_date"]) < pd.Timestamp("2026-06-09") - pd.Timedelta(days=365)

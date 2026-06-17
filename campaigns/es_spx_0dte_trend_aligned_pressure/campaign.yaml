@@ -1,0 +1,95 @@
+campaign_id: es_spx_0dte_trend_aligned_pressure
+title: ES SPX 0DTE Trend-Aligned Calendar Pressure
+created_at: '2026-06-17'
+decision: FAIL
+status: completed
+symbol: ES
+timeframe: 1m
+edge_type: composite_calendar_pressure_trend_alignment
+hypothesis: >
+  SPX same-day option expiration sessions can create intraday ES pressure through
+  dealer hedging, gamma feedback, pinning, and liquidity demand. The campaign
+  tests all locally known SPX 0DTE sessions from the 2016 M/W/F Weeklys era
+  onward, excluding standard monthly OPEX Fridays, only when completed ES
+  intraday structure confirms direction across 30-minute and 120-minute high/low
+  windows.
+sources:
+  - title: Does 0DTE Options Trading Increase Volatility?
+    authors: Brogaard, Han, and Won
+    year: 2023
+    link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4426358
+    relevance: Documents the market-impact question around 0DTE option activity.
+  - title: Volatility Insights - Evaluating the Market Impact of SPX 0 DTE Options
+    authors: Cboe
+    year: 2024
+    link: https://www.cboe.com/insights/posts/volatility-insights-evaluating-the-market-impact-of-spx-0-dte-options/
+    relevance: Provides exchange/practitioner context for SPX 0DTE mechanics and hedging concerns.
+  - title: Time Series Momentum
+    authors: Moskowitz, Ooi, and Pedersen
+    year: 2012
+    link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2089463
+    relevance: Supports the secondary direction filter that trades with persistent price trends rather than against them.
+rationale: >
+  A blind 0DTE calendar or same-day move setup is vulnerable to direction
+  ambiguity. This campaign makes the directional filter explicit before testing:
+  a long is allowed only when the latest completed 30-minute and 120-minute
+  windows both form higher highs and higher lows than their immediately prior
+  windows; a short is allowed only when both form lower highs and lower lows.
+  The all-available 0DTE calendar is used because it preserves enough history
+  for the benchmark 4-year IS / 1-year OOS WFA structure. The trend filter is
+  not tuned by result and is not permitted as a rescue.
+composite_edge_policy:
+  primary_edge: SPX 0DTE calendar pressure
+  secondary_conditions:
+    - Fixed multi-timeframe ES high/low trend alignment.
+  max_secondary_conditions: 2
+  rescue_policy: Rescues may change only fixed parameters or declared parameter space, not add/remove the trend filter.
+data_needs:
+  - Local Sierra ES RTH 1-minute OHLCV/orderflow parquet.
+  - Local SPX 0DTE calendar session CSV.
+lookahead_risks:
+  - The SPX 0DTE calendar is known before the session and must not encode realized outcomes.
+  - Trend windows use only completed 1-minute bars ending at the signal timestamp.
+  - Signals generated from a completed close must execute no earlier than the next bar open through the engine.
+  - No option volume, dealer position, final VWAP, future high/low, or post-signal path is used.
+execution_assumptions:
+  tick_size: 0.25
+  point_value: 50.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  same_bar_stop_target: pessimistic
+  flatten_time: '15:55:00'
+failure_modes:
+  - 0DTE calendar pressure may not transfer into ES futures direction after costs.
+  - Trend confirmation may select late, exhausted moves instead of persistent pressure.
+  - Results may concentrate in a few volatility regimes or large trend days.
+  - Fixed percent stops may be poorly scaled for post-2022 volatility states.
+  - Same-bar pessimistic stop/target ordering may erase apparent edge.
+density_audit:
+  artifact: research_artifacts/es_spx_0dte_trend_aligned_pressure_density_audit_20260617.md
+  result: all five all-available 0DTE variants clear 50 trades/year before PnL testing.
+variants:
+  - all_0dte_trend_only_1330
+  - all_0dte_trend_only_1500
+  - all_0dte_trend_continuation_1330
+  - all_0dte_trend_continuation_1400
+  - all_0dte_trend_continuation_1500
+rescue_rules:
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - existing fixed parameters
+    - existing declared parameter ranges
+  forbidden_changes:
+    - entry mechanic
+    - trend-filter definition
+    - stop-loss module
+    - target module
+    - data period after seeing results
+results:
+  aggregate_summary: backtest-campaigns/es_spx_0dte_trend_aligned_pressure/campaign_test_summary.json
+  decision: FAIL
+  reason: >
+    All five originals failed. All five one-time parameter-space rescues were
+    run. No rescue passed the full staged methodology; the furthest rescue
+    reached WFA and failed by early exit because no in-sample grid row satisfied
+    the configured trade-density selection filter.

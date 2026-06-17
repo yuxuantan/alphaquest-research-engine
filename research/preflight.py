@@ -28,6 +28,14 @@ DEFAULT_CONFIG_GLOBS = (
 REQUIRED_TOP_LEVEL = ("campaign_id", "variant_id", "symbol", "dataset_id", "timeframe", "data", "strategy", "core")
 REQUIRED_CORE_FIELDS = ("tick_size", "commission_per_contract", "slippage_ticks")
 REQUIRED_APEX_FIELDS = ("latest_flat_time", "force_flatten_time", "latest_entry_time")
+REQUIRED_MECHANICS_RATIONALE_FIELDS = (
+    "mechanic_expresses_edge",
+    "entry_logic_rationale",
+    "stop_loss_rationale",
+    "target_exit_rationale",
+    "profitability_rationale",
+    "known_failure_modes",
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -170,6 +178,38 @@ def _validate_config(cfg: dict, path: Path, failures: list[str], warnings: list[
         _require_keys(apex, REQUIRED_APEX_FIELDS, f"{prefix}: apex_rules", failures)
 
     _validate_parameter_grid(cfg, path, failures, warnings)
+    _validate_mechanics_rationale(cfg, path, failures, warnings)
+
+
+def _validate_mechanics_rationale(cfg: dict, path: Path, failures: list[str], warnings: list[str]) -> None:
+    prefix = str(_display_path(path))
+    research = cfg.get("research_metadata")
+    if not isinstance(research, dict):
+        warnings.append(f"{prefix}: research_metadata is absent; new variants should include a mechanics review.")
+        return
+    required = bool(research.get("mechanics_review_required") or research.get("mechanics_review_version"))
+    if not required:
+        warnings.append(
+            f"{prefix}: mechanics review is not marked required; new variants should set "
+            "research_metadata.mechanics_review_required=true."
+        )
+        return
+
+    review = research.get("mechanics_review")
+    if not isinstance(review, dict):
+        failures.append(f"{prefix}: research_metadata.mechanics_review must be configured for new variants.")
+        return
+    for field in REQUIRED_MECHANICS_RATIONALE_FIELDS:
+        value = review.get(field)
+        if not isinstance(value, str) or len(value.strip()) < 80:
+            failures.append(
+                f"{prefix}: research_metadata.mechanics_review.{field} must be a detailed pre-test rationale."
+            )
+    decision = str(review.get("pre_test_decision", "")).strip().lower()
+    if decision != "approve_for_testing":
+        failures.append(
+            f"{prefix}: research_metadata.mechanics_review.pre_test_decision must be approve_for_testing."
+        )
 
 
 def _validate_parameter_grid(cfg: dict, path: Path, failures: list[str], warnings: list[str]) -> None:

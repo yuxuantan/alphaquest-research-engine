@@ -14,6 +14,8 @@ class PropRules:
     payout_threshold: float = 1000
     profit_target_pct: float = 0.06
     drawdown_limit_pct: float = 0.03
+    profit_target_amount: float | None = None
+    drawdown_limit_amount: float | None = None
 
     @classmethod
     def from_dict(cls, data: dict):

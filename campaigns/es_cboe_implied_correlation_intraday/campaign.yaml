@@ -1,0 +1,203 @@
+campaign_id: es_cboe_implied_correlation_intraday
+title: ES Cboe Implied Correlation Intraday
+decision: FAIL
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Cboe implied-correlation states may identify ES intraday risk-off or risk-on pressure
+  because high expected SPX component co-movement reduces diversification benefits and can proxy no-place-to-hide
+  market stress.
+rationale: This campaign tests option-implied correlation, not implied skewness, volatility-of-volatility,
+  VIX-minus-realized variance, put/call volume sentiment, realized volatility, order flow, ORB, VWAP,
+  or prior-level mechanics.
+sources:
+- title: 'The Price of Correlation Risk: Evidence from Equity Options'
+  authors: Joost Driessen, Pascal Maenhout, and Grigory Vilkov
+  year: 2009
+  venue: Journal of Finance, 64(3), 1377-1406
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2009.01467.x
+  relevance: Shows marketwide correlation risk is priced using equity index and component options.
+- title: Option-Implied Correlations and the Price of Correlation Risk
+  authors: Joost Driessen, Pascal Maenhout, and Grigory Vilkov
+  year: 2013
+  venue: SSRN working paper version
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2166829
+  relevance: Documents option-implied correlations and correlation risk premia as distinct from variance
+    risk alone.
+- title: EOD Implied Correlation Index
+  authors: Cboe Global Markets
+  year: 2026
+  venue: Official Cboe index page and daily historical CSV endpoints
+  link: https://www.cboe.com/us/indices/implied/
+  relevance: Official free source and definition for COR1M/COR3M implied-correlation histories.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- official free Cboe COR1M and COR3M daily historical CSVs
+- derived session feature file using only Cboe observations strictly before the ES session date
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- COR1M/COR3M are daily closing option-implied index values, not intraday option snapshots.
+- Same-day Cboe closes are unavailable to intraday ES signals and must not be used.
+- Sierra data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+- Using the Cboe close from the same ES session date would leak unavailable data and is forbidden.
+- Signals use only a completed ES bar at the configured timestamp and lagged Cboe daily state.
+- Rolling ranks are computed over the lagged session feature sequence only.
+- No final session high/low, final VWAP, future returns, or post-entry implied-correlation values are
+  used.
+failure_modes:
+- Correlation risk premia in the literature may apply to option returns or monthly horizons, not same-day
+  ES futures.
+- High implied correlation may imply either risk-off pressure or a compensated equity risk premium; variants
+  predeclare only the stated directions.
+- Daily implied-correlation states may be too slow for intraday ES timing.
+- Performance may concentrate in crisis windows or single volatility events.
+- The signal may overlap with broad volatility regimes and fail WFA stability.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_cboe_skew_tail_risk_intraday
+  - es_vvix_tail_risk_intraday
+  - es_variance_risk_premium_intraday
+  - es_cboe_put_call_sentiment_intraday
+  - es_volatility_managed_intraday_premium
+  - es_realized_vol_of_vol_state
+  conclusion: Not a duplicate of active failed campaigns. This tests lagged Cboe option-implied SPX component
+    correlation and correlation term-spread state, not skew/tail asymmetry, volatility-of-volatility,
+    variance premium, or put/call volume sentiment.
+feature_construction:
+  builder: tools/build_es_cboe_implied_correlation_features.py
+  cor1m_source: https://cdn.cboe.com/api/global/us_indices/daily_prices/COR1M_History.csv
+  cor3m_source: https://cdn.cboe.com/api/global/us_indices/daily_prices/COR3M_History.csv
+  cor1m_cache: data/external/cboe_cor1m_history.csv
+  cor3m_cache: data/external/cboe_cor3m_history.csv
+  output: data/external/es_cboe_implied_correlation_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3759
+  lookahead_control: latest Cboe COR1M/COR3M close strictly before ES session_date
+density_check:
+  sample_start: '2011-01-03'
+  sample_end: '2026-06-09'
+  threshold_trade_density_per_year: planned rank thresholds produce about 70 to 133 eligible sessions/year
+    before bar availability checks
+  tradecount_rule: expected to clear the 50 trades/year gate before strategy filters and fills
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+parameter_space:
+  upper_tail_thresholds:
+  - 0.55
+  - 0.6
+  - 0.65
+  lower_tail_thresholds:
+  - 0.45
+  - 0.4
+  - 0.35
+  stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 27
+variants:
+- high_cor3m_short_1000
+- low_cor3m_long_1030
+- rising_cor3m_short_1130
+- falling_cor3m_long_1200
+- high_short_term_correlation_short_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space only
+  forbidden_changes:
+  - core strategy mechanic
+  - Cboe availability lag rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+outcome:
+  completed_at: '2026-06-17'
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  rescue_runs: 5
+  summary: All five original Cboe implied-correlation variants failed limited_core_grid_test. Each failed
+    variant received exactly one parameter-space-only rescue preserving the same Cboe prior-close feature
+    construction, setup mode, direction, entry time, modules, data, costs, session rules, prop rules,
+    and validation gates. All five rescues also failed limited_core_grid_test. No run reached monkey,
+    WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  aggregate_report: backtest-campaigns/es_cboe_implied_correlation_intraday/campaign_test_summary.json
+  best_original:
+    variant: high_short_term_correlation_short_1330
+    top_net_profit: 1980.0
+    profitable_combo_rate: 0.2222222222222222
+    benchmark_pass_combos: 0
+  best_rescue:
+    variant: high_short_term_correlation_short_1330
+    top_net_profit: 2656.25
+    profitable_combo_rate: 0.9259259259259259
+    benchmark_pass_combos: 0
+rescue_attempts:
+- variant: high_cor3m_short_1000
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_implied_correlation_intraday/rescue_attempts/parameter_space_rescue_1/high_cor3m_short_1000/config.yaml
+  result_path: backtest-campaigns/es_cboe_implied_correlation_intraday/high_cor3m_short_1000/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: low_cor3m_long_1030
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_implied_correlation_intraday/rescue_attempts/parameter_space_rescue_1/low_cor3m_long_1030/config.yaml
+  result_path: backtest-campaigns/es_cboe_implied_correlation_intraday/low_cor3m_long_1030/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: rising_cor3m_short_1130
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_implied_correlation_intraday/rescue_attempts/parameter_space_rescue_1/rising_cor3m_short_1130/config.yaml
+  result_path: backtest-campaigns/es_cboe_implied_correlation_intraday/rising_cor3m_short_1130/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: falling_cor3m_long_1200
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_implied_correlation_intraday/rescue_attempts/parameter_space_rescue_1/falling_cor3m_long_1200/config.yaml
+  result_path: backtest-campaigns/es_cboe_implied_correlation_intraday/falling_cor3m_long_1200/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: high_short_term_correlation_short_1330
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_implied_correlation_intraday/rescue_attempts/parameter_space_rescue_1/high_short_term_correlation_short_1330/config.yaml
+  result_path: backtest-campaigns/es_cboe_implied_correlation_intraday/high_short_term_correlation_short_1330/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+benchmark_table_reruns:
+- variant: high_short_term_correlation_short_1330
+  source_run: rescue1
+  test_run_id: benchmark_table_rerun1
+  config_path: research_artifacts/benchmark_table_rerun_configs/es_cboe_implied_correlation_high_short_term_correlation_short_1330_benchmark_table_rerun1.yaml
+  result_path: backtest-campaigns/es_cboe_implied_correlation_intraday/high_short_term_correlation_short_1330/ES/benchmark_table_rerun1/campaign_test_summary.json
+  decision: FAIL
+  terminal_stage: walk_forward_analysis
+  note: Passed corrected limited-core and limited-monkey benchmark-table gates, then failed WFA by early exit on window 2; stitched OOS PF 0.7661489151873767 and MAR -0.7309106934085055.

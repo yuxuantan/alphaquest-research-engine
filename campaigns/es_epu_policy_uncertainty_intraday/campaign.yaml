@@ -1,0 +1,165 @@
+campaign_id: es_epu_policy_uncertainty_intraday
+title: ES Daily Economic Policy Uncertainty Intraday
+decision: FAIL
+created_at: '2026-06-16'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Daily U.S. Economic Policy Uncertainty states may identify equity-index
+  risk-off pressure or compensating risk-premium states that affect same-day ES RTH
+  returns after the cash open.
+rationale: This campaign tests a news-based macro uncertainty state. It is not an
+  FOMC or BLS scheduled-event drift, Treasury-rate shock, OFR financial-stress index,
+  VVIX/VIX tail-risk, variance-risk-premium, realized-volatility, order-flow, ORB,
+  VWAP, or prior-level campaign.
+sources:
+- title: Measuring Economic Policy Uncertainty
+  authors: Scott R. Baker, Nicholas Bloom, and Steven J. Davis
+  year: 2016
+  venue: Quarterly Journal of Economics 131(4):1593-1636
+  link: https://academic.oup.com/qje/article/131/4/1593/2468873
+  doi: 10.1093/qje/qjw024
+  relevance: Defines the news-based EPU index and documents its relationship with
+    stock-price volatility and macro outcomes.
+- title: The Asset-Pricing Implications of Government Economic Policy Uncertainty
+  authors: Jonathan Brogaard and Andrew Detzel
+  year: 2015
+  venue: Management Science 61(1):3-18
+  link: https://pubsonline.informs.org/doi/10.1287/mnsc.2014.2044
+  doi: 10.1287/mnsc.2014.2044
+  relevance: Finds EPU forecasts excess market returns and commands a risk premium,
+    motivating tests on equity-index futures.
+- title: Uncertainty about Government Policy and Stock Prices
+  authors: Lubos Pastor and Pietro Veronesi
+  year: 2012
+  venue: Journal of Finance 67(4):1219-1264
+  link: https://www.nber.org/papers/w16128
+  doi: 10.3386/w16128
+  relevance: Links policy uncertainty to stock prices, volatility, correlations, and
+    risk premia.
+- title: US Daily EPU Index (1985-present)
+  authors: Economic Policy Uncertainty project
+  year: 2026
+  venue: PolicyUncertainty.com official data page
+  link: https://www.policyuncertainty.com/us_monthly.html
+  relevance: Official free daily U.S. EPU data source used for the lagged session
+    features.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- official free Daily U.S. EPU CSV from PolicyUncertainty.com
+- derived session feature file using only EPU observations at least 30 calendar days
+  before each ES session
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- Daily EPU is a newspaper-count index, not an intraday market microstructure feed.
+- PolicyUncertainty.com indicates recent daily EPU values can revise; this campaign
+  uses a 30-calendar-day lag to avoid recent-revision leakage.
+- Sierra data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+- Using same-day or recently revised EPU values would leak unavailable information;
+  forbidden.
+- Signals use only a completed ES bar at the configured timestamp and lagged EPU daily
+  state.
+- Rolling ranks are computed over the lagged session feature sequence only.
+- No final session high/low, final VWAP, future returns, or post-entry EPU values
+  are used.
+failure_modes:
+- EPU literature may operate at monthly or multi-month horizons, not same-day intraday
+  ES timing.
+- The 30-day availability lag may make the signal too stale for intraday futures.
+- High uncertainty may be either risk-off sell pressure or a positive expected-return
+  state, causing unstable direction.
+- Performance may concentrate in crisis or election windows.
+- The edge may overlap with broad volatility or macro stress states and fail WFA stability.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_bls_macro_release_day_drift
+  - es_fomc_pre_announcement_drift
+  - es_treasury_rate_shock_intraday
+  - es_ofr_financial_stress_intraday
+  - es_vvix_tail_risk_intraday
+  - es_variance_risk_premium_intraday
+  - es_volatility_managed_intraday_premium
+  - es_cftc_tff_hedging_pressure
+  conclusion: Not a duplicate of active failed campaigns. This tests lagged news-based
+    U.S. economic policy uncertainty, not scheduled macro-release/FOMC dates, Treasury
+    yields, OFR market stress, VVIX/VIX volatility-of-volatility, variance risk premium,
+    realized-volatility management, or CFTC positioning.
+feature_construction:
+  builder: tools/build_es_epu_policy_uncertainty_features.py
+  epu_source: https://www.policyuncertainty.com/media/All_Daily_Policy_Data.csv
+  epu_cache: data/external/us_daily_epu_policy_uncertainty_1985_2026.csv
+  output: data/external/es_epu_policy_uncertainty_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3760
+  lookahead_control: latest Daily EPU observation on or before session_date - 30 calendar
+    days
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+parameter_space:
+  upper_tail_thresholds:
+  - 0.55
+  - 0.6
+  - 0.65
+  lower_tail_thresholds:
+  - 0.45
+  - 0.4
+  - 0.35
+  stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 27
+variants:
+- high_epu_short_1000
+- low_epu_long_1030
+- rising_epu_short_1130
+- falling_epu_long_1200
+- high_epu_ma_short_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space only
+  forbidden_changes:
+  - core strategy mechanic
+  - EPU availability lag rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+outcome:
+  completed_at: '2026-06-16'
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  rescue_runs: 5
+  summary: All five original EPU policy-uncertainty variants failed limited_core_grid_test.
+    Each failed variant received exactly one parameter-space-only rescue, preserving
+    the same 30-calendar-day EPU availability lag, setup mode, direction, entry time,
+    entry module, stop module, take-profit module, timeframe, data window, costs,
+    and validation gates. All five rescues also failed limited_core_grid_test; the
+    best rescue was low_epu_long_1030/rescue1 with profitable-combo rate 0.4074074074074074,
+    zero benchmark-passing combinations, top net 2170.625, PF 1.1913709499669385,
+    and 99 top-combo trades. No run reached monkey, WFA, WFA OOS monkey, Monte Carlo,
+    simulated incubation, or frozen validation.
+  aggregate_report: backtest-campaigns/es_epu_policy_uncertainty_intraday/campaign_test_summary.json

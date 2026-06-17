@@ -128,3 +128,34 @@ rescue_policy:
       audit: research_artifacts/es_mes_micro_flow_divergence_reversion_morning_sell_rescue_attempt_1_20260615.md
       terminal_stage: limited_monkey_test
       failure: random-placebo profitable rate 0.47 and median net profit -800.0; trade-path stress passed with profitable rate 0.9966666666666667 and one-tick-worse net profit 6807.5
+
+data_refresh_retries:
+  - id: mes_data_refresh_20260617
+    status: failed
+    reason: Local Sierra MES parquet history became available after the original one-year screen.
+    paid_data_downloaded: false
+    scope: >
+      Retried the same five original variants on the longer completed-bar ES/MES
+      feature cache, then reran each existing parameter-space rescue for every
+      failed original. Entry mechanics, stop modules, target modules, grids,
+      costs, slippage, session rules, and fill rules were unchanged.
+    new_data:
+      mes_cache: data/cache/orderflow/mes_sierra_trade_orderflow_1m_20190506_20260616_full_rth_ny.parquet
+      merged_feature_cache: data/cache/orderflow/es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny.csv
+      merged_rows: 685230
+      merged_sessions: 1757
+      first_timestamp: "2019-05-06 09:30:00"
+      last_timestamp: "2026-06-09 15:59:00"
+    refresh_configs: campaigns/es_mes_micro_flow_divergence_reversion/data_refresh_20260617/
+    report: backtest-campaigns/es_mes_micro_flow_divergence_reversion/campaign_test_summary.json
+    audit: research_artifacts/es_mes_micro_flow_divergence_reversion_mes_data_refresh_20260617.md
+    terminal_summary:
+      limited_core_grid_test_failed: 4
+      limited_monkey_test_failed: 6
+      wfa_reached: 0
+      monte_carlo_reached: 0
+    failure: >
+      No refreshed original or rescue run reached WFA. Four original/rescue runs
+      failed limited core; six reached limited monkey and failed the 90% random
+      net-profit beat-rate gate, with one also failing the max-drawdown beat-rate
+      gate.

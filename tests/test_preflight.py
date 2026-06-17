@@ -40,6 +40,18 @@ def _config(raw_csv, **overrides):
         "symbol": "ES",
         "dataset_id": "unit_fixture",
         "timeframe": "1m",
+        "research_metadata": {
+            "mechanics_review_required": True,
+            "mechanics_review": {
+                "mechanic_expresses_edge": "The entry maps the calendar edge into a same-session ES signal using only completed bars and the predeclared event state before any fill is attempted.",
+                "entry_logic_rationale": "The entry waits for a completed bar at a fixed signal time so the decision is point-in-time and can be executed no earlier than the next bar open.",
+                "stop_loss_rationale": "The stop is a fixed percentage from entry to cap loss size consistently across all parameter combinations without using future bar information.",
+                "target_exit_rationale": "The target is a fixed-R exit so reward is linked directly to the predeclared stop distance rather than optimized price levels.",
+                "profitability_rationale": "The variant is approved for testing because the hypothesized edge could create repeated intraday pressure after costs while preserving enough trade density.",
+                "known_failure_modes": "The edge may be too weak after slippage, may concentrate in a few sessions, or may fail when same-bar stop and target ordering is pessimistic.",
+                "pre_test_decision": "approve_for_testing",
+            },
+        },
         "data": {
             "source": "csv",
             "raw_csv": str(raw_csv),
@@ -190,6 +202,24 @@ def test_preflight_rejects_parameter_combination_cap(tmp_path):
 
     assert not result["passed"]
     assert any("methodology cap is 120" in failure for failure in result["failures"])
+
+
+def test_preflight_rejects_required_mechanics_review_without_approval(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    cfg = _config(data)
+    cfg["research_metadata"]["mechanics_review"] = {
+        "mechanic_expresses_edge": "too short",
+        "pre_test_decision": "needs_work",
+    }
+    _write_config(config, cfg)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("mechanics_review.entry_logic_rationale" in failure for failure in result["failures"])
+    assert any("pre_test_decision" in failure for failure in result["failures"])
 
 
 def test_preflight_cli_runs_from_repo_root_with_explicit_config(tmp_path):

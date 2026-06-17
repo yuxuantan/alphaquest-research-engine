@@ -60,3 +60,27 @@ def test_build_es_mes_flow_divergence_cache_uses_completed_aligned_windows(tmp_p
     assert out.loc[1, "mes_minus_es_return_ticks_2"] == pytest.approx(0.0)
     assert out.loc[1, "mes_trade_orderflow_large20_imbalance_2"] == pytest.approx(-0.4)
     assert out.loc[1, "mes_large20_imbalance_es_return_lte_16_2"] == pytest.approx(-0.4)
+
+
+def test_build_es_mes_flow_divergence_cache_accepts_parquet_inputs(tmp_path):
+    es_path = tmp_path / "es.parquet"
+    mes_path = tmp_path / "mes.parquet"
+    es_csv = tmp_path / "es.csv"
+    mes_csv = tmp_path / "mes.csv"
+    _write_cache(es_csv, "ES", [4, -2, 6], [1, 1, 3])
+    _write_cache(mes_csv, "MES", [-2, -4, 2], [-1, -3, 1])
+    pd.read_csv(es_csv).to_parquet(es_path, index=False)
+    pd.read_csv(mes_csv).to_parquet(mes_path, index=False)
+
+    out = build_es_mes_flow_divergence_cache(
+        es_csv=es_path,
+        mes_csv=mes_path,
+        windows=[2],
+        large_trade_sizes=[20],
+        price_cap_ticks=[16],
+        tick_size=0.25,
+        min_period_fraction=1.0,
+    )
+
+    assert out["timestamp"].tolist() == pd.to_datetime(pd.read_csv(es_csv)["timestamp"]).tolist()
+    assert out.loc[1, "es_minus_mes_imbalance_2"] == pytest.approx(0.4)

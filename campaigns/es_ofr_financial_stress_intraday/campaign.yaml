@@ -1,0 +1,131 @@
+campaign_id: es_ofr_financial_stress_intraday
+title: ES OFR Financial Stress Intraday
+decision: FAIL
+created_at: "2026-06-16"
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged daily systemic financial-stress states can identify risk-off
+  pressure that spills into same-day ES RTH returns. When OFR stress, credit,
+  funding, U.S. regional stress, or volatility contributions are in upper-tail
+  states, ES may exhibit intraday weakness after costs.
+rationale: This campaign tests a public daily financial-stress state, not
+  Treasury-rate shocks, CFTC positioning, dealer-lending plumbing proxies,
+  VIX expiration, realized-volatility management, variance-risk premium, ORB,
+  prior levels, VWAP, seasonality, or intraday order-flow mechanics.
+sources:
+  - title: The OFR Financial Stress Index
+    authors: Phillip Monin
+    year: 2017
+    venue: OFR Working Paper 17-04
+    link: https://www.financialresearch.gov/working-papers/2017/10/25/the-ofr-financial-stability-index/
+    relevance: Introduces the OFR FSI as a daily market-based stress index and documents that it identifies systemic stress episodes.
+  - title: OFR Financial Stress Index
+    authors: Office of Financial Research
+    year: 2026
+    venue: OFR monitoring tool and data release
+    link: https://www.financialresearch.gov/financial-stress-index/
+    relevance: Official source for the daily OFR FSI, its credit/funding/volatility contributions, and its two-business-day data-current lag.
+  - title: Business Conditions and Expected Returns on Stocks and Bonds
+    authors: Eugene F. Fama and Kenneth R. French
+    year: 1989
+    venue: Journal of Financial Economics 25, 23-49
+    link: https://www-2.rotman.utoronto.ca/~kan/3032/pdf/PredictabilityOfReturns_InstrumentalVariables/Fama_French_JFE_1989.pdf
+    relevance: Shows default-spread and business-condition variables contain information about expected returns, motivating a stress-state test.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - official OFR FSI CSV downloaded from the public OFR endpoint
+  - derived session feature file with OFR observations lagged by two business days
+  - same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+  - OFR states the FSI publishes with data current from two business days prior; the builder enforces this availability lag.
+  - The OFR FSI is a revised public index, not a real-time tick feed; this campaign is a research proxy and must fail closed if results are fragile.
+  - Sierra data is aggregated bar-level data, not tick-path data.
+  - Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+  - Using same-day OFR observations would leak unavailable data; forbidden.
+  - Signals use only the completed bar at the configured timestamp and lagged daily stress state.
+  - No final session high/low, final VWAP, future returns, or post-entry stress data are used.
+failure_modes:
+  - Financial-stress states may affect multi-day risk premia but not same-day intraday ES returns.
+  - High-stress states may be mean-reverting rather than trend-following, making short exposure wrong.
+  - OFR revisions or publication timing may make the proxy too optimistic for real-time use.
+  - Performance may concentrate in crisis windows, single years, or isolated days.
+  - Stress features may overlap too strongly with volatility and become unstable across WFA windows.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_treasury_rate_shock_intraday
+    - es_market_plumbing_liquidity_capacity
+    - es_variance_risk_premium_intraday
+    - es_volatility_managed_intraday_premium
+    - es_vix_expiration_pressure
+    - es_cftc_tff_hedging_pressure
+    - es_range_compression_breakout
+    - es_signed_orderflow_persistence
+    - es_volume_shock_liquidity_reversal
+  conclusion: Not a duplicate of active failed campaigns. This tests lagged OFR
+    systemic financial-stress contribution states, not risk-free Treasury shocks,
+    dealer-lending/VX OI plumbing proxies, volatility-risk premium, realized-vol
+    state, VIX settlement calendar pressure, CFTC positioning, ORB, or intraday
+    order-flow/volume mechanics.
+feature_construction:
+  builder: tools/build_es_ofr_financial_stress_features.py
+  source: https://www.financialresearch.gov/financial-stress-index/data/fsi.csv
+  source_cache: data/external/ofr_financial_stress_index_2000_2026.csv
+  output: data/external/es_ofr_financial_stress_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3760
+  lookahead_control: latest OFR observation on or before session_date minus two business days
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  latest_variant_flatten: "15:55:00"
+parameter_space:
+  entry_thresholds: [0.55, 0.60, 0.65]
+  stop_pct: [0.0015, 0.0025, 0.004]
+  target_r_multiple: [1.0, 1.5, 2.0]
+  combinations_per_variant: 27
+variants:
+  - rising_global_stress_short_1000
+  - high_credit_stress_short_1030
+  - funding_stress_short_1130
+  - us_stress_short_1200
+  - volatility_stress_short_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space only
+  forbidden_changes:
+    - core strategy mechanic
+    - OFR availability lag rule
+    - setup mode
+    - direction
+    - entry time
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+outcome:
+  completed_at: "2026-06-16"
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  rescue_runs: 5
+  summary: All five original variants failed limited_core_grid_test. Each failed
+    variant received exactly one parameter-space-only rescue, preserving the
+    OFR feature construction, setup mode, direction, entry time, entry module,
+    stop module, take-profit module, timeframe, data window, costs, OFR
+    two-business-day availability lag, and validation gates. All rescues also
+    failed limited_core_grid_test; no run reached monkey, WFA, Monte Carlo,
+    simulated incubation, or frozen validation.
+  aggregate_report: backtest-campaigns/es_ofr_financial_stress_intraday/campaign_test_summary.json

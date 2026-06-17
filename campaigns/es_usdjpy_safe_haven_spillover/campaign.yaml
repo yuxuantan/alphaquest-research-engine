@@ -1,0 +1,149 @@
+campaign_id: es_usdjpy_safe_haven_spillover
+title: ES USD/JPY Safe-Haven Spillover
+decision: PENDING
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged yen safe-haven/carry-unwind states, measured by USD/JPY level and return ranks, may identify ES intraday risk-off pressure or risk-on continuation because the Japanese yen tends to strengthen during funding-liquidity stress and carry-trade unwinds.
+rationale: This campaign tests JPY-specific safe-haven/carry-unwind information, not broad U.S. dollar strength, Treasury-rate shocks, oil shocks, option-volatility state, OFR financial stress, or ES-only momentum/orderflow.
+sources:
+- title: Safe Haven Currencies
+  authors: Angelo Ranaldo and Paul Soderlind
+  year: 2010
+  venue: Review of Finance, 14(3), 385-407
+  link: https://academic.oup.com/rof/article-abstract/14/3/385/1592162
+  doi: 10.1093/rof/rfq007
+  relevance: Identifies the Japanese yen as a safe-haven currency and motivates using yen strength as a market-stress proxy.
+- title: Carry Trades and Currency Crashes
+  authors: Markus K. Brunnermeier, Stefan Nagel, and Lasse H. Pedersen
+  year: 2008
+  venue: NBER Macroeconomics Annual / NBER Working Paper 14473
+  link: https://www.nber.org/papers/w14473
+  relevance: Links carry-trade unwind risk to falling risk appetite and funding liquidity, supporting a yen/carry stress spillover test.
+- title: Japanese Yen to U.S. Dollar Spot Exchange Rate [DEXJPUS]
+  authors: Board of Governors of the Federal Reserve System via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/DEXJPUS
+  relevance: Free daily USD/JPY series used to build strictly lagged ES session features.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- free FRED DEXJPUS daily USD/JPY CSV or local cached copy
+- deterministic session-date merge using only observations available no later than one business day before the ES session
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- DEXJPUS is a daily noon-buying-rate-style FX series, not an intraday executable FX quote.
+- Same-day FX observations are unavailable to the ES intraday signal by design; a one-business-day lag is enforced.
+- Sierra ES data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+- Signals never use same-date USD/JPY observations.
+- Rolling ranks are computed after applying the one-business-day availability lag to ES session dates.
+- Signals use a completed 1-minute bar and enter at the next bar open or later.
+- No final ES session close/high/low, future FX observation, final VWAP, or future orderflow is used.
+failure_modes:
+- Yen safe-haven effects may be contemporaneous rather than predictive after a one-business-day lag.
+- USD/JPY can move for Japan-specific policy reasons unrelated to U.S. equity risk appetite.
+- The effect may be regime-dependent or dominated by crisis periods.
+- Fixed intraday ES exits may be too noisy after costs and slippage.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_dollar_risk_appetite_intraday
+  - es_treasury_rate_shock_intraday
+  - es_oil_price_shock_spillover
+  - es_ofr_financial_stress_intraday
+  - es_cboe_put_call_sentiment_intraday
+  - es_vvix_tail_risk_intraday
+  - es_variance_risk_premium_intraday
+  - es_market_plumbing_liquidity_capacity
+  - es_daily_time_series_momentum
+  conclusion: Not a duplicate in active scope. This tests JPY-specific safe-haven/carry-unwind state using USD/JPY, while the active failed dollar campaign used broad U.S. dollar index risk-capacity state and did not test yen-specific carry stress.
+feature_construction:
+  builder: tools/build_es_usdjpy_safe_haven_features.py
+  fred_source: https://fred.stlouisfed.org/graph/fredgraph.csv?id=DEXJPUS
+  cache: data/external/fred_dexjpus_usdjpy_1971_2026.csv
+  output: data/external/es_usdjpy_safe_haven_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3760
+  availability_lag_business_days: 1
+density_check:
+  sample_start: '2011-01-03'
+  sample_end: '2026-06-09'
+  threshold_trade_density_per_year: planned thresholds produce about 80 to 143 eligible sessions/year before bar availability checks
+  tradecount_rule: expected to clear the 50 trades/year gate before strategy filters and fills
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+parameter_space:
+  upper_tail_thresholds: [0.55, 0.6, 0.65]
+  lower_tail_thresholds: [0.45, 0.4, 0.35]
+  stop_pct: [0.0015, 0.0025, 0.004]
+  target_r_multiple: [1.0, 1.5, 2.0]
+  combinations_per_variant: 27
+variants:
+- yen_appreciation_short_1000
+- yen_depreciation_long_1030
+- strong_yen_short_1130
+- weak_yen_long_1200
+- five_day_yen_appreciation_short_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space only
+  forbidden_changes:
+  - core strategy mechanic
+  - FRED availability lag rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+status: completed
+outcome:
+  completed_at: '2026-06-17'
+  decision: FAIL
+  terminal_stage: limited_monkey_test
+  original_runs: 5
+  rescue_runs: 5
+  summary: All five original USD/JPY safe-haven variants failed limited_core_grid_test.
+    Each failed variant received exactly one parameter-space-only rescue preserving
+    the same entry, stop, target, data, costs, sessions, prop rules, and validation
+    gates. Four rescues failed limited_core_grid_test; weak_yen_long_1200/rescue1
+    passed limited core but failed limited_monkey_test. No run reached WFA, WFA OOS
+    monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  aggregate_report: backtest-campaigns/es_usdjpy_safe_haven_spillover/campaign_test_summary.json
+  best_original:
+    variant: weak_yen_long_1200
+    top_net_profit: 1207.5
+    top_profit_factor: 1.215625
+    profitable_combo_rate: 0.25925925925925924
+    benchmark_pass_combos: 0
+  best_rescue_by_top_net:
+    variant: strong_yen_short_1130
+    top_net_profit: 4290.0
+    top_profit_factor: 1.1819338422391859
+    profitable_combo_rate: 0.5555555555555556
+    benchmark_pass_combos: 8
+    terminal_stage: limited_core_grid_test
+  best_rescue_by_stage:
+    variant: weak_yen_long_1200
+    terminal_stage: limited_monkey_test
+    limited_core_profitable_combo_rate: 1.0
+    limited_core_top_net_profit: 1607.5
+    limited_core_top_profit_factor: 1.3466307277628031
+    failure: limited_monkey_test failed core-vs-monkey net-profit beat rate 0.8333333333333334
+      below 0.9.

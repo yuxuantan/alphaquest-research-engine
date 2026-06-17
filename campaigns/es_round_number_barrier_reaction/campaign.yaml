@@ -1,0 +1,210 @@
+campaign_name: es_round_number_barrier_reaction
+campaign_id: es_round_number_barrier_reaction
+instrument: ES
+decision: FAIL
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no non-archived ES campaign
+  testing fixed psychological round-number price barriers. This is distinct from prior-session
+  highs/lows, overnight highs/lows, VWAP, range compression, and orderflow campaigns
+  because the traded reference levels are ex-ante fixed price handles rather than
+  data-mined historical levels.
+edge_hypothesis: ES may react predictably around fixed round-number price barriers
+  because stop-loss, take-profit, and discretionary liquidity cluster around salient
+  handles. Failed probes may reverse, while completed breaks may continue as stop-order
+  pressure is triggered.
+why_it_may_apply_to_es_futures: ES trades in visible index handles and is widely watched
+  by discretionary and systematic participants. Fixed 25/50/100-handle barriers are
+  known before the session and require no future high/low, volume profile, or order-book
+  data.
+research_sources:
+- title: Price Barriers in the Dow Jones Industrial Average
+  author: R. Glen Donaldson and Harold Y. Kim
+  year: 1993
+  link_or_doi: https://ideas.repec.org/a/cup/jfinqa/v28y1993i03p313-330_00.html
+  expected_mechanism: Documents support/resistance behavior and continuation after
+    breaks around salient 100-point index barriers.
+- title: Currency Orders and Exchange-Rate Dynamics
+  author: Carol L. Osler
+  year: 2003
+  link_or_doi: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  expected_mechanism: Documents order clustering at round-number support/resistance
+    levels and links reversals and momentum to clustered stop/take-profit orders.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  author: Carol L. Osler
+  year: 2005
+  link_or_doi: https://ideas.repec.org/a/eee/jimfin/v24y2005i2p219-241.html
+  expected_mechanism: Supports the continuation failure mode where stop-loss clustering
+    can create self-reinforcing moves after a level is crossed.
+behavioural_or_microstructure_rationale: The campaign treats round-number barriers
+  as fixed ex-ante levels. Reclaim variants test liquidity provision after failed
+  probes; breakout variants test stop-order continuation after completed crosses.
+  The mechanism is frozen before results.
+expected_failure_modes:
+- Round-number behavior documented in equities and FX may not survive in ES futures
+  after costs.
+- Fixed handles may be too obvious and arbitraged by faster participants.
+- Bar-level OHLC may not capture tick-path sequencing around a fast barrier touch,
+  so pessimistic same-bar stop/target handling is required.
+- The edge may be concentrated in crisis sessions or a few large trend days.
+- Breakout and rejection interpretations may cancel across regimes or sides.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute bars aggregated deterministically from local 1-minute RTH data
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+forbidden_forms_of_lookahead:
+- Use of future session highs/lows, final VWAP, final volume profile, or future orderflow
+  to define a barrier.
+- Entry on the same bar close that creates the signal; signal fills must be next-bar
+  open or later.
+- Changing barrier interval, buffer, time window, direction, stop, or target after
+  seeing results.
+- Using archived result performance for duplicate or parameter decisions.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_campaign_count_checked: 51
+  not_duplicate_of:
+  - es_prior_day_stop_run_reclaim
+  - es_prior_session_level_breakout_continuation
+  - es_overnight_inventory_sweep_reversion
+  - es_vwap_pullback_continuation
+  - es_range_compression_breakout
+  - es_signed_orderflow_persistence
+  conclusion: This campaign tests fixed psychological price barriers known before
+    the session. It does not use prior-session levels, overnight levels, opening ranges,
+    VWAP, range compression, or orderflow-derived levels.
+variants:
+- morning_round_support_reclaim_long
+- morning_round_resistance_reject_short
+- midday_two_sided_round_reclaim
+- round_number_upside_breakout_long
+- round_number_downside_breakout_short
+parameter_space:
+  total_combinations_per_variant: 36
+  entry_tunables:
+  - barrier_interval_points
+  - buffer_ticks
+  stop_tunables:
+  - stop_pct
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.barrier_interval_points:
+    - 25.0
+    - 50.0
+    entry.params.buffer_ticks:
+    - 0
+    - 1
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  pretest_density_adjustment: Removed 2-tick buffer from the original grid before
+    any performance test because one downside-breakout combination was below the 50
+    trades/year density requirement.
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  predeclared_rescue_parameter_space:
+    entry.params.barrier_interval_points:
+    - 10.0
+    - 25.0
+    - 50.0
+    entry.params.buffer_ticks:
+    - 0
+    - 1
+    sl.params.stop_pct:
+    - 0.001
+    - 0.002
+    - 0.0035
+    tp.params.target_r_multiple:
+    - 1.5
+    - 2.5
+    - 3.5
+  attempts:
+  - variant: morning_round_support_reclaim_long
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_round_number_barrier_reaction/rescue_attempts/parameter_space_rescue_1/morning_round_support_reclaim_long/config.yaml
+    result_path: backtest-campaigns/es_round_number_barrier_reaction/morning_round_support_reclaim_long/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: morning_round_resistance_reject_short
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_round_number_barrier_reaction/rescue_attempts/parameter_space_rescue_1/morning_round_resistance_reject_short/config.yaml
+    result_path: backtest-campaigns/es_round_number_barrier_reaction/morning_round_resistance_reject_short/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: midday_two_sided_round_reclaim
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_round_number_barrier_reaction/rescue_attempts/parameter_space_rescue_1/midday_two_sided_round_reclaim/config.yaml
+    result_path: backtest-campaigns/es_round_number_barrier_reaction/midday_two_sided_round_reclaim/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: round_number_upside_breakout_long
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_round_number_barrier_reaction/rescue_attempts/parameter_space_rescue_1/round_number_upside_breakout_long/config.yaml
+    result_path: backtest-campaigns/es_round_number_barrier_reaction/round_number_upside_breakout_long/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: round_number_downside_breakout_short
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_round_number_barrier_reaction/rescue_attempts/parameter_space_rescue_1/round_number_downside_breakout_short/config.yaml
+    result_path: backtest-campaigns/es_round_number_barrier_reaction/round_number_downside_breakout_short/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+density_audit:
+  artifact: research_artifacts/es_round_number_barrier_reaction_density_audit_20260617.md
+  conclusion: Final declared original and rescue grids have minimum pre-test density
+    of 61.3 signals/year; no row is below 50/year.
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-17'
+  aggregate_report: backtest-campaigns/es_round_number_barrier_reaction/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five original round-number barrier variants failed limited_core_grid_test
+    because the profitable-combination rate was far below the required 0.70. Each
+    failed variant received exactly one parameter-space-only rescue preserving the
+    same fixed round-number barrier mechanic, setup mode, direction, time window,
+    entry module, stop module, take-profit module, timeframe, data window, costs,
+    fill rules, session rules, prop rules, and validation gates. All five rescues
+    also failed limited_core_grid_test. Some individual breakout/rejection parameter
+    combinations were profitable and benchmark-passing, but the grid was not robust
+    enough. No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation,
+    frozen validation, or candidate reporting.
+  best_original: round_number_downside_breakout_short/run1 top_net=6137.5 profitable_combo_rate=0.2777777777777778
+    benchmark_passes=8
+  best_rescue: round_number_downside_breakout_short/rescue1 top_net=6406.25 profitable_combo_rate=0.2037037037037037
+    benchmark_passes=4

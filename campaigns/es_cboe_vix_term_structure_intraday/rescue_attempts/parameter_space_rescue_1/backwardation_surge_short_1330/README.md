@@ -1,0 +1,14 @@
+# backwardation_surge_short_1330
+
+Campaign: `es_cboe_vix_term_structure_intraday`
+
+Mechanic: At 13:30:00 ET, short ES when the latest prior one-day VIX/VIX3M ratio-change rank is in the upper tail; flatten by 15:55 ET unless stop or target is hit.
+
+Feature timing: `data/external/es_cboe_vix_term_structure_features_20110103_20260609.csv` uses the latest Cboe VIX term-structure close strictly before the ES session date.
+
+Entry module: `cboe_vix_term_structure` with setup mode `backwardation_surge_short`.
+
+Stop module: `percent_from_entry`. Target module: `fixed_r`.
+
+## Rescue Attempt 1
+Original backwardation-surge short failed core with 0/27 profitable combinations; rescue preserves the same one-day VIX/VIX3M ratio-change short mechanic and tests a stricter upper-tail rank neighborhood with the adjacent wide-stop/high-R space.

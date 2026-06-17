@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.cboe_vix_term_structure import CboeVixTermStructureEntry
+
+ENTRY_MODULE = CboeVixTermStructureEntry

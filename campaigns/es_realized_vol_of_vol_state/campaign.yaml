@@ -1,0 +1,176 @@
+campaign_name: es_realized_vol_of_vol_state
+campaign_id: es_realized_vol_of_vol_state
+instrument: ES
+decision: FAIL
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no non-archived realized volatility-of-volatility
+  ES campaign. The edge uses dense lagged realized-volatility instability features
+  from local ES RTH bars and is distinct from simple realized volatility, semivariance,
+  jump variation, skewness, variance risk premium, and VVIX tail-risk state campaigns.
+edge_hypothesis: Lagged realized volatility-of-volatility, computed from the instability
+  of intraday realized volatility and realized quarticity proxies, may condition next-session
+  ES intraday risk compensation or unresolved stress.
+why_it_may_apply_to_es_futures: ES is the primary liquid futures expression of U.S.
+  equity-index risk. Volatility uncertainty and volatility-of-volatility risk documented
+  in equity-index and option markets can plausibly affect the compensation required
+  to warehouse ES exposure, while the local Sierra cache allows a no-new-data bar-level
+  test.
+research_sources:
+- title: Econometric Analysis of Realized Volatility and Its Use in Estimating Stochastic
+    Volatility Models
+  author: Ole E. Barndorff-Nielsen and Neil Shephard
+  year: 2002
+  link_or_doi: https://doi.org/10.1111/1467-9868.00336
+  expected_mechanism: Provides the realized-volatility measurement framework and high-frequency
+    return aggregation used to construct lagged volatility-state variables.
+- title: How Aggregate Volatility-of-Volatility Affects Stock Returns
+  author: Fabian Hollstein and Marcel Prokopczuk
+  year: 2018
+  link_or_doi: https://doi.org/10.1093/rapstu/rax019
+  expected_mechanism: Documents that aggregate volatility-of-volatility affects stock
+    returns, motivating a futures-specific test of lagged volatility-instability states.
+- title: Volatility-of-Volatility Risk
+  author: Darien Huang, Christian Schlag, Ivan Shaliastovich, and Julian Thimme
+  year: 2018
+  link_or_doi: https://doi.org/10.2139/ssrn.2497759
+  expected_mechanism: Shows volatility-of-volatility is a priced risk factor in index
+    and volatility option returns, motivating a conservative ES intraday proxy test.
+behavioural_or_microstructure_rationale: The campaign treats prior completed RTH volatility
+  instability as an ex-ante state. High volatility-of-volatility can represent uncertainty
+  compensation or unresolved stress; low volatility-of-volatility can represent stable
+  risk-taking conditions. The five variants test these interpretations without changing
+  the feature after results.
+expected_failure_modes:
+- Volatility-of-volatility evidence may apply to option returns or longer horizons
+  rather than same-day ES futures direction.
+- The local realized proxy may mostly capture ordinary realized variance already rejected
+  by active volatility campaigns.
+- Premium and stress interpretations may cancel across regimes.
+- Performance may concentrate in crisis years or narrow thresholds.
+- Pessimistic same-bar ordering, one-tick-worse slippage, missed trades, WFA selection,
+  or prop-rule checks may erase the edge.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/es_realized_vol_of_vol_features_20110103_20260609.csv
+feature_construction:
+  builder: tools/build_es_realized_vol_of_vol_features.py
+  output: data/external/es_realized_vol_of_vol_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3740
+  lookahead_control: Every tradable volatility-of-volatility feature is shifted one
+    completed RTH session; a signal date can only use information available after
+    the prior RTH close.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+forbidden_forms_of_lookahead:
+- Use of current-session realized volatility-of-volatility, high, low, close, or post-entry
+  returns in the signal state.
+- Use of future sessions in rolling ranks.
+- Changing volatility-of-volatility definitions, thresholds, entry times, or direction
+  after seeing test results.
+- Holding overnight to approximate a volatility-risk horizon outside the configured
+  methodology.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_campaign_count_checked: 50
+  not_duplicate_of:
+  - es_volatility_managed_intraday_premium
+  - es_realized_semivariance_asymmetry
+  - es_realized_skewness_reversal
+  - es_realized_jump_variation_premium
+  - es_variance_risk_premium_intraday
+  - es_vvix_tail_risk_intraday
+  - es_amihud_illiquidity_price_impact
+  conclusion: This campaign uses lagged realized volatility instability and quarticity-ratio
+    states. It is not simple lagged realized variance timing, good-vs-bad volatility,
+    jump variation, realized skewness, implied-minus-realized variance risk premium,
+    VVIX implied vol-of-vol, or Amihud price impact.
+variants:
+- high_1d_vov_premium_long_1000
+- high_1d_vov_stress_short_1030
+- low_1d_vov_calm_long_1130
+- high_5d_vov_premium_long_1200
+- two_sided_20d_vov_state_1330
+density_audit:
+  artifact: research_artifacts/es_realized_vol_of_vol_state_density_audit_20260617.md
+  conclusion: All five variant shapes have plausible pre-test signal density above
+    50 trades/year across the declared threshold grid.
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - feature construction shift rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - variant: high_1d_vov_premium_long_1000
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_vol_of_vol_state/rescue_attempts/parameter_space_rescue_1/high_1d_vov_premium_long_1000/config.yaml
+    result_path: backtest-campaigns/es_realized_vol_of_vol_state/high_1d_vov_premium_long_1000/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: high_1d_vov_stress_short_1030
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_vol_of_vol_state/rescue_attempts/parameter_space_rescue_1/high_1d_vov_stress_short_1030/config.yaml
+    result_path: backtest-campaigns/es_realized_vol_of_vol_state/high_1d_vov_stress_short_1030/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: low_1d_vov_calm_long_1130
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_vol_of_vol_state/rescue_attempts/parameter_space_rescue_1/low_1d_vov_calm_long_1130/config.yaml
+    result_path: backtest-campaigns/es_realized_vol_of_vol_state/low_1d_vov_calm_long_1130/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: high_5d_vov_premium_long_1200
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_vol_of_vol_state/rescue_attempts/parameter_space_rescue_1/high_5d_vov_premium_long_1200/config.yaml
+    result_path: backtest-campaigns/es_realized_vol_of_vol_state/high_5d_vov_premium_long_1200/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: two_sided_20d_vov_state_1330
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_vol_of_vol_state/rescue_attempts/parameter_space_rescue_1/two_sided_20d_vov_state_1330/config.yaml
+    result_path: backtest-campaigns/es_realized_vol_of_vol_state/two_sided_20d_vov_state_1330/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-17'
+  aggregate_report: backtest-campaigns/es_realized_vol_of_vol_state/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five original realized volatility-of-volatility state variants
+    failed limited_core_grid_test. Each failed variant received exactly one parameter-space-only
+    rescue preserving the same realized volatility-of-volatility feature family, direction
+    mode, entry time, rank/value columns, entry module, stop module, take-profit module,
+    timeframe, data window, costs, fill rules, session rules, prop rules, and validation
+    gates. All five rescues also failed limited_core_grid_test. No run reached monkey,
+    WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or
+    candidate reporting.
+  best_original: high_1d_vov_premium_long_1000/run1 top_net=-105.0 profitable_combo_rate=0.0
+  best_rescue: high_5d_vov_premium_long_1200/rescue1 top_net=2211.25 profitable_combo_rate=0.18518518518518517

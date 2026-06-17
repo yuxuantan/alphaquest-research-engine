@@ -1,0 +1,199 @@
+campaign_id: es_cboe_vix_level_state_intraday
+title: ES Cboe VIX Level State Intraday
+decision: FAIL
+created_at: '2026-06-17'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Cboe VIX level and VIX change states may identify ES intraday risk-premium,
+  risk-off continuation, or rebound pressure because VIX embeds option-implied equity-index
+  uncertainty and investor hedging demand.
+rationale: This campaign tests VIX level and VIX change ranks as standalone implied-volatility
+  sentiment/risk-state variables. It is distinct from active failed VIX term-structure,
+  VVIX volatility-of-volatility, SKEW tail-risk, implied-correlation, VIX expiration-calendar,
+  variance-risk-premium, and realized-volatility campaigns.
+sources:
+- title: The Investor Fear Gauge
+  authors: Robert E. Whaley
+  year: 2000
+  venue: Journal of Portfolio Management, 26(3), 12-17
+  link: https://www.pm-research.com/content/iijpormgmt/26/3/12
+  relevance: Explains VIX as an option-implied market fear/uncertainty measure tied
+    to stock-index movements.
+- title: Relationships Between Implied Volatility Indexes and Stock Index Returns
+  authors: Pierre Giot
+  year: 2005
+  venue: Journal of Portfolio Management, 31(3), 92-100
+  link: https://www.pm-research.com/content/iijpormgmt/31/3/92
+  doi: 10.3905/jpm.2005.500363
+  relevance: Studies VIX/VXN relationships with stock-index returns and motivates
+    testing implied-volatility state against ES returns.
+- title: Implied Volatility and Future Portfolio Returns
+  authors: Prithviraj S. Banerjee, James S. Doran, and David R. Peterson
+  year: 2007
+  venue: Journal of Banking & Finance, 31(10), 3183-3199
+  link: https://econpapers.repec.org/RePEc:eee:jbfina:v:31:y:2007:i:10:p:3183-3199
+  relevance: Reports predictive content in VIX for future portfolio returns, supporting
+    a direct VIX-level/change campaign.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- free official Cboe VIX daily historical CSV or local cached copy
+- derived session feature file using only Cboe VIX observations strictly before the
+  ES session date
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- VIX is a daily close, not an intraday option snapshot.
+- Same-day VIX closes are unavailable to intraday ES signals and must not be used.
+- Sierra data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+- Using the VIX close from the same ES session date would leak unavailable data and
+  is forbidden.
+- Signals use only a completed ES bar at the configured timestamp and lagged Cboe
+  VIX daily state.
+- Rolling ranks are computed on VIX observations and then mapped with an as-of merge
+  using strictly prior observation dates.
+- No final session high/low, final VWAP, future returns, or post-entry VIX values
+  are used.
+failure_modes:
+- VIX-return literature is mostly daily or longer horizon and may not transfer to
+  same-day intraday ES holds.
+- High VIX can mark risk premium rebound or continuing stress; variants predeclare
+  fixed directions only.
+- VIX level may overlap with existing volatility-state families and fail independent
+  WFA stability.
+- Performance may concentrate in crisis periods or single volatility-shock years.
+- One-tick-worse slippage or missed trades may eliminate any small edge.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_cboe_vix_term_structure_intraday
+  - es_vvix_tail_risk_intraday
+  - es_cboe_skew_tail_risk_intraday
+  - es_cboe_implied_correlation_intraday
+  - es_variance_risk_premium_intraday
+  - es_vix_expiration_pressure
+  - es_volatility_managed_intraday_premium
+  - es_realized_vol_of_vol_state
+  conclusion: Not a duplicate of active failed campaigns. This tests lagged VIX level
+    and VIX change ranks directly, not VIX maturity-slope, VVIX, SKEW, implied correlation,
+    VIX-minus-realized variance, VIX expiration calendar pressure, or realized volatility
+    state.
+feature_construction:
+  builder: tools/build_es_cboe_vix_level_features.py
+  source: https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv
+  cache: data/external/cboe_vix_history.csv
+  output: data/external/es_cboe_vix_level_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3817
+  lookahead_control: latest Cboe VIX close strictly before ES session_date
+density_check:
+  sample_start: '2011-01-03'
+  sample_end: '2026-06-09'
+  threshold_trade_density_per_year: planned rank thresholds produce about 67 to 124
+    eligible sessions/year before bar availability checks
+  tradecount_rule: expected to clear the 50 trades/year gate before strategy filters
+    and fills
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+parameter_space:
+  upper_tail_thresholds:
+  - 0.55
+  - 0.6
+  - 0.65
+  lower_tail_thresholds:
+  - 0.45
+  - 0.4
+  - 0.35
+  stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 27
+variants:
+- high_vix_rebound_long_1000
+- low_vix_complacency_short_1030
+- vix_spike_riskoff_short_1130
+- vix_crush_rebound_long_1200
+- persistent_high_vix_long_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space only
+  forbidden_changes:
+  - core strategy mechanic
+  - Cboe availability lag rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+status: completed
+outcome:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  summary_path: backtest-campaigns/es_cboe_vix_level_state_intraday/campaign_test_summary.json
+  results_csv: backtest-campaigns/es_cboe_vix_level_state_intraday/campaign_results.csv
+  best_original:
+    variant: vix_spike_riskoff_short_1130
+    top_net_profit: 1212.5
+    profitable_combo_rate: 0.14814814814814814
+    benchmark_pass_combos: 0
+  best_rescue:
+    variant: vix_spike_riskoff_short_1130
+    top_net_profit: 2618.75
+    profitable_combo_rate: 0.5555555555555556
+    benchmark_pass_combos: 0
+rescue_attempts:
+- variant: high_vix_rebound_long_1000
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_vix_level_state_intraday/rescue_attempts/parameter_space_rescue_1/high_vix_rebound_long_1000/config.yaml
+  result_path: backtest-campaigns/es_cboe_vix_level_state_intraday/high_vix_rebound_long_1000/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: low_vix_complacency_short_1030
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_vix_level_state_intraday/rescue_attempts/parameter_space_rescue_1/low_vix_complacency_short_1030/config.yaml
+  result_path: backtest-campaigns/es_cboe_vix_level_state_intraday/low_vix_complacency_short_1030/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: vix_spike_riskoff_short_1130
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_vix_level_state_intraday/rescue_attempts/parameter_space_rescue_1/vix_spike_riskoff_short_1130/config.yaml
+  result_path: backtest-campaigns/es_cboe_vix_level_state_intraday/vix_spike_riskoff_short_1130/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: vix_crush_rebound_long_1200
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_vix_level_state_intraday/rescue_attempts/parameter_space_rescue_1/vix_crush_rebound_long_1200/config.yaml
+  result_path: backtest-campaigns/es_cboe_vix_level_state_intraday/vix_crush_rebound_long_1200/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL
+- variant: persistent_high_vix_long_1330
+  attempt: 1
+  scope: parameter_space_only
+  config_path: campaigns/es_cboe_vix_level_state_intraday/rescue_attempts/parameter_space_rescue_1/persistent_high_vix_long_1330/config.yaml
+  result_path: backtest-campaigns/es_cboe_vix_level_state_intraday/persistent_high_vix_long_1330/ES/rescue1/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  decision: FAIL

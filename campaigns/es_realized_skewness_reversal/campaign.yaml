@@ -1,0 +1,171 @@
+campaign_name: es_realized_skewness_reversal
+campaign_id: es_realized_skewness_reversal
+instrument: ES
+initial_decision: TEST
+reason_for_decision: Active-only duplicate review found no non-archived realized-skewness
+  or higher-moment ES campaign. The edge uses dense daily lagged features from local
+  ES RTH bars and is not a calendar/event effect.
+edge_hypothesis: ES may mean-revert or require compensation after low realized skewness
+  states and may underperform after high realized skewness states, because investors
+  prefer positively skewed payoff distributions and realized third moments can proxy
+  short-horizon lottery/crash asymmetry.
+why_it_may_apply_to_es_futures: ES is the liquid futures expression of U.S. equity-index
+  risk. Prior research finds realized skewness is negatively related to subsequent
+  equity returns and that skewness measures can forecast S&P 500 index futures returns.
+  This campaign tests whether an ES-only, lagged intraday realized-skewness proxy has
+  enough standalone signal after realistic ES costs.
+research_sources:
+- title: Does Realized Skewness Predict the Cross-Section of Equity Returns?
+  author: Diego Amaya, Peter Christoffersen, Kris Jacobs, and Aurelio Vasquez
+  year: 2015
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2015.02.009
+  expected_mechanism: Intraday realized skewness is negatively related to next-period
+    returns; low realized skewness earns higher subsequent return than high realized
+    skewness in equity portfolios.
+- title: Skewness and Index Futures Return
+  author: Eric Jondeau, Xuewu Wang, Zhipeng Yan, and Qunzi Zhang
+  year: 2020
+  link_or_doi: https://doi.org/10.1002/fut.22112
+  expected_mechanism: Skewness information can forecast S&P 500 index futures returns
+    out of sample, motivating an ES futures test with strict data-availability controls.
+- title: Expected Idiosyncratic Skewness
+  author: Brian H. Boyer, Todd Mitton, and Keith Vorkink
+  year: 2010
+  link_or_doi: https://doi.org/10.1093/rfs/hhp041
+  expected_mechanism: Preference for positive skewness can make high-skewness assets
+    have lower expected returns.
+behavioural_or_microstructure_rationale: The campaign treats lagged realized skewness
+  as an ex-ante state variable. Negative realized skewness may reflect recent downside
+  asymmetry and higher compensation for taking long ES exposure. Positive realized
+  skewness may reflect lottery-like upside asymmetry that is overpaid and vulnerable
+  to reversal. Every variant uses only completed prior RTH sessions.
+expected_failure_modes:
+- The equity cross-sectional effect does not transfer to a single ES time-series rule.
+- Jondeau et al. use average stock-level skewness, not ES-only intraday skewness.
+- The signal is mostly a hidden volatility or trend proxy already rejected by active
+  campaigns.
+- Intraday one-contract entries cannot capture a weekly/monthly skewness premium after
+  commissions and slippage.
+- Performance is concentrated in crisis years, isolated months, or a narrow threshold.
+- The effect fails monkey stress, WFA selection, or one-tick-worse slippage.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/es_lagged_realized_skewness_features_20110103_20260609.csv
+feature_construction:
+  builder: tools/build_es_lagged_realized_skewness_features.py
+  output: data/external/es_lagged_realized_skewness_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3755
+  lookahead_control: Every tradable skewness feature is shifted one completed RTH
+    session; a signal date can only use information available after the prior RTH
+    close.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  latest_variant_flatten: "15:55:00"
+forbidden_forms_of_lookahead:
+- Use of current-session realized skewness, high, low, close, or post-entry returns
+  in the signal state.
+- Use of future sessions in rolling ranks.
+- Changing skewness definitions, thresholds, entry times, or direction after seeing
+  test results.
+- Holding overnight to approximate the weekly/monthly horizon in the source papers.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  not_duplicate_of:
+  - es_volatility_managed_intraday_premium
+  - es_daily_time_series_momentum
+  - es_connors_rsi2_mean_reversion
+  - es_volume_shock_liquidity_reversal
+  - es_prior_session_ibs_reversion
+  conclusion: This campaign uses lagged third-moment asymmetry ranks. It is not a
+    low-volatility exposure filter, daily time-series momentum, RSI pullback, volume
+    shock, or prior-session IBS reversion campaign.
+variants:
+- low_1d_skew_open_long_1000
+- high_1d_skew_open_short_1000
+- low_3d_skew_midmorning_long_1030
+- high_3d_skew_midday_short_1200
+- two_sided_5d_skew_extreme_1330
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - feature construction shift rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  attempts:
+  - variant: low_1d_skew_open_long_1000
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_skewness_reversal/rescue_attempts/parameter_space_rescue_1/low_1d_skew_open_long_1000/config.yaml
+    result_path: backtest-campaigns/es_realized_skewness_reversal/low_1d_skew_open_long_1000/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -2065.0
+    top_profit_factor: 0.8285239775794063
+    top_trades: 88
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;min_positive_month_rate
+  - variant: high_1d_skew_open_short_1000
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_skewness_reversal/rescue_attempts/parameter_space_rescue_1/high_1d_skew_open_short_1000/config.yaml
+    result_path: backtest-campaigns/es_realized_skewness_reversal/high_1d_skew_open_short_1000/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.07407407407407407
+    top_net_profit: 365.0
+    top_profit_factor: 1.0882175226586104
+    top_trades: 67
+    failure_reason: min_profit_factor;min_mar;max_consecutive_losses;preferred_min_total_trades;max_best_day_concentration
+  - variant: low_3d_skew_midmorning_long_1030
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_skewness_reversal/rescue_attempts/parameter_space_rescue_1/low_3d_skew_midmorning_long_1030/config.yaml
+    result_path: backtest-campaigns/es_realized_skewness_reversal/low_3d_skew_midmorning_long_1030/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -736.25
+    top_profit_factor: 0.7619240097008892
+    top_trades: 66
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;preferred_min_total_trades;min_positive_month_rate
+  - variant: high_3d_skew_midday_short_1200
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_skewness_reversal/rescue_attempts/parameter_space_rescue_1/high_3d_skew_midday_short_1200/config.yaml
+    result_path: backtest-campaigns/es_realized_skewness_reversal/high_3d_skew_midday_short_1200/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -1417.5
+    top_profit_factor: 0.8197138314785374
+    top_trades: 61
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;min_win_rate;preferred_min_total_trades;min_positive_month_rate
+  - variant: two_sided_5d_skew_extreme_1330
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_realized_skewness_reversal/rescue_attempts/parameter_space_rescue_1/two_sided_5d_skew_extreme_1330/config.yaml
+    result_path: backtest-campaigns/es_realized_skewness_reversal/two_sided_5d_skew_extreme_1330/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+    profitable_combo_rate: 0.0
+    top_net_profit: -1621.25
+    top_profit_factor: 0.854072907290729
+    top_trades: 108
+    failure_reason: min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;min_positive_month_rate

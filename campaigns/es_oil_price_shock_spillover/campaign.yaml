@@ -1,0 +1,198 @@
+campaign_id: es_oil_price_shock_spillover
+title: ES Oil Price Shock Spillover
+created_at: "2026-06-17"
+decision: FAIL
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged crude-oil price shocks may spill into same-day ES RTH returns through inflation, real-income, production-cost, and risk-appetite channels.
+rationale: This campaign tests free public EIA WTI and Brent daily spot prices mapped to ES sessions with a conservative two-business-day availability lag. It is not a Treasury-rate, credit-stress, option-volatility, put/call, consumer-sentiment, daily ES momentum, or local orderflow campaign.
+sources:
+  - title: Oil and the Stock Markets
+    authors: Charles M. Jones and Gautam Kaul
+    year: 1996
+    venue: Journal of Finance 51(2), 463-491
+    doi: 10.1111/j.1540-6261.1996.tb02691.x
+    link: https://doi.org/10.1111/j.1540-6261.1996.tb02691.x
+    relevance: Documents that oil-price shocks affect aggregate stock-market cash flows and returns, motivating a predeclared ES spillover test.
+  - title: The Impact of Oil Price Shocks on the U.S. Stock Market
+    authors: Lutz Kilian and Cheolbeom Park
+    year: 2009
+    venue: International Economic Review 50(4), 1267-1287
+    doi: 10.1111/j.1468-2354.2009.00568.x
+    link: https://doi.org/10.1111/j.1468-2354.2009.00568.x
+    relevance: Shows U.S. stock-market response depends on the source and direction of oil shocks, supporting separate WTI, Brent, volatility, and spread variants.
+  - title: Cushing, OK WTI Spot Price FOB
+    authors: U.S. Energy Information Administration
+    year: 2026
+    venue: Official EIA XLS
+    link: https://www.eia.gov/dnav/pet/hist_xls/RWTCd.xls
+    relevance: Free public daily WTI spot-price source.
+  - title: Europe Brent Spot Price FOB
+    authors: U.S. Energy Information Administration
+    year: 2026
+    venue: Official EIA XLS
+    link: https://www.eia.gov/dnav/pet/hist_xls/RBRTEd.xls
+    relevance: Free public daily Brent spot-price source.
+data_needs:
+  - timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+  - free public EIA WTI and Brent daily spot-price files
+  - derived session feature file using only oil observations on or before session date minus two business days
+  - same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+  - EIA spot-price series are daily exogenous observations, not intraday crude futures prices.
+  - The two-business-day availability lag is deliberately conservative and may understate information available from contemporaneous crude futures trading.
+  - Sierra ES data is aggregated bar-level data, not tick-path data.
+  - Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+  - Same-day oil observations are forbidden.
+  - Feature construction maps each ES session to the latest EIA oil observation on or before the session date minus two business days.
+  - Rolling ranks are computed over lagged session features only.
+  - Signals use only a completed ES bar at the configured timestamp and enter at the next bar open.
+  - No final session high/low, final VWAP, future oil value, future returns, or post-entry data is used.
+failure_modes:
+  - Oil-shock effects in the source literature may operate over daily or longer horizons, not intraday ES holds.
+  - The response to oil shocks is regime-dependent and may flip between supply, demand, inflation, and growth interpretations.
+  - EIA spot-price publication lag may make the signal stale relative to tradable crude futures prices.
+  - Any apparent edge may be concentrated in crisis energy shocks or a few inflation regimes.
+  - Oil-state signals may overlap with broad macro stress but still fail after ES costs, slippage, and WFA selection.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_treasury_rate_shock_intraday
+    - es_ofr_financial_stress_intraday
+    - es_variance_risk_premium_intraday
+    - es_vvix_tail_risk_intraday
+    - es_cboe_put_call_sentiment_intraday
+    - es_consumer_sentiment_state_intraday
+    - es_epu_policy_uncertainty_intraday
+    - es_daily_time_series_momentum
+    - es_signed_orderflow_persistence
+    - es_nq_cross_index_lead_lag
+  conclusion: Not a duplicate of active failed campaigns. This campaign uses lagged crude-oil price shocks from public EIA WTI/Brent spot series, not interest-rate shocks, credit stress, option sentiment/volatility, survey sentiment, policy uncertainty, ES own momentum, or local orderflow.
+feature_construction:
+  builder: tools/build_es_oil_price_shock_features.py
+  wti_source: https://www.eia.gov/dnav/pet/hist_xls/RWTCd.xls
+  brent_source: https://www.eia.gov/dnav/pet/hist_xls/RBRTEd.xls
+  wti_cache: data/external/eia_wti_spot_daily_1986_2026.csv
+  brent_cache: data/external/eia_brent_spot_daily_1987_2026.csv
+  output: data/external/es_oil_price_shock_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3760
+  oil_observation_range: 2010-12-30..2026-06-05
+  availability_lag_business_days: 2
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  latest_variant_flatten: "15:55:00"
+parameter_space:
+  entry_thresholds:
+    oil_return_rank_max: [0.50, 0.45, 0.40]
+    oil_return_rank_min: [0.55, 0.60, 0.65]
+    oil_abs_rank_min: [0.55, 0.60, 0.65]
+    spread_change_rank_min: [0.55, 0.60, 0.65]
+  stop_pct: [0.0015, 0.0025, 0.004]
+  target_r_multiple: [1.0, 1.5, 2.0]
+  combinations_per_variant: 27
+variants:
+  - wti_down_relief_long_1000
+  - wti_up_risk_off_short_1030
+  - brent_up_global_shock_short_1130
+  - oil_volatility_stress_short_1200
+  - brent_wti_spread_widen_short_1330
+
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+    - fixed parameters inside existing strategy modules
+    - tunable parameter space only
+  forbidden_changes:
+    - core strategy mechanic
+    - EIA two-business-day availability rule
+    - setup mode
+    - direction
+    - entry time
+    - entry module
+    - stop-loss module
+    - take-profit or exit module
+    - edge thesis
+    - stage criteria
+    - data window
+    - timeframe
+    - costs or fill assumptions
+  attempts:
+    - variant: wti_down_relief_long_1000
+      attempt_id: rescue1
+      scope: parameter_space_only_no_mechanic_change
+      config_path: campaigns/es_oil_price_shock_spillover/rescue_attempts/parameter_space_rescue_1/wti_down_relief_long_1000/config.yaml
+      result_path: backtest-campaigns/es_oil_price_shock_spillover/wti_down_relief_long_1000/ES/rescue1/campaign_test_summary.json
+      status: failed
+      terminal_stage: limited_core_grid_test
+      profitable_combo_rate: 0.0
+      top_net_profit: -1040.0
+      top_profit_factor: 0.9033906177426846
+      top_trades: 78
+    - variant: wti_up_risk_off_short_1030
+      attempt_id: rescue1
+      scope: parameter_space_only_no_mechanic_change
+      config_path: campaigns/es_oil_price_shock_spillover/rescue_attempts/parameter_space_rescue_1/wti_up_risk_off_short_1030/config.yaml
+      result_path: backtest-campaigns/es_oil_price_shock_spillover/wti_up_risk_off_short_1030/ES/rescue1/campaign_test_summary.json
+      status: failed
+      terminal_stage: limited_monkey_test
+      profitable_combo_rate: 0.7777777777777778
+      monkey_profitable_rate: 0.17
+      monkey_median_net_profit: -3905.0
+      one_tick_worse_profitable: false
+      top_net_profit: 2432.5
+      top_profit_factor: 1.2272302662307333
+      top_trades: 76
+    - variant: brent_up_global_shock_short_1130
+      attempt_id: rescue1
+      scope: parameter_space_only_no_mechanic_change
+      config_path: campaigns/es_oil_price_shock_spillover/rescue_attempts/parameter_space_rescue_1/brent_up_global_shock_short_1130/config.yaml
+      result_path: backtest-campaigns/es_oil_price_shock_spillover/brent_up_global_shock_short_1130/ES/rescue1/campaign_test_summary.json
+      status: failed
+      terminal_stage: limited_core_grid_test
+      profitable_combo_rate: 0.0
+      top_net_profit: -5417.5
+      top_profit_factor: 0.43108427408768707
+      top_trades: 71
+    - variant: oil_volatility_stress_short_1200
+      attempt_id: rescue1
+      scope: parameter_space_only_no_mechanic_change
+      config_path: campaigns/es_oil_price_shock_spillover/rescue_attempts/parameter_space_rescue_1/oil_volatility_stress_short_1200/config.yaml
+      result_path: backtest-campaigns/es_oil_price_shock_spillover/oil_volatility_stress_short_1200/ES/rescue1/campaign_test_summary.json
+      status: failed
+      terminal_stage: limited_core_grid_test
+      profitable_combo_rate: 0.0
+      top_net_profit: -2801.25
+      top_profit_factor: 0.7344157383266177
+      top_trades: 84
+    - variant: brent_wti_spread_widen_short_1330
+      attempt_id: rescue1
+      scope: parameter_space_only_no_mechanic_change
+      config_path: campaigns/es_oil_price_shock_spillover/rescue_attempts/parameter_space_rescue_1/brent_wti_spread_widen_short_1330/config.yaml
+      result_path: backtest-campaigns/es_oil_price_shock_spillover/brent_wti_spread_widen_short_1330/ES/rescue1/campaign_test_summary.json
+      status: failed
+      terminal_stage: limited_core_grid_test
+      profitable_combo_rate: 0.0
+      top_net_profit: -1602.5
+      top_profit_factor: 0.8462829736211032
+      top_trades: 83
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_oil_price_shock_spillover/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  failure_reason: >
+    All five originals failed limited_core_grid_test. Four one-time parameter-space
+    rescues failed limited_core_grid_test. The only core-passing rescue,
+    wti_up_risk_off_short_1030/rescue1, failed limited_monkey_test with random-monkey
+    profitable rate 0.17, median net -3905.0, trade-path stress profitable rate
+    0.15666666666666668, and one_tick_worse_profitable=false.

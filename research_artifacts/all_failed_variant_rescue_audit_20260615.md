@@ -305,3 +305,218 @@ validation.
 Verified active sweep after this update: 175 active source variants, 175 rescue
 configs, 368 raw variant-level reports, 0 passes, 0 active variants missing any
 original run, and 0 active variants missing `rescue1`.
+
+## 2026-06-16 Realized Skewness Reversal Update
+
+Added `es_realized_skewness_reversal`. All five original variants failed
+`limited_core_grid_test` and all five one-time parameter-space/fixed-parameter
+rescues were run. Every original and rescue failed `limited_core_grid_test`; no
+run reached monkey, WFA, Monte Carlo, simulated incubation, or frozen
+validation.
+
+Verified active sweep after this update: 180 active source variants, 180 rescue
+configs, 378 raw variant-level reports, 0 passes, 0 active variants missing any
+original run, and 0 active variants missing `rescue1`.
+
+## 2026-06-16 Variance Risk Premium Intraday Update
+
+Added `es_variance_risk_premium_intraday`. All five original variants failed
+`limited_core_grid_test` and all five one-time parameter-space/fixed-parameter
+rescues were run. Every original and rescue failed `limited_core_grid_test`; no
+run reached monkey, WFA, Monte Carlo, simulated incubation, or frozen
+validation.
+
+Verified active sweep after this update: 185 active source variants, 185 rescue
+configs, 388 raw variant-level reports, 0 passes, 0 active variants missing any
+original run, and 0 active variants missing `rescue1`.
+
+
+## 2026-06-16 Realized Jump Variation Premium Update
+
+Added `es_realized_jump_variation_premium`. All five original variants failed
+`limited_core_grid_test` and all five one-time parameter-space/fixed-parameter
+rescues were run. Every original and rescue failed `limited_core_grid_test`; no
+run reached monkey, WFA, Monte Carlo, simulated incubation, or frozen
+validation.
+
+Verified active sweep after this update: 190 active source variants, 190 rescue
+configs, 398 raw variant-level reports, 0 passes, 0 active variants missing any
+original run, and 0 active variants missing `rescue1`.
+
+## 2026-06-16 EPU Policy Uncertainty Intraday Update
+
+Added `es_epu_policy_uncertainty_intraday`. All five original variants failed
+`limited_core_grid_test` and all five one-time parameter-space rescues were run.
+Every original and rescue failed `limited_core_grid_test`; no run reached
+monkey, WFA, Monte Carlo, simulated incubation, or frozen validation.
+
+Verified active sweep after this update: 210 active source variants, 210 rescue
+configs, 438 raw variant-level reports, 0 passes, and 0 EPU variants missing
+any original run or `rescue1`.
+
+## 2026-06-16 Consumer Sentiment State Intraday Update
+
+Added `es_consumer_sentiment_state_intraday`. All five original variants failed
+`limited_core_grid_test` and all five one-time parameter-space rescues were run.
+Every original and rescue failed `limited_core_grid_test`; no run reached
+monkey, WFA, Monte Carlo, simulated incubation, or frozen validation.
+
+Verified active sweep after this update: 215 active source variants, 215 rescue
+configs, 448 raw variant-level reports, 0 passes, and 0 consumer-sentiment
+variants missing any original run or `rescue1`.
+
+## 2026-06-16 Cboe Put/Call Sentiment Intraday Update
+
+Added `es_cboe_put_call_sentiment_intraday`. All five original variants failed
+`limited_core_grid_test` and all five one-time parameter-space rescues were run.
+Three rescues failed `limited_core_grid_test`; two rescues passed core but
+failed `limited_monkey_test`. No run reached WFA, Monte Carlo, simulated
+incubation, or frozen validation.
+
+Verified active sweep after this update: 220 active source variants, 220 rescue
+configs, 458 raw variant-level reports, 0 passes, and 0 Cboe put/call variants
+missing any original run or `rescue1`.
+
+## 2026-06-17 Oil Price Shock Spillover Update
+
+Added `es_oil_price_shock_spillover`. All five original variants failed
+`limited_core_grid_test` and all five one-time parameter-space rescues were run.
+Four rescues failed `limited_core_grid_test`; `wti_up_risk_off_short_1030/rescue1`
+passed core but failed `limited_monkey_test` with random-monkey profitable rate
+`0.17`, median net `-3905.0`, trade-path stress profitable rate
+`0.15666666666666668`, and `one_tick_worse_profitable=false`. No run reached
+WFA, Monte Carlo, simulated incubation, or frozen validation.
+
+## 2026-06-17 Staged Gate Correction Update
+
+Corrected the default staged gates after comparing active results to archived
+workflow semantics:
+
+- Core grid now requires at least one benchmark-passing parameter combination in
+  addition to the profitable-combo-rate gate.
+- Random-placebo monkey now uses core-beats-random net-profit and drawdown rates.
+  Actual trade-path stress retains the `>=80%` profitable, median-positive,
+  one-tick-worse, and prop-rule checks.
+- Active artifact scan found `27` prior core passes invalid under the corrected
+  benchmark-combo gate and `2` prior monkey failures that should advance under
+  the corrected monkey gate.
+
+Reran the two affected valid-core rescues without changing strategy mechanics or
+parameter spaces:
+
+- `es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/rescue1`
+  passed corrected core and monkey, then failed WFA early exit with selected
+  first-window IS PF `0.87 < 1.00`.
+- `es_cboe_put_call_sentiment_intraday/falling_total_pc_long_1130/ES/rescue1`
+  passed corrected core and monkey, then failed WFA early exit with selected
+  first-window IS PF `0.99 < 1.00`.
+
+No corrected-gate rerun reached WFA OOS monkey, Monte Carlo, simulated
+incubation, frozen validation, or candidate reporting. Prior entries that cite
+random-monkey profitability/median as the sole failure reason should be read as
+pre-correction evidence unless rerun artifacts now supersede them.
+
+## 2026-06-17 Dollar Risk-Appetite Intraday Update
+
+Added `es_dollar_risk_appetite_intraday`. All five original variants failed
+`limited_core_grid_test` and all five one-time parameter-space rescues were run.
+Every original and rescue failed `limited_core_grid_test`; no run reached
+monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate
+reporting.
+
+The rescue attempts changed only declared broad-dollar thresholds and
+stop/target parameter spaces. They preserved the FRED DTWEXBGS
+one-business-day availability rule, setup mode, direction, entry time, modules,
+timeframe, data window, costs, fill rules, session rules, prop rules, and
+validation gates.
+
+Verified active sweep after this update: 46 active campaigns, 230 active source
+variants, 230 rescue configs, 478 raw variant-level reports, 0 aggregate passes,
+0 active variants missing an original run, and 0 active variants missing
+`rescue1`.
+
+## 2026-06-17 Trade-Size Segmented Stealth Orderflow Update
+
+Added `es_trade_size_stealth_orderflow`. All five original variants failed
+`limited_core_grid_test` and all five one-time parameter-space rescues were run.
+Every original and rescue failed `limited_core_grid_test`; no run reached
+monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate
+reporting.
+
+The rescue attempts changed only declared large-flow/disagreement thresholds and
+stop/target parameter spaces. They preserved the same trade-size segmentation
+mechanic, entry module, side, entry time, rolling window, large-trade bucket,
+residual-flow mode, stop module, target module, timeframe, data window, costs,
+fill rules, session rules, prop rules, and validation gates.
+
+Verified active sweep after this update: 47 active campaigns, 235 active source
+variants, 235 rescue configs, 488 raw variant-level reports, 0 aggregate passes,
+0 active variants missing an original run, and 0 active variants missing
+`rescue1`.
+
+## 2026-06-17 Trade Fragmentation Liquidity Reversion Update
+
+Added `es_trade_fragmentation_liquidity_reversion`. All five original variants
+failed `limited_core_grid_test` with zero profitable combinations and zero
+benchmark-passing combinations. All five one-time parameter-space rescues were
+run and also failed `limited_core_grid_test` with zero profitable combinations
+and zero benchmark-passing combinations. No run reached monkey, WFA, Monte
+Carlo, simulated incubation, frozen validation, or candidate reporting.
+
+The rescue attempts changed only declared trade-count rank, average-trade-size
+rank, return-confirmation, stop, and target parameter values/spaces. They
+preserved the same trade-fragmentation liquidity-state reversion mechanic, entry
+module, side, entry time, rolling window, return mode, stop module, target
+module, timeframe, data window, costs, fill rules, session rules, prop rules,
+and validation gates.
+
+Verified active sweep after this update: 48 active campaigns, 240 active source
+variants, 240 rescue configs, 498 raw variant-level reports, 48 aggregate
+reports, 0 aggregate or variant passes, 0 bad JSON files, 0 active variants
+missing any original run, and 0 active variants missing `rescue1`.
+
+## 2026-06-17 Realized Semivariance Asymmetry Update
+
+Added `es_realized_semivariance_asymmetry`. All five original variants failed
+`limited_core_grid_test`. All five one-time parameter-space rescues were run.
+Four rescues failed `limited_core_grid_test`.
+`high_1d_badvol_continuation_short_1030/rescue1` passed core and limited
+monkey, then failed `walk_forward_analysis` with `early_exit=true`, stitched OOS
+net `-9625.0`, PF `0.6356926570779712`, MAR `-0.7825314922408811`, and
+expectancy R `-0.24698221123551944`. No run reached WFA OOS monkey, Monte
+Carlo, simulated incubation, frozen validation, or candidate reporting.
+
+The rescue attempts changed only declared semivariance threshold, stop, and
+target numeric values/spaces. They preserved the same semivariance feature,
+direction mode, entry time, rank/value columns, entry module, stop module, target
+module, timeframe, data window, costs, fill rules, session rules, prop rules, and
+validation gates.
+
+Verified active sweep after this update: 49 active campaigns, 245 active source
+variants, 245 rescue configs, 508 raw variant-level reports, 49 aggregate
+reports, 0 aggregate or variant passes, 0 bad JSON files, 0 active variants
+missing any original run, and 0 active variants missing `rescue1`.
+
+
+## 2026-06-17 Amihud Illiquidity Price Impact Update
+
+Added `es_amihud_illiquidity_price_impact`. All five original variants failed
+`limited_core_grid_test`. All five one-time parameter-space rescues were run and
+also failed `limited_core_grid_test`. No run reached monkey, WFA, Monte Carlo,
+simulated incubation, frozen validation, or candidate reporting.
+
+The rescue attempts changed only declared Amihud illiquidity rank thresholds and
+stop/target numeric values/spaces. They preserved the same Amihud price-impact
+feature, direction mode, entry time, rank/value columns, entry module, stop
+module, target module, timeframe, data window, costs, fill rules, session rules,
+prop rules, and validation gates.
+
+
+## es_realized_vol_of_vol_state - 2026-06-17
+
+All five failed original variants received one parameter-space-only rescue. All five rescues failed `limited_core_grid_test`. Aggregate report: `backtest-campaigns/es_realized_vol_of_vol_state/campaign_test_summary.json`. Rescue audit: `research_artifacts/es_realized_vol_of_vol_state_rescue_attempt_1_20260617.md`.
+
+
+## es_round_number_barrier_reaction - 2026-06-17
+
+All five failed original variants received one parameter-space-only rescue. All five rescues failed `limited_core_grid_test`. Aggregate report: `backtest-campaigns/es_round_number_barrier_reaction/campaign_test_summary.json`. Rescue audit: `research_artifacts/es_round_number_barrier_reaction_rescue_attempt_1_20260617.md`.
