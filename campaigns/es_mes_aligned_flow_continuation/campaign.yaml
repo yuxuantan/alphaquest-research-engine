@@ -1,0 +1,156 @@
+campaign_id: es_mes_aligned_flow_continuation
+title: ES/MES aligned-flow intraday continuation
+decision: FAIL
+created_at: 2026-06-18
+symbol: ES
+dataset_id: es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+edge_family: es_mes_cross_contract_confirmation_continuation
+hypothesis: 'ES should have a higher probability of same-session continuation when
+  completed ES price movement and completed MES aggregate orderflow point in the same
+  direction. MES is not traded and is not used as a fade signal; it is used as a cross-contract
+  participation confirmation for the traded ES move.
+
+  '
+rationale: 'ES and MES reference the same S&P 500 futures exposure but can reflect
+  different participant mixes and order sizes. This campaign tests whether same-direction
+  MES pressure confirms that an ES intraday move has broad participation rather than
+  being an isolated ES liquidity sweep. It is distinct from ES/MES divergence reversion,
+  which fades disagreement, and from MES participation crowding reversion, which fades
+  high MES activity after ES moves.
+
+  '
+sources:
+- title: One Security, Many Markets
+  authors: Joel Hasbrouck
+  year: 1995
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/j.1540-6261.1995.tb04054.x
+  relevance: 'Linked markets can share price discovery unevenly. ES/MES are not separate
+    exchanges, but the paper motivates testing whether cross-contract confirmation
+    contains information beyond the traded contract alone.
+
+    '
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: 'Discusses retail futures trading and Micro E-mini examples. This supports
+    using MES activity as a different participation lens from classic ES.
+
+    '
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: 'Motivates order-flow imbalance as a short-horizon pressure proxy. This
+    campaign uses completed Sierra aggregate trade-side bars, not quote-level order-book
+    OFI.
+
+    '
+data_needs:
+- data/cache/orderflow/es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny.csv
+- completed ES and MES 1-minute RTH bars aligned by timestamp in America/New_York
+- rolling completed-bar ES return ticks and MES signed/large-trade imbalance windows
+- ES point value, tick size, commission, slippage, session, and forced-flatten rules
+  from config
+data_quality_caveats:
+- Sierra orderflow is completed-bar aggregate trade-side flow, not quote-level LOB
+  OFI.
+- MES is a participation proxy, not account-classified retail data.
+- Same-bar stop/target conflicts must use pessimistic OHLC ordering when no lower-timeframe
+  truth is available.
+lookahead_risks:
+- ES return and MES imbalance windows include only completed bars ending at the signal
+  bar close.
+- Signal timestamps are completed-bar close times; the engine enters no earlier than
+  next bar open.
+- No final session high/low, final VWAP, final volume profile, or future MES/ES data
+  is used.
+- The latest holdout remains locked until simulated incubation and acceptance stages.
+failure_modes:
+- MES aligned flow may be redundant with ES price movement and add no durable edge
+  after costs.
+- MES pressure may lag ES after the move is exhausted rather than confirm continuation.
+- Results may be concentrated in 2020-2022 volatility regimes or a small number of
+  trend days.
+- Large MES flow may be sparse or semantically noisy in the Sierra aggregate cache.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_mes_participation_crowding_reversion
+  - es_trend_aligned_orderflow_continuation
+  - es_signed_orderflow_persistence
+  - es_trade_size_stealth_orderflow
+  - es_vpin_toxicity_continuation
+  conclusion: 'Eligible in active scope. Existing ES/MES campaigns fade disagreement
+    or high MES participation. Existing trend/orderflow continuation used ES orderflow
+    only. This campaign requires ES price direction plus MES orderflow direction to
+    agree before trading ES.
+
+    '
+variants:
+- morning15_mes_signed_1030
+- late_morning30_mes_signed_1130
+- midday30_mes_large10_1230
+- afternoon60_mes_signed_1400
+- late_day60_mes_large20_1500
+pre_pnl_density_audit: research_artifacts/es_mes_aligned_flow_continuation_density_audit_20260618.md
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core ES price plus MES aligned-flow confirmation mechanic
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant
+    audit: research_artifacts/es_mes_aligned_flow_continuation_rescue_attempt_1_20260618.md
+    variants:
+    - morning15_mes_signed_1030
+    - late_morning30_mes_signed_1130
+    - midday30_mes_large10_1230
+    - afternoon60_mes_signed_1400
+    - late_day60_mes_large20_1500
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_mes_aligned_flow_continuation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test. Only the midday large-10 rescue found a
+    small profitable pocket, but just 6/81 combinations were profitable, far below
+    the 70% profitable-combination gate; no run reached limited monkey, WFA, WFA OOS
+    monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  best_original:
+    variant_id: late_day60_mes_large20_1500
+    run_id: run1
+    top_net_profit: -825.0
+    top_profit_factor: 0.7862694300518135
+    top_trades_per_year: 100.26470588235294
+    profitable_combo_rate: 0.0
+  best_rescue:
+    variant_id: midday30_mes_large10_1230
+    run_id: rescue1
+    top_net_profit: 1192.5
+    top_profit_factor: 1.488229273285568
+    top_trades_per_year: 63.52121606376759
+    profitable_combo_rate: 0.07407407407407407

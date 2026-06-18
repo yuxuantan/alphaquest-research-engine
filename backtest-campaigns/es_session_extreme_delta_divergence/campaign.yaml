@@ -1,0 +1,123 @@
+campaign_id: es_session_extreme_delta_divergence
+title: ES Session-Extreme Cumulative-Delta Divergence
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: session_extreme_delta_divergence
+hypothesis: Fresh ES RTH highs or lows that are not confirmed by cumulative aggregate signed-volume progress
+  may represent exhausted liquidity-taking pressure or absorption at the new extreme, making same-session
+  mean reversion plausible after costs.
+sources:
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports order-flow imbalance as a short-horizon pressure proxy. This campaign uses completed
+    Sierra aggregate signed-volume as the available bar-level proxy, not full depth OFI.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz, Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Supports the idea that technical price levels can coincide with liquidity provision. This
+    campaign tests fresh intraday extremes rather than fixed prior-day or opening-range levels.
+- title: Trading Volume and Serial Correlation in Stock Returns
+  authors: John Y. Campbell, Sanford J. Grossman, Jiang Wang
+  year: 1993
+  venue: Quarterly Journal of Economics
+  link: https://campbell.scholars.harvard.edu/publications/trading-volume-and-serial-correlation-stock-returns
+  relevance: Motivates reversal after liquidity-driven order pressure and inventory-risk episodes.
+rationale: This is a price-action-first aggregate-orderflow campaign. Price must make a fresh current-session
+  RTH high or low using only prior completed extremes as reference. Aggregate orderflow is not a standalone
+  timing signal; it is used to reject extremes whose cumulative signed-volume progress fails to confirm
+  the price extension.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- timezone-aware 1-minute ES RTH OHLCV bars in America/New_York
+- completed-bar signed_volume and volume fields from the validated Sierra aggregate-orderflow cache
+- tick size, point value, slippage, commission, and prop-rule flatten settings from config
+lookahead_risks:
+- Prior session extreme references are current-session highs/lows observed before the signal bar; the
+  signal bar is not included when setting the reference level.
+- The signal bar high/low/close and signed volume are used only after the bar is complete, and the engine
+  enters on the next bar open or later.
+- No final session high/low, final VWAP, final volume profile, future orderflow, or future return is used.
+- All variants allow at most one trade per day and flatten before the configured cutoff.
+failure_modes:
+- Weak cumulative signed-volume progress may reflect hidden continuation or passive liquidity transfer
+  rather than reversal.
+- The Sierra signed-volume proxy is aggregate bar-level bid/ask volume, not full order-book OFI.
+- Late-session extremes may trend despite non-confirmation, especially during high-volatility directional
+  days.
+- Profits may be erased by one-tick slippage, same-bar pessimistic stop/target ordering, or wide spreads
+  around volatile extremes.
+- The edge may be concentrated in the seeded shortlist period and fail WFA or frozen incubation.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_rolling_range_orderflow_sweep_reversal
+  - es_opening_drive_inventory_absorption
+  - es_prior_level_delta_dislocation
+  - es_prior_day_stop_run_reclaim
+  - es_opening_range_failed_breakout_orderflow
+  - es_vwap_orderflow_pullback_continuation
+  - es_trend_aligned_orderflow_continuation
+  conclusion: Eligible as a distinct bounded composite campaign. It does not rank fixed-time orderflow
+    effort, does not require rolling-window sweep/reclaim, does not anchor to the opening drive, prior-day
+    levels, VWAP, round numbers, or MES/NQ relative value. The unique mechanic is current-session fresh
+    extreme plus cumulative signed-volume non-confirmation from the prior completed extreme.
+variants:
+- morning_high_delta_divergence_short
+- morning_low_delta_divergence_long
+- midday_two_sided_delta_divergence
+- afternoon_high_delta_divergence_short
+- afternoon_low_delta_divergence_long
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core session-extreme cumulative-delta divergence mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    scope: per_failed_variant
+    status: completed_failed
+    variants:
+    - afternoon_high_delta_divergence_short
+    - afternoon_low_delta_divergence_long
+    - midday_two_sided_delta_divergence
+    - morning_high_delta_divergence_short
+    - morning_low_delta_divergence_long
+    audit: research_artifacts/es_session_extreme_delta_divergence_rescue_attempt_1_20260618.md
+    summary: All five one-time rescues failed limited_core_grid_test.
+pre_pnl_density_audit: research_artifacts/es_session_extreme_delta_divergence_density_audit_20260618.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_session_extreme_delta_divergence/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time parameter-space/fixed-parameter rescues
+    failed limited_core_grid_test before monkey, WFA, Monte Carlo, simulated incubation, frozen validation,
+    or candidate reporting.
+  best_original_variant: afternoon_low_delta_divergence_long
+  best_original_profitable_combo_rate: 0.0
+  best_original_top_net: -1595.0
+  best_rescue_variant: afternoon_low_delta_divergence_long
+  best_rescue_profitable_combo_rate: 0.1111111111111111
+  best_rescue_top_net: 785.0

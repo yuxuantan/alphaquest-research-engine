@@ -1,10 +1,15 @@
 # Futures Backtest Methodology Audit
 
-Audit date: 2026-06-15
+Audit date: 2026-06-18
 
 Overall status: FAIL
 
-Reason: the engine/preflight path now passes focused sanity checks, but no ES strategy candidate in the active search passed the corrected staged methodology. Active ES campaigns, including the latest BLS macro release-day drift campaign, failed before WFA under the corrected objective gates. The completed per-failed-variant rescue attempts also failed before WFA.
+Reason: the engine/preflight path now passes focused sanity checks, but no ES
+strategy candidate in the active search passed the corrected staged methodology.
+The latest completed price-action plus aggregate-orderflow campaign,
+`es_trend_filtered_prior_session_breakout_orderflow`, failed before monkey/WFA under the
+corrected objective gates. The completed per-failed-variant rescue attempts also
+failed limited core.
 
 ## Engine And Methodology Fixes
 
@@ -36,6 +41,13 @@ Reason: the engine/preflight path now passes focused sanity checks, but no ES st
   with a predeclared thesis, density audit, duplicate check, and unchanged
   tunable caps. Policy artifact:
   `research_artifacts/composite_edge_policy_20260617.md`.
+- Price-action/orderflow routing: after the 2026-06-17 user priority update,
+  prefer ES campaigns where price action defines the setup and Sierra aggregate
+  orderflow acts as confirmation, exhaustion, or dislocation evidence.
+  Deprioritize pure signed-flow or large-flow retiming unless the independent
+  price-action thesis is strong, non-duplicate, and likely to satisfy the
+  50-trades/year benchmark before PnL testing. No paid market data may be
+  downloaded or refreshed without explicit approval for that specific pull.
 - Pre-test variant mechanics review: new variant configs created after
   2026-06-17 must document how entry, stop, and target express the edge and why
   the mechanics are convincing enough to test. If the mechanics are not
@@ -44,8 +56,728 @@ Reason: the engine/preflight path now passes focused sanity checks, but no ES st
   `pre_test_decision: approve_for_testing`; preflight also enforces the review
   when `research_metadata.mechanics_review_required` is set. Policy artifact:
   `research_artifacts/pretest_variant_mechanics_review_policy_20260617.md`.
+- Core-grid density diagnostics: core-grid rows now include
+  `signals_generated`, `entries_opened`, `trades_closed`, and rejection counts.
+  `core_grid_summary.json` now includes `signal_density` so zero-signal or
+  zero-trade parameter spaces are explicitly documented as mechanics/density
+  failures before interpreting PnL. This does not change benchmark-table stage
+  gates or rescue eligibility.
 
 ## Campaign Results
+
+### `es_trend_filtered_prior_session_breakout_orderflow`
+
+Decision: FAIL.
+
+- Added active constrained composite campaign
+  `es_trend_filtered_prior_session_breakout_orderflow` using only the local
+  Sierra ES RTH aggregate-orderflow cache. No paid data was downloaded.
+- Edge distinction: a signal requires completed acceptance outside a public
+  prior RTH high or low, deterministic completed-bar market-structure trend
+  alignment, and same-bar aggregate orderflow confirmation. Neither prior-level
+  breakout/orderflow nor generic trend-aligned orderflow alone can trigger.
+- Added entry module
+  `src/propstack/strategy_modules/entry/pdh_pdl_trend_orderflow_breakout_continuation.py`
+  plus registration, engine required-column checks, and focused unit tests.
+  Signals use completed 5-minute bars and engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `first_half_signed_trend_hold_two_sided`,
+  `first_half_large10_trend_hold_two_sided`,
+  `all_day_signed_trend_hold_two_sided`,
+  `all_day_large10_trend_hold_two_sided`, and
+  `all_day_signed_high_volume_trend_hold_two_sided`.
+- Pre-PnL density audit:
+  `research_artifacts/es_trend_filtered_prior_session_breakout_orderflow_density_audit_20260618.md`.
+  A stricter fresh first-break/retest formulation was rejected before PnL because
+  all five variants produced only `5.39` to `36.39` signals/year on the
+  limited-core window. The retained hold/acceptance formulation cleared the
+  density floor in every declared entry-grid corner; minimum limited-core
+  density ranged from `161.04` to `196.75` signals/year by variant.
+- Originals: all five failed `limited_core_grid_test` with `0.0`
+  profitable-combo rate. Best original was
+  `first_half_signed_trend_hold_two_sided/run1`, with top net `-4866.25`,
+  PF `0.63799516458992`, and `163.79680789930606` top-combo trades/year.
+- Rescues: all five failed variants received exactly one parameter-space/fixed
+  parameter rescue preserving edge thesis, entry module, stop module, target
+  module, timeframe, data, costs, fills, sessions, prop rules, and validation
+  gates. All five rescues failed `limited_core_grid_test`. Best rescue was
+  `all_day_large10_trend_hold_two_sided/rescue1`, with profitable-combo rate
+  `0.012345679012345678`, zero benchmark-pass combinations, top net `1052.5`,
+  PF `1.0401449413559645`, MAR `0.16586554200022113`, and
+  `122.81112803735982` top-combo trades/year. The top rescue also failed profit
+  concentration with best-day concentration `0.7672209026128266`.
+- Aggregate artifacts:
+  `backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/campaign_test_summary.json`,
+  `backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/campaign_results.csv`,
+  `backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/wfa_table.csv`,
+  `backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_trend_filtered_prior_session_breakout_orderflow_rescue_attempt_1_20260618.md`.
+- Verification:
+  `PYTHONPATH=src python3 -m pytest tests/test_pdh_pdl_trend_orderflow_breakout_continuation.py -q`
+  PASS; `PYTHONPATH=src python3 -m research.preflight --skip-tests --config
+  <five original configs>` PASS; `PYTHONPATH=src python3 -m research.preflight
+  --skip-tests --config <five rescue configs>` PASS.
+- Decision: FAIL. No run reached limited monkey, WFA, WFA OOS monkey, Monte
+  Carlo, simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+### `es_session_open_orderflow_reclaim`
+
+Decision: FAIL.
+
+- Added active price-action plus aggregate-orderflow campaign
+  `es_session_open_orderflow_reclaim` using only the local Sierra ES RTH
+  1-minute aggregate-orderflow cache. No paid data was downloaded.
+- Edge distinction: the reference level is the current RTH open itself, known
+  from the first regular-session bar. The setup requires a prior completed
+  excursion away from that open, then a completed reclaim/rejection back through
+  it with same-direction aggregate orderflow confirmation. It is not prior-close
+  gap fade, opening-range breakout/retest, opening-drive state, overnight
+  high/low, VWAP, prior-day level, round-number, or session-extreme divergence.
+- Added entry module
+  `src/propstack/strategy_modules/entry/session_open_orderflow_reclaim.py`
+  plus registration, engine feature-column checks, and focused unit tests.
+  Signals use completed 1-minute bars and engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `morning_down_open_reclaim_long`, `morning_up_open_reject_short`,
+  `midday_large10_two_sided_open_reclaim`,
+  `afternoon_large20_down_open_reclaim_long`, and
+  `afternoon_large20_up_open_reject_short`.
+- Pre-PnL density audit:
+  `research_artifacts/es_session_open_orderflow_reclaim_density_audit_20260618.md`.
+  All five variants exceeded the 50 trades/year feasibility floor at every
+  declared entry-grid corner in both the benchmark limited-core window and the
+  full local history before any PnL was inspected.
+- Originals: all five failed `limited_core_grid_test`. Best original was
+  `morning_down_open_reclaim_long/run1`, with profitable-combo rate
+  `0.012345679012345678`, zero benchmark-pass combinations, top net `50.0`,
+  PF `1.0062034739454093`, and `74.87188247352238` top-combo trades/year.
+- Rescues: all five failed variants received exactly one parameter-space/fixed
+  parameter rescue preserving edge thesis, entry module, stop module, target
+  module, timeframe, data, costs, fills, sessions, prop rules, and validation
+  gates. All five rescues failed `limited_core_grid_test`. Best rescue was
+  `morning_up_open_reject_short/rescue1`, with profitable-combo rate
+  `0.09876543209876543`, two benchmark-pass combinations, top net `1572.5`,
+  PF `1.1076870398904297`, MAR `0.3769003758047812`, and
+  `89.84681505285035` top-combo trades/year. The robust-combo rate remained far
+  below the required `0.70`.
+- Aggregate artifacts:
+  `backtest-campaigns/es_session_open_orderflow_reclaim/campaign_test_summary.json`,
+  `backtest-campaigns/es_session_open_orderflow_reclaim/campaign_results.csv`,
+  `backtest-campaigns/es_session_open_orderflow_reclaim/wfa_table.csv`,
+  `backtest-campaigns/es_session_open_orderflow_reclaim/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_session_open_orderflow_reclaim_rescue_attempt_1_20260618.md`.
+- Verification:
+  `PYTHONPATH=src python3 -m pytest tests/test_session_open_orderflow_reclaim.py tests/test_campaign_stages.py::test_staged_campaign_requires_pre_test_mechanics_review tests/test_campaign_stages.py::test_canonicalized_stage_windows_match_shortlist_and_wfa_benchmarks -q`
+  PASS; `PYTHONPATH=src python3 -m research.preflight --skip-tests --config
+  <five original configs>` PASS; `PYTHONPATH=src python3 -m research.preflight
+  --skip-tests --config <five rescue configs>` PASS.
+- Decision: FAIL. No run reached limited monkey, WFA, WFA OOS monkey, Monte
+  Carlo, simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+### `es_session_extreme_delta_divergence`
+
+Decision: FAIL.
+
+- Added active price-action plus aggregate-orderflow campaign
+  `es_session_extreme_delta_divergence` using only the local Sierra ES RTH
+  1-minute aggregate-orderflow cache. No paid data was downloaded.
+- Edge distinction: price must make a fresh current-session RTH high or low
+  using only prior completed bars as the reference extreme. Aggregate orderflow
+  is used only to test whether cumulative signed-volume progress from that
+  prior completed extreme fails to confirm the price extension. This is not
+  fixed-time orderflow effort ranking, rolling-window sweep/reclaim,
+  opening-drive inventory, prior-day levels, VWAP, round numbers, or MES/NQ
+  relative value.
+- Added entry module
+  `src/propstack/strategy_modules/entry/session_extreme_delta_divergence.py`
+  plus registration, engine feature-column checks, and focused unit tests.
+  Signals use completed 1-minute bars and engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `morning_high_delta_divergence_short`,
+  `morning_low_delta_divergence_long`,
+  `midday_two_sided_delta_divergence`,
+  `afternoon_high_delta_divergence_short`, and
+  `afternoon_low_delta_divergence_long`.
+- Pre-PnL density audit:
+  `research_artifacts/es_session_extreme_delta_divergence_density_audit_20260618.md`.
+  A stricter 2.5% delta-progress threshold was rejected before PnL because one
+  afternoon-low corner fell below the 50 signals/year density target in the
+  limited-core window. The retained original grids used 36 combinations per
+  variant and all declared entry-grid corners cleared the density target.
+- Originals: all five failed `limited_core_grid_test` with `0.0`
+  profitable-combo rate. Best original was
+  `afternoon_high_delta_divergence_short/run1`, with top net `-1889.375`,
+  PF `0.7441604603926879`, and `70.25693694465693` top-combo trades/year.
+- Rescues: all five failed variants received exactly one parameter-space/fixed
+  parameter rescue preserving edge thesis, entry module, stop module, target
+  module, direction, timeframe, data, costs, fills, sessions, prop rules, and
+  validation gates. The rescue made the same failed-extreme mechanic stricter
+  by removing 1-tick probes, tightening close-to-extreme tolerance, and shifting
+  only the existing stop grid wider. All five rescues failed
+  `limited_core_grid_test`. Best rescue was
+  `afternoon_low_delta_divergence_long/rescue1`, with profitable-combo rate
+  `0.1111111111111111`, zero benchmark-pass combinations, top net `785.0`,
+  PF `1.0930646117368108`, and `55.31419274644488` top-combo trades/year.
+- Aggregate artifacts:
+  `backtest-campaigns/es_session_extreme_delta_divergence/campaign_test_summary.json`,
+  `backtest-campaigns/es_session_extreme_delta_divergence/campaign_results.csv`,
+  `backtest-campaigns/es_session_extreme_delta_divergence/wfa_table.csv`,
+  `backtest-campaigns/es_session_extreme_delta_divergence/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_session_extreme_delta_divergence_rescue_attempt_1_20260618.md`.
+- Verification:
+  `PYTHONPATH=src python3 -m pytest tests/test_session_extreme_delta_divergence.py tests/test_campaign_stages.py::test_canonicalized_stage_windows_match_shortlist_and_wfa_benchmarks -q`
+  PASS; `PYTHONPATH=src python3 -m research.preflight --skip-tests --config
+  <five original configs>` PASS; `PYTHONPATH=src python3 -m research.preflight
+  --skip-tests --config <five rescue configs>` PASS.
+- Decision: FAIL. No run reached limited monkey, WFA, WFA OOS monkey, Monte
+  Carlo, simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+### `es_daily_reversal_orderflow_confirmation`
+
+Decision: FAIL.
+
+- Added active constrained composite campaign
+  `es_daily_reversal_orderflow_confirmation` using only the local Sierra ES RTH
+  aggregate-orderflow cache. No paid data was downloaded.
+- Edge distinction: the primary edge is daily short-term return reversal; the
+  secondary condition is fixed completed rolling signed-volume imbalance in the
+  contrarian/reversal direction at a predeclared intraday checkpoint. This is
+  not the raw daily reversal campaign, standalone signed-flow persistence,
+  VWAP pullback continuation, or trend-aligned orderflow continuation.
+- Added entry module
+  `src/propstack/strategy_modules/entry/daily_reversal_orderflow_confirmation.py`
+  plus registration, engine feature-column checks, and focused unit tests.
+  Signals use completed 5-minute bars and engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `first60_1d_flow_confirm_1030`, `first90_2d_flow_confirm_1100`,
+  `first120_3d_flow_confirm_1130`, `first150_5d_flow_confirm_1200`, and
+  `afternoon90_1d_flow_confirm_1400`.
+- Pre-PnL density audit:
+  `research_artifacts/es_daily_reversal_orderflow_confirmation_density_audit_20260618.md`.
+  The initial strict absorption formulation was rejected before PnL for sparse
+  density. The final retained five variants cleared at least 55.5 signals/year
+  across declared original entry-grid corners.
+- Originals: all five failed `limited_core_grid_test`.
+- Rescues: all five failed variants received exactly one parameter-space/fixed
+  parameter rescue preserving edge thesis, entry module, stop module, target
+  module, timeframe, data, costs, fills, sessions, prop rules, and validation
+  gates. Rescue entry-grid density stayed at or above 51.1 signals/year.
+  All five rescues failed `limited_core_grid_test`.
+- Aggregate artifacts:
+  `backtest-campaigns/es_daily_reversal_orderflow_confirmation/campaign_test_summary.json`,
+  `backtest-campaigns/es_daily_reversal_orderflow_confirmation/campaign_results.csv`,
+  `backtest-campaigns/es_daily_reversal_orderflow_confirmation/wfa_table.csv`,
+  `backtest-campaigns/es_daily_reversal_orderflow_confirmation/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_daily_reversal_orderflow_confirmation_rescue_attempt_1_20260618.md`.
+- Decision: FAIL. No run reached limited monkey, WFA, WFA OOS monkey, Monte
+  Carlo, simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+### `es_rolling_range_orderflow_sweep_reversal`
+
+Decision: FAIL.
+
+- Added active bounded composite campaign `es_rolling_range_orderflow_sweep_reversal`
+  using only the local Sierra ES RTH 1-minute aggregate-orderflow cache. No paid
+  data was downloaded.
+- Edge distinction: the setup uses current-session rolling highs/lows built only
+  from prior completed bars, then fades a completed sweep and reclaim when
+  aggregate orderflow shows pressure into the failed sweep. It is not prior-day
+  stop-run reclaim, opening-range failed breakout, round-number reaction, or
+  standalone orderflow absorption.
+- Added entry module
+  `src/propstack/strategy_modules/entry/rolling_range_orderflow_sweep_reversal.py`
+  plus registration and engine feature-column checks. Signals use completed
+  5-minute bars and engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `morning_signed_12bar_sweep_reclaim_1130`,
+  `morning_large10_12bar_sweep_reclaim_1130`,
+  `midday_signed_24bar_sweep_reclaim_1400`,
+  `afternoon_signed_24bar_sweep_reclaim_1500`, and
+  `all_day_large20_36bar_sweep_reclaim_1500`.
+- Density audit:
+  `research_artifacts/es_rolling_range_orderflow_sweep_reversal_density_audit_20260617.md`.
+  All declared variants exceeded the 50 signals/year pre-PnL density target at
+  the strictest declared entry-grid corners.
+- Originals: all five failed `limited_core_grid_test`.
+- Rescues: all five failed variants received exactly one parameter-space/fixed
+  parameter rescue preserving edge thesis, entry module, stop module, target
+  module, timeframe, data, costs, fills, sessions, prop rules, and validation
+  gates. All five rescues failed `limited_core_grid_test`.
+- Best rescue was `afternoon_signed_24bar_sweep_reclaim_1500/rescue1`, with top
+  net `675.0`, PF `1.4272151898734178`, MAR `1.107462152425031`, but only
+  22.270712773465068 trades/year; it failed the trade-count gates and only
+  0.037037037037037035 of combinations were profitable.
+- Aggregate artifacts:
+  `backtest-campaigns/es_rolling_range_orderflow_sweep_reversal/campaign_test_summary.json`,
+  `backtest-campaigns/es_rolling_range_orderflow_sweep_reversal/campaign_results.csv`,
+  `backtest-campaigns/es_rolling_range_orderflow_sweep_reversal/wfa_table.csv`,
+  `backtest-campaigns/es_rolling_range_orderflow_sweep_reversal/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_rolling_range_orderflow_sweep_reversal_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached limited monkey, WFA, WFA OOS monkey, Monte
+  Carlo, simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+### `es_prior_session_breakout_orderflow_confirmation`
+
+Decision: FAIL.
+
+- Added active bounded composite campaign
+  `es_prior_session_breakout_orderflow_confirmation` using only the local
+  Sierra ES RTH 1-minute aggregate-orderflow cache. No paid data was downloaded.
+- Edge distinction: the setup requires a fresh completed break/acceptance beyond
+  the prior RTH high or low plus same-bar aggregate orderflow confirmation. It
+  is not the failed price-only prior-session breakout campaign, and it is not
+  the failed prior-level delta-dislocation campaign because price and flow must
+  align rather than diverge.
+- Added entry module
+  `src/propstack/strategy_modules/entry/pdh_pdl_orderflow_breakout_continuation.py`
+  plus registration and engine feature-column checks. Signals use completed
+  5-minute bars and engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `all_day_signed_buffer_break_two_sided`,
+  `all_day_large10_buffer_break_two_sided`,
+  `all_day_large20_no_buffer_break_two_sided`,
+  `first_half_signed_no_buffer_break_two_sided`, and
+  `all_day_signed_high_volume_break_two_sided`.
+- Density audit:
+  `research_artifacts/es_prior_session_breakout_orderflow_confirmation_density_audit_20260617.md`.
+  Two initially drafted sparse variants were reformulated before PnL; the final
+  five variants all exceeded the 50 signals/year pre-PnL density target at the
+  strictest declared entry-grid corners.
+- Originals: all five failed `limited_core_grid_test`.
+- Rescues: all five failed variants received exactly one parameter-space/fixed
+  parameter rescue preserving edge thesis, entry module, stop module, target
+  module, timeframe, data, costs, fills, sessions, prop rules, and validation
+  gates. Four rescues failed `limited_core_grid_test`.
+- Strongest rescue was `first_half_signed_no_buffer_break_two_sided/rescue1`.
+  It passed `limited_core_grid_test` with 0.8055555555555556 profitable-combo
+  rate and passed `limited_monkey_test` with net-profit beat rate `0.96` and
+  max-drawdown beat rate `0.99`.
+- WFA failure: `first_half_signed_no_buffer_break_two_sided/rescue1` failed the
+  first WFA window by early exit because selected in-sample PF was
+  `0.887903893951947`, below the configured `1.0` threshold. No OOS trades were
+  stitched.
+- Aggregate artifacts:
+  `backtest-campaigns/es_prior_session_breakout_orderflow_confirmation/campaign_test_summary.json`,
+  `backtest-campaigns/es_prior_session_breakout_orderflow_confirmation/campaign_results.csv`,
+  `backtest-campaigns/es_prior_session_breakout_orderflow_confirmation/wfa_table.csv`,
+  `backtest-campaigns/es_prior_session_breakout_orderflow_confirmation/trade_logs_manifest.csv`,
+  `backtest-campaigns/es_prior_session_breakout_orderflow_confirmation/equity_curves_manifest.csv`,
+  `backtest-campaigns/es_prior_session_breakout_orderflow_confirmation/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_prior_session_breakout_orderflow_confirmation_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached WFA OOS monkey, WFA OOS Monte Carlo,
+  simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+### `es_opening_range_trend_orderflow_breakout`
+
+Decision: FAIL.
+
+- Added active bounded composite campaign
+  `es_opening_range_trend_orderflow_breakout` using only the local Sierra ES RTH
+  1-minute aggregate-orderflow cache. No paid data was downloaded.
+- Edge distinction: the setup requires a completed opening-range breakout, a
+  completed multi-horizon intraday price-action trend filter, and same-bar
+  aggregate orderflow confirmation. This is not a rescue of the failed plain
+  ORB/orderflow campaign because price structure is a mandatory predeclared
+  condition.
+- Added entry module
+  `src/propstack/strategy_modules/entry/opening_range_trend_orderflow_breakout.py`
+  plus registration and engine feature-column checks. Signals use completed
+  5-minute bars and engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `or15_signed_trend_breakout_1030`,
+  `or15_large10_trend_breakout_1030`,
+  `or30_signed_trend_breakout_1100`,
+  `or30_large20_trend_breakout_1130`, and
+  `or60_signed_trend_breakout_1200`.
+- Density audit:
+  `research_artifacts/es_opening_range_trend_orderflow_breakout_density_audit_20260617.md`.
+  All declared original and rescue variants exceeded the 50 trades/year
+  pre-PnL density target at the tested corners.
+- Originals: all five failed `limited_core_grid_test` with `0.0`
+  profitable-combo rate despite adequate limited-window trade density.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, stop module, target module,
+  timeframe, data, costs, fills, sessions, prop rules, and validation gates. All
+  five rescues also failed `limited_core_grid_test` with `0.0`
+  profitable-combo rate.
+- Best run was `or60_signed_trend_breakout_1200/run1`, with top net `-3025.0`,
+  PF `0.8567029843675983`, MAR `-0.5208616723709634`, expectancy R
+  `-0.06000630710451231`, and 98.17265515632292 trades/year.
+- Aggregate artifacts:
+  `backtest-campaigns/es_opening_range_trend_orderflow_breakout/campaign_test_summary.json`,
+  `backtest-campaigns/es_opening_range_trend_orderflow_breakout/campaign_results.csv`,
+  `backtest-campaigns/es_opening_range_trend_orderflow_breakout/wfa_table.csv`,
+  `backtest-campaigns/es_opening_range_trend_orderflow_breakout/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_opening_range_trend_orderflow_breakout_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached limited monkey, WFA, WFA OOS monkey, Monte
+  Carlo, simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+### `es_midday_range_orderflow_breakout`
+
+Decision: FAIL.
+
+- Added active bounded composite campaign `es_midday_range_orderflow_breakout`
+  using only the local Sierra ES RTH 1-minute aggregate-orderflow cache. No paid
+  data was downloaded.
+- Edge distinction: the price-action boundary is a completed midday/lunch range,
+  with completed-bar aggregate orderflow used only as breakout confirmation. It
+  is not an opening-range breakout, prior-session level breakout, NR4
+  compression setup, VWAP pullback, or standalone signed-flow impulse.
+- Added entry module
+  `src/propstack/strategy_modules/entry/intraday_range_orderflow_breakout.py`
+  plus registration and engine feature-column checks. Signals use completed
+  5-minute bars and engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `lunch_1130_1300_signed_breakout_1430`,
+  `lunch_1130_1300_large10_breakout_1430`,
+  `lunch_1130_1300_large20_breakout_1430`,
+  `late_lunch_1200_1330_signed_breakout_1500`, and
+  `late_lunch_1200_1330_large10_breakout_1500`.
+- Density audit:
+  `research_artifacts/es_midday_range_orderflow_breakout_density_audit_20260617.md`.
+  Wider 11:00-13:00 range variants and directional-only ideas were rejected
+  before PnL where strict corners risked falling below 50 trades/year.
+- Originals: all five failed `limited_core_grid_test` with `0.0`
+  profitable-combo rate despite adequate limited-window trade density.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, stop module, target module,
+  timeframe, data, costs, fills, sessions, prop rules, and validation gates. All
+  five rescues also failed `limited_core_grid_test` with `0.0`
+  profitable-combo rate.
+- Best rescue was `lunch_1130_1300_large20_breakout_1430/rescue1`, with top net
+  `-2433.75`, PF `0.8948704103671706`, MAR `-0.3417525557764132`, and
+  145.69529085872577 trades/year.
+- Aggregate artifacts:
+  `backtest-campaigns/es_midday_range_orderflow_breakout/campaign_test_summary.json`,
+  `backtest-campaigns/es_midday_range_orderflow_breakout/campaign_results.csv`,
+  `backtest-campaigns/es_midday_range_orderflow_breakout/wfa_table.csv`,
+  `backtest-campaigns/es_midday_range_orderflow_breakout/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_midday_range_orderflow_breakout_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached limited monkey, WFA, WFA OOS monkey, Monte
+  Carlo, simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+### `es_opening_range_retest_orderflow`
+
+Decision: FAIL.
+
+- Added active bounded composite campaign `es_opening_range_retest_orderflow`
+  using only the local Sierra ES RTH 1-minute aggregate-orderflow cache. No paid
+  data was downloaded.
+- Edge distinction: the signal requires a completed opening-range breakout, then
+  a later retest that holds the broken opening-range boundary with aggregate
+  orderflow confirmation. This is not immediate OR breakout continuation and not
+  failed-breakout reclaim back inside the range.
+- Added entry module
+  `src/propstack/strategy_modules/entry/opening_range_retest_orderflow.py` and
+  stop module
+  `src/propstack/strategy_modules/sl/opening_range_retest_boundary.py`, plus
+  registration and engine feature-column checks. Signals use completed
+  5-minute bars and engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `or15_signed_absorption_retest_1030`,
+  `or15_signed_aligned_retest_1030`,
+  `or30_signed_absorption_retest_1100`,
+  `or30_large10_absorption_retest_1130`, and
+  `or60_large20_aligned_retest_1230`.
+- Density audit:
+  `research_artifacts/es_opening_range_retest_orderflow_density_audit_20260617.md`.
+  Directional OR15 variants were rejected before PnL as too sparse; every final
+  declared two-sided entry corner exceeded 50 signals/year before PnL testing.
+- Verification before staged runs:
+  `PYTHONPATH=src python3 -m pytest tests/test_opening_range_retest_orderflow.py tests/test_opening_range_orderflow_breakout.py tests/test_opening_range_failed_breakout_orderflow.py tests/test_core_grid.py tests/test_campaign_stages.py tests/test_preflight.py -q`
+  passed 67 tests; targeted preflight for the five originals and five rescues
+  passed.
+- Originals: all five failed `limited_core_grid_test` with `0.0`
+  profitable-combo rate despite adequate limited-window trade density.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, stop module, target module,
+  timeframe, data, costs, fills, sessions, prop rules, and validation gates. All
+  five rescues also failed `limited_core_grid_test`.
+- Best rescue was `or30_large10_absorption_retest_1130/rescue1`, with
+  0.024691358024691357 profitable-combo rate, one benchmark-passing combination,
+  top net `1184.375`, PF `1.083494888967219`, and 105.1026627366738
+  trades/year, far below the 70% profitable-combo robustness gate.
+- Aggregate artifacts:
+  `backtest-campaigns/es_opening_range_retest_orderflow/campaign_test_summary.json`,
+  `backtest-campaigns/es_opening_range_retest_orderflow/campaign_results.csv`,
+  `backtest-campaigns/es_opening_range_retest_orderflow/wfa_table.csv`,
+  `backtest-campaigns/es_opening_range_retest_orderflow/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_opening_range_retest_orderflow_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached limited monkey, WFA, WFA OOS monkey, Monte
+  Carlo, simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+### `es_round_number_orderflow_barrier`
+
+Decision: FAIL.
+
+- Added active bounded composite campaign `es_round_number_orderflow_barrier`
+  using only the local Sierra ES RTH 1-minute aggregate-orderflow cache. No paid
+  data was downloaded.
+- Edge distinction: fixed psychological round-number barriers are traded only
+  when completed aggregate orderflow confirms absorption at failed probes or
+  continuation participation on breaks. This is not a parameter rescue of the
+  failed standalone `es_round_number_barrier_reaction` campaign.
+- Added entry module
+  `src/propstack/strategy_modules/entry/round_number_orderflow_barrier.py` plus
+  registration and engine feature-column checks. Signals use completed 5-minute
+  bars and engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `morning_support_sell_absorption_long`,
+  `morning_resistance_buy_absorption_short`,
+  `midday_two_sided_large10_absorption_reclaim`,
+  `round_number_upside_flow_breakout_long`, and
+  `round_number_downside_flow_breakout_short`.
+- Density audit:
+  `research_artifacts/es_round_number_orderflow_barrier_density_audit_20260617.md`.
+  Every declared entry corner exceeded the 50 trades/year pre-PnL density floor
+  on the full available period; sparse 50-point absorption corners were rejected
+  before performance testing.
+- Verification before staged runs:
+  `PYTHONPATH=src python3 -m pytest tests/test_round_number_orderflow_barrier.py tests/test_round_number_barrier.py tests/test_preflight.py -q`
+  passed 17 tests; targeted preflight for the five originals and five rescues
+  passed.
+- Originals: all five failed `limited_core_grid_test`. The best original was
+  `round_number_downside_flow_breakout_short/run1`, with 0.12962962962962962
+  profitable-combo rate, six benchmark-passing combos, top net `2817.5`, PF
+  `1.1636178861788617`, and 84.12751394916305 trades/year, below the 70%
+  profitable-combo robustness gate.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, stop module, target module,
+  timeframe, data, costs, fills, sessions, prop rules, and validation gates. All
+  five rescues also failed `limited_core_grid_test`.
+- Best rescue was `morning_support_sell_absorption_long/rescue1`, with
+  0.35185185185185186 profitable-combo rate, top net `2075.0`, PF
+  `1.2181913774973712`, MAR `1.3491650623474079`, and 49.61231535457581
+  trades/year. It failed limited core because profitable-combo rate remained
+  below 0.70 and top-row trade density remained below 50/year.
+- Aggregate artifacts:
+  `backtest-campaigns/es_round_number_orderflow_barrier/campaign_test_summary.json`,
+  `backtest-campaigns/es_round_number_orderflow_barrier/campaign_results.csv`,
+  `backtest-campaigns/es_round_number_orderflow_barrier/wfa_table.csv`,
+  `backtest-campaigns/es_round_number_orderflow_barrier/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_round_number_orderflow_barrier_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached limited monkey, WFA, WFA OOS monkey, Monte
+  Carlo, simulated incubation, frozen validation, or candidate reporting. No
+  `candidate_strategy_report.md` was created.
+
+### `es_opening_range_failed_breakout_orderflow`
+
+Decision: FAIL.
+
+- Created a bounded price-action plus aggregate-orderflow campaign using only
+  the local Sierra ES RTH 1-minute aggregate-orderflow cache. No paid data was
+  downloaded.
+- Primary setup: completed opening-range support/resistance false breakout. A
+  completed close must first break outside the opening range, then a later
+  completed bar must reclaim back through the same boundary with opposite
+  aggregate orderflow. Target is the opposite opening-range edge.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and pre-test mechanics reviews:
+  `or15_signed_failed_reclaim_1030`,
+  `or30_signed_failed_reclaim_1100`,
+  `or15_large10_failed_reclaim_1030`,
+  `or30_large20_failed_reclaim_1130`, and
+  `or60_signed_failed_reclaim_1200`.
+- Pre-PnL density audit:
+  `research_artifacts/es_opening_range_failed_breakout_orderflow_density_audit_20260617.md`.
+  One-bar reclaim and OR15 directional-only ideas were rejected before PnL as
+  too sparse. The final grids were kept only where raw density plausibly met
+  the 50 trades/year rule.
+- Added and verified entry module
+  `src/propstack/strategy_modules/entry/opening_range_failed_breakout_orderflow.py`
+  plus registration and engine feature-column checks. Targeted tests:
+  `PYTHONPATH=src python3 -m pytest tests/test_opening_range_failed_breakout_orderflow.py tests/test_opening_range_orderflow_breakout.py tests/test_core_grid.py tests/test_campaign_stages.py tests/test_preflight.py -q`
+  passed 63 tests.
+- Originals: all five failed `limited_core_grid_test` with `0.0` profitable
+  combinations and zero benchmark-passing combinations. The best original was
+  `or30_signed_failed_reclaim_1100/run1`, top net `-867.5`, PF
+  `0.8922360248447205`, and 76.207045 trades/year.
+- Rescues: all five failed variants received exactly one stop-offset
+  parameter-space rescue preserving entry, stop module, target module, data,
+  costs, fills, sessions, prop rules, and validation gates. All five rescues
+  failed `limited_core_grid_test`; best rescue was
+  `or60_signed_failed_reclaim_1200/rescue1`, top net `-1037.5`, PF
+  `0.9226179377214245`, and `0.0` profitable-combo rate.
+- Aggregate artifacts:
+  `backtest-campaigns/es_opening_range_failed_breakout_orderflow/campaign_test_summary.json`,
+  `backtest-campaigns/es_opening_range_failed_breakout_orderflow/campaign_results.csv`,
+  `backtest-campaigns/es_opening_range_failed_breakout_orderflow/wfa_table.csv`,
+  `backtest-campaigns/es_opening_range_failed_breakout_orderflow/monte_carlo_summary.json`,
+  `research_artifacts/es_opening_range_failed_breakout_orderflow_rescue_attempt_1_20260617.md`.
+
+### `es_range_compression_orderflow_breakout`
+
+Decision: FAIL.
+
+- Created a bounded composite campaign using only the local Sierra ES RTH
+  1-minute aggregate-orderflow cache. No paid data was downloaded.
+- Primary setup: prior RTH session is NR4 range compression. Breakout reference
+  is either prior RTH high/low or a completed opening range. Secondary condition:
+  the completed breakout bar must have aligned aggregate orderflow.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and pre-test mechanics reviews:
+  `nr4_prior_large20_flow_breakout_1400`,
+  `nr4_prior_signed_flow_breakout_1400`,
+  `nr4_or15_large20_flow_breakout_1200`,
+  `nr4_or30_large10_flow_breakout_1400`, and
+  `nr4_or60_signed_flow_breakout_1330`.
+- Pre-PnL density audit:
+  `research_artifacts/es_range_compression_orderflow_breakout_density_audit_20260617.md`.
+  NR7 and inside-day variants were rejected before PnL as too sparse. The final
+  five NR4 variants cleared strict-corner raw signal density above 50/year.
+- Added and verified entry module
+  `src/propstack/strategy_modules/entry/range_compression_orderflow_breakout.py`
+  plus registration and engine feature-column checks. Targeted tests:
+  `PYTHONPATH=src python3 -m pytest tests/test_range_compression_orderflow_breakout.py tests/test_opening_range_orderflow_breakout.py tests/test_preflight.py -q`
+  passed 14 tests. Scoped preflight passed for five originals and five rescues.
+- Originals: all five failed `limited_core_grid_test`. Best original profitable
+  combo rate was `0.04938271604938271`; no original had a benchmark-passing
+  combo. The best top row was
+  `nr4_prior_large20_flow_breakout_1400/run1`, top net `900.0`, PF
+  `1.054471`, and 73.153449 trades/year, but it failed profit concentration.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving compression rule, breakout reference, flow bucket, entry
+  windows, modules, data, costs, fills, sessions, prop rules, and validation
+  gates. The rescue changed only stop/target defaults and stop/target grids.
+  All rescues failed `limited_core_grid_test`; best rescue profitable-combo rate
+  was `0.024691358024691678`.
+- Aggregate artifacts:
+  `backtest-campaigns/es_range_compression_orderflow_breakout/campaign_test_summary.json`,
+  `backtest-campaigns/es_range_compression_orderflow_breakout/campaign_results.csv`,
+  `backtest-campaigns/es_range_compression_orderflow_breakout/wfa_table.csv`,
+  `backtest-campaigns/es_range_compression_orderflow_breakout/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_range_compression_orderflow_breakout_rescue_attempt_1_20260617.md`.
+- No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen
+  validation, or candidate reporting. No `candidate_strategy_report.md` was
+  created.
+
+### `es_opening_gap_orderflow_absorption_fade`
+
+Decision: FAIL.
+
+- Created a price-action plus aggregate-orderflow campaign using only the local
+  Sierra ES RTH 1-minute aggregate-orderflow cache. No paid data was downloaded.
+- Primary setup: ES opens 1-3 points away from the prior RTH close. Secondary
+  condition: a completed post-open aggregate-flow window must show signed flow
+  against the gap, interpreted as possible absorption.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and pre-test mechanics reviews:
+  `early_large20_gap_absorption_fade_1000`,
+  `morning_large20_gap_absorption_fade_1030`,
+  `late_morning_large20_gap_absorption_fade_1100`,
+  `midday_large20_gap_absorption_fade_1200`, and
+  `late_morning_large10_gap_absorption_fade_1100`.
+- Pre-PnL density audit:
+  `research_artifacts/es_opening_gap_orderflow_absorption_fade_density_audit_20260617.md`.
+  Larger-gap formulations were rejected before PnL as too sparse, and zero-gap
+  formulations were rejected before PnL because they no longer expressed an
+  opening-gap edge. The selected nonzero 1-3 point gap grid cleared the raw
+  signal-density screen.
+- Verification before staged runs:
+  `PYTHONPATH=src python3 -m pytest tests/test_strategy_modules.py tests/test_opening_range_orderflow_breakout.py tests/test_trend_aligned_orderflow_continuation.py tests/test_vwap_orderflow_pullback_continuation.py tests/test_preflight.py -q`
+  passed 150 tests. Scoped preflight passed for the five originals and five
+  rescues. A full active-config preflight was intentionally interrupted after
+  several minutes because it was loading the full active backlog; scoped
+  preflight covered this campaign's configs.
+- Originals: all five failed `limited_core_grid_test` with 0.0
+  profitable-combo rate. Least-bad original was
+  `morning_large20_gap_absorption_fade_1030/run1`, top net `-498.75`, PF
+  `0.7170212765957447`, and 34.11936197817293 trades/year.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving entry modules, source windows, flow buckets, data, costs,
+  fills, sessions, prop rules, and validation gates. Rescue changed only the
+  fixed stop/target defaults and stop/target grids. All rescues failed
+  `limited_core_grid_test`. The best rescue profitable-combo rate was
+  `0.4197530864197531`, below the required `0.70`, despite top isolated rows
+  turning positive in two variants.
+- Aggregate artifacts:
+  `backtest-campaigns/es_opening_gap_orderflow_absorption_fade/campaign_test_summary.json`,
+  `backtest-campaigns/es_opening_gap_orderflow_absorption_fade/campaign_results.csv`,
+  `backtest-campaigns/es_opening_gap_orderflow_absorption_fade/wfa_table.csv`,
+  `backtest-campaigns/es_opening_gap_orderflow_absorption_fade/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_opening_gap_orderflow_absorption_fade_rescue_attempt_1_20260617.md`.
+- No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen
+  validation, or candidate reporting. No `candidate_strategy_report.md` was
+  created.
+
+### `es_vwap_orderflow_pullback_continuation`
+
+Decision: FAIL.
+
+- Created a price-action plus aggregate-orderflow campaign using only the local
+  Sierra ES RTH 1-minute aggregate-orderflow cache. No paid data was downloaded.
+- Primary setup: completed VWAP-side trend plus pullback/reclaim on 5-minute
+  bars. Secondary condition: same completed reclaim bar must have aligned
+  aggregate orderflow. This follows the 2026-06-17 routing priority to prefer
+  price action as setup and aggregate orderflow as confirmation.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and pre-test mechanics reviews:
+  `morning_signed_trend_reclaim_two_sided`,
+  `morning_large10_trend_reclaim_two_sided`,
+  `morning_large20_trend_reclaim_two_sided`,
+  `midday_large10_trend_reclaim_two_sided`, and
+  `midday_large20_trend_reclaim_two_sided`.
+- Pre-PnL density audit:
+  `research_artifacts/es_vwap_orderflow_pullback_continuation_density_audit_20260617.md`.
+  Selected variants cleared the raw signal-density screen across declared entry
+  grids. Midday signed-flow, afternoon, late-day failed-break, and initial
+  opening-drive formulations were rejected before PnL for density or formulation
+  defects.
+- Added and verified entry module
+  `src/propstack/strategy_modules/entry/vwap_orderflow_pullback_continuation.py`.
+  Targeted tests:
+  `PYTHONPATH=src python3 -m pytest tests/test_vwap_orderflow_pullback_continuation.py tests/test_preflight.py -q`
+  passed 12 tests. Targeted preflight passed for five originals and five rescues.
+- Originals: all five failed `limited_core_grid_test` with 0.0 profitable-combo
+  rate. Least-bad original was
+  `morning_large20_trend_reclaim_two_sided/run1`, top net `-752.50`, PF
+  `0.9387464387464387`, and 93.27324474648577 trades/year.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving the VWAP trend-reclaim plus orderflow-confirmation mechanic,
+  entry/stop/target modules, variant windows, flow modes, data, costs, fills,
+  sessions, prop rules, and validation gates. All rescues failed
+  `limited_core_grid_test` with 0.0 profitable-combo rate.
+- Aggregate artifacts:
+  `backtest-campaigns/es_vwap_orderflow_pullback_continuation/campaign_test_summary.json`,
+  `backtest-campaigns/es_vwap_orderflow_pullback_continuation/campaign_results.csv`,
+  `backtest-campaigns/es_vwap_orderflow_pullback_continuation/wfa_table.csv`,
+  `backtest-campaigns/es_vwap_orderflow_pullback_continuation/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_vwap_orderflow_pullback_continuation_rescue_attempt_1_20260617.md`.
+- No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen
+  validation, or candidate reporting. No `candidate_strategy_report.md` was
+  created.
 
 ### `es_spx_0dte_trend_aligned_pressure`
 
@@ -1683,6 +2415,112 @@ Decision: FAIL.
   was created.
 
 
+## ES Gao Last-Half-Hour Orderflow Confirmation - 2026-06-17
+
+- Added active price-action plus aggregate-orderflow campaign
+  `es_gao_last_half_hour_orderflow_confirmation` using the existing tested
+  `gao_last_half_hour_orderflow` module and only the local Sierra ES RTH
+  1-minute orderflow cache. No paid data was downloaded.
+- Edge distinction: this campaign tests Gao-style first-window price-action
+  prediction of last-half-hour returns only when completed aggregate orderflow
+  confirms the first-window direction. It is not the failed price-only
+  `es_late_day_intraday_momentum` campaign and not standalone signed-flow
+  persistence.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `first30_signed_flow_two_sided_1530`,
+  `first30_large20_flow_two_sided_1530`,
+  `first60_signed_flow_two_sided_1530`,
+  `first60_large20_flow_two_sided_1530`, and
+  `first30_broad_large_alignment_1530`.
+- Density audit:
+  `research_artifacts/es_gao_last_half_hour_orderflow_confirmation_density_audit_20260617.md`;
+  every original declared entry corner exceeded 90 signals/year before
+  stop/target filtering. Rescue density also cleared the 50/year gate.
+- Verification before staged runs:
+  `PYTHONPATH=src python3 -m pytest tests/test_strategy_modules.py -q -k gao_last_half_hour_orderflow`
+  passed 3 tests; targeted preflight for the five originals and five rescues
+  passed.
+- Originals: all five failed `limited_core_grid_test` with 0.0 profitable-combo
+  rate. Least-bad original was
+  `first30_large20_flow_two_sided_1530/run1`, top net `-5350.00`, PF
+  `0.5451647183846972`, and 133.24081683091848 trades/year.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, stop module, target module,
+  timeframe, signal time, first-window length, flow mode, data, costs, fills,
+  sessions, prop rules, and validation gates. All five rescues failed
+  `limited_core_grid_test`; least-bad rescue was
+  `first30_broad_large_alignment_1530/rescue1`, top net `-2055.00`, PF
+  `0.7144841959013546`, and 73.45024501632395 trades/year.
+- Aggregate artifacts:
+  `backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/campaign_test_summary.json`,
+  `backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/campaign_results.csv`,
+  `backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/wfa_table.csv`,
+  `backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_gao_last_half_hour_orderflow_confirmation_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation,
+  frozen validation, or candidate reporting. No `candidate_strategy_report.md`
+  was created.
+
+
+## ES Trend-Aligned Orderflow Continuation - 2026-06-17
+
+- Added active price-action plus aggregate-orderflow campaign
+  `es_trend_aligned_orderflow_continuation` using only the local Sierra ES RTH
+  1-minute orderflow cache. No paid data was downloaded.
+- Edge distinction: this campaign tests completed two-horizon HH/HL or LH/LL
+  price-action trend structure confirmed by same-bar aggregate orderflow. It is
+  not standalone signed-flow persistence, opening-range breakout, VWAP pullback,
+  prior-level dislocation, range compression, or absorption/fade logic.
+- Added entry module
+  `src/propstack/strategy_modules/entry/trend_aligned_orderflow_continuation.py`
+  plus registration and engine feature-column checks. Signals use completed
+  5-minute bars only; engine entry remains next-bar open.
+- Authored exactly five variants with entry, stop, target module shims,
+  `config.yaml`, `README.md`, and required pre-test mechanics reviews:
+  `morning_15_30_large20_trend_flow_1030`,
+  `late_morning_15_30_signed_trend_flow_1130`,
+  `midday_15_30_large10_trend_flow_1230`,
+  `afternoon_30_60_large20_trend_flow_1400`, and
+  `late_day_30_60_large10_trend_flow_1430`.
+- Density audit:
+  `research_artifacts/es_trend_aligned_orderflow_continuation_density_audit_20260617.md`;
+  every original declared entry corner exceeded roughly 52 signals/year before
+  stop/target filtering. The rescue entry grid also cleared the 50/year density
+  screen with fixed `min_trend_move_ticks = 0`.
+- Verification before staged runs:
+  `PYTHONPATH=src python3 -m pytest tests/test_trend_aligned_orderflow_continuation.py tests/test_opening_range_orderflow_breakout.py tests/test_strategy.py tests/test_data_pipeline.py tests/test_campaign_stages.py tests/test_preflight.py -q`
+  passed 71 tests; targeted preflight for the five originals and five rescues
+  passed.
+- Limited core-grid data period used by the staged runner:
+  `2011-02-22 09:30:00-05:00` through `2012-09-06 15:59:00-04:00`
+  (`random_fraction` 10% shortlist window, avoiding latest 10% and COVID
+  range per current runner defaults).
+- Originals: all five failed `limited_core_grid_test` with 0.0 profitable-combo
+  rate. Least-bad original was
+  `late_day_30_60_large10_trend_flow_1430/run1`, top net `-220.00`, PF
+  `0.9666919000757003`, 74 trades, and 48.87459580960513 trades/year; it still
+  failed net-profit, trade-density, and preferred-count gates.
+- Rescues: all five failed variants received exactly one parameter-space-only
+  rescue preserving edge thesis, entry module, stop module, target module,
+  timeframe, signal time, trend horizons, flow mode, data, costs, fills,
+  sessions, prop rules, and validation gates. All five rescues failed
+  `limited_core_grid_test`; least-bad rescue was
+  `morning_15_30_large20_trend_flow_1030/rescue1`, top net `-1626.25`, PF
+  `0.5827453495830661`, and 65.15759441399504 trades/year.
+- Aggregate artifacts:
+  `backtest-campaigns/es_trend_aligned_orderflow_continuation/campaign_test_summary.json`,
+  `backtest-campaigns/es_trend_aligned_orderflow_continuation/campaign_results.csv`,
+  `backtest-campaigns/es_trend_aligned_orderflow_continuation/wfa_table.csv`,
+  `backtest-campaigns/es_trend_aligned_orderflow_continuation/monte_carlo_summary.json`,
+  and
+  `research_artifacts/es_trend_aligned_orderflow_continuation_rescue_attempt_1_20260617.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation,
+  frozen validation, or candidate reporting. No `candidate_strategy_report.md`
+  was created.
+
+
 ## ES Chicago Fed CFNAI Activity Pullback - 2026-06-17
 
 - Added active non-duplicate campaign `es_chicagofed_cfnai_activity_pullback`
@@ -2047,3 +2885,192 @@ Decision: FAIL.
 - Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation,
   frozen validation, or candidate reporting. No `candidate_strategy_report.md`
   was created.
+
+
+## ES Semivariance Orderflow Confirmation - 2026-06-18
+
+- Added constrained composite campaign `es_semivariance_orderflow_confirmation` using lagged realized semivariance, same-session price action from the known RTH open, and completed aggregate signed orderflow. No paid data was downloaded.
+- Initial one-checkpoint variants failed pre-PnL signal density; before any staged PnL testing, the mechanics were reformulated to fixed multi-time decision variants. Original density artifact: `research_artifacts/es_semivariance_orderflow_confirmation_density_audit_20260618.md`; final density artifact: `research_artifacts/es_semivariance_orderflow_confirmation_reformulated_density_audit_20260618.md`.
+- Verification before staged runs: `PYTHONPATH=src python3 -m pytest tests/test_realized_semivariance_orderflow_confirmation.py -q` passed 4 tests; targeted preflight for the five originals and five rescue configs passed.
+- Originals: all five final variants failed `limited_core_grid_test`. Best original was `badvol_signed_multitime_short/run1` with 24/54 profitable combinations (0.4444), 18 benchmark-passing combos, top net `4545.00`, PF `1.4309`, and 74.86 trades/year, below the 70% profitable-combo threshold.
+- Rescues: all five failed variants received exactly one parameter-space/fixed-parameter rescue preserving edge thesis, entry module, stop module, target module, decision times, data, costs, fills, sessions, prop rules, and validation gates.
+- Best rescue was `badvol_signed_multitime_short/rescue1`: limited core passed with 29/36 profitable combinations (0.8056) and 28 benchmark-passing combos; limited monkey passed. It then failed WFA with early exit, stitched OOS PF `0.7123`, MAR `-0.7884`, expectancy R `-0.1411`, and 94.68 trades/year.
+- Aggregate artifacts: `backtest-campaigns/es_semivariance_orderflow_confirmation/campaign_test_summary.json`, `backtest-campaigns/es_semivariance_orderflow_confirmation/campaign_results.csv`, `backtest-campaigns/es_semivariance_orderflow_confirmation/wfa_table.csv`, `backtest-campaigns/es_semivariance_orderflow_confirmation/monte_carlo_summary.json`, and `research_artifacts/es_semivariance_orderflow_confirmation_rescue_attempt_1_20260618.md`.
+- Decision: FAIL. No run reached WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+
+## ES Wide-Range Orderflow Continuation - 2026-06-18
+- Added and tested `wide_range_orderflow_continuation` as a price-action-first aggregate-orderflow continuation campaign.
+- Pre-PnL density audit passed for all five variants on full history and the default limited-core random window.
+- Five originals and five per-failed-variant parameter-space-only rescues were run. All failed `limited_core_grid_test`; no run reached monkey, WFA, Monte Carlo, simulated incubation, or frozen validation.
+- Decision: FAIL. No candidate strategy report was created.
+
+## ES Prior Value-Area Orderflow Acceptance - 2026-06-18
+
+- Added and tested `prior_value_area_orderflow_acceptance`, a local Sierra completed-bar price-action/orderflow campaign using prior-session approximate value-area boundaries.
+- Pre-PnL density passed for originals and rescues; strict corners stayed above 50 signals/year in the current limited-core window.
+- All five original variants failed limited core. All five one-time rescues were run; four failed limited core, and `morning_signed_vah_acceptance_long/rescue1` failed limited monkey despite core passing.
+- No WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate report was reached. Decision: FAIL.
+
+
+## ES Prior-Session Flip Retest Orderflow - 2026-06-18
+
+- Added and tested `es_prior_session_flip_retest_orderflow`, a price-action plus aggregate-orderflow campaign using only the local Sierra ES RTH cache. No paid data was downloaded.
+- Initial fresh-level-only/one-sided formulation was rejected before PnL for sparse density. The final pre-PnL formulation kept the same S/R flip retest edge, disabled the fresh-level requirement, made all five variants two-sided, and passed strict density checks above 50 signals/year.
+- Added default-preserving support for `entry.params.require_fresh_level=false`, `entry.params.flow_confirmation=aligned|absorbed`, and the `prior_level_retest_boundary` stop. Targeted tests passed: `PYTHONPATH=src python3 -m pytest tests/test_pdh_pdl_orderflow_breakout_continuation.py tests/test_preflight.py -q`.
+- Originals: all five variants failed `limited_core_grid_test` with 0.0 profitable-combo rate.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues were run. All failed `limited_core_grid_test`; best rescue was `afternoon_large10_aligned_two_sided_flip/rescue1` with top net `-38.75`, PF `0.9977064220183486`, and 90.98917839163146 trades/year, still below profitability and robustness requirements.
+- Aggregate artifacts: `backtest-campaigns/es_prior_session_flip_retest_orderflow/campaign_test_summary.json`, `campaign_results.csv`, `wfa_table.csv`, `monte_carlo_summary.json`, and `research_artifacts/es_prior_session_flip_retest_orderflow_rescue_attempt_1_20260618.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## ES Opening Gap Orderflow Continuation - 2026-06-18
+
+- Added and tested `es_opening_gap_orderflow_continuation`, a prior-close opening-gap hold continuation campaign using local Sierra aggregate orderflow only. No paid data was downloaded.
+- Initial density corners were too sparse; before any PnL testing, gap/flow thresholds were reformulated twice while preserving the gap-hold plus aligned-orderflow mechanic. Final strict density passed above 50 signals/year for all five variants.
+- Added `opening_gap_orderflow_continuation` and `opening_gap_boundary`; targeted tests passed with `PYTHONPATH=src python3 -m pytest tests/test_opening_gap_orderflow_continuation.py -q`.
+- Originals: all five variants failed `limited_core_grid_test` with 0.0 profitable-combo rate.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues were run and all failed `limited_core_grid_test`. Best run was `late_morning_large10_gap_hold_continuation_1100/rescue1` with top net `686.25`, PF `1.057068607068607`, and 51.32806680543288 trades/year.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+
+## ES Intraday Capitulation Orderflow Reversion - 2026-06-18
+
+- Added and tested `es_intraday_capitulation_orderflow_reversion`, a completed-bar downside capitulation campaign using only local Sierra ES RTH OHLCV, session VWAP, session-local RSI/volume state, and aggregate signed-volume imbalance. No paid data was downloaded.
+- Pre-PnL density passed for all five variants on full history and the seeded limited-core random window; strict corners stayed above 50 signals/year. Artifact: `research_artifacts/es_intraday_capitulation_orderflow_reversion_density_audit_20260618.md`.
+- Added/tightened `intraday_capitulation_mr` so RSI and volume history are session-local, signals use completed-window sell imbalance, and next-bar execution is preserved. Targeted tests passed: `PYTHONPATH=src python3 -m pytest tests/test_intraday_capitulation_mr.py tests/test_strategy_modules.py::test_intraday_capitulation_mr_entry_emits_on_completed_15m_bar tests/test_strategy_modules.py::test_intraday_capitulation_mr_entry_rejects_close_not_near_low -q`.
+- Originals: all five variants failed `limited_core_grid_test` with 0.0 profitable-combo rate.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues were run and all failed `limited_core_grid_test` with 0.0 profitable-combo rate. Best run was `late_day_10m_capitulation_long_1530/rescue1` with top net `-2477.5`, PF `0.6868878357030016`, and 73.57176633697684 trades/year.
+- Aggregate artifacts: `backtest-campaigns/es_intraday_capitulation_orderflow_reversion/campaign_test_summary.json`, `campaign_results.csv`, `wfa_table.csv`, `monte_carlo_summary.json`, and `research_artifacts/es_intraday_capitulation_orderflow_reversion_rescue_attempt_1_20260618.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## ES Opening-Drive VWAP Orderflow Pullback - 2026-06-18
+
+- Added and tested `es_opening_drive_vwap_orderflow_pullback`, a price-action plus aggregate-orderflow composite using local Sierra ES RTH cache only. No paid data was downloaded.
+- The campaign requires a completed 30- or 60-minute opening-drive direction, a later session-VWAP pullback/reclaim, and aligned completed-bar aggregate orderflow. It is distinct from raw VWAP trend reclaim and raw opening-range breakout/retest campaigns.
+- Pre-PnL density rejected 15-minute drive variants before PnL because their strict corner had only 26.65 limited-window signals/year. The final five 30/60-minute variants passed the 50 trades/year density screen. Artifact: `research_artifacts/es_opening_drive_vwap_orderflow_pullback_density_audit_20260618.md`.
+- Added a targeted test for `vwap_orderflow_pullback_continuation` in `opening_drive_pullback` mode; targeted tests passed with `PYTHONPATH=src python3 -m pytest tests/test_vwap_orderflow_pullback_continuation.py -q`.
+- Originals: all five variants failed `limited_core_grid_test` with 0.0 profitable-combo rate.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues were run and all failed `limited_core_grid_test` with 0.0 profitable-combo rate. Best run was `drive30_large20_pullback_1230/rescue1` with top net `-747.5`, PF `0.8987127371273713`, and 60.11494167194664 trades/year.
+- Aggregate artifacts: `backtest-campaigns/es_opening_drive_vwap_orderflow_pullback/campaign_test_summary.json`, `campaign_results.csv`, `wfa_table.csv`, `monte_carlo_summary.json`, and `research_artifacts/es_opening_drive_vwap_orderflow_pullback_rescue_attempt_1_20260618.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## ES VWAP Deviation Orderflow Reversion - 2026-06-18
+
+- Added and tested `es_vwap_deviation_orderflow_reversion`, a two-sided VWAP-extension reversion campaign using completed counter-direction aggregate orderflow. No paid data was downloaded.
+- Added `vwap_deviation_orderflow_reversion` entry module and engine feature requirements. Targeted tests passed with `PYTHONPATH=src python3 -m pytest tests/test_vwap_deviation_orderflow_reversion.py -q`.
+- Pre-PnL density passed for all five final variants at the strict corner in both full history and the seeded limited-core window. Artifact: `research_artifacts/es_vwap_deviation_orderflow_reversion_density_audit_20260618.md`.
+- Originals: all five variants failed `limited_core_grid_test` with 0.0 profitable-combo rate.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues were run and all failed `limited_core_grid_test` with 0.0 profitable-combo rate. Best run was `midday_signed_counterflow_1400/rescue1` with top net `-1858.75`, PF `0.39882757226601984`, and 60.450316066562436 trades/year.
+- Aggregate artifacts: `backtest-campaigns/es_vwap_deviation_orderflow_reversion/campaign_test_summary.json`, `campaign_results.csv`, `wfa_table.csv`, `monte_carlo_summary.json`, and `research_artifacts/es_vwap_deviation_orderflow_reversion_rescue_attempt_1_20260618.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+
+## ES/MES Aligned-Flow Continuation - 2026-06-18
+
+- Added and tested `es_mes_aligned_flow_continuation`, a cross-contract price-action/orderflow confirmation campaign using local Sierra ES/MES completed 1-minute RTH bars. No paid data was downloaded.
+- Pre-PnL density passed for all five variants on full history, the seeded limited-core random window, WFA first-90%, and latest-year validation slice. Artifact: `research_artifacts/es_mes_aligned_flow_continuation_density_audit_20260618.md`.
+- Added `es_mes_aligned_flow_continuation` entry module and engine feature requirements. Focused tests passed with `PYTHONPATH=src python3 -m pytest tests/test_es_mes_aligned_flow_continuation.py -q`.
+- Originals: all five variants failed `limited_core_grid_test` with 0.0 profitable-combo rate.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues were run. All failed `limited_core_grid_test`; best rescue was `midday30_mes_large10_1230/rescue1` with 6/81 profitable combinations, top net `1192.5`, PF `1.488229`, and 63.52 trades/year, still far below the 70% profitable-combo gate.
+- Aggregate artifacts: `backtest-campaigns/es_mes_aligned_flow_continuation/campaign_test_summary.json`, `campaign_results.csv`, `wfa_table.csv`, `monte_carlo_summary.json`, and `research_artifacts/es_mes_aligned_flow_continuation_rescue_attempt_1_20260618.md`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## ES SPX 0DTE Orderflow Continuation - 2026-06-18
+
+- Added and tested `es_spx_0dte_orderflow_continuation`, the second and final local SPX 0DTE composite under the composite-edge policy. It uses the known SPX 0DTE calendar plus completed ES price movement and aggregate orderflow alignment. No paid data was downloaded.
+- Corrected the pre-PnL data-validity start to `2016-02-24`, the first regular M/W/F SPX weekly-expiration regime date used for this edge. The initial 2011-start density draft was superseded because pre-2016 sessions are too sparse for the 50 trades/year rule.
+- Pre-PnL density passed for all five original variants and all five rescue grids on full history, the seeded limited-core random window, WFA first-90%, and latest-year validation slice. Artifacts: `research_artifacts/es_spx_0dte_orderflow_continuation_density_audit_20260618.md` and `research_artifacts/es_spx_0dte_orderflow_continuation_rescue_attempt_1_density_audit_20260618.md`.
+- Added `spx_0dte_orderflow_continuation` entry module and registry wiring. Focused tests passed with `PYTHONPATH=src python3 -m pytest tests/test_spx_0dte_orderflow_continuation.py -q`; campaign preflight passed for all original and rescue configs.
+- Originals: all five variants failed `limited_core_grid_test`; early signed, early large10, and midday large20 had 0/81 profitable combinations, while late morning and late day had only 4/81 and 3/81 profitable combinations respectively.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues were run. All failed `limited_core_grid_test`; best rescue was `late_morning_large20_flow_continuation_1030/rescue1` with 37/81 profitable combinations, top net `1332.5`, PF `1.1483`, MAR `0.6452`, and 78.18 trades/year, still below the 70% profitable-combo gate.
+- Aggregate artifacts: `backtest-campaigns/es_spx_0dte_orderflow_continuation/campaign_test_summary.json`, `campaign_results.csv`, `wfa_table.csv`, `monte_carlo_summary.json`, `trade_logs_manifest.csv`, and `equity_curves_manifest.csv`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created. Per the campaign stop rule, do not launch another local SPX 0DTE primary-edge composite unless materially new option-flow/gamma data is explicitly approved before testing.
+
+
+## ES Intraday Periodicity Orderflow Confirmation - 2026-06-18
+
+- Added and tested `es_intraday_periodicity_orderflow_confirmation`, a bounded composite of prior-session-only same-clock intraday return persistence and completed local Sierra ES aggregate orderflow confirmation. No paid data was downloaded.
+- Pre-PnL density passed for all five original variants and all five rescue grids on full history, the seeded limited-core random window, WFA first-90%, and latest-year validation slice. Artifacts: `research_artifacts/es_intraday_periodicity_orderflow_confirmation_density_audit_20260618.md` and `research_artifacts/es_intraday_periodicity_orderflow_confirmation_rescue_attempt_1_density_audit_20260618.md`.
+- Focused tests passed with `PYTHONPATH=src python3 -m pytest tests/test_intraday_periodicity_orderflow_confirmation.py tests/test_intraday_periodicity_persistence.py tests/test_campaign_stages.py::test_default_stage_criteria_match_screenshot_benchmarks tests/test_campaign_stages.py::test_canonicalized_stage_windows_match_shortlist_and_wfa_benchmarks tests/test_campaign_stages.py::test_random_fraction_stage_subset_uses_seeded_ten_percent_avoiding_covid_and_latest_holdout -q`.
+- Originals: all five variants failed `limited_core_grid_test`; only `morning_1030_large10_confirmed_slot/run1` had any profitable combinations, at 6/81.
+- Rescues: all five one-time parameter-space/fixed-parameter rescues were run. All failed `limited_core_grid_test`; best rescue was `morning_1030_large10_confirmed_slot/rescue1` with 29/81 profitable combinations, top net `1890.0`, PF `1.3109`, MAR `1.2782`, and 82.22 trades/year, still below the 70% profitable-combination gate.
+- Aggregate artifacts: `backtest-campaigns/es_intraday_periodicity_orderflow_confirmation/campaign_test_summary.json`, `campaign_results.csv`, `wfa_table.csv`, `monte_carlo_summary.json`, `trade_logs_manifest.csv`, and `equity_curves_manifest.csv`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created. This result argues against another local intraday-periodicity composite without materially new evidence or data.
+
+
+## 2026-06-18 - es_trend_filtered_mes_participation_crowding
+
+- Created and tested `es_trend_filtered_mes_participation_crowding`, a bounded composite of MES participation crowding and prior completed ES trend alignment.
+- Data used: local `data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv`; no paid or external data download was performed.
+- Pre-PnL density audits were written before PnL tests: `research_artifacts/es_trend_filtered_mes_participation_crowding_density_audit_20260618.md` and `research_artifacts/es_trend_filtered_mes_participation_crowding_rescue_attempt_1_density_audit_20260618.md`.
+- Focused tests passed: `tests/test_trend_filtered_mes_participation_crowding.py` plus campaign-stage benchmark/window tests.
+- Original runs: five variants, 81 combinations each. Two morning variants passed limited core but failed limited monkey; three midday/afternoon variants failed limited core.
+- Rescue policy applied once per failed variant, parameter-space/fixed-parameter only. No module, session, data-window, cost, fill, or benchmark changes were made.
+- Best rescue: `morning_trade_trend_pullback_reversal_1030/ES/rescue1` passed limited core, limited monkey, WFA, and WFA OOS monkey. WFA stitched OOS PF=1.449, MAR=1.734, trades/year=77.9, apex violations=0.
+- Terminal rejection: WFA OOS Monte Carlo failed with probability_profit_before_drawdown=0.000, probability_account_breach=1.000, probability_net_profit_gt_0=0.000.
+- Decision: FAIL. No `candidate_strategy_report.md` was created because the strategy failed the configured prop-style Monte Carlo gate.
+
+## 2026-06-18 - es_mes_lead_lag_catchup
+
+- Created and tested `es_mes_lead_lag_catchup`, a local ES/MES same-underlying lead-lag catch-up campaign using `data/cache/orderflow/es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny.csv`; no paid or external data download was performed.
+- Added `src/propstack/strategy_modules/entry/es_mes_lead_lag.py` and focused tests in `tests/test_es_mes_lead_lag.py` for long, short, lag rejection, signal-window behavior, and next-bar execution.
+- Pre-PnL density artifacts: `research_artifacts/es_mes_lead_lag_catchup_density_audit_20260618.md` and `research_artifacts/es_mes_lead_lag_catchup_rescue_attempt_1_density_audit_20260618.md`. Both counted at most one signal per session and did not inspect PnL.
+- Preflight passed for all five original configs and all five rescue configs. Focused tests plus benchmark-window tests passed with `PYTHONPATH=src python3 -m pytest tests/test_es_mes_lead_lag.py tests/test_campaign_stages.py::test_default_stage_criteria_match_screenshot_benchmarks tests/test_campaign_stages.py::test_canonicalized_stage_windows_match_shortlist_and_wfa_benchmarks tests/test_campaign_stages.py::test_random_fraction_stage_subset_uses_seeded_ten_percent_avoiding_covid_and_latest_holdout -q`.
+- Original runs: all five variants failed `limited_core_grid_test` with 0/81 profitable combinations and zero apex violations.
+- Rescue policy applied once per failed variant, parameter-space/fixed-parameter only. Entry module, stop module, target module, data, timeframe, direction logic, costs, fills, stage criteria, and prop rules were unchanged.
+- Rescue runs: all five rescues failed `limited_core_grid_test` with 0/81 profitable combinations and zero apex violations.
+- Aggregate artifacts: `backtest-campaigns/es_mes_lead_lag_catchup/campaign_test_summary.json`, `backtest-campaigns/es_mes_lead_lag_catchup/campaign_results.csv`, `backtest-campaigns/es_mes_lead_lag_catchup/wfa_table.csv`, `backtest-campaigns/es_mes_lead_lag_catchup/monte_carlo_summary.json`, `backtest-campaigns/es_mes_lead_lag_catchup/trade_logs_manifest.csv`, and `backtest-campaigns/es_mes_lead_lag_catchup/equity_curves_manifest.csv`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## 2026-06-18 - es_orderflow_impulse_reversal
+
+- Created and tested `es_orderflow_impulse_reversal`, a local ES aggregate-orderflow campaign that fades completed same-clock signed-flow plus same-direction price impulses using `data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet`; no paid or external data download was performed.
+- The campaign deliberately tested the liquidity-provision/inventory-correction mirror of signed-flow continuation, not a relaunch of the continuation edge. The stop module was `sweep_extreme`, so reversal invalidation was tied to the completed signal-bar high/low plus an offset.
+- Pre-PnL density artifact: `research_artifacts/es_orderflow_impulse_reversal_density_audit_20260618.md`. The first density pass failed four variants at strict entry-threshold corners; because no PnL or trade outcomes had been inspected, entry thresholds were reformulated before testing. The retained grids passed density for all five variants in both the full data and canonical limited-core random 10% window.
+- Preflight passed for all five original configs and all five rescue configs. Focused module test passed: `PYTHONPATH=src python3 -m pytest tests/test_strategy_modules.py::test_orderflow_regime_flow_impulse_reversal_fades_confirmed_flow -q`.
+- Original runs: all five variants failed `limited_core_grid_test` with 0/81 profitable combinations and zero apex violations. Best original was `afternoon_60m_impulse_reversal_1400/run1`, top net `-1847.5`, PF `0.5050`, and 63.38 trades/year.
+- Rescue policy applied once per failed variant, parameter-space/fixed-parameter only. The rescue preserved entry module, stop module, target module, signal times, data, timeframe, costs, fills, stage criteria, and prop rules; only stop-offset and target-R grids shifted toward a quicker micro-retracement expression.
+- Rescue runs: all five rescues failed `limited_core_grid_test` with 0/81 profitable combinations and zero apex violations. Best rescue was `afternoon_60m_impulse_reversal_1400/rescue1`, top net `-1969.375`, PF `0.4878`, and 63.38 trades/year.
+- Aggregate artifacts: `backtest-campaigns/es_orderflow_impulse_reversal/campaign_test_summary.json`, `backtest-campaigns/es_orderflow_impulse_reversal/campaign_results.csv`, `backtest-campaigns/es_orderflow_impulse_reversal/wfa_table.csv`, `backtest-campaigns/es_orderflow_impulse_reversal/monte_carlo_summary.json`, `backtest-campaigns/es_orderflow_impulse_reversal/trade_logs_manifest.csv`, and `backtest-campaigns/es_orderflow_impulse_reversal/equity_curves_manifest.csv`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## 2026-06-18 - es_prior_value_area_orderflow_rejection
+
+- Created and tested `es_prior_value_area_orderflow_rejection`, a local ES price-action/orderflow campaign that fades failed probes beyond frozen prior-session VAH/VAL when the completed signal bar closes back inside value with counterflow. No paid or external data download was performed.
+- Added `prior_value_area_orderflow_rejection` entry module and registered its engine feature requirements. Focused tests passed with `PYTHONPATH=src python3 -m pytest tests/test_strategy_modules.py::test_prior_value_area_orderflow_acceptance_uses_prior_session_profile_for_long tests/test_strategy_modules.py::test_prior_value_area_orderflow_rejection_fades_vah_probe_back_inside tests/test_strategy_modules.py::test_prior_value_area_orderflow_rejection_fades_val_probe_back_inside tests/test_strategy_modules.py::test_prior_value_area_orderflow_rejection_requires_counterflow_and_trade_limit tests/test_campaign_stages.py::test_random_fraction_stage_subset_uses_seeded_ten_percent_avoiding_covid_and_latest_holdout -q`.
+- Pre-PnL raw module-density artifact: `research_artifacts/es_prior_value_area_orderflow_rejection_density_audit_20260618.md`. Caveat: raw module counts overstate tradable density when positions overlap; staged `limited_core_grid_test` signal-density summaries are authoritative because the engine suppresses new signals while already in a position.
+- Original runs: all five variants failed `limited_core_grid_test` with 0 profitable combinations and zero apex violations.
+- Rescue policy applied once per failed variant, parameter-space/fixed-parameter only. The rescue preserved entry module, stop module, target module, signal windows, value-area approximation, data, timeframe, costs, fills, stage criteria, and prop rules; only stop-offset and target-R grids shifted toward faster return-to-value exits.
+- Rescue runs: all five rescues failed `limited_core_grid_test` with 0 profitable combinations and zero apex violations. Best rescue was `afternoon_large20_two_sided_rejection/rescue1`, top net `-1344.9999999999523`, PF `0.7318045862412856`, and 66.11731906154708 trades/year.
+- Aggregate artifacts: `backtest-campaigns/es_prior_value_area_orderflow_rejection/campaign_test_summary.json`, `backtest-campaigns/es_prior_value_area_orderflow_rejection/campaign_results.csv`, `backtest-campaigns/es_prior_value_area_orderflow_rejection/wfa_table.csv`, `backtest-campaigns/es_prior_value_area_orderflow_rejection/monte_carlo_summary.json`, `backtest-campaigns/es_prior_value_area_orderflow_rejection/trade_logs_manifest.csv`, and `backtest-campaigns/es_prior_value_area_orderflow_rejection/equity_curves_manifest.csv`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## 2026-06-18 - es_morning_trend_lunch_reversal_orderflow
+
+- Created and tested `es_morning_trend_lunch_reversal_orderflow`, a local ES price-action/orderflow campaign that fades same-session morning extensions only after a completed opposite-color signal bar and completed aggregate counterflow. No paid or external data download was performed.
+- Added `morning_trend_lunch_reversal_orderflow` entry module, registry wiring, and engine feature requirements. Focused tests passed with `PYTHONPATH=src python3 -m pytest tests/test_morning_trend_lunch_reversal_orderflow.py tests/test_campaign_stages.py::test_random_fraction_stage_subset_uses_seeded_ten_percent_avoiding_covid_and_latest_holdout -q`.
+- Pre-PnL raw module-density artifact: `research_artifacts/es_morning_trend_lunch_reversal_orderflow_density_audit_20260618.md`. All five variants passed raw density in the canonical limited-core window; staged `limited_core_grid_test` signal-density remains authoritative for tradable density after open-position suppression.
+- Original runs: all five variants failed `limited_core_grid_test` with 0 profitable combinations and zero apex violations.
+- Rescue policy applied once per failed variant, parameter-space/fixed-parameter only. The rescue preserved entry module, stop module, target module, signal windows, data, timeframe, costs, fills, stage criteria, and prop rules; only extension thresholds, counterflow thresholds, and target-R grid changed.
+- Rescue runs: all five rescues failed `limited_core_grid_test`. Best rescue was `late_morning_signed_up_extension_short_1130/rescue1`, with 1/81 profitable combinations, top net `51.875`, PF `1.0137235449735449`, and 45.085926192798176 trades/year, failing the 70% profitable-combo, trade-count, and concentration gates.
+- Aggregate artifacts: `backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/campaign_test_summary.json`, `backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/campaign_results.csv`, `backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/wfa_table.csv`, `backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/monte_carlo_summary.json`, `backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/trade_logs_manifest.csv`, and `backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/equity_curves_manifest.csv`.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## 2026-06-18 - es_ema_pullback_orderflow_continuation
+
+- Created and tested `es_ema_pullback_orderflow_continuation`, a local ES price-action/orderflow campaign using same-session prior completed EMA trend state, completed pullback/reclaim of the prior fast EMA, completed aggregate orderflow confirmation, next-bar execution, `sweep_extreme` stops, and `fixed_r` targets. No paid or external market data was downloaded.
+- Added `ema_pullback_orderflow_continuation` entry module, registry wiring, engine feature requirements, and focused tests. Verification passed with `PYTHONPATH=src python3 -m pytest tests/test_ema_pullback_orderflow_continuation.py tests/test_campaign_stages.py::test_random_fraction_stage_subset_uses_seeded_ten_percent_avoiding_covid_and_latest_holdout -q`.
+- Pre-PnL density passed for all five original variants and all original entry threshold combinations. Artifact: `research_artifacts/es_ema_pullback_orderflow_continuation_density_audit_20260618.md`.
+- Original runs: all five variants failed `limited_core_grid_test` with 0/81 profitable combinations and zero apex violations. The best original was `lunch_signed_two_sided_ema_pullback_1300/run1`, top net `-3470.0`, PF `0.7699320404442235`, 194 trades, and 126.06482619734493 trades/year.
+- Rescue policy applied once per failed variant, parameter-space/fixed-parameter only. The first strict rescue density draft was rejected before PnL because some corners fell below 50 trades/year; the retained rescue grid passed density before testing. The rescue preserved entry module, stop module, target module, timeframe, data, costs, fills, sessions, stage criteria, and prop rules.
+- Rescue runs: all five rescues failed `limited_core_grid_test` with 0/81 profitable combinations and zero apex violations. The best rescue was `lunch_signed_two_sided_ema_pullback_1300/rescue1`, top net `-1498.75`, PF `0.891962515768607`, 136 trades, and 89.33056922346829 trades/year.
+- Aggregate artifacts: `backtest-campaigns/es_ema_pullback_orderflow_continuation/campaign_test_summary.json`, `backtest-campaigns/es_ema_pullback_orderflow_continuation/campaign_results.csv`, `backtest-campaigns/es_ema_pullback_orderflow_continuation/wfa_table.csv`, `backtest-campaigns/es_ema_pullback_orderflow_continuation/monte_carlo_summary.json`, `backtest-campaigns/es_ema_pullback_orderflow_continuation/trade_logs_manifest.csv`, and `backtest-campaigns/es_ema_pullback_orderflow_continuation/equity_curves_manifest.csv`.
+- User-suggested footprint/CVD absorption-initiation was assessed separately and queued behind a data-contract gate in `research_artifacts/footprint_absorption_initiation_edge_feasibility_20260618.md`; true diagonal footprint imbalance is not considered validated until local raw Sierra price-level bid/ask-volume features are built and tested.
+- Decision: FAIL. No run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. No `candidate_strategy_report.md` was created.
+
+## 2026-06-18 - Fixed-Config Core Trade Log Artifact
+
+- Updated the staged runner so every future `limited_core_grid_test` writes a fixed-config mechanics cross-check run before grid evaluation.
+- The fixed-config run uses the exact `strategy.entry`, `strategy.sl`, and `strategy.tp` parameters already present in the variant `config.yaml`; it does not use grid-selected, monkey-selected, WFA-selected, rescue-derived, or post-result parameters.
+- New artifacts per variant run: `limited_core_grid_test/fixed_config_core_trade_log.csv`, `fixed_config_core_daily_results.csv`, `fixed_config_core_metrics.json`, `fixed_config_core_equity_curve.csv`, and `fixed_config_core_equity_curve.html`.
+- The fixed-config core log uses the same resolved limited-core shortlist window as the core grid stage, which avoids touching the latest untouched holdout before a candidate reaches validation.
+- Purpose: manual chart/source cross-check of trade mechanics only. It is not a pass/fail shortcut and does not replace core grid, monkey, WFA, Monte Carlo, incubation, or frozen validation gates.

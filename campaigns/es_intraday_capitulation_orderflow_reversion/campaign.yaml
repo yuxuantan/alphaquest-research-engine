@@ -1,0 +1,126 @@
+campaign_id: es_intraday_capitulation_orderflow_reversion
+title: ES Intraday Capitulation Orderflow Reversion
+decision: FAIL
+created_at: '2026-06-18'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframes:
+- 5m
+- 10m
+hypothesis: >
+  ES may mean-revert intraday after a completed downside capitulation bar when
+  the bar closes near its low, below session VWAP, with session-local oversold
+  RSI, elevated volume, and same-window aggregate selling imbalance. The
+  intended edge is temporary liquidity demand or inventory pressure exhausting
+  after aggressive sellers push price lower.
+rationale: >
+  This is a predeclared composite of liquidity-demand reversal and completed-bar
+  aggregate orderflow. It is not the prior simple volume-shock reversal campaign:
+  signals are long-only, require a downside move, require close-location
+  capitulation, require price below completed VWAP, require session-local RSI
+  oversold state, and require completed-window sell imbalance. It is also not
+  Connors RSI2 because the oscillator is only one fixed confirmation inside a
+  volume and orderflow capitulation bar, not the primary edge.
+sources:
+- title: Trading Volume and Serial Correlation in Stock Returns
+  authors: John Y. Campbell, Sanford J. Grossman, Jiang Wang
+  year: 1993
+  venue: Quarterly Journal of Economics
+  link: https://campbell.scholars.harvard.edu/publications/trading-volume-and-serial-correlation-stock-returns
+  relevance: >
+    Models how liquidity trading and market-maker inventory risk can create
+    volume-conditioned return reversals.
+- title: Dynamic Volume-Return Relation of Individual Stocks
+  authors: Guillermo Llorente, Roni Michaely, Gideon Saar, Jiang Wang
+  year: 2002
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v15y2002i4p1005-1047.html
+  relevance: >
+    Separates volume-return continuation from reversal depending on whether
+    trading is information-driven or risk-sharing/liquidity-driven.
+- title: Order Flow Imbalance and Individual Stock Returns
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://doi.org/10.1093/jjfinec/nbt003
+  relevance: >
+    Supports the use of completed orderflow imbalance as a short-horizon state
+    variable, while this campaign deliberately uses only aggregate completed-bar
+    Sierra signed volume rather than LOB data.
+- title: Liquidity and Market Structure
+  authors: Sanford J. Grossman, Merton H. Miller
+  year: 1988
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/j.1540-6261.1988.tb04594.x
+  relevance: >
+    Provides the inventory/liquidity-supplier mechanism for temporary price
+    pressure that can reverse after immediacy demand is absorbed.
+data_needs:
+- timezone-aware ES RTH OHLCV and aggregate signed-volume bars in America/New_York
+- session VWAP computed only through the completed signal bar
+- completed-window signed-volume imbalance from local Sierra aggregate orderflow
+- same-day forced flatten before configured cutoff
+data_quality_caveats:
+- Sierra signed volume is an aggregate bid/ask-volume proxy, not print-level aggressor truth.
+- The strategy uses completed 5-minute or 10-minute bars; intra-bar stop/target ordering remains pessimistic OHLC unless detail data is available.
+- The campaign does not use LOB/TBBO and should not be interpreted as a true OFI strategy.
+lookahead_risks:
+- Session VWAP is computed only through each completed bar, not from final session VWAP.
+- RSI and volume average are session-local and use only earlier completed bars plus the just-completed signal bar.
+- Signal generation uses the completed capitulation bar; fills occur no earlier than the next bar open.
+- No future high, low, final range, final volume, or post-signal orderflow is used.
+failure_modes:
+- Downside capitulation bars may represent real information and continue lower.
+- Aggregate sell imbalance can be adverse selection rather than exhaustion.
+- Long-only rebound profits may concentrate in high-volatility crisis regimes.
+- VWAP-below signals can catch falling knives if stops are too tight or too wide.
+- The 50 trades/year screen may pass in density but fail after stage-level fills and exits.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_volume_shock_liquidity_reversal
+  - es_connors_rsi2_mean_reversion
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_signed_orderflow_persistence
+  - es_daily_reversal_orderflow_confirmation
+  - es_vwap_orderflow_pullback_continuation
+  conclusion: >
+    Eligible as a new composite campaign. The failed volume-shock campaign faded
+    any high-volume price shock. This campaign tests a narrower downside
+    capitulation state requiring completed sell imbalance, session-local RSI
+    oversold state, close near low, and below-VWAP price location before any
+    long-only reversal entry.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_intraday_capitulation_orderflow_reversion_density_audit_20260618.md
+  limited_core_window:
+    start_date: '2011-02-22'
+    end_date: '2012-09-06'
+    source: benchmark random 10 percent window, seed 31, excluding latest 10 percent and Covid range
+  strict_corner:
+    entry.params.max_rsi: 35
+    entry.params.min_sell_imbalance: 0.04
+    fixed_min_volume_ratio: 1.3
+    fixed_min_down_move_ticks: 4
+    fixed_max_close_location_from_low: 0.30
+  decision: approve_for_testing
+variants:
+- all_day_5m_capitulation_long_1530
+- late_day_5m_capitulation_long_1530
+- afternoon_5m_capitulation_long_1530
+- all_day_10m_capitulation_long_1530
+- late_day_10m_capitulation_long_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results

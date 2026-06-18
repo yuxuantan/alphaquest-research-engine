@@ -1,0 +1,25 @@
+campaign_id: es_rolling_range_orderflow_sweep_reversal
+variant_id: morning_signed_12bar_sweep_reclaim_1130
+strategy_name: rolling_range_orderflow_sweep_reversal
+mechanic:
+  entry_module: rolling_range_orderflow_sweep_reversal
+  take_profit_module: fixed_r
+  stop_loss_module: sweep_extreme
+  flatten_time: '15:55:00'
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: scaffold

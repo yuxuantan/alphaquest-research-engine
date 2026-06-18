@@ -1,0 +1,138 @@
+campaign_id: es_daily_reversal_orderflow_confirmation
+title: ES Daily Reversal With Aggregate Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-18'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: Recent completed RTH close-to-close ES returns can partially reverse intraday when completed
+  early-session aggregate signed flow already confirms the contrarian direction, because liquidity
+  demand from the prior move is being absorbed and liquidity providers or informed participants are
+  no longer pushing with the prior trend.
+rationale: 'This is a constrained composite campaign. The primary edge is the documented short-horizon
+  reversal/liquidity-provision effect. The secondary condition is fixed aggregate orderflow confirmation
+  in the reversal direction at a predeclared intraday checkpoint. It is not a rescue of the failed
+  raw daily-reversal campaign because it tests a different economic mechanism: daily reversal should
+  be tradable only when same-session completed flow confirms that the prior move is losing pressure.'
+sources:
+- title: Fads, Martingales, and Market Efficiency
+  authors: Bruce N. Lehmann
+  year: 1990
+  venue: Quarterly Journal of Economics 105(1), 1-28
+  doi: 10.2307/2937816
+  link: https://ideas.repec.org/a/oup/qjecon/v105y1990i1p1-28..html
+  relevance: Documents short-horizon return reversals and motivates testing a contrarian ES expression
+    after completed daily price moves.
+- title: Evaporating Liquidity
+  authors: Stefan Nagel
+  year: 2012
+  venue: Review of Financial Studies 25(7), 2005-2039
+  doi: 10.1093/rfs/hhs066
+  link: https://ideas.repec.org/a/oup/rfinst/v25y2012i7p2005-2039.html
+  relevance: Interprets short-term reversal returns as compensation for liquidity provision, which
+    motivates requiring evidence that intraday liquidity/flow has turned against the prior daily move.
+- title: Reversals and the Returns to Liquidity Provision
+  authors: Wei Dai, Mamdouh Medhat, Robert Novy-Marx, and Savina Rizova
+  year: 2023
+  venue: NBER Working Paper 30917
+  doi: 10.3386/w30917
+  link: https://www.nber.org/papers/w30917
+  relevance: Shows that liquidity conditions influence reversal behavior; this campaign requires orderflow
+    confirmation instead of trading every prior-return reversal.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics 12(1), 47-88
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports order-flow imbalance as a short-horizon price-pressure proxy. This campaign
+    uses Sierra completed-bar signed-volume imbalance, not full quote-level OFI.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV and Sierra aggregate signed-volume bars in America/New_York
+- deterministic 5-minute aggregation with completed rolling orderflow windows
+- previous completed RTH closes recorded before the signal session
+- same-day stop, target, and forced-flatten checks with next-bar-open execution
+data_quality_caveats:
+- Sierra signed volume is completed-bar aggregate trade-side flow, not quote-level order book imbalance.
+- Same-bar stop/target conflicts must use pessimistic OHLC ordering.
+- No tick-path inference is made from reconstructed minute bars.
+lookahead_risks:
+- Prior return uses only completed RTH closes before the signal session.
+- Orderflow confirmation uses rolling windows ending at the signal bar close.
+- Signals use bar close and enter no earlier than the next bar open.
+- No current-session final close, final high/low, final VWAP, future volume, or future orderflow is
+  used.
+failure_modes:
+- The daily reversal effect may not survive intraday ES costs.
+- Aggregate signed-flow confirmation may arrive after the reversal edge has decayed.
+- Mild flow thresholds may be too weak to distinguish true liquidity absorption from noise.
+- Stronger flow thresholds may reduce trade density below the 50/year standard.
+- Performance may concentrate in volatile crisis regimes or one trade direction.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_adjacent_edges_checked:
+  - es_daily_short_term_reversal
+  - es_signed_orderflow_persistence
+  - es_trade_size_stealth_orderflow
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_vwap_orderflow_pullback_continuation
+  - es_trend_aligned_orderflow_continuation
+  conclusion: Eligible as a constrained composite campaign. It is not the raw daily reversal campaign,
+    not fixed-time orderflow persistence, and not VWAP/trend continuation. The edge requires a prior
+    completed daily reversal direction plus same-session aggregate flow confirmation in that contrarian
+    direction.
+variants:
+- first60_1d_flow_confirm_1030
+- first90_2d_flow_confirm_1100
+- first120_3d_flow_confirm_1130
+- first150_5d_flow_confirm_1200
+- afternoon90_1d_flow_confirm_1400
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variants:
+    - afternoon90_1d_flow_confirm_1400
+    - first120_3d_flow_confirm_1130
+    - first150_5d_flow_confirm_1200
+    - first60_1d_flow_confirm_1030
+    - first90_2d_flow_confirm_1100
+    audit: research_artifacts/es_daily_reversal_orderflow_confirmation_rescue_attempt_1_20260618.md
+    terminal_stage: limited_core_grid_test
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_daily_reversal_orderflow_confirmation/campaign_test_summary.json
+  results_csv: backtest-campaigns/es_daily_reversal_orderflow_confirmation/campaign_results.csv
+  density_audit: research_artifacts/es_daily_reversal_orderflow_confirmation_density_audit_20260618.md
+  rescue_audit: research_artifacts/es_daily_reversal_orderflow_confirmation_rescue_attempt_1_20260618.md
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  frozen_validation_reached: 0
+  failure_reason: All five original variants and all five one-time parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test before monkey, WFA, Monte Carlo, simulated incubation, frozen
+    validation, or candidate reporting.
+  best_original:
+    variant: afternoon90_1d_flow_confirm_1400
+    profitable_combo_rate: 0.0
+    top_net_profit: -1055.0
+  best_rescue:
+    variant: afternoon90_1d_flow_confirm_1400
+    profitable_combo_rate: 0.024691358024691357
+    top_net_profit: 402.5

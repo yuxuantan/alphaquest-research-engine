@@ -1,0 +1,194 @@
+campaign_name: es_round_number_orderflow_barrier
+campaign_id: es_round_number_orderflow_barrier
+instrument: ES
+decision: FAIL
+reason_for_decision: >
+  Active-only duplicate review found an already failed standalone round-number
+  barrier campaign and multiple standalone orderflow campaigns. This campaign is
+  eligible under the user's 2026-06-17 composite-edge allowance because it tests a
+  predeclared interaction: fixed psychological price barriers are traded only when
+  completed aggregate orderflow confirms absorption at failed probes or
+  participation on breaks. It is not a parameter rescue of the failed standalone
+  round-number campaign.
+edge_hypothesis: >
+  ES may react around ex-ante round-number price barriers because stops,
+  discretionary orders, and liquidity cluster near salient index handles.
+  Completed-bar aggregate orderflow should distinguish failed probes absorbed by
+  passive liquidity from breaks supported by aggressive participation.
+why_it_may_apply_to_es_futures: >
+  ES trades in visible index handles and has deep enough volume for 5-minute
+  aggregate signed-flow measures. The price barrier is known before the session,
+  while the flow condition is observed only on the completed signal bar before
+  next-bar execution.
+research_sources:
+- title: Price Barriers in the Dow Jones Industrial Average
+  author: R. Glen Donaldson and Harold Y. Kim
+  year: 1993
+  link_or_doi: https://ideas.repec.org/a/cup/jfinqa/v28y1993i03p313-330_00.html
+  expected_mechanism: Salient index levels can behave as support/resistance and
+    may produce continuation once crossed.
+- title: Currency Orders and Exchange-Rate Dynamics
+  author: Carol L. Osler
+  year: 2003
+  link_or_doi: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  expected_mechanism: Stop-loss and take-profit order clustering around round
+    numbers can create both reversals and momentum after level interaction.
+- title: The Price Impact of Order Book Events
+  author: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  link_or_doi: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  expected_mechanism: Order-flow imbalance is linked to short-horizon price
+    changes; here it is used as completed-bar confirmation, not as tick-level LOB
+    data.
+behavioural_or_microstructure_rationale: >
+  Reclaim variants require price to probe a fixed barrier and close back through
+  it while the completed bar shows opposite-side aggressive flow, consistent with
+  absorption. Breakout variants require a completed close through the barrier and
+  same-direction aggressive flow, consistent with stop-order continuation.
+expected_failure_modes:
+- Round-number clustering may be too visible and arbitraged in ES futures.
+- Aggregate signed-flow classification may be too noisy to identify absorption.
+- Bar-level OHLC cannot prove the intra-bar queue path, so pessimistic same-bar
+  stop/target handling remains required.
+- The orderflow filter may remove too many trades in some regimes or select
+  adverse liquidation flow instead of informed participation.
+- The effect may concentrate in a few volatility regimes or trend days.
+data_requirements:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- Deterministic 5-minute aggregation from completed 1-minute RTH bars
+session_assumptions:
+  timezone: America/New_York
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+  no_overnight_positions: true
+  latest_variant_flatten: "15:55:00"
+forbidden_forms_of_lookahead:
+- Use of future session highs/lows, final VWAP, final volume profile, or future
+  orderflow to define a barrier.
+- Entry on the same bar close that creates the signal; signal fills must occur at
+  the next bar open or later.
+- Changing barrier interval, flow mode, flow confirmation, time window, stop, or
+  target after seeing results.
+- Using archived result performance for duplicate or parameter decisions.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  known_related_active_campaigns:
+  - es_round_number_barrier_reaction
+  - es_signed_orderflow_persistence
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_opening_range_orderflow_breakout
+  conclusion: >
+    This is a bounded composite of fixed psychological barriers and completed-bar
+    aggregate orderflow. The standalone round-number edge remains failed; this
+    campaign tests whether the interaction of barrier reaction with absorption or
+    participation is materially different.
+variants:
+- morning_support_sell_absorption_long
+- morning_resistance_buy_absorption_short
+- midday_two_sided_large10_absorption_reclaim
+- round_number_upside_flow_breakout_long
+- round_number_downside_flow_breakout_short
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - buffer_ticks or barrier_interval_points
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_pct
+  target_tunables:
+  - target_r_multiple
+  density_screen: research_artifacts/es_round_number_orderflow_barrier_density_audit_20260617.md
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - rescue the same failed variant more than once
+  - core strategy mechanic
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  predeclared_rescue_parameter_space:
+    absorption_variants:
+      entry.params.buffer_ticks: [0, 1]
+      entry.params.min_orderflow_imbalance: [0.005, 0.02, 0.04]
+      sl.params.stop_pct: [0.001, 0.002, 0.0035]
+      tp.params.target_r_multiple: [1.25, 2.0, 3.0]
+    breakout_variants:
+      entry.params.barrier_interval_points: [10.0, 25.0, 50.0]
+      entry.params.min_orderflow_imbalance: [0.005, 0.02, 0.04]
+      sl.params.stop_pct: [0.001, 0.002, 0.0035]
+      tp.params.target_r_multiple: [1.25, 2.0, 3.0]
+  attempts:
+  - variant: morning_support_sell_absorption_long
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_round_number_orderflow_barrier/rescue_attempts/parameter_space_rescue_1/morning_support_sell_absorption_long/config.yaml
+    result_path: backtest-campaigns/es_round_number_orderflow_barrier/morning_support_sell_absorption_long/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: morning_resistance_buy_absorption_short
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_round_number_orderflow_barrier/rescue_attempts/parameter_space_rescue_1/morning_resistance_buy_absorption_short/config.yaml
+    result_path: backtest-campaigns/es_round_number_orderflow_barrier/morning_resistance_buy_absorption_short/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: midday_two_sided_large10_absorption_reclaim
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_round_number_orderflow_barrier/rescue_attempts/parameter_space_rescue_1/midday_two_sided_large10_absorption_reclaim/config.yaml
+    result_path: backtest-campaigns/es_round_number_orderflow_barrier/midday_two_sided_large10_absorption_reclaim/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: round_number_upside_flow_breakout_long
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_round_number_orderflow_barrier/rescue_attempts/parameter_space_rescue_1/round_number_upside_flow_breakout_long/config.yaml
+    result_path: backtest-campaigns/es_round_number_orderflow_barrier/round_number_upside_flow_breakout_long/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+  - variant: round_number_downside_flow_breakout_short
+    attempt_id: rescue1
+    scope: parameter_space_only_no_mechanic_change
+    config_path: campaigns/es_round_number_orderflow_barrier/rescue_attempts/parameter_space_rescue_1/round_number_downside_flow_breakout_short/config.yaml
+    result_path: backtest-campaigns/es_round_number_orderflow_barrier/round_number_downside_flow_breakout_short/ES/rescue1/campaign_test_summary.json
+    status: failed
+    terminal_stage: limited_core_grid_test
+density_audit:
+  artifact: research_artifacts/es_round_number_orderflow_barrier_density_audit_20260617.md
+  conclusion: >
+    Every declared entry corner exceeded the 50 trades/year pre-PnL density floor
+    on the full available period; sparse 50-point absorption corners were rejected
+    before performance testing.
+result_summary:
+  decision: FAIL
+  completed_at: "2026-06-17"
+  aggregate_report: backtest-campaigns/es_round_number_orderflow_barrier/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: >
+    All five original variants failed limited_core_grid_test. Each failed variant
+    received exactly one parameter-space-only rescue preserving the edge thesis,
+    entry module, stop module, target module, timeframe, data, costs, fills,
+    sessions, prop rules, and validation gates. All five rescues also failed
+    limited_core_grid_test. No run reached monkey, WFA, WFA OOS monkey, Monte
+    Carlo, simulated incubation, frozen validation, or candidate reporting.
+  best_original: >
+    round_number_downside_flow_breakout_short/run1 top_net=2817.5
+    profitable_combo_rate=0.12962962962962962 benchmark_passes=6
+  best_rescue: >
+    morning_support_sell_absorption_long/rescue1 top_net=2075.0
+    profitable_combo_rate=0.35185185185185186 benchmark_passes=0

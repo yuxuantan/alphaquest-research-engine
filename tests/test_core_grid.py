@@ -49,6 +49,9 @@ def test_core_grid_pass_percentage():
     assert len(results) == 2
     assert "percentage_passing_benchmark" in summary
     assert "percentage_profitable_iterations" in summary
+    assert {"signals_generated", "entries_opened", "trades_closed"}.issubset(results.columns)
+    assert summary["signal_density"]["total_combinations"] == 2
+    assert summary["signal_density"]["combinations_with_trades"] == 2
 
 
 def test_core_grid_summary_and_iteration_audit_reports(tmp_path):
@@ -94,6 +97,37 @@ def test_core_grid_summary_and_iteration_audit_reports(tmp_path):
     audit_pnl = trades.groupby("run_id")["net_pnl"].sum()
     for _, row in results.iterrows():
         assert round(audit_pnl[int(row["run_id"])], 8) == round(row["net_profit"], 8)
+
+
+def test_core_grid_signal_density_flags_zero_signal_parameter_space():
+    df, _, _ = clean_data(DATA_CFG)
+    data = build_features(df, DATA_CFG)
+    cfg = {
+        **BASE_CFG,
+        "strategy": {
+            **BASE_CFG["strategy"],
+            "entry": {
+                **BASE_CFG["strategy"]["entry"],
+                "params": {
+                    **BASE_CFG["strategy"]["entry"]["params"],
+                    "start_time": "18:00:00",
+                    "end_time": "18:01:00",
+                },
+            },
+        },
+    }
+    results, summary = run_core_grid(
+        data,
+        cfg,
+        {"parameters": {"entry.params.reclaim_window_bars": [2, 3], "tp.params.target_r_multiple": [1.0]}},
+        {"min_trade_count": 1},
+    )
+
+    assert results["signals_generated"].sum() == 0
+    assert results["entries_opened"].sum() == 0
+    assert summary["signal_density"]["all_combinations_zero_signals"] is True
+    assert summary["signal_density"]["all_combinations_zero_trades"] is True
+    assert summary["signal_density"]["combinations_meeting_50_trades_per_year"] == 0
 
 
 def test_core_grid_parallel_branch_is_configurable(monkeypatch):

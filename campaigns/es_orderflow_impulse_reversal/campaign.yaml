@@ -1,0 +1,156 @@
+campaign_id: es_orderflow_impulse_reversal
+title: ES Orderflow-Impulse Reversal
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: orderflow_impulse_reversal
+hypothesis: >
+  Completed ES bars with an extreme same-clock aggressive signed-flow rank and same-direction price
+  impulse can represent temporary inventory pressure rather than durable information. The campaign
+  fades the completed flow-plus-return impulse at the next bar open and exits on a short fixed-R
+  retracement or invalidation beyond the signal-bar extreme.
+sources:
+- title: Rethinking reversals
+  authors: Timothy C. Johnson
+  year: 2016
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2016.01.026
+  link: https://ideas.repec.org/a/eee/jfinec/v120y2016i2p211-228.html
+  relevance: Supports short-horizon market-portfolio reversals and the idea that flow-driven price pressure
+    can create negative autocorrelation rather than immediate continuation.
+- title: Interaction between Returns and Order Flow Imbalances
+  authors: Makoto Takahashi
+  year: 2025
+  venue: arXiv
+  doi: 10.48550/arXiv.2508.06788
+  link: https://arxiv.org/abs/2508.06788
+  relevance: Studies S&P 500 E-mini futures return/order-flow-imbalance dynamics directly and motivates
+    treating return and flow as endogenous intraday variables rather than assuming all flow impulses continue.
+- title: Order imbalance, liquidity, and market returns
+  authors: Tarun Chordia, Richard Roll, and Avanidhar Subrahmanyam
+  year: 2002
+  venue: Journal of Financial Economics
+  link: https://www.cis.upenn.edu/~mkearns/finread/Chordia_buy-sell_orders.pdf
+  relevance: Motivates the inventory/liquidity-provision channel in which order imbalances can be followed
+    by opposing liquidity supply and return correction.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Provides the order-flow-imbalance price-impact foundation. This campaign uses Sierra completed-bar
+    aggregate signed-volume as a proxy, not full depth order-book OFI.
+rationale: >
+  This is a bounded mirror test of the active rejected signed-flow continuation thesis, but it is not the
+  same edge renamed. The economic mechanism is liquidity provision and inventory correction after a
+  completed flow-plus-price impulse. The entry explicitly requires both extreme same-clock signed-flow rank
+  and same-direction completed return, then trades opposite the impulse. The stop uses the completed signal
+  bar extreme as the invalidation point and the target is a short fixed-R retracement.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- completed-bar signed_volume and volume fields sufficient for trade_orderflow_imbalance_N and same-clock ranks
+- tick size, point value, commission, slippage, prop-rule flatten, and same-bar pessimistic fill settings from config
+lookahead_risks:
+- Same-clock ranks are computed from prior same-clock observations and exclude future/current-session observations beyond the signal bar.
+- Rolling return and orderflow windows use only completed 1-minute bars ending at the signal timestamp.
+- Signals generated from a completed bar close are filled no earlier than the next bar open by the engine.
+- The stop uses the already-completed signal-bar high or low, not a future extreme.
+- No final session high, final session low, final VWAP, final volume profile, future orderflow, or post-entry return is used.
+failure_modes:
+- Extreme aggregate orderflow can be informed pressure that continues instead of reversing.
+- Sierra signed-volume is an aggregate bar proxy and may not match true aggressor-side or quote-level OFI.
+- Short retracement targets may be too small after ES commissions, slippage, and pessimistic same-bar handling.
+- Results may concentrate in a specific time of day, volatility regime, or side.
+- The edge may clear the limited core window but fail monkey stress when entry is delayed or slippage worsens.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_signed_orderflow_persistence
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_vpin_toxicity_continuation
+  - es_volume_shock_liquidity_reversal
+  - es_intraday_capitulation_orderflow_reversion
+  - es_session_extreme_delta_divergence
+  - es_rolling_range_orderflow_sweep_reversal
+  conclusion: >
+    Eligible as a distinct active campaign. Signed-flow persistence follows flow plus price confirmation.
+    Absorption/exhaustion fades extreme flow only when price displacement is weak. This campaign fades
+    a confirmed flow-plus-return impulse itself, with signal-bar extreme invalidation, on a liquidity
+    provision and flow-driven reversal thesis.
+variants:
+- early_5m_impulse_reversal_1000
+- late_morning_15m_impulse_reversal_1130
+- midday_30m_impulse_reversal_1230
+- afternoon_60m_impulse_reversal_1400
+- late_day_30m_impulse_reversal_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core orderflow-plus-return impulse reversal mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, validation gates, or prop rules
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant
+    variants:
+    - afternoon_60m_impulse_reversal_1400
+    - early_5m_impulse_reversal_1000
+    - late_day_30m_impulse_reversal_1500
+    - late_morning_15m_impulse_reversal_1130
+    - midday_30m_impulse_reversal_1230
+    summary: >
+      Preserved the `orderflow_regime` flow-impulse-reversal entry, `sweep_extreme` stop,
+      `fixed_r` target, signal times, data, costs, fills, validation gates, and core
+      economic thesis. Only the stop-offset and target-R parameter spaces were shifted
+      toward a quicker micro-retracement expression. All five rescues failed limited_core_grid_test.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_orderflow_impulse_reversal_density_audit_20260618.md
+  csv: research_artifacts/es_orderflow_impulse_reversal_density_audit_20260618.csv
+  result: >
+    PASS after pre-PnL entry-threshold reformulation. The first density pass failed four variants at
+    the strictest entry-threshold corners, and no PnL or trade outcome data had been inspected. The
+    retained grids preserve the same entry module, stop module, target module, times, data, costs,
+    and orderflow-plus-return impulse reversal mechanic. Every declared entry-threshold pair remains
+    above 50 signals/year in both the full 2011-2026 local ES cache and the canonical limited-core
+    random 10 percent benchmark window.
+result_summary:
+  decision: FAIL
+  status: completed_failed
+  report: backtest-campaigns/es_orderflow_impulse_reversal/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  frozen_validation_reached: 0
+  candidate_report_created: false
+  failure_reason: >
+    All five original variants and all five one-time parameter-space/fixed-parameter rescues
+    failed limited_core_grid_test with 0.0 profitable-combo rate. No run reached limited monkey,
+    WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  best_original:
+    variant_id: afternoon_60m_impulse_reversal_1400
+    run_id: run1
+    top_net_profit: -1847.5
+    top_profit_factor: 0.5050234427327528
+    top_trades_per_year: 63.38339671492447
+    profitable_combo_rate: 0.0
+  best_rescue:
+    variant_id: afternoon_60m_impulse_reversal_1400
+    run_id: rescue1
+    top_net_profit: -1969.375
+    top_profit_factor: 0.48780884265279584
+    top_trades_per_year: 63.38182184107248
+    profitable_combo_rate: 0.0

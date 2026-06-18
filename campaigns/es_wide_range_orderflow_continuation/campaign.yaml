@@ -1,0 +1,155 @@
+campaign_id: es_wide_range_orderflow_continuation
+title: ES wide-range bar continuation with aggregate orderflow confirmation
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: wide_range_orderflow_continuation
+hypothesis: 'Completed ES RTH bars with unusually wide range, a directional body,
+  and a close near the bar extreme may represent short-horizon information or liquidity-taking
+  pressure. If completed aggregate signed orderflow confirms the same direction, ES
+  may continue over the same session after next-bar execution and realistic costs.
+
+  '
+sources:
+- title: The Dynamic Volume-Return Relation of Individual Stocks
+  authors: Guillermo Llorente, Roni Michaely, Gideon Saar, Jiang Wang
+  year: 2002
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v15y2002i4p1005-1047.html
+  relevance: 'Distinguishes volume-return continuation from reversal depending on
+    whether trading reflects information rather than liquidity demand. This campaign
+    tests directional high-range ES bars with participation evidence.
+
+    '
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: 'Supports orderflow imbalance as a short-horizon price-pressure proxy.
+    The implementation uses completed Sierra aggregate trade-side flow, not quote-level
+    OFI.
+
+    '
+- title: How Markets Slowly Digest Changes in Supply and Demand
+  authors: Jean-Philippe Bouchaud, J. Doyne Farmer, Fabrizio Lillo
+  year: 2009
+  venue: Handbook of Financial Markets
+  link: https://arxiv.org/abs/0809.0822
+  relevance: 'Reviews persistent orderflow and gradual price adjustment. This motivates
+    testing continuation after completed range expansion and aligned flow.
+
+    '
+rationale: 'This is a price-action-first aggregate-orderflow campaign. A trade cannot
+  occur from signed flow alone: the completed signal bar must first show range expansion,
+  a directional body, and a close near the high for longs or near the low for shorts.
+  Orderflow then acts as participation confirmation on the same completed bar. It
+  is distinct from active signed-orderflow persistence because rolling flow and return
+  agreement alone is insufficient; it is distinct from volume-shock liquidity reversal
+  because it follows directional expansion instead of fading it; and it is not a level,
+  VWAP, opening-range, prior-level, or round-number campaign.
+
+  '
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute ES strategy bars aggregated from local completed 1-minute RTH bars
+- rolling volume ratio computed from prior completed 5-minute bars
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  and large20_volume
+data_quality_caveats:
+- Sierra signed volume is completed-bar aggregate bid/ask-volume flow, not full quote-level
+  OFI.
+- The bar close, range, body, close-location, volume ratio, and orderflow are available
+  only after the signal bar completes.
+- Same-bar stop/target conflicts use 1-minute detail when available and pessimistic
+  OHLC fallback otherwise.
+lookahead_risks:
+- Signals use only the completed signal bar and prior rolling-volume history.
+- Entry must occur no earlier than the next bar open because the signal uses the bar
+  close.
+- No future session high, low, VWAP, volume profile, final daily range, future orderflow,
+  or post-entry return is used.
+- Each variant allows at most one trade per day and flattens before the configured
+  cutoff.
+failure_modes:
+- Wide-range ES bars may be exhaustion rather than information continuation.
+- Aggregate orderflow may confirm too late after the move has already completed.
+- The effect may depend on high-volatility regimes or a few directional macro sessions.
+- Large10/large20 trade-size buckets may not reliably proxy informed participation.
+- One-tick worse slippage, entry delay, or pessimistic same-bar fill ordering may
+  erase the apparent edge.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_signed_orderflow_persistence
+  - es_volume_shock_liquidity_reversal
+  - es_trend_aligned_orderflow_continuation
+  - es_vwap_orderflow_pullback_continuation
+  - es_gao_last_half_hour_orderflow_confirmation
+  - es_opening_range_trend_orderflow_breakout
+  - es_session_extreme_delta_divergence
+  conclusion: 'Eligible as a distinct active campaign. The mechanic is completed-bar
+    range expansion with close-location and same-bar aggregate-flow confirmation.
+    Existing active failures tested standalone flow persistence, high-volume shock
+    reversal, HH/HL trend-flow continuation at fixed times, VWAP reclaim, first-window
+    to last-half-hour momentum, opening-range breakouts, or fresh session extremes.
+
+    '
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_wide_range_orderflow_continuation_density_audit_20260618.md
+  result: 'All five variants exceeded the 50 trades/year feasibility floor at every
+    declared entry-grid corner on both full local history and the default limited-core
+    random window before any PnL was inspected.
+
+    '
+variants:
+- morning_signed_range_expansion_long
+- morning_signed_range_expansion_short
+- midday_large10_range_expansion_twosided
+- afternoon_large20_range_expansion_long
+- afternoon_large20_range_expansion_short
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core wide-range price-action plus orderflow-confirmation mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant
+    variants:
+    - morning_signed_range_expansion_long
+    - morning_signed_range_expansion_short
+    - midday_large10_range_expansion_twosided
+    - afternoon_large20_range_expansion_long
+    - afternoon_large20_range_expansion_short
+    audit: research_artifacts/es_wide_range_orderflow_continuation_rescue_attempt_1_20260618.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_wide_range_orderflow_continuation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five allowed parameter-space
+    rescues failed limited_core_grid_test before monkey, WFA, Monte Carlo, simulated
+    incubation, frozen validation, or candidate reporting.
+  best_original_variant: morning_signed_range_expansion_long
+  best_original_profitable_combo_rate: 0.06172839506172839
+  best_original_top_net: 2142.5
+  best_rescue_variant: morning_signed_range_expansion_long
+  best_rescue_profitable_combo_rate: 0.1111111111111111
+  best_rescue_top_net: 2142.5

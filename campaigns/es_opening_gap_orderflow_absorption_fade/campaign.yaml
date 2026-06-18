@@ -1,0 +1,120 @@
+campaign_id: es_opening_gap_orderflow_absorption_fade
+title: ES Opening Gap Orderflow Absorption Fade
+decision: FAIL
+created_at: '2026-06-17'
+instrument: ES
+market_timezone: America/New_York
+edge_family: opening_gap_orderflow_absorption_fade
+hypothesis: 'ES RTH opening gaps from the prior RTH close can represent overnight inventory dislocation. If completed post-open aggregate orderflow moves against the gap, the gap move may be getting absorbed and may mean-revert intraday.
+
+  '
+sources:
+- title: Overnight-Intraday Reversal Everywhere
+  authors: Chun Liu, Yang Liu, Tianyu Wang, Guofu Zhou, Yingzi Zhu
+  year: 2016
+  venue: SSRN working paper
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2730304
+  relevance: 'Documents overnight-intraday reversal behaviour and motivates testing whether ES RTH can fade prior-close-to-open dislocations without holding overnight.
+
+    '
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: 'Supports orderflow imbalance as a short-horizon price-pressure proxy. This campaign uses local Sierra aggregate trade-side orderflow, not quote-level order-book OFI.
+
+    '
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  doi: 10.1016/j.jfineco.2018.05.009
+  relevance: 'Provides same-day intraday return-predictability context and motivates testing whether post-open flow state can condition gap continuation versus reversal.
+
+    '
+rationale: 'This is a bounded composite edge: the price-action condition is a real RTH open dislocation from the prior RTH close, and the aggregate orderflow condition requires completed post-open flow against the gap. It is not a plain overnight-intraday reversal campaign because the trade is only allowed after later completed orderflow absorption. It is not opening-drive inventory absorption because the reference level is the prior close-to-open gap, not a first-window directional drive from the RTH open.
+
+  '
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- previous RTH close available only after the previous RTH session completes
+- completed-bar signed_volume, large10_signed_volume, large10_volume, large20_signed_volume, large20_volume
+lookahead_risks:
+- Prior RTH close is known only after the previous session completes.
+- RTH opening price is known at the current RTH open, but no signal is emitted until the configured post-open flow window closes.
+- Aggregate orderflow is computed only over completed bars ending at or before the signal timestamp.
+- Entry is next-bar-open or later when a signal uses a completed bar close.
+- No final session high, low, VWAP, volume profile, or future orderflow is used.
+failure_modes:
+- Modest 1-3 point opening gaps may be too small to represent durable inventory dislocation after costs.
+- Sierra aggregate orderflow may be too noisy relative to true quote-level OFI.
+- Flow against the gap may identify early countertrend pressure that gets squeezed rather than absorbed.
+- The edge may be concentrated in high-volatility years or a few macro-event days.
+- Tight percent stops may be hit by ordinary ES noise, while wider stops may produce poor MAR.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_overnight_intraday_reversal
+  - es_overnight_return_late_day_momentum
+  - es_opening_drive_inventory_absorption
+  - es_opening_range_orderflow_breakout
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_signed_orderflow_persistence
+  - es_trend_aligned_orderflow_continuation
+  - es_vwap_orderflow_pullback_continuation
+  conclusion: 'Eligible as a distinct active campaign because it requires both an opening gap from the prior RTH close and later completed aggregate-flow absorption against that gap. Existing active failures tested plain overnight reversal, late-day overnight return continuation, opening-drive state, opening-range breakout, standalone flow persistence, or VWAP pullback continuation.
+
+    '
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_opening_gap_orderflow_absorption_fade_density_audit_20260617.md
+  result: 'Candidate windows using nonzero 1-3 point gap thresholds and modest aggregate-flow imbalance thresholds exceeded 50 raw signals per year at the strictest declared entry-grid corner before any PnL was inspected.
+
+    '
+variants:
+- early_large20_gap_absorption_fade_1000
+- morning_large20_gap_absorption_fade_1030
+- late_morning_large20_gap_absorption_fade_1100
+- midday_large20_gap_absorption_fade_1200
+- late_morning_large10_gap_absorption_fade_1100
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core opening-gap plus aggregate-flow-absorption mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant
+    variants:
+    - early_large20_gap_absorption_fade_1000
+    - morning_large20_gap_absorption_fade_1030
+    - late_morning_large20_gap_absorption_fade_1100
+    - midday_large20_gap_absorption_fade_1200
+    - late_morning_large10_gap_absorption_fade_1100
+    audit: research_artifacts/es_opening_gap_orderflow_absorption_fade_rescue_attempt_1_20260617.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_opening_gap_orderflow_absorption_fade/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time parameter-space rescues failed limited_core_grid_test before monkey, WFA, Monte Carlo, simulated incubation, or frozen validation.
+  best_original_profitable_combo_rate: 0.0
+  best_rescue_profitable_combo_rate: 0.41975308641975306
+  best_top_net_profit: 5711.25

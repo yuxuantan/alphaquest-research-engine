@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.intraday_periodicity_orderflow_confirmation import IntradayPeriodicityOrderflowConfirmationEntry
+
+ENTRY_MODULE = IntradayPeriodicityOrderflowConfirmationEntry

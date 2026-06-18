@@ -1,0 +1,184 @@
+campaign_id: es_mes_lead_lag_catchup
+title: ES/MES lead-lag catch-up
+decision: FAIL
+created_at: '2026-06-18'
+symbol: ES
+dataset_id: es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+hypothesis: 'Because ES and MES represent the same S&P 500 futures exposure but differ
+  in participant mix and contract size, completed MES price movement and aggregate
+  orderflow can occasionally lead ES over short intraday windows. If MES moves materially
+  and ES has not fully followed, ES may catch up in the MES direction.
+
+  '
+rationale: 'This is a linked-market price-discovery campaign, not a MES fade. It follows
+  MES only when three conditions are present before entry: MES has a material completed-window
+  price move, ES lags that move by a predeclared tick gap, and MES aggregate orderflow
+  confirms the MES direction. It is distinct from active MES divergence reversion,
+  MES participation crowding reversion, and ES/MES aligned-flow continuation because
+  ES does not need to confirm the move; it must lag it.
+
+  '
+sources:
+- title: One Security, Many Markets
+  authors: Joel Hasbrouck
+  year: 1995
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1995.tb04054.x
+  relevance: Supports the possibility that economically linked trading venues can
+    contribute to price discovery at different speeds.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures participation and Micro E-mini examples, motivating
+    MES as a different participation lens from ES.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates orderflow imbalance as a short-horizon pressure proxy. This
+    campaign uses completed Sierra aggregate trade-side bars, not quote-level OFI.
+data_needs:
+- data/cache/orderflow/es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny.csv
+- completed ES and MES 1-minute RTH bars aligned by timestamp in America/New_York
+- rolling completed-window ES and MES return ticks
+- rolling completed-window MES aggregate signed, large10, and large20 imbalance fields
+- ES tick size, point value, commission, slippage, session, and forced-flatten rules
+  from config
+data_quality_caveats:
+- Sierra orderflow is completed-bar aggregate trade-side flow, not quote-level LOB
+  OFI.
+- MES is a participation and price-discovery proxy, not account-classified retail
+  data.
+- Same-bar stop/target conflicts must use pessimistic OHLC ordering when no lower-timeframe
+  truth is available.
+lookahead_risks:
+- ES and MES return windows include only completed bars ending at the signal bar close.
+- MES aggregate-flow confirmation uses only the completed flow window ending at the
+  signal bar close.
+- Signal timestamps are completed-bar close times; the engine enters ES no earlier
+  than the next bar open.
+- No final session high/low, final VWAP, final volume profile, future MES/ES data,
+  or future orderflow is used.
+- The latest holdout remains locked until simulated incubation and acceptance stages.
+failure_modes:
+- MES may not actually lead ES at 1-minute resolution; the catch-up may already occur
+  within the signal bar.
+- MES flow may be noisy or dominated by smaller-contract participants who lag ES rather
+  than lead it.
+- Same-underlying ES/MES dislocations may be too small to overcome one-tick slippage
+  and commissions.
+- The effect may work in only one direction or one volatility regime, which should
+  fail robustness gates.
+- A one-contract ES system may pass WFA but still fail the prop-style Monte Carlo
+  payout-before-drawdown gate.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_micro_flow_divergence_reversion
+  - es_mes_participation_crowding_reversion
+  - es_trend_filtered_mes_participation_crowding
+  - es_mes_aligned_flow_continuation
+  - es_nq_cross_index_lead_lag
+  - es_nq_relative_value_reversion
+  - es_signed_orderflow_persistence
+  conclusion: 'Eligible in active scope. This campaign is same-underlying MES-to-ES
+    catch-up: it follows MES direction only when ES lags. Existing ES/MES divergence
+    campaigns faded disagreement; participation campaigns used MES share rather than
+    direction; aligned-flow continuation required ES and MES to agree; NQ lead-lag
+    used a different cross-index leader.
+
+    '
+variants:
+- morning15_signed_two_sided_1030
+- late_morning30_signed_two_sided_1130
+- midday30_large10_two_sided_1230
+- afternoon60_signed_two_sided_1400
+- late_day30_large20_two_sided_1500
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_mes_lead_lag_catchup_density_audit_20260618.md
+  detail_csv: research_artifacts/es_mes_lead_lag_catchup_density_audit_20260618.csv
+  decision: approve_for_testing
+  summary: 'After pre-PnL reformulation from fixed signal minutes to fixed signal
+    windows, all declared entry-threshold combinations clear 50 signals/year in both
+    the full ES/MES cache and the canonical limited-core random 10 percent window.
+    The audit counted at most one signal per session and did not inspect PnL.
+
+    '
+  rescue_attempt_1_artifact: research_artifacts/es_mes_lead_lag_catchup_rescue_attempt_1_density_audit_20260618.md
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core MES-leads-ES-lags catch-up mechanic
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: afternoon60_signed_two_sided_1400
+    config: campaigns/es_mes_lead_lag_catchup/rescue_attempts/parameter_space_rescue_1/afternoon60_signed_two_sided_1400/config.yaml
+    report: backtest-campaigns/es_mes_lead_lag_catchup/afternoon60_signed_two_sided_1400/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -3582.5; top trades
+      124
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: late_day30_large20_two_sided_1500
+    config: campaigns/es_mes_lead_lag_catchup/rescue_attempts/parameter_space_rescue_1/late_day30_large20_two_sided_1500/config.yaml
+    report: backtest-campaigns/es_mes_lead_lag_catchup/late_day30_large20_two_sided_1500/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -1877.5; top trades
+      113
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: late_morning30_signed_two_sided_1130
+    config: campaigns/es_mes_lead_lag_catchup/rescue_attempts/parameter_space_rescue_1/late_morning30_signed_two_sided_1130/config.yaml
+    report: backtest-campaigns/es_mes_lead_lag_catchup/late_morning30_signed_two_sided_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -1125.0; top trades
+      110
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: midday30_large10_two_sided_1230
+    config: campaigns/es_mes_lead_lag_catchup/rescue_attempts/parameter_space_rescue_1/midday30_large10_two_sided_1230/config.yaml
+    report: backtest-campaigns/es_mes_lead_lag_catchup/midday30_large10_two_sided_1230/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -3976.25; top
+      trades 144
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: morning15_signed_two_sided_1030
+    config: campaigns/es_mes_lead_lag_catchup/rescue_attempts/parameter_space_rescue_1/morning15_signed_two_sided_1030/config.yaml
+    report: backtest-campaigns/es_mes_lead_lag_catchup/morning15_signed_two_sided_1030/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -3123.75; top
+      trades 126
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_mes_lead_lag_catchup/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test with 0.0 profitable-combo rate.
+  best_original_variant: late_morning30_signed_two_sided_1130
+  best_original_top_net_profit: -132.5
+  best_original_profitable_combo_rate: 0.0
+  best_rescue_variant: late_morning30_signed_two_sided_1130
+  best_rescue_top_net_profit: -1125.0
+  best_rescue_profitable_combo_rate: 0.0

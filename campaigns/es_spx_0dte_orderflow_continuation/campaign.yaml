@@ -1,0 +1,190 @@
+campaign_id: es_spx_0dte_orderflow_continuation
+title: ES SPX 0DTE Orderflow-Confirmed Continuation
+created_at: '2026-06-18'
+decision: FAIL
+status: closed_failed_limited_core_grid
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+edge_type: composite_calendar_pressure_orderflow_confirmation
+hypothesis: >
+  SPX same-day option-expiration sessions can create intraday ES pressure through
+  dealer hedging, gamma feedback, and liquidity demand. The campaign tests that
+  pressure only when completed ES RTH price movement and completed aggregate
+  trade-side orderflow point in the same direction before entry.
+rationale: >
+  A calendar-only 0DTE signal does not identify direction. This bounded composite
+  requires the 0DTE calendar state, an already completed ES open-to-signal move,
+  and same-direction aggregate orderflow. It is distinct from the failed active
+  SPX 0DTE trend-aligned campaign because the secondary condition is completed
+  trade-side participation, not multi-timeframe high/low trend state. It is also
+  distinct from standalone signed-flow persistence because no non-0DTE session can
+  trade.
+sources:
+  - title: Does 0DTE Options Trading Increase Volatility?
+    authors: Jonathan Brogaard, Jaehee Han, and Peter Y. Won
+    year: 2023
+    venue: SSRN 4426358
+    link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4426358
+    relevance: Documents the market-impact question around same-day index-option
+      trading and motivates a fail-closed test of ES pressure on SPX 0DTE sessions.
+  - title: Volatility Insights - Evaluating the Market Impact of SPX 0DTE Options
+    authors: Cboe Global Markets
+    year: 2024
+    venue: Cboe Insights
+    link: https://www.cboe.com/insights/posts/volatility-insights-evaluating-the-market-impact-of-spx-0-dte-options/
+    relevance: Provides exchange/practitioner context for SPX 0DTE growth, hedging
+      channels, and market-impact caveats.
+  - title: The Price Impact of Order Book Events
+    authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+    year: 2014
+    venue: Journal of Financial Econometrics
+    doi: 10.1093/jjfinec/nbt003
+    link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+    relevance: Supports orderflow imbalance as a short-horizon price-pressure proxy.
+      This campaign uses Sierra completed-bar aggregate trade-side flow, not full
+      quote-level OFI.
+data_needs:
+  - local Sierra ES RTH 1-minute OHLCV and aggregate trade-side orderflow bars
+  - local deterministic SPX 0DTE session calendar generated from Cboe listing rules
+  - completed source-window signed, large10, and large20 orderflow aggregates
+  - data validity starts on 2016-02-24, the first regular M/W/F SPX weekly-expiration regime date used for this edge
+  - next-bar-open execution after completed source-window close signals
+  - same-day forced flatten and no-overnight prop-rule checks
+data_quality_caveats:
+  - The SPX 0DTE calendar is deterministic and contains no option volume, dealer
+    gamma, strike, open-interest, or realized settlement information.
+  - Sierra signed-volume and large-trade fields are completed-bar aggregate proxies,
+    not full depth order book or tick-replay truth.
+  - Same-bar stop/target conflicts must use pessimistic OHLC handling.
+  - The early 2016-2022 M/W/F 0DTE regime differs from the full-week post-2022 regime,
+    so WFA and frozen validation must reject unstable transfer.
+  - Pre-2016 sessions are excluded from this campaign's configured data window because the
+    deterministic 0DTE listing regime was not dense enough to test a 50-trades/year ES strategy.
+lookahead_risks:
+  - The SPX 0DTE calendar is known before the session and must not encode realized
+    option activity or ES outcomes.
+  - The open-to-signal move and orderflow features use only completed bars ending
+    at the configured signal timestamp.
+  - Signals use bar close and the engine must enter no earlier than the next bar open.
+  - No final session high/low, final VWAP, future orderflow, future option volume,
+    or post-entry path information is used.
+failure_modes:
+  - 0DTE activity may increase volume or volatility but not directional ES returns
+    after commissions and slippage.
+  - Same-direction orderflow can mark exhaustion rather than continuation.
+  - The pre-2022 partial-week calendar and post-2022 full-week calendar may not be
+    comparable enough for WFA.
+  - Large-trade orderflow buckets may not identify dealer hedging or informed flow.
+  - Pessimistic same-bar stop/target ordering may erase short-horizon continuation.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_spx_0dte_expiration_pressure
+    - es_spx_0dte_trend_aligned_pressure
+    - es_signed_orderflow_persistence
+    - es_opening_drive_inventory_absorption
+    - es_gao_last_half_hour_orderflow_confirmation
+    - es_trend_aligned_orderflow_continuation
+    - es_opening_gap_orderflow_continuation
+  conclusion: >
+    Eligible as the second and final SPX 0DTE composite under the composite-edge
+    policy. The failed base campaign tested calendar plus ES move without orderflow.
+    The failed trend-aligned campaign used a fixed high/low trend filter. This
+    campaign requires 0DTE calendar pressure plus completed aggregate ES trade-side
+    participation. If this campaign fails, the SPX 0DTE primary edge should be
+    retired from local active testing unless a materially new data source such as
+    option-flow/gamma data is explicitly approved before testing.
+composite_edge_policy:
+  policy_artifact: research_artifacts/composite_edge_policy_20260617.md
+  primary_edge: SPX 0DTE calendar pressure
+  secondary_conditions:
+    - Completed ES aggregate trade-side orderflow aligned with completed ES price movement.
+  max_secondary_conditions: 1
+  primary_edge_stop_rule: This is the second 0DTE composite; do not launch another
+    local 0DTE composite if all variants and rescues fail.
+variants:
+  - early_signed_flow_continuation_1000
+  - early_large10_flow_continuation_1000
+  - late_morning_large20_flow_continuation_1030
+  - midday_large20_flow_continuation_1330
+  - late_day_large20_flow_continuation_1430
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core economic edge
+    - add or remove filters after seeing results
+    - alter costs, fills, sessions, data windows, or validation gates
+pre_pnl_density_audit: research_artifacts/es_spx_0dte_orderflow_continuation_density_audit_20260618.md
+rescue_density_audit: research_artifacts/es_spx_0dte_orderflow_continuation_rescue_attempt_1_density_audit_20260618.md
+tested_runs:
+  originals:
+    - variant_id: early_signed_flow_continuation_1000
+      config: campaigns/es_spx_0dte_orderflow_continuation/variants/early_signed_flow_continuation_1000/config.yaml
+      report: backtest-campaigns/es_spx_0dte_orderflow_continuation/early_signed_flow_continuation_1000/ES/run1/campaign_test_summary.json
+      decision: FAIL
+      terminal_stage: limited_core_grid_test
+    - variant_id: early_large10_flow_continuation_1000
+      config: campaigns/es_spx_0dte_orderflow_continuation/variants/early_large10_flow_continuation_1000/config.yaml
+      report: backtest-campaigns/es_spx_0dte_orderflow_continuation/early_large10_flow_continuation_1000/ES/run1/campaign_test_summary.json
+      decision: FAIL
+      terminal_stage: limited_core_grid_test
+    - variant_id: late_morning_large20_flow_continuation_1030
+      config: campaigns/es_spx_0dte_orderflow_continuation/variants/late_morning_large20_flow_continuation_1030/config.yaml
+      report: backtest-campaigns/es_spx_0dte_orderflow_continuation/late_morning_large20_flow_continuation_1030/ES/run1/campaign_test_summary.json
+      decision: FAIL
+      terminal_stage: limited_core_grid_test
+    - variant_id: midday_large20_flow_continuation_1330
+      config: campaigns/es_spx_0dte_orderflow_continuation/variants/midday_large20_flow_continuation_1330/config.yaml
+      report: backtest-campaigns/es_spx_0dte_orderflow_continuation/midday_large20_flow_continuation_1330/ES/run1/campaign_test_summary.json
+      decision: FAIL
+      terminal_stage: limited_core_grid_test
+    - variant_id: late_day_large20_flow_continuation_1430
+      config: campaigns/es_spx_0dte_orderflow_continuation/variants/late_day_large20_flow_continuation_1430/config.yaml
+      report: backtest-campaigns/es_spx_0dte_orderflow_continuation/late_day_large20_flow_continuation_1430/ES/run1/campaign_test_summary.json
+      decision: FAIL
+      terminal_stage: limited_core_grid_test
+  rescues:
+    - variant_id: early_signed_flow_continuation_1000
+      config: campaigns/es_spx_0dte_orderflow_continuation/rescue_attempts/parameter_space_rescue_1/early_signed_flow_continuation_1000/config.yaml
+      report: backtest-campaigns/es_spx_0dte_orderflow_continuation/early_signed_flow_continuation_1000/ES/rescue1/campaign_test_summary.json
+      decision: FAIL
+      terminal_stage: limited_core_grid_test
+    - variant_id: early_large10_flow_continuation_1000
+      config: campaigns/es_spx_0dte_orderflow_continuation/rescue_attempts/parameter_space_rescue_1/early_large10_flow_continuation_1000/config.yaml
+      report: backtest-campaigns/es_spx_0dte_orderflow_continuation/early_large10_flow_continuation_1000/ES/rescue1/campaign_test_summary.json
+      decision: FAIL
+      terminal_stage: limited_core_grid_test
+    - variant_id: late_morning_large20_flow_continuation_1030
+      config: campaigns/es_spx_0dte_orderflow_continuation/rescue_attempts/parameter_space_rescue_1/late_morning_large20_flow_continuation_1030/config.yaml
+      report: backtest-campaigns/es_spx_0dte_orderflow_continuation/late_morning_large20_flow_continuation_1030/ES/rescue1/campaign_test_summary.json
+      decision: FAIL
+      terminal_stage: limited_core_grid_test
+    - variant_id: midday_large20_flow_continuation_1330
+      config: campaigns/es_spx_0dte_orderflow_continuation/rescue_attempts/parameter_space_rescue_1/midday_large20_flow_continuation_1330/config.yaml
+      report: backtest-campaigns/es_spx_0dte_orderflow_continuation/midday_large20_flow_continuation_1330/ES/rescue1/campaign_test_summary.json
+      decision: FAIL
+      terminal_stage: limited_core_grid_test
+    - variant_id: late_day_large20_flow_continuation_1430
+      config: campaigns/es_spx_0dte_orderflow_continuation/rescue_attempts/parameter_space_rescue_1/late_day_large20_flow_continuation_1430/config.yaml
+      report: backtest-campaigns/es_spx_0dte_orderflow_continuation/late_day_large20_flow_continuation_1430/ES/rescue1/campaign_test_summary.json
+      decision: FAIL
+      terminal_stage: limited_core_grid_test
+final_result:
+  decision: FAIL
+  report: backtest-campaigns/es_spx_0dte_orderflow_continuation/campaign_test_summary.json
+  reason: >
+    All five original variants and all five one-time per-variant parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test. No run reached limited monkey, WFA, WFA OOS monkey,
+    Monte Carlo, simulated incubation, frozen validation, or candidate reporting. Per the campaign
+    stop rule, do not launch another local SPX 0DTE primary-edge composite unless materially new
+    option-flow/gamma data is explicitly approved before testing.

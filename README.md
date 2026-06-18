@@ -14,7 +14,7 @@ The normal workflow is:
 download/export data
 place raw data under data/raw/
 create or update one campaign
-create one run config.yaml
+create one authored config.yaml under campaigns/
 run validation/core/core_grid/monkey/WFA/Monte Carlo
 review variant_test_summary.json and runs_index.csv
 ```
@@ -40,6 +40,20 @@ data/
       roll_calendars/
         motivewave_rithmic_roll_calendar.csv
 
+campaigns/
+  pdh_pdl_sweep/
+    campaign.yaml
+    results_index.yaml
+    variants/
+      baseline/
+        config.yaml
+        README.md
+        strategy_modules/
+    rescue_attempts/
+      parameter_space_rescue_1/
+        baseline/
+          config.yaml
+
 backtest-campaigns/
   pdh_pdl_sweep/
     campaign.yaml
@@ -48,7 +62,8 @@ backtest-campaigns/
       variant.yaml
       ES/
         run1/
-          config.yaml
+          source_config.yaml
+          effective_config.yaml
           variant_test_summary.json
           campaign_test_summary.json
           config_hash.txt
@@ -61,7 +76,8 @@ backtest-campaigns/
           wfa/
           monte_carlo/
         run2/
-          config.yaml
+          source_config.yaml
+          effective_config.yaml
           limited_core_grid_test/
           limited_monkey_test/
           walk_forward_analysis/
@@ -234,33 +250,56 @@ manually spot-checked if you use pre-2022 results for decisions.
 
 A campaign is the strategy idea you are researching. It should stay the same while you test reasonable variations of that same idea: different parameters, slightly different entry/exit mechanics, symbols, timeframes, or datasets.
 
-A campaign can keep edge research and the planned variant list here:
+A campaign keeps authored edge research and the planned variant list here:
 
 ```text
-backtest-campaigns/{campaign_id}/campaign.yaml
+campaigns/{campaign_id}/campaign.yaml
 ```
 
 Use `campaign.yaml` for the academic source, thesis, intended market, caveats, and exactly five planned trade-mechanics variants. The backtest runner does not use it as the executable strategy config, but run summaries and manifests record its path and hash when it exists.
 
-A variant is one concrete strategy shape under that campaign. It keeps its invariant mechanic here:
+A variant is one concrete strategy shape under that campaign. Its authored source config lives here:
+
+```text
+campaigns/{campaign_id}/variants/{variant_id}/config.yaml
+```
+
+An allowed rescue attempt gets its own authored source config without replacing the original:
+
+```text
+campaigns/{campaign_id}/rescue_attempts/{rescue_id}/{variant_id}/config.yaml
+```
+
+Generated backtest evidence lives separately under `backtest-campaigns/`. The runner snapshots the submitted source config and writes the canonical effective config here:
+
+```text
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/source_config.yaml
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/effective_config.yaml
+```
+
+`source_config.yaml` is the exact submitted file. `effective_config.yaml` is the executable, canonicalized run config after default stage settings are expanded. Older generated reports may still have `config.yaml`; readers keep backward compatibility for those legacy artifacts.
+
+The generated variant root also keeps the invariant mechanic lock here:
 
 ```text
 backtest-campaigns/{campaign_id}/{variant_id}/variant.yaml
 ```
 
-`variant.yaml` records the entry, take-profit, and stop-loss modules plus the rescue policy. The runner creates a scaffold when it is missing and rejects a run when an existing `variant.yaml` says the variant uses different entry, TP, or SL modules. Rescue runs can change fixed parameters, tunable parameter space, stage settings, and data windows, but not those modules.
+`variant.yaml` records the entry, take-profit, and stop-loss modules plus the rescue policy. The runner creates a scaffold when it is missing and rejects a run when an existing `variant.yaml` says the variant uses different entry, TP, or SL modules. Rescue runs can change fixed parameters and tunable parameter space, but not those modules.
 
-A run is one attempt to validate that variant with a specific fixed parameter set and tunable search space. Use `run1`, `run2`, and so on for rescue attempts of the same variant; for example, `run2` can narrow or shift the parameter space after `run1` fails.
+A run is one attempt to validate that variant with a specific fixed parameter set and tunable search space. Use `run1`, `rescue1`, and so on for rescue attempts of the same variant.
 
 ```text
-backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/config.yaml
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/
 ```
 
 Example:
 
 ```text
-backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml
-backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/config.yaml
+campaigns/pdh_pdl_sweep/variants/baseline/config.yaml
+campaigns/pdh_pdl_sweep/rescue_attempts/parameter_space_rescue_1/baseline/config.yaml
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/effective_config.yaml
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/rescue1/effective_config.yaml
 ```
 
 This keeps the config and generated evidence together:
@@ -272,16 +311,9 @@ ES             instrument
 run1           first test-run parameter-space attempt
 ```
 
-The campaign root also maintains `variants_index.yaml`, a lightweight index of each variant's `variant.yaml` path, hash, and mechanics.
+The generated campaign root maintains `variants_index.yaml`, a lightweight index of each variant's `variant.yaml` path, hash, and mechanics. When the submitted config comes from `campaigns/`, the authored campaign root also gets `results_index.yaml`, a lightweight pointer from source configs to generated run folders.
 
-Start a rescue run by copying the previous run config into the next run folder:
-
-```bash
-mkdir -p backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2
-cp backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/config.yaml
-```
-
-Edit the new run config:
+Edit the authored source config:
 
 ```yaml
 campaign_id: pdh_pdl_sweep
@@ -328,13 +360,13 @@ core:
 warmup period before `start_date` so previous-session features remain available,
 then filters the prepared data to the requested test window.
 
-The `campaign_id`, `variant_id`, `dataset_id`, and `timeframe` are mandatory. `test_run_id` is optional when the config path is already under `.../{run_id}/config.yaml`; otherwise it defaults to `run1`. Outputs write to:
+The `campaign_id`, `variant_id`, `dataset_id`, and `timeframe` are mandatory. `test_run_id` is optional when the config path is already under a legacy `.../{run_id}/config.yaml`, generated `.../{run_id}/source_config.yaml`, or generated `.../{run_id}/effective_config.yaml`; otherwise it defaults to `run1`. Outputs write to:
 
 ```text
 backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/
 ```
 
-Use one run config per concrete fixed/tunable parameter-space attempt, not one YAML per report type. A single `config.yaml` can produce the core, core grid, monkey, WFA, Monte Carlo, and staged campaign-test reports for the same controlled setup.
+Use one authored source config per concrete fixed/tunable parameter-space attempt, not one YAML per report type. A single source `config.yaml` can produce the core, core grid, monkey, WFA, Monte Carlo, and staged campaign-test reports for the same controlled setup.
 
 The runner rejects output paths that are not concrete run folders. Do not write summaries at `backtest-campaigns/{campaign_id}/{variant_id}/ES/` or `.../ES_1m/`; they must live under `.../ES/run1/`, `.../ES/run2/`, etc.
 
@@ -413,7 +445,7 @@ tp    -> calculates target price
 sl    -> calculates stop price
 ```
 
-The simulation engine uses a generic `ModularStrategy` composer. There is no separate PDH/PDL strategy wrapper; the run `config.yaml` is the source of truth for which entry, TP, and SL modules are combined.
+The simulation engine uses a generic `ModularStrategy` composer. There is no separate PDH/PDL strategy wrapper; the authored source `config.yaml` is the source of truth for which entry, TP, and SL modules are combined.
 
 Each module implementation lives in its own file:
 
@@ -455,7 +487,7 @@ The cleanest workflow is:
 ```text
 1. Define the strategy idea
 2. Build or reuse entry, TP, and SL modules
-3. Wire those modules in one run config.yaml
+3. Wire those modules in one authored source config.yaml
 4. Set the exact data, costs, and risk assumptions
 5. Run the core test
 6. Validate data and sample trades
@@ -480,7 +512,7 @@ sl:    beyond the sweep candle extreme, offset by ticks
 tp:    fixed R multiple from entry to stop
 ```
 
-For normal one-entry, one-stop, one-target strategies, do not create a strategy file. Create or swap the relevant module and wire it in the run `config.yaml`. A custom strategy orchestrator is only worth adding later if the engine needs behavior beyond this composition model, such as partial exits, trailing stops, pyramiding, or multiple simultaneous entry systems.
+For normal one-entry, one-stop, one-target strategies, do not create a strategy file. Create or swap the relevant module and wire it in the authored source `config.yaml`. A custom strategy orchestrator is only worth adding later if the engine needs behavior beyond this composition model, such as partial exits, trailing stops, pyramiding, or multiple simultaneous entry systems.
 
 ### Step 2: Create Or Reuse An Entry Module
 
@@ -628,19 +660,19 @@ TP_MODULES = {
 }
 ```
 
-### Step 5: Wire The Modules In A Run Config
+### Step 5: Wire The Modules In A Source Config
 
-Campaign run configs live under:
+Authored campaign source configs live under:
 
 ```text
-backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/config.yaml
+campaigns/{campaign_id}/variants/{variant_id}/config.yaml
 ```
 
-For a new rescue run, copy the previous run config and update the fixed/tunable parameter space:
+For a new rescue attempt, copy the source config into a rescue folder and update only the allowed fixed/tunable parameter space:
 
 ```bash
-mkdir -p backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2
-cp backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/config.yaml
+mkdir -p campaigns/pdh_pdl_sweep/rescue_attempts/parameter_space_rescue_1/baseline
+cp campaigns/pdh_pdl_sweep/variants/baseline/config.yaml campaigns/pdh_pdl_sweep/rescue_attempts/parameter_space_rescue_1/baseline/config.yaml
 ```
 
 Set the campaign, variant, and run identity:
@@ -656,7 +688,7 @@ dataset_id: 1m_20221201_20260529
 
 Use a new `test_run_id` for every rescue attempt you want to preserve under the same variant. Use a new `variant_id` only when the strategy mechanics change.
 
-Do not split one experiment into separate YAML files for core, core grid, monkey, WFA, and Monte Carlo. Keep those report sections together inside the same run `config.yaml` so every report points back to the same data, modules, parameters, costs, and benchmarks.
+Do not split one experiment into separate YAML files for core, core grid, monkey, WFA, and Monte Carlo. Keep those report sections together inside the same authored source `config.yaml`; the staged runner will write `source_config.yaml` and `effective_config.yaml` into the generated run folder.
 
 Then wire the modules and parameters:
 
@@ -790,10 +822,10 @@ Do not compare variants unless these assumptions are intentionally identical or 
 
 ### Step 7: Run Core
 
-Run one exact run config through the core test:
+Run one exact source config through the core test:
 
 ```bash
-VARIANT_CONFIG=backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/config.yaml
+VARIANT_CONFIG=campaigns/pdh_pdl_sweep/rescue_attempts/parameter_space_rescue_1/baseline/config.yaml
 PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
 ```
 
@@ -1039,7 +1071,8 @@ The variant and run folders record the mechanic, config, and input hashes:
 
 ```text
 variant.yaml
-config.yaml
+source_config.yaml
+effective_config.yaml
 variant_test_summary.json
 config_hash.txt
 input_data_hash.txt
@@ -1052,11 +1085,14 @@ Use them like this:
 variant.yaml
   Variant-root file that locks the entry, take-profit, and stop-loss modules.
 
-config.yaml
-  Snapshot of the exact YAML used for the run.
+source_config.yaml
+  Snapshot of the exact authored YAML submitted to the staged runner.
+
+effective_config.yaml
+  Canonical executable YAML used for the run after default stage settings are expanded.
 
 config_hash.txt
-  Changes when the run config changes.
+  Changes when the effective run config changes.
 
 input_data_hash.txt
   Changes when the selected raw input files or data window changes.
@@ -1163,7 +1199,7 @@ max_drawdown_pct: 0.20
 ## 6. Run Data Validation And Core
 
 ```bash
-VARIANT_CONFIG=backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml
+VARIANT_CONFIG=campaigns/pdh_pdl_sweep/variants/baseline/config.yaml
 PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
 ```
 
@@ -1909,7 +1945,8 @@ probability_profit_before_drawdown >= 0.50
 Each runner updates:
 
 ```text
-config.yaml
+source_config.yaml
+effective_config.yaml
 variant_test_summary.json
 config_hash.txt
 input_data_hash.txt
@@ -1988,7 +2025,7 @@ visible in `stage_result.json`.
 For a serious strategy test:
 
 ```bash
-VARIANT_CONFIG=backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml
+VARIANT_CONFIG=campaigns/pdh_pdl_sweep/variants/baseline/config.yaml
 
 PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
 PYTHONPATH=src python3 -m propstack.run_core_grid --config "$VARIANT_CONFIG"

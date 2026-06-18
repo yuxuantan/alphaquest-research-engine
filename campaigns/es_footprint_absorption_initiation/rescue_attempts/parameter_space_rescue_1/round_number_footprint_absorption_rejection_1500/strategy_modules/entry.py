@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.footprint_absorption_initiation import FootprintAbsorptionInitiationEntry
+
+__all__ = ["FootprintAbsorptionInitiationEntry"]

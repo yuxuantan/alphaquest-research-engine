@@ -14,13 +14,13 @@ class IntradayCapitulationMREntry:
     def __init__(self, params: dict):
         self.params = params
         self.state_by_day: dict = {}
-        self.indicator_bars: list[dict] = []
 
     def _state(self, session_date):
         return self.state_by_day.setdefault(
             session_date,
             {
                 "current_bar": None,
+                "indicator_bars": [],
                 "signaled": False,
             },
         )
@@ -56,14 +56,19 @@ class IntradayCapitulationMREntry:
         if not self._bar_complete(timestamp, window_start):
             return None
 
-        signal = self._signal_from_completed_bar(current, session_date)
-        self.indicator_bars.append(current.copy())
+        signal = self._signal_from_completed_bar(current, session_date, state["indicator_bars"])
+        state["indicator_bars"].append(current.copy())
         state["current_bar"] = None
         if signal is not None:
             state["signaled"] = True
         return signal
 
-    def _signal_from_completed_bar(self, completed_bar: dict, session_date) -> Signal | None:
+    def _signal_from_completed_bar(
+        self,
+        completed_bar: dict,
+        session_date,
+        indicator_bars: list[dict],
+    ) -> Signal | None:
         if self.params.get("allow_long", True) is False:
             return None
         if bool(self.params.get("require_full_window", True)):
@@ -85,6 +90,12 @@ class IntradayCapitulationMREntry:
             return None
         if vwap is None or pd.isna(vwap) or not math.isfinite(float(vwap)):
             return None
+        tick_size = float(self.params.get("tick_size", 0.25))
+        if tick_size <= 0:
+            raise ValueError("entry.params.tick_size must be greater than 0.")
+        down_move_ticks = (open_price - close) / tick_size
+        if down_move_ticks < float(self.params.get("min_down_move_ticks", 0.0)):
+            return None
 
         bar_range = high - low
         if bar_range <= 0:
@@ -95,7 +106,16 @@ class IntradayCapitulationMREntry:
         if close_location_from_low > float(self.params.get("max_close_location_from_low", 0.25)):
             return None
 
-        rsi = self._rsi([*self.indicator_bars, completed_bar], int(self.params.get("rsi_period", 14)))
+        signed_volume = completed_bar.get("signed_volume")
+        signed_imbalance = None
+        if signed_volume is not None and not pd.isna(signed_volume) and volume > 0:
+            signed_imbalance = float(signed_volume) / volume
+        min_sell_imbalance = float(self.params.get("min_sell_imbalance", 0.0))
+        if min_sell_imbalance > 0:
+            if signed_imbalance is None or signed_imbalance > -min_sell_imbalance:
+                return None
+
+        rsi = self._rsi([*indicator_bars, completed_bar], int(self.params.get("rsi_period", 14)))
         if rsi is None or rsi >= float(self.params.get("max_rsi", 35.0)):
             return None
 
@@ -104,7 +124,7 @@ class IntradayCapitulationMREntry:
 
         volume_window = int(self.params.get("volume_avg_window", 20))
         min_volume_avg_bars = int(self.params.get("min_volume_avg_bars", volume_window))
-        prior_volumes = [float(item["volume"]) for item in self.indicator_bars[-volume_window:]]
+        prior_volumes = [float(item["volume"]) for item in indicator_bars[-volume_window:]]
         if len(prior_volumes) < min_volume_avg_bars:
             return None
         avg_volume = sum(prior_volumes) / len(prior_volumes)
@@ -128,10 +148,13 @@ class IntradayCapitulationMREntry:
                 "capitulation_rsi": rsi,
                 "capitulation_volume_ratio": volume_ratio,
                 "capitulation_close_location_from_low": close_location_from_low,
+                "capitulation_down_move_ticks": down_move_ticks,
+                "capitulation_signed_imbalance": signed_imbalance,
             },
             report_fields={
                 "capitulation_bar_start_timestamp": completed_bar["start_timestamp"],
                 "capitulation_bar_end_timestamp": completed_bar["end_timestamp"],
+                "capitulation_timeframe_minutes": self._timeframe_minutes(),
                 "capitulation_open": open_price,
                 "capitulation_high": high,
                 "capitulation_low": low,
@@ -142,6 +165,13 @@ class IntradayCapitulationMREntry:
                 "capitulation_volume_ratio": volume_ratio,
                 "capitulation_rsi": rsi,
                 "capitulation_close_location_from_low": close_location_from_low,
+                "capitulation_down_move_ticks": down_move_ticks,
+                "capitulation_signed_volume": signed_volume,
+                "capitulation_signed_imbalance": signed_imbalance,
+                "min_down_move_ticks": float(self.params.get("min_down_move_ticks", 0.0)),
+                "min_sell_imbalance": min_sell_imbalance,
+                "rsi_scope": "session",
+                "volume_average_scope": "session",
                 "session_date": session_date,
             },
         )
@@ -155,6 +185,7 @@ class IntradayCapitulationMREntry:
             "low": float(bar["low"]),
             "close": float(bar["close"]),
             "volume": float(bar["volume"]),
+            "signed_volume": self._bar_signed_volume(bar),
             "vwap": self._last_vwap(bar),
             "bar_count": 1,
         }
@@ -164,6 +195,7 @@ class IntradayCapitulationMREntry:
         aggregate["low"] = min(float(aggregate["low"]), float(bar["low"]))
         aggregate["close"] = float(bar["close"])
         aggregate["volume"] = float(aggregate["volume"]) + float(bar["volume"])
+        aggregate["signed_volume"] = float(aggregate.get("signed_volume") or 0.0) + self._bar_signed_volume(bar)
         aggregate["vwap"] = self._last_vwap(bar)
         aggregate["bar_count"] += 1
 
@@ -200,6 +232,11 @@ class IntradayCapitulationMREntry:
         if "vwap" not in bar or pd.isna(bar["vwap"]):
             return None
         return float(bar["vwap"])
+
+    def _bar_signed_volume(self, bar: pd.Series) -> float:
+        if "signed_volume" not in bar or pd.isna(bar["signed_volume"]):
+            return 0.0
+        return float(bar["signed_volume"])
 
     def _rsi(self, bars: list[dict], period: int) -> float | None:
         if period <= 0:

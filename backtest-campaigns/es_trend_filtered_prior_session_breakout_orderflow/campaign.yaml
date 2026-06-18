@@ -1,0 +1,168 @@
+campaign_id: es_trend_filtered_prior_session_breakout_orderflow
+title: ES Trend-Filtered Prior Session Breakout With Aggregate Orderflow
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: trend_filtered_prior_session_breakout_orderflow
+hypothesis: ES prior-RTH high/low acceptance should have better continuation odds when the completed hold
+  bar has same-direction aggregate orderflow and the current session has already formed deterministic
+  higher-high/higher-low or lower-high/lower-low structure.
+rationale: This is a constrained composite campaign. The primary edge is prior-session support/resistance
+  acceptance/continuation. The secondary filters are fixed completed-bar market-structure trend alignment
+  and same-bar aggregate orderflow confirmation. A stricter first-break/retest formulation was rejected
+  before PnL because every variant fell below the 50 signals/year density floor; the retained hold formulation
+  preserves the edge while clearing pre-PnL density.
+sources:
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  authors: William Brock, Josef Lakonishok, Blake LeBaron
+  year: 1992
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1992.tb04681.x
+  link: https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04681.x
+  relevance: Supports testing trading-range and support/resistance breakout rules as mechanical price-action
+    signals.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical
+    Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00265
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00265
+  relevance: Formalizes systematic chart-pattern detection; this campaign uses deterministic higher-high/higher-low
+    and lower-high/lower-low trend states rather than discretionary chart reading.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure proxy; this campaign uses
+    completed Sierra aggregate trade-side flow, not quote-depth OFI.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2011.11.003
+  link: https://ideas.repec.org/a/eee/jfinec/v104y2012i2p228-250.html
+  relevance: Documents persistence across liquid futures; this campaign uses only intraday completed-bar
+    trend alignment as a filter, not the monthly TSMOM anomaly itself.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- completed prior RTH high/low and fresh-level flags from pdh_pdl_sweep features
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, and
+  large20_volume
+lookahead_risks:
+- Prior RTH high and low are known only after the prior RTH session is complete.
+- Trend alignment uses only completed bars already observed in the current session before the signal is
+  emitted.
+- Breakout/retest confirmation and orderflow confirmation use only the completed signal bar.
+- Signals generated from a completed bar are filled no earlier than the next bar open by the engine.
+- No current-session final high/low, final VWAP, final volume profile, future orderflow, future trend
+  state, or future daily range is used.
+failure_modes:
+- Trend filtering may still reduce effective trade count after fills below the required 50 trades/year
+  even though pre-PnL signal density passed.
+- Same-direction aggregate flow may still represent exhaustion into liquidity rather than informed continuation.
+- Higher-high/higher-low filters may select mature trends that are ready to reverse.
+- The effect may remain concentrated in crisis trend days or one market side.
+- Bar-level signed volume may be too noisy to distinguish stop cascades from informed flow.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_prior_session_breakout_orderflow_confirmation
+  - es_prior_session_level_breakout_continuation
+  - es_trend_aligned_orderflow_continuation
+  - es_prior_day_stop_run_reclaim
+  - es_prior_level_delta_dislocation
+  - es_opening_range_trend_orderflow_breakout
+  - es_range_compression_orderflow_breakout
+  conclusion: Eligible as a constrained composite campaign because neither prior-session breakout/orderflow
+    nor generic trend-aligned orderflow alone can trigger. A signal requires prior RTH level acceptance/retest,
+    deterministic completed-bar market-structure trend alignment, and same-bar aggregate orderflow confirmation,
+    all declared before PnL testing.
+variants:
+- first_half_signed_trend_hold_two_sided
+- first_half_large10_trend_hold_two_sided
+- all_day_signed_trend_hold_two_sided
+- all_day_large10_trend_hold_two_sided
+- all_day_signed_high_volume_trend_hold_two_sided
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core prior-session breakout plus fixed trend/orderflow-confirmation mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: first_half_signed_trend_hold_two_sided
+    config: campaigns/es_trend_filtered_prior_session_breakout_orderflow/rescue_attempts/parameter_space_rescue_1/first_half_signed_trend_hold_two_sided/config.yaml
+    report: backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/first_half_signed_trend_hold_two_sided/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -2885.0; top trades/year 144.28024911032028
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: first_half_large10_trend_hold_two_sided
+    config: campaigns/es_trend_filtered_prior_session_breakout_orderflow/rescue_attempts/parameter_space_rescue_1/first_half_large10_trend_hold_two_sided/config.yaml
+    report: backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/first_half_large10_trend_hold_two_sided/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -456.25; top trades/year 95.43284030332607
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: all_day_signed_trend_hold_two_sided
+    config: campaigns/es_trend_filtered_prior_session_breakout_orderflow/rescue_attempts/parameter_space_rescue_1/all_day_signed_trend_hold_two_sided/config.yaml
+    report: backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/all_day_signed_trend_hold_two_sided/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -3365.0; top trades/year 157.88546016059294
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: all_day_large10_trend_hold_two_sided
+    config: campaigns/es_trend_filtered_prior_session_breakout_orderflow/rescue_attempts/parameter_space_rescue_1/all_day_large10_trend_hold_two_sided/config.yaml
+    report: backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/all_day_large10_trend_hold_two_sided/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.012345679012345678 below required 0.70; top net 1052.5; top trades/year
+      122.81112803735982
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: all_day_signed_high_volume_trend_hold_two_sided
+    config: campaigns/es_trend_filtered_prior_session_breakout_orderflow/rescue_attempts/parameter_space_rescue_1/all_day_signed_high_volume_trend_hold_two_sided/config.yaml
+    report: backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/all_day_signed_high_volume_trend_hold_two_sided/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -3472.5; top trades/year 121.50858921853863
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_trend_filtered_prior_session_breakout_orderflow_density_audit_20260618.md
+  preliminary_rejected_formulation: Fresh first-break and retest variants were rejected before staged
+    PnL because all five variants produced only 5.39 to 36.39 signals/year on the limited-core window.
+  retained_formulation: Completed prior-level hold/acceptance with fixed trend alignment and aggregate
+    orderflow confirmation.
+  result: 'PASS: all five retained hold/acceptance variants exceeded 50 signals/year at every declared
+    entry-grid corner in both the benchmark limited-core window and full local history before any staged
+    PnL was inspected.'
+  limited_core_window:
+    start_date: '2011-02-22'
+    end_date: '2012-09-06'
+    session_labels:
+    - RTH
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  frozen_validation_reached: 0
+  candidate_report_created: false
+  failure: All five original variants and all five one-time parameter-space/fixed-parameter rescues failed
+    limited_core_grid_test before monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or
+    candidate reporting.

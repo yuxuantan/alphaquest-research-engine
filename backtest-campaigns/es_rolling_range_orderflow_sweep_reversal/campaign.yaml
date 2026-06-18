@@ -1,0 +1,128 @@
+campaign_id: es_rolling_range_orderflow_sweep_reversal
+title: ES rolling intraday range sweep-reclaim with aggregate orderflow absorption
+decision: FAIL
+created_at: '2026-06-17'
+instrument: ES
+market_timezone: America/New_York
+edge_family: rolling_range_orderflow_sweep_reversal
+hypothesis: ES intraday sweeps beyond a recently established rolling high or low may reverse when
+  the completed bar reclaims the boundary while aggregate orderflow shows aggressive pressure
+  into the failed sweep, consistent with liquidity absorption rather than continuation.
+sources:
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz, Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Supports the idea that technical support/resistance areas can coincide with liquidity
+    supply.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  venue: Journal of International Money and Finance
+  link: https://www.newyorkfed.org/research/staff_reports/sr150.html
+  relevance: Documents clustered stop-loss orders around technical levels, motivating explicit
+    sweep-vs-reclaim tests.
+- title: Trading Volume and Serial Correlation in Stock Returns
+  authors: John Y. Campbell, Sanford J. Grossman, Jiang Wang
+  year: 1993
+  venue: Quarterly Journal of Economics
+  link: https://campbell.scholars.harvard.edu/publications/trading-volume-and-serial-correlation-stock-returns
+  relevance: Supports reversal after liquidity-driven pressure and inventory-risk episodes.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports orderflow imbalance as a short-horizon pressure proxy; this campaign uses
+    completed Sierra aggregate trade-side flow.
+rationale: This is a bounded composite campaign. The primary price-action edge is a false break
+  of a rolling current-session high/low followed by a completed reclaim. The secondary condition
+  is aggregate orderflow absorption into the failed sweep. It is distinct from prior-day stop-run
+  reclaim, opening-range failed breakout, round-number barriers, and standalone orderflow absorption
+  because the reference boundary is a rolling intraday range built only from prior completed bars.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  large20_volume
+lookahead_risks:
+- Rolling highs/lows are computed from prior completed bars only and do not include the signal
+  bar.
+- The sweep, reclaim, and orderflow absorption conditions use only the completed signal bar.
+- Signals using bar close are filled no earlier than the next bar open by the engine.
+- No final session high/low, final VWAP, future orderflow, future volume profile, or future range
+  information is used.
+- All variants flatten before the configured prop cutoff and disallow overnight exposure.
+failure_modes:
+- A reclaimed sweep may be only a pause before trend continuation.
+- Aggregate signed volume may misclassify pressure compared with quote-level OFI.
+- Sweep reversals may be too sensitive to slippage and same-bar stop/target ordering.
+- Profits may concentrate in volatile crisis sessions or one side of the market.
+- Rolling levels may be too local and noisy if lookback windows are too short.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_prior_day_stop_run_reclaim
+  - es_opening_range_failed_breakout_orderflow
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_round_number_orderflow_barrier
+  - es_prior_session_breakout_orderflow_confirmation
+  - es_midday_range_orderflow_breakout
+  conclusion: Eligible as a new bounded composite campaign because it uses current-session rolling
+    range extremes from prior completed bars, not prior-day levels, opening range boundaries,
+    fixed round numbers, or standalone flow/effort ranks.
+variants:
+- morning_signed_12bar_sweep_reclaim_1130
+- morning_large10_12bar_sweep_reclaim_1130
+- midday_signed_24bar_sweep_reclaim_1400
+- afternoon_signed_24bar_sweep_reclaim_1500
+- all_day_large20_36bar_sweep_reclaim_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core rolling-range sweep-reclaim plus orderflow-absorption mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    scope: per_failed_variant
+    status: completed_failed
+    variants:
+    - afternoon_signed_24bar_sweep_reclaim_1500
+    - all_day_large20_36bar_sweep_reclaim_1500
+    - midday_signed_24bar_sweep_reclaim_1400
+    - morning_large10_12bar_sweep_reclaim_1130
+    - morning_signed_12bar_sweep_reclaim_1130
+    audit: research_artifacts/es_rolling_range_orderflow_sweep_reversal_rescue_attempt_1_20260617.md
+    summary: All five one-time rescues failed limited_core_grid_test.
+pre_pnl_density_audit: research_artifacts/es_rolling_range_orderflow_sweep_reversal_density_audit_20260617.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_rolling_range_orderflow_sweep_reversal/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test before monkey, WFA, Monte Carlo, simulated incubation,
+    frozen validation, or candidate reporting.
+  best_run:
+    variant_id: afternoon_signed_24bar_sweep_reclaim_1500
+    run_id: rescue1
+    top_net_profit: 675.0
+    top_profit_factor: 1.4272151898734178
+    top_mar: 1.107462152425031
+    top_trades_per_year: 22.270712773465068
+    top_failure_reason: min_trades_per_year;preferred_min_total_trades

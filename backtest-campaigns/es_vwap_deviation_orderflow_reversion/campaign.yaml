@@ -1,0 +1,112 @@
+campaign_id: es_vwap_deviation_orderflow_reversion
+title: ES VWAP Deviation Orderflow Reversion
+decision: FAIL
+created_at: '2026-06-18'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframes:
+- 5m
+hypothesis: ES may mean-revert intraday after price stretches far from completed session
+  VWAP when the completed signal bar shows counter-direction aggregate orderflow and
+  closes away from the extreme. VWAP is the institutional value reference; counterflow
+  indicates liquidity absorption against the extension.
+rationale: This is a bounded price-action plus aggregate-orderflow reversion edge.
+  It is not the failed VWAP pullback continuation campaign, because trades fade extension
+  away from VWAP rather than join VWAP-side trend. It is not the downside capitulation
+  campaign because it is two-sided and requires counterflow confirmation rather than
+  same-direction sell imbalance. It is not a generic volume-shock reversal because
+  VWAP deviation is the primary level reference.
+sources:
+- title: 'Improving VWAP Strategies: A Dynamical Volume Approach'
+  authors: Jedrzej Bialkowski, Serge Darolles, Gaelle Le Fol
+  year: 2008
+  venue: Journal of Banking and Finance / working-paper version
+  link: https://ideas.repec.org/p/eve/wpaper/06-08.html
+  relevance: Motivates VWAP as an institutional execution benchmark and intraday value
+    reference.
+- title: Liquidity and Market Structure
+  authors: Sanford J. Grossman, Merton H. Miller
+  year: 1988
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/j.1540-6261.1988.tb04594.x
+  relevance: Provides the liquidity-supplier/inventory mechanism for temporary price
+    pressure and reversion after immediacy demand is absorbed.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure proxy;
+    this campaign uses completed Sierra aggregate signed volume, not quote-level OFI.
+data_needs:
+- timezone-aware ES RTH OHLCV and aggregate signed-volume bars in America/New_York
+- session VWAP computed only through the completed signal bar
+- completed-bar signed_volume and large10/large20 aggregate fields from local Sierra
+  cache
+- same-day forced flatten before configured cutoff
+data_quality_caveats:
+- Sierra signed volume and large-trade fields are aggregate completed-bar proxies,
+  not print-level aggressor truth or LOB OFI.
+- The strategy uses completed 5-minute bars; intra-bar stop/target ordering remains
+  pessimistic OHLC unless detail data is available.
+lookahead_risks:
+- Session VWAP uses only completed bars through the signal bar.
+- Counterflow confirmation uses only the completed signal bar.
+- Close-location filters use only the completed signal bar high/low/close.
+- Signals generated from a bar close are filled no earlier than the next bar open.
+- No final session high, low, VWAP, volume profile, future orderflow, or future return
+  is used.
+failure_modes:
+- VWAP deviations may reflect real information and continue rather than revert.
+- Counterflow can be early absorption that fails before price turns.
+- VWAP mean reversion may be too small to overcome ES costs and slippage.
+- Large-trade buckets may not identify liquidity provision reliably.
+- Results may concentrate in high-volatility sessions or one side.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_vwap_orderflow_pullback_continuation
+  - es_vwap_pullback_continuation
+  - es_intraday_capitulation_orderflow_reversion
+  - es_volume_shock_liquidity_reversal
+  - es_session_extreme_delta_divergence
+  - es_orderflow_absorption_exhaustion_reversal
+  conclusion: Eligible as a bounded composite campaign. Existing active failures tested
+    VWAP continuation, downside capitulation, generic volume-shock reversal, session
+    extremes, or generic absorption. This campaign requires two-sided VWAP extension
+    plus completed counterflow and close-location confirmation.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_vwap_deviation_orderflow_reversion_density_audit_20260618.md
+  limited_core_window:
+    start_date: '2011-02-22'
+    end_date: '2012-09-06'
+    source: benchmark random 10 percent window, seed 31, excluding latest 10 percent
+      and Covid range
+  strict_corner:
+    entry.params.min_vwap_deviation_ticks: 16
+    entry.params.min_counterflow_imbalance: 0.04
+    fixed_min_close_location_long: 0.35
+    fixed_max_close_location_short: 0.65
+  decision: approve_for_testing
+variants:
+- morning_signed_counterflow_1200
+- morning_large10_counterflow_1200
+- midday_signed_counterflow_1400
+- midday_large20_counterflow_1400
+- afternoon_signed_counterflow_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results

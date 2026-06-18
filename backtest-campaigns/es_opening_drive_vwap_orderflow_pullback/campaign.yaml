@@ -1,0 +1,116 @@
+campaign_id: es_opening_drive_vwap_orderflow_pullback
+title: ES Opening-Drive VWAP Orderflow Pullback
+decision: FAIL
+created_at: '2026-06-18'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframes:
+- 5m
+hypothesis: ES sessions with a completed directional opening drive may continue after
+  a later pullback to session VWAP when the reclaim bar shows aligned aggregate orderflow.
+  The opening drive identifies auction imbalance, VWAP defines intraday value, and
+  orderflow confirmation attempts to distinguish real resumption from weak noise.
+rationale: This is a constrained composite edge. It is not raw opening-range breakout,
+  not opening-range retest, and not generic VWAP/orderflow trend reclaim. A signal
+  requires a completed 30- or 60-minute opening-drive direction, a later pullback
+  to completed session VWAP, a completed reclaim back in the drive direction, and
+  aligned Sierra aggregate signed-volume or large-trade imbalance on the reclaim bar.
+sources:
+- title: Assessing the profitability of intraday opening range breakout strategies
+  authors: Ulf Holmberg, Carl Lonnback, Christian Lundstrom
+  year: 2013
+  venue: Finance Research Letters
+  link: https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html
+  doi: 10.1016/j.frl.2012.09.001
+  relevance: Supports the opening-period range/drive as a systematic intraday futures
+    framework.
+- title: 'Improving VWAP Strategies: A Dynamical Volume Approach'
+  authors: Jedrzej Bialkowski, Serge Darolles, Gaelle Le Fol
+  year: 2008
+  venue: Journal of Banking and Finance / working-paper version
+  link: https://ideas.repec.org/p/eve/wpaper/06-08.html
+  relevance: Motivates VWAP as an institutional intraday benchmark and value reference.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure proxy;
+    this campaign uses completed Sierra aggregate signed volume, not quote-level OFI.
+data_needs:
+- timezone-aware ES RTH OHLCV and aggregate signed-volume bars in America/New_York
+- session VWAP computed only through the completed signal bar
+- completed-bar signed_volume and large10/large20 aggregate fields from local Sierra
+  cache
+- same-day forced flatten before configured cutoff
+data_quality_caveats:
+- Sierra signed volume and large-trade fields are aggregate completed-bar proxies,
+  not print-level aggressor truth or LOB OFI.
+- The strategy uses completed 5-minute bars; intra-bar stop/target ordering remains
+  pessimistic OHLC unless detail data is available.
+lookahead_risks:
+- Opening-drive direction is not evaluated until the configured opening-drive window
+  has completed.
+- The module must start at 09:30 ET so the opening-drive state is observed before
+  any later pullback signal.
+- Session VWAP uses only completed bars through the signal bar.
+- Orderflow confirmation uses only the completed reclaim bar.
+- Signals generated from a bar close are filled no earlier than the next bar open.
+- No final session high, low, VWAP, volume profile, future orderflow, or future return
+  is used.
+failure_modes:
+- Opening drives can exhaust rather than continue after a VWAP pullback.
+- VWAP pullbacks can become crowded and lose edge after costs.
+- Aggregate signed flow may lag price and confirm too late.
+- Large-trade buckets may not identify informed continuation pressure.
+- Results may concentrate in crisis trend days or one market side.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_vwap_orderflow_pullback_continuation
+  - es_vwap_pullback_continuation
+  - es_opening_range_orderflow_breakout
+  - es_opening_range_retest_orderflow
+  - es_opening_drive_inventory_absorption
+  - es_trend_aligned_orderflow_continuation
+  conclusion: Eligible as a bounded composite campaign. Existing active failures tested
+    generic VWAP trend reclaim, raw opening-range breakout/retest, or opening-drive
+    inventory absorption. This campaign requires opening-drive direction plus later
+    VWAP pullback/reclaim plus aligned aggregate orderflow, so neither component can
+    trigger alone.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_opening_drive_vwap_orderflow_pullback_density_audit_20260618.md
+  limited_core_window:
+    start_date: '2011-02-22'
+    end_date: '2012-09-06'
+    source: benchmark random 10 percent window, seed 31, excluding latest 10 percent
+      and Covid range
+  strict_corner:
+    entry.params.min_drive_points: 4.0
+    entry.params.min_orderflow_imbalance: 0.04
+    fixed_pullback_tolerance_ticks: 4
+    fixed_reclaim_window_bars: 6
+    fixed_min_drive_close_location: 0.55
+  decision: approve_for_testing
+variants:
+- drive30_signed_pullback_1230
+- drive30_large10_pullback_1230
+- drive30_large20_pullback_1230
+- drive60_signed_pullback_1430
+- drive60_large20_pullback_1430
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results

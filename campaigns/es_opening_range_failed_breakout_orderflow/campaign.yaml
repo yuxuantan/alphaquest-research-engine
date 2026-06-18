@@ -1,0 +1,128 @@
+campaign_id: es_opening_range_failed_breakout_orderflow
+title: ES opening-range failed breakout reclaim with aggregate orderflow
+decision: FAIL
+created_at: '2026-06-17'
+instrument: ES
+market_timezone: America/New_York
+edge_family: opening_range_failed_breakout_orderflow
+hypothesis: Opening-range highs and lows are public intraday support/resistance levels.
+  A close outside the completed opening range that quickly reclaims back through the
+  boundary with opposite aggregate orderflow may indicate a failed breakout and inventory
+  reversal rather than genuine continuation.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Documents that support/resistance levels can predict intraday trend interruptions.
+    This campaign maps the idea to completed opening-range boundaries in ES.
+- title: Assessing the profitability of intraday opening range breakout strategies
+  authors: Ulf Holmberg, Carl Lonnback, Christian Lundstrom
+  year: 2013
+  venue: Finance Research Letters
+  link: https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html
+  doi: 10.1016/j.frl.2012.09.001
+  relevance: 'Supports opening-range rules as a systematic intraday futures framework.
+    This campaign tests the mirror image: failed breakouts that reclaim the range.'
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Supports orderflow imbalance as a short-horizon pressure proxy. This
+    campaign uses local Sierra aggregate signed trade flow, not quote-level OFI.
+rationale: 'This is a bounded composite edge. Price action defines the setup: completed
+  opening range, close outside the range, then close back through the same boundary.
+  Aggregate orderflow is only a confirmation that the reclaim bar contains pressure
+  opposite the failed breakout. It is distinct from opening-range breakout continuation,
+  opening gap absorption, prior-day stop-run reclaim, and standalone orderflow absorption.'
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  large20_volume
+lookahead_risks:
+- Opening-range high and low are unavailable until the configured opening window is
+  complete.
+- The failed breakout is recognized only after a completed close outside the opening
+  range.
+- The reclaim and orderflow confirmation use only the completed reclaim bar or predeclared
+  completed-bar lookback.
+- Signals generated from bar close are filled no earlier than the next bar open by
+  the engine.
+- Final session high/low, final VWAP, volume profile, and post-entry orderflow are
+  not used.
+failure_modes:
+- Opening-range failures may be random noise after costs rather than a durable reversal
+  edge.
+- Sierra aggregate signed flow may not match quote-level OFI or true initiator-side
+  pressure.
+- A reclaim can precede a second breakout, causing range-edge stops to be hit repeatedly.
+- The effect may concentrate in a small set of high-volatility days or news regimes.
+- Opening ranges can be too wide for prop-style drawdown geometry.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_opening_range_orderflow_breakout
+  - es_opening_gap_orderflow_absorption_fade
+  - es_prior_day_stop_run_reclaim
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_prior_level_delta_dislocation
+  - es_range_compression_orderflow_breakout
+  conclusion: Eligible as a new active campaign because the primary trigger is an
+    opening-range false breakout and reclaim, not OR continuation, gap fade, prior-day
+    level reclaim, standalone orderflow absorption, prior-level delta dislocation,
+    or range compression.
+variants:
+- or15_signed_failed_reclaim_1030
+- or30_signed_failed_reclaim_1100
+- or15_large10_failed_reclaim_1030
+- or30_large20_failed_reclaim_1130
+- or60_signed_failed_reclaim_1200
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change opening-range failed-breakout reclaim mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant
+    variants:
+    - or15_large10_failed_reclaim_1030
+    - or15_signed_failed_reclaim_1030
+    - or30_large20_failed_reclaim_1130
+    - or30_signed_failed_reclaim_1100
+    - or60_signed_failed_reclaim_1200
+    audit: research_artifacts/es_opening_range_failed_breakout_orderflow_rescue_attempt_1_20260617.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_opening_range_failed_breakout_orderflow/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time stop-offset parameter-space
+    rescues failed limited_core_grid_test before monkey, WFA, Monte Carlo, simulated
+    incubation, frozen validation, or candidate reporting.
+  best_run:
+    variant_id: or30_signed_failed_reclaim_1100
+    run_id: rescue1
+    profitable_combo_rate: 0.0
+    top_net_profit: -867.5
+    top_profit_factor: 0.8922360248447205
+    top_trades_per_year: 76.20704471646266
+    top_failure_reason: min_total_net_profit

@@ -1,0 +1,142 @@
+campaign_id: es_intraday_periodicity_orderflow_confirmation
+title: ES Intraday Periodicity With Aggregate Orderflow Confirmation
+created_at: '2026-06-18'
+decision: FAIL
+status: closed_failed_limited_core_grid
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+edge_type: composite_intraday_periodicity_orderflow_confirmation
+hypothesis: Same-clock ES intraday return tendencies documented in the intraday periodicity literature
+  may be tradable only when the immediately preceding completed ES orderflow window confirms the historical
+  slot direction.
+rationale: 'The failed base periodicity campaign used only prior same-clock slot returns. This bounded
+  composite keeps the primary same-clock anomaly fixed and adds one secondary condition: completed aggregate
+  orderflow before entry must align with the prior-slot direction. It is not an opening-range, VWAP, prior-level,
+  raw signed-flow, or 0DTE campaign.'
+sources:
+- title: Intraday Patterns in the Cross-Section of Stock Returns
+  authors: Steven L. Heston, Robert A. Korajczyk, and Ronnie Sadka
+  year: 2010
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2010.01573.x
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2010.01573.x
+  relevance: Documents same-clock intraday return continuation at half-hour intervals using only prior
+    occurrences of the same intraday interval.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports orderflow imbalance as a short-horizon price-pressure proxy. This campaign uses
+    completed Sierra aggregate trade-side flow, not full-depth OFI.
+data_needs:
+- local Sierra ES RTH 1-minute OHLCV and aggregate orderflow bars
+- prebuilt intraday periodicity feature CSV with prior-session-only same-slot rolling means
+- completed pre-entry source-window signed, large10, and large20 imbalances
+- next-bar-open execution after completed entry-time signal
+- same-day forced flatten at the slot end and no overnight exposure
+lookahead_risks:
+- Same-clock return means are shifted one occurrence within each slot; the current slot return is never
+  used for its own signal.
+- Orderflow confirmation uses only completed bars before the entry timestamp.
+- Signals use bar close and engine execution must occur no earlier than the next bar open.
+- No final session high/low, final VWAP, future orderflow, or future slot return is used.
+failure_modes:
+- The stock cross-sectional periodicity anomaly may not transfer to ES futures after costs.
+- Current orderflow confirmation may identify exhaustion rather than confirmation.
+- Slot effects may be unstable across regimes and fail WFA even if the shortlist window passes.
+- Short slot holds may be erased by one-tick slippage and pessimistic same-bar stop/target ordering.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_intraday_periodicity_persistence
+  - es_signed_orderflow_persistence
+  - es_trend_aligned_orderflow_continuation
+  - es_opening_range_orderflow_breakout
+  - es_gao_last_half_hour_orderflow_confirmation
+  - es_spx_0dte_orderflow_continuation
+  conclusion: Eligible as one bounded composite for the failed intraday-periodicity primary edge. If this
+    campaign fails, do not launch another local intraday-periodicity composite without materially new
+    evidence or data.
+composite_edge_policy:
+  primary_edge: Heston-Korajczyk-Sadka same-clock intraday periodicity
+  secondary_conditions:
+  - Completed ES aggregate orderflow imbalance aligned with the prior same-clock direction.
+  max_secondary_conditions: 1
+  primary_edge_stop_rule: This is the only local orderflow-confirmed composite for intraday periodicity
+    unless materially new evidence is approved before testing.
+variants:
+- morning_1000_signed_confirmed_slot
+- morning_1030_large10_confirmed_slot
+- late_morning_1130_signed_confirmed_slot
+- afternoon_1330_large20_confirmed_slot
+- late_afternoon_1430_large20_confirmed_slot
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+pre_pnl_density_audit: research_artifacts/es_intraday_periodicity_orderflow_confirmation_density_audit_20260618.md
+rescue_density_audit: research_artifacts/es_intraday_periodicity_orderflow_confirmation_rescue_attempt_1_density_audit_20260618.md
+rescue_attempts:
+- attempt: 1
+  scope: per_failed_variant_parameter_space_only
+  path: campaigns/es_intraday_periodicity_orderflow_confirmation/rescue_attempts/parameter_space_rescue_1
+  applies_to:
+  - morning_1000_signed_confirmed_slot
+  - morning_1030_large10_confirmed_slot
+  - late_morning_1130_signed_confirmed_slot
+  - afternoon_1330_large20_confirmed_slot
+  - late_afternoon_1430_large20_confirmed_slot
+  allowed_by_user_rule: each failed variant can be rescued once
+  changes:
+    fixed_entry_param:
+      entry.params.min_mean_return_bps: 0.75
+    stop_grid:
+      sl.params.stop_pct:
+      - 0.0015
+      - 0.0025
+      - 0.0035
+    target_grid:
+      tp.params.target_r_multiple:
+      - 1.0
+      - 1.25
+      - 1.5
+  forbidden_changes_not_made:
+  - entry module unchanged
+  - stop module unchanged
+  - target module unchanged
+  - slot/source windows unchanged
+  - flow modes unchanged
+  - data/costs/fills/session gates unchanged
+  result: failed_limited_core_grid
+  best_rescue: &id001
+    variant_id: morning_1030_large10_confirmed_slot
+    run_id: rescue1
+    profitable_combinations: 29
+    total_combinations: 81
+    profitable_combo_rate: 0.35802469135802467
+    top_net_profit: 1890.0
+    top_profit_factor: 1.3108552631578947
+    top_mar: 1.278178203219572
+final_result:
+  closed_at: '2026-06-18'
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  original_variants_failed: 5
+  rescue_variants_failed: 5
+  best_rescue: *id001
+  reason: All original variants and all one-time rescues failed limited_core_grid_test. Best rescue reached
+    29/81 profitable combinations (35.8%), below the 70% profitable-combination gate.

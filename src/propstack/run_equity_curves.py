@@ -5,7 +5,13 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from propstack.backtest.equity_report import write_equity_report_from_trade_log
-from propstack.utils.config import load_yaml, variant_root
+from propstack.utils.config import (
+    EFFECTIVE_CONFIG_FILENAME,
+    LEGACY_CAMPAIGN_CONFIG_FILENAME,
+    SOURCE_CONFIG_SNAPSHOT_FILENAME,
+    load_yaml,
+    variant_root,
+)
 from propstack.utils.reports import market_timezone
 
 
@@ -39,7 +45,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--config",
-        help="Run config.yaml. When set, only trade logs under that campaign variant run folder are rendered.",
+        help="Run source or effective config. When set, only trade logs under that campaign variant run folder are rendered.",
     )
     parser.add_argument(
         "--report-dir",
@@ -124,7 +130,13 @@ def _config_candidates_for_trade_log(path: Path) -> list[Path]:
     candidates = []
     seen = set()
     for parent in [path.parent, *path.parent.parents]:
-        for name in ["config.yaml", "config_snapshot.yaml", "variant_config.yaml"]:
+        for name in [
+            EFFECTIVE_CONFIG_FILENAME,
+            LEGACY_CAMPAIGN_CONFIG_FILENAME,
+            SOURCE_CONFIG_SNAPSHOT_FILENAME,
+            "config_snapshot.yaml",
+            "variant_config.yaml",
+        ]:
             candidate = parent / name
             if candidate in seen:
                 continue

@@ -1,0 +1,137 @@
+campaign_id: es_footprint_absorption_initiation
+title: ES Footprint Absorption Followed By Initiation
+decision: PENDING
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: footprint_absorption_initiation
+hypothesis: Price-level bid/ask imbalance that fails to extend price at a known
+  area of interest can mark liquidity absorption. A completed bar that closes back
+  away from the absorbed imbalance is an initiation signal in the opposite direction,
+  and should have short-horizon predictive value when executed no earlier than the
+  next 1-minute bar open.
+sources:
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Provides academic support for short-horizon price changes being linked
+    to order-flow imbalance. This campaign adapts that concept to local Sierra
+    price-level bid/ask footprint imbalance, not full depth-of-book OFI.
+- title: Limit Order Books
+  authors: Martin D. Gould, Mason A. Porter, Stacy Williams, Mark McDonald, Daniel
+    J. Fenn, and Sam D. Howison
+  year: 2013
+  venue: Quantitative Finance
+  doi: 10.1080/14697688.2013.803148
+  link: https://www.tandfonline.com/doi/abs/10.1080/14697688.2013.803148
+  relevance: Reviews empirical LOB behavior and cautions that order-book models
+    are nuanced; this supports testing footprint imbalance as a fragile hypothesis,
+    not treating it as a guaranteed edge.
+- title: Support for Resistance
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the idea that published support/resistance levels can predict
+    intraday trend interruptions. This campaign uses prior RTH levels, opening range,
+    rolling extremes, and round-number levels as objectively defined AOIs.
+rationale: This is a price-action plus local at-price orderflow campaign. A bid
+  imbalance below the close means heavy selling traded at a lower price but price
+  closed back above it, consistent with sell absorption and bullish initiation. An
+  ask imbalance above the close means heavy buying traded at a higher price but price
+  closed back below it, consistent with buy absorption and bearish initiation. AOI
+  filters keep the signal from becoming a generic imbalance detector.
+data_needs:
+- local Sierra ES at-price bid/ask trade records already converted to parquet
+- derived 1-minute footprint imbalance feature cache built from local Sierra data
+- completed RTH OHLCV bars with prior RTH levels where applicable
+- next-bar execution, ES tick size, point value, commission, and slippage from config
+data_quality_caveats:
+- The footprint cache is derived from local Sierra records with bid_volume and
+  ask_volume at traded prices. It is not full depth-of-book replay and does not prove
+  queue position or limit-order fill quality.
+- Footprint columns are valid at the 1-minute source timeframe. They are not treated
+  as valid after generic 5-minute aggregation.
+- Diagonal imbalance is computed from completed bar at-price bid/ask volume; signals
+  are entered only on the next bar by the engine.
+- Same-bar stop/target conflicts remain pessimistic unless detail data resolves them.
+lookahead_risks:
+- The footprint imbalance and close relative to the imbalance are known only after
+  the 1-minute signal bar closes.
+- Opening-range levels are available only after the configured opening range has
+  completed. Rolling range levels use prior bars only.
+- Prior RTH high/low are from completed prior sessions. No final current-session
+  high/low, final VWAP, final profile, future footprint, or future range is used.
+- Signals using bar close are filled no earlier than the next 1-minute bar open.
+failure_modes:
+- Bid/ask footprint imbalance may be a descriptive pattern with no exploitable edge
+  after spread, slippage, and commissions.
+- Sierra bid/ask volume semantics may differ from true aggressor classification,
+  especially around bundled or corrected records.
+- AOI confluence can reduce sample size below the required 50 trades per year.
+- One-minute signal bars can be noisy; an apparent absorption close may be random
+  churn around a level.
+- Stops at the signal-bar extreme may be too tight during high-volatility sweeps or
+  too wide to support positive expectancy.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_prior_value_area_orderflow_rejection
+  - es_rolling_range_orderflow_sweep_reversal
+  - es_round_number_orderflow_barrier
+  - es_opening_range_retest_orderflow
+  - es_session_extreme_delta_divergence
+  - es_orderflow_impulse_reversal
+  conclusion: Eligible as a distinct active campaign because it uses price-level
+    diagonal footprint imbalance and absorption location relative to the close. The
+    active rejected orderflow campaigns used bar-level signed volume, large-trade
+    aggregates, or price-only AOI mechanics rather than at-price bid/ask absorption.
+variant_count_required: 5
+variants:
+- prior_extreme_footprint_absorption_reversal_1500
+- session_open_footprint_absorption_reclaim_1500
+- opening_range_footprint_absorption_retest_1100
+- rolling_range_footprint_absorption_sweep_1500
+- round_number_footprint_absorption_rejection_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change core strategy mechanic
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+pre_pnl_density_audit:
+  status: final_source_set_passed_before_pnl
+  artifact: research_artifacts/es_footprint_absorption_initiation_density_audit_20260618.md
+  detail_csv: research_artifacts/es_footprint_absorption_initiation_density_audit_20260618.csv
+  summary_csv: research_artifacts/es_footprint_absorption_initiation_density_summary_20260618.csv
+  note: First density pass rejected isolated prior-low and prior-high one-sided
+    variants before any PnL because both stayed below 50 raw signals/year. They were
+    reformulated into two-sided prior-session-extreme and session-open AOI variants
+    before staged testing. Final density audit passed for all five active variants
+    before any PnL run.
+result_summary:
+  decision: PENDING
+  status: not_started
+rescue_attempts:
+- id: parameter_space_rescue_1
+  status: density_passed_pending_pnl
+  scope: per_failed_variant
+  changes: Parameter-space/fixed-parameter changes only. The rescue preserves the
+    footprint absorption entry module, AOI mechanics, sweep-extreme stop, fixed-R
+    target module, 1-minute local Sierra footprint data, costs, fills, sessions,
+    prop rules, and staged gates. It drops zero-confirmation entries and tests more
+    continuation-oriented target-R settings.
+  density_audit: research_artifacts/es_footprint_absorption_initiation_rescue_attempt_1_density_audit_20260618.md
+  density_summary_csv: research_artifacts/es_footprint_absorption_initiation_rescue_attempt_1_density_summary_20260618.csv

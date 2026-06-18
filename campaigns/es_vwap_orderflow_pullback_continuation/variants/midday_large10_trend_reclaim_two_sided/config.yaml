@@ -1,0 +1,203 @@
+campaign_id: es_vwap_orderflow_pullback_continuation
+variant_id: midday_large10_trend_reclaim_two_sided
+test_run_id: run1
+strategy_name: vwap_orderflow_pullback_continuation
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Bialkowski, Darolles, and Le Fol (2008); McCulloch and Kazakov (2007); Cont, Kukanov, and Stoikov (2014)
+  edge_thesis: VWAP-side ES pullbacks may continue during midday when the completed reclaim bar has aligned large-10 aggregate orderflow.
+  mechanic: From 11:00 through 14:30 ET, enter with the VWAP-side trend after a completed pullback/reclaim only when same-bar large-10 signed-flow imbalance confirms direction.
+  timeframe_rationale: 5-minute bars reduce one-minute VWAP noise while preserving completed-bar signal timing and next-bar-open execution.
+  mechanics_review_required: true
+  mechanics_review_version: "2026-06-17"
+  mechanics_review:
+    mechanic_expresses_edge: >
+      This variant expresses the edge by requiring the price-action setup first:
+      ES must already have a completed VWAP-side trend, then pull back to VWAP,
+      and then close back on the trend side. The signed-volume filter is only a
+      confirmation on that completed reclaim bar, so it does not become a pure
+      orderflow timing strategy.
+    entry_logic_rationale: >
+      The 11:00-14:30 ET window gives the session enough history to form VWAP and
+      trend state after the opening auction. Requiring
+      two to four completed trend closes plus positive or negative reclaim-bar
+      large-10 signed flow should isolate continuation attempts that have both
+      price and larger-trade participation evidence.
+    stop_loss_rationale: >
+      A percent-from-entry stop is simple and independent of post-entry orderflow.
+      It rejects the trade if the reclaim cannot hold enough of the VWAP-side move
+      to justify continuation after costs.
+    target_exit_rationale: >
+      A fixed-R target keeps the exit predeclared and lets the grid test whether
+      VWAP reclaim continuation can produce enough reward relative to the initial
+      stop before the same-day flatten.
+    profitability_rationale: >
+      The setup should only be profitable if VWAP acts as a benchmark value area
+      and aligned larger-trade aggressive flow identifies reclaims with real
+      inventory follow through. Pre-PnL density showed the full entry grid
+      stayed above 50 signals per year, so the test is not dependent on rare
+      events.
+    known_failure_modes: >
+      The edge can fail if VWAP reclaims are crowded, if large-10 buckets are
+      noisy, if confirmation arrives after most of the move, or if profits are
+      concentrated in a small set of high-volatility trend days.
+    pre_test_decision: approve_for_testing
+data: &data
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: intraday_capitulation_mr
+  warmup_days: 30
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+apex_rules: &apex_rules
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: "16:59:59"
+  force_flatten_enabled: true
+  force_flatten_time: "16:58:30"
+  latest_entry_time: "16:45:00"
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: vwap_orderflow_pullback_continuation
+    params:
+      setup_mode: trend_reclaim
+      start_time: "11:00:00"
+      end_time: "14:30:00"
+      required_trend_closes: 3
+      min_drive_points: 2.0
+      pullback_tolerance_ticks: 1
+      reclaim_buffer_ticks: 0
+      reclaim_window_bars: 3
+      flow_mode: large10
+      min_orderflow_imbalance: 0.04
+      min_flow_volume: 0
+      allow_long: true
+      allow_short: true
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      max_trades_per_day: 1
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0025
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: "15:55:00"
+core: &core
+  data_subset: &data_subset
+    start_date: "2011-01-03"
+    end_date: "2026-06-09"
+    session_labels: [RTH]
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: "15:55:00"
+  max_trades_per_day: 1
+benchmarks: &benchmarks
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.10
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid: &grid
+  data_subset: *data_subset
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &parameters
+    entry.params.required_trend_closes: [2, 3, 4]
+    entry.params.min_orderflow_imbalance: [0.02, 0.04, 0.06]
+    sl.params.stop_pct: [0.0015, 0.0025, 0.004]
+    tp.params.target_r_multiple: [0.75, 1.0, 1.5]
+monkey: &monkey
+  data_subset: *data_subset
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+wfa: &wfa
+  data_subset: *data_subset
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *parameters
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules: &prop_rules
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo: &monte_carlo
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

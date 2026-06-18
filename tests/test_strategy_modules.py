@@ -31,6 +31,12 @@ from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPd
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.positive_delta_dislocation import PositiveDeltaDislocationEntry
 from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSessionIbsReversionEntry
+from propstack.strategy_modules.entry.prior_value_area_orderflow_acceptance import (
+    PriorValueAreaOrderflowAcceptanceEntry,
+)
+from propstack.strategy_modules.entry.prior_value_area_orderflow_rejection import (
+    PriorValueAreaOrderflowRejectionEntry,
+)
 from propstack.strategy_modules.entry.range_compression_breakout import RangeCompressionBreakoutEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
@@ -40,6 +46,9 @@ from propstack.strategy_modules.entry.trade_orderflow_pressure import TradeOrder
 from propstack.strategy_modules.entry.trade_orderflow_state_rank import TradeOrderflowStateRankEntry
 from propstack.strategy_modules.entry.volume_conditioned_liquidity_reversal import (
     VolumeConditionedLiquidityReversalEntry,
+)
+from propstack.strategy_modules.entry.wide_range_orderflow_continuation import (
+    WideRangeOrderflowContinuationEntry,
 )
 from propstack.strategy_modules.entry.vpin_toxicity_continuation import VpinToxicityContinuationEntry
 from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPullbackContinuationEntry
@@ -4027,6 +4036,363 @@ def test_volume_conditioned_liquidity_reversal_rejects_low_volume():
 
     assert entry.on_bar_close(
         _volume_reversal_bar("2024-01-03 09:30", 100.0, 100.25, 97.5, 98.0, volume_ratio=1.1)
+    ) is None
+
+
+def _wide_range_flow_bar(
+    timestamp,
+    open_price,
+    high,
+    low,
+    close,
+    *,
+    signed_volume=300.0,
+    volume=1000.0,
+    large10_signed_volume=120.0,
+    large10_volume=400.0,
+    large20_signed_volume=60.0,
+    large20_volume=200.0,
+    volume_ratio=1.3,
+    name=None,
+):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": True,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume_ratio": volume_ratio,
+            "signed_volume": signed_volume,
+            "volume": volume,
+            "large10_signed_volume": large10_signed_volume,
+            "large10_volume": large10_volume,
+            "large20_signed_volume": large20_signed_volume,
+            "large20_volume": large20_volume,
+        },
+        name=name if name is not None else ts.hour * 60 + ts.minute,
+    )
+
+
+def test_wide_range_orderflow_continuation_emits_next_bar_long_signal():
+    entry = WideRangeOrderflowContinuationEntry(
+        {
+            "setup_mode": "morning_signed_wide_range_long",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_range_ticks": 8,
+            "min_body_ticks": 4,
+            "min_close_location": 0.7,
+            "min_volume_ratio": 1.2,
+            "min_orderflow_imbalance": 0.2,
+            "flow_mode": "signed_volume",
+            "allow_long": True,
+            "allow_short": False,
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _wide_range_flow_bar("2024-01-03 09:30", 100.0, 102.5, 99.75, 102.0, signed_volume=300.0)
+    )
+
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 09:35", tz="America/New_York")
+    assert signal.report_fields["signal_range_ticks"] == 11.0
+    assert signal.report_fields["signal_orderflow_imbalance"] == 0.3
+    assert signal.report_fields["feature_method"] == "completed_bar_wide_range_with_sierra_aggregate_orderflow"
+
+
+def test_wide_range_orderflow_continuation_requires_flow_alignment_and_trade_limit():
+    entry = WideRangeOrderflowContinuationEntry(
+        {
+            "bar_interval_minutes": 5,
+            "min_range_ticks": 8,
+            "min_body_ticks": 4,
+            "min_close_location": 0.7,
+            "min_volume_ratio": 1.0,
+            "min_orderflow_imbalance": 0.2,
+            "flow_mode": "large20",
+            "allow_long": True,
+            "allow_short": True,
+            "max_trades_per_day": 1,
+        }
+    )
+    misaligned = _wide_range_flow_bar(
+        "2024-01-03 09:30",
+        100.0,
+        102.5,
+        99.75,
+        102.0,
+        large20_signed_volume=-80.0,
+        large20_volume=200.0,
+    )
+
+    assert entry.on_bar_close(misaligned) is None
+    assert entry.on_bar_close(
+        _wide_range_flow_bar("2024-01-03 09:30", 100.0, 102.5, 99.75, 102.0),
+        trades_today=1,
+    ) is None
+
+
+def test_wide_range_orderflow_continuation_emits_short_at_lower_close_location():
+    entry = WideRangeOrderflowContinuationEntry(
+        {
+            "bar_interval_minutes": 5,
+            "min_range_ticks": 8,
+            "min_body_ticks": 4,
+            "min_close_location": 0.7,
+            "min_orderflow_imbalance": 0.2,
+            "allow_long": False,
+            "allow_short": True,
+        }
+    )
+
+    signal = entry.on_bar_close(
+        _wide_range_flow_bar("2024-01-03 09:30", 100.0, 100.5, 97.5, 98.0, signed_volume=-300.0)
+    )
+
+    assert signal.direction == "short"
+    assert signal.report_fields["signal_return_ticks"] == -8.0
+    assert signal.report_fields["signal_close_location"] < 0.3
+
+
+def _prior_value_bar(
+    timestamp,
+    open_price,
+    high,
+    low,
+    close,
+    *,
+    signed_volume=200.0,
+    volume=1000.0,
+    large10_signed_volume=100.0,
+    large10_volume=500.0,
+    large20_signed_volume=50.0,
+    large20_volume=250.0,
+):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": True,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+            "signed_volume": signed_volume,
+            "volume": volume,
+            "large10_signed_volume": large10_signed_volume,
+            "large10_volume": large10_volume,
+            "large20_signed_volume": large20_signed_volume,
+            "large20_volume": large20_volume,
+        }
+    )
+
+
+def test_prior_value_area_orderflow_acceptance_uses_prior_session_profile_for_long():
+    entry = PriorValueAreaOrderflowAcceptanceEntry(
+        {
+            "setup_mode": "vah_acceptance_long",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 2,
+            "breakout_buffer_ticks": 1,
+            "min_orderflow_imbalance": 0.1,
+            "flow_mode": "signed_volume",
+            "allow_long": True,
+            "allow_short": False,
+        }
+    )
+
+    assert entry.on_bar_close(_prior_value_bar("2024-01-02 09:30", 100.0, 100.5, 99.5, 100.0)) is None
+    assert entry.on_bar_close(_prior_value_bar("2024-01-02 09:35", 100.0, 100.5, 99.5, 100.0)) is None
+    signal = entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:30", 100.75, 101.25, 100.5, 101.0, signed_volume=300.0)
+    )
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 09:35", tz="America/New_York")
+    assert signal.report_fields["prior_profile_session"] == pd.Timestamp("2024-01-02").date()
+    assert signal.report_fields["boundary_type"] == "vah"
+    assert signal.report_fields["orderflow_imbalance"] == 0.3
+
+
+def test_prior_value_area_orderflow_acceptance_requires_aligned_flow_and_trade_limit():
+    entry = PriorValueAreaOrderflowAcceptanceEntry(
+        {
+            "setup_mode": "two_sided_acceptance",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 2,
+            "breakout_buffer_ticks": 0,
+            "min_orderflow_imbalance": 0.2,
+            "flow_mode": "large20",
+        }
+    )
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:30", 100.0, 100.5, 99.5, 100.0))
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:35", 100.0, 100.5, 99.5, 100.0))
+
+    assert entry.on_bar_close(
+        _prior_value_bar(
+            "2024-01-03 09:30",
+            100.75,
+            101.25,
+            100.5,
+            101.0,
+            large20_signed_volume=-100.0,
+            large20_volume=250.0,
+        )
+    ) is None
+    assert entry.on_bar_close(
+        _prior_value_bar(
+            "2024-01-03 09:35",
+            100.75,
+            101.25,
+            100.5,
+            101.0,
+            large20_signed_volume=100.0,
+            large20_volume=250.0,
+        ),
+        trades_today=1,
+    ) is None
+
+
+def test_prior_value_area_orderflow_acceptance_emits_short_below_prior_val():
+    entry = PriorValueAreaOrderflowAcceptanceEntry(
+        {
+            "setup_mode": "val_acceptance_short",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 2,
+            "breakout_buffer_ticks": 1,
+            "min_orderflow_imbalance": 0.1,
+            "allow_long": False,
+            "allow_short": True,
+        }
+    )
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:30", 100.0, 100.5, 99.5, 100.0))
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:35", 100.0, 100.5, 99.5, 100.0))
+    signal = entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:30", 99.25, 99.5, 98.75, 99.0, signed_volume=-300.0)
+    )
+
+    assert signal is not None
+    assert signal.direction == "short"
+    assert signal.report_fields["boundary_type"] == "val"
+
+
+def test_prior_value_area_orderflow_rejection_fades_vah_probe_back_inside():
+    entry = PriorValueAreaOrderflowRejectionEntry(
+        {
+            "setup_mode": "vah_rejection_short",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 2,
+            "rejection_buffer_ticks": 1,
+            "min_orderflow_imbalance": 0.1,
+            "flow_mode": "signed_volume",
+            "allow_long": False,
+            "allow_short": True,
+        }
+    )
+
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:30", 100.0, 100.5, 99.5, 100.0))
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:35", 100.0, 100.5, 99.5, 100.0))
+    signal = entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:30", 100.75, 101.25, 100.25, 100.25, signed_volume=-300.0)
+    )
+
+    assert signal is not None
+    assert signal.direction == "short"
+    assert signal.sweep_high == 101.25
+    assert signal.report_fields["boundary_type"] == "vah"
+    assert signal.report_fields["orderflow_imbalance"] == -0.3
+    assert signal.report_fields["signal_timestamp"] == pd.Timestamp("2024-01-03 09:35", tz="America/New_York")
+
+
+def test_prior_value_area_orderflow_rejection_fades_val_probe_back_inside():
+    entry = PriorValueAreaOrderflowRejectionEntry(
+        {
+            "setup_mode": "val_rejection_long",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 2,
+            "rejection_buffer_ticks": 1,
+            "min_orderflow_imbalance": 0.1,
+            "flow_mode": "signed_volume",
+            "allow_long": True,
+            "allow_short": False,
+        }
+    )
+
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:30", 100.0, 100.5, 99.5, 100.0))
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:35", 100.0, 100.5, 99.5, 100.0))
+    signal = entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:30", 99.25, 99.75, 98.75, 99.75, signed_volume=300.0)
+    )
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.sweep_low == 98.75
+    assert signal.report_fields["boundary_type"] == "val"
+
+
+def test_prior_value_area_orderflow_rejection_requires_counterflow_and_trade_limit():
+    entry = PriorValueAreaOrderflowRejectionEntry(
+        {
+            "setup_mode": "two_sided_rejection",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 2,
+            "rejection_buffer_ticks": 1,
+            "min_orderflow_imbalance": 0.2,
+            "flow_mode": "large20",
+        }
+    )
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:30", 100.0, 100.5, 99.5, 100.0))
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:35", 100.0, 100.5, 99.5, 100.0))
+
+    assert entry.on_bar_close(
+        _prior_value_bar(
+            "2024-01-03 09:30",
+            100.75,
+            101.25,
+            100.25,
+            100.25,
+            large20_signed_volume=100.0,
+            large20_volume=250.0,
+        )
+    ) is None
+    assert entry.on_bar_close(
+        _prior_value_bar(
+            "2024-01-03 09:35",
+            100.75,
+            101.25,
+            100.25,
+            100.25,
+            large20_signed_volume=-100.0,
+            large20_volume=250.0,
+        ),
+        trades_today=1,
     ) is None
 
 

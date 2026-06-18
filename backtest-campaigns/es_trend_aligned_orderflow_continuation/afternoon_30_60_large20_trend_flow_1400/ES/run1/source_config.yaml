@@ -1,0 +1,200 @@
+campaign_id: es_trend_aligned_orderflow_continuation
+variant_id: afternoon_30_60_large20_trend_flow_1400
+test_run_id: run1
+strategy_name: trend_aligned_orderflow_continuation
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Gao, Han, Li, and Zhou (2018); Cont, Kukanov, and Stoikov (2014); Moskowitz, Ooi, and Pedersen (2012)
+  edge_thesis: ES may continue in the direction of completed multi-timeframe intraday trend structure when same-bar aggregate orderflow confirms direction.
+  mechanic: At the 14:00 ET completed bar, require 30-minute and 60-minute HH/HL for longs or LH/LL for shorts, plus aligned large-20 signed-flow imbalance.
+  timeframe_rationale: 5-minute bars keep the price-action state completed and auditable while preserving enough intraday observations for one daily signal and 1-minute detail conflict handling.
+  mechanics_review_required: true
+  mechanics_review_version: "2026-06-17"
+  mechanics_review:
+    mechanic_expresses_edge: >
+      This variant expresses the edge using slower completed price-action
+      structure, requiring 30-minute and 60-minute trend agreement by 14:00 ET.
+      The large-20 orderflow condition confirms whether larger liquidity takers
+      are still pressing the established direction rather than fading it.
+    entry_logic_rationale: >
+      The afternoon signal intentionally avoids the opening auction and asks
+      whether a broader intraday trend can continue into the final two hours.
+      The signal is formed only from completed bars through 14:00 ET and uses no
+      later high, low, close, VWAP, or volume information.
+    stop_loss_rationale: >
+      A percent-from-entry stop fits this broad trend-state entry because there
+      is no single public level whose violation invalidates the trade. The stop
+      grid tests risk width while leaving the price-action and flow trigger
+      untouched.
+    target_exit_rationale: >
+      A fixed-R target keeps the payoff rule stable across trend horizons and
+      prevents post-signal flow from influencing exits. The 15:55 ET flatten is
+      close enough to the cash close to capture afternoon continuation while
+      avoiding overnight exposure.
+    profitability_rationale: >
+      This should be profitable only if broad afternoon trend alignment plus
+      large-trade pressure captures persistent inventory demand into the close.
+      The pre-PnL density audit showed all declared entry corners above roughly
+      55 trades per year.
+    known_failure_modes: >
+      The setup can fail if 14:00 ET trends are exhausted, if large-20 flow is
+      reactive rather than predictive, or if late-day liquidity changes make the
+      generic stop and fixed-R target unstable across regimes.
+    pre_test_decision: approve_for_testing
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: "16:59:59"
+  force_flatten_enabled: true
+  force_flatten_time: "16:58:30"
+  latest_entry_time: "16:45:00"
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: trend_aligned_orderflow_continuation
+    params:
+      rth_start: "09:30:00"
+      signal_time: "14:00:00"
+      flatten_time: "15:55:00"
+      bar_interval_minutes: 5
+      short_trend_bars: 6
+      long_trend_bars: 12
+      tick_size: 0.25
+      min_trend_move_ticks: 0
+      min_orderflow_imbalance: 0.005
+      flow_mode: large20
+      min_flow_volume: 1
+      allow_long: true
+      allow_short: true
+      max_trades_per_day: 1
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0025
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: "15:55:00"
+core: &core
+  data_subset: &data_subset
+    start_date: "2011-01-03"
+    end_date: "2026-06-09"
+    session_labels: [RTH]
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: "15:55:00"
+  max_trades_per_day: 1
+benchmarks: &benchmarks
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_total_net_profit: 0
+  max_drawdown_pct: 0.10
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid: &grid
+  data_subset: *data_subset
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &parameters
+    entry.params.min_orderflow_imbalance: [0.005, 0.01]
+    entry.params.min_trend_move_ticks: [0, 1]
+    sl.params.stop_pct: [0.0015, 0.0025, 0.0035]
+    tp.params.target_r_multiple: [0.75, 1.0, 1.5]
+monkey:
+  data_subset: *data_subset
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *data_subset
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *parameters
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

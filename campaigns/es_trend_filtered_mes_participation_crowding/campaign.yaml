@@ -1,0 +1,173 @@
+campaign_id: es_trend_filtered_mes_participation_crowding
+title: ES trend-filtered MES participation crowding reversion
+decision: FAIL
+created_at: '2026-06-18'
+symbol: ES
+dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+hypothesis: ES may mean-revert after high MES smaller-contract participation during
+  a completed pullback, but only when the fade is aligned with the prior completed
+  ES trend rather than fighting it.
+rationale: This is a bounded composite edge. MES participation is used as a smaller-contract
+  crowding proxy; the ES price-action trend filter requires the reversal to be a trend
+  pullback entry, not a generic countertrend fade. The traded instrument is always
+  ES, and the trend window ends before the pullback/crowding window begins.
+sources:
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not
+    Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates conditioning on retail-like or smaller-ticket participation
+    intensity rather than treating all volume as equally informed.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures participation and Micro E-mini usage, supporting
+    MES participation as a relevant smaller-contract proxy.
+- title: Micro E-mini futures and options
+  authors: CME Group
+  year: 2026
+  venue: CME product documentation
+  link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+  relevance: Documents the 1:10 Micro E-mini to classic E-mini relationship used for
+    notional-equivalent MES participation.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2011.11.003
+  relevance: Motivates a directional price-action trend filter, used here only from
+    completed ES bars before the pullback window.
+data_needs:
+- local Sierra ES and MES completed 1-minute RTH OHLCV/trade-count cache
+- aligned ES/MES active-contract minutes from 2019-05-06 through 2026-06-09
+- MES notional-equivalent share using the 1:10 MES-to-ES contract ratio and MES trade-count
+  share
+- same-clock prior ranks shifted by one prior session; no current or future session
+  rank information
+- completed ES close history to compute a prior trend window ending before the pullback/crowding
+  window begins
+data_quality_caveats:
+- Sierra cache is completed-bar aggregate data, not tick-path or LOB data.
+- MES participation is a proxy for smaller-contract activity, not an account-classified
+  retail feed.
+- Same-bar stop/target conflicts require pessimistic OHLC ordering.
+- The 2019 MES launch date shortens WFA history compared with the full ES cache.
+lookahead_risks:
+- Entry uses only completed 1-minute bars; a 10:30 entry uses the completed 10:29-10:30
+  bar and executes next bar open.
+- Same-clock ranks use only prior same-clock observations and are unavailable during
+  the rank warmup period.
+- The ES trend window ends before the pullback/MES participation window begins, so
+  the trend filter does not use the signal pullback itself.
+- No future ES return, final session high/low, final VWAP, post-entry MES/ES data,
+  or post-entry orderflow is used.
+failure_modes:
+- MES participation may not isolate retail or less-informed flow.
+- High MES share may coincide with informed news or macro shocks rather than crowding.
+- Trend-filtered pullback reversals may still be too small to overcome ES commission,
+  slippage, and pessimistic fill ordering.
+- The effect may be concentrated in a small subset of volatility regimes or fail under
+  monkey perturbations.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_participation_crowding_reversion
+  - es_mes_micro_flow_divergence_reversion
+  - es_mes_aligned_flow_continuation
+  - es_signed_orderflow_persistence
+  - es_trend_aligned_orderflow_continuation
+  - es_intraday_capitulation_orderflow_reversion
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_daily_reversal_orderflow_confirmation
+  conclusion: Eligible as a bounded composite campaign. The prior MES participation
+    campaign faded all high-MES-share moves; this campaign only fades completed pullbacks
+    that move against a prior completed ES trend window. It is not MES signed-flow
+    divergence, ES/MES aligned-flow continuation, standalone signed-flow persistence,
+    or generic orderflow exhaustion.
+variants:
+- morning_trade_trend_pullback_reversal_1030
+- morning_notional_trend_pullback_reversal_1030
+- midday_notional_trend_pullback_reversal_1200
+- early_afternoon_notional_trend_pullback_reversal_1300
+- afternoon_notional_trend_pullback_reversal_1400
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_trend_filtered_mes_participation_crowding_density_audit_20260618.md
+  csv: research_artifacts/es_trend_filtered_mes_participation_crowding_density_audit_20260618.csv
+  summary: All selected entry-grid corners cleared roughly 50 signals/year before
+    any PnL was inspected.
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change MES participation feature definition
+  - change prior-trend-before-pullback mechanic
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: afternoon_notional_trend_pullback_reversal_1400
+    config: campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/parameter_space_rescue_1/afternoon_notional_trend_pullback_reversal_1400/config.yaml
+    report: backtest-campaigns/es_trend_filtered_mes_participation_crowding/afternoon_notional_trend_pullback_reversal_1400/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: summary.percentage_profitable_iterations=0.06172839506172839
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: early_afternoon_notional_trend_pullback_reversal_1300
+    config: campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/parameter_space_rescue_1/early_afternoon_notional_trend_pullback_reversal_1300/config.yaml
+    report: backtest-campaigns/es_trend_filtered_mes_participation_crowding/early_afternoon_notional_trend_pullback_reversal_1300/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: summary.percentage_profitable_iterations=0.04938271604938271
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: midday_notional_trend_pullback_reversal_1200
+    config: campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/parameter_space_rescue_1/midday_notional_trend_pullback_reversal_1200/config.yaml
+    report: backtest-campaigns/es_trend_filtered_mes_participation_crowding/midday_notional_trend_pullback_reversal_1200/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: summary.percentage_profitable_iterations=0.2345679012345679
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: morning_notional_trend_pullback_reversal_1030
+    config: campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/parameter_space_rescue_1/morning_notional_trend_pullback_reversal_1030/config.yaml
+    report: backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_notional_trend_pullback_reversal_1030/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_monkey_test
+    failure: summary.core_beats_monkey_net_profit_rate=0.84;summary.core_beats_monkey_max_drawdown_rate=0.7433333333333333
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: morning_trade_trend_pullback_reversal_1030
+    config: campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/parameter_space_rescue_1/morning_trade_trend_pullback_reversal_1030/config.yaml
+    report: backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/campaign_test_summary.json
+    terminal_stage: wfa_oos_monte_carlo
+    failure: summary.probability_profit_before_drawdown=0.0
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_trend_filtered_mes_participation_crowding/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 1
+  monte_carlo_reached: 1
+  candidate_report_created: false
+  failure_reason: All originals failed before WFA. Each failed variant received exactly
+    one parameter-space rescue. The best rescue passed WFA and WFA OOS monkey but
+    failed WFA OOS Monte Carlo prop-rule gate with 0.0 probability_profit_before_drawdown
+    and 1.0 probability_account_breach.
+  best_run: morning_trade_trend_pullback_reversal_1030/ES/rescue1
+  best_wfa_profit_factor: 1.449261337978195
+  best_wfa_mar: 1.7344926418082498
+  best_wfa_trades_per_year: 77.87399848190942
+  monte_carlo_probability_profit_before_drawdown: 0.0
+  monte_carlo_probability_account_breach: 1.0

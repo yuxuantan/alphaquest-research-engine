@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.trend_aligned_orderflow_continuation import TrendAlignedOrderflowContinuationEntry
+
+ENTRY_MODULE = TrendAlignedOrderflowContinuationEntry

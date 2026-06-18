@@ -21,6 +21,7 @@ from propstack.data.load import load_raw_data  # noqa: E402
 
 
 DEFAULT_CONFIG_GLOBS = (
+    "backtest-campaigns/**/effective_config.yaml",
     "backtest-campaigns/**/config.yaml",
     "campaigns/**/variants/**/config.yaml",
     "configs/campaigns/**/*.yaml",

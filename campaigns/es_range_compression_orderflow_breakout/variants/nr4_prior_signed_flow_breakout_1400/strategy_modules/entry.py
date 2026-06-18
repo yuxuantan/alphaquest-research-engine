@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.range_compression_orderflow_breakout import RangeCompressionOrderflowBreakoutEntry
+
+ENTRY_MODULE = RangeCompressionOrderflowBreakoutEntry

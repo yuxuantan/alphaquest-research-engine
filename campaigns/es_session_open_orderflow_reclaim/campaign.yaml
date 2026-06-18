@@ -1,0 +1,159 @@
+campaign_id: es_session_open_orderflow_reclaim
+title: ES Session Open Orderflow Reclaim
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: session_open_orderflow_reclaim
+hypothesis: The current RTH open is the first regular-session auction-clearing price. After ES makes a
+  completed excursion away from that price, a completed reclaim or rejection back through the open with
+  aligned aggregate orderflow may identify trapped inventory and short-horizon price pressure.
+sources:
+- title: Support and Resistance Levels in the Foreign Exchange Market
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the idea that widely observed price levels can condition short-horizon intraday
+    reactions. This campaign treats the current RTH open as a known auction-anchor level rather than a
+    future-derived level.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates orderflow imbalance as short-horizon price-pressure evidence. This campaign uses
+    completed-bar Sierra aggregate trade-side flow, not quote-level OFI.
+- title: Intraday Patterns in the Cross-Section of Stock Returns
+  authors: Steven L. Heston, Robert A. Korajczyk, Ronnie Sadka
+  year: 2010
+  venue: Journal of Finance / working paper
+  link: https://arxiv.org/abs/1005.3535
+  relevance: Documents systematic intraday return patterns related to trading-flow timing and motivates
+    testing whether a session-time anchor plus contemporaneous flow can produce repeatable same-day behavior.
+rationale: This is a bounded price-action plus aggregate-orderflow edge. The price-action component is
+  a prior completed excursion away from the current RTH open and a completed reclaim or rejection through
+  that same open. The orderflow component requires aligned same-bar signed-flow imbalance at the reclaim/rejection.
+  It is distinct from prior-close gap, opening-range, opening-drive, overnight-high/low, VWAP, prior-day-level,
+  and round-number campaigns.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 1-minute RTH OHLCV bars with completed-bar signed_volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  and large20_volume
+- current RTH open from the first regular-session bar; this is known from the first completed/observed
+  RTH bar and is not a future session statistic
+lookahead_risks:
+- The RTH open is fixed from the first RTH bar; no final session high, low, VWAP, range, or volume profile
+  is used.
+- The excursion must exist on a prior completed bar before the reclaim/rejection bar, avoiding same-bar
+  extension/reclaim sequence assumptions.
+- The reclaim/rejection and orderflow confirmation use only the completed signal bar; the engine enters
+  at the next bar open or later.
+- Same-bar stop/target conflicts are handled by the backtest engine with pessimistic OHLC ordering unless
+  detail data is available.
+failure_modes:
+- The RTH open may be too obvious and arbitraged away after costs.
+- A reclaim through the open may be a noisy cross rather than a true inventory trap.
+- Aggregate Sierra signed flow may not capture quote-level OFI or hidden liquidity replenishment.
+- The edge may be regime-specific and fail monkey tests when slippage, delay, or missed trades are stressed.
+- Open-anchor reactions may be dominated by a few high-volatility sessions or by morning-only behavior.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_opening_gap_orderflow_absorption_fade
+  - es_opening_drive_inventory_absorption
+  - es_opening_range_orderflow_breakout
+  - es_opening_range_failed_breakout_orderflow
+  - es_opening_range_retest_orderflow
+  - es_overnight_intraday_reversal
+  - es_overnight_return_late_day_momentum
+  - es_prior_level_delta_dislocation
+  - es_round_number_orderflow_barrier
+  - es_session_extreme_delta_divergence
+  - es_vwap_orderflow_pullback_continuation
+  conclusion: Eligible as a distinct active campaign because the reference level is the current session
+    RTH open itself. Nearby active failures used prior RTH close gaps, overnight highs/lows, completed
+    opening ranges, first-window opening-drive state, prior-day levels, round numbers, session extremes,
+    or VWAP. This campaign does not use those reference levels.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_session_open_orderflow_reclaim_density_audit_20260618.md
+  result: All five variants exceeded the 50 trades/year feasibility floor at every declared entry-grid
+    corner in both the benchmark limited-core window and the full available local history before any PnL
+    was inspected.
+variants:
+- morning_down_open_reclaim_long
+- morning_up_open_reject_short
+- midday_large10_two_sided_open_reclaim
+- afternoon_large20_down_open_reclaim_long
+- afternoon_large20_up_open_reject_short
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core session-open auction-anchor mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: morning_down_open_reclaim_long
+    config: campaigns/es_session_open_orderflow_reclaim/rescue_attempts/parameter_space_rescue_1/morning_down_open_reclaim_long/config.yaml
+    report: backtest-campaigns/es_session_open_orderflow_reclaim/morning_down_open_reclaim_long/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.04938271604938271 below required 0.70;
+      top net 0.0; top trades/year 74.86354218495882
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: morning_up_open_reject_short
+    config: campaigns/es_session_open_orderflow_reclaim/rescue_attempts/parameter_space_rescue_1/morning_up_open_reject_short/config.yaml
+    report: backtest-campaigns/es_session_open_orderflow_reclaim/morning_up_open_reject_short/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.09876543209876543 below required 0.70;
+      benchmark-pass combinations 2; top net 1572.5; top trades/year 89.84681505285035
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: midday_large10_two_sided_open_reclaim
+    config: campaigns/es_session_open_orderflow_reclaim/rescue_attempts/parameter_space_rescue_1/midday_large10_two_sided_open_reclaim/config.yaml
+    report: backtest-campaigns/es_session_open_orderflow_reclaim/midday_large10_two_sided_open_reclaim/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -2352.5;
+      top trades/year 151.6640904326217
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: afternoon_large20_down_open_reclaim_long
+    config: campaigns/es_session_open_orderflow_reclaim/rescue_attempts/parameter_space_rescue_1/afternoon_large20_down_open_reclaim_long/config.yaml
+    report: backtest-campaigns/es_session_open_orderflow_reclaim/afternoon_large20_down_open_reclaim_long/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; top net -2437.5;
+      top trades/year 127.41500672094773
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: afternoon_large20_up_open_reject_short
+    config: campaigns/es_session_open_orderflow_reclaim/rescue_attempts/parameter_space_rescue_1/afternoon_large20_up_open_reject_short/config.yaml
+    report: backtest-campaigns/es_session_open_orderflow_reclaim/afternoon_large20_up_open_reject_short/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.012345679012345678 below required 0.70;
+      top net 32.5; top trades/year 91.78819012539127
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_session_open_orderflow_reclaim/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  frozen_validation_reached: 0
+  candidate_report_created: false
+  failure: All five original variants and all five one-time parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test. No run reached limited monkey, WFA,
+    WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or
+    candidate reporting. The strongest rescue reached only 0.09876543209876543
+    profitable-combo rate versus the required 0.70.

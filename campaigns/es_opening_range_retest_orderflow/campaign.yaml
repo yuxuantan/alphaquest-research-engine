@@ -1,0 +1,129 @@
+campaign_id: es_opening_range_retest_orderflow
+title: ES opening-range break-and-retest with aggregate orderflow
+decision: FAIL
+created_at: '2026-06-17'
+instrument: ES
+market_timezone: America/New_York
+edge_family: opening_range_retest_orderflow
+hypothesis: Opening-range breakouts may be more durable when price later retests the
+  broken opening-range boundary and the retest bar shows aggregate orderflow evidence
+  that the boundary has flipped from resistance to support or support to resistance.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the use of support/resistance levels as intraday trend-interruption
+    reference points.
+- title: Assessing the profitability of intraday opening range breakout strategies
+  authors: Ulf Holmberg, Carl Lonnback, Christian Lundstrom
+  year: 2013
+  venue: Finance Research Letters
+  link: https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html
+  doi: 10.1016/j.frl.2012.09.001
+  relevance: Uses opening-range breakout rules as a systematic intraday futures framework.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure proxy;
+    this campaign uses Sierra aggregate trade-side flow, not quote-level OFI.
+rationale: This is a bounded composite edge. Price action defines the opening-range
+  breakout and later retest of the broken boundary. Aggregate orderflow confirms either
+  absorption of counter-pressure at the retest or renewed participation in the breakout
+  direction. It is distinct from immediate OR breakout continuation and from failed-breakout
+  reclaim because it waits for a retest that holds outside the range.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  large20_volume
+lookahead_risks:
+- Opening-range high and low are unavailable until the configured opening window is
+  complete.
+- Breakout recognition uses only a completed close outside the opening range.
+- Retest and orderflow confirmation use only completed retest bars and predeclared
+  completed-bar flow lookback.
+- Signals generated from bar close are filled no earlier than the next bar open by
+  the engine.
+- Final session high/low, final VWAP, volume profile, and post-entry orderflow are
+  not used.
+failure_modes:
+- Retests may be ordinary chop around opening-range boundaries rather than a real
+  S/R flip.
+- Aggregate signed flow may be too noisy compared with quote-level OFI.
+- A held retest may still fail on the next bar after realistic slippage and commissions.
+- The effect may concentrate in high-volatility trend days or be dominated by one
+  side.
+- Boundary stops can be too tight around fast retests, causing adverse same-bar stop/target
+  paths.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_opening_range_orderflow_breakout
+  - es_opening_range_failed_breakout_orderflow
+  - es_opening_gap_orderflow_absorption_fade
+  - es_range_compression_orderflow_breakout
+  - es_round_number_orderflow_barrier
+  conclusion: Eligible as a new active campaign because it requires breakout first,
+    then a later retest that holds the broken opening-range boundary with orderflow
+    confirmation. It is not immediate OR breakout continuation and not failed-breakout
+    reclaim back inside the range.
+variants:
+- or15_signed_absorption_retest_1030
+- or15_signed_aligned_retest_1030
+- or30_signed_absorption_retest_1100
+- or30_large10_absorption_retest_1130
+- or60_large20_aligned_retest_1230
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change opening-range break-and-retest mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant
+    variants:
+    - or15_signed_absorption_retest_1030
+    - or15_signed_aligned_retest_1030
+    - or30_large10_absorption_retest_1130
+    - or30_signed_absorption_retest_1100
+    - or60_large20_aligned_retest_1230
+    audit: research_artifacts/es_opening_range_retest_orderflow_rescue_attempt_1_20260617.md
+density_audit:
+  artifact: research_artifacts/es_opening_range_retest_orderflow_density_audit_20260617.md
+  conclusion: Every declared entry corner for the final five variants exceeded 50
+    signals/year before PnL testing.
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_opening_range_retest_orderflow/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time parameter-space
+    rescues failed limited_core_grid_test before monkey, WFA, Monte Carlo, simulated
+    incubation, or frozen validation.
+  best_run:
+    variant_id: or30_large10_absorption_retest_1130
+    run_id: rescue1
+    profitable_combo_rate: 0.024691358024691357
+    top_net_profit: 1184.375
+    top_profit_factor: 1.083494888967219
+    top_trades_per_year: 105.1026627366738
+    top_failure_reason: ''

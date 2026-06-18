@@ -1,0 +1,3 @@
+from propstack.strategy_modules.sl.opening_range_retest_boundary import OpeningRangeRetestBoundaryStop
+
+STOP_MODULE = OpeningRangeRetestBoundaryStop

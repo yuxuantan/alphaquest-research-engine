@@ -1,0 +1,132 @@
+campaign_id: es_midday_range_orderflow_breakout
+title: ES midday range breakout with aggregate orderflow confirmation
+decision: FAIL
+created_at: '2026-06-17'
+instrument: ES
+market_timezone: America/New_York
+edge_family: midday_range_orderflow_breakout
+hypothesis: ES may be more likely to expand after the low-liquidity midday range when
+  the first completed post-range breakout is confirmed by aligned aggregate trade-side
+  orderflow. The completed midday range defines the price-action boundary; aggregate
+  orderflow attempts to distinguish real inventory participation from random lunch-session
+  drift.
+sources:
+- title: 'A Theory of Intraday Patterns: Volume and Price Variability'
+  authors: Anat R. Admati and Paul Pfleiderer
+  year: 1988
+  venue: Review of Financial Studies
+  link: https://academic.oup.com/rfs/article-abstract/1/1/3/1601212
+  doi: 10.1093/rfs/1.1.3
+  relevance: Explains why strategic liquidity and informed traders can concentrate
+    activity at predictable intraday times, supporting an intraday range/participation
+    hypothesis.
+- title: A transaction data study of weekly and intradaily patterns in stock returns
+  authors: Lawrence Harris
+  year: 1986
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v16y1986i1p99-117.html
+  relevance: Documents systematic intraday return patterns using transaction data,
+    motivating explicit time-of-day segmentation rather than treating all RTH bars
+    identically.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Supports orderflow imbalance as a short-horizon price-pressure proxy.
+    This campaign uses completed Sierra aggregate trade-side imbalance, not quote-level
+    OFI.
+rationale: This is a bounded composite edge. The primary edge is post-lunch expansion
+  from a completed low-activity midday range. The secondary condition is aligned completed-bar
+  aggregate orderflow. It is not an opening-range breakout, not a prior-session level
+  breakout, not NR4 range compression, and not standalone signed-flow persistence
+  because the tradable boundary is created by the completed intraday lunch range.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  large20_volume
+lookahead_risks:
+- Midday range high and low are not known until the configured range window is complete.
+- Breakout and orderflow confirmation use only the completed confirmation bar.
+- A signal generated from a bar close is filled no earlier than the next bar open
+  by the engine.
+- The final session high, final low, final VWAP, and post-entry orderflow are not
+  used.
+- Same-bar stop/target conflicts use 1-minute detail data when available and pessimistic
+  fallback otherwise.
+failure_modes:
+- Post-lunch range breaks may mostly be stop probes that reverse after costs.
+- Aggregate Sierra signed volume may be too noisy compared with quote-level OFI.
+- The effect may concentrate in high-volatility trend regimes and fail WFA/monkey
+  tests.
+- Boundary stops may be too tight in choppy sessions or too wide when lunch range
+  is broad.
+- A two-sided breakout may lose money if directionality is dominated by market-wide
+  drift rather than range expansion.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_opening_range_orderflow_breakout
+  - es_opening_range_failed_breakout_orderflow
+  - es_opening_range_retest_orderflow
+  - es_range_compression_orderflow_breakout
+  - es_signed_orderflow_persistence
+  - es_trend_aligned_orderflow_continuation
+  - es_vwap_orderflow_pullback_continuation
+  - es_volume_shock_liquidity_reversal
+  conclusion: Eligible as a new active campaign because the reference level is the
+    completed post-open midday/lunch range, not the opening range, prior-session level,
+    VWAP, NR4 compression, fixed-time trend state, or standalone flow impulse.
+pre_pnl_density_audit: research_artifacts/es_midday_range_orderflow_breakout_density_audit_20260617.md
+variants:
+- lunch_1130_1300_signed_breakout_1430
+- lunch_1130_1300_large10_breakout_1430
+- lunch_1130_1300_large20_breakout_1430
+- late_lunch_1200_1330_signed_breakout_1500
+- late_lunch_1200_1330_large10_breakout_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core midday range plus orderflow-confirmation mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - name: parameter_space_rescue_1
+    scope: per_failed_variant
+    status: completed_failed
+    audit_path: research_artifacts/es_midday_range_orderflow_breakout_rescue_attempt_1_20260617.md
+    variants:
+    - lunch_1130_1300_signed_breakout_1430
+    - lunch_1130_1300_large10_breakout_1430
+    - lunch_1130_1300_large20_breakout_1430
+    - late_lunch_1200_1330_signed_breakout_1500
+    - late_lunch_1200_1330_large10_breakout_1500
+result_summary:
+  status: completed
+  decision: FAIL
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  best_run:
+    variant_id: lunch_1130_1300_large20_breakout_1430
+    run_id: rescue1
+    profitable_combo_rate: 0.0
+    top_net_profit: -2433.75
+    top_profit_factor: 0.8948704103671706
+    top_trades_per_year: 145.69529085872577
+  failure_reason: All five original variants and all five one-time parameter-space
+    rescues failed limited_core_grid_test before monkey, WFA, Monte Carlo,
+    simulated incubation, frozen validation, or candidate reporting.

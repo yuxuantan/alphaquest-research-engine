@@ -1,0 +1,145 @@
+campaign_id: es_vwap_orderflow_pullback_continuation
+title: ES VWAP pullback continuation with aggregate orderflow confirmation
+decision: FAIL
+created_at: 2026-06-17
+instrument: ES
+market_timezone: America/New_York
+edge_family: vwap_orderflow_pullback_continuation
+hypothesis: >
+  ES intraday moves that remain on the trend side of session VWAP may continue
+  after a completed pullback/reclaim when the reclaim bar also carries aligned
+  aggregate signed orderflow. VWAP defines the price-action value reference;
+  orderflow confirmation attempts to distinguish a real continuation reclaim
+  from a weak mean-reversion bounce.
+sources:
+  - title: "Improving VWAP Strategies: A Dynamical Volume Approach"
+    authors: Jedrzej Bialkowski, Serge Darolles, Gaelle Le Fol
+    year: 2008
+    venue: Journal of Banking and Finance / working-paper version
+    link: https://ideas.repec.org/p/eve/wpaper/06-08.html
+    relevance: >
+      Treats VWAP as a central institutional execution benchmark and motivates
+      VWAP as a meaningful intraday reference level rather than an arbitrary
+      moving average.
+  - title: Optimal VWAP Trading Strategy and Relative Volume
+    authors: James McCulloch and Vladimir Kazakov
+    year: 2007
+    venue: Quantitative Finance Research Centre research paper
+    link: https://ideas.repec.org/p/uts/rpaper/201.html
+    relevance: >
+      Describes VWAP as a popular execution-quality benchmark linked to
+      market-impact-aware trading.
+  - title: The Price Impact of Order Book Events
+    authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+    year: 2014
+    venue: Journal of Financial Econometrics
+    link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+    doi: 10.1093/jjfinec/nbt003
+    relevance: >
+      Supports orderflow imbalance as a short-horizon price-pressure proxy.
+      This campaign uses Sierra aggregate trade-side flow, not quote-level OFI.
+rationale: >
+  This is a bounded composite edge: price action supplies the setup through a
+  completed VWAP-side trend and pullback/reclaim, while aggregate orderflow must
+  confirm participation on the reclaim bar. It is not the prior VWAP pullback
+  campaign because that campaign did not require orderflow confirmation. It is
+  not standalone signed-flow persistence because no trade can occur without the
+  VWAP pullback/reclaim price-action state.
+data_needs:
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  - 5-minute ES strategy bars aggregated from local 1-minute Sierra RTH bars
+  - completed-bar VWAP computed from current-session bars only
+  - completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, large20_volume
+data_quality_caveats:
+  - Sierra signed volume is completed-bar aggregate bid/ask-volume flow, not full quote-level OFI.
+  - Sierra large10/large20 fields are completed-bar aggregate trade-size buckets.
+  - Same-bar stop/target conflicts must use 1-minute detail data when available and pessimistic fallback otherwise.
+lookahead_risks:
+  - VWAP uses only completed current-session bars at signal time.
+  - Trend counts, pullback touch, reclaim close, and flow confirmation use only completed 5-minute bars.
+  - Signals generated from a bar close are filled no earlier than the next bar open.
+  - No final session VWAP, final session high/low, future volume profile, future orderflow, or future return is used.
+  - All variants flatten on the same RTH session before the configured cutoff.
+failure_modes:
+  - VWAP reclaim may be a crowded, low-edge signal after ES costs.
+  - Aggregate orderflow may lag price action and confirm too late.
+  - The edge may be regime-specific or dominated by crisis trend days.
+  - Large-trade flow buckets may not reliably proxy informed participation.
+  - Tight orderflow thresholds may reduce trade count or select exhausted moves.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_vwap_pullback_continuation
+    - es_signed_orderflow_persistence
+    - es_opening_range_orderflow_breakout
+    - es_opening_drive_inventory_absorption
+    - es_trend_aligned_orderflow_continuation
+    - es_gao_last_half_hour_orderflow_confirmation
+    - es_trade_size_stealth_orderflow
+  conclusion: >
+    Eligible as a composite campaign under the 2026-06-17 user instruction to
+    prioritize price action plus aggregate orderflow. The primary setup is VWAP
+    pullback/reclaim price action; the secondary condition is same-bar aggregate
+    orderflow confirmation. Existing active failures tested price-only VWAP
+    pullback, standalone signed flow, opening-range orderflow breakout,
+    opening-drive inventory, HH/HL trend-flow continuation, Gao last-half-hour
+    flow confirmation, or trade-size disagreement.
+variants:
+  - morning_signed_trend_reclaim_two_sided
+  - morning_large10_trend_reclaim_two_sided
+  - morning_large20_trend_reclaim_two_sided
+  - midday_large10_trend_reclaim_two_sided
+  - midday_large20_trend_reclaim_two_sided
+density_audit:
+  artifact: research_artifacts/es_vwap_orderflow_pullback_continuation_density_audit_20260617.md
+  conclusion: >
+    The five selected variants cleared the pre-PnL signal-density screen across
+    their declared entry grids. Midday signed-flow and late-day failed-break
+    variants were rejected before testing because their strict entry-grid
+    corners were unlikely to satisfy 50 trades/year.
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core VWAP pullback plus orderflow-confirmation mechanic
+    - add or remove filters after seeing results
+    - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+    - id: parameter_space_rescue_1
+      status: completed_failed
+      scope: per_failed_variant
+      variants:
+        - morning_signed_trend_reclaim_two_sided
+        - morning_large10_trend_reclaim_two_sided
+        - morning_large20_trend_reclaim_two_sided
+        - midday_large10_trend_reclaim_two_sided
+        - midday_large20_trend_reclaim_two_sided
+      audit: research_artifacts/es_vwap_orderflow_pullback_continuation_rescue_attempt_1_20260617.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_vwap_orderflow_pullback_continuation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: >
+    All five original variants and all five one-time parameter-space rescues
+    failed limited_core_grid_test before monkey, WFA, Monte Carlo, simulated
+    incubation, frozen validation, or candidate reporting.
+  best_run:
+    variant_id: morning_large20_trend_reclaim_two_sided
+    run_id: run1
+    profitable_combo_rate: 0.0
+    top_net_profit: -752.5
+    top_profit_factor: 0.9387464387464387
+    top_trades_per_year: 93.27324474648577
+    top_failure_reason: min_total_net_profit

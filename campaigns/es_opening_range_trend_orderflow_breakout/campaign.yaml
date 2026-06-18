@@ -1,0 +1,134 @@
+campaign_id: es_opening_range_trend_orderflow_breakout
+title: ES trend-filtered opening-range breakout with aggregate orderflow confirmation
+decision: FAIL
+created_at: '2026-06-17'
+instrument: ES
+market_timezone: America/New_York
+edge_family: opening_range_trend_orderflow_breakout
+hypothesis: ES opening-range breakouts should have a better chance of same-day continuation
+  when the breakout occurs in the same direction as completed multi-horizon intraday price-action
+  trend and the completed breakout bar carries aligned aggregate orderflow.
+sources:
+- title: Assessing the profitability of intraday opening range breakout strategies
+  authors: Ulf Holmberg, Carl Lonnback, Christian Lundstrom
+  year: 2013
+  venue: Finance Research Letters
+  link: https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html
+  doi: 10.1016/j.frl.2012.09.001
+  relevance: Supports opening-range breakout as a mechanical intraday futures reference-level
+    strategy.
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  doi: 10.1016/j.jfineco.2018.05.009
+  relevance: Supports same-day continuation from early intraday market information.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2011.11.003
+  doi: 10.1016/j.jfineco.2011.11.003
+  relevance: Supports trend-continuation behavior across futures markets; this campaign adapts
+    it to intraday completed-bar structure.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Supports orderflow imbalance as a short-horizon pressure proxy; this campaign
+    uses completed Sierra aggregate trade-side flow, not full-depth quote OFI.
+rationale: This is a bounded composite campaign. The primary edge is opening-range breakout.
+  The first secondary condition is completed-bar multi-horizon HH/HL or LH/LL trend alignment.
+  The second secondary condition is same-bar aggregate orderflow confirmation. It is not the
+  failed plain ORB/orderflow campaign because price must also show trend structure; it is
+  not the failed trend-aligned orderflow campaign because an opening-range breakout boundary
+  is required.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  large20_volume
+lookahead_risks:
+- Opening range high and low are not known until the configured opening window is complete.
+- Trend windows use only completed bars ending at the signal bar close.
+- Orderflow confirmation uses only the completed breakout bar.
+- A signal generated from a completed bar is filled no earlier than the next bar open by the
+  engine.
+- No future session high, low, VWAP, volume profile, final daily range, or post-entry orderflow
+  is used.
+failure_modes:
+- The trend filter may select overextended breakouts that reverse after costs.
+- Aggregate Sierra signed volume may be too noisy compared with quote-level OFI.
+- The edge may concentrate in crisis trend days or high-volatility regimes.
+- Opening-range-edge stops may be too wide during volatile opens.
+- The composite filter can still admit stop probes if aggressive flow is liquidity-taking
+  into exhaustion.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_opening_range_orderflow_breakout
+  - es_trend_aligned_orderflow_continuation
+  - es_opening_range_retest_orderflow
+  - es_opening_range_failed_breakout_orderflow
+  - es_range_compression_orderflow_breakout
+  - es_signed_orderflow_persistence
+  conclusion: 'Eligible as a new bounded composite campaign because the trigger requires all
+    three predeclared legs: opening-range breakout, multi-horizon completed-bar trend structure,
+    and same-bar aggregate orderflow confirmation. It is not a rescue of the failed ORB/orderflow
+    campaign.'
+pre_pnl_density_audit: research_artifacts/es_opening_range_trend_orderflow_breakout_density_audit_20260617.md
+variants:
+- or15_signed_trend_breakout_1030
+- or15_large10_trend_breakout_1030
+- or30_signed_trend_breakout_1100
+- or30_large20_trend_breakout_1130
+- or60_signed_trend_breakout_1200
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core ORB plus trend plus orderflow-confirmation mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    scope: per_failed_variant
+    status: completed_failed
+    variants:
+    - or15_large10_trend_breakout_1030
+    - or15_signed_trend_breakout_1030
+    - or30_large20_trend_breakout_1130
+    - or30_signed_trend_breakout_1100
+    - or60_signed_trend_breakout_1200
+    audit: research_artifacts/es_opening_range_trend_orderflow_breakout_rescue_attempt_1_20260617.md
+    summary: All five parameter-space-only rescues failed limited_core_grid_test.
+result_summary:
+  status: completed_failed
+  original_runs: 5
+  rescue_runs: 5
+  best_run:
+    variant_id: or60_signed_trend_breakout_1200
+    run_id: run1
+    top_net_profit: -3025.0
+    top_profit_factor: 0.8567029843675983
+    top_mar: -0.5208616723709634
+    top_expectancy_r: -0.06000630710451231
+    top_trade_count: 150
+    top_trades_per_year: 98.17265515632292
+    top_failure_reason: min_total_net_profit
+  terminal_stage: limited_core_grid_test
+  failure_reason: All five original variants and all five one-time parameter-space rescues
+    failed limited_core_grid_test before monkey, WFA, Monte Carlo, simulated incubation, frozen
+    validation, or candidate reporting.
+  aggregate_summary: backtest-campaigns/es_opening_range_trend_orderflow_breakout/campaign_test_summary.json

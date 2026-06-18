@@ -26,6 +26,7 @@ from propstack.research.monte_carlo import run_monte_carlo, run_monte_carlo_with
 from propstack.research.wfa import run_wfa
 from propstack.utils.config import (
     CAMPAIGN_CONFIG_FILENAME,
+    SOURCE_CONFIG_SNAPSHOT_FILENAME,
     VARIANT_TEST_SUMMARY_FILENAME,
     campaign_test_run_id,
     campaign_metadata_info,
@@ -248,7 +249,7 @@ def run_campaign_stage_tests(
     root.mkdir(parents=True, exist_ok=True)
     variant_metadata = ensure_variant_metadata(cfg, root_path=root)
     config_snapshot_path = root / CAMPAIGN_CONFIG_FILENAME
-    source_config_snapshot_path = root / "source_config.yaml"
+    source_config_snapshot_path = root / SOURCE_CONFIG_SNAPSHOT_FILENAME
     _write_config_snapshot(config_snapshot_path, cfg)
     if config_path.resolve() != source_config_snapshot_path.resolve():
         source_config_snapshot_path.write_text(source_config_text, encoding="utf-8")
@@ -318,6 +319,10 @@ def run_campaign_stage_tests(
         "halted": halted,
         "stages": results,
     }
+    source_results_index_path = _update_source_results_index(config_path, cfg, summary)
+    summary["source_results_index_path"] = (
+        str(source_results_index_path) if source_results_index_path is not None else None
+    )
     write_json(
         root / "run_manifest.json",
         {
@@ -334,9 +339,11 @@ def run_campaign_stage_tests(
             "campaign_metadata": summary["campaign_metadata"],
             "variant_metadata": summary["variant_metadata"],
             "config_source": str(config_path),
+            "effective_config": str(config_snapshot_path),
             "source_config_snapshot": str(source_config_snapshot_path),
             "config_hash": summary["config_hash"],
             "source_config_hash": source_config_hash,
+            "source_results_index": summary["source_results_index_path"],
             "created_at": created_at,
             "updated_at": created_at,
             "stage_order": stage_order,
@@ -350,6 +357,80 @@ def run_campaign_stage_tests(
         _write_candidate_due_diligence_package(root, cfg, summary, config_snapshot_path)
     update_runs_index(root)
     return summary
+
+
+def _update_source_results_index(config_path: Path, cfg: dict, summary: dict) -> Path | None:
+    """Write a lightweight source-tree pointer to generated evidence.
+
+    The generated evidence stays under backtest-campaigns. This index only gives
+    source configs a stable navigation hook to the run folder that tested them.
+    """
+
+    source_root = _source_campaign_root(config_path)
+    if source_root is None or source_root.name != str(cfg.get("campaign_id")):
+        return None
+    index_path = source_root / "results_index.yaml"
+    existing = load_yaml(index_path) if index_path.is_file() else {}
+    entries = existing.get("runs") if isinstance(existing.get("runs"), list) else []
+    run_dir = Path(str(summary["output_dir"]))
+    entry = {
+        "campaign_id": summary.get("campaign_id"),
+        "variant_id": summary.get("variant_id"),
+        "symbol": summary.get("symbol"),
+        "test_run_id": summary.get("test_run_id"),
+        "source_config_path": str(config_path),
+        "source_config_snapshot_path": summary.get("source_config_snapshot_path"),
+        "source_config_hash": summary.get("source_config_hash"),
+        "effective_config_path": summary.get("effective_config_path"),
+        "effective_config_hash": summary.get("config_hash"),
+        "run_dir": str(run_dir),
+        "campaign_test_summary": str(run_dir / "campaign_test_summary.json"),
+        "variant_test_summary": str(run_dir / VARIANT_TEST_SUMMARY_FILENAME),
+        "passed": summary.get("passed"),
+        "halted": summary.get("halted"),
+        "failed_stage": _first_failed_stage(summary.get("stages") or []),
+        "updated_at": summary.get("updated_at"),
+    }
+    key_fields = ("source_config_path", "symbol", "test_run_id")
+    entries = [
+        item
+        for item in entries
+        if not all(str(item.get(field)) == str(entry.get(field)) for field in key_fields)
+    ]
+    entries.append(entry)
+    entries.sort(
+        key=lambda item: (
+            str(item.get("variant_id") or ""),
+            str(item.get("symbol") or ""),
+            str(item.get("test_run_id") or ""),
+            str(item.get("source_config_path") or ""),
+        )
+    )
+    payload = {
+        "campaign_id": cfg.get("campaign_id"),
+        "generated_by": "propstack.run_campaign_stages",
+        "description": "Navigation pointers from authored source configs to generated backtest evidence.",
+        "runs": entries,
+    }
+    index_path.write_text(yaml.safe_dump(payload, sort_keys=False, default_flow_style=False), encoding="utf-8")
+    return index_path
+
+
+def _source_campaign_root(config_path: Path) -> Path | None:
+    parts = config_path.parts
+    if "campaigns" not in parts:
+        return None
+    index = len(parts) - 1 - list(reversed(parts)).index("campaigns")
+    if len(parts) <= index + 1:
+        return None
+    return Path(*parts[: index + 2])
+
+
+def _first_failed_stage(stages: list[dict]) -> str | None:
+    for stage in stages:
+        if stage.get("status") == "failed" or stage.get("passed") is False:
+            return str(stage.get("stage") or "")
+    return None
 
 
 def _validate_pre_test_mechanics_review(cfg: dict, config_path: Path) -> None:
@@ -639,6 +720,7 @@ def _run_limited_core_grid(
         skip_validation,
         data_cache=context.get("_prepared_data_cache"),
     )
+    fixed_config_core = _write_fixed_config_core_artifacts(cfg, market, detail, stage_dir, subset, quality)
     report_dir = stage_dir if grid_cfg.get("retain_iteration_reports", True) else None
     results, summary = run_core_grid(
         market,
@@ -650,6 +732,7 @@ def _run_limited_core_grid(
     )
     summary["benchmark_thresholds"] = benchmarks
     summary["benchmark_threshold_adjustments"] = benchmark_adjustments
+    summary["fixed_config_core"] = fixed_config_core
     _annotate_stage_data_period(summary, subset, quality)
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "core_grid_results.csv", report_timezone, index=False)
@@ -665,6 +748,56 @@ def _run_limited_core_grid(
         "core_grid_results": results,
         "core_grid_parameters": grid_cfg.get("parameters", {}),
     }
+
+
+def _write_fixed_config_core_artifacts(
+    cfg: dict,
+    market: pd.DataFrame,
+    detail: pd.DataFrame | None,
+    stage_dir: Path,
+    resolved_subset: dict | None,
+    quality: dict,
+) -> dict:
+    """Write a YAML-fixed strategy run for chart/mechanics cross-checking.
+
+    This run deliberately uses the parameters already present under
+    strategy.entry/sl/tp in the effective config. It does not use grid-selected,
+    monkey-selected, WFA-selected, or rescue-derived parameters.
+    """
+
+    result = BacktestEngine(cfg).run(market, detail_data=detail)
+    trades = result.get("trades", pd.DataFrame())
+    daily = result.get("daily", pd.DataFrame())
+    report_timezone = market_timezone(cfg)
+    trade_log_path = stage_dir / "fixed_config_core_trade_log.csv"
+    daily_path = stage_dir / "fixed_config_core_daily_results.csv"
+    write_report_csv(trades, trade_log_path, report_timezone, index=False)
+    write_report_csv(daily, daily_path, report_timezone, index=False)
+    initial_balance = float((cfg.get("core") or {}).get("initial_balance", 0.0))
+    equity_summary = write_equity_report(
+        trades,
+        stage_dir,
+        initial_balance=initial_balance,
+        timezone=report_timezone,
+        title=f"{cfg.get('campaign_id')} / {cfg.get('variant_id')} fixed-config core equity curve",
+        csv_name="fixed_config_core_equity_curve.csv",
+        html_name="fixed_config_core_equity_curve.html",
+    )
+    summary = {
+        "purpose": "fixed_config_mechanics_cross_check",
+        "parameter_source": "strategy section in effective config",
+        "uses_grid_selected_params": False,
+        "trade_log_csv": str(trade_log_path),
+        "daily_results_csv": str(daily_path),
+        "metrics": copy.deepcopy(result.get("metrics", {})),
+        "diagnostics": copy.deepcopy(result.get("diagnostics", {})),
+        "strategy": copy.deepcopy(cfg.get("strategy", {})),
+        "core": copy.deepcopy(cfg.get("core", {})),
+        **equity_summary,
+    }
+    _annotate_stage_data_period(summary, resolved_subset, quality)
+    write_json(stage_dir / "fixed_config_core_metrics.json", summary)
+    return summary
 
 
 def _limited_core_grid_benchmarks(cfg: dict, resolved_subset: dict | None) -> tuple[dict, dict]:

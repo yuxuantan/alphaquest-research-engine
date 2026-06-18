@@ -26,6 +26,7 @@ class PdhPdlBreakoutContinuationEntry:
         self.min_volume_ratio = float(params.get("min_volume_ratio", 0.0))
         self.min_gap_points = float(params.get("min_gap_points", 0.0))
         self.gap_hold_bars = int(params.get("gap_hold_bars", 1))
+        self.require_fresh_level = bool(params.get("require_fresh_level", True))
         self.state_by_day: dict = {}
 
     def _state(self, session_date):
@@ -284,6 +285,8 @@ class PdhPdlBreakoutContinuationEntry:
         return max(0, idx - int(breakout["idx"]) - 1) > self.retest_window_bars
 
     def _fresh_level(self, bar: pd.Series, column: str) -> bool:
+        if not self.require_fresh_level:
+            return True
         if column not in bar:
             return True
         value = bar.get(column)

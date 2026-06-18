@@ -1,0 +1,211 @@
+campaign_id: es_mes_aligned_flow_continuation
+variant_id: morning15_mes_signed_1030
+test_run_id: rescue1
+strategy_name: es_mes_aligned_flow_continuation
+symbol: ES
+dataset_id: es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Hasbrouck (1995); CFTC Office of the Chief Economist (2024); Cont,
+    Kukanov, and Stoikov (2014)
+  edge_thesis: ES intraday price continuation may be more reliable when MES completed
+    signed-flow imbalance confirms the same direction.
+  mechanic: At the completed 10:30 ET signal, require 15-minute ES return and 15-minute
+    MES signed imbalance to point in the same direction, then trade ES in that direction.
+  timeframe_rationale: The ES/MES feature cache is built on completed 1-minute aligned
+    bars, so the strategy stays on 1-minute bars to preserve feature semantics and
+    next-bar-open execution.
+  mechanics_review_required: true
+  mechanics_review_version: 2026-06-18-rescue1
+  mechanics_review:
+    mechanic_expresses_edge: 'This variant expresses the edge by requiring the early
+      RTH ES move and the simultaneous 15-minute MES signed-flow imbalance to agree
+      before a trade is allowed. MES is used as cross-contract confirmation of participation,
+      not as a divergence or crowding fade signal.
+
+      '
+    entry_logic_rationale: 'The 10:30 ET timestamp gives the opening auction one full
+      hour to settle while still leaving enough RTH time for continuation. A long
+      requires ES return ticks and MES signed imbalance to be positive on completed
+      windows; a short requires both to be negative.
+
+      '
+    stop_loss_rationale: 'The sweep-extreme stop sits beyond the completed signal
+      bar. If price immediately breaks the bar that aligned ES direction and MES flow,
+      the continuation thesis is invalidated without relying on future swing points.
+
+      '
+    target_exit_rationale: 'A fixed-R target tests whether the cross-contract confirmation
+      has enough short-horizon follow-through to pay ES costs. Any unresolved position
+      is flattened before the configured cutoff.
+
+      '
+    profitability_rationale: 'The setup should only make money if broad micro-contract
+      participation confirms, rather than lags, ES directional pressure. The pre-PnL
+      density audit showed the strict grid corner remains above 100 signals/year in
+      the limited-core window and latest-year validation slice.
+
+      '
+    known_failure_modes: 'MES signed flow may simply follow ES after the opportunity
+      is gone, early moves may mean-revert, and the signal-bar stop may be too tight
+      on fast trend days or too loose on quiet failed moves.
+
+      '
+    pre_test_decision: approve_for_testing
+  rescue_attempt: parameter_space_rescue_1
+  rescue_scope: per_failed_variant
+  rescue_changes: 'Changed only fixed parameter defaults and declared grid values
+    inside the existing entry, stop, and target modules: shifted ES return thresholds
+    higher, shifted MES imbalance thresholds to stricter density-approved values,
+    widened the signal-bar stop offset grid, and shortened the fixed-R target grid.
+    Entry module, stop module, target module, data, timeframe, costs, fills, sessions,
+    and staged validation gates are unchanged.'
+data:
+  dataset_id: es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny
+  source_timeframe: 1m
+  source: csv
+  raw_csv: data/cache/orderflow/es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny.csv
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: es_mes_aligned_flow_continuation
+    params:
+      setup_mode: morning15_mes_signed_1030
+      signal_time: '10:30:00'
+      bar_interval_minutes: 1
+      return_window_minutes: 15
+      flow_window_minutes: 15
+      mes_flow_mode: signed
+      min_es_return_ticks: 8
+      min_mes_flow_imbalance: 0.02
+      allow_long: true
+      allow_short: true
+      max_trades_per_day: 1
+      flatten_time: '15:55:00'
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 4
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 0.75
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_total_net_profit: 0
+  max_drawdown_pct: 0.1
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parameters: &id002
+    entry.params.min_es_return_ticks:
+    - 4
+    - 8
+    - 12
+    entry.params.min_mes_flow_imbalance:
+    - 0.01
+    - 0.02
+    - 0.03
+    sl.params.stop_offset_ticks:
+    - 4
+    - 8
+    - 12
+    tp.params.target_r_multiple:
+    - 0.5
+    - 0.75
+    - 1.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false

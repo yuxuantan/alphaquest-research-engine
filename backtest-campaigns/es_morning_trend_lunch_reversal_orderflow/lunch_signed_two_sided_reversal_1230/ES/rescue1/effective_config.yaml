@@ -1,0 +1,380 @@
+campaign_id: es_morning_trend_lunch_reversal_orderflow
+variant_id: lunch_signed_two_sided_reversal_1230
+test_run_id: rescue1
+strategy_name: morning_trend_lunch_reversal_orderflow
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Admati and Pfleiderer (1988); Campbell, Grossman, and Wang (1993);
+    Heston, Korajczyk, and Sadka (2010); Cont, Kukanov, and Stoikov (2014)
+  edge_thesis: Strong ES morning directional pressure can partially reverse into late
+    morning or lunch when the completed signal bar turns against the morning move
+    and completed aggregate orderflow confirms counter-direction pressure. The setup
+    treats the morning move as possible liquidity/inventory pressure rather than a
+    level breakout.
+  mechanic: two-sided lunch fade of morning extension with completed signed-volume
+    counterflow between 11:30:00 and 12:30:00; enter at the next 5-minute bar open
+    after the completed reversal/counterflow bar.
+  timeframe_rationale: Five-minute bars are short enough for late-morning/lunch reversals
+    while filtering one-minute noise. Signal features use completed bars only and
+    the engine enters on the next bar open.
+  mechanics_review_required: true
+  mechanics_review:
+    mechanic_expresses_edge: This variant expresses the edge by requiring two-sided
+      lunch fade of morning extension with completed signed-volume counterflow. The
+      RTH session open anchors the morning extension, the signal bar must turn against
+      that extension, and completed aggregate flow must agree with the reversal direction
+      before any next-bar entry.
+    entry_logic_rationale: The entry is not triggered by flow alone. Price must first
+      be extended from the RTH open, then the completed signal bar must reject that
+      extension with an opposite-colored body. This keeps the mechanic tied to observable
+      price action and avoids future session information.
+    stop_loss_rationale: The signal-bar high for shorts or low for longs is the natural
+      invalidation point because a move beyond the completed reversal bar means the
+      morning extension has not been rejected. The stop-offset grid is small and tick-based.
+    target_exit_rationale: The target is a modest fixed-R retracement because the
+      hypothesis is a lunch/inventory reversal, not an all-day trend forecast. No
+      target uses future VWAP, final range, or final profile information.
+    profitability_rationale: If the morning move is liquidity/inventory pressure rather
+      than durable information, a completed counter-bar with aligned counterflow should
+      lead to a short-horizon reversal that can survive next-bar execution and costs
+      often enough across sessions.
+    known_failure_modes: The morning move may be informed and continue; counterflow
+      may simply be liquidity-taking into trend; open-position overlap can reduce
+      tradable signal density; small lunch reversals may be erased by slippage and
+      pessimistic same-bar ordering.
+    pre_test_decision: approve_for_testing
+  rescue_attempt: parameter_space_rescue_1
+  rescue_scope: per_failed_variant
+  rescue_changes: 'Changed only declared parameter space inside existing modules after
+    original limited-core failure: stronger morning extension thresholds, stronger
+    counterflow thresholds, and smaller fixed-R target grid. Entry module, setup direction,
+    signal window, stop module, target module, data, timeframe, costs, fills, validation
+    gates, and prop rules are unchanged.'
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 5
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: morning_trend_lunch_reversal_orderflow
+    params:
+      setup_mode: two_sided_reversal
+      start_time: '11:30:00'
+      end_time: '12:30:00'
+      flatten_time: '14:00:00'
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      min_morning_return_ticks: 20
+      min_counterflow_imbalance: 0.06
+      flow_mode: signed_volume
+      allow_long: true
+      allow_short: true
+      max_trades_per_day: 1
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 2
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 0.5
+  flatten_time: '14:00:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '14:00:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.min_morning_return_ticks:
+    - 16
+    - 20
+    - 24
+    entry.params.min_counterflow_imbalance:
+    - 0.04
+    - 0.06
+    - 0.08
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 0.25
+    - 0.5
+    - 0.75
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.min_morning_return_ticks:
+    - 16
+    - 20
+    - 24
+    entry.params.min_counterflow_imbalance:
+    - 0.04
+    - 0.06
+    - 0.08
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 0.25
+    - 0.5
+    - 0.75
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    enabled: false
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 6
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 6
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 6
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 6
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 6
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 6
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

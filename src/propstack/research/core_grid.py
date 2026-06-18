@@ -93,6 +93,7 @@ def run_core_grid(
         "meets_profitable_iteration_threshold": profitable_rate >= profitable_threshold,
         "top_10_combinations": top.to_dict(orient="records"),
         "stable_parameter_zones": summarize_stability(df),
+        "signal_density": summarize_signal_density(df),
         "iteration_reports_retained": report_paths is not None,
         "iteration_report_files": _iteration_report_files(report_paths),
         "data_subset": grid_config.get("data_subset", {}),
@@ -194,10 +195,24 @@ def _evaluate_core_grid_combo(
     cfg = apply_dotted_params(base_config, combo)
     result = BacktestEngine(cfg).run(data, detail_data=detail_data)
     metrics = result["metrics"]
+    diagnostics = result.get("diagnostics", {})
+    rejects = diagnostics.get("rejects", {}) if isinstance(diagnostics, dict) else {}
     passed, reason = benchmark(metrics, benchmarks)
     row = {
         "run_id": idx,
         **combo,
+        "signals_generated": int(diagnostics.get("signals_generated", 0)) if isinstance(diagnostics, dict) else 0,
+        "entries_opened": int(diagnostics.get("entries_opened", 0)) if isinstance(diagnostics, dict) else 0,
+        "trades_closed": int(diagnostics.get("trades_closed", metrics["total_trades"]))
+        if isinstance(diagnostics, dict)
+        else metrics["total_trades"],
+        "entry_rejections_total": _sum_rejects(rejects),
+        "reject_missing_stop": int(rejects.get("missing_stop", 0)),
+        "reject_target_already_reached": int(rejects.get("target_already_reached", 0)),
+        "reject_position_sizing": int(rejects.get("position_sizing", 0)),
+        "reject_daily_risk_lockout": int(rejects.get("daily_risk_lockout", 0)),
+        "reject_apex_latest_entry_time": int(rejects.get("apex_latest_entry_time", 0)),
+        "reject_event_no_trade_window": int(rejects.get("event_no_trade_window", 0)),
         "total_trades": metrics["total_trades"],
         "trades_per_year": metrics["trades_per_year"],
         "net_profit": metrics["net_profit"],
@@ -240,6 +255,62 @@ def summarize_stability(df: pd.DataFrame) -> dict:
             grouped = df.groupby(col)["benchmark_passed"].mean().sort_values(ascending=False)
             zones[col] = grouped.to_dict()
     return zones
+
+
+def summarize_signal_density(df: pd.DataFrame) -> dict:
+    if df.empty:
+        return {
+            "total_combinations": 0,
+            "combinations_with_signals": 0,
+            "combinations_with_trades": 0,
+            "combinations_meeting_50_trades_per_year": 0,
+            "all_combinations_zero_signals": True,
+            "all_combinations_zero_trades": True,
+        }
+    signals = pd.to_numeric(df.get("signals_generated", pd.Series(0, index=df.index)), errors="coerce").fillna(0)
+    entries = pd.to_numeric(df.get("entries_opened", pd.Series(0, index=df.index)), errors="coerce").fillna(0)
+    trades = pd.to_numeric(df.get("total_trades", pd.Series(0, index=df.index)), errors="coerce").fillna(0)
+    trades_per_year = pd.to_numeric(df.get("trades_per_year", pd.Series(0.0, index=df.index)), errors="coerce").fillna(0.0)
+    total = int(len(df))
+    combinations_with_signals = int((signals > 0).sum())
+    combinations_with_trades = int((trades > 0).sum())
+    combinations_meeting_density = int((trades_per_year >= 50).sum())
+    positive_tpy = trades_per_year[trades_per_year > 0]
+    return {
+        "total_combinations": total,
+        "combinations_with_signals": combinations_with_signals,
+        "percentage_combinations_with_signals": float(combinations_with_signals / total) if total else 0.0,
+        "zero_signal_combinations": int(total - combinations_with_signals),
+        "all_combinations_zero_signals": combinations_with_signals == 0,
+        "max_signals_generated": int(signals.max()) if total else 0,
+        "median_signals_generated": float(signals.median()) if total else 0.0,
+        "combinations_with_entries": int((entries > 0).sum()),
+        "max_entries_opened": int(entries.max()) if total else 0,
+        "median_entries_opened": float(entries.median()) if total else 0.0,
+        "combinations_with_trades": combinations_with_trades,
+        "percentage_combinations_with_trades": float(combinations_with_trades / total) if total else 0.0,
+        "zero_trade_combinations": int(total - combinations_with_trades),
+        "all_combinations_zero_trades": combinations_with_trades == 0,
+        "max_total_trades": int(trades.max()) if total else 0,
+        "median_total_trades": float(trades.median()) if total else 0.0,
+        "max_trades_per_year": float(trades_per_year.max()) if total else 0.0,
+        "median_trades_per_year": float(trades_per_year.median()) if total else 0.0,
+        "min_positive_trades_per_year": float(positive_tpy.min()) if not positive_tpy.empty else 0.0,
+        "combinations_meeting_50_trades_per_year": combinations_meeting_density,
+        "percentage_combinations_meeting_50_trades_per_year": float(combinations_meeting_density / total)
+        if total
+        else 0.0,
+    }
+
+
+def _sum_rejects(rejects: dict) -> int:
+    total = 0
+    for value in rejects.values():
+        try:
+            total += int(value)
+        except (TypeError, ValueError):
+            continue
+    return total
 
 
 def _validate_parameter_grid(params: dict, label: str) -> None:

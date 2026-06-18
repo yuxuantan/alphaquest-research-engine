@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.spx_0dte_orderflow_continuation import Spx0dteOrderflowContinuationEntry
+
+ENTRY_MODULE = Spx0dteOrderflowContinuationEntry

@@ -56,9 +56,45 @@ def test_variant_root_can_derive_campaign_test_run_id_from_local_config_path():
     assert str(
         variant_root(
             config,
+            config_path="backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/effective_config.yaml",
+        )
+    ) == "backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2"
+
+
+def test_variant_root_can_derive_campaign_test_run_id_from_legacy_local_config_path():
+    config = {
+        "campaign_id": "pdh_pdl_sweep",
+        "variant_id": "baseline",
+        "strategy_name": "pdh_pdl_sweep",
+        "symbol": "ES",
+        "dataset_id": "1m_20221201_20260529",
+        "timeframe": "5m",
+    }
+
+    assert str(
+        variant_root(
+            config,
             config_path="backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/config.yaml",
         )
     ) == "backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2"
+
+
+def test_variant_root_can_derive_campaign_test_run_id_from_source_snapshot_path():
+    config = {
+        "campaign_id": "pdh_pdl_sweep",
+        "variant_id": "baseline",
+        "strategy_name": "pdh_pdl_sweep",
+        "symbol": "ES",
+        "dataset_id": "1m_20221201_20260529",
+        "timeframe": "5m",
+    }
+
+    assert str(
+        variant_root(
+            config,
+            config_path="backtest-campaigns/pdh_pdl_sweep/baseline/ES/rescue1/source_config.yaml",
+        )
+    ) == "backtest-campaigns/pdh_pdl_sweep/baseline/ES/rescue1"
 
 
 def test_campaign_metadata_path_lives_at_campaign_root():
@@ -264,7 +300,7 @@ def test_validate_campaign_run_root_rejects_config_folder_run_mismatch():
         validate_campaign_run_root(
             "backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2",
             config,
-            config_path="backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/config.yaml",
+            config_path="backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/effective_config.yaml",
         )
 
 

@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import yaml
 
 from propstack.research.campaign_stages import evaluate_criteria
 from propstack.research import campaign_stages
@@ -197,8 +198,16 @@ def test_limited_core_summary_records_resolved_data_period(tmp_path, monkeypatch
             {"total_combinations_tested": 1, "data_subset": dict(grid_cfg.get("data_subset") or {})},
         )
 
+    def fake_write_fixed_config_core_artifacts(cfg, market_data, detail_data, stage_dir, subset, quality_report):
+        seen["fixed_config_core_subset"] = subset
+        return {
+            "purpose": "fixed_config_mechanics_cross_check",
+            "trade_log_csv": str(stage_dir / "fixed_config_core_trade_log.csv"),
+        }
+
     monkeypatch.setattr(campaign_stages, "_prepare_stage_data_cached", fake_prepare_stage_data_cached)
     monkeypatch.setattr(campaign_stages, "run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr(campaign_stages, "_write_fixed_config_core_artifacts", fake_write_fixed_config_core_artifacts)
 
     payload = campaign_stages._run_limited_core_grid(
         {
@@ -227,13 +236,82 @@ def test_limited_core_summary_records_resolved_data_period(tmp_path, monkeypatch
     assert payload["summary"]["resolved_data_subset"] == expected_resolved_subset
     assert payload["summary"]["data_subset"] == expected_resolved_subset
     assert payload["summary"]["actual_data_period"] == quality
+    assert seen["fixed_config_core_subset"] == expected_resolved_subset
+    assert payload["summary"]["fixed_config_core"]["purpose"] == "fixed_config_mechanics_cross_check"
     assert seen["benchmarks"]["preferred_min_total_trades"] == 78
     assert seen["benchmarks"]["max_best_day_concentration"] == 0.4
     assert "min_profit_factor" not in seen["benchmarks"]
     assert "min_expectancy_r" not in seen["benchmarks"]
     assert "min_mar" not in seen["benchmarks"]
     assert written_summary["benchmark_thresholds"]["preferred_min_total_trades"] == 78
+    assert written_summary["fixed_config_core"]["trade_log_csv"].endswith("fixed_config_core_trade_log.csv")
     assert written_summary["actual_data_period"] == quality
+
+
+def test_fixed_config_core_artifacts_write_trade_log_from_yaml_strategy_params(tmp_path, monkeypatch):
+    quality = {
+        "rows": 2,
+        "strategy_rows": 2,
+        "first_timestamp": "2011-02-22 09:30:00-05:00",
+        "last_timestamp": "2011-02-22 09:31:00-05:00",
+        "timeframe": "1m",
+        "source_timeframe": "1m",
+    }
+    subset = {"start_date": "2011-02-22", "end_date": "2011-02-22", "session_labels": ["RTH"]}
+    market = pd.DataFrame({"timestamp": pd.to_datetime(["2011-02-22 09:30:00-05:00"])})
+    seen = {}
+
+    class FakeBacktestEngine:
+        def __init__(self, cfg):
+            self.cfg = cfg
+
+        def run(self, market_data, detail_data=None):
+            seen["strategy"] = self.cfg["strategy"]
+            return {
+                "trades": pd.DataFrame(
+                    [
+                        {
+                            "trade_id": 1,
+                            "entry_timestamp": pd.Timestamp("2011-02-22 09:31:00", tz="America/New_York"),
+                            "exit_timestamp": pd.Timestamp("2011-02-22 09:35:00", tz="America/New_York"),
+                            "direction": "long",
+                            "net_pnl": 25.0,
+                        }
+                    ]
+                ),
+                "daily": pd.DataFrame([{"session_date": "2011-02-22", "net_pnl": 25.0}]),
+                "metrics": {"total_trades": 1, "net_profit": 25.0},
+                "diagnostics": {"signals_generated": 1},
+            }
+
+    monkeypatch.setattr(campaign_stages, "BacktestEngine", FakeBacktestEngine)
+    cfg = {
+        "campaign_id": "test_campaign",
+        "variant_id": "test_variant",
+        "data": {"timezone": "America/New_York"},
+        "core": {"initial_balance": 150000},
+        "strategy": {
+            "entry": {"module": "fixed_entry", "params": {"threshold": 7}},
+            "sl": {"module": "fixed_sl", "params": {"stop_offset_ticks": 2}},
+            "tp": {"module": "fixed_tp", "params": {"target_r_multiple": 1.0}},
+        },
+    }
+
+    summary = campaign_stages._write_fixed_config_core_artifacts(cfg, market, None, tmp_path, subset, quality)
+
+    trade_log = tmp_path / "fixed_config_core_trade_log.csv"
+    metrics_json = tmp_path / "fixed_config_core_metrics.json"
+    assert trade_log.is_file()
+    assert (tmp_path / "fixed_config_core_daily_results.csv").is_file()
+    assert (tmp_path / "fixed_config_core_equity_curve.csv").is_file()
+    assert metrics_json.is_file()
+    assert seen["strategy"]["entry"]["params"]["threshold"] == 7
+    assert summary["parameter_source"] == "strategy section in effective config"
+    assert summary["uses_grid_selected_params"] is False
+    assert summary["resolved_data_subset"] == subset
+    written = json.loads(metrics_json.read_text(encoding="utf-8"))
+    assert written["metrics"]["total_trades"] == 1
+    assert written["strategy"]["entry"]["params"]["threshold"] == 7
 
 
 def test_limited_monkey_summary_records_resolved_data_period(tmp_path, monkeypatch):
@@ -439,7 +517,7 @@ def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, m
     run_dir = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run2"
     assert Path(summary["output_dir"]) == Path("backtest-campaigns/demo_campaign/demo_variant/ES/run2")
     assert summary["test_run_id"] == "run2"
-    assert (run_dir / "config.yaml").is_file()
+    assert (run_dir / "effective_config.yaml").is_file()
     assert (run_dir / "source_config.yaml").is_file()
     assert (run_dir / "limited_core_grid_test/stage_result.json").is_file()
     assert (run_dir / "variant_test_summary.json").is_file()
@@ -448,13 +526,15 @@ def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, m
     assert (run_dir.parent / "runs_index.csv").is_file()
     assert summary["campaign_metadata"]["path"] == "backtest-campaigns/demo_campaign/campaign.yaml"
     assert summary["campaign_metadata"]["hash"]
-    assert summary["effective_config_path"] == "backtest-campaigns/demo_campaign/demo_variant/ES/run2/config.yaml"
+    assert summary["effective_config_path"] == (
+        "backtest-campaigns/demo_campaign/demo_variant/ES/run2/effective_config.yaml"
+    )
     assert summary["source_config_snapshot_path"] == "backtest-campaigns/demo_campaign/demo_variant/ES/run2/source_config.yaml"
     assert summary["variant_metadata"]["path"] == "backtest-campaigns/demo_campaign/demo_variant/variant.yaml"
     assert summary["variant_metadata"]["mechanic"]["entry_module"] == "demo_entry"
     assert (tmp_path / "backtest-campaigns/demo_campaign/demo_variant/variant.yaml").is_file()
     assert (tmp_path / "backtest-campaigns/demo_campaign/variants_index.yaml").is_file()
-    effective_config = (run_dir / "config.yaml").read_text(encoding="utf-8")
+    effective_config = (run_dir / "effective_config.yaml").read_text(encoding="utf-8")
     source_config = (run_dir / "source_config.yaml").read_text(encoding="utf-8")
     assert "stage_order:" in effective_config
     assert "limited_core_grid_test:" in effective_config
@@ -511,10 +591,87 @@ def test_staged_campaign_can_write_external_config_to_explicit_run_folder(tmp_pa
 
     run_dir = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run2"
     assert summary["test_run_id"] == "run2"
-    assert summary["config_path"] == str(run_dir / "config.yaml")
+    assert summary["config_path"] == str(run_dir / "effective_config.yaml")
     assert summary["variant_metadata"]["path"] == str(tmp_path / "backtest-campaigns/demo_campaign/demo_variant/variant.yaml")
     assert (run_dir / "source_config.yaml").read_text(encoding="utf-8") == config_path.read_text(encoding="utf-8")
-    assert "stage_order:" in (run_dir / "config.yaml").read_text(encoding="utf-8")
+    assert "stage_order:" in (run_dir / "effective_config.yaml").read_text(encoding="utf-8")
+
+
+def test_staged_campaign_writes_source_results_index_for_campaign_source_config(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "campaigns/demo_campaign/variants/demo_variant/config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        "\n".join(
+            [
+                "campaign_id: demo_campaign",
+                "variant_id: demo_variant",
+                "strategy_name: demo_strategy",
+                "timeframe: 1m",
+                *_mechanics_review_yaml(),
+                "data:",
+                "  symbol: ES",
+                "  dataset_id: sample_1m",
+                "  raw_csv: data/raw/ES/sample.csv",
+                "strategy:",
+                "  entry:",
+                "    module: demo_entry",
+                "  tp:",
+                "    module: demo_tp",
+                "  sl:",
+                "    module: demo_sl",
+                "core:",
+                "  initial_balance: 50000",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    def fake_run_stage(stage_name, cfg, source_config, stage_cfg, stage_dir, skip_validation, context):
+        return {
+            "stage": stage_name,
+            "label": stage_name,
+            "status": "passed",
+            "passed": True,
+            "criteria": [],
+        }
+
+    monkeypatch.setattr(campaign_stages, "_run_stage", fake_run_stage)
+
+    summary = campaign_stages.run_campaign_stage_tests(
+        config_path,
+        include_acceptance=False,
+        skip_validation=True,
+    )
+
+    run_dir = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run1"
+    index_path = tmp_path / "campaigns/demo_campaign/results_index.yaml"
+    assert summary["source_results_index_path"] == str(index_path)
+    assert (run_dir / "effective_config.yaml").is_file()
+    assert (run_dir / "source_config.yaml").is_file()
+    manifest = yaml.safe_load((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["effective_config"] == "backtest-campaigns/demo_campaign/demo_variant/ES/run1/effective_config.yaml"
+    index = yaml.safe_load(index_path.read_text(encoding="utf-8"))
+    assert index["runs"] == [
+        {
+            "campaign_id": "demo_campaign",
+            "variant_id": "demo_variant",
+            "symbol": "ES",
+            "test_run_id": "run1",
+            "source_config_path": str(config_path),
+            "source_config_snapshot_path": "backtest-campaigns/demo_campaign/demo_variant/ES/run1/source_config.yaml",
+            "source_config_hash": summary["source_config_hash"],
+            "effective_config_path": "backtest-campaigns/demo_campaign/demo_variant/ES/run1/effective_config.yaml",
+            "effective_config_hash": summary["config_hash"],
+            "run_dir": "backtest-campaigns/demo_campaign/demo_variant/ES/run1",
+            "campaign_test_summary": "backtest-campaigns/demo_campaign/demo_variant/ES/run1/campaign_test_summary.json",
+            "variant_test_summary": "backtest-campaigns/demo_campaign/demo_variant/ES/run1/variant_test_summary.json",
+            "passed": True,
+            "halted": False,
+            "failed_stage": None,
+            "updated_at": summary["updated_at"],
+        }
+    ]
 
 
 def test_staged_campaign_rejects_symbol_level_output_dir(tmp_path, monkeypatch):
@@ -637,6 +794,42 @@ def test_default_stage_criteria_match_screenshot_benchmarks():
     assert "metrics.total_trades" not in by_metric(acceptance)
     assert "metrics.expectancy_r" not in by_metric(acceptance)
     assert "metrics.win_rate" not in by_metric(acceptance)
+
+
+def test_canonicalized_stage_windows_match_shortlist_and_wfa_benchmarks():
+    cfg = campaign_stages.canonicalize_campaign_config(
+        {
+            "campaign_tests": {
+                "limited_core_grid_test": {
+                    "data_subset": {"start_date": "2024-01-01", "end_date": "2024-12-31"}
+                },
+                "limited_monkey_test": {
+                    "data_subset": {"start_date": "2024-01-01", "end_date": "2024-12-31"}
+                },
+                "walk_forward_analysis": {
+                    "data_subset": {"start_date": "2024-01-01", "end_date": "2024-12-31"}
+                },
+            }
+        }
+    )
+
+    limited_core = cfg["campaign_tests"]["limited_core_grid_test"]
+    limited_monkey = cfg["campaign_tests"]["limited_monkey_test"]
+    wfa = cfg["campaign_tests"]["walk_forward_analysis"]
+
+    for stage_cfg in (limited_core, limited_monkey):
+        assert "data_subset" not in stage_cfg
+        assert stage_cfg["data_window"] == campaign_stages.DEFAULT_SHORTLIST_DATA_WINDOW
+        assert stage_cfg["data_window"]["mode"] == "random_fraction"
+        assert stage_cfg["data_window"]["fraction"] == 0.10
+        assert stage_cfg["data_window"]["avoid_last_fraction"] == 0.10
+        assert stage_cfg["data_window"]["avoid_ranges"] == [
+            {"start_date": "2020-02-01", "end_date": "2021-06-30"}
+        ]
+
+    assert "data_subset" not in wfa
+    assert wfa["data_window"] == campaign_stages.DEFAULT_WFA_DATA_WINDOW
+    assert wfa["data_window"] == {"mode": "first_fraction", "fraction": 0.90}
 
 
 def test_wfa_mar_default_criteria_use_fixed_screenshot_threshold():

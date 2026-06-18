@@ -1,0 +1,156 @@
+campaign_id: es_opening_gap_orderflow_continuation
+title: ES opening gap hold continuation with aggregate orderflow
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: opening_gap_orderflow_continuation
+hypothesis: ES RTH opening gaps from the prior RTH close may continue intraday when
+  the post-open window holds on the gap side of the prior close and completed aggregate
+  orderflow remains aligned with the gap direction.
+sources:
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2018.05.009
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  relevance: Documents predictable same-day intraday return continuation, motivating
+    tests of whether post-open gap acceptance predicts later intraday continuation.
+- title: Overnight-Intraday Reversal Everywhere
+  authors: Chun Liu, Yang Liu, Tianyu Wang, Guofu Zhou, Yingzi Zhu
+  year: 2016
+  venue: SSRN working paper
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2730304
+  relevance: Provides the competing overnight reversal benchmark; this campaign tests
+    the opposite condition, where the RTH gap is accepted instead of faded.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon pressure proxy; this
+    campaign uses completed Sierra aggregate trade-side flow.
+rationale: This is a bounded composite edge. The price-action state is a prior-close-to-RTH-open
+  gap that does not fill during the completed source window. Aggregate orderflow is
+  only used after that completed window and must agree with the gap direction. It
+  is distinct from the failed opening-gap absorption fade because it follows accepted
+  gaps instead of fading counter-gap flow.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- previous RTH close from completed prior session
+- completed source-window signed_volume, volume, large10_signed_volume, large10_volume
+lookahead_risks:
+- Prior RTH close is known only after the previous session completes.
+- RTH open is known at the current open, but no signal is emitted until the configured
+  source window closes.
+- The gap-hold and orderflow checks use only completed bars ending at or before the
+  signal timestamp.
+- Signals generated from a completed source window are filled no earlier than the
+  next bar open.
+- The stop uses the known prior close boundary and next-bar entry price; no future
+  session information is used.
+- No final session high/low, final VWAP, volume profile, or future orderflow is used.
+failure_modes:
+- Most opening gaps may still mean-revert despite early acceptance.
+- Aligned aggregate flow may mark exhaustion after the gap move rather than continuation
+  sponsorship.
+- Boundary stops at the prior close can be wide for larger gaps and reduce MAR.
+- The edge may concentrate in a few macro-event sessions or volatility regimes.
+- Small 1-3 point gaps may be too noisy after ES costs and slippage.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_opening_gap_orderflow_absorption_fade
+  - es_overnight_intraday_reversal
+  - es_overnight_return_late_day_momentum
+  - es_opening_drive_inventory_absorption
+  - es_prior_session_level_breakout_continuation
+  - es_signed_orderflow_persistence
+  conclusion: Eligible as a new bounded composite campaign because it requires an
+    opening gap to hold outside the prior RTH close and then follows same-direction
+    aggregate flow. Existing active campaigns faded gap absorption, faded overnight
+    gaps, traded late-day overnight-return continuation, tested opening-drive state,
+    or used prior-session high/low gap holds rather than prior-close gap acceptance
+    with aligned orderflow.
+variants:
+- early_signed_gap_hold_continuation_1000
+- morning_signed_gap_hold_continuation_1030
+- early_large10_gap_hold_continuation_1000
+- late_morning_large10_gap_hold_continuation_1100
+- midday_signed_gap_hold_continuation_1200
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change opening-gap hold continuation plus aligned orderflow mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    scope: per_failed_variant
+    status: completed_failed
+    variants:
+    - early_large10_gap_hold_continuation_1000
+    - early_signed_gap_hold_continuation_1000
+    - late_morning_large10_gap_hold_continuation_1100
+    - midday_signed_gap_hold_continuation_1200
+    - morning_signed_gap_hold_continuation_1030
+    audit: research_artifacts/es_opening_gap_orderflow_continuation_rescue_attempt_1_20260618.md
+    summary: All five one-time rescues failed limited_core_grid_test; no downstream
+      stages reached.
+pre_pnl_reformulations:
+- id: density_reformulation_1
+  reason: Initial strict density corners were below 50 signals/year on full history
+    for several variants before any PnL testing.
+  changes:
+  - changed entry.params.min_opening_gap_ticks grid from [4, 8, 12] to [4, 8, 10]
+  - changed signed max orderflow threshold from 0.05 to 0.04
+  - changed large10 max orderflow threshold from 0.10 to 0.08
+  - kept the same opening-gap hold continuation plus aligned orderflow mechanic
+- id: density_reformulation_2
+  reason: First reformulation still left several strict entry corners below 50 signals/year
+    on full history before PnL.
+  changes:
+  - changed entry.params.min_opening_gap_ticks grid to [4, 6, 8]
+  - changed signed max orderflow threshold to 0.02
+  - changed large10 max orderflow threshold to 0.04
+  - kept the same opening-gap hold continuation plus aligned orderflow mechanic
+density_audit:
+  initial_artifact: research_artifacts/es_opening_gap_orderflow_continuation_density_audit_20260618.md
+  reformulated_artifact: research_artifacts/es_opening_gap_orderflow_continuation_reformulated_density_audit_20260618.md
+  final_artifact: research_artifacts/es_opening_gap_orderflow_continuation_final_density_audit_20260618.md
+  conclusion: 'Final pre-PnL formulation approved for testing: every strict entry
+    corner exceeded 50 signals/year on both the full local Sierra period and canonical
+    limited-core window.'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_opening_gap_orderflow_continuation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants failed limited_core_grid_test with 0.0
+    profitable-combo rate. Each failed variant received exactly one parameter-space/fixed-parameter
+    rescue preserving the opening-gap hold continuation plus aligned aggregate-orderflow
+    mechanic. All five rescues also failed limited_core_grid_test; no run reached
+    limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen
+    validation, or candidate reporting.
+  best_run:
+    variant_id: late_morning_large10_gap_hold_continuation_1100
+    run_id: rescue1
+    terminal_stage: limited_core_grid_test
+    top_net_profit: 686.25
+    top_profit_factor: 1.057068607068607
+    top_trades_per_year: 51.32806680543288

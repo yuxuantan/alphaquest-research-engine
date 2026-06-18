@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.opening_gap_orderflow_fade import OpeningGapOrderflowFadeEntry
+
+ENTRY_MODULE = OpeningGapOrderflowFadeEntry

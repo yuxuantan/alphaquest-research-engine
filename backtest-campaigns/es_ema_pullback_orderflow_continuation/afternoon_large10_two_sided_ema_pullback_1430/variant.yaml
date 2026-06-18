@@ -1,0 +1,25 @@
+campaign_id: es_ema_pullback_orderflow_continuation
+variant_id: afternoon_large10_two_sided_ema_pullback_1430
+strategy_name: ema_pullback_orderflow_continuation
+mechanic:
+  entry_module: ema_pullback_orderflow_continuation
+  take_profit_module: fixed_r
+  stop_loss_module: sweep_extreme
+  flatten_time: '15:30:00'
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: scaffold

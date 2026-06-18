@@ -11,6 +11,7 @@ from tools.build_sierra_trade_orderflow_cache import (
     datetime_to_scid_us,
     roll_contract_to_file_symbol,
 )
+from tools.build_sierra_footprint_feature_cache import aggregate_footprint_price_volume_batch
 
 
 def _batch(rows: list[dict]) -> pa.RecordBatch:
@@ -104,3 +105,49 @@ def test_aggregate_batch_converts_utc_scid_timestamps_to_new_york_rth_winter() -
 def test_roll_contract_to_file_symbol_supports_non_es_root_symbol() -> None:
     assert roll_contract_to_file_symbol(pd.Timestamp("2025-12-15"), "ESH6", "NQ") == "NQH26"
     assert roll_contract_to_file_symbol(pd.Timestamp("2025-06-15"), "ESU5", "NQ") == "NQU25"
+
+
+def test_aggregate_footprint_price_volume_batch_groups_new_york_minute_and_tick_price() -> None:
+    batch = _batch(
+        [
+            {
+                "scid_datetime_us": datetime_to_scid_us(datetime(2025, 6, 9, 13, 30, 1)),
+                "close": 6000.0,
+                "num_trades": 1,
+                "volume": 2,
+                "bid_volume": 2,
+                "ask_volume": 0,
+            },
+            {
+                "scid_datetime_us": datetime_to_scid_us(datetime(2025, 6, 9, 13, 30, 20)),
+                "close": 6000.01,
+                "num_trades": 1,
+                "volume": 3,
+                "bid_volume": 0,
+                "ask_volume": 3,
+            },
+            {
+                "scid_datetime_us": datetime_to_scid_us(datetime(2025, 6, 9, 13, 30, 30)),
+                "close": 6000.25,
+                "num_trades": 1,
+                "volume": 4,
+                "bid_volume": 4,
+                "ask_volume": 0,
+            },
+        ]
+    )
+
+    out = aggregate_footprint_price_volume_batch(
+        batch,
+        start_us=datetime_to_scid_us(datetime(2025, 6, 9)),
+        end_us=datetime_to_scid_us(datetime(2025, 6, 10)),
+        tick_size=0.25,
+    )
+
+    assert len(out) == 2
+    assert _timestamp_from_minute_us(out.iloc[0]["minute_us"]) == pd.Timestamp("2025-06-09 09:30")
+    assert out.iloc[0]["price"] == 6000.0
+    assert out.iloc[0]["volume"] == 5
+    assert out.iloc[0]["bid_volume"] == 2
+    assert out.iloc[0]["ask_volume"] == 3
+    assert out.iloc[1]["price"] == 6000.25

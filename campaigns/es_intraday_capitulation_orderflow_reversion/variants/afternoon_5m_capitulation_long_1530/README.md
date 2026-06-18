@@ -1,0 +1,7 @@
+# afternoon_5m_capitulation_long_1530
+
+Campaign: `es_intraday_capitulation_orderflow_reversion`
+
+This variant trades long after a completed 5-minute downside capitulation bar from 12:30 to 15:30 ET, focusing on afternoon liquidity pressure that may reverse before the close. Entry is next bar open, with a stop beyond the capitulation low, fixed-R target, and same-day flatten.
+
+Modules: `intraday_capitulation_mr`, `sweep_extreme`, `fixed_r`.

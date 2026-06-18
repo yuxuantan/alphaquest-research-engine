@@ -1,0 +1,138 @@
+campaign_id: es_prior_session_breakout_orderflow_confirmation
+title: ES prior-session level breakout continuation with aggregate orderflow confirmation
+decision: FAIL
+created_at: '2026-06-17'
+instrument: ES
+market_timezone: America/New_York
+edge_family: prior_session_level_breakout_orderflow_confirmation
+hypothesis: ES breaks beyond the prior RTH high or low should be more likely to continue intraday
+  when the completed breakout or hold bar also shows same-direction aggregate trade-side orderflow.
+sources:
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  authors: William Brock, Josef Lakonishok, Blake LeBaron
+  year: 1992
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1992.tb04681.x
+  link: https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04681.x
+  relevance: Supports testing support/resistance trading-range break rules as mechanical price-action
+    signals.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz, Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Links technical support/resistance levels with liquidity supply, motivating prior-session
+    highs/lows as public liquidity boundaries.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  venue: Journal of International Money and Finance
+  link: https://www.newyorkfed.org/research/staff_reports/sr150.html
+  relevance: Documents clustered stop orders around technical levels; the campaign tests continuation
+    only after completed acceptance outside the level.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports orderflow imbalance as a short-horizon pressure proxy; this campaign uses
+    completed Sierra aggregate trade-side flow, not quote-depth OFI.
+rationale: This is a bounded composite campaign. The primary edge is prior-session support/resistance
+  breakout continuation. The secondary condition is completed-bar aggregate orderflow confirmation
+  in the breakout direction. It is distinct from prior-session level breakout continuation because
+  price alone cannot trigger, and distinct from prior-level delta dislocation because it follows
+  aligned acceptance rather than fading or interpreting price-flow disagreement.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- completed prior RTH high/low and fresh-level flags from pdh_pdl_sweep features
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume
+lookahead_risks:
+- Prior RTH high and low are known only after the prior RTH session is complete.
+- Fresh break, retest hold, gap hold, and orderflow confirmation use only completed 5-minute bars.
+- Signals generated from a completed bar are filled no earlier than the next bar open by the engine.
+- No current-session final high/low, final VWAP, final volume profile, future orderflow, or future
+  daily range is used.
+- All variants flatten before the configured prop cutoff and disallow overnight exposure.
+failure_modes:
+- Aligned aggregate flow may represent exhaustion into liquidity rather than informed continuation.
+- Prior-session level breaks may remain false breakouts after costs and slippage.
+- The effect may concentrate in crisis trend days or a single side of the market.
+- Bar-level signed volume may be too noisy to distinguish stop cascades from informed flow.
+- Gap-hold variants may duplicate overnight information without enough intraday follow-through.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_prior_session_level_breakout_continuation
+  - es_prior_day_stop_run_reclaim
+  - es_prior_level_delta_dislocation
+  - es_signed_orderflow_persistence
+  - es_opening_range_orderflow_breakout
+  - es_range_compression_orderflow_breakout
+  - es_round_number_orderflow_barrier
+  conclusion: Eligible as a new bounded composite campaign because it requires prior-session level
+    breakout acceptance plus same-bar aggregate orderflow confirmation. Existing active campaigns
+    tested price-only prior-level continuation, failed prior-level sweeps, or price-flow dislocation
+    rather than aligned breakout confirmation.
+variants:
+- all_day_signed_buffer_break_two_sided
+- all_day_large10_buffer_break_two_sided
+- all_day_large20_no_buffer_break_two_sided
+- first_half_signed_no_buffer_break_two_sided
+- all_day_signed_high_volume_break_two_sided
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core prior-session breakout plus orderflow-confirmation mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    scope: per_failed_variant
+    status: completed_failed
+    variants:
+    - all_day_large10_buffer_break_two_sided
+    - all_day_large20_no_buffer_break_two_sided
+    - all_day_signed_buffer_break_two_sided
+    - all_day_signed_high_volume_break_two_sided
+    - first_half_signed_no_buffer_break_two_sided
+    audit: research_artifacts/es_prior_session_breakout_orderflow_confirmation_rescue_attempt_1_20260617.md
+    summary: All five one-time rescues completed. Four failed limited core; first_half_signed_no_buffer_break_two_sided/rescue1
+      passed limited core and limited monkey but failed WFA early.
+pre_pnl_density_audit: research_artifacts/es_prior_session_breakout_orderflow_confirmation_density_audit_20260617.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_prior_session_breakout_orderflow_confirmation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 1
+  wfa_reached: 1
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time parameter-space rescues failed
+    the staged methodology. The strongest rescue, first_half_signed_no_buffer_break_two_sided/rescue1,
+    passed limited core and limited monkey but failed WFA early because the first selected in-sample
+    profit factor was 0.887903893951947, below the required 1.0; no OOS trades were stitched and
+    no Monte Carlo, incubation, frozen validation, or candidate report was reached.
+  best_run:
+    variant_id: first_half_signed_no_buffer_break_two_sided
+    run_id: rescue1
+    terminal_stage: walk_forward_analysis
+    top_net_profit: 1535.0
+    top_profit_factor: 1.2073623775751436
+    top_mar: 0.9323173093989308
+    top_trades_per_year: 54.22268041237114
+    monkey_passed: true
+    wfa_early_exit: true
+    wfa_train_profit_factor: '0.887903893951947'
+    wfa_early_exit_reason: selected_train_profit_factor_below_minimum

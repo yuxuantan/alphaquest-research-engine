@@ -1,0 +1,150 @@
+campaign_id: es_trend_aligned_orderflow_continuation
+title: ES multi-timeframe price-action trend aligned with aggregate orderflow continuation
+decision: FAIL
+created_at: 2026-06-17
+instrument: ES
+market_timezone: America/New_York
+edge_family: trend_aligned_orderflow_continuation
+hypothesis: >
+  ES should have a higher probability of same-session continuation when completed
+  price action shows higher highs and higher lows, or lower highs and lower lows,
+  on two intraday horizons and the completed signal bar also carries aggregate
+  orderflow in the same direction. The price-action structure defines the
+  directional regime; the orderflow condition attempts to confirm that the move
+  is supported by aggressive participation rather than passive drift.
+sources:
+  - title: Market Intraday Momentum
+    authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+    year: 2018
+    venue: Journal of Financial Economics
+    link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+    doi: 10.1016/j.jfineco.2018.05.009
+    relevance: >
+      Documents same-day continuation from intraday market information. This
+      campaign uses only completed intraday price-action structure and asks
+      whether continuation improves when aggregate orderflow confirms direction.
+  - title: The Price Impact of Order Book Events
+    authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+    year: 2014
+    venue: Journal of Financial Econometrics
+    link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+    doi: 10.1093/jjfinec/nbt003
+    relevance: >
+      Supports orderflow imbalance as a short-horizon pressure proxy. This
+      campaign uses completed-bar Sierra aggregate trade-side flow, not full-depth
+      quote-level OFI.
+  - title: Time Series Momentum
+    authors: Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen
+    year: 2012
+    venue: Journal of Financial Economics
+    link: https://doi.org/10.1016/j.jfineco.2011.11.003
+    doi: 10.1016/j.jfineco.2011.11.003
+    relevance: >
+      Provides broader support for trend-continuation behavior across futures
+      markets. This campaign adapts the idea to intraday completed-bar structure
+      and requires contemporaneous aggregate orderflow confirmation.
+rationale: >
+  This is a bounded composite edge requested after the failed single-edge
+  campaigns: trade only when price action and aggregate orderflow independently
+  agree. The price-action leg is two-horizon HH/HL or LH/LL structure using
+  completed 5-minute bars. The orderflow leg uses completed-bar signed-volume,
+  large-10, or large-20 imbalance. It is not the active signed-flow persistence
+  campaign because flow alone cannot trigger a trade. It is not the opening-range
+  orderflow breakout campaign because there is no opening-range boundary or
+  breakout level. It is not VWAP, gap, prior-level, or absorption/fade logic.
+data_needs:
+  - data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  - 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+  - completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, large20_volume
+lookahead_risks:
+  - Trend windows use only bars completed at or before the signal close time.
+  - Aggregate orderflow is read only from the completed signal bar.
+  - A signal generated from a completed bar is filled no earlier than the next bar open by the engine.
+  - No future session high, low, VWAP, final range, or post-entry orderflow is used.
+  - Same-bar stop/target conflicts use 1-minute detail data when available and pessimistic fallback otherwise.
+failure_modes:
+  - HH/HL or LH/LL structure may identify overextended moves that mean-revert after costs.
+  - Sierra aggregate signed-volume classification may be too noisy for short-horizon direction.
+  - Large-trade flow may reflect liquidity-taking into exhaustion rather than informed continuation.
+  - Positive results may be concentrated in crisis trend days or a small number of high-volatility sessions.
+  - The stop/target geometry may be too generic for the price-action trigger.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_signed_orderflow_persistence
+    - es_opening_range_orderflow_breakout
+    - es_opening_drive_inventory_absorption
+    - es_orderflow_absorption_exhaustion_reversal
+    - es_vwap_pullback_continuation
+    - es_prior_level_delta_dislocation
+    - es_range_compression_breakout
+  conclusion: >
+    Eligible as a new active campaign because the trigger requires both
+    multi-timeframe completed-bar price-action trend structure and same-direction
+    aggregate orderflow. Existing active failures tested standalone signed-flow
+    persistence, opening-range breakouts, inventory/absorption states, VWAP
+    pullbacks, prior-level dislocation, or range compression.
+variants:
+  - morning_15_30_large20_trend_flow_1030
+  - late_morning_15_30_signed_trend_flow_1130
+  - midday_15_30_large10_trend_flow_1230
+  - afternoon_30_60_large20_trend_flow_1400
+  - late_day_30_60_large10_trend_flow_1430
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core price-action plus aggregate-orderflow mechanic
+    - add or remove filters after seeing results
+    - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+    - id: parameter_space_rescue_1
+      status: completed_failed
+      scope: per_failed_variant
+      variants:
+        - morning_15_30_large20_trend_flow_1030
+        - late_morning_15_30_signed_trend_flow_1130
+        - midday_15_30_large10_trend_flow_1230
+        - afternoon_30_60_large20_trend_flow_1400
+        - late_day_30_60_large10_trend_flow_1430
+      allowed_change_summary: >
+        Fix `entry.params.min_trend_move_ticks` at 0 and retest a narrower
+        parameter space: `entry.params.min_orderflow_imbalance` in `[0.01, 0.02]`,
+        `sl.params.stop_pct` in `[0.00075, 0.001, 0.0015]`, and
+        `tp.params.target_r_multiple` in `[0.5, 0.75, 1.0]`.
+      audit: research_artifacts/es_trend_aligned_orderflow_continuation_rescue_attempt_1_20260617.md
+pre_pnl_density_audit: research_artifacts/es_trend_aligned_orderflow_continuation_density_audit_20260617.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_trend_aligned_orderflow_continuation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: >
+    All five original variants and all five one-time parameter-space rescues
+    failed limited_core_grid_test before monkey, WFA, Monte Carlo, simulated
+    incubation, frozen validation, or candidate reporting.
+  best_original:
+    variant_id: late_day_30_60_large10_trend_flow_1430
+    run_id: run1
+    top_net_profit: -220.0
+    top_profit_factor: 0.9666919000757003
+    top_trades_per_year: 48.87459580960513
+    top_failure_reason: min_total_net_profit;min_trades_per_year;preferred_min_total_trades
+  best_rescue:
+    variant_id: morning_15_30_large20_trend_flow_1030
+    run_id: rescue1
+    top_net_profit: -1626.25
+    top_profit_factor: 0.5827453495830661
+    top_trades_per_year: 65.15759441399504
+    top_failure_reason: min_total_net_profit

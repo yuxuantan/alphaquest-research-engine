@@ -1,0 +1,161 @@
+campaign_id: es_prior_session_flip_retest_orderflow
+title: ES prior-session support/resistance flip retest with aggregate orderflow
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: prior_session_sr_flip_retest_orderflow
+hypothesis: A prior RTH high or low that is broken and later retested from the other
+  side may flip from resistance to support, or support to resistance. The flip should
+  be more reliable when completed aggregate orderflow on the retest confirms either
+  absorption of counter-pressure or renewed participation in the continuation direction.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports intraday support/resistance levels as public reference points
+    where trend interruptions and level reactions can be systematically tested.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz, Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Links technical levels to liquidity supply; a broken prior-session high/low
+    can become a public liquidity boundary on retest.
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  authors: William Brock, Josef Lakonishok, Blake LeBaron
+  year: 1992
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1992.tb04681.x
+  link: https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04681.x
+  relevance: Motivates mechanical testing of break and support/resistance style technical
+    trading rules rather than discretionary chart interpretation.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure proxy;
+    this campaign uses completed Sierra aggregate trade-side flow, not quote-depth
+    OFI.
+rationale: This is a bounded composite edge. Price action defines the public prior-session
+  high/low, the completed breakout, and the later retest that must hold outside the
+  level. Aggregate orderflow is only used on the completed retest-hold bar. A preliminary
+  fresh-level-only formulation was rejected before PnL because it was too sparse;
+  this final pre-test formulation permits non-fresh prior levels because S/R flip
+  retests can remain valid after earlier probes of the same public level.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- pdh_pdl_sweep features for completed prior RTH high/low
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume
+lookahead_risks:
+- Prior RTH high and low are known only after the prior RTH session is complete.
+- The breakout is recognized only after a completed close beyond the prior RTH level.
+- The retest hold and aggregate orderflow confirmation use only the completed retest
+  bar; no future bar, final session high/low, final VWAP, or future orderflow is used.
+- Signals generated from a completed bar are filled no earlier than the next bar open
+  by the engine.
+- The boundary stop is computed from the already-known prior level and next-bar entry
+  price; no post-entry excursion is used.
+- All variants flatten before the configured cutoff and disallow overnight exposure.
+failure_modes:
+- A retest may hold briefly and still fail after next-bar slippage and pessimistic
+  same-bar stop/target ordering.
+- Absorbed counter-flow may indicate hidden adverse pressure rather than true defense
+  of the flipped level.
+- Aligned aggregate flow may represent late exhaustion after the initial breakout.
+- The edge may only work in narrow trend regimes or be dominated by a few large sessions.
+- A boundary stop can be too tight for ES noise around prior-session levels.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_prior_session_level_breakout_continuation
+  - es_prior_session_breakout_orderflow_confirmation
+  - es_prior_day_stop_run_reclaim
+  - es_prior_level_delta_dislocation
+  - es_opening_range_retest_orderflow
+  - es_round_number_orderflow_barrier
+  - es_prior_value_area_orderflow_acceptance
+  conclusion: Eligible as a bounded composite campaign because every variant requires
+    a prior-session high/low breakout followed by a later retest-hold and retest-bar
+    aggregate orderflow confirmation. Existing active campaigns tested price-only
+    retest, immediate breakout plus orderflow, failed sweep/reclaim, price-flow dislocation,
+    opening-range retest, round-number barriers, or value-area acceptance rather than
+    prior-session S/R flip retest with retest-bar flow.
+pre_pnl_reformulations:
+- id: density_reformulation_1
+  reason: Fresh-level-only and one-sided variants produced fewer than 50 signals/year
+    in strict density corners before PnL testing.
+  changes:
+  - set entry.params.require_fresh_level=false for all variants
+  - made all variants two-sided
+  - kept the same prior-level break, retest-hold, retest-bar orderflow, boundary-stop,
+    fixed-R mechanic
+variants:
+- morning_signed_absorbed_two_sided_flip
+- morning_signed_aligned_two_sided_flip
+- late_morning_large10_absorbed_two_sided_flip
+- midday_signed_aligned_two_sided_flip
+- afternoon_large10_aligned_two_sided_flip
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change prior-session S/R flip retest plus retest-bar orderflow mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    scope: per_failed_variant
+    status: completed_failed
+    variants:
+    - afternoon_large10_aligned_two_sided_flip
+    - late_morning_large10_absorbed_two_sided_flip
+    - midday_signed_aligned_two_sided_flip
+    - morning_signed_absorbed_two_sided_flip
+    - morning_signed_aligned_two_sided_flip
+    audit: research_artifacts/es_prior_session_flip_retest_orderflow_rescue_attempt_1_20260618.md
+    summary: All five one-time rescues failed limited_core_grid_test; no downstream
+      stages reached.
+    density_audit: research_artifacts/es_prior_session_flip_retest_orderflow_rescue_density_audit_20260618.md
+    density_conclusion: All rescue strict entry corners exceeded 50 signals/year on
+      full and canonical limited-core windows.
+density_audit:
+  initial_rejected_artifact: research_artifacts/es_prior_session_flip_retest_orderflow_density_audit_20260618.md
+  final_artifact: research_artifacts/es_prior_session_flip_retest_orderflow_reformulated_density_audit_20260618.md
+  conclusion: 'Final pre-PnL reformulation approved for testing: every strict entry
+    corner exceeded 50 signals/year on both the full local Sierra period and the canonical
+    limited-core random 10% window.'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_prior_session_flip_retest_orderflow/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants failed limited_core_grid_test with 0.0
+    profitable-combo rate. Each failed variant received exactly one parameter-space/fixed-parameter
+    rescue preserving the prior-session S/R flip retest plus retest-bar orderflow
+    mechanic. All five rescues also failed limited_core_grid_test; no run reached
+    limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen
+    validation, or candidate reporting.
+  best_run:
+    variant_id: afternoon_large10_aligned_two_sided_flip
+    run_id: rescue1
+    terminal_stage: limited_core_grid_test
+    top_net_profit: -38.75
+    top_profit_factor: 0.9977064220183486
+    top_trades_per_year: 90.98917839163146

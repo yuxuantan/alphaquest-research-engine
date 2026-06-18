@@ -20,10 +20,19 @@ CAMPAIGN_REPORT_ROOT = Path("backtest-campaigns")
 CAMPAIGN_METADATA_FILENAME = "campaign.yaml"
 VARIANT_METADATA_FILENAME = "variant.yaml"
 CAMPAIGN_VARIANTS_INDEX_FILENAME = "variants_index.yaml"
-CAMPAIGN_CONFIG_FILENAME = "config.yaml"
+EFFECTIVE_CONFIG_FILENAME = "effective_config.yaml"
+SOURCE_CONFIG_SNAPSHOT_FILENAME = "source_config.yaml"
+LEGACY_CAMPAIGN_CONFIG_FILENAME = "config.yaml"
+CAMPAIGN_CONFIG_FILENAME = EFFECTIVE_CONFIG_FILENAME
 VARIANT_TEST_SUMMARY_FILENAME = "variant_test_summary.json"
 LEGACY_VARIANT_SUMMARY_FILENAME = "variant_summary.json"
-CONFIG_SNAPSHOT_FILENAMES = {CAMPAIGN_CONFIG_FILENAME, "variant_config.yaml", "config_snapshot.yaml"}
+CONFIG_SNAPSHOT_FILENAMES = {
+    EFFECTIVE_CONFIG_FILENAME,
+    SOURCE_CONFIG_SNAPSHOT_FILENAME,
+    LEGACY_CAMPAIGN_CONFIG_FILENAME,
+    "variant_config.yaml",
+    "config_snapshot.yaml",
+}
 DEFAULT_CAMPAIGN_TEST_RUN_ID = "run1"
 RUN_ID_KEYS = ("test_run_id", "campaign_test_run_id", "run_name", "run_id")
 
