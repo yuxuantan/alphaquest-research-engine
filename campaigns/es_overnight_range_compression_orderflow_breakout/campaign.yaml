@@ -1,0 +1,173 @@
+campaign_id: es_overnight_range_compression_orderflow_breakout
+title: ES Overnight Range Compression Orderflow Breakout
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: overnight_range_compression_breakout_with_aggregate_orderflow
+hypothesis: A completed narrow overnight ES range can leave pent-up inventory and
+  unresolved liquidity around the overnight high/low. When RTH price closes beyond
+  the compressed overnight boundary with same-direction aggregate orderflow, the
+  breakout should have higher odds of short-horizon continuation.
+rationale: This campaign tests compression then expansion, not overnight gap reversal
+  or overnight level sweep-reclaim. The overnight high/low and range rank are fixed
+  before RTH opens, the RTH breakout is confirmed only after a completed bar close,
+  and execution must occur at the next bar open with ES costs and slippage.
+sources:
+- title: A Simple Opening Range Breakout Trading Strategy on S&P 500 Index Futures
+  authors: Ulf Holmberg, Carl Lönnbark, and Carl Lundström
+  year: 2012
+  venue: Finance Research Letters
+  doi: 10.1016/j.frl.2012.03.006
+  relevance: Provides direct S&P futures evidence that early range breakouts can
+    have state-dependent positive returns; this campaign uses overnight range compression
+    as the range source rather than the opening range.
+- title: Support for Resistance; Technical Analysis and Intraday Exchange Rates
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the idea that pre-identified support/resistance levels can
+    influence intraday price behavior; overnight high/low are known levels before
+    the RTH decision window.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates using orderflow imbalance as a short-horizon pressure proxy.
+    This campaign uses completed Sierra aggregate signed volume, not quote-level OFI.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- data/external/es_overnight_range_features_20110103_20260529.csv
+- timezone-aware ES RTH OHLCV and aggregate signed-volume bars in America/New_York
+- locally built overnight features from completed ETH bars only; no paid data fetch
+lookahead_risks:
+- The overnight range feature is computed from ETH bars ending 09:29 New York time
+  and is fixed before the RTH signal window.
+- The range-rank feature uses completed overnight ranges known by the session open,
+  not future RTH highs/lows or final session range.
+- RTH breakout and orderflow confirmation use only completed bar close data, so the
+  engine must enter at next-bar open or later.
+- Stop placement uses the completed signal-bar high/low, not future extremes.
+failure_modes:
+- Narrow overnight ranges may precede chop or false breakout rather than expansion.
+- Same-direction aggregate flow can be adverse selection during failed breakouts.
+- Signal-bar stops may be too tight around compressed-range expansion.
+- Results may concentrate in a single volatility regime, side, or year.
+- A breakout edge may not overcome one-tick slippage and ES commissions.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_overnight_inventory_sweep_reversion
+  - es_overnight_intraday_reversal
+  - es_opening_range_breakout
+  - es_opening_range_orderflow_breakout
+  - es_range_compression_breakout
+  - es_range_compression_orderflow_breakout
+  conclusion: Eligible as a distinct bounded campaign. It uses a pre-RTH overnight
+    compression state and overnight high/low breakout levels, not opening range
+    levels, prior-day stop-run reclaim, overnight gap fade, or rolling intraday
+    compression boxes.
+variants:
+- morning_signed_two_sided_breakout_1030
+- morning_large10_two_sided_breakout_1100
+- late_morning_large10_two_sided_breakout_1130
+- midday_signed_two_sided_breakout_1300
+- afternoon_large20_two_sided_breakout_1500
+parameter_policy:
+  max_tunables:
+    entry: 2
+    stop: 1
+    target_or_exit: 1
+  declared_tunables:
+  - entry.params.max_overnight_range_rank
+  - entry.params.min_orderflow_imbalance
+  - sl.params.stop_offset_ticks
+  - tp.params.target_r_multiple
+  combinations_per_variant: 81
+pre_pnl_reformulation:
+  date: '2026-06-18'
+  reason: Initial long-only/short-only morning split and strict breakout-buffer
+    corners failed the pre-PnL density screen before any PnL, stop/target, WFA,
+    monkey, or Monte Carlo results were computed.
+  initial_density_audit: research_artifacts/es_overnight_range_compression_orderflow_breakout_density_audit_20260618.md
+  changes_before_pnl:
+  - replaced separate one-sided morning variants with two-sided morning signed
+    and large10 variants
+  - fixed breakout_buffer_ticks at 0, still requiring a completed close outside
+    the overnight boundary
+  - made min_orderflow_imbalance the second entry tunable
+  - shifted max_overnight_range_rank grid to [0.4, 0.5, 0.6] to preserve a
+    lower-to-middle overnight range state while meeting the 50 trades/year screen
+  pnl_inspected: false
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change declared parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: all_five_original_variants_failed_limited_core
+    variants:
+    - morning_signed_two_sided_breakout_1030
+    - morning_large10_two_sided_breakout_1100
+    - late_morning_large10_two_sided_breakout_1130
+    - midday_signed_two_sided_breakout_1300
+    - afternoon_large20_two_sided_breakout_1500
+    density_audit: research_artifacts/es_overnight_range_compression_orderflow_breakout_rescue_attempt_1_density_audit_20260618.md
+    density_summary_csv: research_artifacts/es_overnight_range_compression_orderflow_breakout_rescue_attempt_1_density_summary_20260618.csv
+    rationale: Original runs had adequate signal density but zero profitable limited-core
+      combinations. The one allowed rescue preserves entry, stop, target, data,
+      sessions, fills, costs, and the completed overnight compression breakout with
+      aggregate orderflow confirmation mechanic, while testing a broader lower-to-middle
+      overnight range rank, neighboring orderflow thresholds, [1, 2, 3] stop offsets,
+      and quicker [0.5, 0.75, 1.0] fixed-R continuation targets.
+status:
+  current_stage: completed_failed
+  density_audit_required_before_pnl: false
+pre_pnl_density_audit:
+  date: '2026-06-18'
+  result: PASS
+  artifact: research_artifacts/es_overnight_range_compression_orderflow_breakout_reformulated_density_audit_20260618.md
+  detail_csv: research_artifacts/es_overnight_range_compression_orderflow_breakout_reformulated_density_audit_20260618.csv
+  summary_csv: research_artifacts/es_overnight_range_compression_orderflow_breakout_reformulated_density_summary_20260618.csv
+  limited_core_period: 2011-02-22 to 2012-09-05
+  full_configured_period: 2011-01-03 to 2026-05-29
+  min_required_signals_per_year: 50
+  weakest_limited_core_signals_per_year: 59.791815
+  weakest_full_configured_signals_per_year: 57.196098
+  note: Density only was evaluated after the pre-PnL reformulation. No stop, target,
+    fill, net profit, monkey, WFA, Monte Carlo, or validation result was inspected.
+result_summary:
+  decision: FAIL
+  status: completed_failed
+  report: backtest-campaigns/es_overnight_range_compression_orderflow_breakout/campaign_test_summary.json
+  results_csv: backtest-campaigns/es_overnight_range_compression_orderflow_breakout/campaign_results.csv
+  trade_logs_manifest: backtest-campaigns/es_overnight_range_compression_orderflow_breakout/trade_logs_manifest.csv
+  equity_curves_manifest: backtest-campaigns/es_overnight_range_compression_orderflow_breakout/equity_curves_manifest.csv
+  wfa_table: backtest-campaigns/es_overnight_range_compression_orderflow_breakout/wfa_table.csv
+  monte_carlo_summary: backtest-campaigns/es_overnight_range_compression_orderflow_breakout/monte_carlo_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  all_failed_variants_rescued_once: true
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  frozen_validation_reached: 0
+  candidate_report_created: false
+  best_run_by_top_net_profit: midday_signed_two_sided_breakout_1300/rescue1 top_net=-77.5
+  failure_reason: All five originals and all five one-time parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test. No run reached monkey, WFA, WFA OOS
+    monkey, Monte Carlo, simulated incubation, frozen validation, or candidate
+    reporting.

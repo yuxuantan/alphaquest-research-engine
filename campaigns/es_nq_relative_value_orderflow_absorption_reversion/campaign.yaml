@@ -1,0 +1,202 @@
+campaign_id: es_nq_relative_value_orderflow_absorption_reversion
+title: ES/NQ Relative-Value Reversion With ES Orderflow Absorption
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: cross_index_relative_value_orderflow_absorption_reversion
+hypothesis: ES/NQ return divergences are more likely to mean-revert when ES aggregate signed flow is counter to the ES price
+  leg, indicating absorption rather than continuation pressure; a fixed intraday window keeps trade frequency viable while
+  preserving max one signal per day.
+rationale: This is a bounded composite campaign. The primary edge is ES/NQ relative-value convergence; the fixed secondary
+  filter is completed ES aggregate signed-flow absorption over the same lookback window. Exact-minute timing was rejected
+  before PnL for insufficient density, so the tested mechanic uses the first qualifying completed bar inside a predeclared
+  window.
+sources:
+- title: 'Pairs Trading: Performance of a Relative-Value Arbitrage Rule'
+  authors: Evan Gatev, William N. Goetzmann, and K. Geert Rouwenhorst
+  year: 2006
+  venue: Review of Financial Studies
+  link: https://academic.oup.com/rfs/article-abstract/19/3/797/1585302
+  relevance: Relative-value foundation for temporary divergence and convergence between related instruments.
+- title: High Frequency Lead/Lag Relationships - Empirical Facts
+  authors: Nicolas Huth and Frederic Abergel
+  year: 2014
+  venue: Empirical market microstructure working paper
+  link: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+  relevance: Motivates high-frequency dependencies between related assets such as equity-index futures.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports imbalance as a short-horizon pressure proxy; this campaign uses completed aggregate signed trade flow,
+    not quote-depth OFI.
+- title: Lead-Lag Relationships in Market Microstructure
+  authors: Julian Schmidt, Tino Cestonaro, and Micha Bender
+  year: 2024
+  venue: SSRN
+  link: https://doi.org/10.2139/ssrn.5043260
+  relevance: Reviews predictive cross-market relationships in microstructure data.
+data_needs:
+- data/cache/orderflow/es_nq_lead_lag_1m_20110103_20260609_full_rth_ny.parquet
+- completed ES/NQ rolling return-spread columns
+- completed ES signed-imbalance columns over 15/30/60 minute windows
+lookahead_risks:
+- Rolling return and signed-imbalance features must use completed bars only.
+- Signal at the decision minute enters no earlier than the next one-minute bar open.
+- No future ES/NQ bars, final VWAP, final daily range, or future orderflow is used.
+- All variants flatten intraday before their configured cutoff.
+failure_modes:
+- Divergence may be information-driven rather than temporary.
+- Signed flow can be noisy or mark late capitulation.
+- Trading only ES may not monetize true pair convergence.
+- The effect can concentrate in one side, one volatility regime, or a small number of dates.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_nq_relative_value_reversion
+  - es_nq_cross_index_lead_lag
+  - es_mes_lead_lag_catchup
+  - es_mes_micro_flow_divergence_reversion
+  - es_signed_orderflow_persistence
+  conclusion: Eligible as a bounded composite because ES/NQ relative-value divergence alone cannot trigger; ES signed-flow
+    absorption over the completed lookback must confirm counter-price pressure before entry.
+variants:
+- morning15_two_sided_absorption_1000
+- morning30_underperform_absorption_long_1030
+- morning30_outperform_absorption_short_1030
+- late_morning30_two_sided_absorption_1130
+- midday60_two_sided_absorption_1400
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core ES/NQ relative-value plus ES signed-flow absorption mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - variant_id: late_morning30_two_sided_absorption_1130
+    attempt_id: parameter_space_rescue_1
+    scope: parameter_space_and_fixed_parameters_only
+    mechanics_changed: false
+    status: failed_limited_core_grid_test
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 81
+    benchmark_passing_combinations: 0
+    top_net_profit: -232.5
+    top_profit_factor: 0.9519628099173554
+    wfa_profit_factor: ''
+    wfa_mar: ''
+    wfa_trades_per_year: ''
+    failure_reason: min_total_net_profit
+    report_path: backtest-campaigns/es_nq_relative_value_orderflow_absorption_reversion/late_morning30_two_sided_absorption_1130/ES/rescue1/campaign_test_summary.json
+  - variant_id: midday60_two_sided_absorption_1400
+    attempt_id: parameter_space_rescue_1
+    scope: parameter_space_and_fixed_parameters_only
+    mechanics_changed: false
+    status: failed_walk_forward_analysis
+    terminal_stage: walk_forward_analysis
+    profitable_combinations: 71
+    total_combinations: 81
+    benchmark_passing_combinations: 16
+    top_net_profit: 4457.5
+    top_profit_factor: 1.4503662541045719
+    wfa_profit_factor: 0.7169466764061359
+    wfa_mar: -0.6975521321854036
+    wfa_trades_per_year: 40.80309072008192
+    failure_reason: profit_factor_lt_1.2;mar_lt_0.4;trades_per_year_lt_50;expectancy_not_positive
+    report_path: backtest-campaigns/es_nq_relative_value_orderflow_absorption_reversion/midday60_two_sided_absorption_1400/ES/rescue1/campaign_test_summary.json
+  - variant_id: morning15_two_sided_absorption_1000
+    attempt_id: parameter_space_rescue_1
+    scope: parameter_space_and_fixed_parameters_only
+    mechanics_changed: false
+    status: failed_limited_core_grid_test
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 81
+    benchmark_passing_combinations: 0
+    top_net_profit: -2048.125
+    top_profit_factor: 0.7677862811791383
+    wfa_profit_factor: ''
+    wfa_mar: ''
+    wfa_trades_per_year: ''
+    failure_reason: min_total_net_profit
+    report_path: backtest-campaigns/es_nq_relative_value_orderflow_absorption_reversion/morning15_two_sided_absorption_1000/ES/rescue1/campaign_test_summary.json
+  - variant_id: morning30_outperform_absorption_short_1030
+    attempt_id: parameter_space_rescue_1
+    scope: parameter_space_and_fixed_parameters_only
+    mechanics_changed: false
+    status: failed_walk_forward_analysis
+    terminal_stage: walk_forward_analysis
+    profitable_combinations: 67
+    total_combinations: 81
+    benchmark_passing_combinations: 15
+    top_net_profit: 2748.75
+    top_profit_factor: 1.2343849925389043
+    wfa_profit_factor: 0.0
+    wfa_mar: 0.0
+    wfa_trades_per_year: 0.0
+    failure_reason: early_exit_no_oos_trades_or_no_profitable_is_selection
+    report_path: backtest-campaigns/es_nq_relative_value_orderflow_absorption_reversion/morning30_outperform_absorption_short_1030/ES/rescue1/campaign_test_summary.json
+  - variant_id: morning30_underperform_absorption_long_1030
+    attempt_id: parameter_space_rescue_1
+    scope: parameter_space_and_fixed_parameters_only
+    mechanics_changed: false
+    status: failed_limited_core_grid_test
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 81
+    benchmark_passing_combinations: 0
+    top_net_profit: -15.0
+    top_profit_factor: 0.9978655282817502
+    wfa_profit_factor: ''
+    wfa_mar: ''
+    wfa_trades_per_year: ''
+    failure_reason: min_total_net_profit
+    report_path: backtest-campaigns/es_nq_relative_value_orderflow_absorption_reversion/morning30_underperform_absorption_long_1030/ES/rescue1/campaign_test_summary.json
+testing_plan:
+  methodology: current staged research pipeline
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 50.0
+pre_pnl_reformulation:
+  status: completed_before_pnl
+  reason: Exact-minute absorption signals failed the 50 trades/year strict-corner density screen for all five variants. No
+    PnL was run before reformulating to first signal in a fixed time window with max one trade per day.
+  discarded_density_artifact: research_artifacts/es_nq_relative_value_orderflow_absorption_reversion_density_audit_20260618.md
+testing_outcome:
+  status: completed
+  decision: FAIL
+  original_runs: 5
+  rescue_runs: 5
+  all_failed_variants_rescued_once: true
+  wfa_reached: 2
+  monte_carlo_reached: 0
+  fixed_config_core_trade_logs: 10
+  campaign_summary_path: backtest-campaigns/es_nq_relative_value_orderflow_absorption_reversion/campaign_test_summary.json
+  failure_reason: 'All five originals failed limited_core_grid_test. All five one-time parameter-space/fixed-parameter rescues
+    also failed the staged workflow: three stopped at limited_core_grid_test and two passed limited core/limited monkey but
+    failed walk_forward_analysis on stitched OOS metrics or early-exit selection. No run reached WFA OOS monkey, Monte Carlo,
+    simulated incubation, frozen validation, or candidate reporting.'
+final_result:
+  decision: FAIL
+  candidate_strategy_report_created: false
+  reason: 'All five originals failed limited_core_grid_test. All five one-time parameter-space/fixed-parameter rescues also
+    failed the staged workflow: three stopped at limited_core_grid_test and two passed limited core/limited monkey but failed
+    walk_forward_analysis on stitched OOS metrics or early-exit selection. No run reached WFA OOS monkey, Monte Carlo, simulated
+    incubation, frozen validation, or candidate reporting.'
+  report_path: backtest-campaigns/es_nq_relative_value_orderflow_absorption_reversion/campaign_test_summary.json

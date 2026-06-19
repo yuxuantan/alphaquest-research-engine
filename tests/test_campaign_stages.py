@@ -920,6 +920,77 @@ def test_wfa_oos_monte_carlo_defaults_to_50k_target_before_10k_drawdown(tmp_path
     assert (tmp_path / "wfa_oos_monte_carlo_summary.json").exists()
 
 
+def test_wfa_oos_monte_carlo_does_not_inherit_tighter_top_level_drawdown_by_default(
+    tmp_path,
+    monkeypatch,
+):
+    trades = pd.DataFrame(
+        [{"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 100.0}]
+    )
+    seen = {}
+
+    def fake_run_monte_carlo(source_trades, mc_cfg, rules):
+        seen["rules"] = rules
+        return pd.DataFrame([{"run_id": 1, "net_pnl": 100.0}]), {
+            "probability_profit_before_drawdown": 0.6
+        }
+
+    monkeypatch.setattr(campaign_stages, "run_monte_carlo", fake_run_monte_carlo)
+
+    payload = campaign_stages._run_wfa_oos_monte_carlo(
+        {
+            "data": {"timezone": "America/New_York"},
+            "prop_rules": {
+                "starting_balance": 150000,
+                "daily_loss_limit": 4000,
+                "trailing_drawdown": 4000,
+                "max_contracts": 10,
+            },
+        },
+        {},
+        tmp_path,
+        {"wfa_trades": trades},
+    )
+
+    assert seen["rules"].starting_balance == 150000
+    assert seen["rules"].max_contracts == 10
+    assert seen["rules"].daily_loss_limit == 10000.0
+    assert seen["rules"].trailing_drawdown == 10000.0
+    assert payload["summary"]["prop_rules_used"]["daily_loss_limit"] == 10000.0
+    assert payload["summary"]["prop_rules_used"]["trailing_drawdown"] == 10000.0
+
+
+def test_wfa_oos_monte_carlo_stage_prop_rules_can_tighten_drawdown_defaults(
+    tmp_path,
+    monkeypatch,
+):
+    trades = pd.DataFrame(
+        [{"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 100.0}]
+    )
+    seen = {}
+
+    def fake_run_monte_carlo(source_trades, mc_cfg, rules):
+        seen["rules"] = rules
+        return pd.DataFrame([{"run_id": 1, "net_pnl": 100.0}]), {
+            "probability_profit_before_drawdown": 0.6
+        }
+
+    monkeypatch.setattr(campaign_stages, "run_monte_carlo", fake_run_monte_carlo)
+
+    campaign_stages._run_wfa_oos_monte_carlo(
+        {
+            "data": {"timezone": "America/New_York"},
+            "prop_rules": {"daily_loss_limit": 4000, "trailing_drawdown": 4000},
+        },
+        {"prop_rules": {"daily_loss_limit": 3000, "trailing_drawdown": 3500}},
+        tmp_path,
+        {"wfa_trades": trades},
+    )
+
+    assert seen["rules"].daily_loss_limit == 3000
+    assert seen["rules"].trailing_drawdown == 3500
+
+
 def test_incubation_params_are_selected_from_best_wfa_oos_window():
     wfa_results = pd.DataFrame(
         [

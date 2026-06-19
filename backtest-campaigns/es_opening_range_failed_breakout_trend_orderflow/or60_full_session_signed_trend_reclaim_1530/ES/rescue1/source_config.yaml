@@ -1,0 +1,300 @@
+campaign_id: es_opening_range_failed_breakout_trend_orderflow
+variant_id: or60_full_session_signed_trend_reclaim_1530
+test_run_id: rescue1
+strategy_name: opening_range_failed_breakout_trend_orderflow
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Osler (2000); Holmberg, Lonnback, and Lundstrom (2013); Brock,
+    Lakonishok, and LeBaron (1992); Cont, Kukanov, and Stoikov (2014)
+  edge_thesis: The first-hour range is a broader initial-balance proxy; failed breaks
+    after that range completes may be less noisy if the reclaim aligns with immediate
+    completed-bar trend and signed flow. Rescue 1 keeps the same opening-range failed-breakout
+    reclaim edge and changes only fixed parameters/parameter space to address the
+    original low trade-count and negative small-rotation diagnostics.
+  mechanic: Build the first 60-minute RTH opening range. From range completion through
+    15:30 ET, require a completed close outside the range and a reclaim back inside
+    within eight bars. Enter in the reclaim direction only when the pre-breakout 3-bar
+    and 6-bar trend windows agree and same-direction signed-volume imbalance confirms
+    the reclaim. Rescue 1 preserves the outside-close, reclaim, frozen pre-breakout
+    trend, and completed orderflow requirements; it allows a longer reclaim window
+    and tests a smaller target grid for the same rotation thesis.
+  timeframe_rationale: One-minute bars preserve the outside-close then reclaim sequence
+    without merging the trap and reclaim into a larger bar, while the full-session
+    cutoff supplies enough qualifying sessions for the 50 trades/year screen.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-19'
+  mechanics_review:
+    mechanic_expresses_edge: 'Rescue 1 still expresses the same edge: a completed
+      opening-range break fails, reclaims inside the public OR level, agrees with
+      the pre-breakout trend context, and has completed aggregate orderflow in the
+      reclaim direction. Only the allowed fixed parameters and parameter space are
+      changed.'
+    entry_logic_rationale: The rescue does not add or remove entry filters. It keeps
+      next-bar execution after a completed reclaim, freezes trend before the failed-breakout
+      candidate, and uses the same completed orderflow confirmation. The fixed changes
+      only acknowledge that full-session failed breaks can take longer than eight
+      bars to reclaim and that a zero-tick trend threshold still requires non-opposing
+      HH/HL or LH/LL structure.
+    stop_loss_rationale: The same opening-range-edge stop module is retained. The
+      max_stop_points cap is widened modestly as an allowed fixed stop parameter so
+      wider full-session OR reclaims are not mechanically rejected before testing;
+      stop offset remains a declared grid.
+    target_exit_rationale: The same fixed-R target module is retained. The rescue
+      target grid shifts toward smaller rotations because original runs showed no
+      profitable combinations and the edge thesis is a trap-reclaim rotation, not
+      a full trend-day continuation. This is a parameter-space rescue, not a new exit
+      mechanic.
+    profitability_rationale: The rescue is only defensible if the original failure
+      was partly caused by sparse eligible entries and targets that were too ambitious
+      for a full-session OR reclaim. A longer reclaim allowance, non-opposing trend
+      threshold, and smaller fixed-R targets may better match a short-horizon trap
+      rotation while still paying ES costs and respecting next-bar execution.
+    known_failure_modes: The rescue can still fail if the original negative edge is
+      structural, if later reclaims are stale OR references, if looser trend admits
+      chop, if smaller targets cannot overcome costs, or if results fail monkey, WFA,
+      Monte Carlo, or frozen validation.
+    pre_test_decision: approve_for_testing
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: opening_range_failed_breakout_trend_orderflow
+    params:
+      rth_start: 09:30:00
+      opening_range_minutes: 60
+      bar_interval_minutes: 1
+      last_entry_time: '15:45:00'
+      max_opening_range_pct_of_open: 0.05
+      tick_size: 0.25
+      breakout_buffer_ticks: 1
+      reclaim_buffer_ticks: 0
+      max_reclaim_bars: 12
+      flow_lookback_bars: 1
+      min_reclaim_orderflow_imbalance: 0.0
+      flow_mode: signed_volume
+      min_flow_volume: 0
+      short_trend_bars: 3
+      long_trend_bars: 6
+      min_trend_move_ticks: 0
+      allow_long: true
+      allow_short: true
+      max_trades_per_day: 1
+  sl:
+    module: opening_range_edge
+    params:
+      max_stop_points: 36
+      stop_offset_ticks: 2
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 0.75
+  flatten_time: '15:55:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.max_reclaim_bars:
+    - 6
+    - 12
+    entry.params.min_reclaim_orderflow_imbalance:
+    - 0.0
+    - 0.005
+    - 0.01
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 0.5
+    - 0.75
+    - 1.0
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.min_trend_move_ticks:
+    - 0
+    - 1
+    - 2
+    entry.params.min_reclaim_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 0.75
+    - 1.0
+    - 1.25
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+rescue_attempt: parameter_space_rescue_1
+rescue_parent_config: campaigns/es_opening_range_failed_breakout_trend_orderflow/variants/or60_full_session_signed_trend_reclaim_1530/config.yaml
+rescue_rationale:
+  id: parameter_space_rescue_1
+  allowed_scope: parameter_space_and_fixed_parameters_only
+  mechanic_preserved: true
+  changes:
+  - last_entry_time 15:30 -> 15:45
+  - max_reclaim_bars fixed 8 -> 12 and grid [6,12]
+  - min_trend_move_ticks fixed 0 with no trend-threshold grid
+  - min_reclaim_orderflow_imbalance grid [0,0.005,0.01]
+  - max_stop_points 24 -> 36
+  - target_r_multiple grid [0.5,0.75,1.0]
+  not_changed:
+  - entry module
+  - opening range failed-breakout reclaim mechanic
+  - pre-breakout trend agreement requirement
+  - completed aggregate orderflow confirmation
+  - stop module
+  - target module
+  - data source
+  - costs
+  - slippage
+  - session windows
+  - stage gates
+pre_pnl_density:
+  status: raw_signal_screen_passed_before_rescue_pnl
+  audit: research_artifacts/es_opening_range_failed_breakout_trend_orderflow_rescue1_raw_density_audit_20260619.md
+  detail_csv: research_artifacts/es_opening_range_failed_breakout_trend_orderflow_rescue1_raw_density_audit_20260619.csv
+  full_min_signals_per_year: 103.67216604576902
+  limited_core_min_signals_per_year: 106.39609236234458
+  density_floor_signals_per_year: 50
+  note: Raw signal screen only; staged runner remains authoritative for closed-trade
+    count and benchmark criteria.

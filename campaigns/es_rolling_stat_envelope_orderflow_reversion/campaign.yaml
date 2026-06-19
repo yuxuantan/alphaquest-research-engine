@@ -1,0 +1,160 @@
+campaign_id: es_rolling_stat_envelope_orderflow_reversion
+title: ES Rolling Statistical Envelope Orderflow Reversion
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: rolling_stat_envelope_orderflow_reversion
+hypothesis: Completed intraday closes outside a rolling price envelope may mean-revert
+  when same-bar aggregate orderflow is pressing into the extreme, because temporary
+  immediacy demand is being supplied rather than repriced as durable information.
+rationale: This campaign tests rolling statistical price-extension reversion with
+  aggregate orderflow pressure. It is not VWAP deviation, prior/session level reaction,
+  rolling high/low sweep-reclaim, ORB, round-number, same-clock flow rank, or pure
+  orderflow impulse reversal. The reference level is a rolling mean/std envelope computed
+  only from prior completed closes.
+sources:
+- title: Trading Volume and Serial Correlation in Stock Returns
+  authors: John Y. Campbell, Sanford J. Grossman, and Jiang Wang
+  year: 1993
+  venue: Quarterly Journal of Economics
+  link: https://campbell.scholars.harvard.edu/publications/trading-volume-and-serial-correlation-stock-returns
+  relevance: Models how liquidity trading and market-maker inventory risk can produce
+    short-horizon reversal after volume pressure.
+- title: Liquidity and Market Structure
+  authors: Sanford J. Grossman and Merton H. Miller
+  year: 1988
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1988.tb04594.x
+  link: https://doi.org/10.1111/j.1540-6261.1988.tb04594.x
+  relevance: Provides the liquidity-supplier mechanism for temporary price pressure
+    and inventory-risk compensation.
+- title: Rethinking reversals
+  authors: Timothy C. Johnson
+  year: 2016
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2016.01.026
+  link: https://ideas.repec.org/a/eee/jfinec/v120y2016i2p211-228.html
+  relevance: Supports a disciplined test of short-horizon reversal rather than assuming
+    intraday extension is continuation.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon pressure proxy. This
+    campaign uses completed Sierra aggregate signed volume, not quote-level OFI.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- timezone-aware ES RTH OHLCV and aggregate signed-volume bars in America/New_York
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  and large20_volume
+lookahead_risks:
+- Rolling mean/std envelope is computed from prior completed closes only and excludes
+  the signal bar from the envelope statistics.
+- Same-bar orderflow is used only after the signal bar has closed, so entry must occur
+  no earlier than next-bar open.
+- The signal-bar high/low stop uses an already-completed bar extreme, not future price
+  action.
+- No final session high/low, final VWAP, final volume profile, future orderflow, or
+  future returns are used.
+failure_modes:
+- A close outside the rolling envelope may be informed continuation rather than temporary
+  liquidity demand.
+- Aggregate signed flow may not reliably separate liquidity demand from informed pressure.
+- Stops just beyond the signal bar can be too tight during volatility expansion.
+- The effect may be dominated by one side, one time of day, or high-volatility regimes.
+- Short fixed-R reversion targets may not overcome ES costs and one-tick slippage.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_vwap_deviation_orderflow_reversion
+  - es_rolling_range_orderflow_sweep_reversal
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_orderflow_impulse_reversal
+  - es_intraday_capitulation_orderflow_reversion
+  - es_volume_shock_liquidity_reversal
+  - es_session_extreme_delta_divergence
+  - es_signed_orderflow_persistence
+  conclusion: Eligible as a distinct bounded campaign. The trigger is a rolling mean/std
+    close envelope built from prior completed bars, not VWAP distance, rolling high/low
+    sweep-reclaim, same-clock flow rank, volume shock, session extreme, or standalone
+    signed-flow continuation/reversal.
+variants:
+- morning_5m_signed_6bar_reversion_1130
+- late_morning_5m_large10_12bar_reversion_1230
+- midday_5m_signed_18bar_reversion_1400
+- afternoon_5m_large20_24bar_reversion_1500
+- all_day_1m_signed_30bar_reversion_1530
+pre_pnl_density_audit:
+  date: '2026-06-18'
+  result: PASS
+  artifact: research_artifacts/es_rolling_stat_envelope_orderflow_reversion_density_audit_20260618.md
+  detail_csv: research_artifacts/es_rolling_stat_envelope_orderflow_reversion_density_audit_20260618.csv
+  summary_csv: research_artifacts/es_rolling_stat_envelope_orderflow_reversion_density_summary_20260618.csv
+  limited_core_period: 2011-02-22 to 2012-09-06
+  full_configured_period: 2011-01-03 to 2026-06-09
+  min_required_signals_per_year: 50
+  weakest_limited_core_signals_per_year: 241.986234
+  weakest_full_configured_signals_per_year: 243.888771
+  note: All declared entry parameter corners exceeded the 50 signals/year pre-PnL density
+    screen in both the canonical limited-core random 10 percent window and full configured
+    local ES data. Density only was evaluated; no stop, target, or PnL was inspected before
+    this audit was recorded.
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change the core rolling-envelope statistical reversion plus same-side orderflow-pressure
+    mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant
+    variants:
+    - morning_5m_signed_6bar_reversion_1130
+    - late_morning_5m_large10_12bar_reversion_1230
+    - midday_5m_signed_18bar_reversion_1400
+    - afternoon_5m_large20_24bar_reversion_1500
+    - all_day_1m_signed_30bar_reversion_1530
+    density_audit: research_artifacts/es_rolling_stat_envelope_orderflow_reversion_rescue_attempt_1_density_audit_20260618.md
+    density_summary_csv: research_artifacts/es_rolling_stat_envelope_orderflow_reversion_rescue_attempt_1_density_summary_20260618.csv
+    rationale: Original runs were dense but all 81 combinations were unprofitable
+      for every variant. This one allowed rescue preserves the same entry, stop,
+      target, data, sessions, fills, costs, and rolling-envelope reversion mechanic,
+      while testing more statistically extreme completed closes, stronger same-side
+      orderflow pressure, larger fixed signal-bar range, and wider stop/target spaces.
+      A first rescue density draft was rejected before rescue PnL because several
+      strict corners fell below 50 signals/year; the retained rescue grid passed
+      density in both full and limited-core windows before staged testing.
+result_summary:
+  decision: FAIL
+  status: completed_failed
+  report: backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/campaign_test_summary.json
+  results_csv: backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/campaign_results.csv
+  trade_logs_manifest: backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/trade_logs_manifest.csv
+  equity_curves_manifest: backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/equity_curves_manifest.csv
+  wfa_table: backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/wfa_table.csv
+  monte_carlo_summary: backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/monte_carlo_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  all_failed_variants_rescued_once: true
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  frozen_validation_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test. Every run had 0 profitable combinations
+    out of 81 and 0 benchmark-passing combinations; no run reached monkey, WFA,
+    Monte Carlo, simulated incubation, frozen validation, or candidate reporting.

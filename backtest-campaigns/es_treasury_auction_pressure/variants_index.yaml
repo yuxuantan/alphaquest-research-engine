@@ -1,18 +1,11 @@
 campaign_id: es_treasury_auction_pressure
-decision: FAIL
 variants:
-  all_coupon_pre_auction_short_1130:
-    run1: backtest-campaigns/es_treasury_auction_pressure/all_coupon_pre_auction_short_1130/ES/run1/campaign_test_summary.json
-    rescue1: backtest-campaigns/es_treasury_auction_pressure/all_coupon_pre_auction_short_1130/ES/rescue1/campaign_test_summary.json
-  all_coupon_post_auction_short_1305:
-    run1: backtest-campaigns/es_treasury_auction_pressure/all_coupon_post_auction_short_1305/ES/run1/campaign_test_summary.json
-    rescue1: backtest-campaigns/es_treasury_auction_pressure/all_coupon_post_auction_short_1305/ES/rescue1/campaign_test_summary.json
-  all_coupon_late_reversal_long_1430:
-    run1: backtest-campaigns/es_treasury_auction_pressure/all_coupon_late_reversal_long_1430/ES/run1/campaign_test_summary.json
-    rescue1: backtest-campaigns/es_treasury_auction_pressure/all_coupon_late_reversal_long_1430/ES/rescue1/campaign_test_summary.json
-  note_only_post_auction_short_1305:
-    run1: backtest-campaigns/es_treasury_auction_pressure/note_only_post_auction_short_1305/ES/run1/campaign_test_summary.json
-    rescue1: backtest-campaigns/es_treasury_auction_pressure/note_only_post_auction_short_1305/ES/rescue1/campaign_test_summary.json
-  all_coupon_late_pressure_short_1500:
-    run1: backtest-campaigns/es_treasury_auction_pressure/all_coupon_late_pressure_short_1500/ES/run1/campaign_test_summary.json
-    rescue1: backtest-campaigns/es_treasury_auction_pressure/all_coupon_late_pressure_short_1500/ES/rescue1/campaign_test_summary.json
+- variant_id: note_only_post_auction_short_1305
+  strategy_name: treasury_auction_pressure
+  path: backtest-campaigns/es_treasury_auction_pressure/note_only_post_auction_short_1305/variant.yaml
+  hash: d800d6b50f860e23adcf53be4697dc2a44c0c1e00fb9eab8eecb0f477bf86671
+  mechanic:
+    entry_module: treasury_auction_pressure
+    take_profit_module: fixed_r
+    stop_loss_module: percent_from_entry
+    flatten_time: '15:55:00'

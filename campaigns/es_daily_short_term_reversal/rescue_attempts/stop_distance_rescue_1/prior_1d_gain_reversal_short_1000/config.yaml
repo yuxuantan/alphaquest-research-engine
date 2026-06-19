@@ -1,0 +1,222 @@
+campaign_id: es_daily_short_term_reversal
+strategy_name: daily_short_term_reversal
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  exchange_timezone: America/New_York
+  feature_set: none
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  rth_end: '15:59:00'
+  rth_start: 09:30:00
+  source: parquet
+  source_timeframe: 1m
+  symbol: ES
+  timezone: America/New_York
+  warmup_days: 0
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: &id001
+    entry.params.min_abs_reversal_return_pct:
+    - 0.003
+    - 0.005
+    - 0.0075
+    sl.params.stop_pct: &id002
+    - 0.00375
+    - 0.006
+    - 0.009
+    tp.params.target_r_multiple:
+    - 0.5
+    - 0.75
+    - 1.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+variant_id: prior_1d_gain_reversal_short_1000
+test_run_id: stop_widen_rescue1
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: *id001
+research_metadata:
+  academic_source: Lehmann (1990); Nagel (2012); Dai, Medhat, Novy-Marx, and Rizova (2023)
+  edge_thesis: Recent short-horizon gains can include liquidity-pressure compensation that partially reverses intraday.
+  mechanic: At 10:00 ET, short ES after a completed one-session RTH gain exceeds the configured threshold; flatten by 15:55 ET unless stop or target is hit.
+  timeframe_rationale: 5-minute bars provide completed-bar signaling and next-bar-open execution while keeping enough intraday holding time.
+  rescue_status: parameter_space_rescue_1
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-19'
+  mechanics_review:
+    mechanic_expresses_edge: 'This user-authorized stop-distance rescue preserves the existing es_daily_short_term_reversal/prior_1d_gain_reversal_short_1000 entry mechanic: At 10:00 ET, short ES after a completed one-session RTH gain exceeds the configured threshold; flatten by 15:55 ET unless stop or target is hit..'
+    entry_logic_rationale: Entry logic is unchanged from the selected best core-grid source run; no signal, direction, time-window, filter, data, or execution rule is altered.
+    stop_loss_rationale: Only stop distance is widened by 1.5x to test whether the best existing core-grid variant was being rejected because the stop was too tight for ES noise. This is a user-authorized additional rescue and not a new edge.
+    target_exit_rationale: Target/exit logic and parameter space are unchanged, so any improvement must come from stop-distance tolerance rather than post-result take-profit tuning.
+    profitability_rationale: If the original edge has directional value but premature stop-outs dominated, a wider stop may allow the intended move to develop after next-bar execution and costs.
+    known_failure_modes: A wider stop may increase drawdown, reduce expectancy, hide a non-existent edge, or pass only in a narrow core-grid pocket; all normal staged gates still apply.
+    pre_test_decision: approve_for_testing
+  user_authorized_additional_rescue:
+    id: stop_distance_rescue_1
+    created_at: '2026-06-19T00:00:00'
+    source_campaign_id: es_daily_short_term_reversal
+    source_variant_id: prior_1d_gain_reversal_short_1000
+    source_run_id: rescue1
+    source_config_path: campaigns/es_daily_short_term_reversal/rescue_attempts/parameter_space_rescue_1/prior_1d_gain_reversal_short_1000/config.yaml
+    selection_rule: best existing limited core-grid run per campaign by core pass flag, benchmark-pass combos, profitable-combo rate, top net profit, PF, MAR, and trade density
+    allowed_change_scope: stop_distance_only
+    stop_distance_multiplier: 1.5
+    normal_rescue_policy_override: true
+    stop_changes:
+    - path: strategy.sl.params.stop_pct
+      old: 0.004
+      new: 0.006
+    - path: core_grid.parameters.sl.params.stop_pct
+      old:
+      - 0.0025
+      - 0.004
+      - 0.006
+      new: *id002
+strategy:
+  entry:
+    module: daily_short_term_reversal
+    params:
+      setup_mode: close_to_close_reversal
+      direction_mode: gain_short
+      signal_time: '10:00:00'
+      rth_end: '16:00:00'
+      bar_interval_minutes: 5
+      lookback_sessions: 1
+      min_abs_reversal_return_pct: 0.005
+      max_trades_per_day: 1
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.006
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 0.75
+  flatten_time: '15:55:00'

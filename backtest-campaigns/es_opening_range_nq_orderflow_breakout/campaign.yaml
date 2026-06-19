@@ -1,0 +1,171 @@
+campaign_id: es_opening_range_nq_orderflow_breakout
+title: ES opening-range breakout with NQ leadership and ES aggregate orderflow confirmation
+decision: FAIL
+pre_pnl_density_audit:
+  decision: PASS
+  artifact: research_artifacts/es_opening_range_nq_orderflow_breakout_density_audit_20260619.md
+  csv: research_artifacts/es_opening_range_nq_orderflow_breakout_density_audit_20260619.csv
+  method: Entry-only vectorized signal-count audit over declared entry grids; no PnL,
+    stop, target, WFA, monkey, Monte Carlo, or holdout result was inspected.
+  limited_core_period: 2011-02-22 to 2012-09-06
+  weakest_full_signals_per_year: 142.48
+  weakest_limited_core_signals_per_year: 130.4
+created_at: '2026-06-19'
+instrument: ES
+market_timezone: America/New_York
+edge_family: opening_range_nq_orderflow_breakout
+hypothesis: ES opening-range breakouts may have better same-session continuation odds
+  when the completed breakout bar is supported by ES aggregate signed flow and NQ
+  is leading ES in the same direction over a completed lookback window. NQ leadership
+  is treated as cross-index information transfer, while the opening range supplies
+  the public ES price-action trigger.
+rationale: 'This is a bounded composite edge. Price action is primary: ES must close
+  outside a completed opening-range boundary. ES aggregate orderflow is a same-bar
+  participation confirmation, and NQ leadership is a cross-index confirmation that
+  related Nasdaq futures have already moved more strongly in the breakout direction.
+  The trade is always ES, next-bar open, intraday only, and local data only.'
+sources:
+- title: Assessing the profitability of intraday opening range breakout strategies
+  authors: Ulf Holmberg, Carl Lonnback, Christian Lundstrom
+  year: 2013
+  venue: Finance Research Letters
+  link: https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html
+  doi: 10.1016/j.frl.2012.09.001
+  relevance: Supports mechanical opening-range breakouts as intraday rules; this campaign
+    adds predeclared cross-index and flow confirmation.
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  doi: 10.1016/j.jfineco.2018.05.009
+  relevance: Documents that early intraday market information can predict later market
+    returns.
+- title: High Frequency Lead/Lag Relationships - Empirical Facts
+  authors: Nicolas Huth and Frederic Abergel
+  year: 2014
+  venue: Empirical market microstructure working paper
+  link: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+  relevance: Motivates cross-market lead-lag propagation between related liquid instruments.
+- title: Lead-Lag Relationships in Market Microstructure
+  authors: Julian Schmidt, Tino Cestonaro, and Micha Bender
+  year: 2024
+  venue: SSRN
+  link: https://doi.org/10.2139/ssrn.5043260
+  relevance: Reviews predictive cross-market relationships in microstructure data.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports orderflow imbalance as short-horizon price-pressure evidence;
+    this campaign uses completed Sierra aggregate flow, not quote-level OFI.
+data_needs:
+- data/cache/orderflow/es_nq_lead_lag_1m_20110103_20260609_full_rth_ny.parquet
+- completed ES OHLCV and aggregate signed-volume fields
+- completed ES/NQ rolling return-bps features for 5/15/30/60 minute windows
+data_quality_caveats:
+- The ES/NQ cache is built from local Sierra completed-bar aggregate data, not tick-path
+  or LOB data.
+- NQ leadership at one-minute resolution may already be arbitraged before next-bar
+  ES entry.
+- Same-bar stop/target conflicts remain pessimistic unless detail data resolves path.
+lookahead_risks:
+- Opening range high/low are frozen only after the configured opening window completes.
+- NQ and ES return features are completed rolling-window features ending at the signal
+  bar close.
+- ES orderflow confirmation uses only the completed breakout bar or confirmation bars.
+- A signal generated from bar close is filled no earlier than the next ES bar open.
+- No final VWAP, final range, future ES/NQ bars, or post-entry orderflow is used.
+failure_modes:
+- NQ may lead only within the same minute, leaving no next-bar edge.
+- ES aggregate orderflow can confirm late exhaustion rather than continuation.
+- Opening-range breakouts can be stop probes and reverse after entry.
+- Profits can concentrate in technology-led regimes, crisis sessions, or one side.
+- The combined filters can still be too sparse or too sensitive to slippage and entry
+  delay.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_opening_range_orderflow_breakout
+  - es_opening_range_trend_orderflow_breakout
+  - es_opening_range_retest_orderflow
+  - es_nq_cross_index_lead_lag
+  - es_nq_relative_value_orderflow_absorption_reversion
+  - es_trend_aligned_orderflow_continuation
+  conclusion: Eligible as a bounded composite. Existing OR/orderflow campaigns did
+    not require NQ leadership. Existing NQ lead-lag campaigns used fixed-time NQ/ES
+    return propagation or relative-value reversion without requiring a completed ES
+    opening-range breakout plus same-bar ES orderflow confirmation.
+variants:
+- or15_nq15_signed_breakout_1030
+- or15_nq30_signed_breakout_1130
+- or30_nq15_signed_breakout_1030
+- or30_nq30_signed_breakout_1130
+- or60_nq60_signed_breakout_1300
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change OR breakout plus NQ leadership plus ES orderflow mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, validation gates, or prop rules
+  attempts:
+  - id: parameter_space_rescue_1
+    created_at: '2026-06-19'
+    scope: all_five_failed_original_variants
+    status: failed_limited_core_grid_test
+    rationale: Preserves the same OR breakout plus NQ leadership plus ES aggregate
+      signed-flow continuation mechanic while narrowing fixed direction to long-only.
+      Original fixed-config logs showed short breakouts were consistently weaker,
+      and long-only still expresses equity-index continuation rather than a new edge.
+    allowed_changes_used:
+    - fixed entry parameter allow_short=false; allow_long=true
+    forbidden_changes_avoided:
+    - entry module unchanged
+    - stop module unchanged
+    - target module unchanged
+    - data unchanged
+    - costs/fills/sessions/gates unchanged
+    pre_pnl_density_audit:
+      decision: PASS
+      artifact: research_artifacts/es_opening_range_nq_orderflow_breakout_rescue1_density_audit_20260619.md
+      csv: research_artifacts/es_opening_range_nq_orderflow_breakout_rescue1_density_audit_20260619.csv
+      weakest_full_signals_per_year: 73.16665188076651
+      weakest_limited_core_signals_per_year: 66.94083629893238
+    result:
+      decision: FAIL
+      profitable_combo_rate: 0.0
+      best_rescue_variant: or30_nq15_signed_breakout_1030
+      best_rescue_top_net_profit: -33.75
+      best_rescue_top_profit_factor: 0.9974446337308348
+tested_at: '2026-06-19T08:21:46'
+final_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  rescue_runs: 5
+  best_original:
+    variant_id: or30_nq15_signed_breakout_1030
+    run_id: run1
+    top_net_profit: -306.25
+    top_profit_factor: 0.9890556597873671
+  best_rescue:
+    variant_id: or30_nq15_signed_breakout_1030
+    run_id: rescue1
+    top_net_profit: -33.75
+    top_profit_factor: 0.9974446337308348
+  failure_reason: All five original variants and all five allowed per-variant long-only
+    parameter/fixed-parameter rescues failed limited_core_grid_test. Every run had
+    0/81 profitable parameter combinations after costs, so no run reached limited
+    monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation,
+    or candidate reporting.

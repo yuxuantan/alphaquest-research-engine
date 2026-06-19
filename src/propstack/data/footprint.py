@@ -136,8 +136,11 @@ def _minute_footprint_metrics(
 
     sell_ratio = _safe_ratio(bid_values, ask_above)
     buy_ratio = _safe_ratio(ask_values, bid_below)
-    sell_mask = (bid_values >= min_level_volume) & (sell_ratio >= imbalance_ratio)
-    buy_mask = (ask_values >= min_level_volume) & (buy_ratio >= imbalance_ratio)
+    # A diagonal imbalance needs an observed opposite-side comparison level.
+    # Without this guard, every sufficiently large bid at the bar high and ask
+    # at the bar low becomes an artificial infinite-ratio imbalance.
+    sell_mask = (bid_values >= min_level_volume) & (ask_above > 0) & (sell_ratio >= imbalance_ratio)
+    buy_mask = (ask_values >= min_level_volume) & (bid_below > 0) & (buy_ratio >= imbalance_ratio)
 
     prices = bid.index.to_numpy(dtype=float)
     sell_prices = prices[sell_mask]

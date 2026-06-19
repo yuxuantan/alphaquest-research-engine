@@ -1,0 +1,168 @@
+campaign_id: es_opening_drive_mes_crowding_reversal
+title: ES opening-drive failed-extension reversal with MES participation crowding
+decision: FAIL
+created_at: '2026-06-19'
+symbol: ES
+dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+edge_family: opening_drive_mes_crowding_reversal
+hypothesis: After a directional ES opening drive, a later completed bar that extends beyond the frozen opening-drive extreme but closes back inside it may mark failed initiative activity. If the failed extension occurs while MES participation is high versus prior same-clock history, the micro-contract crowd may be pressing into the exhaustion point and ES may reverse intraday.
+rationale: 'This is a bounded composite edge. Price action is primary: the opening drive defines the public directional extreme, and the signal requires a failed extension beyond that frozen extreme. MES participation rank is secondary evidence of crowding during the failed extension. The traded instrument remains ES, entry is next-bar open, and no post-entry MES data or final-session state is used.'
+sources:
+- title: Assessing the profitability of intraday opening range breakout strategies
+  authors: Ulf Holmberg, Carl Lonnback, Christian Lundstrom
+  year: 2013
+  venue: Finance Research Letters
+  link: https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html
+  doi: 10.1016/j.frl.2012.09.001
+  relevance: 'Supports testing the opening range/opening drive as a public intraday reference. This campaign tests the mirror image: a failed continuation beyond the early extreme.'
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  doi: 10.1016/j.jfineco.2018.05.009
+  relevance: Documents that early intraday market information can condition later intraday returns; failed continuation after the early move is a falsifiable reversal version of this setup.
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates using smaller-trader participation as a crowding proxy while remaining skeptical that the flow is directly profitable.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures participation and Micro E-mini usage, supporting MES participation as a relevant smaller-contract proxy.
+- title: Micro E-mini futures and options
+  authors: CME Group
+  year: 2026
+  venue: CME product documentation
+  link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+  relevance: Documents the 1:10 Micro E-mini to E-mini relationship used to construct notional-equivalent MES participation.
+data_needs:
+- data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv
+- local Sierra ES and MES completed 1-minute RTH OHLCV/trade-count cache
+- MES notional-equivalent share and trade-count share ranked against prior same-clock observations only
+data_quality_caveats:
+- Sierra cache is completed-bar aggregate data, not tick-path or LOB data.
+- MES participation is a proxy for smaller-contract activity, not an account-classified retail feed.
+- Same-bar stop/target conflicts require pessimistic OHLC ordering unless lower-level data resolves path.
+- The MES launch date shortens history to 2019-05-06 onward.
+lookahead_risks:
+- Opening-drive high, low, close, and direction are frozen only after the configured opening-drive window completes.
+- MES participation rank is computed from current completed bars and prior same-clock history; it does not use future sessions.
+- The failed-extension signal is generated only after the signal bar closes and is filled no earlier than the next bar open.
+- No final session high, low, VWAP, volume profile, post-entry MES participation, or future return is used.
+failure_modes:
+- Opening-drive failed extensions may be random noise and too small after ES costs and slippage.
+- MES participation may reflect legitimate informed hedging or news response rather than uninformed crowding.
+- A failed extension can become a trend pause and then resume, causing sweep-extreme stops to be hit.
+- The edge may be concentrated in high-volatility days, violating profit-concentration and WFA stability requirements.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_trend_filtered_mes_participation_crowding
+  - es_mes_participation_crowding_reversion
+  - es_mes_micro_flow_divergence_reversion
+  - es_mes_aligned_flow_continuation
+  - es_opening_range_failed_breakout_orderflow
+  - es_opening_range_failed_breakout_trend_orderflow
+  - es_opening_drive_inventory_absorption
+  - es_opening_gap_orderflow_absorption_fade
+  - es_session_open_orderflow_reclaim
+  conclusion: Eligible as a new bounded composite campaign. Existing active MES participation campaigns used generic timed pullback/crowding or ES/MES flow divergence. Existing opening-range/orderflow campaigns used ES aggregate orderflow, OR breakout/retest/reclaim, gap, or session-open references. This campaign requires a frozen opening-drive directional extreme, failed continuation beyond that same extreme, and high MES participation at the failed extension.
+variants:
+- od15_notional_failed_extension_reversal_1130
+- od15_trade_failed_extension_reversal_1130
+- od30_notional_failed_extension_reversal_1300
+- od30_trade_failed_extension_reversal_1300
+- od60_notional_failed_extension_reversal_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change opening-drive failed-extension plus MES-crowding mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, validation gates, or prop rules
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: od15_notional_failed_extension_reversal_1130
+    config: campaigns/es_opening_drive_mes_crowding_reversal/rescue_attempts/parameter_space_rescue_1/od15_notional_failed_extension_reversal_1130/config.yaml
+    scope: per_failed_variant
+    rationale: Focuses around the near-breakeven low-R/wider-stop neighborhood from the original, without changing the failed-extension or MES-notional crowding mechanic.
+    report: backtest-campaigns/es_opening_drive_mes_crowding_reversal/od15_notional_failed_extension_reversal_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: summary.percentage_profitable_iterations=0.1111111111111111; top_net=870.0; top_pf=1.1233605104572846
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: od15_trade_failed_extension_reversal_1130
+    config: campaigns/es_opening_drive_mes_crowding_reversal/rescue_attempts/parameter_space_rescue_1/od15_trade_failed_extension_reversal_1130/config.yaml
+    scope: per_failed_variant
+    rationale: Focuses around the high MES trade-share rank and low-R area that was least negative in the original.
+    report: backtest-campaigns/es_opening_drive_mes_crowding_reversal/od15_trade_failed_extension_reversal_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: summary.percentage_profitable_iterations=0.06172839506172839; top_net=481.25; top_pf=1.065077755240027
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: od30_notional_failed_extension_reversal_1300
+    config: campaigns/es_opening_drive_mes_crowding_reversal/rescue_attempts/parameter_space_rescue_1/od30_notional_failed_extension_reversal_1300/config.yaml
+    scope: per_failed_variant
+    rationale: 'Focuses around the original profitable pocket: higher MES notional rank, medium sweep stop offsets, and 0.75R to 1.0R targets, with neighboring values.'
+    report: backtest-campaigns/es_opening_drive_mes_crowding_reversal/od30_notional_failed_extension_reversal_1300/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: summary.percentage_profitable_iterations=0.35802469135802467; top_net=1425.0; top_pf=1.1796973518284994
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: od30_trade_failed_extension_reversal_1300
+    config: campaigns/es_opening_drive_mes_crowding_reversal/rescue_attempts/parameter_space_rescue_1/od30_trade_failed_extension_reversal_1300/config.yaml
+    scope: per_failed_variant
+    rationale: 'Focuses around the only marginally positive original area: mid MES trade-share rank, low opening-drive threshold, wider stop, and low-R exits.'
+    report: backtest-campaigns/es_opening_drive_mes_crowding_reversal/od30_trade_failed_extension_reversal_1300/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: summary.percentage_profitable_iterations=0.24691358024691357; top_net=1401.25; top_pf=1.2067502766506824
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: od60_notional_failed_extension_reversal_1530
+    config: campaigns/es_opening_drive_mes_crowding_reversal/rescue_attempts/parameter_space_rescue_1/od60_notional_failed_extension_reversal_1530/config.yaml
+    scope: per_failed_variant
+    rationale: Keeps the 60-minute opening-drive reference but shortens the fixed rescue signal/flatten window to avoid testing late-session failed extensions inside this already failed variant.
+    report: backtest-campaigns/es_opening_drive_mes_crowding_reversal/od60_notional_failed_extension_reversal_1530/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: summary.percentage_profitable_iterations=0.0; top_net=-1008.125; top_pf=0.7203536754507628
+  rescue1_pre_pnl_density_audit:
+    artifact: research_artifacts/es_opening_drive_mes_crowding_reversal_rescue1_density_audit_20260619.md
+    csv: research_artifacts/es_opening_drive_mes_crowding_reversal_rescue1_density_audit_20260619.csv
+    summary: All five rescue1 entry grids passed pre-PnL signal-density screening. Weakest full-history corner was 94.27 signals/year and weakest canonical limited-core corner was 109.998 signals/year.
+    decision: PASS
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_opening_drive_mes_crowding_reversal_density_audit_20260619.md
+  csv: research_artifacts/es_opening_drive_mes_crowding_reversal_density_audit_20260619.csv
+  summary: All five variants passed pre-PnL signal-density screening across declared entry-grid corners. Weakest full-history corner was 99.91 signals/year and weakest canonical limited-core corner was 108.59 signals/year. Canonical limited-core period resolved to 2021-07-13 through 2022-03-28.
+  decision: PASS
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_opening_drive_mes_crowding_reversal/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five allowed parameter-space/fixed-parameter rescues failed limited_core_grid_test. No run reached limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  best_run:
+    variant_id: od30_trade_failed_extension_reversal_1300
+    run_id: rescue1
+    profitable_combo_rate: 0.24691358024691357
+    top_net_profit: 1401.25
+    top_profit_factor: 1.2067502766506824
+    top_trades_per_year: 158.97991972245975

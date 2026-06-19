@@ -1,0 +1,168 @@
+campaign_id: es_opening_range_failed_breakout_trend_orderflow
+title: ES trend-filtered opening-range failed breakout reclaim with aggregate orderflow
+decision: FAIL
+created_at: '2026-06-19'
+instrument: ES
+market_timezone: America/New_York
+edge_family: opening_range_failed_breakout_trend_orderflow
+hypothesis: 'Opening-range failed breakouts may be more predictive when the reclaim
+  is back in the direction of a pre-breakout completed-bar trend structure. The public
+  OR boundary creates the trap, the higher-high/higher-low or lower-high/lower-low
+  filter avoids fading against the immediate structure, and completed aggregate orderflow
+  confirms participation on the reclaim bar.
+
+  '
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports public intraday support/resistance levels as reference points
+    where trend interruptions can occur.
+- title: Assessing the profitability of intraday opening range breakout strategies
+  authors: Ulf Holmberg, Carl Lonnback, Christian Lundstrom
+  year: 2013
+  venue: Finance Research Letters
+  link: https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html
+  doi: 10.1016/j.frl.2012.09.001
+  relevance: Supports opening-range rules as a systematic intraday futures framework;
+    this campaign tests trend-filtered failed breaks rather than continuation.
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  authors: William Brock, Josef Lakonishok, Blake LeBaron
+  year: 1992
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1992.tb04681.x
+  link: https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04681.x
+  relevance: Motivates mechanical trend/range filters instead of discretionary chart-pattern
+    interpretation.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Supports orderflow imbalance as a short-horizon pressure proxy; this
+    implementation uses completed Sierra aggregate signed trade flow, not quote-level
+    OFI.
+rationale: This is a bounded composite of opening-range failed breakout, pre-breakout
+  trend-direction filtering, and completed aggregate orderflow confirmation. The first
+  pre-PnL formulation was too sparse; this reformulation keeps the same edge but treats
+  the opening range as a full-session public reference so the setup can meet the required
+  50 trades/year screen before PnL testing.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 1-minute ES RTH OHLCV and completed aggregate signed-volume buckets
+- opening-range high/low from completed RTH bars only
+- pre-breakout completed short and long trend windows
+lookahead_risks:
+- Opening-range levels are unavailable until the configured OR window is complete.
+- The outside close, pre-breakout trend context, reclaim close, and reclaim orderflow
+  use only completed bars.
+- The trend context is frozen before the failed breakout candidate and excludes the
+  breakout/reclaim bars.
+- Signals from the reclaim close are filled no earlier than the next bar open by the
+  engine.
+- No final session high/low, final VWAP, future orderflow, or post-entry return is
+  used.
+failure_modes:
+- Trend-filtered failed breakouts may remain random opening chop after costs.
+- The trend filter can select late continuation failure rather than clean trap reversals.
+- Sierra aggregate signed flow may be noisy versus true quote-level OFI.
+- One-minute reclaims may be too small for ES slippage, commissions, and pessimistic
+  same-bar ordering.
+- The edge may depend on a narrow volatility regime or fail WFA/Monte Carlo even if
+  core looks stable.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_opening_range_failed_breakout_orderflow
+  - es_opening_range_trend_orderflow_breakout
+  - es_opening_range_retest_orderflow
+  - es_prior_session_flip_retest_orderflow
+  - es_prior_day_stop_run_reclaim
+  conclusion: 'Eligible as a bounded composite campaign. Existing active campaigns
+    tested OR failed breakouts without pre-breakout trend agreement, OR trend breakouts
+    that follow the breakout, OR retests, prior-session flip retests, or prior-day
+    stop-run reclaims.
+
+    '
+variants:
+- or15_full_session_signed_trend_reclaim_1530
+- or15_full_session_large10_trend_reclaim_1530
+- or30_full_session_signed_trend_reclaim_1530
+- or30_full_session_large10_trend_reclaim_1530
+- or60_full_session_signed_trend_reclaim_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core trend-filtered OR failed-breakout reclaim plus orderflow mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+pre_pnl_density_audit:
+  status: initial_source_set_failed_before_pnl
+  artifact: research_artifacts/es_opening_range_failed_breakout_trend_orderflow_density_audit_20260619.md
+  detail_csv: research_artifacts/es_opening_range_failed_breakout_trend_orderflow_density_audit_20260619.csv
+  failure_reason: All five initial variants were below 50 signals/year in the full-history
+    and limited-core pre-PnL density audit. No staged PnL was run before reformulation.
+reformulation_before_pnl:
+  status: active_source_set_reformulated_before_staged_pnl
+  reason: Initial 10:30-12:30 variants were too sparse for the required 50 trades/year
+    screen. The active variants preserve the OR failed-breakout reclaim plus pre-breakout
+    trend plus completed orderflow mechanic but monitor the same public OR levels
+    through 15:30 ET and use a declared density-safe entry grid.
+  forbidden_after_pnl: No further mechanic changes after staged PnL starts except
+    one allowed parameter-space/fixed-parameter rescue per failed variant.
+reformulated_pre_pnl_density_audit:
+  status: passed_before_staged_pnl
+  artifact: research_artifacts/es_opening_range_failed_breakout_trend_orderflow_reformulated_density_audit_20260619.md
+  detail_csv: research_artifacts/es_opening_range_failed_breakout_trend_orderflow_reformulated_density_audit_20260619.csv
+  density_floor_signals_per_year: 50
+  weakest_full_min_signals_per_year: 77.30055880787653
+  weakest_limited_core_min_signals_per_year: 61.631882770870334
+  note: All active reformulated variants passed the pre-PnL density floor before staged
+    backtesting.
+  staged_runner_followup: 'Original staged runs contradicted raw signal-density optimism:
+    all five originals failed limited_core_grid_test with 0/54 profitable combinations
+    and low closed-trade counts. Staged runner evidence is authoritative.'
+rescue_attempts:
+- id: parameter_space_rescue_1
+  status: failed
+  scope: per_failed_variant
+  reason: All five original variants failed limited_core_grid_test. Rescue changes
+    only fixed parameters/parameter space and preserves modules, data, costs, sessions,
+    stage gates, and core mechanics.
+  path: campaigns/es_opening_range_failed_breakout_trend_orderflow/rescue_attempts/parameter_space_rescue_1
+  result: all five rescues failed limited_core_grid_test
+result_summary:
+  decision: FAIL
+  status: completed
+  updated_at: '2026-06-19T05:49:52'
+  report: backtest-campaigns/es_opening_range_failed_breakout_trend_orderflow/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  terminal_stage: limited_core_grid_test
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  fixed_config_core_trade_logs: 10
+  failure_reason: All five reformulated original variants and all five one-time parameter-space
+    rescues failed limited_core_grid_test with 0 profitable combinations. No run reached
+    monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation,
+    or candidate reporting.
+  max_original_profitable_combo_rate: 0
+  max_rescue_profitable_combo_rate: 0
+  max_original_benchmark_passing_combinations: 0
+  max_rescue_benchmark_passing_combinations: 0
+  best_original_variant: or30_full_session_signed_trend_reclaim_1530
+  best_original_top_net_profit: -1252.5
+  best_rescue_variant: or30_full_session_large10_trend_reclaim_1530
+  best_rescue_top_net_profit: -2472.5

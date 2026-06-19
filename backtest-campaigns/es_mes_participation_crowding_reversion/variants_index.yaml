@@ -1,58 +1,15 @@
 campaign_id: es_mes_participation_crowding_reversion
 variants:
-- morning_notional_down_reversal_long_1030
-- morning_notional_up_reversal_short_1030
-- midday_notional_two_sided_reversal_1200
-- afternoon_trade_down_reversal_long_1400
-- afternoon_trade_up_reversal_short_1400
-runs:
-- variant_id: morning_notional_down_reversal_long_1030
-  run_id: run1
-  report: backtest-campaigns/es_mes_participation_crowding_reversion/morning_notional_down_reversal_long_1030/ES/run1/campaign_test_summary.json
-  decision: FAIL
-  terminal_stage: limited_core_grid_test
-- variant_id: morning_notional_down_reversal_long_1030
-  run_id: rescue1
-  report: backtest-campaigns/es_mes_participation_crowding_reversion/morning_notional_down_reversal_long_1030/ES/rescue1/campaign_test_summary.json
-  decision: FAIL
-  terminal_stage: limited_monkey_test
-- variant_id: morning_notional_up_reversal_short_1030
-  run_id: run1
-  report: backtest-campaigns/es_mes_participation_crowding_reversion/morning_notional_up_reversal_short_1030/ES/run1/campaign_test_summary.json
-  decision: FAIL
-  terminal_stage: limited_core_grid_test
-- variant_id: morning_notional_up_reversal_short_1030
-  run_id: rescue1
-  report: backtest-campaigns/es_mes_participation_crowding_reversion/morning_notional_up_reversal_short_1030/ES/rescue1/campaign_test_summary.json
-  decision: FAIL
-  terminal_stage: limited_core_grid_test
-- variant_id: midday_notional_two_sided_reversal_1200
-  run_id: run1
-  report: backtest-campaigns/es_mes_participation_crowding_reversion/midday_notional_two_sided_reversal_1200/ES/run1/campaign_test_summary.json
-  decision: FAIL
-  terminal_stage: limited_core_grid_test
-- variant_id: midday_notional_two_sided_reversal_1200
-  run_id: rescue1
-  report: backtest-campaigns/es_mes_participation_crowding_reversion/midday_notional_two_sided_reversal_1200/ES/rescue1/campaign_test_summary.json
-  decision: FAIL
-  terminal_stage: limited_monkey_test
 - variant_id: afternoon_trade_down_reversal_long_1400
-  run_id: run1
-  report: backtest-campaigns/es_mes_participation_crowding_reversion/afternoon_trade_down_reversal_long_1400/ES/run1/campaign_test_summary.json
-  decision: FAIL
-  terminal_stage: limited_core_grid_test
-- variant_id: afternoon_trade_down_reversal_long_1400
-  run_id: rescue1
-  report: backtest-campaigns/es_mes_participation_crowding_reversion/afternoon_trade_down_reversal_long_1400/ES/rescue1/campaign_test_summary.json
-  decision: FAIL
-  terminal_stage: limited_core_grid_test
 - variant_id: afternoon_trade_up_reversal_short_1400
-  run_id: run1
-  report: backtest-campaigns/es_mes_participation_crowding_reversion/afternoon_trade_up_reversal_short_1400/ES/run1/campaign_test_summary.json
-  decision: FAIL
-  terminal_stage: limited_core_grid_test
-- variant_id: afternoon_trade_up_reversal_short_1400
-  run_id: rescue1
-  report: backtest-campaigns/es_mes_participation_crowding_reversion/afternoon_trade_up_reversal_short_1400/ES/rescue1/campaign_test_summary.json
-  decision: FAIL
-  terminal_stage: limited_core_grid_test
+- variant_id: midday_notional_two_sided_reversal_1200
+- variant_id: morning_notional_down_reversal_long_1030
+  strategy_name: mes_participation_crowding
+  path: backtest-campaigns/es_mes_participation_crowding_reversion/morning_notional_down_reversal_long_1030/variant.yaml
+  hash: 37e6cc6de937e89c55894df07c89f4a3611c51099065bc1c02a3e36eeeac4099
+  mechanic:
+    entry_module: mes_participation_crowding
+    take_profit_module: fixed_r
+    stop_loss_module: percent_from_entry
+    flatten_time: '12:00:00'
+- variant_id: morning_notional_up_reversal_short_1030

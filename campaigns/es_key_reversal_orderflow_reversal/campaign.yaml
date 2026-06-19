@@ -1,0 +1,178 @@
+campaign_id: es_key_reversal_orderflow_reversal
+title: ES prior-bar key reversal with aggregate orderflow confirmation
+decision: FAIL
+created_at: '2026-06-19'
+instrument: ES
+market_timezone: America/New_York
+edge_family: key_reversal_orderflow_reversal
+hypothesis: 'One-bar failed micro-breakouts may contain short-horizon reversal information
+  when price sweeps the immediately prior completed bar''s extreme, closes back through
+  the prior close, and aggregate completed-bar orderflow confirms the reversal direction.
+  The campaign tests whether this local price-action rejection survives next-bar execution,
+  costs, pessimistic same-bar TP/SL handling, WFA, monkey tests, and prop-style Monte
+  Carlo.
+
+  '
+sources:
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical
+    Inference, and Empirical Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/0022-1082.00265
+  relevance: 'Supports testing mechanically defined technical patterns with statistical
+    discipline instead of visual chart interpretation. This campaign translates a
+    key-reversal pattern into deterministic completed-bar rules.
+
+    '
+- title: The Predictive Power of Price Patterns
+  authors: Gunduz Caginalp, Henry Laurent
+  year: 1998
+  venue: Applied Mathematical Finance
+  link: https://ideas.repec.org/a/taf/apmtfi/v5y1998i3-4p181-205.html
+  relevance: 'Motivates testing reversal-oriented price patterns, while requiring
+    this campaign to pass modern futures costs, robustness, WFA, and holdout gates
+    rather than using pattern appearance alone.
+
+    '
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: 'Supports orderflow imbalance as short-horizon price-pressure information.
+    The available implementation uses completed Sierra aggregate trade-side flow,
+    not quote-level OFI or intra-bar LOB sequencing.
+
+    '
+rationale: 'This is a price-action-first aggregate-orderflow campaign. A completed
+  signal bar must sweep the prior completed bar high or low and then close back through
+  the prior completed close with reversal body and close-location confirmation. Aggregate
+  flow confirms that the rejection had participation. It is distinct from active rolling-range
+  sweep campaigns because the only level is the immediately prior completed bar; it
+  is distinct from opening-range/prior-day/VWAP campaigns because no fixed session
+  level is used; and it is distinct from wide-range continuation because the direction
+  fades the failed micro-break instead of following range expansion.
+
+  '
+pre_pnl_reformulation_log:
+- timestamp: '2026-06-19'
+  rejected_formulation: 5-minute prior-bar key reversal
+  artifact: research_artifacts/es_key_reversal_orderflow_reversal_5m_density_rejected_20260619.md
+  reason: 'The first formulation failed the pre-PnL density screen before any backtest
+    result was inspected. Limited-core minimum signal density was about 12 to 27 signals/year,
+    below the 50 trades/year research floor.
+
+    '
+  replacement: 1-minute prior-bar key reversal with the same sweep, close-back, body,
+    close-location, and aggregate-orderflow confirmation mechanic.
+- timestamp: '2026-06-19'
+  rejected_formulation: 1-minute prior-bar key reversal with 3-tick sweep corner
+  artifact: research_artifacts/es_key_reversal_orderflow_reversal_1m_sweep3_density_rejected_20260619.md
+  reason: 'The 3-tick sweep corner was too sparse in the limited-core window for several
+    variants before any PnL was inspected.
+
+    '
+  replacement: 1-minute prior-bar key reversal with min_sweep_ticks limited to 1-2
+    ticks, matching a local ES micro-breakout probe.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_key_reversal_orderflow_reversal_density_audit_20260619.md
+  result: 'All five variants exceeded the 50 signals/year feasibility floor at every
+    declared entry-grid corner on both full local history and the resolved limited-core
+    random 10% window before any PnL was inspected.
+
+    '
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 1-minute ES RTH strategy bars from local Sierra cache
+- rolling volume ratio computed from prior completed 1-minute bars
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  and large20_volume
+data_quality_caveats:
+- Sierra signed volume is completed-bar aggregate bid/ask-volume flow, not quote-level
+  OFI.
+- Signals use the just-completed 1-minute bar close, so entries must occur no earlier
+  than the next minute open.
+- The stop is the completed signal-bar extreme plus a tick offset; same-bar stop/target
+  conflicts remain pessimistic.
+lookahead_risks:
+- Prior-bar high, low, and close are known before the signal bar begins.
+- Signal-bar range, close, close-location, volume ratio, and orderflow are only available
+  after the bar completes.
+- No future session high, low, VWAP, final daily range, volume profile, or post-entry
+  orderflow is used.
+- One trade per day and configured flatten times are enforced by config and stage
+  runner.
+failure_modes:
+- Prior-bar sweeps may be noise with no meaningful liquidity exhaustion.
+- Aggregate orderflow can confirm late after price already reversed.
+- Large10 and large20 buckets may proxy trade size poorly after Sierra aggregation.
+- The edge may be side-specific, regime-specific, or too small for ES costs and one-tick-worse
+  slippage.
+- Profits may concentrate in a few volatility events or fail the WFA trade-density
+  gate.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_rolling_range_orderflow_sweep_reversal
+  - es_prior_day_stop_run_reclaim
+  - es_opening_range_failed_breakout_orderflow
+  - es_wide_range_orderflow_continuation
+  - es_footprint_absorption_initiation
+  - es_vwap_deviation_orderflow_reversion
+  conclusion: 'Eligible as a distinct active campaign. The level is the immediately
+    prior completed bar only; no session level, rolling multi-bar range, VWAP, opening
+    range, prior-day level, footprint diagonal imbalance, or continuation range expansion
+    is used.
+
+    '
+variants:
+- morning_signed_two_sided_key_reversal_1130
+- late_morning_large10_down_sweep_reclaim_long_1230
+- late_morning_large10_up_sweep_reject_short_1230
+- midday_signed_two_sided_key_reversal_1400
+- afternoon_large20_two_sided_key_reversal_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core prior-bar key-reversal plus aggregate-orderflow mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant
+    variants:
+    - afternoon_large20_two_sided_key_reversal_1530
+    - late_morning_large10_down_sweep_reclaim_long_1230
+    - late_morning_large10_up_sweep_reject_short_1230
+    - midday_signed_two_sided_key_reversal_1400
+    - morning_signed_two_sided_key_reversal_1130
+    audit: research_artifacts/es_key_reversal_orderflow_reversal_rescue_attempt_1_20260619.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_key_reversal_orderflow_reversal/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five allowed parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test; no run reached monkey, WFA, Monte Carlo,
+    simulated incubation, frozen validation, or candidate reporting.
+  best_original_variant: afternoon_large20_two_sided_key_reversal_1530
+  best_original_profitable_combo_rate: 0.0
+  best_original_top_net: -1534.375
+  best_rescue_variant: midday_signed_two_sided_key_reversal_1400
+  best_rescue_profitable_combo_rate: 0.0
+  best_rescue_top_net: -1720.0

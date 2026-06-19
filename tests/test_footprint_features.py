@@ -70,11 +70,50 @@ def test_footprint_features_detect_buy_absorption_above_close():
         min_level_volume=20,
     )
 
-    assert out.iloc[0]["footprint_buy_imbalance_count"] == 2
+    assert out.iloc[0]["footprint_buy_imbalance_count"] == 1
     assert out.iloc[0]["footprint_lowest_buy_imbalance_price"] == 100.5
     assert out.iloc[0]["footprint_buy_imbalance_above_close"] == 1.0
     assert out.iloc[0]["footprint_absorption_short"] == 1.0
     assert out.iloc[0]["footprint_absorption_long"] == 0.0
+
+
+def test_footprint_features_ignore_zero_opposite_diagonal_at_bar_extremes():
+    bars = pd.DataFrame(
+        [
+            {
+                "timestamp": pd.Timestamp("2024-01-03 10:00", tz="America/New_York"),
+                "open": 100.0,
+                "high": 100.5,
+                "low": 100.0,
+                "close": 100.25,
+                "volume": 100,
+            }
+        ]
+    )
+    price_volume = pd.DataFrame(
+        [
+            {"timestamp": bars.iloc[0]["timestamp"], "price": 100.0, "bid_volume": 0, "ask_volume": 35},
+            {"timestamp": bars.iloc[0]["timestamp"], "price": 100.25, "bid_volume": 2, "ask_volume": 0},
+            {"timestamp": bars.iloc[0]["timestamp"], "price": 100.5, "bid_volume": 40, "ask_volume": 10},
+        ]
+    )
+
+    out = add_footprint_imbalance_features(
+        bars,
+        price_volume,
+        tick_size=0.25,
+        imbalance_ratio=3.0,
+        min_level_volume=20,
+    )
+
+    assert out.iloc[0]["footprint_sell_imbalance_count"] == 0
+    assert out.iloc[0]["footprint_buy_imbalance_count"] == 0
+    assert out.iloc[0]["footprint_max_sell_imbalance_ratio"] == 0.0
+    assert out.iloc[0]["footprint_max_buy_imbalance_ratio"] == 0.0
+    assert out.iloc[0]["footprint_highest_sell_imbalance_price"] == 0.0
+    assert out.iloc[0]["footprint_lowest_buy_imbalance_price"] == 0.0
+    assert out.iloc[0]["footprint_absorption_long"] == 0.0
+    assert out.iloc[0]["footprint_absorption_short"] == 0.0
 
 
 def test_price_volume_from_prints_groups_by_minute_and_tick_price():

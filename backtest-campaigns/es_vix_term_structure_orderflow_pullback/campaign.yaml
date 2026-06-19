@@ -1,0 +1,291 @@
+campaign_id: es_vix_term_structure_orderflow_pullback
+title: ES VIX Term-Structure State With VWAP/Orderflow Pullback Confirmation
+decision: FAIL
+created_at: '2026-06-18'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Cboe VIX term-structure states may identify risk-on or risk-off ES sessions, but entries
+  should require same-session ES price-action acceptance around VWAP and completed aggregate orderflow
+  confirmation before taking intraday exposure.
+rationale: 'The active timed VIX-term campaign tested a daily volatility-state signal at fixed entry times.
+  This composite tests a stricter mechanism: the volatility term structure supplies only the prior-close
+  risk regime, while ES must independently show current-session VWAP pullback/rejection continuation and
+  aligned aggregate orderflow on a completed bar before next-bar entry.'
+sources:
+- title: The Implied Volatility Term Structure of Stock Index Options
+  authors: Scott Mixon
+  year: 2007
+  venue: Journal of Empirical Finance, 14(3), 333-354
+  link: https://ideas.repec.org/a/eee/empfin/v14y2007i3p333-354.html
+  relevance: Documents information in stock-index option implied-volatility term structure across maturities.
+- title: Risk Premia and the VIX Term Structure
+  authors: Travis L. Johnson
+  year: 2017
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.travislakejohnson.com/pdfs/Johnson%20VIXTS%202017%20%28JFQA%29.pdf
+  relevance: Shows the VIX term-structure slope summarizes variance-risk-premium information; this campaign
+    uses it only as a lagged regime state.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow imbalance as a short-horizon pressure proxy. This campaign uses completed
+    Sierra aggregate signed-volume buckets, not full-depth LOB OFI.
+- title: VIX Term Structure and Historical Volatility Index Data
+  authors: Cboe Global Markets
+  year: 2026
+  venue: Official Cboe volatility-index data
+  link: https://www.cboe.com/tradable-products/vix/term-structure/
+  relevance: Official free source and definitions for VIX maturity-term-structure indices used by the
+    local lagged feature file.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV and aggregate signed-volume bars in America/New_York
+- official free Cboe VIX9D, VIX, VIX3M, and VIX6M daily historical values already cached locally
+- derived VIX term-structure session feature file using only Cboe observations strictly before the ES
+  session date
+- completed session VWAP from current-session bars only, aggregate signed/large10/large20 flow, next-bar
+  execution, costs, slippage, tick size, point value, pessimistic fills, and forced flatten from config
+data_quality_caveats:
+- VIX maturity indices are daily closing SPX option-implied values, not intraday option snapshots.
+- Same-day Cboe closes are unavailable to intraday ES signals and are not used.
+- Sierra orderflow is aggregate bid/ask-volume proxy data, not quote-level queue or TBBO data.
+- VWAP is computed from completed current-session bars only and is not final-session VWAP.
+lookahead_risks:
+- Using the Cboe close from the same ES session date would leak unavailable data and is forbidden.
+- The VIX term-state feature file uses latest Cboe volatility-index close strictly before ES session_date.
+- The ES entry requires a completed VWAP pullback/reclaim or rejection bar and completed aggregate orderflow
+  before next-bar execution.
+- No final session high/low, final VWAP, future orderflow, future VIX values, future returns, or overnight
+  exposure is used.
+failure_modes:
+- The VIX term-structure regime may already be priced into ES by the RTH open.
+- VWAP pullbacks can be crowded and cost-sensitive after one-tick slippage and commissions.
+- Aggregate orderflow confirmation may arrive after most of the continuation has already occurred.
+- The composite filters may reduce density below 50 trades/year in some WFA windows.
+- Risk-off term states can mean either continuing sell pressure or rebound risk premium, so direction
+  may be unstable.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_cboe_vix_term_structure_intraday
+  - es_vwap_orderflow_pullback_continuation
+  - es_vwap_pullback_continuation
+  - es_vwap_deviation_orderflow_reversion
+  - es_trend_aligned_orderflow_continuation
+  - es_ema_pullback_orderflow_continuation
+  - es_cboe_vix_level_state_intraday
+  - es_vvix_tail_risk_intraday
+  - es_variance_risk_premium_intraday
+  conclusion: Eligible as a composite campaign under the user-approved mix-and-match rule. It is not a
+    duplicate timed VIX-term campaign because VIX state only gates trades; every entry still requires
+    current-session ES VWAP pullback/rejection and aggregate orderflow confirmation. It is not a duplicate
+    VWAP/orderflow campaign because the prior-close VIX term-state determines allowed direction and sessions
+    before the ES mechanics can trade.
+variants:
+- contango_morning_signed_vwap_reclaim_long_1300
+- contango_large10_vwap_reclaim_long_1500
+- curve_flattening_signed_vwap_reject_short_1500
+- front_stress_large10_vwap_reject_short_1500
+- backwardation_surge_signed_vwap_reject_short_1500
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - term_rank_threshold
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.term_rank_threshold: variant-specific 3-point lower-half or upper-half rank grid
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.03
+    - 0.06
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core VIX-state plus VWAP/orderflow pullback mechanic
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+pre_pnl_reformulation_log:
+  status: completed_before_any_pnl_test
+  reason: Initial opening-drive-heavy draft failed pre-PnL density before staged testing. Mechanics were
+    reformulated to keep the same lagged VIX term-state plus VWAP/orderflow continuation edge while removing
+    the sparse opening-drive dependency and using broader, still predeclared VWAP rejection/reclaim windows.
+    No PnL, stops, targets, fills, or returns were inspected for this reformulation.
+pre_pnl_density_audit:
+  status: PASS
+  generated_at: '2026-06-18'
+  artifact: research_artifacts/es_vix_term_structure_orderflow_pullback_density_audit_20260618.md
+  detail_csv: research_artifacts/es_vix_term_structure_orderflow_pullback_density_audit_20260618.csv
+  summary_csv: research_artifacts/es_vix_term_structure_orderflow_pullback_density_summary_20260618.csv
+  density_rule: At least one predeclared entry-grid point per variant must reach 50 signals/year on both
+    full data and the canonical limited-core shortlist window before PnL testing starts.
+  window_summary:
+    full_configured_subset:
+      start_date: '2011-01-03'
+      end_date: '2026-06-09'
+      session_labels: &id001
+      - RTH
+    limited_core_resolved_subset:
+      start_date: '2011-02-22'
+      end_date: '2012-09-06'
+      session_labels: *id001
+  variant_density_summary:
+  - campaign_id: es_vix_term_structure_orderflow_pullback
+    variant_id: backwardation_surge_signed_vwap_reject_short_1500
+    best_full_signals: 1078
+    best_full_trades_per_year: 69.86151525904897
+    best_limited_core_signals: 102
+    best_limited_core_trades_per_year: 66.29092526690391
+    density_gate_pass: true
+  - campaign_id: es_vix_term_structure_orderflow_pullback
+    variant_id: contango_large10_vwap_reclaim_long_1500
+    best_full_signals: 1266
+    best_full_trades_per_year: 82.04515613910574
+    best_limited_core_signals: 119
+    best_limited_core_trades_per_year: 77.3394128113879
+    density_gate_pass: true
+  - campaign_id: es_vix_term_structure_orderflow_pullback
+    variant_id: contango_morning_signed_vwap_reclaim_long_1300
+    best_full_signals: 1103
+    best_full_trades_per_year: 71.48168026969482
+    best_limited_core_signals: 97
+    best_limited_core_trades_per_year: 63.04137010676156
+    density_gate_pass: true
+  - campaign_id: es_vix_term_structure_orderflow_pullback
+    variant_id: curve_flattening_signed_vwap_reject_short_1500
+    best_full_signals: 1028
+    best_full_trades_per_year: 66.62118523775727
+    best_limited_core_signals: 83
+    best_limited_core_trades_per_year: 53.94261565836299
+    density_gate_pass: true
+  - campaign_id: es_vix_term_structure_orderflow_pullback
+    variant_id: front_stress_large10_vwap_reject_short_1500
+    best_full_signals: 1104
+    best_full_trades_per_year: 71.54648687012066
+    best_limited_core_signals: 90
+    best_limited_core_trades_per_year: 58.49199288256227
+    density_gate_pass: true
+  decision: Proceed to preflight and staged testing without changing mechanics or parameter space after
+    this point.
+rescue_attempts:
+- id: parameter_space_rescue_1
+  status: failed_limited_core_grid_test
+  scope: per_failed_variant
+  created_at: '2026-06-18'
+  trigger: All five original variants failed limited_core_grid_test.
+  mechanic_preserved: true
+  changes: Parameter-space and fixed-parameter changes only. Rescue preserves entry module, stop module,
+    target module, timeframe, data window, VIX-state plus VWAP/orderflow pullback mechanic, costs, fills,
+    sessions, prop rules, and staged gates.
+  density_audit:
+    status: PASS
+    artifact: research_artifacts/es_vix_term_structure_orderflow_pullback_rescue_attempt_1_density_audit_20260618.md
+    summary_csv: research_artifacts/es_vix_term_structure_orderflow_pullback_rescue_attempt_1_density_summary_20260618.csv
+    variant_density_summary:
+    - variant_id: backwardation_surge_signed_vwap_reject_short_1500
+      best_full_signals: 975
+      best_full_trades_per_year: 63.18643541518808
+      best_limited_core_signals: 92
+      best_limited_core_trades_per_year: 59.79181494661921
+      density_gate_pass: true
+    - variant_id: contango_large10_vwap_reclaim_long_1500
+      best_full_signals: 1061
+      best_full_trades_per_year: 68.7598030518098
+      best_limited_core_signals: 102
+      best_limited_core_trades_per_year: 66.29092526690391
+      density_gate_pass: true
+    - variant_id: contango_morning_signed_vwap_reclaim_long_1300
+      best_full_signals: 926
+      best_full_trades_per_year: 60.010911994322214
+      best_limited_core_signals: 82
+      best_limited_core_trades_per_year: 53.29270462633452
+      density_gate_pass: true
+    - variant_id: curve_flattening_signed_vwap_reject_short_1500
+      best_full_signals: 927
+      best_full_trades_per_year: 60.07571859474805
+      best_limited_core_signals: 80
+      best_limited_core_trades_per_year: 51.99288256227758
+      density_gate_pass: true
+    - variant_id: front_stress_large10_vwap_reject_short_1500
+      best_full_signals: 1104
+      best_full_trades_per_year: 71.54648687012066
+      best_limited_core_signals: 90
+      best_limited_core_trades_per_year: 58.49199288256227
+      density_gate_pass: true
+  result:
+    decision: FAIL
+    terminal_stage: limited_core_grid_test
+    original_variants_failed: 5
+    rescue_variants_failed: 5
+    best_rescue_variant: front_stress_large10_vwap_reject_short_1500
+    best_rescue_profitable_combo_rate: 0.012345679012345678
+    best_rescue_top_net_profit: 115.625
+    failure_reason: All five originals and all five one-time parameter-space/fixed-parameter rescues failed
+      limited_core_grid_test. No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation,
+      frozen validation, or candidate reporting.
+result_summary:
+  status: completed
+  decision: FAIL
+  generated_at: '2026-06-18'
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  fixed_config_core_trade_logs: 10
+  max_original_profitable_combo_rate: 0.0
+  max_rescue_profitable_combo_rate: 0.012345679012345678
+  max_original_benchmark_passing_combinations: 0
+  max_rescue_benchmark_passing_combinations: 0
+  best_original:
+    variant_id: curve_flattening_signed_vwap_reject_short_1500
+    run_id: run1
+    top_net_profit: -192.5
+    top_profit_factor: 0.9738451086956522
+    top_total_trades: 76
+    top_trades_per_year: 75.4125688369364
+    profitable_combinations: 0
+    total_combinations: 81
+  best_rescue:
+    variant_id: front_stress_large10_vwap_reject_short_1500
+    run_id: rescue1
+    top_net_profit: 115.625
+    top_profit_factor: 1.0346441947565543
+    top_total_trades: 50
+    top_trades_per_year: 38.28504876983549
+    profitable_combinations: 1
+    total_combinations: 81
+  aggregate_artifacts:
+    campaign_summary_json: backtest-campaigns/es_vix_term_structure_orderflow_pullback/campaign_test_summary.json
+    campaign_results_csv: backtest-campaigns/es_vix_term_structure_orderflow_pullback/campaign_results.csv
+    trade_logs_manifest_csv: backtest-campaigns/es_vix_term_structure_orderflow_pullback/trade_logs_manifest.csv
+    equity_curves_manifest_csv: backtest-campaigns/es_vix_term_structure_orderflow_pullback/equity_curves_manifest.csv
+    wfa_table_csv: backtest-campaigns/es_vix_term_structure_orderflow_pullback/wfa_table.csv
+    monte_carlo_summary_json: backtest-campaigns/es_vix_term_structure_orderflow_pullback/monte_carlo_summary.json
+  failure_reason: All five originals and all five one-time parameter-space/fixed-parameter rescues failed
+    limited_core_grid_test. No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation,
+    frozen validation, or candidate reporting.

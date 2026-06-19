@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.opening_drive_mes_crowding_reversal import OpeningDriveMesCrowdingReversalEntry
+
+ENTRY_MODULE = OpeningDriveMesCrowdingReversalEntry

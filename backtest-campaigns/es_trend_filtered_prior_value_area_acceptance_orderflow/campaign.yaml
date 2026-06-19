@@ -1,0 +1,159 @@
+campaign_id: es_trend_filtered_prior_value_area_acceptance_orderflow
+title: ES Trend-Filtered Prior Value-Area Acceptance With Aggregate Orderflow
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: trend_filtered_prior_value_area_acceptance_orderflow
+hypothesis: ES should be more likely to continue away from the prior RTH accepted-value area when a completed
+  5-minute close accepts beyond prior VAH/VAL, aggregate orderflow confirms participation in that direction,
+  and the current session has already formed deterministic completed-bar higher-high/higher-low or
+  lower-high/lower-low structure.
+rationale: This is a bounded composite campaign. The primary edge is prior-session value-area acceptance,
+  motivated by support/resistance and market-profile acceptance logic. The fixed secondary filters are
+  aggregate trade-side orderflow and completed-bar market-structure trend alignment. This branch is not
+  a rescue of the prior value-area campaign; it is a predeclared composite allowed under the current policy
+  because price acceptance, orderflow, and trend structure must all agree before a signal can exist.
+sources:
+- title: Support for Resistance; Technical Analysis and Intraday Exchange Rates
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Documents that real support/resistance levels predict intraday interruptions better than
+    arbitrary levels; prior value-area boundaries are treated here as public accepted-value support/resistance.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical
+    Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00265
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00265
+  relevance: Supports deterministic, non-discretionary chart-state definitions; the trend filter uses
+    completed-bar higher-high/higher-low or lower-high/lower-low windows.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates imbalance as a short-horizon price-pressure proxy. This campaign uses completed
+    Sierra aggregate signed trade flow, not quote-depth OFI.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2011.11.003
+  link: https://ideas.repec.org/a/eee/jfinec/v104y2012i2p228-250.html
+  relevance: Documents persistence across liquid futures; this campaign uses only intraday completed-bar
+    trend alignment as a fixed filter, not the monthly TSMOM anomaly itself.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute bars aggregated from local 1-minute RTH Sierra bars
+- completed prior RTH session OHLCV to approximate prior value area before the current session starts
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, and
+  large20_volume
+lookahead_risks:
+- Prior value-area levels are built only from the completed previous RTH session after session roll.
+- Trend alignment uses only completed current-session bars through the signal bar; no future trend state is read.
+- Orderflow confirmation uses only the completed signal bar.
+- Signals generated from a completed bar are filled no earlier than the next bar open by the engine.
+- No current-session final high/low, final VWAP, final volume profile, future orderflow, future session range,
+  or future daily close is used.
+failure_modes:
+- Prior value area is approximated from OHLCV bars rather than true volume-at-price and can misplace VAH/VAL.
+- Trend filtering can select mature, overextended moves after much of the acceptance impulse is gone.
+- Signed aggregate flow can mark exhaustion into liquidity rather than informed participation.
+- The composite filter may reduce effective filled trades below 50/year despite pre-PnL signal-density checks.
+- Profits may concentrate in crisis trend sessions, a single side, or a narrow volatility regime.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_prior_value_area_orderflow_acceptance
+  - es_prior_value_area_orderflow_rejection
+  - es_trend_filtered_prior_session_breakout_orderflow
+  - es_prior_session_breakout_orderflow_confirmation
+  - es_prior_day_stop_run_reclaim
+  - es_prior_level_delta_dislocation
+  - es_trend_aligned_orderflow_continuation
+  conclusion: Eligible as a bounded composite campaign. Existing active value-area campaigns could trigger
+    from value boundary plus orderflow without a completed multi-window trend state; existing trend-filtered
+    prior-session campaigns used prior high/low breakout/hold rather than accepted-value VAH/VAL boundaries.
+variants:
+- morning_signed_vah_trend_acceptance_long
+- morning_signed_val_trend_acceptance_short
+- late_morning_large10_two_sided_trend_acceptance
+- midday_signed_two_sided_trend_acceptance
+- afternoon_large20_two_sided_trend_acceptance
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core prior-value-area acceptance plus fixed trend/orderflow-confirmation mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: morning_signed_vah_trend_acceptance_long
+    config: campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/rescue_attempts/parameter_space_rescue_1/morning_signed_vah_trend_acceptance_long/config.yaml
+    report: backtest-campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/morning_signed_vah_trend_acceptance_long/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 16/81 below required 70%; best row failed concentration gate.
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: morning_signed_val_trend_acceptance_short
+    config: campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/rescue_attempts/parameter_space_rescue_1/morning_signed_val_trend_acceptance_short/config.yaml
+    report: backtest-campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/morning_signed_val_trend_acceptance_short/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0/81 below required 70%; best row remained net negative.
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: late_morning_large10_two_sided_trend_acceptance
+    config: campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/rescue_attempts/parameter_space_rescue_1/late_morning_large10_two_sided_trend_acceptance/config.yaml
+    report: backtest-campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/late_morning_large10_two_sided_trend_acceptance/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0/81 below required 70%; best row remained net negative.
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: midday_signed_two_sided_trend_acceptance
+    config: campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/rescue_attempts/parameter_space_rescue_1/midday_signed_two_sided_trend_acceptance/config.yaml
+    report: backtest-campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/midday_signed_two_sided_trend_acceptance/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0/81 below required 70%; best row remained net negative.
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: afternoon_large20_two_sided_trend_acceptance
+    config: campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/rescue_attempts/parameter_space_rescue_1/afternoon_large20_two_sided_trend_acceptance/config.yaml
+    report: backtest-campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/afternoon_large20_two_sided_trend_acceptance/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0/81 below required 70%; best row remained net negative.
+final_result:
+  status: completed
+  decision: FAIL
+  report_path: backtest-campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/campaign_test_summary.json
+  summary: All five originals and all five per-variant parameter-space rescues failed limited_core_grid_test.
+  candidate_strategy_report_created: false
+testing_plan:
+  methodology: current staged research pipeline
+  gate_sequence:
+  - limited core grid on random 10% period avoiding latest 10% and COVID period
+  - limited monkey test on selected profitable run
+  - unanchored WFA on first 90% available data, 48-month IS and 12-month OOS
+  - WFA OOS monkey
+  - WFA OOS Monte Carlo with prop-style rules
+  - simulated incubation on latest 1-year locked OOS if reached
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 50.0

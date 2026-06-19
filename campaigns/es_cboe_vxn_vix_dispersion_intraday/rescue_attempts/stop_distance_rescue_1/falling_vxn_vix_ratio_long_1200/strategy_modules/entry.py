@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.cboe_vxn_vix_dispersion import CboeVxnVixDispersionEntry
+
+ENTRY_MODULE = CboeVxnVixDispersionEntry

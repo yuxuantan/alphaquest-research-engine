@@ -183,7 +183,9 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
 
 def apply_fast_runtime_defaults(cfg: dict, workers: int | None = None) -> dict:
     out = copy.deepcopy(cfg)
-    worker_count = max(1, int(workers or min(6, os.cpu_count() or 1)))
+    # WFA workers keep sliced market/detail frames cached across windows. A lower
+    # default avoids memory-heavy process-pool stalls while preserving mechanics.
+    worker_count = max(1, int(workers or min(3, os.cpu_count() or 1)))
     _enable_parallel(out, "core_grid", "grid", worker_count)
     _enable_parallel(out, "monkey", "runs", worker_count)
     _enable_parallel(out, "wfa", "window_grid", worker_count)
@@ -1057,15 +1059,7 @@ def _run_wfa_oos_monte_carlo(cfg: dict, stage_cfg: dict, stage_dir: Path, contex
     trades = _required_context_frame(context, "wfa_trades", "WFA OOS Monte Carlo requires walk_forward_analysis trades.")
     mc_cfg = {**cfg.get("benchmarks", {}), **copy.deepcopy(cfg.get("monte_carlo", {})), **stage_cfg}
     mc_cfg["_core"] = cfg.get("core", {})
-    rules_cfg = copy.deepcopy(cfg.get("prop_rules") or {})
-    monte_carlo_rules = (cfg.get("monte_carlo") or {}).get("prop_rules")
-    if isinstance(monte_carlo_rules, dict):
-        _deep_update(rules_cfg, copy.deepcopy(monte_carlo_rules))
-    stage_rules = stage_cfg.get("prop_rules")
-    if isinstance(stage_rules, dict):
-        _deep_update(rules_cfg, copy.deepcopy(stage_rules))
-    rules_cfg.setdefault("profit_target_amount", 50000.0)
-    rules_cfg.setdefault("drawdown_limit_amount", 10000.0)
+    rules_cfg = _wfa_oos_monte_carlo_rules_config(cfg, stage_cfg)
     rules = PropRules.from_dict(rules_cfg)
     retain_path_trades = bool(mc_cfg.get("retain_path_trades", False))
     retain_path_events = bool(mc_cfg.get("retain_path_events", False))
@@ -1084,6 +1078,33 @@ def _run_wfa_oos_monte_carlo(cfg: dict, stage_cfg: dict, stage_dir: Path, contex
         write_report_csv(path_events, stage_dir / "wfa_oos_monte_carlo_path_events.csv", report_timezone, index=False)
     write_json(stage_dir / "wfa_oos_monte_carlo_summary.json", summary)
     return {"summary": summary, "artifacts": _stage_artifacts(stage_dir)}
+
+
+def _wfa_oos_monte_carlo_rules_config(cfg: dict, stage_cfg: dict) -> dict:
+    top_rules = copy.deepcopy(cfg.get("prop_rules") or {})
+    rules_cfg = {
+        key: top_rules[key]
+        for key in (
+            "starting_balance",
+            "max_contracts",
+            "max_best_day_profit_percentage",
+            "min_trading_days",
+            "payout_threshold",
+        )
+        if key in top_rules
+    }
+    monte_carlo_rules = (cfg.get("monte_carlo") or {}).get("prop_rules")
+    if isinstance(monte_carlo_rules, dict):
+        _deep_update(rules_cfg, copy.deepcopy(monte_carlo_rules))
+    stage_rules = stage_cfg.get("prop_rules")
+    if isinstance(stage_rules, dict):
+        _deep_update(rules_cfg, copy.deepcopy(stage_rules))
+    rules_cfg.setdefault("profit_target_amount", 50000.0)
+    rules_cfg.setdefault("drawdown_limit_amount", 10000.0)
+    drawdown_budget = float(rules_cfg["drawdown_limit_amount"])
+    rules_cfg.setdefault("daily_loss_limit", drawdown_budget)
+    rules_cfg.setdefault("trailing_drawdown", drawdown_budget)
+    return rules_cfg
 
 
 def _run_incubation_core(

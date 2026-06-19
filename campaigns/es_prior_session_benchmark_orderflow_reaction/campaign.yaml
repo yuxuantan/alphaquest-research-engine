@@ -1,0 +1,274 @@
+campaign_id: es_prior_session_benchmark_orderflow_reaction
+title: ES Prior-Session Benchmark Open/Close Orderflow Reaction
+decision: FAIL
+created_at: '2026-06-18'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: ES may reject completed previous RTH open and close benchmark levels intraday
+  when a completed bar probes through the level, closes back across it, and carries
+  aggregate trade-side counterflow in the rejection direction.
+rationale: This campaign tests benchmark-level reaction at prior RTH open/close, not
+  prior high/low stop runs, prior value-area boundaries, VWAP, opening range, round
+  numbers, or generic signed-flow persistence. The levels are fully known before the
+  current RTH session; the signal requires a completed probe-and-reclaim/reject bar
+  plus completed aggregate orderflow before next-bar entry.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Shows that externally supplied support/resistance levels can predict
+    intraday trend interruptions, motivating objective tests of widely watched previous-session
+    benchmarks.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v17y2004i4p1043-1071.html
+  relevance: Finds technical support/resistance can align with limit-order-book depth,
+    supporting a liquidity-provision interpretation of reactions at visible benchmark
+    levels.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow imbalance as a short-horizon pressure proxy. This
+    campaign uses completed Sierra aggregate signed volume, not full-depth LOB OFI.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV and aggregate signed-volume bars in America/New_York
+- deterministic 5-minute aggregation with previous RTH open and close shifted from
+  completed sessions only
+- completed-bar signed_volume, large10, and large20 aggregate orderflow buckets
+- next-bar execution, tick size, point value, commission, slippage, pessimistic same-bar
+  fills, and forced flatten from config
+data_quality_caveats:
+- Sierra signed volume is an aggregate bid/ask-volume proxy, not full quote-level
+  OFI or queue-position truth.
+- Prior RTH open/close are benchmark levels, not guaranteed resting liquidity; failed
+  probes can still be informed breakouts.
+- Same-bar stop/target conflicts must use 1-minute detail when available and pessimistic
+  fallback otherwise.
+lookahead_risks:
+- Previous RTH open and close are shifted from the completed prior RTH session only.
+- Probe, reclaim/rejection close, and aggregate orderflow use only the completed signal
+  bar.
+- Signals generated from a completed 5-minute bar are filled no earlier than the next
+  bar open.
+- No current-session final high/low, final VWAP, final volume profile, future orderflow,
+  or future session return is used.
+- All variants flatten on the same RTH session before the configured prop cutoff.
+failure_modes:
+- Prior open/close probes may be true acceptance through the benchmark rather than
+  failed breakouts.
+- Counterflow on a completed 5-minute bar may arrive too late after most of the rejection
+  has already occurred.
+- The effect may be one-sided, time-of-day specific, or too cost-sensitive after one-tick
+  ES slippage.
+- Large-trade buckets may be sparse or noisy in Sierra aggregate bars.
+- Profits may concentrate around specific volatility regimes or news sessions.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_prior_day_stop_run_reclaim
+  - es_prior_level_delta_dislocation
+  - es_prior_value_area_orderflow_rejection
+  - es_prior_value_area_orderflow_acceptance
+  - es_prior_session_flip_retest_orderflow
+  - es_session_open_orderflow_reclaim
+  - es_round_number_orderflow_barrier
+  - es_vwap_deviation_orderflow_reversion
+  - es_opening_range_retest_orderflow
+  conclusion: Eligible as a distinct active campaign. Existing prior-level campaigns
+    use prior highs/lows, value-area boundaries, opening range, session open, round
+    numbers, or VWAP. This campaign uses previous RTH open and close as benchmark
+    auction references and requires completed-bar counterflow rejection at those levels.
+variants:
+- prior_close_morning_signed_reclaim_reversion_1130
+- prior_open_morning_signed_reclaim_reversion_1130
+- prior_close_midday_large10_reclaim_reversion_1400
+- prior_open_midday_large20_reclaim_reversion_1400
+- prior_open_close_afternoon_signed_reclaim_reversion_1530
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - min_probe_ticks
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.min_probe_ticks:
+    - 0
+    - 1
+    - 2
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 0.75
+    - 1.0
+    - 1.5
+pre_pnl_density_audit:
+  status: PASS
+  generated_at: '2026-06-18'
+  artifact: research_artifacts/es_prior_session_benchmark_orderflow_reaction_density_audit_20260618.md
+  detail_csv: research_artifacts/es_prior_session_benchmark_orderflow_reaction_density_audit_20260618.csv
+  summary_csv: research_artifacts/es_prior_session_benchmark_orderflow_reaction_density_summary_20260618.csv
+  decision: Proceed to preflight and staged testing without changing mechanics or
+    parameter space after this point.
+  density_rule: At least one predeclared entry-grid point per variant must reach
+    50 signals/year on both full data and the canonical limited-core shortlist
+    window before PnL testing starts.
+  window_summary:
+    full_configured_subset:
+      start_date: '2011-01-03'
+      end_date: '2026-06-09'
+      session_labels:
+      - RTH
+    full_span_years: 15.433265
+    limited_core_resolved_subset:
+      start_date: '2011-02-22'
+      end_date: '2012-09-06'
+      session_labels:
+      - RTH
+    limited_core_span_years: 1.541410
+  variant_density_summary:
+  - variant_id: prior_close_midday_large10_reclaim_reversion_1400
+    best_full_trades_per_year: 89.417243
+    best_limited_core_trades_per_year: 76.553286
+    density_gate_pass: true
+  - variant_id: prior_close_morning_signed_reclaim_reversion_1130
+    best_full_trades_per_year: 112.484300
+    best_limited_core_trades_per_year: 107.693606
+    density_gate_pass: true
+  - variant_id: prior_open_close_afternoon_signed_reclaim_reversion_1530
+    best_full_trades_per_year: 102.376264
+    best_limited_core_trades_per_year: 97.313499
+    density_gate_pass: true
+  - variant_id: prior_open_midday_large20_reclaim_reversion_1400
+    best_full_trades_per_year: 58.833954
+    best_limited_core_trades_per_year: 54.495560
+    density_gate_pass: true
+  - variant_id: prior_open_morning_signed_reclaim_reversion_1130
+    best_full_trades_per_year: 70.432278
+    best_limited_core_trades_per_year: 57.090586
+    density_gate_pass: true
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core benchmark-level reaction mechanic
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+rescue_attempts:
+- id: parameter_space_rescue_1
+  status: failed_limited_core_grid_test
+  scope: per_failed_variant
+  created_at: '2026-06-18'
+  trigger: All five original variants failed limited_core_grid_test.
+  mechanic_preserved: true
+  changes: Parameter-space and fixed-parameter changes only. The rescue preserves
+    the prior-session benchmark open/close probe-and-reclaim/reject entry module,
+    sweep-extreme stop module, fixed-R target module, 5-minute timeframe, ES Sierra
+    aggregate-orderflow data, costs, fills, sessions, prop rules, and staged gates.
+  rescue_grid:
+    entry.params.min_probe_ticks:
+    - 1
+    - 2
+    - 3
+    entry.params.min_orderflow_imbalance:
+    - 0.02
+    - 0.04
+    - 0.06
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 3
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  density_audit:
+    status: PASS
+    artifact: research_artifacts/es_prior_session_benchmark_orderflow_reaction_rescue_attempt_1_density_audit_20260618.md
+    detail_csv: research_artifacts/es_prior_session_benchmark_orderflow_reaction_rescue_attempt_1_density_audit_20260618.csv
+    summary_csv: research_artifacts/es_prior_session_benchmark_orderflow_reaction_rescue_attempt_1_density_summary_20260618.csv
+    decision: Proceed to staged rescue testing without changing mechanics.
+  result:
+    decision: FAIL
+    terminal_stage: limited_core_grid_test
+    original_variants_failed: 5
+    rescue_variants_failed: 5
+    best_rescue_variant: prior_close_midday_large10_reclaim_reversion_1400
+    best_rescue_profitable_combinations: 2
+    best_rescue_total_combinations: 81
+    best_rescue_profitable_combo_rate: 0.024691358024691357
+    best_rescue_top_net_profit: 280.0
+    best_rescue_top_profit_factor: 1.0298030867482704
+    best_rescue_top_trades: 104
+    best_rescue_top_trades_per_year: 67.9593981786331
+    failure_reason: Rescue remained far below the 70% profitable-combination benchmark
+      and failed concentration/losing-streak gates. No run reached monkey, WFA,
+      Monte Carlo, simulated incubation, or frozen validation.
+result_summary:
+  status: completed
+  decision: FAIL
+  generated_at: '2026-06-18'
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  fixed_config_core_trade_logs: 10
+  max_original_profitable_combo_rate: 0.0
+  max_rescue_profitable_combo_rate: 0.024691358024691357
+  max_original_benchmark_passing_combinations: 0
+  max_rescue_benchmark_passing_combinations: 0
+  best_original:
+    variant_id: prior_close_midday_large10_reclaim_reversion_1400
+    run_id: run1
+    top_net_profit: -476.25
+    top_profit_factor: 0.9519546027742748
+    top_total_trades: 109
+    top_trades_per_year: 71.22667693722123
+    profitable_combinations: 0
+    total_combinations: 81
+  best_rescue:
+    variant_id: prior_close_midday_large10_reclaim_reversion_1400
+    run_id: rescue1
+    top_net_profit: 280.0
+    top_profit_factor: 1.0298030867482704
+    top_total_trades: 104
+    top_trades_per_year: 67.9593981786331
+    profitable_combinations: 2
+    total_combinations: 81
+  aggregate_artifacts:
+    campaign_summary_json: backtest-campaigns/es_prior_session_benchmark_orderflow_reaction/campaign_test_summary.json
+    campaign_results_csv: backtest-campaigns/es_prior_session_benchmark_orderflow_reaction/campaign_results.csv
+    trade_logs_manifest_csv: backtest-campaigns/es_prior_session_benchmark_orderflow_reaction/trade_logs_manifest.csv
+    equity_curves_manifest_csv: backtest-campaigns/es_prior_session_benchmark_orderflow_reaction/equity_curves_manifest.csv
+    wfa_table_csv: backtest-campaigns/es_prior_session_benchmark_orderflow_reaction/wfa_table.csv
+    monte_carlo_summary_json: backtest-campaigns/es_prior_session_benchmark_orderflow_reaction/monte_carlo_summary.json
+  failure_reason: All five originals and all five one-time parameter-space/fixed-parameter
+    rescues failed limited_core_grid_test. No run reached monkey, WFA, WFA OOS
+    monkey, Monte Carlo, simulated incubation, frozen validation, or candidate
+    reporting.

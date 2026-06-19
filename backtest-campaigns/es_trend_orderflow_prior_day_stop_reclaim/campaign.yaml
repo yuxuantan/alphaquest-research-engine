@@ -1,0 +1,144 @@
+campaign_id: es_trend_orderflow_prior_day_stop_reclaim
+title: ES Trend-Filtered Prior-Day Stop-Run Reclaim With Absorbed Aggregate Orderflow
+decision: FAIL
+created_at: '2026-06-18'
+instrument: ES
+market_timezone: America/New_York
+edge_family: trend_orderflow_prior_day_stop_reclaim
+hypothesis: Prior RTH high/low stop-runs should mean-revert more reliably when the sweep fails in the
+  direction of an already established completed-bar trend and the completed reclaim bar shows aggregate
+  trade pressure absorbed into the failed sweep.
+rationale: This is a bounded composite campaign. The primary price-action edge is prior-day high/low stop-run
+  failure and reclaim. The secondary filters are pre-sweep completed-bar trend alignment and completed-bar
+  aggregate orderflow absorption. It is distinct from the prior-day stop-run campaign because price alone
+  cannot trigger, and distinct from prior-level delta dislocation because an actual sweep-and-reclaim
+  is mandatory.
+sources:
+- title: Currency Orders and Exchange Rate Dynamics
+  authors: Carol L. Osler
+  year: 2003
+  venue: Journal of Finance
+  link: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  relevance: Documents clustered stop-loss and take-profit orders around technical support/resistance
+    levels and the dual possibility of reversal or continuation after levels are crossed.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Supports the idea that visible technical levels can align with liquidity supply, making failed
+    probes around prior highs/lows economically meaningful.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure proxy; this campaign uses
+    completed Sierra aggregate trade-side imbalance, not quote-depth OFI.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical
+    Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00265
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00265
+  relevance: Supports deterministic, predeclared chart-pattern and trend-state rules rather than discretionary
+    visual pattern fitting.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- completed prior RTH high/low and fresh-level flags from pdh_pdl_sweep features
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, and
+  large20_volume
+lookahead_risks:
+- Prior RTH high and low are known only after the prior RTH session is complete.
+- The sweep and reclaim are evaluated only after the 5-minute signal bar has closed.
+- The trend filter snapshots completed bars before the sweep, not future bars after the reclaim.
+- Aggregate orderflow absorption is read from the completed reclaim bar and therefore enters no earlier
+  than next-bar open.
+- No final current-session high/low, final VWAP, final volume profile, future orderflow, or future trend
+  state is used.
+failure_modes:
+- A prior-day high/low sweep may be informed breakout continuation rather than a liquidity failure.
+- The trend filter may select exhausted trends or reduce density below the 50 trades/year requirement.
+- Aggregate signed volume may mark continuation pressure rather than absorption.
+- Large-trade filters may be too sparse or may reflect reporting artifacts in the Sierra cache.
+- Profits may concentrate in volatile event days or one side of the market.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_prior_day_stop_run_reclaim
+  - es_prior_level_delta_dislocation
+  - es_footprint_absorption_initiation
+  - es_rolling_range_orderflow_sweep_reversal
+  - es_trend_filtered_prior_session_breakout_orderflow
+  - es_trend_filtered_prior_value_area_acceptance_orderflow
+  conclusion: 'Eligible as a bounded composite because the signal requires all three predeclared conditions:
+    prior-day sweep-reclaim, absorbed aggregate orderflow on the completed reclaim bar, and pre-sweep
+    trend alignment. None of the checked active campaigns required exactly this conjunction before entry.'
+variants:
+- morning_pdl_signed_trend_absorption_long_1130
+- morning_pdh_signed_trend_absorption_short_1130
+- late_morning_signed_two_sided_trend_absorption_1230
+- midday_large10_two_sided_trend_absorption_1400
+- afternoon_large20_two_sided_trend_absorption_1500
+pre_pnl_density_audit:
+  date: '2026-06-18'
+  result: FAIL
+  artifact: research_artifacts/es_trend_orderflow_prior_day_stop_reclaim_density_audit_20260618.md
+  detail_csv: research_artifacts/es_trend_orderflow_prior_day_stop_reclaim_density_audit_20260618.csv
+  summary_csv: research_artifacts/es_trend_orderflow_prior_day_stop_reclaim_density_summary_20260618.csv
+  limited_core_period: 2011-02-22 to 2012-09-06
+  full_configured_period: 2011-01-03 to 2026-06-09
+  min_required_signals_per_year: 50
+  best_limited_core_signals_per_year: 19.4627
+  best_full_configured_signals_per_year: 26.630788
+  rejection_reason: Even the loosest entry corner of the densest variant is far below the required
+    50 signals/year density screen, so the prior-day sweep-reclaim plus pre-sweep trend and absorbed
+    aggregate orderflow formulation is too sparse for this methodology. No staged PnL was run.
+rescue_attempts:
+- id: parameter_space_rescue_1
+  date: '2026-06-19'
+  trigger: Original five variants failed pre-PnL density before any staged PnL was inspected.
+  scope: per_failed_variant
+  changes: Fixed-parameter and declared-parameter-space density rescue only. Entry module, stop module,
+    target module, data, costs, sessions, fills, prop rules, and validation gates are unchanged. The rescue
+    widens the fixed signal window, shortens the pre-sweep trend snapshot to one-versus-two completed
+    5-minute bars, and keeps the same prior-day sweep-reclaim plus absorbed-flow plus pre-sweep trend
+    mechanic.
+  result: FAIL_LIMITED_CORE_GRID_TEST
+  artifact: research_artifacts/es_trend_orderflow_prior_day_stop_reclaim_rescue_attempt_1_density_audit_20260619.md
+  detail_csv: research_artifacts/es_trend_orderflow_prior_day_stop_reclaim_rescue_attempt_1_density_audit_20260619.csv
+  summary_csv: research_artifacts/es_trend_orderflow_prior_day_stop_reclaim_rescue_attempt_1_density_summary_20260619.csv
+  min_full_signals_per_year: 76.406982
+  min_limited_core_signals_per_year: 61.741548
+  density_audit_caveat: The standalone vectorized density audit overcounted relative to the actual entry
+    module state machine. The staged runner's `signal_density` output is authoritative for final assessment.
+  staged_signal_density: In rescue1 limited-core runs, max trades/year ranged from 49.787067 to 53.151059,
+    median trades/year ranged from 35.171188 to 38.734815, and only 0 to 9 of 81 combinations met 50 trades/year.
+  testing_decision: completed_staged_testing
+  terminal_stage: limited_core_grid_test
+  failure_reason: All five rescue variants failed the 70% profitable-combination gate before monkey or WFA.
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change the core prior-day sweep-reclaim plus pre-sweep trend and absorbed-flow mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+results:
+  report: backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/campaign_test_summary.json
+  campaign_results: backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/campaign_results.csv
+  trade_logs_manifest: backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/trade_logs_manifest.csv
+  equity_curves_manifest: backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/equity_curves_manifest.csv
+  wfa_table: backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/wfa_table.csv
+  monte_carlo_summary: backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/monte_carlo_summary.json

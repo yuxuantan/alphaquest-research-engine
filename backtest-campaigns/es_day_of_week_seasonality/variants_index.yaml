@@ -1,7 +1,15 @@
 campaign_id: es_day_of_week_seasonality
 variants:
-  - friday_late_preweekend_long_1300
-  - friday_open_preweekend_long_0935
-  - mon_fri_polarity_pair_1000
-  - monday_late_weekend_short_1100
-  - monday_open_weekend_short_0935
+- variant_id: friday_late_preweekend_long_1300
+- variant_id: friday_open_preweekend_long_0935
+- variant_id: mon_fri_polarity_pair_1000
+- variant_id: monday_late_weekend_short_1100
+- variant_id: monday_open_weekend_short_0935
+  strategy_name: calendar_session_bias
+  path: backtest-campaigns/es_day_of_week_seasonality/monday_open_weekend_short_0935/variant.yaml
+  hash: 0e90b03347f988984099c1374d39bc415e79c3dcf8dc02156cf544e7482310b5
+  mechanic:
+    entry_module: calendar_session_bias
+    take_profit_module: fixed_r
+    stop_loss_module: percent_from_entry
+    flatten_time: '15:55:00'

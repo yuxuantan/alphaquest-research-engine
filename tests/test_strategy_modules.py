@@ -12,6 +12,9 @@ from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTim
 from propstack.strategy_modules.entry.gao_last_half_hour_orderflow import GaoLastHalfHourOrderflowEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 from propstack.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry
+from propstack.strategy_modules.entry.key_reversal_orderflow_reversal import (
+    KeyReversalOrderflowReversalEntry,
+)
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
 from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import LiquidityRiskCapacityPriorityEntry
 from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
@@ -30,6 +33,9 @@ from propstack.strategy_modules.entry.overnight_return_late_day_momentum import 
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
 from propstack.strategy_modules.entry.positive_delta_dislocation import PositiveDeltaDislocationEntry
+from propstack.strategy_modules.entry.prior_session_benchmark_orderflow_reaction import (
+    PriorSessionBenchmarkOrderflowReactionEntry,
+)
 from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSessionIbsReversionEntry
 from propstack.strategy_modules.entry.prior_value_area_orderflow_acceptance import (
     PriorValueAreaOrderflowAcceptanceEntry,
@@ -3970,6 +3976,142 @@ def test_rth_gap_fade_rejects_missing_previous_close():
     assert entry.on_bar_close(bar) is None
 
 
+def _benchmark_bar(
+    timestamp,
+    open_price,
+    high,
+    low,
+    close,
+    *,
+    prev_open=99.0,
+    prev_close=100.0,
+    signed_volume=100.0,
+    volume=1000.0,
+    large10_signed_volume=100.0,
+    large10_volume=1000.0,
+    large20_signed_volume=100.0,
+    large20_volume=1000.0,
+    name=None,
+):
+    ts = pd.Timestamp(timestamp, tz="America/New_York")
+    return pd.Series(
+        {
+            "timestamp": ts,
+            "session_date": ts.date(),
+            "is_rth": True,
+            "open": open_price,
+            "high": high,
+            "low": low,
+            "close": close,
+            "prev_rth_open": prev_open,
+            "prev_rth_close": prev_close,
+            "signed_volume": signed_volume,
+            "volume": volume,
+            "large10_signed_volume": large10_signed_volume,
+            "large10_volume": large10_volume,
+            "large20_signed_volume": large20_signed_volume,
+            "large20_volume": large20_volume,
+        },
+        name=name if name is not None else ts.hour * 60 + ts.minute,
+    )
+
+
+def test_prior_session_benchmark_orderflow_reaction_long_reclaim():
+    entry = PriorSessionBenchmarkOrderflowReactionEntry(
+        {
+            "level_set": "previous_close",
+            "flow_mode": "signed_volume",
+            "bar_interval_minutes": 5,
+            "min_probe_ticks": 2,
+            "min_orderflow_imbalance": 0.05,
+        }
+    )
+    signal = entry.on_bar_close(
+        _benchmark_bar(
+            "2024-01-03 10:00",
+            100.25,
+            100.5,
+            99.25,
+            100.25,
+            signed_volume=80,
+            volume=1000,
+            name=12,
+        )
+    )
+
+    assert signal.direction == "long"
+    assert signal.level_type == "previous_rth_close"
+    assert signal.swept_level == 100.0
+    assert signal.sweep_low == 99.25
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 10:05", tz="America/New_York")
+    assert signal.report_fields["confirmation_orderflow_imbalance"] == 0.08
+
+
+def test_prior_session_benchmark_orderflow_reaction_short_rejects_prior_open_with_large20_flow():
+    entry = PriorSessionBenchmarkOrderflowReactionEntry(
+        {
+            "level_set": "previous_open",
+            "flow_mode": "large20",
+            "bar_interval_minutes": 5,
+            "min_probe_ticks": 1,
+            "reclaim_buffer_ticks": 1,
+            "min_orderflow_imbalance": 0.02,
+        }
+    )
+    signal = entry.on_bar_close(
+        _benchmark_bar(
+            "2024-01-03 11:00",
+            99.0,
+            99.75,
+            98.5,
+            98.5,
+            large20_signed_volume=-30,
+            large20_volume=1000,
+            name=24,
+        )
+    )
+
+    assert signal.direction == "short"
+    assert signal.level_type == "previous_rth_open"
+    assert signal.swept_level == 99.0
+    assert signal.sweep_high == 99.75
+    assert signal.report_fields["flow_mode"] == "large20"
+    assert signal.report_fields["confirmation_orderflow_imbalance"] == -0.03
+
+
+def test_prior_session_benchmark_orderflow_reaction_requires_counterflow_and_trade_limit():
+    entry = PriorSessionBenchmarkOrderflowReactionEntry(
+        {
+            "level_set": "previous_close",
+            "min_probe_ticks": 1,
+            "min_orderflow_imbalance": 0.05,
+        }
+    )
+    weak_flow = _benchmark_bar(
+        "2024-01-03 10:00",
+        100.0,
+        100.25,
+        99.5,
+        100.25,
+        signed_volume=20,
+        volume=1000,
+        name=12,
+    )
+    valid_flow = _benchmark_bar(
+        "2024-01-03 10:05",
+        100.25,
+        100.5,
+        99.75,
+        100.25,
+        signed_volume=80,
+        volume=1000,
+        name=13,
+    )
+
+    assert entry.on_bar_close(weak_flow) is None
+    assert entry.on_bar_close(valid_flow, trades_today=1) is None
+
+
 def _volume_reversal_bar(timestamp, open_price, high, low, close, volume_ratio=1.4, name=None):
     ts = pd.Timestamp(timestamp, tz="America/New_York")
     return pd.Series(
@@ -4159,6 +4301,103 @@ def test_wide_range_orderflow_continuation_emits_short_at_lower_close_location()
     assert signal.direction == "short"
     assert signal.report_fields["signal_return_ticks"] == -8.0
     assert signal.report_fields["signal_close_location"] < 0.3
+
+
+def test_key_reversal_orderflow_reversal_uses_prior_completed_bar_for_long_signal():
+    entry = KeyReversalOrderflowReversalEntry(
+        {
+            "setup_mode": "two_sided_key_reversal",
+            "start_time": "09:40:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_sweep_ticks": 1,
+            "min_body_ticks": 2,
+            "min_close_location": 0.65,
+            "min_orderflow_imbalance": 0.2,
+            "flow_mode": "signed_volume",
+        }
+    )
+
+    assert entry.on_bar_close(_wide_range_flow_bar("2024-01-03 09:30", 100.5, 101.0, 100.0, 100.5)) is None
+    signal = entry.on_bar_close(
+        _wide_range_flow_bar("2024-01-03 09:35", 99.75, 101.25, 99.5, 100.75, signed_volume=300.0)
+    )
+
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 09:40", tz="America/New_York")
+    assert signal.swept_level == 100.0
+    assert signal.report_fields["prior_bar_close"] == 100.5
+    assert signal.report_fields["signal_orderflow_imbalance"] == 0.3
+    assert signal.report_fields["feature_method"] == (
+        "completed_bar_prior_bar_sweep_reclaim_with_sierra_aggregate_orderflow"
+    )
+
+
+def test_key_reversal_orderflow_reversal_rejects_misaligned_flow_and_trade_limit():
+    entry = KeyReversalOrderflowReversalEntry(
+        {
+            "start_time": "09:40:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_sweep_ticks": 1,
+            "min_orderflow_imbalance": 0.2,
+            "flow_mode": "large20",
+            "max_trades_per_day": 1,
+        }
+    )
+
+    assert entry.on_bar_close(_wide_range_flow_bar("2024-01-03 09:30", 100.5, 101.0, 100.0, 100.5)) is None
+    assert entry.on_bar_close(
+        _wide_range_flow_bar(
+            "2024-01-03 09:35",
+            99.75,
+            101.25,
+            99.5,
+            100.75,
+            large20_signed_volume=-80.0,
+            large20_volume=200.0,
+        )
+    ) is None
+    assert entry.on_bar_close(
+        _wide_range_flow_bar(
+            "2024-01-03 09:40",
+            100.75,
+            101.0,
+            99.0,
+            100.9,
+            large20_signed_volume=80.0,
+            large20_volume=200.0,
+        ),
+        trades_today=1,
+    ) is None
+
+
+def test_key_reversal_orderflow_reversal_emits_short_from_prior_high_sweep():
+    entry = KeyReversalOrderflowReversalEntry(
+        {
+            "start_time": "09:40:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_sweep_ticks": 1,
+            "min_body_ticks": 2,
+            "min_close_location": 0.65,
+            "min_orderflow_imbalance": 0.2,
+            "allow_long": False,
+            "allow_short": True,
+        }
+    )
+
+    assert entry.on_bar_close(_wide_range_flow_bar("2024-01-03 09:30", 100.5, 101.0, 100.0, 100.5)) is None
+    signal = entry.on_bar_close(
+        _wide_range_flow_bar("2024-01-03 09:35", 101.0, 101.5, 99.75, 100.0, signed_volume=-300.0)
+    )
+
+    assert signal.direction == "short"
+    assert signal.swept_level == 101.0
+    assert signal.report_fields["signal_close_location"] < 0.35
 
 
 def _prior_value_bar(

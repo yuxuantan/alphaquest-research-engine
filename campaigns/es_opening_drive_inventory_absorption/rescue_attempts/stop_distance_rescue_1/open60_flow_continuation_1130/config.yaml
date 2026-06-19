@@ -1,0 +1,243 @@
+campaign_id: es_opening_drive_inventory_absorption
+variant_id: open60_flow_continuation_1130
+test_run_id: stop_widen_rescue1
+strategy_name: opening_drive_inventory_combo
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Gao, Han, Li, and Zhou (2018); Heston, Korajczyk, and Sadka (2010); Cont, Kukanov, and Stoikov (2014)
+  edge_thesis: High-volume first-60-minute downside opening drives with aligned aggressive sell flow may continue after the first hour if cumulative delta remains supportive.
+  mechanic: Use only the completed 09:30-10:29 ET opening window. At 11:30 ET, go short when opening return, opening signed-flow imbalance, opening volume rank, and current cumulative delta remain aligned; flatten at 13:30 ET unless stop or target is hit.
+  timeframe_rationale: 1-minute bars preserve next-bar-open execution and expose same-bar stop/target conflicts to the pessimistic OHLC handler.
+  rescue_attempt: parameter_space_rescue_1
+  rescue_rules: Changed only the declared parameter space; original opening-drive inventory/absorption mechanic retained.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-19'
+  mechanics_review:
+    mechanic_expresses_edge: 'This user-authorized stop-distance rescue preserves the existing es_opening_drive_inventory_absorption/open60_flow_continuation_1130 entry mechanic: Use only the completed 09:30-10:29 ET opening window. At 11:30 ET, go short when opening return, opening signed-flow imbalance, opening volume rank, and current cumulative delta remain aligned; flatten at 13:30 ET unless stop or target is hit..'
+    entry_logic_rationale: Entry logic is unchanged from the selected best core-grid source run; no signal, direction, time-window, filter, data, or execution rule is altered.
+    stop_loss_rationale: Only stop distance is widened by 1.5x to test whether the best existing core-grid variant was being rejected because the stop was too tight for ES noise. This is a user-authorized additional rescue and not a new edge.
+    target_exit_rationale: Target/exit logic and parameter space are unchanged, so any improvement must come from stop-distance tolerance rather than post-result take-profit tuning.
+    profitability_rationale: If the original edge has directional value but premature stop-outs dominated, a wider stop may allow the intended move to develop after next-bar execution and costs.
+    known_failure_modes: A wider stop may increase drawdown, reduce expectancy, hide a non-existent edge, or pass only in a narrow core-grid pocket; all normal staged gates still apply.
+    pre_test_decision: approve_for_testing
+  user_authorized_additional_rescue:
+    id: stop_distance_rescue_1
+    created_at: '2026-06-19T00:00:00'
+    source_campaign_id: es_opening_drive_inventory_absorption
+    source_variant_id: open60_flow_continuation_1130
+    source_run_id: rescue1
+    source_config_path: campaigns/es_opening_drive_inventory_absorption/rescue_attempts/parameter_space_rescue_1/open60_flow_continuation_1130/config.yaml
+    selection_rule: best existing limited core-grid run per campaign by core pass flag, benchmark-pass combos, profitable-combo rate, top net profit, PF, MAR, and trade density
+    allowed_change_scope: stop_distance_only
+    stop_distance_multiplier: 1.5
+    normal_rescue_policy_override: true
+    stop_changes:
+    - path: strategy.sl.params.stop_pct
+      old: 0.004
+      new: 0.006
+    - path: strategy.entry.params.stop_pct
+      old: 0.004
+      new: 0.006
+    - path: core_grid.parameters.sl.params.stop_pct
+      old:
+      - 0.0035
+      - 0.005
+      - 0.0075
+      new: &id002
+      - 0.00525
+      - 0.0075
+      - 0.01125
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  trade_orderflow_features:
+    enabled: true
+    windows:
+    - 30
+    - 60
+    large_trade_sizes:
+    - 10
+    - 20
+    min_period_fraction: 1.0
+    tick_size: 0.25
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: opening_drive_inventory_combo
+    params:
+      setup_mode: open60_flow_continuation_1130
+      bar_interval_minutes: 1
+      tick_size: 0.25
+      opening_rank_window: 42
+      opening_rank_min_periods: 14
+      stop_pct: 0.006
+      target_r_multiple: 1.5
+      max_trades_per_day: 1
+      slots:
+      - slot_id: open60_down_cont_1130
+        family: opening_drive_flow_continuation
+        opening_window: 60
+        pressure_direction: short
+        direction: short
+        min_open_return_ticks: 12.0
+        max_open_return_ticks: inf
+        min_open_imbalance: 0.03
+        max_open_imbalance: inf
+        min_open_volume_rank: 0.55
+        min_session_delta_ratio: 0.0
+        max_current_retrace_frac: 2.5
+        entry_time: '11:30:00'
+        flatten_time: '13:30:00'
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.006
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '13:30:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '13:30:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id003
+    entry.params.slots.0.min_open_return_ticks:
+    - 12.0
+    - 16.0
+    - 20.0
+    entry.params.slots.0.min_open_volume_rank:
+    - 0.65
+    - 0.8
+    - 0.9
+    sl.params.stop_pct: *id002
+    tp.params.target_r_multiple:
+    - 0.75
+    - 1.0
+    - 1.25
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id003
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

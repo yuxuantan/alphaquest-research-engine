@@ -1,0 +1,373 @@
+campaign_id: es_sector_rotation_risk_appetite
+variant_id: growth_lead_long_1030
+test_run_id: stop_widen_rescue1
+strategy_name: sector_rotation_risk_appetite
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Moskowitz and Grinblatt (1999); Chordia and Shivakumar (2002);
+    Molchanov and Stangl (2024)
+  edge_thesis: Lagged growth-sector leadership may proxy risk-on allocation pressure
+    and positive ES intraday drift.
+  mechanic: At 10:30 ET, buy ES when prior-business-day growth-minus-defensive 5-day
+    sector return spread ranks in the upper tail.
+  timeframe_rationale: A 1-minute completed-bar signal preserves deterministic next-bar-open
+    execution while the sector state is lagged by one business day.
+  rescue_reason: Parameter-space-only rescue after original limited core-grid failure;
+    sector-rotation mechanic, entry module, setup mode, signal time, data, costs,
+    sessions, and gates unchanged.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-19'
+  mechanics_review:
+    mechanic_expresses_edge: 'This user-authorized stop-distance rescue preserves
+      the existing es_sector_rotation_risk_appetite/growth_lead_long_1030 entry mechanic:
+      At 10:30 ET, buy ES when prior-business-day growth-minus-defensive 5-day sector
+      return spread ranks in the upper tail..'
+    entry_logic_rationale: Entry logic is unchanged from the selected best core-grid
+      source run; no signal, direction, time-window, filter, data, or execution rule
+      is altered.
+    stop_loss_rationale: Only stop distance is widened by 1.5x to test whether the
+      best existing core-grid variant was being rejected because the stop was too
+      tight for ES noise. This is a user-authorized additional rescue and not a new
+      edge.
+    target_exit_rationale: Target/exit logic and parameter space are unchanged, so
+      any improvement must come from stop-distance tolerance rather than post-result
+      take-profit tuning.
+    profitability_rationale: If the original edge has directional value but premature
+      stop-outs dominated, a wider stop may allow the intended move to develop after
+      next-bar execution and costs.
+    known_failure_modes: A wider stop may increase drawdown, reduce expectancy, hide
+      a non-existent edge, or pass only in a narrow core-grid pocket; all normal staged
+      gates still apply.
+    pre_test_decision: approve_for_testing
+  user_authorized_additional_rescue:
+    id: stop_distance_rescue_1
+    created_at: '2026-06-19T00:00:00'
+    source_campaign_id: es_sector_rotation_risk_appetite
+    source_variant_id: growth_lead_long_1030
+    source_run_id: rescue1
+    source_config_path: campaigns/es_sector_rotation_risk_appetite/rescue_attempts/parameter_space_rescue_1/growth_lead_long_1030/config.yaml
+    selection_rule: best existing limited core-grid run per campaign by core pass
+      flag, benchmark-pass combos, profitable-combo rate, top net profit, PF, MAR,
+      and trade density
+    allowed_change_scope: stop_distance_only
+    stop_distance_multiplier: 1.5
+    normal_rescue_policy_override: true
+    stop_changes:
+    - path: strategy.sl.params.stop_pct
+      old: 0.004
+      new: 0.006
+    - path: strategy.entry.params.stop_pct
+      old: 0.004
+      new: 0.006
+    - path: core_grid.parameters.sl.params.stop_pct
+      old:
+      - 0.003
+      - 0.004
+      - 0.006
+      new: &id002
+      - 0.0045
+      - 0.006
+      - 0.009
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: sector_rotation_risk_appetite
+    params:
+      feature_csv: data/external/es_sector_rotation_features_20110103_20260609.csv
+      setup_mode: growth_lead_long
+      bar_interval_minutes: 1
+      entry_time: '10:30:00'
+      flatten_time: '15:55:00'
+      max_trades_per_day: 1
+      rank_min: 0.7
+      stop_pct: 0.006
+      target_r_multiple: 2.0
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.006
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 2.0
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.rank_min:
+    - 0.65
+    - 0.7
+    - 0.75
+    sl.params.stop_pct: *id002
+    tp.params.target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.rank_min:
+    - 0.55
+    - 0.6
+    - 0.65
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 3
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    scope: runs
+    workers: 3

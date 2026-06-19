@@ -4,6 +4,9 @@ from propstack.backtest.engine import BacktestEngine
 from propstack.strategy_modules.entry.opening_range_failed_breakout_orderflow import (
     OpeningRangeFailedBreakoutOrderflowEntry,
 )
+from propstack.strategy_modules.entry.opening_range_failed_breakout_trend_orderflow import (
+    OpeningRangeFailedBreakoutTrendOrderflowEntry,
+)
 
 
 def test_opening_range_failed_breakout_orderflow_shorts_upside_reclaim_with_selling_flow():
@@ -13,6 +16,7 @@ def test_opening_range_failed_breakout_orderflow_shorts_upside_reclaim_with_sell
             "opening_range_minutes": 5,
             "bar_interval_minutes": 1,
             "last_entry_time": "10:00:00",
+            "max_opening_range_pct_of_open": 0.03,
             "breakout_buffer_ticks": 1,
             "reclaim_buffer_ticks": 0,
             "max_reclaim_bars": 2,
@@ -36,6 +40,7 @@ def test_opening_range_failed_breakout_orderflow_shorts_upside_reclaim_with_sell
             "opening_range_minutes": 5,
             "bar_interval_minutes": 1,
             "last_entry_time": "10:00:00",
+            "max_opening_range_pct_of_open": 0.03,
             "breakout_buffer_ticks": 1,
             "reclaim_buffer_ticks": 0,
             "max_reclaim_bars": 2,
@@ -94,6 +99,81 @@ def test_opening_range_failed_breakout_orderflow_longs_downside_reclaim_with_lar
     assert signal.report_fields["failed_breakout_side"] == "downside"
     assert signal.report_fields["flow_mode"] == "large20"
     assert signal.report_fields["reclaim_orderflow_imbalance"] == 0.6
+
+
+def test_opening_range_failed_breakout_trend_orderflow_requires_matching_downtrend_for_short():
+    entry = OpeningRangeFailedBreakoutTrendOrderflowEntry(
+        {
+            "rth_start": "09:30:00",
+            "opening_range_minutes": 5,
+            "bar_interval_minutes": 1,
+            "last_entry_time": "10:00:00",
+            "max_opening_range_pct_of_open": 0.03,
+            "breakout_buffer_ticks": 1,
+            "reclaim_buffer_ticks": 0,
+            "max_reclaim_bars": 2,
+            "min_reclaim_orderflow_imbalance": 0.20,
+            "flow_mode": "signed_volume",
+            "tick_size": 0.25,
+            "short_trend_bars": 3,
+            "long_trend_bars": 5,
+            "min_trend_move_ticks": 1,
+        }
+    )
+
+    for bar in [
+        _bar("2024-01-03 09:30:00", close=100.5, high=100.8, low=100.2),
+        _bar("2024-01-03 09:31:00", close=100.25, high=100.55, low=99.95),
+        _bar("2024-01-03 09:32:00", close=100.0, high=100.3, low=99.7),
+        _bar("2024-01-03 09:33:00", close=99.75, high=100.05, low=99.45),
+        _bar("2024-01-03 09:34:00", close=99.5, high=99.8, low=99.2),
+    ]:
+        assert entry.on_bar_close(bar) is None
+    assert entry.on_bar_close(_bar("2024-01-03 09:35:00", close=101.1, high=101.2, low=100.45)) is None
+    signal = entry.on_bar_close(
+        _bar("2024-01-03 09:36:00", close=100.15, high=100.2, low=99.7, signed_volume=-350, volume=1000)
+    )
+
+    assert signal is not None
+    assert signal.direction == "short"
+    assert signal.level_type.endswith("_trend_filtered")
+    assert signal.report_fields["trend_filter"] == "hh_hl_lh_ll_reclaim_direction"
+    assert signal.report_fields["short_trend_high_move_ticks"] >= 1
+    assert signal.report_fields["long_trend_low_move_ticks"] >= 1
+
+
+def test_opening_range_failed_breakout_trend_orderflow_rejects_wrong_trend():
+    entry = OpeningRangeFailedBreakoutTrendOrderflowEntry(
+        {
+            "rth_start": "09:30:00",
+            "opening_range_minutes": 5,
+            "bar_interval_minutes": 1,
+            "last_entry_time": "10:00:00",
+            "max_opening_range_pct_of_open": 0.03,
+            "breakout_buffer_ticks": 1,
+            "reclaim_buffer_ticks": 0,
+            "max_reclaim_bars": 2,
+            "min_reclaim_orderflow_imbalance": 0.20,
+            "flow_mode": "signed_volume",
+            "tick_size": 0.25,
+            "short_trend_bars": 3,
+            "long_trend_bars": 5,
+            "min_trend_move_ticks": 1,
+        }
+    )
+
+    for bar in [
+        _bar("2024-01-03 09:30:00", close=99.6, high=99.8, low=99.4),
+        _bar("2024-01-03 09:31:00", close=99.7, high=99.9, low=99.5),
+        _bar("2024-01-03 09:32:00", close=99.8, high=100.0, low=99.6),
+        _bar("2024-01-03 09:33:00", close=99.9, high=100.1, low=99.7),
+        _bar("2024-01-03 09:34:00", close=100.0, high=100.2, low=99.8),
+    ]:
+        assert entry.on_bar_close(bar) is None
+    assert entry.on_bar_close(_bar("2024-01-03 09:35:00", close=100.75, high=100.9, low=100.45)) is None
+    assert entry.on_bar_close(
+        _bar("2024-01-03 09:36:00", close=99.85, high=100.2, low=99.7, signed_volume=-350, volume=1000)
+    ) is None
 
 
 def test_engine_enters_failed_breakout_reclaim_on_next_bar_open():

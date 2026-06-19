@@ -570,7 +570,15 @@ def _update_variants_index(campaign_dir: Path, config: dict | None, variant_info
             "hash": variant_info.get("hash"),
             "mechanic": variant_info.get("mechanic") or {},
         }
-        variants = [item for item in variants if item.get("variant_id") != row["variant_id"]]
+        normalized_variants = []
+        for item in variants:
+            if isinstance(item, dict):
+                normalized_variants.append(item)
+            elif item:
+                normalized_variants.append({"variant_id": str(item)})
+        variants = [
+            item for item in normalized_variants if item.get("variant_id") != row["variant_id"]
+        ]
         variants.append(row)
         variants = sorted(variants, key=lambda item: str(item.get("variant_id") or ""))
         payload = {"campaign_id": _campaign_id(config), "variants": variants}

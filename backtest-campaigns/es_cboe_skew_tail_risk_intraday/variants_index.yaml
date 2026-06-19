@@ -1,18 +1,11 @@
 campaign_id: es_cboe_skew_tail_risk_intraday
-decision: FAIL
 variants:
-  high_skew_short_1000:
-    run1: backtest-campaigns/es_cboe_skew_tail_risk_intraday/high_skew_short_1000/ES/run1/campaign_test_summary.json
-    rescue1: backtest-campaigns/es_cboe_skew_tail_risk_intraday/high_skew_short_1000/ES/rescue1/campaign_test_summary.json
-  low_skew_long_1030:
-    run1: backtest-campaigns/es_cboe_skew_tail_risk_intraday/low_skew_long_1030/ES/run1/campaign_test_summary.json
-    rescue1: backtest-campaigns/es_cboe_skew_tail_risk_intraday/low_skew_long_1030/ES/rescue1/campaign_test_summary.json
-  rising_skew_short_1130:
-    run1: backtest-campaigns/es_cboe_skew_tail_risk_intraday/rising_skew_short_1130/ES/run1/campaign_test_summary.json
-    rescue1: backtest-campaigns/es_cboe_skew_tail_risk_intraday/rising_skew_short_1130/ES/rescue1/campaign_test_summary.json
-  falling_skew_long_1200:
-    run1: backtest-campaigns/es_cboe_skew_tail_risk_intraday/falling_skew_long_1200/ES/run1/campaign_test_summary.json
-    rescue1: backtest-campaigns/es_cboe_skew_tail_risk_intraday/falling_skew_long_1200/ES/rescue1/campaign_test_summary.json
-  persistent_high_skew_short_1330:
-    run1: backtest-campaigns/es_cboe_skew_tail_risk_intraday/persistent_high_skew_short_1330/ES/run1/campaign_test_summary.json
-    rescue1: backtest-campaigns/es_cboe_skew_tail_risk_intraday/persistent_high_skew_short_1330/ES/rescue1/campaign_test_summary.json
+- variant_id: high_skew_short_1000
+  strategy_name: cboe_skew_tail_risk
+  path: backtest-campaigns/es_cboe_skew_tail_risk_intraday/high_skew_short_1000/variant.yaml
+  hash: 5e5d63aa00b1e887975d53ef88d17f359baefc4d21963c9fb269f7cc9bd46ceb
+  mechanic:
+    entry_module: cboe_skew_tail_risk
+    take_profit_module: fixed_r
+    stop_loss_module: percent_from_entry
+    flatten_time: '15:55:00'

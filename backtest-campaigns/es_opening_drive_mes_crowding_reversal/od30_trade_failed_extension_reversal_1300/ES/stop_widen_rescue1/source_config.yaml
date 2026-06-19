@@ -1,0 +1,258 @@
+campaign_id: es_opening_drive_mes_crowding_reversal
+variant_id: od30_trade_failed_extension_reversal_1300
+test_run_id: stop_widen_rescue1
+strategy_name: opening_drive_mes_crowding_reversal
+symbol: ES
+dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Holmberg, Lonnback, and Lundstrom (2013); Gao, Han, Li, and Zhou (2018); Barber, Lin, and Odean (2024); CFTC Retail Traders in Futures Markets (2024)
+  edge_thesis: Opening-drive failed continuation beyond a frozen early extreme may reverse when MES participation is elevated, indicating smaller-contract crowding into the failed extension.
+  mechanic: rescue1 parameter-space/fixed-parameter attempt for 30-minute opening drive, MES trade-count participation crowding, failed extension monitored through 13:00 ET.
+  timeframe_rationale: 1-minute bars preserve completed opening-drive boundaries, exact failed-extension timing, MES participation ranks, and next-bar-open execution.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-19'
+  mechanics_review:
+    mechanic_expresses_edge: This variant expresses the edge by freezing the first 30 minutes of RTH as the opening-drive reference, then waiting for a completed bar to extend beyond the drive extreme and close back inside that same extreme. The entry fades only the failed continuation in the direction of the opening drive, while MES trade-count share rank supplies the crowding evidence on the completed failure bar.
+    entry_logic_rationale: Opening-drive high, low, open, close, and direction are unavailable until 10:00:00 ET. After that, each completed 1-minute bar through 13:00:00 ET can signal at most once per day if it breaks the frozen drive extreme by the fixed extension amount, closes back inside it, and has prior-same-clock MES participation rank above the predeclared threshold. Entry is next-bar open, so the signal never enters on the same close it used.
+    stop_loss_rationale: The stop is anchored to the failed-extension bar high for shorts or low for longs, plus a tunable tick offset. That directly invalidates the failed-extension thesis if price resumes through the exhaustion extreme. Same-bar stop/target conflicts remain pessimistic under the engine.
+    target_exit_rationale: The fixed-R target tests whether the reversal away from the failed opening-drive extension monetizes before the forced flatten at 14:00:00 ET. There is no discretionary exit, overnight hold, or post-entry MES/orderflow condition.
+    profitability_rationale: If the first 30 minutes create a directional reference watched by intraday traders, then a later failed push beyond that reference can trap late continuation traders. High MES trade-count share during the failed push is a plausible crowding proxy; fading that failure should have positive expectancy only if trapped pressure unwinds far enough to cover ES costs and sweep-extreme risk.
+    known_failure_modes: MES participation may not indicate uninformed crowding, the failed extension can be a healthy continuation pause, stops can be wide on volatile opens, and the effect can concentrate in a few crisis sessions or disappear under slippage/delay monkey tests.
+    pre_test_decision: approve_for_testing
+    rescue_rationale: 'Focuses around the only marginally positive original area: mid MES trade-share rank, low opening-drive threshold, wider stop, and low-R exits. This is the single allowed rescue for this failed variant and does not change modules, data, costs, fills, or validation gates.'
+  user_authorized_additional_rescue:
+    id: stop_distance_rescue_1
+    created_at: '2026-06-19T00:00:00'
+    source_campaign_id: es_opening_drive_mes_crowding_reversal
+    source_variant_id: od30_trade_failed_extension_reversal_1300
+    source_run_id: rescue1
+    source_config_path: campaigns/es_opening_drive_mes_crowding_reversal/rescue_attempts/parameter_space_rescue_1/od30_trade_failed_extension_reversal_1300/config.yaml
+    selection_rule: best existing limited core-grid run per campaign by core pass flag, benchmark-pass combos, profitable-combo rate, top net profit, PF, MAR, and trade density
+    allowed_change_scope: stop_distance_only
+    stop_distance_multiplier: 1.5
+    normal_rescue_policy_override: true
+    stop_changes:
+    - path: strategy.sl.params.stop_offset_ticks
+      old: 2
+      new: 3
+    - path: core_grid.parameters.sl.params.stop_offset_ticks
+      old:
+      - 3
+      - 4
+      - 6
+      new: &id001
+      - 5
+      - 6
+      - 9
+data:
+  dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+  source_timeframe: 1m
+  source: csv
+  raw_csv: data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: opening_drive_mes_crowding_reversal
+    params:
+      setup_mode: od30_trade_failed_extension_reversal_1300
+      rth_start: 09:30:00
+      opening_drive_minutes: 30
+      bar_interval_minutes: 1
+      signal_start_time: '10:00:00'
+      last_entry_time: '13:00:00'
+      flatten_time: '14:00:00'
+      participation_window: 30
+      rank_window: 252
+      share_mode: trade
+      direction: both
+      share_rank_min: 0.55
+      min_opening_drive_ticks: 4
+      min_extension_ticks: 1
+      reclaim_buffer_ticks: 0
+      max_opening_drive_pct_of_open: 0.04
+      max_trades_per_day: 1
+      tick_size: 0.25
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 3
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 0.75
+  flatten_time: '14:00:00'
+core:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '14:00:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 250
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.share_rank_min:
+    - 0.5
+    - 0.55
+    - 0.6
+    entry.params.min_opening_drive_ticks:
+    - 1
+    - 2
+    - 3
+    sl.params.stop_offset_ticks: *id001
+    tp.params.target_r_multiple:
+    - 0.25
+    - 0.5
+    - 0.75
+monkey:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+rescue_metadata:
+  rescue_id: parameter_space_rescue_1
+  rescue_scope: per_failed_variant
+  original_variant_id: od30_trade_failed_extension_reversal_1300
+  allowed_changes:
+  - parameter space inside existing modules
+  - fixed parameters inside existing modules
+  forbidden_changes_preserved:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - core mechanic
+  - data
+  - costs
+  - fills
+  - sessions
+  - validation gates
+  rationale: 'Focuses around the only marginally positive original area: mid MES trade-share rank, low opening-drive threshold, wider stop, and low-R exits.'
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_opening_drive_mes_crowding_reversal_rescue1_density_audit_20260619.md
+  csv: research_artifacts/es_opening_drive_mes_crowding_reversal_rescue1_density_audit_20260619.csv
+  summary: All five rescue1 entry grids passed pre-PnL signal-density screening. Weakest full-history corner was 94.27 signals/year and weakest canonical limited-core corner was 109.998 signals/year.
+  decision: PASS
