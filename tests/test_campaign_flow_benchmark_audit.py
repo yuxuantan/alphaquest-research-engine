@@ -90,3 +90,22 @@ def test_summary_audit_flags_downstream_skip_after_reclassified_stage(tmp_path):
         "pass_mismatch",
         "flow_incomplete_after_reclassification",
     }
+
+
+def test_audit_ignores_campaign_level_aggregate_summary(tmp_path):
+    tool = _load_tool_module()
+    path = tmp_path / "campaign_test_summary.json"
+    path.write_text(
+        json.dumps(
+            {
+                "campaign_id": "example",
+                "decision": "FAIL",
+                "variants": ["variant_a", "variant_b"],
+                "original_runs": 2,
+                "passed": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert tool.audit_summary_path(path) == []

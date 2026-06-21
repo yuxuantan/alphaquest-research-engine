@@ -453,6 +453,25 @@ def test_fast_runtime_defaults_enable_parallel_sections_without_mutating_input()
     }
 
 
+def test_canonicalized_campaign_forces_monkey_runs_to_8000():
+    cfg = campaign_stages.canonicalize_campaign_config(
+        {
+            "monkey": {"runs": 300, "seed": 7},
+            "campaign_tests": {
+                "limited_monkey_test": {"runs": 300},
+                "wfa_oos_monkey_test": {"runs": 300},
+                "simulated_incubation_monkey": {"runs": 300},
+            },
+        }
+    )
+
+    assert cfg["monkey"]["runs"] == campaign_stages.DEFAULT_MONKEY_RUNS == 8000
+    assert cfg["campaign_tests"]["limited_monkey_test"]["runs"] == 8000
+    assert cfg["campaign_tests"]["wfa_oos_monkey_test"]["runs"] == 8000
+    assert cfg["campaign_tests"]["simulated_incubation_monkey"]["runs"] == 8000
+    assert cfg["monkey"]["seed"] == 7
+
+
 def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config_path = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run2/config.yaml"

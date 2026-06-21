@@ -202,11 +202,10 @@ campaign_tests:
       min: 50
     - metric: metrics.apex_rule_violations
       max: 0
-    enabled: false
     parallel:
       enabled: true
       scope: grid
-      workers: 6
+      workers: 3
   stage_order:
   - limited_core_grid_test
   - limited_monkey_test
@@ -215,6 +214,7 @@ campaign_tests:
   - wfa_oos_monte_carlo
   - simulated_incubation_core
   - simulated_incubation_monkey
+  - acceptance_oos_test
   limited_core_grid_test:
     criteria:
     - metric: summary.total_combinations_tested
@@ -234,7 +234,7 @@ campaign_tests:
     parallel:
       enabled: true
       scope: grid
-      workers: 6
+      workers: 3
   limited_monkey_test:
     criteria:
     - metric: summary.core_beats_monkey_net_profit_rate
@@ -254,7 +254,7 @@ campaign_tests:
     parallel:
       enabled: true
       scope: runs
-      workers: 6
+      workers: 3
   walk_forward_analysis:
     criteria:
     - metric: summary.early_exit
@@ -273,7 +273,7 @@ campaign_tests:
     parallel:
       enabled: true
       scope: window_grid
-      workers: 6
+      workers: 3
   wfa_oos_monkey_test:
     criteria:
     - metric: summary.core_beats_monkey_net_profit_rate
@@ -285,15 +285,15 @@ campaign_tests:
     parallel:
       enabled: true
       scope: runs
-      workers: 6
+      workers: 3
   wfa_oos_monte_carlo:
     criteria:
-    - metric: summary.probability_profit_before_drawdown
-      exclusive_min: 0.5
+    - metric: summary.mean_net_pnl
+      exclusive_min: 0.0
     parallel:
       enabled: true
       scope: runs
-      workers: 6
+      workers: 3
   simulated_incubation_core:
     criteria:
     - metric: metrics.profit_factor
@@ -317,7 +317,7 @@ campaign_tests:
     parallel:
       enabled: true
       scope: runs
-      workers: 6
+      workers: 3
 prop_rules:
   starting_balance: 150000
   daily_loss_limit: 4000

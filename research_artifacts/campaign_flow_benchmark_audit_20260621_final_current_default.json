@@ -1,0 +1,149 @@
+{
+  "authoritative_flow": {
+    "criteria": {
+      "acceptance_oos_test": [
+        {
+          "metric": "metrics.profit_factor",
+          "min": 1.0
+        },
+        {
+          "metric": "metrics.mar",
+          "min": 1.0
+        },
+        {
+          "metric": "metrics.trades_per_year",
+          "min": 50
+        },
+        {
+          "max": 0,
+          "metric": "metrics.apex_rule_violations"
+        }
+      ],
+      "limited_core_grid_test": [
+        {
+          "metric": "summary.total_combinations_tested",
+          "valid_parameter_combination_count": true
+        },
+        {
+          "metric": "summary.percentage_profitable_iterations",
+          "min": 0.7
+        },
+        {
+          "max": 0,
+          "metric": "summary.apex_rule_violating_iterations"
+        }
+      ],
+      "limited_monkey_test": [
+        {
+          "metric": "summary.core_beats_monkey_net_profit_rate",
+          "min": 0.9
+        },
+        {
+          "metric": "summary.core_beats_monkey_max_drawdown_rate",
+          "min": 0.9
+        },
+        {
+          "max": 0,
+          "metric": "summary.core_metrics.apex_rule_violations"
+        }
+      ],
+      "simulated_incubation_core": [
+        {
+          "metric": "metrics.profit_factor",
+          "min": 1.0
+        },
+        {
+          "metric": "metrics.mar",
+          "min": 1.0
+        },
+        {
+          "metric": "metrics.trades_per_year",
+          "min": 50
+        },
+        {
+          "max": 0,
+          "metric": "metrics.apex_rule_violations"
+        }
+      ],
+      "simulated_incubation_monkey": [
+        {
+          "metric": "summary.core_beats_monkey_net_profit_rate",
+          "min": 0.8
+        },
+        {
+          "metric": "summary.core_beats_monkey_max_drawdown_rate",
+          "min": 0.8
+        },
+        {
+          "max": 0,
+          "metric": "summary.core_metrics.apex_rule_violations"
+        }
+      ],
+      "walk_forward_analysis": [
+        {
+          "equals": false,
+          "metric": "summary.early_exit"
+        },
+        {
+          "metric": "stitched_oos_metrics.profit_factor",
+          "min": 1.2
+        },
+        {
+          "metric": "stitched_oos_metrics.mar",
+          "min": 0.4
+        },
+        {
+          "metric": "stitched_oos_metrics.trades_per_year",
+          "min": 50
+        },
+        {
+          "max": 0,
+          "metric": "stitched_oos_metrics.apex_rule_violations"
+        }
+      ],
+      "wfa_oos_monkey_test": [
+        {
+          "metric": "summary.core_beats_monkey_net_profit_rate",
+          "min": 0.8
+        },
+        {
+          "metric": "summary.core_beats_monkey_max_drawdown_rate",
+          "min": 0.8
+        },
+        {
+          "max": 0,
+          "metric": "summary.core_metrics.apex_rule_violations"
+        }
+      ],
+      "wfa_oos_monte_carlo": [
+        {
+          "exclusive_min": 0.0,
+          "metric": "summary.mean_net_pnl"
+        }
+      ]
+    },
+    "stage_order": [
+      "limited_core_grid_test",
+      "limited_monkey_test",
+      "walk_forward_analysis",
+      "wfa_oos_monkey_test",
+      "wfa_oos_monte_carlo",
+      "simulated_incubation_core",
+      "simulated_incubation_monkey",
+      "acceptance_oos_test"
+    ]
+  },
+  "generated_at": "2026-06-21T18:01:05",
+  "issues": [],
+  "scan_roots": [
+    "backtest-campaigns"
+  ],
+  "summary": {
+    "issue_count": 0,
+    "issue_count_by_stage": {},
+    "issue_count_by_type": {},
+    "run_roots_scanned": 1832,
+    "stage_artifacts_scanned": 1872,
+    "summary_artifacts_scanned": 3520
+  }
+}

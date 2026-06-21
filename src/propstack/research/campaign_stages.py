@@ -125,6 +125,13 @@ DEFAULT_WFA_DATA_WINDOW = {
     "fraction": 0.90,
 }
 
+DEFAULT_MONKEY_RUNS = 8000
+MONKEY_STAGE_NAMES = {
+    "limited_monkey_test",
+    "wfa_oos_monkey_test",
+    "simulated_incubation_monkey",
+}
+
 LIMITED_CORE_GRID_BENCHMARK_KEYS = {
     "min_total_net_profit",
     "max_drawdown",
@@ -160,6 +167,7 @@ MECHANICS_REVIEW_MIN_CHARS = 80
 
 def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) -> dict:
     out = copy.deepcopy(cfg)
+    out.setdefault("monkey", {})["runs"] = DEFAULT_MONKEY_RUNS
     campaign_tests = copy.deepcopy(out.get("campaign_tests") or {})
     stage_order = DEFAULT_STAGE_ORDER if include_acceptance else PRE_ACCEPTANCE_STAGE_ORDER
     campaign_tests["stage_order"] = list(stage_order)
@@ -170,6 +178,8 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
         if stage_name in {"limited_core_grid_test", "limited_monkey_test"}:
             stage_cfg.pop("data_subset", None)
             stage_cfg["data_window"] = copy.deepcopy(DEFAULT_SHORTLIST_DATA_WINDOW)
+        if stage_name in MONKEY_STAGE_NAMES:
+            stage_cfg["runs"] = DEFAULT_MONKEY_RUNS
         if stage_name == "walk_forward_analysis":
             stage_cfg.pop("data_subset", None)
             stage_cfg["data_window"] = copy.deepcopy(DEFAULT_WFA_DATA_WINDOW)
@@ -2151,13 +2161,17 @@ def _skipped_stage(stage_name: str, reason: str) -> dict:
 
 
 def _error_stage(stage_name: str, exc: Exception) -> dict:
+    criteria = evaluate_criteria(
+        {"stage": stage_name, "error": str(exc)},
+        copy.deepcopy(DEFAULT_STAGE_CRITERIA.get(stage_name, [])),
+    )
     return {
         "stage": stage_name,
         "label": STAGE_LABELS.get(stage_name, stage_name),
         "status": "error",
         "passed": False,
         "error": str(exc),
-        "criteria": [],
+        "criteria": criteria,
     }
 
 

@@ -144,6 +144,8 @@ def audit_summary_path(path: Path) -> list[dict[str, Any]]:
     issues: list[dict[str, Any]] = []
     stages = payload.get("stages")
     if not isinstance(stages, list):
+        if is_campaign_level_summary(payload, path):
+            return []
         return [
             _issue(
                 path=path,
@@ -336,6 +338,28 @@ def summary_flow_assessment(
 
     expected_passed = (not flow_incomplete) and all_current_pass_or_skip and any_current_pass
     return expected_passed, issues
+
+
+def is_campaign_level_summary(payload: dict[str, Any], path: Path) -> bool:
+    if path.name != "campaign_test_summary.json":
+        return False
+    campaign_level_keys = {
+        "variants",
+        "variants_tested",
+        "runs",
+        "original_runs",
+        "original_run_count",
+        "rescue_runs",
+        "rescue_run_count",
+        "terminal_stage",
+        "terminal_counts",
+        "terminal_counts_corrected_gates",
+        "best_original",
+        "best_rescue",
+        "best_runs_by_core",
+        "best_runs_by_core_net_profit",
+    }
+    return any(key in payload for key in campaign_level_keys)
 
 
 def run_root_for_stage_result(path: Path) -> Path:

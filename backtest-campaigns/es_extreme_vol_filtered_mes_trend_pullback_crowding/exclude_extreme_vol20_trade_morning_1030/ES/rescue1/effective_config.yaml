@@ -186,7 +186,7 @@ core_grid:
     - 3.0
 monkey:
   data_subset: *id001
-  runs: 300
+  runs: 8000
   seed: 7
   beat_threshold: 0.9
   retain_iteration_reports: false
@@ -229,10 +229,6 @@ campaign_tests:
       min: 50
     - metric: metrics.apex_rule_violations
       max: 0
-    parallel:
-      enabled: true
-      scope: grid
-      workers: 3
   stage_order:
   - limited_core_grid_test
   - limited_monkey_test
@@ -258,10 +254,6 @@ campaign_tests:
       avoid_ranges:
       - start_date: '2020-02-01'
         end_date: '2021-06-30'
-    parallel:
-      enabled: true
-      scope: grid
-      workers: 3
   limited_monkey_test:
     criteria:
     - metric: summary.core_beats_monkey_net_profit_rate
@@ -278,10 +270,7 @@ campaign_tests:
       avoid_ranges:
       - start_date: '2020-02-01'
         end_date: '2021-06-30'
-    parallel:
-      enabled: true
-      scope: runs
-      workers: 3
+    runs: 8000
   walk_forward_analysis:
     criteria:
     - metric: summary.early_exit
@@ -297,10 +286,6 @@ campaign_tests:
     data_window:
       mode: first_fraction
       fraction: 0.9
-    parallel:
-      enabled: true
-      scope: window_grid
-      workers: 3
   wfa_oos_monkey_test:
     criteria:
     - metric: summary.core_beats_monkey_net_profit_rate
@@ -309,18 +294,11 @@ campaign_tests:
       min: 0.8
     - metric: summary.core_metrics.apex_rule_violations
       max: 0
-    parallel:
-      enabled: true
-      scope: runs
-      workers: 3
+    runs: 8000
   wfa_oos_monte_carlo:
     criteria:
-    - metric: summary.probability_profit_before_drawdown
-      exclusive_min: 0.5
-    parallel:
-      enabled: true
-      scope: runs
-      workers: 3
+    - metric: summary.mean_net_pnl
+      exclusive_min: 0.0
   simulated_incubation_core:
     criteria:
     - metric: metrics.profit_factor
@@ -341,10 +319,7 @@ campaign_tests:
       min: 0.8
     - metric: summary.core_metrics.apex_rule_violations
       max: 0
-    parallel:
-      enabled: true
-      scope: runs
-      workers: 3
+    runs: 8000
 prop_rules:
   starting_balance: 150000
   daily_loss_limit: 4000
