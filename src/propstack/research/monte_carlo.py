@@ -34,10 +34,28 @@ _PATH_TRADE_AUDIT_COLUMNS = [
     "skip_reason",
     "was_loss_clustered",
     "was_applied",
+    "account_number",
+    "account_phase",
+    "balance",
+    "account_high",
+    "trailing_floor",
+    "event",
+    "breach_reason",
+    "trader_net_pnl",
+    "total_challenge_fees",
+    "gross_payouts",
+    "net_payouts",
+    "total_payout_count",
+    "account_payout_count",
+    "funded_profit_days",
+    "challenge_total_profit",
+    "challenge_largest_trade_profit",
+    "challenge_consistency_ratio",
 ]
 
 _PATH_EVENT_AUDIT_COLUMNS = [
     "run_id",
+    "event_sequence",
     "path_index",
     "source_trade_id",
     "source_session_date",
@@ -61,6 +79,21 @@ _PATH_EVENT_AUDIT_COLUMNS = [
     "event",
     "breach_reason",
     "daily_pnl",
+    "account_number",
+    "account_phase",
+    "trader_net_pnl",
+    "total_challenge_fees",
+    "gross_payouts",
+    "net_payouts",
+    "total_payout_count",
+    "account_payout_count",
+    "funded_profit_days",
+    "challenge_total_profit",
+    "challenge_largest_trade_profit",
+    "challenge_consistency_ratio",
+    "payout_request",
+    "payout_net",
+    "account_breached",
 ]
 
 
@@ -196,27 +229,75 @@ def _run_monte_carlo(
         "number_of_runs": int(len(df)),
         "median_ending_balance": float(df["ending_balance"].median()) if len(df) else rules.starting_balance,
         "p5_ending_balance": float(df["ending_balance"].quantile(0.05)) if len(df) else rules.starting_balance,
+        "mean_net_pnl": float(df["net_pnl"].mean()) if len(df) else 0.0,
+        "average_net_pnl": float(df["net_pnl"].mean()) if len(df) else 0.0,
+        "median_net_pnl": float(df["net_pnl"].median()) if len(df) else 0.0,
+        "p5_net_pnl": float(df["net_pnl"].quantile(0.05)) if len(df) else 0.0,
+        "p95_net_pnl": float(df["net_pnl"].quantile(0.95)) if len(df) else 0.0,
         "p95_drawdown": float(df["max_drawdown"].quantile(0.95)) if len(df) else 0.0,
         "probability_account_breach": float(df["account_breached"].mean()) if len(df) else 0.0,
         "probability_payout_eligible": float(df["payout_eligible"].mean()) if len(df) else 0.0,
         "probability_profit_before_drawdown": float(df["profit_before_drawdown"].mean()) if len(df) else 0.0,
         "probability_net_profit_gt_0": float((df["net_pnl"] > 0).mean()) if len(df) else 0.0,
+        "sampling": {
+            "seed": int(cfg.get("seed", 1)),
+            "skip_trade_probability": float(cfg.get("skip_trade_probability", 0.0)),
+            "skip_winning_trade_probability": float(cfg.get("skip_winning_trade_probability", 0.0)),
+            "cluster_losses": bool(cfg.get("cluster_losses", False)),
+        },
         "parallel": {
             "enabled": parallel["enabled"],
             "workers": parallel["workers"] if parallel["enabled"] else 1,
             "scope": "runs",
         },
     }
+    if "challenge_passes" in df.columns:
+        summary.update(
+            {
+                "probability_challenge_passed": float((df["challenge_passes"] > 0).mean()) if len(df) else 0.0,
+                "probability_funded_payout": float((df["payout_count"] > 0).mean()) if len(df) else 0.0,
+                "probability_account_terminated_after_payouts": (
+                    float((df["accounts_terminated"] > 0).mean()) if len(df) else 0.0
+                ),
+                "median_accounts_purchased": float(df["accounts_purchased"].median()) if len(df) else 0.0,
+                "median_accounts_breached": float(df["accounts_breached"].median()) if len(df) else 0.0,
+                "median_challenge_passes": float(df["challenge_passes"].median()) if len(df) else 0.0,
+                "median_payout_count": float(df["payout_count"].median()) if len(df) else 0.0,
+                "median_total_challenge_fees": float(df["total_challenge_fees"].median()) if len(df) else 0.0,
+                "median_net_payouts": float(df["net_payouts"].median()) if len(df) else 0.0,
+            }
+        )
+    benchmark_metric = str(
+        cfg.get(
+            "monte_carlo_prop_benchmark_metric",
+            "mean_net_pnl"
+            if bool(getattr(rules, "account_lifecycle_enabled", False))
+            else "probability_profit_before_drawdown",
+        )
+    )
+    mean_pnl_metrics = {"mean_net_pnl", "average_net_pnl"}
+    benchmark_threshold = (
+        float(cfg.get("min_monte_carlo_mean_net_pnl", 0.0))
+        if benchmark_metric in mean_pnl_metrics
+        else float(cfg.get("min_monte_carlo_prop_pass_chance", 0.0))
+    )
+    summary["prop_pass_chance_benchmark_metric"] = benchmark_metric
+    summary["prop_pass_chance_benchmark_threshold"] = benchmark_threshold
+    benchmark_value = float(summary.get(benchmark_metric, 0.0))
     summary["meets_prop_pass_chance_benchmark"] = (
-        summary["probability_profit_before_drawdown"]
-        >= float(cfg.get("min_monte_carlo_prop_pass_chance", 0.0))
+        benchmark_value > benchmark_threshold
+        if benchmark_metric in mean_pnl_metrics
+        else benchmark_value >= benchmark_threshold
     )
     path_trades = pd.DataFrame(path_trade_rows, columns=_PATH_TRADE_AUDIT_COLUMNS)
     path_events = pd.DataFrame(path_event_rows, columns=_PATH_EVENT_AUDIT_COLUMNS)
     if len(path_trades):
         path_trades = path_trades.sort_values(["run_id", "sample_index"]).reset_index(drop=True)
     if len(path_events):
-        path_events = path_events.sort_values(["run_id", "path_index"], na_position="last").reset_index(drop=True)
+        if "event_sequence" in path_events.columns and not path_events["event_sequence"].isna().all():
+            path_events = path_events.sort_values(["run_id", "event_sequence"]).reset_index(drop=True)
+        else:
+            path_events = path_events.sort_values(["run_id", "path_index"], na_position="last").reset_index(drop=True)
     return df, summary, path_trades, path_events
 
 
@@ -403,11 +484,15 @@ def _scalar(value):
 
 
 def _apply_simulation_events_to_path_trades(path_trade_rows: list[dict], event_rows: list[dict]) -> None:
-    event_by_path_index = {
-        int(row["path_index"]): row
-        for row in event_rows
-        if row.get("path_index") is not None and not pd.isna(row.get("path_index"))
-    }
+    event_by_path_index = {}
+    for row in event_rows:
+        path_index = row.get("path_index")
+        if path_index is None or pd.isna(path_index):
+            continue
+        key = int(path_index)
+        event_name = str(row.get("event", ""))
+        if key not in event_by_path_index or event_name.startswith("trade"):
+            event_by_path_index[key] = row
     for row in path_trade_rows:
         path_index = row.get("path_index")
         if path_index is None or pd.isna(path_index):
@@ -424,9 +509,26 @@ def _apply_simulation_events_to_path_trades(path_trade_rows: list[dict], event_r
             "dollar_risk_per_contract",
             "unrounded_contracts",
             "planned_dollar_risk",
+            "account_number",
+            "account_phase",
+            "balance",
+            "account_high",
+            "trailing_floor",
+            "event",
+            "breach_reason",
+            "trader_net_pnl",
+            "total_challenge_fees",
+            "gross_payouts",
+            "net_payouts",
+            "total_payout_count",
+            "account_payout_count",
+            "funded_profit_days",
+            "challenge_total_profit",
+            "challenge_largest_trade_profit",
+            "challenge_consistency_ratio",
         ]:
             row[key] = event.get(key)
-        row["was_applied"] = str(event.get("event", "")).startswith("trade")
+        row["was_applied"] = "trade" in str(event.get("event", "")).split("|")
         if event.get("event") == "position_size_skip":
             row["was_skipped"] = True
             row["skip_reason"] = "position_sizing_min_contracts"

@@ -1,0 +1,208 @@
+campaign_id: es_default_spread_orderflow_risk_premium
+variant_id: two_sided_spread_change_large10_1130
+test_run_id: rescue1
+strategy_name: default_spread_orderflow_state
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Fama and French (1989); Keim and Stambaugh (1986); FRED DAAA/DBAA; Cont, Kukanov, and Stoikov (2014)
+  edge_thesis: Lagged default-spread changes may identify both credit relief and credit stress; ES direction is selected only when price movement and large-10 orderflow agree with the credit-change tail.
+  mechanic: Two-sided default-spread-change state with large-10 ES orderflow confirmation.
+  timeframe_rationale: The morning window keeps both sides early enough for same-day continuation while avoiding the cash-open minute itself.
+  pre_pnl_density: 1510 full-sample pre-PnL signals, about 97.77 per year; limited-core reference 160 signals, about 103.99 per year.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: 'This variant expresses the same default-spread change edge on both sides: lower-tail spread change plus ES/large-10 buying allows longs, while upper-tail spread change plus ES/large-10 selling allows shorts.
+
+      '
+    entry_logic_rationale: 'Direction is mechanically selected from the lagged spread-change tail and completed ES confirmation at 10:00, 10:30, or 11:30 ET. Larger-print flow is used to reduce weak marginal signals.
+
+      '
+    stop_loss_rationale: The rescue tests wider percent stops because original top rows frequently sat at the widest tested stop, which suggests the declared signal may need more intraday noise tolerance without changing its economic trigger.
+    target_exit_rationale: The fixed-R target logic and target grid are intentionally unchanged. All tested target_r_multiple values are at least 1.0R, so the corrected RR rule permits no TP widening; any rescue effect must come from entry-threshold and stop-distance robustness.
+    profitability_rationale: If default-spread changes identify credit relief/stress and larger ES participants confirm the same direction, the aligned sessions should have better continuation than unfiltered ES moves.
+    known_failure_modes: Two-sided logic may combine asymmetric long and short behavior, spread changes may lag ES, and the high signal count may include weaker marginal setups.
+    pre_test_decision: approve_for_testing
+  rescue_attempt: parameter_space_rescue_1
+  rescue_reason: Original best rows used stricter credit-change and large-10 confirmation but failed concentration checks, so the rescue preserves the two-sided change mechanic while testing adjacent strictness and more breathing room.
+  rescue_constraints: Same default-spread/orderflow edge, entry module, setup mode, flow bucket, signal times, timeframe, data window, costs, stop module, target module, target grid, flatten rule, prop rules, and validation gates. Only existing credit threshold, orderflow threshold, and stop-distance fixed values/parameter grids are changed. TP is unchanged because all target_r_multiple values are already >= 1.0R.
+  source_run_report: backtest-campaigns/es_default_spread_orderflow_risk_premium/two_sided_spread_change_large10_1130/ES/run1/campaign_test_summary.json
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: default_spread_orderflow_state
+    params:
+      feature_csv: data/external/es_default_spread_features_20110103_20260609.csv
+      setup_mode: spread_change_two_sided
+      flow_mode: large10
+      signal_times:
+      - '10:00:00'
+      - '10:30:00'
+      - '11:30:00'
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      credit_rank_threshold: 0.65
+      min_es_move_ticks: 2
+      min_orderflow_imbalance: 0.04
+      max_trades_per_day: 1
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.004
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.credit_rank_threshold: &id001
+    - 0.6
+    - 0.65
+    - 0.7
+    entry.params.min_orderflow_imbalance: &id002
+    - 0.02
+    - 0.04
+    - 0.06
+    sl.params.stop_pct: &id003
+    - 0.003
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.credit_rank_threshold: *id001
+    entry.params.min_orderflow_imbalance: *id002
+    sl.params.stop_pct: *id003
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts

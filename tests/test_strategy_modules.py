@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 
 import pandas as pd
+import pytest
 
 from propstack.data.features import add_vpin_toxicity_features
 from propstack.strategy_modules.entry.bankruptcy_distress_reversion import BankruptcyDistressReversionEntry
@@ -11,6 +12,9 @@ from propstack.strategy_modules.entry.connors_rsi2_mean_reversion import Connors
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
 from propstack.strategy_modules.entry.gao_last_half_hour_orderflow import GaoLastHalfHourOrderflowEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
+from propstack.strategy_modules.entry.intraday_invariance_dislocation_reversion import (
+    IntradayInvarianceDislocationReversionEntry,
+)
 from propstack.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry
 from propstack.strategy_modules.entry.key_reversal_orderflow_reversal import (
     KeyReversalOrderflowReversalEntry,
@@ -29,6 +33,7 @@ from propstack.strategy_modules.entry.orderflow_regime import OrderflowRegimeEnt
 from propstack.strategy_modules.entry.orderflow_recent_pocket_combo import OrderflowRecentPocketComboEntry
 from propstack.strategy_modules.entry.overnight_inventory_reversion import OvernightInventoryReversionEntry
 from propstack.strategy_modules.entry.overnight_intraday_reversal import OvernightIntradayReversalEntry
+from propstack.strategy_modules.entry.overnight_drift import OvernightDriftEntry
 from propstack.strategy_modules.entry.overnight_return_late_day_momentum import OvernightReturnLateDayMomentumEntry
 from propstack.strategy_modules.entry.pdh_pdl_breakout_continuation import PdhPdlBreakoutContinuationEntry
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
@@ -37,12 +42,14 @@ from propstack.strategy_modules.entry.prior_session_benchmark_orderflow_reaction
     PriorSessionBenchmarkOrderflowReactionEntry,
 )
 from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSessionIbsReversionEntry
+from propstack.strategy_modules.entry.prior_lvn_orderflow_rejection import PriorLvnOrderflowRejectionEntry
 from propstack.strategy_modules.entry.prior_value_area_orderflow_acceptance import (
     PriorValueAreaOrderflowAcceptanceEntry,
 )
 from propstack.strategy_modules.entry.prior_value_area_orderflow_rejection import (
     PriorValueAreaOrderflowRejectionEntry,
 )
+from propstack.strategy_modules.entry.prior_poc_orderflow_magnet import PriorPocOrderflowMagnetEntry
 from propstack.strategy_modules.entry.range_compression_breakout import RangeCompressionBreakoutEntry
 from propstack.strategy_modules.entry.rth_gap_fade import RthGapFadeEntry
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
@@ -57,6 +64,9 @@ from propstack.strategy_modules.entry.wide_range_orderflow_continuation import (
     WideRangeOrderflowContinuationEntry,
 )
 from propstack.strategy_modules.entry.vpin_toxicity_continuation import VpinToxicityContinuationEntry
+from propstack.strategy_modules.entry.variance_ratio_orderflow_regime import (
+    VarianceRatioOrderflowRegimeEntry,
+)
 from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPullbackContinuationEntry
 from propstack.strategy_modules.sl.opening_range_edge import OpeningRangeEdgeStop
 from propstack.strategy_modules.sl.opening_range_width import OpeningRangeWidthStop
@@ -81,6 +91,13 @@ def test_fixed_r_target_module_long_and_short():
     assert target.price(entry_price=100.0, stop_price=102.0, direction="short") == 96.0
 
 
+def test_fixed_r_target_rejects_reward_risk_below_one():
+    target = FixedRTarget({"target_r_multiple": 0.75})
+
+    with pytest.raises(ValueError, match="target_r_multiple must be >= 1.0"):
+        target.price(entry_price=100.0, stop_price=98.0, direction="long")
+
+
 def test_cost_adjusted_fixed_r_target_module_long_and_short():
     target = CostAdjustedFixedRTarget(
         {
@@ -94,6 +111,19 @@ def test_cost_adjusted_fixed_r_target_module_long_and_short():
 
     assert round(target.price(entry_price=100.0, stop_price=99.0, direction="long"), 10) == 102.6
     assert round(target.price(entry_price=100.0, stop_price=101.0, direction="short"), 10) == 97.4
+
+
+def test_cost_adjusted_fixed_r_target_rejects_reward_risk_below_one():
+    target = CostAdjustedFixedRTarget(
+        {
+            "target_r_multiple": 0.75,
+            "tick_size": 0.1,
+            "tick_value": 10.0,
+        }
+    )
+
+    with pytest.raises(ValueError, match="target_r_multiple must be >= 1.0"):
+        target.price(entry_price=100.0, stop_price=99.0, direction="long")
 
 
 def test_fixed_dollar_per_contract_stop_and_target_convert_es_dollars_to_points():
@@ -146,6 +176,14 @@ def test_signal_stop_and_target_use_signal_metadata():
     fallback_stop = stop.price(SimpleNamespace(metadata={}), direction="short", tick_size=0.25, entry_price=100.0)
     assert fallback_stop == 100.5
     assert target.price(100.0, fallback_stop, "short", signal=SimpleNamespace(metadata={})) == 99.25
+
+
+def test_signal_fixed_r_target_rejects_signal_reward_risk_below_one():
+    target = SignalFixedRTarget({"default_target_r_multiple": 1.5})
+    signal = SimpleNamespace(metadata={"target_r_multiple": 0.75})
+
+    with pytest.raises(ValueError, match="target_r_multiple must be >= 1.0"):
+        target.price(100.0, 99.0, "long", signal=signal)
 
 
 def test_connors_rsi2_mean_reversion_emits_metadata_driven_long_signal():
@@ -3976,6 +4014,98 @@ def test_rth_gap_fade_rejects_missing_previous_close():
     assert entry.on_bar_close(bar) is None
 
 
+def _variance_ratio_bar(timestamp, close, *, close_location=0.8, signed=900, volume=1000):
+    bar_range = 2.0
+    low = close - close_location * bar_range
+    high = low + bar_range
+    return pd.Series(
+        {
+            "timestamp": pd.Timestamp(timestamp),
+            "session_date": pd.Timestamp(timestamp).date(),
+            "is_rth": True,
+            "open": close - 0.25,
+            "high": high,
+            "low": low,
+            "close": close,
+            "volume": volume,
+            "signed_volume": signed,
+            "large10_signed_volume": signed,
+            "large10_volume": volume,
+            "large20_signed_volume": signed,
+            "large20_volume": volume,
+        }
+    )
+
+
+def test_variance_ratio_orderflow_regime_emits_completed_bar_continuation_long():
+    entry = VarianceRatioOrderflowRegimeEntry(
+        {
+            "regime_mode": "continuation",
+            "start_time": "09:30:00",
+            "lookback_bars": 6,
+            "horizon_bars": 2,
+            "signal_return_bars": 2,
+            "flow_window_bars": 2,
+            "vr_threshold": 0.2,
+            "min_orderflow_imbalance": 0.05,
+            "min_signal_return_ticks": 1,
+            "min_close_location": 0.6,
+            "bar_interval_minutes": 5,
+        }
+    )
+    closes = [100.0, 100.5, 100.25, 101.0, 101.75, 101.5, 102.25, 103.25, 104.0]
+    signal = None
+    for i, close in enumerate(closes):
+        signal = entry.on_bar_close(
+            _variance_ratio_bar(
+                pd.Timestamp("2024-01-04 09:30") + pd.Timedelta(minutes=5 * i),
+                close,
+                close_location=0.85,
+                signed=800,
+            )
+        )
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-04 10:15")
+    assert signal.report_fields["feature_method"] == "completed_bar_variance_ratio_orderflow_regime"
+    assert signal.report_fields["variance_ratio"] > 0
+
+
+def test_variance_ratio_orderflow_regime_emits_completed_bar_reversion_short():
+    entry = VarianceRatioOrderflowRegimeEntry(
+        {
+            "regime_mode": "reversion",
+            "start_time": "09:30:00",
+            "lookback_bars": 6,
+            "horizon_bars": 2,
+            "signal_return_bars": 2,
+            "flow_window_bars": 2,
+            "vr_threshold": 5.0,
+            "min_orderflow_imbalance": 0.05,
+            "min_signal_return_ticks": 1,
+            "max_reversion_close_location": 0.8,
+            "bar_interval_minutes": 5,
+        }
+    )
+    closes = [100.0, 100.5, 100.25, 101.0, 101.75, 101.5, 102.25, 103.25, 104.0]
+    signal = None
+    for i, close in enumerate(closes):
+        signal = entry.on_bar_close(
+            _variance_ratio_bar(
+                pd.Timestamp("2024-01-04 09:30") + pd.Timedelta(minutes=5 * i),
+                close,
+                close_location=0.1,
+                signed=800,
+            )
+        )
+
+    assert signal is not None
+    assert signal.direction == "short"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-04 10:15")
+    assert signal.report_fields["regime_mode"] == "reversion"
+
+
 def _benchmark_bar(
     timestamp,
     open_price,
@@ -4635,6 +4765,221 @@ def test_prior_value_area_orderflow_rejection_requires_counterflow_and_trade_lim
     ) is None
 
 
+def test_prior_poc_orderflow_magnet_shorts_above_prior_poc():
+    entry = PriorPocOrderflowMagnetEntry(
+        {
+            "setup_mode": "above_poc_magnet_short",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 2,
+            "poc_buffer_ticks": 1,
+            "min_poc_distance_ticks": 2,
+            "max_poc_distance_ticks": 20,
+            "min_toward_move_ticks": 1,
+            "min_orderflow_imbalance": 0.1,
+            "flow_mode": "signed_volume",
+            "allow_long": False,
+            "allow_short": True,
+        }
+    )
+
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:30", 100.0, 100.5, 99.5, 100.0))
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:35", 100.0, 100.5, 99.5, 100.0))
+    signal = entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:30", 101.5, 101.75, 101.0, 101.0, signed_volume=-300.0)
+    )
+
+    assert signal is not None
+    assert signal.direction == "short"
+    assert signal.report_fields["prior_profile_session"] == pd.Timestamp("2024-01-02").date()
+    assert signal.report_fields["prior_point_of_control"] == 100.0
+    assert signal.report_fields["poc_side"] == "above"
+    assert signal.report_fields["orderflow_imbalance"] == -0.3
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 09:35", tz="America/New_York")
+
+
+def test_prior_poc_orderflow_magnet_longs_below_prior_poc():
+    entry = PriorPocOrderflowMagnetEntry(
+        {
+            "setup_mode": "below_poc_magnet_long",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 2,
+            "poc_buffer_ticks": 1,
+            "min_poc_distance_ticks": 2,
+            "min_toward_move_ticks": 1,
+            "min_orderflow_imbalance": 0.1,
+            "flow_mode": "large20",
+            "allow_long": True,
+            "allow_short": False,
+        }
+    )
+
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:30", 100.0, 100.5, 99.5, 100.0))
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:35", 100.0, 100.5, 99.5, 100.0))
+    signal = entry.on_bar_close(
+        _prior_value_bar(
+            "2024-01-03 09:30",
+            98.5,
+            99.0,
+            98.25,
+            98.75,
+            large20_signed_volume=100.0,
+            large20_volume=250.0,
+        )
+    )
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.sweep_low == 98.25
+    assert signal.report_fields["poc_side"] == "below"
+    assert signal.report_fields["orderflow_imbalance"] == 0.4
+
+
+def test_prior_poc_orderflow_magnet_requires_toward_move_flow_and_trade_limit():
+    entry = PriorPocOrderflowMagnetEntry(
+        {
+            "setup_mode": "two_sided_magnet",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 2,
+            "poc_buffer_ticks": 1,
+            "min_poc_distance_ticks": 2,
+            "min_orderflow_imbalance": 0.2,
+            "flow_mode": "signed_volume",
+        }
+    )
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:30", 100.0, 100.5, 99.5, 100.0))
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:35", 100.0, 100.5, 99.5, 100.0))
+
+    assert entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:30", 101.0, 101.5, 100.75, 101.25, signed_volume=-300.0)
+    ) is None
+    assert entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:35", 101.5, 101.75, 101.0, 101.0, signed_volume=300.0)
+    ) is None
+    assert entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:40", 101.5, 101.75, 101.0, 101.0, signed_volume=-300.0),
+        trades_today=1,
+    ) is None
+
+
+def _seed_prior_lvn_profile(entry):
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:30", 100.0, 100.0, 100.0, 100.0, volume=1000.0))
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:35", 100.25, 100.25, 100.25, 100.25, volume=10.0))
+    entry.on_bar_close(_prior_value_bar("2024-01-02 09:40", 100.5, 100.5, 100.5, 100.5, volume=1000.0))
+
+
+def test_prior_lvn_orderflow_rejection_longs_after_downside_lvn_reclaim():
+    entry = PriorLvnOrderflowRejectionEntry(
+        {
+            "setup_mode": "downside_lvn_reclaim_long",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 3,
+            "lvn_quantile": 0.34,
+            "min_sweep_ticks": 1,
+            "reclaim_buffer_ticks": 0,
+            "min_orderflow_imbalance": 0.1,
+            "flow_mode": "signed_volume",
+            "allow_long": True,
+            "allow_short": False,
+        }
+    )
+    _seed_prior_lvn_profile(entry)
+
+    signal = entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:30", 100.25, 100.75, 99.75, 100.5, signed_volume=300.0)
+    )
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.swept_level == 100.25
+    assert signal.sweep_low == 99.75
+    assert signal.report_fields["rejection_type"] == "downside_lvn_reclaim"
+    assert signal.report_fields["prior_lvn_price"] == 100.25
+    assert signal.report_fields["prior_lvn_count"] == 1
+    assert signal.report_fields["orderflow_imbalance"] == 0.3
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 09:35", tz="America/New_York")
+
+
+def test_prior_lvn_orderflow_rejection_shorts_after_upside_lvn_reject():
+    entry = PriorLvnOrderflowRejectionEntry(
+        {
+            "setup_mode": "upside_lvn_reject_short",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 3,
+            "lvn_quantile": 0.34,
+            "min_sweep_ticks": 1,
+            "reclaim_buffer_ticks": 0,
+            "min_orderflow_imbalance": 0.2,
+            "flow_mode": "large10",
+            "allow_long": False,
+            "allow_short": True,
+        }
+    )
+    _seed_prior_lvn_profile(entry)
+
+    signal = entry.on_bar_close(
+        _prior_value_bar(
+            "2024-01-03 09:30",
+            100.25,
+            100.75,
+            99.75,
+            100.0,
+            large10_signed_volume=-200.0,
+            large10_volume=500.0,
+        )
+    )
+
+    assert signal is not None
+    assert signal.direction == "short"
+    assert signal.swept_level == 100.25
+    assert signal.sweep_high == 100.75
+    assert signal.report_fields["rejection_type"] == "upside_lvn_reject"
+    assert signal.report_fields["flow_mode"] == "large10"
+    assert signal.report_fields["orderflow_imbalance"] == -0.4
+
+
+def test_prior_lvn_orderflow_rejection_requires_reclaim_flow_and_trade_limit():
+    entry = PriorLvnOrderflowRejectionEntry(
+        {
+            "setup_mode": "two_sided_lvn_rejection",
+            "start_time": "09:35:00",
+            "end_time": "11:30:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_profile_bars": 3,
+            "lvn_quantile": 0.34,
+            "min_sweep_ticks": 1,
+            "reclaim_buffer_ticks": 0,
+            "min_orderflow_imbalance": 0.2,
+            "flow_mode": "signed_volume",
+            "max_trades_per_day": 1,
+        }
+    )
+    _seed_prior_lvn_profile(entry)
+
+    assert entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:30", 100.25, 100.75, 99.75, 100.5, signed_volume=-300.0)
+    ) is None
+    assert entry.on_bar_close(
+        _prior_value_bar("2024-01-03 09:35", 100.25, 100.75, 99.75, 100.5, signed_volume=300.0),
+        trades_today=1,
+    ) is None
+
+
 def test_cftc_tff_hedging_pressure_uses_shifted_trade_date_feature(tmp_path):
     feature_file = tmp_path / "features.csv"
     pd.DataFrame(
@@ -5208,3 +5553,196 @@ def test_orderflow_regime_opening_price_flow_divergence_fade_fades_price_without
     assert signal.direction == "short"
     assert signal.report_fields["orderflow_regime_mode"] == "opening_price_flow_divergence_fade"
     assert rejected is None
+
+
+def _overnight_drift_bar(
+    timestamp: str,
+    *,
+    close: float = 100.0,
+    open_price: float = 100.0,
+    prev_rth_open: float = 105.0,
+    prev_rth_close: float = 100.0,
+    is_eth: bool = True,
+) -> pd.Series:
+    return pd.Series(
+        {
+            "timestamp": pd.Timestamp(timestamp),
+            "session_date": pd.Timestamp(timestamp).date(),
+            "session_label": "ETH" if is_eth else "RTH",
+            "is_eth": is_eth,
+            "is_rth": not is_eth,
+            "open": open_price,
+            "high": max(open_price, close) + 0.5,
+            "low": min(open_price, close) - 0.5,
+            "close": close,
+            "volume": 1000,
+            "prev_rth_open": prev_rth_open,
+            "prev_rth_close": prev_rth_close,
+        }
+    )
+
+
+def test_overnight_drift_emits_completed_eth_window_long_signal():
+    entry = OvernightDriftEntry(
+        {
+            "signal_time": "02:00:00",
+            "flatten_time": "03:00:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+        }
+    )
+
+    assert entry.on_bar_close(_overnight_drift_bar("2024-01-03 01:50:00", close=99.5)) is None
+    signal = entry.on_bar_close(_overnight_drift_bar("2024-01-03 01:55:00", close=100.25))
+
+    assert signal.direction == "long"
+    assert signal.report_fields["feature_method"] == "fixed_eth_european_open_overnight_drift_window"
+    assert signal.report_fields["signal_timestamp"] == pd.Timestamp("2024-01-03 02:00:00")
+    assert signal.report_fields["signal_flatten_time"] == "03:00:00"
+    assert signal.report_fields["prior_rth_return_ticks"] == -20.0
+
+
+def test_overnight_drift_prior_rth_down_filter_is_pre_signal_only():
+    entry = OvernightDriftEntry(
+        {
+            "signal_time": "02:00:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_rth_down_ticks": 12,
+        }
+    )
+
+    rejected = entry.on_bar_close(
+        _overnight_drift_bar("2024-01-03 01:55:00", prev_rth_open=100.0, prev_rth_close=98.0)
+    )
+
+    assert rejected is None
+
+    accepted = OvernightDriftEntry(
+        {
+            "signal_time": "02:00:00",
+            "bar_interval_minutes": 5,
+            "tick_size": 0.25,
+            "min_prior_rth_down_ticks": 12,
+        }
+    ).on_bar_close(_overnight_drift_bar("2024-01-03 01:55:00", prev_rth_open=105.0, prev_rth_close=100.0))
+
+    assert accepted is not None
+    assert accepted.report_fields["prior_rth_return_ticks"] == -20.0
+
+
+def test_overnight_drift_requires_eth_bar_when_configured():
+    entry = OvernightDriftEntry({"signal_time": "02:00:00", "bar_interval_minutes": 5})
+
+    signal = entry.on_bar_close(_overnight_drift_bar("2024-01-03 01:55:00", is_eth=False))
+
+    assert signal is None
+
+
+def _invariance_bar(
+    timestamp: str,
+    *,
+    close: float,
+    volume: float = 300.0,
+    signed_volume: float = 0.0,
+    trades: float = 30.0,
+) -> pd.Series:
+    return pd.Series(
+        {
+            "timestamp": pd.Timestamp(timestamp),
+            "session_date": pd.Timestamp(timestamp).date(),
+            "session_label": "RTH",
+            "is_rth": True,
+            "open": close,
+            "high": close + 0.25,
+            "low": close - 0.25,
+            "close": close,
+            "volume": volume,
+            "signed_volume": signed_volume,
+            "trades": trades,
+        }
+    )
+
+
+def _seed_invariance_same_clock(entry: IntradayInvarianceDislocationReversionEntry) -> None:
+    for day, base in [("2024-01-02", 100.0), ("2024-01-03", 101.0)]:
+        for minute, close in [("09:30:00", base), ("09:31:00", base + 0.25), ("09:32:00", base + 0.5)]:
+            assert entry.on_bar_close(_invariance_bar(f"{day} {minute}", close=close)) is None
+
+
+def test_intraday_invariance_dislocation_fades_up_move_after_prior_same_clock_rank():
+    entry = IntradayInvarianceDislocationReversionEntry(
+        {
+            "start_time": "09:33:00",
+            "end_time": "09:33:00",
+            "window_minutes": 2,
+            "same_clock_rank_window": 5,
+            "min_same_clock_observations": 2,
+            "invariance_rank_threshold": 0.9,
+            "min_return_ticks": 6,
+            "max_aligned_flow_imbalance": 0.05,
+            "direction": "short",
+            "bar_interval_minutes": 1,
+        }
+    )
+    _seed_invariance_same_clock(entry)
+
+    assert entry.on_bar_close(_invariance_bar("2024-01-04 09:30:00", close=100.0)) is None
+    assert entry.on_bar_close(_invariance_bar("2024-01-04 09:31:00", close=101.0)) is None
+    signal = entry.on_bar_close(_invariance_bar("2024-01-04 09:32:00", close=103.0))
+
+    assert signal is not None
+    assert signal.direction == "short"
+    assert signal.report_fields["feature_method"] == "completed_bar_intraday_trading_invariance_dislocation"
+    assert signal.report_fields["intended_entry_timestamp"] == pd.Timestamp("2024-01-04 09:33:00")
+    assert signal.report_fields["invariance_rank"] == 1.0
+
+
+def test_intraday_invariance_dislocation_rejects_strong_aligned_flow():
+    entry = IntradayInvarianceDislocationReversionEntry(
+        {
+            "start_time": "09:33:00",
+            "end_time": "09:33:00",
+            "window_minutes": 2,
+            "same_clock_rank_window": 5,
+            "min_same_clock_observations": 2,
+            "invariance_rank_threshold": 0.9,
+            "min_return_ticks": 6,
+            "max_aligned_flow_imbalance": 0.05,
+            "direction": "short",
+            "bar_interval_minutes": 1,
+        }
+    )
+    _seed_invariance_same_clock(entry)
+
+    assert entry.on_bar_close(_invariance_bar("2024-01-04 09:30:00", close=100.0, signed_volume=100)) is None
+    assert entry.on_bar_close(_invariance_bar("2024-01-04 09:31:00", close=101.0, signed_volume=200)) is None
+    signal = entry.on_bar_close(_invariance_bar("2024-01-04 09:32:00", close=103.0, signed_volume=200))
+
+    assert signal is None
+
+
+def test_intraday_invariance_dislocation_fades_down_move_long():
+    entry = IntradayInvarianceDislocationReversionEntry(
+        {
+            "start_time": "09:33:00",
+            "end_time": "09:33:00",
+            "window_minutes": 2,
+            "same_clock_rank_window": 5,
+            "min_same_clock_observations": 2,
+            "invariance_rank_threshold": 0.9,
+            "min_return_ticks": 6,
+            "max_aligned_flow_imbalance": 0.05,
+            "direction": "long",
+            "bar_interval_minutes": 1,
+        }
+    )
+    _seed_invariance_same_clock(entry)
+
+    assert entry.on_bar_close(_invariance_bar("2024-01-04 09:30:00", close=103.0)) is None
+    assert entry.on_bar_close(_invariance_bar("2024-01-04 09:31:00", close=102.0)) is None
+    signal = entry.on_bar_close(_invariance_bar("2024-01-04 09:32:00", close=100.0))
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.report_fields["return_ticks"] == -12.0

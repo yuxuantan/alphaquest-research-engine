@@ -1,0 +1,197 @@
+campaign_id: es_nq_semivariance_filtered_relative_value_absorption
+title: ES/NQ Relative-Value Absorption Reversion Filtered By Prior Semivariance Regime
+decision: FAIL
+created_at: '2026-06-20'
+instrument: ES
+market_timezone: America/New_York
+edge_family: relative_value_orderflow_absorption_filtered_by_realized_semivariance
+hypothesis: ES/NQ intraday return divergences that already show ES signed-flow absorption should mean-revert more reliably
+  when the prior completed RTH session had benign downside-semivariance conditions. In bad downside-volatility regimes, the
+  same divergence can be information-driven and should be filtered out.
+rationale: This is a bounded composite campaign. The primary edge is ES/NQ relative-value convergence, the immediate confirmation
+  is completed ES aggregate signed-flow absorption, and the fixed regime gate is prior-session realized semivariance. The
+  semivariance feature is known before the current RTH session, so it does not alter intraday timing or introduce lookahead.
+sources:
+- title: 'Pairs Trading: Performance of a Relative-Value Arbitrage Rule'
+  authors: Evan Gatev, William N. Goetzmann, and K. Geert Rouwenhorst
+  year: 2006
+  venue: Review of Financial Studies
+  link: https://academic.oup.com/rfs/article-abstract/19/3/797/1585302
+  relevance: Relative-value foundation for temporary divergence and convergence between related instruments.
+- title: High Frequency Lead/Lag Relationships - Empirical Facts
+  authors: Nicolas Huth and Frederic Abergel
+  year: 2014
+  venue: Market microstructure working paper
+  link: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+  relevance: Motivates high-frequency dependencies between related equity-index futures.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports orderflow imbalance as a short-horizon pressure proxy; this campaign uses completed aggregate signed
+    trade flow, not quote-depth OFI.
+- title: 'Measuring Downside Risk: Realised Semivariance'
+  authors: Ole E. Barndorff-Nielsen, Silja Kinnebrock, and Neil Shephard
+  year: 2010
+  venue: Volatility and Time Series Econometrics
+  link: https://doi.org/10.1093/acprof:oso/9780199549498.003.0007
+  relevance: Defines realized semivariance as a way to separate downside and upside variation using past completed returns.
+- title: 'Good Volatility, Bad Volatility: Signed Jumps and the Persistence of Volatility'
+  authors: Andrew J. Patton and Kevin Sheppard
+  year: 2015
+  venue: Review of Economics and Statistics
+  link: https://doi.org/10.1162/REST_a_00503
+  relevance: Supports treating downside variation as a distinct risk state; here it gates whether divergence is likely benign
+    enough to fade.
+data_needs:
+- data/cache/orderflow/es_nq_lead_lag_1m_20110103_20260609_full_rth_ny.parquet
+- data/external/es_realized_semivariance_features_20110103_20260609.csv
+- completed ES/NQ rolling return-spread columns
+- completed ES signed-imbalance columns over the selected lookback window
+- prior-session realized semivariance ranks computed without current-session data
+lookahead_risks:
+- Rolling ES/NQ return and ES signed-imbalance features must use completed bars only.
+- Semivariance ranks must be lagged prior-session features available before the current RTH session.
+- Signal at a decision minute enters no earlier than the next one-minute ES bar open.
+- No future ES/NQ bars, final VWAP, final daily range, future orderflow, or current-session semivariance is used.
+- All variants flatten intraday before their configured cutoff.
+failure_modes:
+- ES/NQ divergence may be information-driven rather than temporary even in benign semivariance regimes.
+- Aggregate signed-flow absorption can be noisy or too late for monetizable convergence after costs.
+- The semivariance filter may remove adverse regimes but also remove enough winners to hurt expectancy.
+- Trading only ES may fail to capture true pair convergence.
+- Profits can concentrate by side, volatility regime, or a small cluster of dates.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_nq_relative_value_orderflow_absorption_reversion
+  - es_realized_semivariance_asymmetry
+  - es_semivariance_orderflow_confirmation
+  - es_nq_relative_value_reversion
+  - es_nq_cross_index_lead_lag
+  conclusion: Eligible as a new bounded composite because neither ES/NQ absorption nor semivariance alone can trigger. A trade
+    requires both a current completed ES/NQ divergence with ES absorption and a pre-existing benign prior-session semivariance
+    regime.
+pre_pnl_density:
+  status: approved_for_authoring
+  artifacts:
+  - research_artifacts/es_nq_semivariance_filtered_relative_value_absorption_density_audit_20260620.md
+  - research_artifacts/es_nq_semivariance_filtered_relative_value_absorption_density_alternative_summary_20260620.csv
+  note: Initial fifth variant was reformulated before any PnL inspection because one strict latest-year trade-count corner
+    fell below 50/year. Final selected variants all cleared the pre-PnL density gate.
+variants:
+- morning15_low_badvol_absorption_twosided_1100
+- morning30_low_badvol_absorption_twosided_1130
+- late_morning30_low_badvol_absorption_twosided_1230
+- midday60_low_badvol_absorption_twosided_1430
+- midday60_low_downside_share_absorption_twosided_1430
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core ES/NQ relative-value absorption plus prior-semivariance filter mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  - allow target reward:risk below 1.0
+  attempts:
+  - variant_id: morning15_low_badvol_absorption_twosided_1100
+    attempt_id: parameter_space_rescue_1
+    scope: parameter_space_and_fixed_parameters_only
+    mechanics_changed: false
+    status: failed_limited_core_grid_test
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 36
+    benchmark_passing_combinations: 0
+    top_net_profit: -1647.5
+    top_profit_factor: 0.7949595519601742
+    failure_reason: 'summary.percentage_profitable_iterations=0.0 expected {''min'': 0.7}'
+    report_path: backtest-campaigns/es_nq_semivariance_filtered_relative_value_absorption/morning15_low_badvol_absorption_twosided_1100/ES/rescue1/campaign_test_summary.json
+  - variant_id: morning30_low_badvol_absorption_twosided_1130
+    attempt_id: parameter_space_rescue_1
+    scope: parameter_space_and_fixed_parameters_only
+    mechanics_changed: false
+    status: failed_limited_core_grid_test
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 36
+    benchmark_passing_combinations: 0
+    top_net_profit: -2400.0
+    top_profit_factor: 0.6290571870170015
+    failure_reason: 'summary.percentage_profitable_iterations=0.0 expected {''min'': 0.7}'
+    report_path: backtest-campaigns/es_nq_semivariance_filtered_relative_value_absorption/morning30_low_badvol_absorption_twosided_1130/ES/rescue1/campaign_test_summary.json
+  - variant_id: late_morning30_low_badvol_absorption_twosided_1230
+    attempt_id: parameter_space_rescue_1
+    scope: parameter_space_and_fixed_parameters_only
+    mechanics_changed: false
+    status: failed_limited_core_grid_test
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 36
+    benchmark_passing_combinations: 0
+    top_net_profit: -1707.5
+    top_profit_factor: 0.686697247706422
+    failure_reason: 'summary.percentage_profitable_iterations=0.0 expected {''min'': 0.7}'
+    report_path: backtest-campaigns/es_nq_semivariance_filtered_relative_value_absorption/late_morning30_low_badvol_absorption_twosided_1230/ES/rescue1/campaign_test_summary.json
+  - variant_id: midday60_low_badvol_absorption_twosided_1430
+    attempt_id: parameter_space_rescue_1
+    scope: parameter_space_and_fixed_parameters_only
+    mechanics_changed: false
+    status: failed_limited_core_grid_test
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 36
+    benchmark_passing_combinations: 0
+    top_net_profit: -72.5
+    top_profit_factor: 0.986346516007533
+    failure_reason: 'summary.percentage_profitable_iterations=0.0 expected {''min'': 0.7}'
+    report_path: backtest-campaigns/es_nq_semivariance_filtered_relative_value_absorption/midday60_low_badvol_absorption_twosided_1430/ES/rescue1/campaign_test_summary.json
+  - variant_id: midday60_low_downside_share_absorption_twosided_1430
+    attempt_id: parameter_space_rescue_1
+    scope: parameter_space_and_fixed_parameters_only
+    mechanics_changed: false
+    status: failed_limited_core_grid_test
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 36
+    benchmark_passing_combinations: 0
+    top_net_profit: -3927.5
+    top_profit_factor: 0.5829572604194319
+    failure_reason: 'summary.percentage_profitable_iterations=0.0 expected {''min'': 0.7}'
+    report_path: backtest-campaigns/es_nq_semivariance_filtered_relative_value_absorption/midday60_low_downside_share_absorption_twosided_1430/ES/rescue1/campaign_test_summary.json
+testing_plan:
+  methodology: current staged research pipeline
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 50.0
+testing_outcome:
+  status: completed
+  decision: FAIL
+  original_runs: 5
+  rescue_runs: 5
+  all_failed_variants_rescued_once: true
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  fixed_config_core_trade_logs: 10
+  campaign_summary_path: backtest-campaigns/es_nq_semivariance_filtered_relative_value_absorption/campaign_test_summary.json
+  failure_reason: All five original variants and all five allowed parameter-space rescues failed limited_core_grid_test; no
+    run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+final_result:
+  decision: FAIL
+  candidate_strategy_report_created: false
+  reason: All five original variants and all five allowed parameter-space rescues failed limited_core_grid_test; no run reached
+    monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  report_path: backtest-campaigns/es_nq_semivariance_filtered_relative_value_absorption/campaign_test_summary.json

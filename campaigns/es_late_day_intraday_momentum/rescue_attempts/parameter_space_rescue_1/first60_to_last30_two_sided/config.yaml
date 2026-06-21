@@ -58,7 +58,7 @@ strategy:
   tp:
     module: fixed_r
     params:
-      target_r_multiple: 0.75
+      target_r_multiple: 1.0
   flatten_time: '15:55:00'
 core:
   data_subset: &data_subset
@@ -106,7 +106,7 @@ core_grid: &grid
   parameters: &parameters
     entry.params.min_signal_return_ticks: [16.0, 24.0, 32.0]
     sl.params.stop_pct: [0.00075, 0.001, 0.0015]
-    tp.params.target_r_multiple: [0.5, 0.75, 1.0]
+    tp.params.target_r_multiple: [1.0]
 monkey:
   data_subset: *data_subset
   runs: 300

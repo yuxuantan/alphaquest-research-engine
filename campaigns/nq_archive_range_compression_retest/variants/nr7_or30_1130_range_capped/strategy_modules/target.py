@@ -1,0 +1,3 @@
+from propstack.strategy_modules.tp.cost_adjusted_fixed_r import CostAdjustedFixedRTarget
+
+TARGET_MODULE = CostAdjustedFixedRTarget

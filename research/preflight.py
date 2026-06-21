@@ -18,13 +18,17 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from propstack.data.load import load_raw_data  # noqa: E402
+from propstack.utils.target_rr import MIN_TARGET_R_MULTIPLE, target_rr_violations  # noqa: E402
 
 
-DEFAULT_CONFIG_GLOBS = (
+ACTIVE_CONFIG_GLOBS = (
+    "campaigns/**/variants/**/config.yaml",
+    "campaigns/**/rescue_attempts/**/config.yaml",
+    "configs/campaigns/**/*.yaml",
+)
+GENERATED_RESULT_CONFIG_GLOBS = (
     "backtest-campaigns/**/effective_config.yaml",
     "backtest-campaigns/**/config.yaml",
-    "campaigns/**/variants/**/config.yaml",
-    "configs/campaigns/**/*.yaml",
 )
 REQUIRED_TOP_LEVEL = ("campaign_id", "variant_id", "symbol", "dataset_id", "timeframe", "data", "strategy", "core")
 REQUIRED_CORE_FIELDS = ("tick_size", "commission_per_contract", "slippage_ticks")
@@ -37,11 +41,20 @@ REQUIRED_MECHANICS_RATIONALE_FIELDS = (
     "profitability_rationale",
     "known_failure_modes",
 )
+SUPPORTED_CONTINUOUS_CONTRACT_RULES = {"none", "dominant_session_volume", "session_volume", "explicit_roll_calendar"}
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Fail-closed research methodology preflight.")
     parser.add_argument("--config", action="append", dest="configs", help="Campaign config YAML to validate.")
+    parser.add_argument(
+        "--include-generated-results",
+        action="store_true",
+        help=(
+            "Also inspect generated backtest-campaigns config snapshots. "
+            "Default discovery checks authored active configs only."
+        ),
+    )
     parser.add_argument(
         "--allow-no-configs",
         action="store_true",
@@ -58,6 +71,7 @@ def main(argv: list[str] | None = None) -> int:
 
     result = run_preflight(
         config_paths=args.configs,
+        include_generated_results=args.include_generated_results,
         allow_no_configs=args.allow_no_configs,
         run_tests=not args.skip_tests,
         pytest_args=shlex.split(args.pytest_args),
@@ -72,17 +86,18 @@ def main(argv: list[str] | None = None) -> int:
 def run_preflight(
     *,
     config_paths: Iterable[str | Path] | None = None,
+    include_generated_results: bool = False,
     allow_no_configs: bool = False,
     run_tests: bool = True,
     pytest_args: Iterable[str] = ("tests",),
 ) -> dict:
     failures: list[str] = []
     warnings: list[str] = []
-    paths = _config_paths(config_paths)
+    paths = _config_paths(config_paths, include_generated_results=include_generated_results)
 
     if not paths and not allow_no_configs:
         failures.append(
-            "No active campaign config files found. Pass --config or restore backtest-campaigns/configs before research."
+            "No active authored campaign config files found. Pass --config or add configs under campaigns/ before research."
         )
 
     inspected = []
@@ -105,14 +120,22 @@ def run_preflight(
         "failures": failures,
         "warnings": warnings,
         "tests_ran": bool(run_tests),
+        "include_generated_results": bool(include_generated_results),
     }
 
 
-def _config_paths(config_paths: Iterable[str | Path] | None) -> list[Path]:
+def _config_paths(
+    config_paths: Iterable[str | Path] | None,
+    *,
+    include_generated_results: bool = False,
+) -> list[Path]:
     if config_paths:
         return [Path(path) for path in config_paths]
     found: list[Path] = []
-    for pattern in DEFAULT_CONFIG_GLOBS:
+    patterns = list(ACTIVE_CONFIG_GLOBS)
+    if include_generated_results:
+        patterns.extend(GENERATED_RESULT_CONFIG_GLOBS)
+    for pattern in patterns:
         found.extend(PROJECT_ROOT.glob(pattern))
     return sorted(path for path in found if path.is_file() and not _is_archived_path(path))
 
@@ -142,6 +165,13 @@ def _validate_config(cfg: dict, path: Path, failures: list[str], warnings: list[
         failures.append(f"{prefix}: data must be a mapping.")
     elif not (data_cfg.get("timezone") or data_cfg.get("exchange_timezone")):
         failures.append(f"{prefix}: data.timezone or data.exchange_timezone is required for timestamp interpretation.")
+    else:
+        rule = data_cfg.get("continuous_contract")
+        if rule is not None and str(rule) not in SUPPORTED_CONTINUOUS_CONTRACT_RULES:
+            failures.append(
+                f"{prefix}: data.continuous_contract={rule} is unsupported; expected one of "
+                f"{sorted(SUPPORTED_CONTINUOUS_CONTRACT_RULES)}."
+            )
 
     for section in ("entry", "tp", "sl"):
         value = strategy.get(section)
@@ -179,6 +209,7 @@ def _validate_config(cfg: dict, path: Path, failures: list[str], warnings: list[
         _require_keys(apex, REQUIRED_APEX_FIELDS, f"{prefix}: apex_rules", failures)
 
     _validate_parameter_grid(cfg, path, failures, warnings)
+    _validate_minimum_target_rr(cfg, path, failures)
     _validate_mechanics_rationale(cfg, path, failures, warnings)
 
 
@@ -245,6 +276,15 @@ def _validate_parameter_grid(cfg: dict, path: Path, failures: list[str], warning
                 f"{prefix}: {section}.parameters exceeds methodology tunable count guidance "
                 f"(entry={entry_params}, tp={tp_params}, sl={sl_params})."
             )
+
+
+def _validate_minimum_target_rr(cfg: dict, path: Path, failures: list[str]) -> None:
+    prefix = str(_display_path(path))
+    for violation in target_rr_violations(cfg, minimum=MIN_TARGET_R_MULTIPLE, context=prefix):
+        failures.append(
+            f"{violation} is below the minimum allowed reward:risk target_r_multiple "
+            f"{MIN_TARGET_R_MULTIPLE}."
+        )
 
 
 def _validate_data(cfg: dict, path: Path, failures: list[str], warnings: list[str]) -> None:

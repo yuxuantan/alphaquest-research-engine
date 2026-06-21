@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.import_export_price_pressure import ImportExportPricePressureEntry
+
+ENTRY_MODULE = ImportExportPricePressureEntry

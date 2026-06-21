@@ -1,0 +1,119 @@
+campaign_id: es_treasury_rate_orderflow_confirmation
+title: ES Treasury Rate Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-20'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: Lagged U.S. Treasury yield and curve-shape tail moves condition same-day ES direction only when completed RTH ES price movement and aggregate signed orderflow confirm the discount-rate repricing direction before next-bar entry.
+rationale: This is a bounded composite edge. The prior Treasury-rate state supplies the exogenous macro/discount-rate pressure using observations strictly before the ES session. ES then must confirm direction with completed RTH movement from the session open and cumulative signed or large-trade orderflow. It is distinct from the prior fixed-time Treasury-rate campaign because the macro state alone is not tradable here.
+sources:
+- title: What Explains the Stock Market's Reaction to Federal Reserve Policy?
+  authors: Ben S. Bernanke and Kenneth N. Kuttner
+  year: 2005
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2005.00760.x
+  link: https://doi.org/10.1111/j.1540-6261.2005.00760.x
+  relevance: Documents equity-market sensitivity to interest-rate and discount-rate news.
+- title: Measuring the Reaction of Monetary Policy to the Stock Market
+  authors: Roberto Rigobon and Brian Sack
+  year: 2003
+  venue: Quarterly Journal of Economics
+  doi: 10.1162/003355303322552810
+  link: https://doi.org/10.1162/003355303322552810
+  relevance: Supports the macro link between interest-rate movements and equity prices.
+- title: Daily Treasury Rates
+  authors: U.S. Department of the Treasury
+  year: 2026
+  venue: Treasury Resource Center
+  link: https://home.treasury.gov/resource-center/data-chart-center/interest-rates
+  relevance: Free official source for the daily 2-year and 10-year Treasury yield observations used in the local feature file.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Supports requiring contemporaneous orderflow imbalance confirmation instead of trading the daily rate state alone.
+data_needs:
+- timezone-aware ES RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- existing local Treasury yield feature file built from free official daily Treasury rates
+- 5-minute completed-bar ES aggregation with cumulative orderflow confirmation
+- same-day stop, target, forced-flatten, and no-overnight enforcement
+data_quality_caveats:
+- Treasury yields are daily observations, not intraday tick data.
+- The feature file intentionally excludes same-session Treasury observations, which is conservative if values were published earlier.
+- Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor truth.
+- The full-day decision schedule is used to preserve 50/year feasibility and should be manually reviewed if anything passes.
+lookahead_risks:
+- An ES session dated D may only use Treasury observations strictly before D.
+- Rolling ranks use only Treasury observations through the mapped observation date.
+- Signals use completed ES bars only; entries must occur at the next bar open or later.
+- No final ES session high/low, final VWAP, future return, or same-day/future Treasury value is used.
+failure_modes:
+- Lagged daily rate shocks may be fully incorporated before ES RTH opens.
+- Rate-equity sign can switch across inflation, growth, policy, and crisis regimes.
+- ES confirmation may enter after the tradable rate repricing move has already occurred.
+- Results may concentrate in 2020 or 2022 rate-volatility regimes.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_treasury_rate_shock_intraday
+  - es_treasury_auction_pressure
+  - es_market_plumbing_liquidity_capacity
+  - es_dollar_risk_appetite_intraday
+  - es_credit_etf_orderflow_risk_appetite
+  - es_spy_turnover_orderflow_attention
+  conclusion: Eligible as a distinct bounded composite. The earlier Treasury-rate campaign used lagged rate state at fixed bars; this campaign requires completed ES price movement and aggregate orderflow confirmation before entry.
+feature_construction:
+  builder: tools/build_es_treasury_rate_state_features.py
+  rate_source_cache: data/external/us_treasury_daily_yield_curve_rates_2010_2026.csv
+  output: data/external/es_treasury_rate_state_features_20110103_20260609.csv
+  availability_rule: latest Treasury observation strictly before ES session_date
+  pre_pnl_density_audit: research_artifacts/es_treasury_rate_orderflow_confirmation_density_audit_20260620.md
+  target_reward_risk_floor: 1.0
+variants:
+- teny_1d_signed_rate_confirmation_1530
+- twoy_1d_signed_rate_confirmation_1530
+- teny_5d_signed_rate_confirmation_1530
+- curve_1d_signed_rate_confirmation_1530
+- teny_1d_large10_rate_confirmation_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  - use any target_r_multiple below 1.0
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed
+    decision: FAIL
+    scope: per_failed_variant
+    reason: All five original variants failed limited core. Each failed variant received one parameter-space-only rescue that preserved the entry, stop, target, data, timeframe, costs, sessions, fills, signal schedule, and validation gates. Rescue changes only adjusted existing rate-rank, orderflow-threshold, and stop-distance parameter spaces. TP was unchanged because every target_r_multiple was already at least 1.0R.
+    configs:
+    - campaigns/es_treasury_rate_orderflow_confirmation/rescue_attempts/parameter_space_rescue_1/curve_1d_signed_rate_confirmation_1530/config.yaml
+    - campaigns/es_treasury_rate_orderflow_confirmation/rescue_attempts/parameter_space_rescue_1/teny_1d_large10_rate_confirmation_1530/config.yaml
+    - campaigns/es_treasury_rate_orderflow_confirmation/rescue_attempts/parameter_space_rescue_1/teny_1d_signed_rate_confirmation_1530/config.yaml
+    - campaigns/es_treasury_rate_orderflow_confirmation/rescue_attempts/parameter_space_rescue_1/teny_5d_signed_rate_confirmation_1530/config.yaml
+    - campaigns/es_treasury_rate_orderflow_confirmation/rescue_attempts/parameter_space_rescue_1/twoy_1d_signed_rate_confirmation_1530/config.yaml
+    summary: backtest-campaigns/es_treasury_rate_orderflow_confirmation/campaign_test_summary.json
+test_results:
+  decision: FAIL
+  summary: backtest-campaigns/es_treasury_rate_orderflow_confirmation/campaign_test_summary.json
+  campaign_results: backtest-campaigns/es_treasury_rate_orderflow_confirmation/campaign_results.csv
+  trade_logs_manifest: backtest-campaigns/es_treasury_rate_orderflow_confirmation/trade_logs_manifest.csv
+  equity_curves_manifest: backtest-campaigns/es_treasury_rate_orderflow_confirmation/equity_curves_manifest.csv
+  wfa_table: backtest-campaigns/es_treasury_rate_orderflow_confirmation/wfa_table.csv
+  monte_carlo_summary: backtest-campaigns/es_treasury_rate_orderflow_confirmation/monte_carlo_summary.csv
+  failure_reason: All five original variants failed limited core. All five failed variants received one parameter-space-only rescue. All five rescues also failed limited core; no run reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. The strongest rescue by profitable-combo rate was curve_1d_signed_rate_confirmation_1530/rescue1 with profitable-combo rate 0.0, benchmark-passing combinations 0/81, top net -15.0, PF 0.9951417004048583, MAR -0.007965771559462615, and trades/year 24.29954639637117; it still failed because the profitable-combo rate was below 0.70. TP was not adjusted because every target_r_multiple was already >= 1.0R.

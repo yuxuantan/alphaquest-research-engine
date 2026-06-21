@@ -1,0 +1,132 @@
+campaign_id: es_credit_etf_orderflow_risk_appetite
+title: ES Credit ETF Orderflow Risk-Appetite
+decision: FAIL
+created_at: '2026-06-20'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: Lagged high-yield corporate bond ETF return tails proxy credit-market risk appetite or risk aversion. ES continuation attempts are only credible when the HYG state, completed ES movement from the RTH open, and aggregate signed orderflow agree before next-bar entry.
+rationale: This is a bounded composite edge using a traded credit-risk proxy rather than stale yield spreads. HYG daily returns are known only after the prior ETF close and are mapped strictly before the ES session. The ES leg requires same-day completed price movement and signed-volume confirmation so the campaign does not trade a macro state alone.
+sources:
+- title: Predicting Returns in the Stock and Bond Markets
+  authors: Donald B. Keim and Robert F. Stambaugh
+  year: 1986
+  venue: Journal of Financial Economics
+  doi: 10.1016/0304-405X(86)90070-X
+  link: https://doi.org/10.1016/0304-405X(86)90070-X
+  relevance: Supports bond-market and default-risk variables as predictors of time-varying expected returns.
+- title: Business Conditions and Expected Returns on Stocks and Bonds
+  authors: Eugene F. Fama and Kenneth R. French
+  year: 1989
+  venue: Journal of Financial Economics
+  link: https://www-2.rotman.utoronto.ca/~kan/3032/pdf/PredictabilityOfReturns_InstrumentalVariables/Fama_French_JFE_1989.pdf
+  relevance: Documents that business-condition and credit-spread variables contain expected-return information across stocks and bonds.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Supports requiring contemporaneous orderflow imbalance confirmation instead of trading the lagged credit proxy alone.
+- title: Yahoo Finance daily HYG and LQD adjusted-close histories
+  authors: Yahoo Finance
+  year: 2026
+  venue: Free public chart endpoint
+  link: https://query1.finance.yahoo.com/v8/finance/chart/HYG
+  relevance: Free no-paid-data source used for the tradable high-yield and investment-grade ETF histories.
+data_needs:
+- timezone-aware ES RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- free local Yahoo HYG and LQD daily adjusted-close CSV files
+- existing local SPY daily adjusted-close CSV for diagnostic excess-return features
+- derived credit ETF feature file with strict prior-session daily-close availability
+- 5-minute completed-bar ES aggregation with next-bar execution
+data_quality_caveats:
+- Yahoo chart data is a free public adjusted-close source and should be cross-checked before manual incubation.
+- HYG started in April 2007; the campaign only uses ES sessions from 2011 onward with valid rolling ranks.
+- ETF close timestamps are daily; intraday HYG/LQD prints are not used.
+- Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor truth.
+lookahead_risks:
+- An ES session dated D may only use ETF observations strictly before D.
+- Rolling ranks use only ETF observations through the mapped observation date.
+- Signals are no earlier than 10:00 ET and use completed ES bars only.
+- Entries must occur at the next bar open or later.
+failure_modes:
+- HYG may react after equities rather than lead ES.
+- Credit ETF moves may be dominated by rates or ETF-specific liquidity rather than equity risk appetite.
+- Requiring ES confirmation may enter after the tradable move has already occurred.
+- Results may concentrate around credit-crisis or volatility-regime dates.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_default_spread_orderflow_risk_premium
+  - es_credit_spread_state_intraday
+  - es_ofr_financial_stress_intraday
+  - es_sector_rotation_orderflow_pullback
+  - es_cboe_put_call_sentiment_intraday
+  conclusion: Eligible as a distinct bounded composite. It uses tradable high-yield ETF daily return ranks as the primary state, not FRED default spreads, OFR stress, option sentiment, or sector ETF leadership.
+feature_construction:
+  builder: tools/build_es_credit_etf_features.py
+  hyg_source_cache: data/external/yahoo_credit_etfs/yahoo_hyg_daily_20020726_20260610.csv
+  lqd_source_cache: data/external/yahoo_credit_etfs/yahoo_lqd_daily_20020726_20260610.csv
+  spy_source_cache: data/external/yahoo_sector_etfs/yahoo_spy_daily_1998-12-01_2026-06-10.csv
+  output: data/external/es_credit_etf_risk_appetite_features_20110103_20260609.csv
+  availability_rule: latest ETF daily close strictly before ES session_date
+  pre_pnl_density_audit: research_artifacts/es_credit_etf_orderflow_risk_appetite_density_audit_20260620.md
+  target_reward_risk_floor: 1.0
+variants:
+- hyg_1d_strength_signed_long_1230
+- hyg_1d_weakness_signed_short_1230
+- hyg_1d_two_sided_signed_1230
+- hyg_3d_two_sided_signed_1230
+- hyg_5d_two_sided_signed_1230
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  - use any target_r_multiple below 1.0
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed
+    decision: FAIL
+    scope: per_failed_variant
+    reason: All five original variants failed limited core. Each failed variant
+      received one parameter-space-only rescue that preserved the entry, stop,
+      target, data, timeframe, costs, sessions, fills, and validation gates.
+      Rescue changes only adjusted existing HYG rank, orderflow-threshold, and
+      stop-distance parameter spaces. TP was unchanged because every
+      target_r_multiple was already at least 1.0R.
+    configs:
+    - campaigns/es_credit_etf_orderflow_risk_appetite/rescue_attempts/parameter_space_rescue_1/hyg_1d_strength_signed_long_1230/config.yaml
+    - campaigns/es_credit_etf_orderflow_risk_appetite/rescue_attempts/parameter_space_rescue_1/hyg_1d_weakness_signed_short_1230/config.yaml
+    - campaigns/es_credit_etf_orderflow_risk_appetite/rescue_attempts/parameter_space_rescue_1/hyg_1d_two_sided_signed_1230/config.yaml
+    - campaigns/es_credit_etf_orderflow_risk_appetite/rescue_attempts/parameter_space_rescue_1/hyg_3d_two_sided_signed_1230/config.yaml
+    - campaigns/es_credit_etf_orderflow_risk_appetite/rescue_attempts/parameter_space_rescue_1/hyg_5d_two_sided_signed_1230/config.yaml
+    summary: backtest-campaigns/es_credit_etf_orderflow_risk_appetite/campaign_test_summary.json
+test_results:
+  decision: FAIL
+  summary: backtest-campaigns/es_credit_etf_orderflow_risk_appetite/campaign_test_summary.json
+  campaign_results: backtest-campaigns/es_credit_etf_orderflow_risk_appetite/campaign_results.csv
+  trade_logs_manifest: backtest-campaigns/es_credit_etf_orderflow_risk_appetite/trade_logs_manifest.csv
+  equity_curves_manifest: backtest-campaigns/es_credit_etf_orderflow_risk_appetite/equity_curves_manifest.csv
+  wfa_table: backtest-campaigns/es_credit_etf_orderflow_risk_appetite/wfa_table.csv
+  monte_carlo_summary: backtest-campaigns/es_credit_etf_orderflow_risk_appetite/monte_carlo_summary.csv
+  failure_reason: The best original and best rescue were both
+    hyg_5d_two_sided_signed_1230 by limited-core profitable-combination rate,
+    but the rescue failed limited monkey/stress because max-drawdown robustness
+    was 0.8766666666666667 versus the 0.90 threshold and the one-tick-worse
+    run was unprofitable. The deepest-progressing rescue was
+    hyg_3d_two_sided_signed_1230/rescue1, which passed limited core and monkey
+    but failed WFA with stitched PF 1.077365644773513 and MAR
+    0.08981641818942494, below the required PF >= 1.2 and MAR >= 0.4.

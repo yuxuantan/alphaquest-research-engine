@@ -1,0 +1,145 @@
+campaign_id: es_impulse_pause_orderflow_continuation
+title: ES impulse-pause breakout continuation with aggregate orderflow confirmation
+decision: FAIL
+created_at: '2026-06-20'
+instrument: ES
+market_timezone: America/New_York
+edge_family: impulse_pause_orderflow_continuation
+hypothesis: After a completed directional impulse, a shallow completed pause can show that price is absorbing profit-taking
+  without fully retracing. If ES then closes beyond the pause boundary with same-direction aggregate orderflow,
+  the move may continue because liquidity-taking pressure or order splitting has not finished.
+sources:
+- title: The Dynamic Volume-Return Relation of Individual Stocks
+  authors: Guillermo Llorente, Roni Michaely, Gideon Saar, Jiang Wang
+  year: 2002
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v15y2002i4p1005-1047.html
+  relevance: Supports the distinction between volume-backed continuation and liquidity-driven reversal. This campaign
+    requires price continuation structure plus completed aggregate orderflow confirmation.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure variable. The implementation uses Sierra
+    completed-bar signed-volume proxies, not quote-level OFI.
+- title: How Markets Slowly Digest Changes in Supply and Demand
+  authors: Jean-Philippe Bouchaud, J. Doyne Farmer, Fabrizio Lillo
+  year: 2009
+  venue: Handbook of Financial Markets
+  link: https://arxiv.org/abs/0809.0822
+  relevance: Reviews persistent orderflow and gradual price adjustment, motivating continuation after an impulse-pause-breakout
+    sequence rather than immediate mean reversion.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00265
+  relevance: Supports testing objectively defined price patterns rather than discretionary chart labels. The campaign
+    defines impulse, pause, and breakout using completed OHLC bars only.
+rationale: This is a price-action-first campaign. A trade requires a completed multi-bar impulse, a completed shallow
+  pause, and a completed close beyond the pause boundary; aggregate signed or large-trade flow confirms only the
+  breakout bar. It differs from single wide-range continuation, VWAP/EMA pullback continuation, prior-level breakout,
+  opening-range breakout, and raw signed-flow persistence.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute ES bars aggregated from local completed 1-minute RTH Sierra cache
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, large20_volume
+data_quality_caveats:
+- Sierra signed-volume fields are completed-bar aggregate bid/ask-volume proxies, not quote-level OFI or print-sequenced
+  LOB data.
+- The signal uses completed OHLC and completed orderflow only; entry is next bar open or later.
+- Same-bar stop/target conflicts rely on available detail data and pessimistic OHLC fallback when sequencing is
+  unresolved.
+lookahead_risks:
+- Impulse and pause windows use only bars that closed before the breakout signal bar.
+- The breakout and orderflow confirmation use the signal bar close, so entry must be next bar open or later.
+- No future high, low, VWAP, volume profile, final daily range, or post-entry orderflow is used.
+failure_modes:
+- Impulse-pause-breakout may still identify exhaustion rather than continuation.
+- Aggregate orderflow can confirm after most of the move has already occurred.
+- Directional behavior may be regime-specific or dominated by a few macro-volatility years.
+- Large-trade buckets may be sparse and may not reliably represent informed participation.
+- One-tick worse slippage or entry delay can erase a narrow edge.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_wide_range_orderflow_continuation
+  - es_ema_pullback_orderflow_continuation
+  - es_vwap_orderflow_pullback_continuation
+  - es_trend_aligned_orderflow_continuation
+  - es_signed_orderflow_persistence
+  - es_range_compression_orderflow_breakout
+  - es_rolling_range_orderflow_sweep_reversal
+  conclusion: Eligible as a distinct active campaign only if implemented as impulse plus pause plus breakout. The
+    core mechanic is not a single expansion bar, not a dynamic-average pullback, not a fixed-time trend-state signal,
+    not a range-compression breakout, and not a sweep/reclaim reversal.
+pre_pnl_density_audit:
+  status: passed
+  artifact: research_artifacts/es_impulse_pause_orderflow_continuation_density_audit_20260620.md
+  csv: research_artifacts/es_impulse_pause_orderflow_continuation_density_audit_20260620.csv
+  limited_core_period:
+    start_date: '2011-02-22'
+    end_date: '2012-09-06'
+    session_labels:
+    - RTH
+  lowest_full_signals_per_year: 92.2160995987637
+  lowest_limited_signals_per_year: 57.169212146664115
+  reformulated_before_pnl:
+    rejected_variant: morning_signed_long_impulse_pause_breakout_1130
+    replacement_variant: full_session_signed_two_sided_impulse_pause_breakout_1530
+    reason: rejected variant had strict limited-core density below 50 signals/year before any PnL was inspected
+variants:
+- morning_signed_two_sided_impulse_pause_breakout_1130
+- late_morning_large10_two_sided_impulse_pause_breakout_1230
+- midday_signed_two_sided_impulse_pause_breakout_1400
+- afternoon_large10_two_sided_impulse_pause_breakout_1530
+- full_session_signed_two_sided_impulse_pause_breakout_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core impulse-pause-breakout plus orderflow-confirmation mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant_parameter_space_only
+    variants:
+    - afternoon_large10_two_sided_impulse_pause_breakout_1530
+    - full_session_signed_two_sided_impulse_pause_breakout_1530
+    - late_morning_large10_two_sided_impulse_pause_breakout_1230
+    - midday_signed_two_sided_impulse_pause_breakout_1400
+    - morning_signed_two_sided_impulse_pause_breakout_1130
+    tp_adjustment: none; all active target_r_multiple values already >= 1.0 and user correction forbids widening
+      just to improve results
+    rationale: All five original variants failed limited_core_grid_test; each receives exactly one rescue without
+      changing modules, data, costs, fills, sessions, or validation gates.
+    result: all five rescues failed limited_core_grid_test
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_impulse_pause_orderflow_continuation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five allowed per-variant rescues failed limited_core_grid_test;
+    no variant reached monkey, WFA, Monte Carlo, simulated incubation, or acceptance validation.
+  best_original_variant: morning_signed_two_sided_impulse_pause_breakout_1130
+  best_original_top_net: -75.0
+  best_original_profitable_combo_rate: 0.0
+  best_rescue_variant: morning_signed_two_sided_impulse_pause_breakout_1130
+  best_rescue_top_net: -15.0
+  best_rescue_profitable_combo_rate: 0.0
+  fixed_config_core_trade_logs: 10

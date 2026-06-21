@@ -1,0 +1,61 @@
+campaign_id: nq_archive_range_compression_retest
+title: NQ archived range compression retest
+decision: FAIL
+created_at: '2026-06-21'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: archive_nq_nr7_or30_and_inside_nr4_breakout
+hypothesis: A narrow prior NQ session or inside narrow-range day may create compression that resolves
+  through a completed opening-range or prior-session breakout.
+sources:
+- title: Day Trading With Short Term Price Patterns and Opening Range Breakout
+  authors: Toby Crabel
+  year: 1990
+  venue: Trader's Press
+  link: https://www.traderspress.com/
+  relevance: Documents narrow-range and opening-range breakout patterns used as the archived range-compression
+    mechanics.
+- title: Street Smarts
+  authors: Linda Bradford Raschke and Laurence A. Connors
+  year: 1995
+  venue: M. Gordon Publishing
+  link: https://lbrgroup.com/
+  relevance: Practitioner source for NR7 and intraday breakout concepts; this implementation adds current
+    cost, fill, and prop-rule gates.
+rationale: This revamp retest ports archive strategies that passed many historical stages or were close
+  to passing into the current authored campaign tree. Only pre-result parameter spaces are declared here,
+  and old over-wide grids are narrowed solely to satisfy current methodology caps.
+data_needs:
+- local completed-bar Sierra RTH orderflow parquet
+- America/New_York timestamp handling and RTH session labels
+- commission, slippage, tick size, point value, and forced flatten configured in each variant
+lookahead_risks:
+- All signal windows are completed before the engine can enter on the next bar.
+- No final session value, future daily range, future VWAP, or post-entry orderflow is used in the signal.
+- Any pass remains only a candidate strategy pending source comparison and manual due diligence.
+duplicate_edge_check:
+  archive_retest_scope: true
+  active_revamp_direct_test_missing: true
+  conclusion: These variants retest specific archived mechanics that were not directly present under the
+    revamp source tree. They are not evidence for a new economic edge unless the current staged flow also
+    passes.
+variants:
+- nr7_or30_1040_rank_relaxed_138cap
+- nr7_or30_morning_range_capped
+- nr7_or30_1045_rank_relaxed_135cap
+- nr7_or30_1130_range_capped
+- id_nr4_prior_session_breakout
+rescue_policy:
+  allowed: false
+  reason: Archive retests must be accepted or rejected under the predeclared current-compliant grids;
+    no post-result rescue is authorized.
+result_summary:
+  decision: FAIL
+  report_root: backtest-campaigns/nq_archive_range_compression_retest
+  variants_tested: 5
+  variants_passed: 0
+  terminal_stages:
+    limited_core_grid_test: 4
+    limited_monkey_test: 1
+  failure_reason: Four NQ range-compression variants failed limited_core_grid_test. The id_nr4_prior_session_breakout
+    variant reached limited_monkey_test but failed the monkey robustness thresholds.

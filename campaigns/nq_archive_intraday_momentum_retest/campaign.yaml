@@ -1,0 +1,64 @@
+campaign_id: nq_archive_intraday_momentum_retest
+title: NQ archived intraday momentum retest
+decision: FAIL
+created_at: '2026-06-21'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: archive_nq_intraday_return_priority_and_morning_strength
+hypothesis: Large completed NQ morning returns may persist intraday, with priority given to an early short
+  weakness signal before a later long strength signal in the archived rule.
+sources:
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  doi: 10.1016/j.jfineco.2018.05.009
+  relevance: Supports testing whether completed intraday index-market returns forecast later same-day
+    direction.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  link: https://www.sciencedirect.com/science/article/abs/pii/S0304405X11002613
+  doi: 10.1016/j.jfineco.2011.11.003
+  relevance: Provides broader evidence that futures returns can persist, while this campaign tests only
+    intraday completed-window persistence.
+rationale: This revamp retest ports archive strategies that passed many historical stages or were close
+  to passing into the current authored campaign tree. Only pre-result parameter spaces are declared here,
+  and old over-wide grids are narrowed solely to satisfy current methodology caps.
+data_needs:
+- local completed-bar Sierra RTH orderflow parquet
+- America/New_York timestamp handling and RTH session labels
+- commission, slippage, tick size, point value, and forced flatten configured in each variant
+lookahead_risks:
+- All signal windows are completed before the engine can enter on the next bar.
+- No final session value, future daily range, future VWAP, or post-entry orderflow is used in the signal.
+- Any pass remains only a candidate strategy pending source comparison and manual due diligence.
+duplicate_edge_check:
+  archive_retest_scope: true
+  active_revamp_direct_test_missing: true
+  conclusion: These variants retest specific archived mechanics that were not directly present under the
+    revamp source tree. They are not evidence for a new economic edge unless the current staged flow also
+    passes.
+variants:
+- priority_short1030_long1130_long50
+- priority_short1030_long1130_base
+- long_only_1030_strength_balanced
+- long_only_1030_strength_efficiency
+- short_only_1030_weakness
+rescue_policy:
+  allowed: false
+  reason: Archive retests must be accepted or rejected under the predeclared current-compliant grids;
+    no post-result rescue is authorized.
+result_summary:
+  decision: FAIL
+  report_root: backtest-campaigns/nq_archive_intraday_momentum_retest
+  variants_tested: 5
+  variants_passed: 0
+  terminal_stages:
+    limited_monkey_test: 4
+    walk_forward_analysis: 1
+  failure_reason: Four variants failed limited_monkey_test despite passing limited_core_grid_test. The
+    long-only efficiency variant reached walk_forward_analysis but failed by early exit with no selected
+    in-sample row satisfying the configured selection filter.

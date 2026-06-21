@@ -119,7 +119,7 @@ strategy:
       pressure_rank_threshold: 0.8
       min_return_ticks: 2
       stop_pct: 0.0025
-      target_r_multiple: 0.5
+      target_r_multiple: 1.0
       slots:
       - slot_id: early_5m_impulse_reversal_1000
         setup_mode: early_5m_impulse_reversal_1000
@@ -135,7 +135,7 @@ strategy:
   tp:
     module: fixed_r
     params:
-      target_r_multiple: 0.5
+      target_r_multiple: 1.0
   flatten_time: '10:45:00'
 core:
   data_subset: &id001
@@ -195,9 +195,7 @@ core_grid:
     - 2
     - 3
     tp.params.target_r_multiple:
-    - 0.25
-    - 0.5
-    - 0.75
+    - 1.0
 monkey:
   data_subset: *id001
   runs: 300

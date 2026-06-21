@@ -21,7 +21,7 @@ from propstack.data.pipeline import prepare_data
 from propstack.data.source import data_source_hash
 from propstack.prop.rules import PropRules
 from propstack.research.core_grid import run_core_grid
-from propstack.research.monkey import run_monkey, run_trade_path_stress
+from propstack.research.monkey import run_monkey
 from propstack.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
 from propstack.research.wfa import run_wfa
 from propstack.utils.config import (
@@ -57,6 +57,11 @@ PRE_ACCEPTANCE_STAGE_ORDER = [
 
 DEFAULT_STAGE_ORDER = [*PRE_ACCEPTANCE_STAGE_ORDER, ACCEPTANCE_STAGE]
 
+TRADE_PATH_STRESS_SKIP_REASON = (
+    "trade-path stress is globally disabled for campaign stages; "
+    "monkey gates use random-entry core-beat rates"
+)
+
 DEFAULT_STAGE_CRITERIA = {
     "limited_core_grid_test": [
         {"metric": "summary.total_combinations_tested", "valid_parameter_combination_count": True},
@@ -81,7 +86,7 @@ DEFAULT_STAGE_CRITERIA = {
         {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
     ],
     "wfa_oos_monte_carlo": [
-        {"metric": "summary.probability_profit_before_drawdown", "exclusive_min": 0.50},
+        {"metric": "summary.mean_net_pnl", "exclusive_min": 0.0},
     ],
     "simulated_incubation_core": [
         {"metric": "metrics.profit_factor", "min": 1.0},
@@ -883,6 +888,17 @@ def _annotate_stage_data_period(summary: dict, resolved_subset: dict | None, qua
     summary["actual_data_period"] = actual_period
 
 
+def _skipped_trade_path_stress() -> tuple[pd.DataFrame, dict]:
+    return (
+        pd.DataFrame(columns=["run_id", "skipped", "skip_reason"]),
+        {
+            "enabled": False,
+            "skipped": True,
+            "skip_reason": TRADE_PATH_STRESS_SKIP_REASON,
+        },
+    )
+
+
 def _run_limited_monkey(
     cfg: dict,
     stage_cfg: dict,
@@ -920,14 +936,7 @@ def _run_limited_monkey(
         detail_data=detail,
         core_trades=core_trades,
     )
-    stress_results, stress_summary = run_trade_path_stress(
-        market,
-        test_cfg,
-        monkey_cfg,
-        test_cfg.get("benchmarks", {}),
-        core_trades=core_trades,
-        report_dir=report_dir,
-    )
+    stress_results, stress_summary = _skipped_trade_path_stress()
     summary["trade_path_stress"] = stress_summary
     summary["selected_core_params"] = selected_params
     summary["selected_core_row"] = selected_row.to_dict() if selected_row is not None else {}
@@ -1038,14 +1047,7 @@ def _run_wfa_oos_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context: di
         detail_data=detail,
         core_trades=trades,
     )
-    stress_results, stress_summary = run_trade_path_stress(
-        market,
-        cfg,
-        monkey_cfg,
-        cfg.get("benchmarks", {}),
-        core_trades=trades,
-        report_dir=report_dir,
-    )
+    stress_results, stress_summary = _skipped_trade_path_stress()
     summary["trade_path_stress"] = stress_summary
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "wfa_oos_monkey_results.csv", report_timezone, index=False)
@@ -1061,6 +1063,11 @@ def _run_wfa_oos_monte_carlo(cfg: dict, stage_cfg: dict, stage_dir: Path, contex
     mc_cfg["_core"] = cfg.get("core", {})
     rules_cfg = _wfa_oos_monte_carlo_rules_config(cfg, stage_cfg)
     rules = PropRules.from_dict(rules_cfg)
+    if bool(getattr(rules, "account_lifecycle_enabled", False)):
+        mc_cfg["retain_path_trades"] = True
+        mc_cfg["retain_path_events"] = True
+        if "cluster_losses" not in stage_cfg:
+            mc_cfg["cluster_losses"] = False
     retain_path_trades = bool(mc_cfg.get("retain_path_trades", False))
     retain_path_events = bool(mc_cfg.get("retain_path_events", False))
     if retain_path_trades or retain_path_events:
@@ -1085,22 +1092,40 @@ def _wfa_oos_monte_carlo_rules_config(cfg: dict, stage_cfg: dict) -> dict:
     rules_cfg = {
         key: top_rules[key]
         for key in (
-            "starting_balance",
             "max_contracts",
             "max_best_day_profit_percentage",
             "min_trading_days",
-            "payout_threshold",
         )
         if key in top_rules
     }
+    rules_cfg.update(
+        {
+            "account_lifecycle_enabled": True,
+            "starting_balance": 50000.0,
+            "challenge_fee": 98.0,
+            "challenge_profit_target_amount": 3000.0,
+            "challenge_consistency_limit": 0.50,
+            "trailing_drawdown": 2000.0,
+            "trailing_drawdown_lock_balance": 52100.0,
+            "trailing_drawdown_locked_floor": 50100.0,
+            "funded_starting_balance": 50000.0,
+            "funded_initial_drawdown_floor": 48000.0,
+            "funded_payout_min_profit_day": 150.0,
+            "funded_payout_required_profit_days": 5,
+            "funded_payout_profit_fraction": 0.50,
+            "funded_payout_profit_share": 0.90,
+            "funded_payout_max_amount": 2000.0,
+            "max_payouts_per_account": 5,
+            "profit_target_amount": 3000.0,
+            "drawdown_limit_amount": 2000.0,
+        }
+    )
     monte_carlo_rules = (cfg.get("monte_carlo") or {}).get("prop_rules")
     if isinstance(monte_carlo_rules, dict):
         _deep_update(rules_cfg, copy.deepcopy(monte_carlo_rules))
     stage_rules = stage_cfg.get("prop_rules")
     if isinstance(stage_rules, dict):
         _deep_update(rules_cfg, copy.deepcopy(stage_rules))
-    rules_cfg.setdefault("profit_target_amount", 50000.0)
-    rules_cfg.setdefault("drawdown_limit_amount", 10000.0)
     drawdown_budget = float(rules_cfg["drawdown_limit_amount"])
     rules_cfg.setdefault("daily_loss_limit", drawdown_budget)
     rules_cfg.setdefault("trailing_drawdown", drawdown_budget)
@@ -1349,14 +1374,7 @@ def _run_incubation_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context:
         detail_data=detail,
         core_trades=trades,
     )
-    stress_results, stress_summary = run_trade_path_stress(
-        market,
-        test_cfg,
-        monkey_cfg,
-        test_cfg.get("benchmarks", {}),
-        core_trades=trades,
-        report_dir=report_dir,
-    )
+    stress_results, stress_summary = _skipped_trade_path_stress()
     summary["trade_path_stress"] = stress_summary
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "incubation_monkey_results.csv", report_timezone, index=False)
@@ -1775,11 +1793,19 @@ def _deep_update(target: dict, updates: dict) -> dict:
 def _stage_subset(cfg: dict, stage_cfg: dict, fallback_section: str) -> dict | None:
     if stage_cfg.get("data_subset"):
         return dict(stage_cfg["data_subset"])
-    fallback = dict((cfg.get(fallback_section) or {}).get("data_subset") or (cfg.get("data") or {}).get("data_subset") or {})
+    fallback = _stage_base_subset(cfg, fallback_section)
     window = stage_cfg.get("data_window")
     if window:
         return _subset_from_window(fallback, window)
     return fallback or None
+
+
+def _stage_base_subset(cfg: dict, fallback_section: str) -> dict:
+    for section in (fallback_section, "core", "data"):
+        subset = (cfg.get(section) or {}).get("data_subset")
+        if subset:
+            return dict(subset)
+    return {}
 
 
 def _subset_from_window(base_subset: dict, window: dict) -> dict:

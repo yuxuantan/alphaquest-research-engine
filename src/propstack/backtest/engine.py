@@ -14,6 +14,7 @@ from propstack.backtest.sizing import size_position, tick_value_from_core
 from propstack.strategy import ModularStrategy
 from propstack.utils.config import config_timeframe_minutes
 from propstack.utils.progress import progress_bar
+from propstack.utils.target_rr import require_minimum_target_rr
 from propstack.utils.time import parse_time
 
 
@@ -100,6 +101,7 @@ class EventFilters:
 
 class BacktestEngine:
     def __init__(self, config: dict, show_progress: bool = False):
+        require_minimum_target_rr(config.get("strategy", {}), context="strategy")
         self.config = config
         self.strategy_config = copy.deepcopy(config.get("strategy", {}))
         if "strategy_name" not in self.strategy_config and config.get("strategy_name"):
@@ -517,6 +519,12 @@ class BacktestEngine:
                 "large20_signed_volume",
                 "large20_volume",
             },
+            "intraday_invariance_dislocation_reversion": {
+                "is_rth",
+                "signed_volume",
+                "volume",
+                "trades",
+            },
             "pdh_pdl_orderflow_breakout_continuation": {
                 "is_rth",
                 "prev_rth_high",
@@ -566,11 +574,56 @@ class BacktestEngine:
                 "large20_signed_volume",
                 "large20_volume",
             },
+            "sector_rotation_orderflow_pullback": {
+                "is_rth",
+                "vwap",
+                "signed_volume",
+                "volume",
+                "large10_signed_volume",
+                "large10_volume",
+                "large20_signed_volume",
+                "large20_volume",
+            },
             "gao_last_half_hour_orderflow": {"is_rth", "signed_volume", "large20_signed_volume", "large20_volume"},
+            "impulse_pause_orderflow_continuation": {
+                "is_rth",
+                "signed_volume",
+                "volume",
+                "large10_signed_volume",
+                "large10_volume",
+                "large20_signed_volume",
+                "large20_volume",
+            },
+            "import_export_price_pressure": {
+                "is_rth",
+                "signed_volume",
+                "volume",
+                "large10_signed_volume",
+                "large10_volume",
+                "large20_signed_volume",
+                "large20_volume",
+            },
             "halloween_seasonal_premium": {"is_rth"},
             "late_day_intraday_momentum": {"is_rth", "prev_rth_close", "volume_ratio"},
             "leveraged_etf_rebalance_pressure": {"is_rth", "prev_rth_close"},
             "liquidity_risk_capacity_priority": {"is_rth"},
+            "market_plumbing_priority": {"is_rth"},
+            "market_structure_pivot_continuation": {"is_rth"},
+            "market_structure_filtered_entry": {
+                "is_rth",
+                "vwap",
+                "volume",
+                "signed_volume",
+                "large10_signed_volume",
+                "large10_volume",
+                "large20_signed_volume",
+                "large20_volume",
+                "mes_participation_share_30_rank252",
+                "mes_participation_share_60_rank252",
+                "mes_trade_share_60_rank252",
+                "es_return_ticks_30",
+                "es_return_ticks_60",
+            },
             "mes_participation_crowding": {
                 "is_rth",
                 "mes_participation_share_30_rank252",
@@ -578,6 +631,35 @@ class BacktestEngine:
                 "mes_trade_share_60_rank252",
                 "es_return_ticks_30",
                 "es_return_ticks_60",
+            },
+            "volatility_filtered_trend_mes_participation_crowding": {
+                "is_rth",
+                "mes_participation_share_15_rank252",
+                "mes_participation_share_30_rank252",
+                "mes_participation_share_60_rank252",
+                "mes_trade_share_15_rank252",
+                "mes_trade_share_30_rank252",
+                "mes_trade_share_60_rank252",
+                "es_return_ticks_15",
+                "es_return_ticks_30",
+                "es_return_ticks_60",
+            },
+            "mes_footprint_liquidity_sweep_reversion": {
+                "is_rth",
+                "footprint_absorption_long",
+                "footprint_absorption_short",
+                "footprint_max_sell_imbalance_volume",
+                "footprint_max_buy_imbalance_volume",
+                "footprint_highest_sell_imbalance_price",
+                "footprint_lowest_buy_imbalance_price",
+                "mes_participation_share_15_rank252",
+                "mes_participation_share_30_rank252",
+                "mes_trade_share_15_rank252",
+                "mes_trade_share_30_rank252",
+                "mes_trade_orderflow_imbalance_15",
+                "mes_trade_orderflow_imbalance_30",
+                "mes_trade_orderflow_large10_imbalance_15",
+                "mes_trade_orderflow_large10_imbalance_30",
             },
             "opening_drive_mes_crowding_reversal": {
                 "is_rth",
@@ -657,6 +739,7 @@ class BacktestEngine:
                 "large20_volume",
             },
             "overnight_intraday_reversal": {"is_rth", "prev_rth_close"},
+            "overnight_drift": {"is_eth", "session_label", "prev_rth_open", "prev_rth_close"},
             "overnight_return_late_day_momentum": {"is_rth", "prev_rth_close"},
             "overnight_inventory_reversion": {"is_rth", "overnight_high", "overnight_low", "vwap"},
             "overnight_range_orderflow_breakout": {
@@ -716,6 +799,24 @@ class BacktestEngine:
                 "large20_signed_volume",
                 "large20_volume",
             },
+            "prior_poc_orderflow_magnet": {
+                "is_rth",
+                "volume",
+                "signed_volume",
+                "large10_signed_volume",
+                "large10_volume",
+                "large20_signed_volume",
+                "large20_volume",
+            },
+            "prior_lvn_orderflow_rejection": {
+                "is_rth",
+                "volume",
+                "signed_volume",
+                "large10_signed_volume",
+                "large10_volume",
+                "large20_signed_volume",
+                "large20_volume",
+            },
             "quarterly_expiration_pressure": {"is_rth"},
             "range_compression_breakout": {"is_rth"},
             "range_compression_orderflow_breakout": {
@@ -766,6 +867,15 @@ class BacktestEngine:
             "trade_size_segment_orderflow": {"is_rth"},
             "turn_of_year_effect": {"is_rth"},
             "variance_risk_premium_intraday": {"is_rth"},
+            "variance_ratio_orderflow_regime": {
+                "is_rth",
+                "signed_volume",
+                "volume",
+                "large10_signed_volume",
+                "large10_volume",
+                "large20_signed_volume",
+                "large20_volume",
+            },
             "vix_expiration_pressure": {"is_rth"},
             "volatility_managed_intraday_premium": {"is_rth"},
             "volume_conditioned_liquidity_reversal": {"is_rth", "volume_ratio"},

@@ -1,0 +1,413 @@
+campaign_id: es_pivot_filtered_mes_participation_crowding_reversion
+variant_id: morning_notional_two_sided_reversal_window_1130
+test_run_id: stop_widen_rescue1
+strategy_name: pivot_filtered_mes_participation_crowding_reversion
+symbol: ES
+dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Barber, Lin, and Odean (2024); CFTC Retail Traders in Futures Markets
+    (2024); CME Micro E-mini documentation; Lo, Mamaysky, and Wang (2000); Moskowitz,
+    Ooi, and Pedersen (2012)
+  edge_thesis: High MES participation during a completed ES move may mark temporary
+    smaller-contract crowding only when the reversal direction agrees with the last
+    completed multi-timeframe pivot market-structure pattern.
+  mechanic: From 10:00 through 11:30 ET, use completed 1-minute bars to find the first
+    high-MES-notional-share 30-minute ES move. Fade down moves only when carried 5/10-minute
+    pivot structure is bullish and fade up moves only when it is bearish. Enter next
+    bar and flatten by 12:30.
+  timeframe_rationale: 1-minute bars preserve completed ES/MES participation features
+    and next-bar execution while the fixed pivot filter builds higher-timeframe structure
+    only from completed 1-minute bars. Carrying completed pivots across RTH sessions
+    implements the predeclared last-pattern-found bias without using any future bar.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: Two-sided morning fade of crowded MES participation only
+      when the reversal direction agrees with the last completed 5/10-minute pivot
+      structure; the pivot filter rejects blind counter-structure fades. The base
+      MES crowding condition must trigger first; the pivot filter cannot create a
+      trade by itself.
+    entry_logic_rationale: The entry uses completed rolling 30-minute ES return and
+      prior-history MES participation rank on each completed 1-minute bar inside a
+      fixed window. A signal is accepted only if the carried completed pivot bias
+      has the same direction as the proposed fade. Engine execution remains next-bar
+      open or later.
+    stop_loss_rationale: The stop remains percent-from-entry, rounded to the ES tick,
+      so the composite does not use a future swing or post-entry structure level for
+      invalidation.
+    target_exit_rationale: The fixed-R target remains predeclared and target_r_multiple
+      is never below 1.0R. Any unresolved position flattens at the configured intraday
+      cutoff.
+    profitability_rationale: This is convincing enough to test because high smaller-contract
+      participation can reflect crowded late reaction, while completed pivot structure
+      should filter those fades to pullbacks in the prevailing intraday structure
+      instead of opposing persistent repricing.
+    known_failure_modes: MES participation may be informed rather than crowded; carried
+      pivot structure may lag regime changes; the window may select weak first signals;
+      costs and one-tick slippage may erase the mean-reversion effect.
+    pre_test_decision: approve_for_testing
+    rescue_attempt: 'stop_widen_rescue_1: parameter-only rescue after original run
+      failed staged validation. Entry mechanics, signal windows, pivot filter, data
+      windows, costs, and target grid are unchanged; only stop_pct fixed value/grid
+      is widened.'
+data:
+  dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+  source_timeframe: 1m
+  source: csv
+  raw_csv: data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: market_structure_filtered_entry
+    params:
+      base_module: mes_participation_crowding
+      base_params:
+        setup_mode: morning_notional_two_sided_reversal_window
+        signal_mode: first_signal_in_window
+        start_time: '10:00:00'
+        end_time: '11:30:00'
+        entry_time: '11:30:00'
+        flatten_time: '12:30:00'
+        bar_interval_minutes: 1
+        lookback_minutes: 30
+        rank_window: 252
+        share_mode: notional
+        direction: both
+        share_rank_min: 0.55
+        min_abs_return_ticks: 2
+        max_trades_per_day: 1
+        stop_pct: 0.004
+        target_r_multiple: 1.5
+      rth_start: 09:30:00
+      bar_interval_minutes: 1
+      tick_size: 0.25
+      timeframes_minutes:
+      - 5
+      - 10
+      min_aligned_timeframes: 2
+      pivot_left_bars: 1
+      pivot_right_bars: 1
+      min_pivot_move_ticks: 0
+      carry_pivots_across_sessions: true
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.004
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '12:30:00'
+core:
+  data_subset: &id001
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '12:30:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 250
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.base_params.share_rank_min:
+    - 0.45
+    - 0.55
+    - 0.65
+    entry.params.base_params.min_abs_return_ticks:
+    - 1
+    - 2
+    - 3
+    sl.params.stop_pct:
+    - 0.0025
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.base_params.share_rank_min:
+    - 0.45
+    - 0.55
+    - 0.65
+    entry.params.base_params.min_abs_return_ticks:
+    - 1
+    - 2
+    - 3
+    sl.params.stop_pct:
+    - 0.0025
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 3
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    scope: runs
+    workers: 3
+rescue_attempt:
+  id: stop_widen_rescue_1
+  applies_to_run_id: run1
+  allowed_by_policy: one rescue per failed variant
+  changes:
+  - field: strategy.sl.params.stop_pct
+    from: 0.0025
+    to: 0.004
+  - field: core_grid/wfa sl.params.stop_pct
+    from:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    to:
+    - 0.0025
+    - 0.004
+    - 0.006
+  unchanged:
+  - entry module
+  - base MES crowding mechanic
+  - signal window
+  - pivot filter
+  - target grid
+  - costs
+  - sessions
+  - data windows
+  - validation gates
+  target_r_multiple_floor_enforced: true

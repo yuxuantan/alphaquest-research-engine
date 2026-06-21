@@ -1,4 +1,7 @@
+import copy
+
 import pandas as pd
+import pytest
 
 from propstack.backtest.engine import BacktestEngine
 from propstack.backtest.equity_report import equity_curve_frame
@@ -44,6 +47,14 @@ BASE_CFG = {
 def _features():
     df, _, _ = clean_data(DATA_CFG)
     return build_features(df, DATA_CFG)
+
+
+def test_backtest_engine_rejects_target_r_multiple_below_one():
+    cfg = copy.deepcopy(BASE_CFG)
+    cfg["strategy"]["tp"]["params"]["target_r_multiple"] = 0.75
+
+    with pytest.raises(ValueError, match="target_r_multiple must be >= 1.0"):
+        BacktestEngine(cfg)
 
 
 def test_next_bar_entry_and_costs():

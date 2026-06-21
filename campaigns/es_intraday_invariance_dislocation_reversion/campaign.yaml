@@ -1,0 +1,166 @@
+campaign_id: es_intraday_invariance_dislocation_reversion
+title: ES Intraday Trading-Invariance Dislocation Reversion
+decision: FAIL
+created_at: '2026-06-20'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Completed ES bars with unusually large price movement per transaction, scaled by average trade size and ranked against prior same-clock observations, may identify temporary liquidity dislocations that mean-revert when aggregate signed flow does not strongly sponsor the move.
+rationale: This campaign tests intraday trading-invariance dislocation, not raw trade-count fragmentation, average trade-size segmentation, Amihud daily illiquidity, variance-ratio serial dependence, or signed-flow persistence. The signal combines completed price displacement, completed trades, completed volume, and completed signed volume; entries occur no earlier than the next bar open.
+sources:
+- title: Intraday Trading Invariance in the E-mini S&P 500 Futures Market
+  authors: Torben G. Andersen, Oleg Bondarenko, Albert S. Kyle, and Anna A. Obizhaeva
+  year: 2018
+  link: https://pages.nes.ru/aobizhaeva/ABKO-intradayinv.pdf
+  relevance: Directly studies intraday trading invariance in E-mini S&P 500 futures and motivates combining transaction count, trade size, and price variation instead of using volume alone.
+- title: 'Market Microstructure Invariance: Empirical Hypotheses'
+  authors: Albert S. Kyle and Anna A. Obizhaeva
+  year: 2016
+  venue: Econometrica
+  doi: 10.3982/ECTA10486
+  relevance: Provides the microstructure-invariance framework linking bet/trade arrival, size, and risk transfer. This campaign treats abnormal intraday departures as a liquidity-state proxy, not as a fill-quality assumption.
+- title: Order Flow, Transaction Clock, and Normality of Asset Returns
+  authors: Thierry Ane and Helyette Geman
+  year: 2000
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00268
+  relevance: Motivates using transaction-clock information when interpreting short-horizon returns.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- Sierra completed-bar aggregate volume, signed_volume, and trades fields
+- prior same-clock rank history computed online from earlier sessions only
+- next-bar execution, ES tick size/point value, commissions, slippage, pessimistic same-bar ordering, and forced flatten from config
+data_quality_caveats:
+- Sierra signed_volume is an aggregate bid/ask-volume proxy, not quote-level OFI.
+- Sierra trades is a completed-bar aggregate and is not used for print sequencing, queue position, or intra-minute fill truth.
+- The invariance score is a bar-level proxy, not the exact bet-size object in the theory.
+lookahead_risks:
+- Rolling price, volume, signed_volume, and trades use only completed bars ending at the signal bar close.
+- Same-clock ranks compare the current completed score only with prior same-clock observations; the current score is appended after the signal decision.
+- A signal at HH:MM uses the bar that closed at HH:MM and can enter only at the next bar open.
+- No final current-session range, final VWAP, future orderflow, future trades, or future session totals are used.
+- All variants flatten same day before configured prop cutoff.
+failure_modes:
+- High invariance dislocation may identify informed price discovery rather than temporary liquidity pressure.
+- Aggregate signed flow may be too noisy to distinguish sponsored from unsponsored moves.
+- The score may overlap generic volatility/liquidity states and fail after costs.
+- The edge may exist only in specific crisis periods or a narrow time of day, causing profit concentration.
+- One-minute bars cannot resolve same-bar stop/target order without pessimistic handling.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_trade_fragmentation_liquidity_reversion
+  - es_trade_size_stealth_orderflow
+  - es_amihud_illiquidity_price_impact
+  - es_variance_ratio_orderflow_regime
+  - es_signed_orderflow_persistence
+  - es_volume_shock_liquidity_reversal
+  - es_orderflow_absorption_exhaustion_reversal
+  - es_vpin_toxicity_continuation
+  conclusion: Eligible as a distinct active campaign. Fragmentation used high trade-count plus low average trade-size ranks; trade-size stealth used large/residual signed-flow disagreement; Amihud used daily illiquidity; variance-ratio used serial-dependence states. This campaign uses a same-clock ranked intraday invariance dislocation score combining price variation per transaction and average trade size, then fades only when aggregate signed flow does not strongly align with the move.
+variants:
+- morning_15m_two_sided_dislocation_fade_1130
+- midday_15m_two_sided_dislocation_fade_1400
+- lunch_15m_two_sided_dislocation_fade_1330
+- afternoon_15m_two_sided_dislocation_fade_1530
+- full_session_15m_two_sided_dislocation_fade_1530
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - invariance_rank_threshold
+  - min_return_ticks
+  stop_tunables:
+  - stop_pct
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.invariance_rank_threshold:
+    - 0.9
+    - 0.95
+    - 0.975
+    entry.params.min_return_ticks:
+    - 4
+    - 6
+    - 8
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.0035
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  target_rr_floor: No target_r_multiple below 1.0R is allowed.
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core invariance-dislocation mechanic
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: afternoon_15m_two_sided_dislocation_fade_1530
+    config: campaigns/es_intraday_invariance_dislocation_reversion/rescue_attempts/parameter_space_rescue_1/afternoon_15m_two_sided_dislocation_fade_1530/config.yaml
+    report: backtest-campaigns/es_intraday_invariance_dislocation_reversion/afternoon_15m_two_sided_dislocation_fade_1530/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.037037037037037035 below required 0.70; benchmark-passing combinations 0
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: full_session_15m_two_sided_dislocation_fade_1530
+    config: campaigns/es_intraday_invariance_dislocation_reversion/rescue_attempts/parameter_space_rescue_1/full_session_15m_two_sided_dislocation_fade_1530/config.yaml
+    report: backtest-campaigns/es_intraday_invariance_dislocation_reversion/full_session_15m_two_sided_dislocation_fade_1530/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; benchmark-passing combinations 0
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: lunch_15m_two_sided_dislocation_fade_1330
+    config: campaigns/es_intraday_invariance_dislocation_reversion/rescue_attempts/parameter_space_rescue_1/lunch_15m_two_sided_dislocation_fade_1330/config.yaml
+    report: backtest-campaigns/es_intraday_invariance_dislocation_reversion/lunch_15m_two_sided_dislocation_fade_1330/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.18518518518518517 below required 0.70; benchmark-passing combinations 0
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: midday_15m_two_sided_dislocation_fade_1400
+    config: campaigns/es_intraday_invariance_dislocation_reversion/rescue_attempts/parameter_space_rescue_1/midday_15m_two_sided_dislocation_fade_1400/config.yaml
+    report: backtest-campaigns/es_intraday_invariance_dislocation_reversion/midday_15m_two_sided_dislocation_fade_1400/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; benchmark-passing combinations 0
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: morning_15m_two_sided_dislocation_fade_1130
+    config: campaigns/es_intraday_invariance_dislocation_reversion/rescue_attempts/parameter_space_rescue_1/morning_15m_two_sided_dislocation_fade_1130/config.yaml
+    report: backtest-campaigns/es_intraday_invariance_dislocation_reversion/morning_15m_two_sided_dislocation_fade_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: profitable-combo rate 0.0 below required 0.70; benchmark-passing combinations 0
+pre_pnl_density_audit:
+  status: PASS
+  generated_at: '2026-06-20'
+  artifact: research_artifacts/es_intraday_invariance_dislocation_reversion_density_audit_20260620.md
+  detail_csv: research_artifacts/es_intraday_invariance_dislocation_reversion_density_audit_20260620.csv
+  decision: Proceed to preflight and staged testing without changing mechanics or parameter space after this point.
+  note: Initial single-sided morning variants were rejected pre-PnL for insufficient limited-core density and replaced before staged testing.
+status: completed
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_intraday_invariance_dislocation_reversion/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  terminal_stage: limited_core_grid_test
+  monkey_reached_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five original intraday-invariance dislocation reversion variants failed limited_core_grid_test, and all five one-time parameter-space-only rescues also failed limited_core_grid_test. No run reached limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  best_original_profitable_combo_rate: 0.25925925925925924
+  best_rescue_profitable_combo_rate: 0.18518518518518517

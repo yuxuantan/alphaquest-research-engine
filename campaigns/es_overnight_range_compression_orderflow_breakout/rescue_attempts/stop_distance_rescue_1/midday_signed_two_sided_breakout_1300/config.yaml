@@ -33,7 +33,7 @@ research_metadata:
     - max_overnight_range_rank grid changed to [0.5, 0.6, 0.7]
     - min_orderflow_imbalance grid changed to [0.0, 0.01, 0.03]
     - stop_offset_ticks grid changed to [1, 2, 3]
-    - target_r_multiple grid changed to [0.5, 0.75, 1.0]
+    - historical target_r_multiple grid changed to [0.5, 0.75, 1.0]; this sub-1R grid is now invalid and future reruns must use target_r_multiple >= 1.0
     rationale: Original grids had adequate signal density but no profitable combinations. The one allowed rescue keeps the completed overnight compression breakout with aggregate orderflow confirmation intact and tests whether the edge, if present, is shorter-horizon follow-through that needs quicker fixed-R exits and a less extreme lower-to-middle overnight range state.
   user_authorized_additional_rescue:
     id: stop_distance_rescue_1
@@ -108,7 +108,7 @@ strategy:
   tp:
     module: fixed_r
     params:
-      target_r_multiple: 0.75
+      target_r_multiple: 1.0
   flatten_time: '14:00:00'
 core:
   data_subset: &id001
@@ -165,8 +165,6 @@ core_grid:
     - 0.03
     sl.params.stop_offset_ticks: *id002
     tp.params.target_r_multiple:
-    - 0.5
-    - 0.75
     - 1.0
 monkey:
   data_subset: *id001

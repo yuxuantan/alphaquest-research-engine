@@ -1,0 +1,119 @@
+campaign_id: es_pivot_filtered_vwap_pullback_continuation
+title: ES VWAP pullback continuation filtered by completed pivot market structure
+decision: FAIL
+created_at: '2026-06-20'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: ES VWAP pullback continuation should be more robust when the continuation direction agrees with at least one carried
+  completed 5/15-minute swing-pivot structure and is not opposed by either checked timeframe.
+rationale: 'This is a bounded composite campaign: the primary edge is VWAP pullback continuation, and the fixed secondary
+  condition is completed swing-pivot direction. A VWAP reclaim/reject continuation signal is allowed only when completed 5/15-minute
+  pivot structure supports the signal direction with no opposite checked timeframe. The strict 2-of-2 draft was rejected before
+  PnL for insufficient trade density; the active 1-of-2/no-opposition filter is fixed before PnL testing and adds no tunable.'
+sources:
+- title: 'Improving VWAP Strategies: A Dynamical Volume Approach'
+  authors: Jedrzej Bialkowski, Serge Darolles, Gaelle Le Fol
+  year: 2008
+  venue: Journal of Banking and Finance / working-paper version
+  link: https://ideas.repec.org/p/eve/wpaper/06-08.html
+  relevance: Treats VWAP as a central institutional execution benchmark and models intraday volume dynamics around VWAP execution.
+- title: Optimal VWAP Trading Strategy and Relative Volume
+  authors: James McCulloch and Vladimir Kazakov
+  year: 2007
+  venue: Quantitative Finance Research Centre research paper
+  link: https://ideas.repec.org/p/uts/rpaper/201.html
+  relevance: Describes VWAP as a popular institutional execution-quality benchmark and links it to market-impact-aware trading.
+- title: Volume Weighted Average Price Optimal Execution
+  authors: "Olivier Gu\xE9ant and Jiang Pu"
+  year: 2015
+  venue: arXiv / Stanford mirror
+  link: https://stanford.edu/~boyd/papers/vwap_opt_exec
+  relevance: Frames VWAP benchmark execution under transaction costs and intraday information, motivating VWAP as a liquidity-aware
+    reference level.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/0022-1082.00265
+  relevance: Supports algorithmic local-extrema pattern definitions. Here it justifies a fixed completed-pivot direction filter,
+    not a free-form chart read.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2011.11.003
+  relevance: Provides futures-market support for trend persistence. This campaign uses it only as rationale for requiring
+    VWAP continuation to align with completed intraday structure.
+data_needs:
+- local Sierra ES completed 1-minute RTH OHLCV/orderflow cache
+- deterministic 5-minute aggregation from completed 1-minute bars
+- session VWAP computed only from completed intraday bars at signal time
+- completed ES OHLC bars for carried 5/15-minute pivot-state construction
+- same-day flatten and no-overnight prop-rule checks
+lookahead_risks:
+- VWAP uses only current and prior completed intraday bars at signal time.
+- Opening-drive state uses only completed early RTH bars.
+- Pivot structure confirms swing highs/lows only after right-side confirmation bars are complete.
+- Carried pivot state uses only completed prior-session pivot patterns and current-or-prior completed bars.
+- Signals generated from completed bars are filled no earlier than the next bar open by the engine.
+- No final session high/low, final VWAP, final volume profile, or future return is used.
+failure_modes:
+- VWAP pullbacks may mean-revert rather than continue after ES costs.
+- Pivot structure may lag fast intraday reversals and reject otherwise valid VWAP continuation signals.
+- The broad signal windows may admit weak first signals that pass structure but fail after costs.
+- Continuation may be concentrated in a volatility regime or one side only.
+- Slippage and commissions may erase short-horizon VWAP reclaim edge.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_vwap_pullback_continuation
+  - es_market_structure_pivot_trend_bias
+  - es_pivot_filtered_mes_participation_crowding_reversion
+  conclusion: 'Eligible as a predeclared composite campaign: prior VWAP pullback continuation did not require completed pivot
+    direction, standalone pivot trend bias did not use VWAP pullback mechanics, and the failed MES composite used a different
+    primary edge.'
+variants:
+- morning_trend_reclaim_two_sided_1200
+- late_morning_trend_reclaim_two_sided_1300
+- midday_trend_reclaim_two_sided_1430
+- opening_drive_pullback_two_sided_1400
+- failed_vwap_break_two_sided_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change VWAP feature definition
+  - add or remove filters after seeing results
+  - make pivot filter tunable after seeing results
+  - use target_r_multiple below 1.0
+  - alter costs, fills, sessions, data windows, or validation gates
+pre_pnl_density_audit: research_artifacts/es_pivot_filtered_vwap_pullback_continuation_density_audit_20260620.md
+test_outcome:
+  completed_at: '2026-06-20'
+  decision: FAIL
+  summary_path: backtest-campaigns/es_pivot_filtered_vwap_pullback_continuation/campaign_test_summary.json
+  originals_tested: 5
+  rescues_tested: 5
+  rescue_used: stop_widen_rescue_1
+  outcome: All five originals and all five allowed stop-widen rescues failed limited_core_grid_test; no run reached WFA.
+  best_original:
+    variant_id: failed_vwap_break_two_sided_1500
+    profitable_combo_rate: 0.05555555555555555
+    benchmark_passing_combos: 0
+    total_combinations: 54
+  best_rescue:
+    variant_id: failed_vwap_break_two_sided_1500
+    run_id: stop_widen_rescue1
+    profitable_combo_rate: 0.16666666666666666
+    benchmark_passing_combos: 0
+    total_combinations: 54
+  candidate_strategy_report_created: false

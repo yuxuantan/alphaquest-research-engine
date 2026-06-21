@@ -1,0 +1,187 @@
+campaign_id: es_variance_ratio_orderflow_regime
+title: ES variance-ratio serial-dependence regime with aggregate orderflow confirmation
+decision: FAIL
+created_at: '2026-06-19'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: Rolling completed-bar variance ratio identifies whether short-horizon ES price action is in
+  a persistent or anti-persistent state; aggregate orderflow confirmation should improve trade selection
+  by requiring pressure to align with the serial-dependence state.
+rationale: This is a bounded price-action/orderflow edge. The core edge is serial dependence measured
+  by a rolling variance-ratio statistic computed only from completed ES bars. High variance-ratio states
+  express trend persistence and trade with the completed return plus aligned aggregate flow. Low variance-ratio
+  states express choppy overreaction and fade completed moves that show aggressive flow but fail to close
+  at the extreme. Orderflow is a confirmation layer, not the primary edge.
+sources:
+- title: 'Stock Market Prices Do Not Follow Random Walks: Evidence from a Simple Specification Test'
+  authors: Andrew W. Lo and A. Craig MacKinlay
+  year: 1988
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/1.1.41
+  link: https://doi.org/10.1093/rfs/1.1.41
+  relevance: Introduces the variance-ratio test as a direct measurement of serial dependence in returns;
+    this campaign uses rolling completed-bar variance ratio as the price-action regime gate.
+- title: Stock Market Overreaction
+  authors: Werner F. M. De Bondt and Richard Thaler
+  year: 1985
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1985.tb05004.x
+  link: https://doi.org/10.1111/j.1540-6261.1985.tb05004.x
+  relevance: Motivates the low-variance-ratio/reversal variants as tests for overreaction and short-horizon
+    mean reversion rather than unconditional trend following.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://doi.org/10.1093/jjfinec/nbt003
+  relevance: Supports using contemporaneous order-flow imbalance as a short-horizon price-pressure confirmation,
+    while this campaign avoids LOB claims and uses only completed aggregate Sierra trade flow.
+data_needs:
+- Local Sierra ES completed 1-minute RTH OHLCV and aggregate trade-orderflow cache.
+- 5-minute bars resampled from completed 1-minute bars by the existing runner.
+- Completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, and
+  large20_volume.
+- No LOB, quote, TBBO, paid, or future-derived data.
+data_quality_caveats:
+- Sierra aggregate orderflow is a completed-bar proxy and cannot prove print-level sequencing or true
+  LOB order-flow imbalance.
+- The variance ratio is computed from rolling intraday close-to-close returns and can be noisy in low-range
+  windows.
+- Same-bar stop/target conflicts still require pessimistic OHLC ordering.
+- The edge may collapse after ES commission and one-tick entry slippage if average continuation/reversion
+  is small.
+lookahead_risks:
+- The variance-ratio window includes the signal bar only after that bar has closed; entry is next bar
+  open through the engine.
+- Orderflow confirmation uses only completed signal-window aggregate volume and signed volume.
+- No final session high/low, final VWAP, final volume profile, future returns, or post-entry orderflow
+  is used.
+- WFA parameter selection must use in-sample windows only; no frozen validation tuning is allowed.
+failure_modes:
+- Variance-ratio regimes may not be stable across volatility regimes or contract-roll environments.
+- High variance ratio may identify exhaustion rather than continuation after large news moves.
+- Low variance ratio may identify noise with too little edge after costs.
+- Aggregate signed flow may be too crude compared with true LOB order-flow imbalance.
+- A few high-volatility periods may dominate profitability and fail Monte Carlo or monkey perturbations.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_signed_orderflow_persistence
+  - es_trend_aligned_orderflow_continuation
+  - es_orderflow_impulse_reversal
+  - es_rolling_stat_envelope_orderflow_reversion
+  - es_range_compression_orderflow_breakout
+  - es_realized_vol_of_vol_state
+  - es_realized_semivariance_asymmetry
+  - es_vpin_toxicity_continuation
+  conclusion: Eligible as a new bounded composite edge because the entry is gated by rolling variance-ratio
+    serial dependence computed from completed price bars. It is not standalone signed-flow persistence,
+    generic trend alignment, range compression, realized volatility state, or envelope reversion.
+variants:
+- morning_high_vr_signed_continuation_1130
+- midday_high_vr_large10_continuation_1400
+- afternoon_high_vr_signed_continuation_1530
+- morning_low_vr_signed_reversion_1130
+- midday_low_vr_large10_reversion_1430
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change the variance-ratio serial-dependence edge thesis
+  - change data window, costs, fills, sessions, or stage gates after seeing results
+  - add or remove filters after seeing results
+  attempts:
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: morning_high_vr_signed_continuation_1130
+    config: campaigns/es_variance_ratio_orderflow_regime/rescue_attempts/parameter_space_rescue_1/morning_high_vr_signed_continuation_1130/config.yaml
+    allowed_scope: parameter-space/fixed-threshold changes only; no module, data, cost, fill, or gate
+      changes
+    rationale: Original best row was closest but under the trade-density preference and still negative;
+      rescue lowers the completed-return and flow-magnitude thresholds while preserving high-VR continuation
+      and signed-flow alignment.
+    report: backtest-campaigns/es_variance_ratio_orderflow_regime/morning_high_vr_signed_continuation_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: 0/81 profitable combinations
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: midday_high_vr_large10_continuation_1400
+    config: campaigns/es_variance_ratio_orderflow_regime/rescue_attempts/parameter_space_rescue_1/midday_high_vr_large10_continuation_1400/config.yaml
+    allowed_scope: parameter-space/fixed-threshold changes only; no module, data, cost, fill, or gate
+      changes
+    rationale: Original top rows favored the strictest VR and large-trade-flow corner with wider stops;
+      rescue focuses the same continuation mechanic on stronger persistent moves and larger-flow confirmation.
+    report: backtest-campaigns/es_variance_ratio_orderflow_regime/midday_high_vr_large10_continuation_1400/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: 0/81 profitable combinations
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: afternoon_high_vr_signed_continuation_1530
+    config: campaigns/es_variance_ratio_orderflow_regime/rescue_attempts/parameter_space_rescue_1/afternoon_high_vr_signed_continuation_1530/config.yaml
+    allowed_scope: parameter-space/fixed-threshold changes only; no module, data, cost, fill, or gate
+      changes
+    rationale: Original top row preferred high VR, stronger flow, wider stop, and larger target; rescue
+      narrows toward that same afternoon persistence expression without adding filters.
+    report: backtest-campaigns/es_variance_ratio_orderflow_regime/afternoon_high_vr_signed_continuation_1530/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: 0/81 profitable combinations
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: morning_low_vr_signed_reversion_1130
+    config: campaigns/es_variance_ratio_orderflow_regime/rescue_attempts/parameter_space_rescue_1/morning_low_vr_signed_reversion_1130/config.yaml
+    allowed_scope: parameter-space/fixed-threshold changes only; no module, data, cost, fill, or gate
+      changes
+    rationale: Original top row favored low VR, stronger flow, tighter stop, and modest target; rescue
+      keeps the exhaustion-reversion thesis but narrows to quicker mean-reversion payoffs.
+    report: backtest-campaigns/es_variance_ratio_orderflow_regime/morning_low_vr_signed_reversion_1130/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: 0/81 profitable combinations
+  - id: parameter_space_rescue_1
+    status: failed
+    variant_id: midday_low_vr_large10_reversion_1430
+    config: campaigns/es_variance_ratio_orderflow_regime/rescue_attempts/parameter_space_rescue_1/midday_low_vr_large10_reversion_1430/config.yaml
+    allowed_scope: parameter-space/fixed-threshold changes only; no module, data, cost, fill, or gate
+      changes
+    rationale: Original top row favored the lowest VR threshold with large-trade pressure and wider stop/target;
+      rescue focuses on more clearly anti-persistent midday states while keeping the same reversion mechanic.
+    report: backtest-campaigns/es_variance_ratio_orderflow_regime/midday_low_vr_large10_reversion_1430/ES/rescue1/campaign_test_summary.json
+    terminal_stage: limited_core_grid_test
+    failure: 0/81 profitable combinations
+pre_pnl_density_audit:
+  initial_artifact: research_artifacts/es_variance_ratio_orderflow_regime_density_audit_20260619.md
+  initial_decision: FAIL before PnL because strict morning and afternoon corners had fewer than 50 signals/year.
+  reformulation_allowed: No PnL, stop, target, or trade outcome was inspected before changing the entry
+    parameter space.
+  reformulation_scope: Entry threshold grids only; same variance-ratio/orderflow mechanic, data, stop
+    module, target module, costs, sessions, and validation gates.
+  final_adjustment: morning_high_vr_signed_continuation_1130 entry.params.min_orderflow_imbalance grid
+    changed to [0.01, 0.025, 0.04] before any PnL inspection because the strict [0.06] corner had only
+    41.08 full-window signals/year.
+  final_artifact: research_artifacts/es_variance_ratio_orderflow_regime_final_density_audit_20260619.md
+  final_csv: research_artifacts/es_variance_ratio_orderflow_regime_final_density_audit_20260619.csv
+  final_decision: 'PASS before staged PnL: every entry-grid combination had at least 50 signals/year in
+    full and limited-core windows; minimum full 54.816658 and minimum limited 65.524423.'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_variance_ratio_orderflow_regime/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five originals and all five one-time parameter-space rescues failed limited_core_grid_test
+    with 0/81 profitable combinations.
+  best_run: midday_high_vr_large10_continuation_1400/rescue1
+  best_top_net_profit: -182.5
+  best_top_profit_factor: 0.9722222222222222
+  best_top_trades_per_year: 41.58762555441617

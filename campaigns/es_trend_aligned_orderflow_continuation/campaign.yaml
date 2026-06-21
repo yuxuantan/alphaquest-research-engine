@@ -119,7 +119,9 @@ rescue_policy:
         Fix `entry.params.min_trend_move_ticks` at 0 and retest a narrower
         parameter space: `entry.params.min_orderflow_imbalance` in `[0.01, 0.02]`,
         `sl.params.stop_pct` in `[0.00075, 0.001, 0.0015]`, and
-        `tp.params.target_r_multiple` in `[0.5, 0.75, 1.0]`.
+        historical `tp.params.target_r_multiple` in `[0.5, 0.75, 1.0]`.
+        This historical sub-1R target space is now invalid under the current
+        methodology; future reruns must use `target_r_multiple >= 1.0` only.
       audit: research_artifacts/es_trend_aligned_orderflow_continuation_rescue_attempt_1_20260617.md
 pre_pnl_density_audit: research_artifacts/es_trend_aligned_orderflow_continuation_density_audit_20260617.md
 result_summary:

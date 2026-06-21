@@ -1,0 +1,107 @@
+campaign_id: es_mes_footprint_liquidity_sweep_reversion
+title: ES MES Footprint Liquidity Sweep Reversion
+symbol: ES
+market: CME E-mini S&P 500 futures
+status: authored_for_testing
+created_at: '2026-06-19'
+edge_family: rolling_liquidity_sweep_reversion_with_mes_crowding_and_footprint_absorption
+hypothesis: Completed rolling intraday high/low sweeps in ES are more likely to reverse when the reclaim bar shows
+  footprint absorption against the sweep and MES participation is crowded in the sweep direction.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  url: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Documents that support/resistance levels can predict intraday trend interruptions; this campaign uses
+    rolling intraday levels rather than ex-post levels.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies 17(4), 1043-1071
+  doi: 10.1093/rfs/hhg057
+  url: https://www.jstor.org/stable/3598058
+  relevance: Links technical levels to liquidity provision, motivating sweep/reclaim mechanics as liquidity-taking
+    pressure that may reverse after replenishment.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics 12(1), 47-88
+  url: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Shows short-horizon price changes relate to order-flow imbalance; this campaign uses completed Sierra
+    footprint/MES aggregate proxies, not raw LOB OFI.
+rationale: This is a bounded composite edge, not a blind filter search. Rolling intraday levels approximate visible
+  local support/resistance; footprint absorption asks whether aggressive pressure failed at the edge; MES participation
+  asks whether the move was crowded in the smaller contract rather than institutionally confirmed. All three conditions
+  are known only after the completed signal bar, with next-bar-open execution.
+data_needs:
+  primary: data/cache/orderflow/es_mes_footprint_liquidity_sweep_1m_20190506_20260609_full_rth_ny.parquet
+  builder: tools/build_es_mes_footprint_liquidity_sweep_cache.py
+  cost_policy: Built only from existing local Sierra footprint and MES participation caches; no paid data download.
+  required_fields:
+  - timestamp
+  - open
+  - high
+  - low
+  - close
+  - is_rth
+  - session_date
+  - footprint_absorption_long
+  - footprint_absorption_short
+  - footprint_max_sell_imbalance_volume
+  - footprint_max_buy_imbalance_volume
+  - footprint_highest_sell_imbalance_price
+  - footprint_lowest_buy_imbalance_price
+  - mes_participation_share_15_rank252
+  - mes_trade_share_15_rank252
+  - mes_trade_orderflow_imbalance_15
+  - mes_trade_orderflow_large10_imbalance_15
+lookahead_risks:
+- Rolling highs/lows are computed from prior bars only inside the entry module.
+- Footprint and MES crowding filters are read from the completed signal bar; entry is next bar open through the
+  engine.
+- The strategy does not use future session highs/lows, future VWAP, final volume profile, or final daily range.
+- Same-bar stop/target conflicts use the existing pessimistic fill path.
+failure_modes:
+- The Sierra footprint and MES fields are aggregate proxies, not raw LOB queue reconstruction.
+- Rolling levels may be too noisy and create many false reversals.
+- Crowded MES participation may mark informed continuation instead of weak-hand exhaustion.
+- The expected reversal may be too small after one-tick slippage and commissions.
+- Any apparent edge may concentrate in volatile regimes or a few dates.
+variants:
+- rolling30_full_session_trade_large10_two_sided
+- rolling30_full_session_notional_two_sided
+- rolling45_full_session_trade_large10_two_sided
+- rolling45_midday_notional_two_sided
+- rolling60_midday_notional_two_sided
+parameter_policy:
+  max_entry_tunables: 2
+  max_stop_tunables: 1
+  max_target_exit_tunables: 1
+  minimum_target_r_multiple: 1.0
+  combinations_per_variant: 36
+  entry_tunables:
+  - entry.params.min_sweep_ticks
+  - entry.params.share_rank_min
+  stop_tunable: sl.params.stop_offset_ticks
+  target_exit_tunable: tp.params.target_r_multiple
+  rescue_policy: If variants fail, one mechanics-preserving parameter-space or fixed-parameter rescue is allowed
+    per failed variant. Mechanics may not change after seeing results.
+rescue_attempts:
+- id: parameter_space_rescue_1
+  created_at: '2026-06-19'
+  scope: one rescue for each failed original variant
+  type: parameter_space_only
+  mechanics_unchanged: true
+  target_r_multiple_floor: 1.0
+  target_grid_changed: false
+  variants:
+  - rolling30_full_session_trade_large10_two_sided
+  - rolling30_full_session_notional_two_sided
+  - rolling45_full_session_trade_large10_two_sided
+  - rolling45_midday_notional_two_sided
+  - rolling60_midday_notional_two_sided
+  rationale: All five original variants failed the limited core grid. The rescue keeps the same rolling liquidity
+    sweep, footprint absorption, MES crowding, stop, target, data, session, costs, and fill mechanics, and adjusts
+    only existing entry-threshold and stop-offset parameter grids. The TP grid remains [1.0, 1.5, 2.0] because the
+    minimum 1.0R floor was already satisfied.

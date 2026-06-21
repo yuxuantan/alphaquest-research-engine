@@ -83,7 +83,7 @@ strategy:
       flatten_time: '15:55:00'
       max_trades_per_day: 1
       stop_pct: 0.00375
-      target_r_multiple: 0.75
+      target_r_multiple: 1.0
       skew_rank_min: 0.575
   sl:
     module: percent_from_entry
@@ -93,7 +93,7 @@ strategy:
   tp:
     module: fixed_r
     params:
-      target_r_multiple: 0.75
+      target_r_multiple: 1.0
   flatten_time: '15:55:00'
 core:
   data_subset: &id001
@@ -146,8 +146,6 @@ core_grid:
     - 0.6
     sl.params.stop_pct: *id002
     tp.params.target_r_multiple:
-    - 0.5
-    - 0.75
     - 1.0
 monkey:
   data_subset: *id001

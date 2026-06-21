@@ -29,6 +29,10 @@ _WORKER_MAX_DURATION = None
 _WORKER_SEED = None
 _WORKER_INCLUDE_REPORTS = False
 
+TRADE_PATH_STRESS_DISABLED_REASON = (
+    "trade-path stress is globally disabled; monkey gates use random-entry core-beat rates"
+)
+
 
 def run_monkey(
     data: pd.DataFrame,
@@ -189,53 +193,11 @@ def run_trade_path_stress(
 ) -> tuple[pd.DataFrame, dict]:
     """Stress the actual strategy trade path with execution perturbations."""
 
-    stress_config = _trade_path_stress_config(monkey_config)
-    if not stress_config["enabled"]:
-        return pd.DataFrame(), {"enabled": False}
-    if core_trades is None or core_trades.empty:
-        raise ValueError("Trade-path stress requires non-empty core_trades.")
-
-    market = data.sort_values("timestamp").reset_index(drop=True)
-    seed = int(stress_config["seed"])
-    total_runs = int(stress_config["runs"])
-    report_paths = _prepare_iteration_report_paths(report_dir, prefix="trade_path_stress_iteration")
-    report_timezone = market_timezone(base_config)
-
-    rows = []
-    progress = progress_bar(total_runs, "trade-path stress runs")
-    for run_id in range(1, total_runs + 1):
-        rng = random.Random(_run_seed(seed, run_id))
-        trades, counters = _build_stressed_trade_path(
-            market,
-            core_trades,
-            base_config,
-            stress_config,
-            rng=rng,
-            run_id=run_id,
-        )
-        row = _trade_path_stress_result_row(run_id, trades, counters, base_config, benchmarks)
-        rows.append(row)
-        daily = daily_results(trades)
-        _append_iteration_report(report_paths, "trades", trades, run_id, report_timezone)
-        _append_iteration_report(report_paths, "daily", daily, run_id, report_timezone)
-        progress.update(run_id)
-
-    df = pd.DataFrame(rows)
-    one_tick_trades, one_tick_counters = _build_stressed_trade_path(
-        market,
-        core_trades,
-        base_config,
-        stress_config,
-        rng=random.Random(_run_seed(seed, 0)),
-        run_id=0,
-        fixed_extra_slippage_ticks=1.0,
-        fixed_entry_delay_bars=0,
-        fixed_missed_trade_probability=0.0,
-        fixed_time_window_trim_minutes=0,
-    )
-    one_tick_row = _trade_path_stress_result_row(0, one_tick_trades, one_tick_counters, base_config, benchmarks)
-    summary = _trade_path_stress_summary(df, one_tick_row, stress_config, report_paths)
-    return df, summary
+    return pd.DataFrame(columns=["run_id", "skipped", "skip_reason"]), {
+        "enabled": False,
+        "skipped": True,
+        "skip_reason": TRADE_PATH_STRESS_DISABLED_REASON,
+    }
 
 
 def _trade_path_stress_config(monkey_config: dict) -> dict:

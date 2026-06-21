@@ -14,7 +14,10 @@ class MesParticipationCrowdingEntry:
     def __init__(self, params: dict):
         self.params = params
         self.setup_mode = str(params.get("setup_mode", "mes_participation_crowding"))
+        self.signal_mode = str(params.get("signal_mode", "fixed_time")).lower()
         self.entry_time = parse_time(params.get("entry_time", "10:30:00"))
+        self.start_time = parse_time(params.get("start_time", params.get("entry_start_time", self.entry_time)))
+        self.end_time = parse_time(params.get("end_time", params.get("last_entry_time", self.entry_time)))
         self.flatten_time = parse_time(params.get("flatten_time", "12:00:00"))
         self.bar_interval_minutes = float(params.get("bar_interval_minutes", 1))
         self.lookback_minutes = int(params.get("lookback_minutes", 30))
@@ -36,14 +39,21 @@ class MesParticipationCrowdingEntry:
 
         timestamp = pd.Timestamp(bar["timestamp"])
         bar_close = timestamp + pd.Timedelta(minutes=self.bar_interval_minutes)
-        signal_timestamp = timestamp.replace(
-            hour=self.entry_time.hour,
-            minute=self.entry_time.minute,
-            second=self.entry_time.second,
-            microsecond=0,
-        )
-        if bar_close != signal_timestamp:
-            return None
+        if self.signal_mode == "fixed_time":
+            signal_timestamp = timestamp.replace(
+                hour=self.entry_time.hour,
+                minute=self.entry_time.minute,
+                second=self.entry_time.second,
+                microsecond=0,
+            )
+            if bar_close != signal_timestamp:
+                return None
+        elif self.signal_mode in {"first_signal_in_window", "first_in_window"}:
+            if bar_close.time() < self.start_time or bar_close.time() > self.end_time:
+                return None
+            signal_timestamp = bar_close
+        else:
+            raise ValueError("signal_mode must be fixed_time or first_signal_in_window.")
 
         metrics = self._metrics(bar)
         if metrics is None:
@@ -61,6 +71,9 @@ class MesParticipationCrowdingEntry:
         report_fields = {
             "setup_mode": self.setup_mode,
             "feature_method": "completed_bar_mes_participation_crowding",
+            "signal_mode": self.signal_mode,
+            "signal_window_start": self.start_time.strftime("%H:%M:%S"),
+            "signal_window_end": self.end_time.strftime("%H:%M:%S"),
             "share_mode": self.share_mode,
             "lookback_minutes": self.lookback_minutes,
             "rank_window": self.rank_window,
@@ -92,6 +105,9 @@ class MesParticipationCrowdingEntry:
             reclaim_timestamp=signal_timestamp,
             metadata={
                 "setup_mode": self.setup_mode,
+                "signal_mode": self.signal_mode,
+                "signal_window_start": self.start_time.strftime("%H:%M:%S"),
+                "signal_window_end": self.end_time.strftime("%H:%M:%S"),
                 "share_mode": self.share_mode,
                 "lookback_minutes": self.lookback_minutes,
                 "rank_window": self.rank_window,
@@ -109,6 +125,10 @@ class MesParticipationCrowdingEntry:
             raise ValueError("bar_interval_minutes must be greater than 0.")
         if self.lookback_minutes <= 0:
             raise ValueError("lookback_minutes must be greater than 0.")
+        if self.signal_mode not in {"fixed_time", "first_signal_in_window", "first_in_window"}:
+            raise ValueError("signal_mode must be fixed_time or first_signal_in_window.")
+        if self.start_time > self.end_time:
+            raise ValueError("start_time must be at or before end_time.")
         if self.rank_window <= 0:
             raise ValueError("rank_window must be greater than 0.")
         if self.share_mode not in {"notional", "trade"}:

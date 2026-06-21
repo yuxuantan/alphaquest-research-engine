@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 
+from propstack.utils.target_rr import MIN_TARGET_R_MULTIPLE
+
 
 def cost_adjusted_fixed_r_target(
     entry_price: float,
@@ -14,8 +16,8 @@ def cost_adjusted_fixed_r_target(
     slippage_ticks: float = 0.0,
     round_to_tick: bool = True,
 ) -> float:
-    if r_multiple < 0:
-        raise ValueError("tp.params.target_r_multiple must be non-negative.")
+    if float(r_multiple) < MIN_TARGET_R_MULTIPLE:
+        raise ValueError(f"tp.params.target_r_multiple must be >= {MIN_TARGET_R_MULTIPLE:.1f} reward:risk.")
     if tick_size <= 0:
         raise ValueError("tp.params.tick_size must be greater than 0.")
     if tick_value <= 0:

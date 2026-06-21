@@ -1,0 +1,231 @@
+campaign_id: es_extreme_vol_filtered_mes_trend_pullback_crowding
+test_run_id: run1
+strategy_name: volatility_filtered_trend_mes_participation_crowding
+symbol: ES
+dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+variant_id: exclude_extreme_vol20_trade_morning_1030
+research_metadata:
+  academic_source: Barber, Lin, and Odean (2024); CFTC Retail Traders in Futures Markets (2024); Moskowitz, Ooi,
+    and Pedersen (2012); Moreira and Muir (2017); Fleming, Kirby, and Ostdiek (2001)
+  edge_thesis: Elevated MES smaller-contract participation during a completed ES pullback may mark crowded temporary
+    pressure; lagged volatility gates should reject extreme path-risk states before entry.
+  mechanic: 'At 10:30 ET, take a two-sided ES trend-pullback fade only when MES trade participation is elevated
+    over the completed 15-minute pullback, the prior completed 30-minute ES trend points opposite the pullback,
+    and the lagged volatility filter passes: exclude top 5% prior 20-day realized-volatility rank. Entry is next
+    bar open.'
+  timeframe_rationale: One-minute bars preserve completed ES/MES participation ranks, exact 10:30 ET signal timing,
+    next-bar-open execution, and stop/target ordering on the native bar stream.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: 'This variant expresses the edge by requiring the same completed-bar MES trade-crowding
+      pullback condition as the prior trend-filtered MES branch, then vetoing sessions where the lagged risk-state
+      filter fails: exclude top 5% prior 20-day realized-volatility rank.'
+    entry_logic_rationale: The signal is evaluated on the completed 10:29-10:30 ET bar. MES trade-share rank and
+      ES 15-minute pullback return are completed-bar features; the prior 30-minute trend window ends before the
+      pullback window starts; the volatility feature is shifted one prior session. Entry is therefore next bar open
+      without current-session volatility lookahead.
+    stop_loss_rationale: A fixed percent-from-entry stop is declared before testing, rounded to the ES tick, and
+      tested with pessimistic same-bar stop/target ordering. It invalidates the pullback-reversal thesis if the
+      crowded move keeps extending.
+    target_exit_rationale: A fixed-R target with target reward:risk >= 1.0 monetizes the expected snapback without
+      using future orderflow, VWAP, or discretionary levels. Any unresolved trade is force-flattened at 12:00 ET.
+    profitability_rationale: This is convincing enough to test because the prior MES trend-pullback branch reached
+      WFA and WFA monkey but failed path-risk Monte Carlo; the volatility gate directly targets that failure mode
+      by excluding extreme lagged volatility/path-risk states while keeping signal density above 50 trades/year
+      before PnL inspection.
+    known_failure_modes: The gate can remove winners as well as losses, lagged volatility may not predict same-day
+      path risk, MES participation can be noise rather than crowding, and 10:30 reversals may remain too small after
+      ES costs.
+    pre_test_decision: approve_for_testing
+  pre_pnl_density:
+    artifact: research_artifacts/es_extreme_vol_filtered_mes_trend_pullback_crowding_density_summary_20260620.csv
+    entry_combo_count: 9
+    passing_entry_combos: 9
+    full_min_trades_per_year: 54.13199536858355
+    limited_core_min_trades_per_year: 71.64519230769231
+    wfa90_min_trades_per_year: 51.64839119390347
+    latest_one_year_min_trades_per_year: 66.22664835164835
+data:
+  dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+  source_timeframe: 1m
+  source: csv
+  raw_csv: data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  feature_csv: data/external/es_lagged_volatility_features_20110103_20260609.csv
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: volatility_filtered_trend_mes_participation_crowding
+    params:
+      setup_mode: exclude_extreme_vol20_trade_morning_1030
+      entry_time: '10:30:00'
+      flatten_time: '12:00:00'
+      bar_interval_minutes: 1
+      lookback_minutes: 15
+      trend_lookback_minutes: 30
+      rank_window: 252
+      share_mode: trade
+      direction: both
+      share_rank_min: 0.45
+      min_abs_return_ticks: 3
+      min_trend_return_ticks: 4
+      feature_csv: data/external/es_lagged_volatility_features_20110103_20260609.csv
+      volatility_gate_column: vol20_rank_252
+      volatility_gate_max: 0.95
+      max_trades_per_day: 1
+      stop_pct: 0.004
+      target_r_multiple: 2.0
+      tick_size: 0.25
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.004
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 2.0
+  flatten_time: '12:00:00'
+core:
+  data_subset: &id001
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '12:00:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 250
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.share_rank_min:
+    - 0.35
+    - 0.45
+    - 0.55
+    entry.params.min_abs_return_ticks:
+    - 2
+    - 3
+    - 4
+    sl.params.stop_pct:
+    - 0.003
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

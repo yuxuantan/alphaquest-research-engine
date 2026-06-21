@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.semivariance_filtered_trend_mes_participation_crowding import (
+    SemivarianceFilteredTrendMesParticipationCrowdingEntry,
+)

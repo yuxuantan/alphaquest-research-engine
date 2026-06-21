@@ -1,0 +1,131 @@
+campaign_id: es_import_export_price_pressure
+title: ES Import/Export Price Pressure Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-20'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged import/export price-index pressure changes ES intraday continuation probabilities only when completed RTH price action and aggregate orderflow confirm the macro direction before next-bar entry.
+rationale: Import prices are a channel for input-cost inflation, margin pressure, purchasing-power effects, and policy-rate expectations. The strategy does not trade the monthly macro series alone; it waits for same-session ES price and aggregate orderflow confirmation so the macro state acts as a risk regime rather than a standalone timing signal.
+sources:
+- title: Economic Forces and the Stock Market
+  authors: Nai-Fu Chen, Richard Roll, and Stephen A. Ross
+  year: 1986
+  venue: Journal of Business
+  doi: 10.1086/296344
+  link: https://doi.org/10.1086/296344
+  relevance: Supports the premise that macroeconomic state variables, including inflation-related forces, can be priced in equity returns.
+- title: Asset Returns and Inflation
+  authors: Eugene F. Fama and G. William Schwert
+  year: 1977
+  venue: Journal of Financial Economics
+  doi: 10.1016/0304-405X(77)90014-9
+  link: https://doi.org/10.1016/0304-405X(77)90014-9
+  relevance: Documents the relationship between inflation and asset returns, motivating import-price inflation as an equity-index risk-state proxy.
+- title: What Drives U.S. Import Price Inflation?
+  authors: Mary Amiti, Oleg Itskhoki, and David E. Weinstein
+  year: 2024
+  venue: NBER Working Paper 32133
+  link: https://www.nber.org/papers/w32133
+  relevance: Supports treating import prices as a meaningful inflation-pressure channel rather than a random monthly series.
+- title: Import and Export Price Indexes
+  authors: U.S. Bureau of Labor Statistics
+  year: 2026
+  venue: Official BLS data program
+  link: https://www.bls.gov/mxp/
+  relevance: Official source family for the import/export price indexes mirrored by FRED and used in the feature file.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://doi.org/10.1093/jjfinec/nbt003
+  relevance: Supports requiring contemporaneous orderflow confirmation rather than trading the macro state alone.
+data_needs:
+- timezone-aware ES RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- free public FRED/BLS monthly import/export price-index feature file built with conservative availability lag
+- completed-bar ES price movement and cumulative aggregate signed-flow fields before next-bar entry
+- same-day stop, target, forced-flatten, and no-overnight enforcement
+data_quality_caveats:
+- FRED/BLS observations are monthly, not intraday.
+- The feature builder uses observation date plus a conservative 51-calendar-day availability lag, which may be slower than actual BLS publication but prevents release-date lookahead.
+- Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor truth.
+- The edge is a slow macro-regime plus intraday confirmation composite; any pass needs manual chart review to ensure the macro filter is not incidental.
+lookahead_risks:
+- A session may only use the latest monthly observation whose conservative availability date is on or before the ES session date.
+- Rolling ranks use only monthly data through the mapped available observation.
+- Signals use completed ES bars only; entries must occur at the next bar open or later.
+- No final session high/low, final VWAP, final daily return, future price-index revision, or future ES orderflow is used.
+failure_modes:
+- Monthly import/export price states may be too slow or already incorporated before the RTH session.
+- Equity reaction to inflation pressure may flip across growth, policy, and crisis regimes.
+- ES orderflow confirmation may simply identify generic intraday continuation already tested elsewhere.
+- Results may concentrate in high-inflation years such as 2021-2022 or in a small number of trend days.
+- Low-frequency macro states may not provide enough independent yearly trades after strict OOS gates.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_bls_macro_release_day_drift
+  - es_treasury_rate_orderflow_confirmation
+  - es_default_spread_orderflow_risk_premium
+  - es_credit_etf_orderflow_risk_appetite
+  - es_oil_price_shock_spillover
+  - es_spy_turnover_orderflow_attention
+  - es_signed_orderflow_persistence
+  conclusion: Eligible as a distinct bounded composite. The earlier BLS campaign used CPI/employment release dates rather than lagged import/export price-index levels and ranks; orderflow-only campaigns did not condition on import/export inflation pressure.
+feature_construction:
+  builder: tools/build_es_import_export_price_pressure_features.py
+  source_cache_import_all: data/external/fred_import_price_all_ir_1982_2026.csv
+  source_cache_import_exfuel: data/external/fred_import_price_exfuel_irexfuels_2001_2026.csv
+  source_cache_export_all: data/external/fred_export_price_all_iq_1983_2026.csv
+  output: data/external/es_import_export_price_pressure_features_20110103_20260609.csv
+  availability_rule: monthly observation date plus 51 calendar days
+  pre_pnl_density_audit: research_artifacts/es_import_export_price_pressure_density_audit_20260620.md
+  target_reward_risk_floor: 1.0
+  paid_data_downloaded: false
+variants:
+- import_disinflation_signed_long_1030
+- import_disinflation_large20_long_1200
+- import_disinflation_large20_long_1430
+- core_pressure_signed_short_1100
+- core_pressure_large20_short_1200
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  - use any target_r_multiple below 1.0
+  - widen an already valid target_r_multiple at or above 1.0R as a rescue
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed
+    decision: FAIL
+    scope: per_failed_variant
+    reason: All five original variants failed. Each failed variant received one stop-distance-only parameter-space rescue. Four rescues failed limited core; import_disinflation_large20_long_1200/rescue1 passed limited core but failed limited monkey/stress. No run reached WFA or later.
+    configs:
+    - campaigns/es_import_export_price_pressure/rescue_attempts/parameter_space_rescue_1/core_pressure_large20_short_1200/config.yaml
+    - campaigns/es_import_export_price_pressure/rescue_attempts/parameter_space_rescue_1/core_pressure_signed_short_1100/config.yaml
+    - campaigns/es_import_export_price_pressure/rescue_attempts/parameter_space_rescue_1/import_disinflation_large20_long_1200/config.yaml
+    - campaigns/es_import_export_price_pressure/rescue_attempts/parameter_space_rescue_1/import_disinflation_large20_long_1430/config.yaml
+    - campaigns/es_import_export_price_pressure/rescue_attempts/parameter_space_rescue_1/import_disinflation_signed_long_1030/config.yaml
+    summary: backtest-campaigns/es_import_export_price_pressure/campaign_test_summary.json
+test_results:
+  decision: FAIL
+  summary: backtest-campaigns/es_import_export_price_pressure/campaign_test_summary.json
+  campaign_results: backtest-campaigns/es_import_export_price_pressure/campaign_results.csv
+  trade_logs_manifest: backtest-campaigns/es_import_export_price_pressure/trade_logs_manifest.csv
+  equity_curves_manifest: backtest-campaigns/es_import_export_price_pressure/equity_curves_manifest.csv
+  wfa_table: backtest-campaigns/es_import_export_price_pressure/wfa_table.csv
+  monte_carlo_summary: backtest-campaigns/es_import_export_price_pressure/monte_carlo_summary.csv
+  failure_reason: All five original variants failed. Each failed variant received exactly one parameter-space-only rescue that widened stop distance while preserving entry mechanics, macro thresholds, signal time, flow column, TP grid, data, costs, sessions, and gates. The best rescue, import_disinflation_large20_long_1200/rescue1, passed limited core with profitable-combo rate 0.9259259259259259 and 13 benchmark-passing combinations, but failed limited monkey/stress because the max-drawdown beat rate was 0.49333333333333335, below the required 0.90, despite net-profit beat rate 0.9066666666666666. No run reached WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting. TP was not adjusted because all target_r_multiple values were already >= 1.0R.

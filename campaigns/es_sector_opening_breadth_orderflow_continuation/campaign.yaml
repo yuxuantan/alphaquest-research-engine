@@ -1,0 +1,163 @@
+campaign_id: es_sector_opening_breadth_orderflow_continuation
+title: ES Sector Opening Breadth Orderflow Continuation
+decision: TEST
+created_at: "2026-06-20"
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: >
+  Same-day cash-market sector ETF opening breadth can reveal broad equity risk appetite shortly
+  after the 09:30 ET cash open. ES continuation attempts should be more credible when the
+  sector-open breadth, completed ES morning price move, and aggregate ES orderflow all point in
+  the same direction before a next-bar entry.
+rationale: >
+  This is a bounded composite edge. The sector ETF opens provide a same-day cross-sectional
+  breadth state, but no ETF high, low, close, or future sector information is used. ES must then
+  show completed-bar movement in the same direction from the RTH open, and Sierra aggregate
+  signed-volume or large-trade orderflow must confirm participation. The setup is intended to
+  avoid the bluntness of lagged sector-ranking entries while staying distinct from pure ES
+  orderflow continuation.
+sources:
+  - title: "Do Industries Explain Momentum?"
+    authors: Tobias J. Moskowitz and Mark Grinblatt
+    year: 1999
+    venue: Journal of Finance
+    doi: 10.1111/0022-1082.00146
+    link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00146
+    relevance: >
+      Supports the idea that sector and industry leadership can carry meaningful information
+      about broad equity return pressure.
+  - title: "Momentum, Business Cycle, and Time-varying Expected Returns"
+    authors: Tarun Chordia and Lakshmanan Shivakumar
+    year: 2002
+    venue: Journal of Finance
+    doi: 10.1111/1540-6261.00449
+    link: https://onlinelibrary.wiley.com/doi/abs/10.1111/1540-6261.00449
+    relevance: >
+      Motivates treating sector leadership as a time-varying expected-return and risk-appetite
+      state rather than a single-market technical signal.
+  - title: "The Price Impact of Order Book Events"
+    authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+    year: 2014
+    venue: Journal of Financial Econometrics
+    doi: 10.1093/jjfinec/nbt003
+    link: https://academic.oup.com/jfec/article/12/1/47/816163
+    relevance: >
+      Supports using contemporaneous orderflow imbalance as a short-horizon pressure proxy.
+      This campaign uses completed-bar Sierra aggregate signed volume, not print-level LOB data.
+  - title: "The myth of business cycle sector rotation"
+    authors: Alexander Molchanov and Jeffrey Stangl
+    year: 2024
+    venue: International Journal of Finance and Economics
+    doi: 10.1002/ijfe.2882
+    link: https://onlinelibrary.wiley.com/doi/10.1002/ijfe.2882
+    relevance: >
+      Cautionary source: naive sector rotation can fail after timing error and costs, so this
+      campaign must pass the full staged workflow and cannot rely on the sector state alone.
+data_needs:
+  - timezone-aware ES RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+  - existing local no-cost Yahoo daily ETF files for XLK, XLY, XLF, XLI, XLV, XLP, and XLU
+  - same-day raw ETF Open and prior raw Close only; no same-day ETF high, low, close, or adjusted close
+  - 5-minute completed-bar ES aggregation with next-bar execution
+  - same-day stop, target, forced-flatten, and no-overnight enforcement
+data_quality_caveats:
+  - Yahoo ETF raw opens are research proxies, not exchange-grade point-in-time records.
+  - ETF dividend/ex-date gaps may enter the opening breadth calculation.
+  - Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor truth.
+  - Same-bar stop/target conflicts must remain pessimistic because no tick path is used.
+lookahead_risks:
+  - Sector open features for session D use only ETF raw Open on D and raw Close from the prior ETF trading day.
+  - Signals are no earlier than 10:00 ET, after cash ETF opens are observable and the ES confirmation bars have closed.
+  - ES signal decisions use completed bars and must enter at the next bar open or later.
+  - No future ES bar, same-day ETF close, final session VWAP, final high/low, or post-entry orderflow is used.
+failure_modes:
+  - ETF opening breadth may be stale by the time ES confirms at 10:00 or later.
+  - Opening sector breadth may simply reflect overnight information already priced into ES.
+  - Orderflow confirmation may arrive after most of the continuation move is complete.
+  - Short-side risk-off breadth may produce lower density or worse slippage sensitivity.
+  - Results may concentrate in crisis regimes, one side, or a narrow parameter corner.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_sector_rotation_risk_appetite
+    - es_sector_rotation_orderflow_pullback
+    - es_sector_dispersion_state
+    - es_signed_orderflow_persistence
+    - es_trend_aligned_orderflow_continuation
+    - es_opening_gap_orderflow_continuation
+    - es_opening_range_orderflow_breakout
+  conclusion: >
+    Eligible as a distinct bounded composite under the user's mix-and-match allowance. It uses
+    same-day cash sector opening breadth, not lagged sector rankings, and requires completed ES
+    price and aggregate orderflow confirmation before next-bar execution.
+feature_construction:
+  builder: tools/build_es_sector_opening_breadth_features.py
+  sector_output: data/external/es_sector_opening_breadth_features_20110103_20260609.csv
+  orderflow_source: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  pre_pnl_density_audit: research_artifacts/es_sector_opening_breadth_orderflow_continuation_density_audit_20260620.md
+  target_reward_risk_floor: 1.0
+variants:
+  - broad_up_early_signed_long_1000
+  - broad_down_morning_signed_short_1130
+  - cyclical_up_morning_signed_long_1130
+  - riskoff_cycdown_midday_signed_short_1230
+  - broad_two_sided_morning_large10_1130
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core economic edge
+    - change timeframe or data window
+    - add or remove filters after seeing results
+    - alter costs, fills, sessions, validation gates, or prop rules
+    - use any target_r_multiple below 1.0
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      scope: per_failed_variant
+      variants:
+        - broad_up_early_signed_long_1000
+        - broad_down_morning_signed_short_1130
+        - cyclical_up_morning_signed_long_1130
+        - riskoff_cycdown_midday_signed_short_1230
+        - broad_two_sided_morning_large10_1130
+      changed_only:
+        - entry.params.min_sector_count fixed defaults and parameter space
+        - entry.params.min_orderflow_imbalance fixed defaults and parameter space
+        - sl.params.stop_pct fixed defaults and parameter space
+      unchanged:
+        - sector opening breadth feature construction
+        - setup mode and signal time windows
+        - entry module
+        - stop-loss module
+        - take-profit module and target_r_multiple grid
+        - ES orderflow data source and timeframe
+        - costs, fills, sessions, validation gates, and prop rules
+      audit: backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/campaign_test_summary.json
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/campaign_test_summary.json
+  results_csv: backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/campaign_results.csv
+  density_audit: research_artifacts/es_sector_opening_breadth_orderflow_continuation_density_audit_20260620.md
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 2
+  wfa_reached: 1
+  monte_carlo_reached: 0
+  best_original: broad_up_early_signed_long_1000/run1
+  best_rescue: broad_up_early_signed_long_1000/rescue1
+  failure_reason: >
+    All five original variants failed. Every failed variant received one
+    parameter-space-only rescue. The strongest rescue passed limited core and
+    limited monkey but failed walk-forward analysis due to early-exit selection;
+    cyclical-up failed limited monkey/trade-path stress, and the short/two-sided
+    rescues failed limited core. No run reached Monte Carlo, simulated
+    incubation, frozen validation, or candidate reporting.

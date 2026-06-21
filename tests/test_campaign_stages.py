@@ -344,13 +344,9 @@ def test_limited_monkey_summary_records_resolved_data_period(tmp_path, monkeypat
             "data_subset": dict(monkey_cfg.get("data_subset") or {}),
         }
 
-    def fake_run_trade_path_stress(data, cfg, monkey_cfg, benchmarks, core_trades=None, report_dir=None):
-        return pd.DataFrame([{"run_id": 1, "net_profit": 10.0}]), {"enabled": True}
-
     monkeypatch.setattr(campaign_stages, "_prepare_stage_data_cached", fake_prepare_stage_data_cached)
     monkeypatch.setattr(campaign_stages, "BacktestEngine", FakeBacktestEngine)
     monkeypatch.setattr(campaign_stages, "run_monkey", fake_run_monkey)
-    monkeypatch.setattr(campaign_stages, "run_trade_path_stress", fake_run_trade_path_stress)
 
     payload = campaign_stages._run_limited_monkey(
         {
@@ -376,6 +372,8 @@ def test_limited_monkey_summary_records_resolved_data_period(tmp_path, monkeypat
     assert payload["summary"]["data_subset"] == expected_resolved_subset
     assert payload["summary"]["actual_data_period"] == quality
     assert monkey_summary["actual_data_period"] == quality
+    assert stress_summary["enabled"] is False
+    assert stress_summary["skipped"] is True
     assert stress_summary["resolved_data_subset"] == expected_resolved_subset
     assert payload["summary"]["trade_path_stress"]["actual_data_period"] == quality
 
@@ -884,39 +882,55 @@ def test_wfa_monte_carlo_probability_remains_exclusive():
     assert mar["expected"] == {"min": 0.4}
 
     mc_criteria = campaign_stages._criteria_for_stage("wfa_oos_monte_carlo", {})
-    mc_results = evaluate_criteria({"summary": {"probability_profit_before_drawdown": 0.5}}, mc_criteria)
+    mc_results = evaluate_criteria({"summary": {"mean_net_pnl": 0.0}}, mc_criteria)
     assert mc_results[0]["passed"] is False
-    assert mc_results[0]["expected"] == {"exclusive_min": 0.5}
+    assert mc_results[0]["expected"] == {"exclusive_min": 0.0}
 
 
-def test_wfa_oos_monte_carlo_defaults_to_50k_target_before_10k_drawdown(tmp_path, monkeypatch):
+def test_wfa_oos_monte_carlo_defaults_to_50k_prop_challenge_lifecycle(tmp_path, monkeypatch):
     trades = pd.DataFrame(
         [{"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 100.0}]
     )
     seen = {}
 
-    def fake_run_monte_carlo(source_trades, mc_cfg, rules):
+    def fake_run_monte_carlo_with_audit(source_trades, mc_cfg, rules):
         seen["trades"] = source_trades
         seen["mc_cfg"] = mc_cfg
         seen["rules"] = rules
-        return pd.DataFrame([{"run_id": 1, "net_pnl": 100.0}]), {
-            "probability_profit_before_drawdown": 0.6
-        }
+        return (
+            pd.DataFrame([{"run_id": 1, "net_pnl": 100.0}]),
+            {"probability_profit_before_drawdown": 0.6},
+            pd.DataFrame(),
+            pd.DataFrame(),
+        )
 
-    monkeypatch.setattr(campaign_stages, "run_monte_carlo", fake_run_monte_carlo)
+    monkeypatch.setattr(campaign_stages, "run_monte_carlo_with_audit", fake_run_monte_carlo_with_audit)
 
     payload = campaign_stages._run_wfa_oos_monte_carlo(
-        {"data": {"timezone": "America/New_York"}, "core": {"initial_balance": 100000}},
+        {
+            "data": {"timezone": "America/New_York"},
+            "core": {"initial_balance": 100000},
+            "monte_carlo": {"cluster_losses": True},
+        },
         {},
         tmp_path,
         {"wfa_trades": trades},
     )
 
     assert seen["trades"].equals(trades)
-    assert seen["rules"].profit_target_amount == 50000.0
-    assert seen["rules"].drawdown_limit_amount == 10000.0
-    assert payload["summary"]["prop_rules_used"]["profit_target_amount"] == 50000.0
-    assert payload["summary"]["prop_rules_used"]["drawdown_limit_amount"] == 10000.0
+    assert seen["rules"].account_lifecycle_enabled is True
+    assert seen["rules"].starting_balance == 50000.0
+    assert seen["rules"].challenge_fee == 98.0
+    assert seen["rules"].challenge_profit_target_amount == 3000.0
+    assert seen["rules"].challenge_consistency_limit == 0.50
+    assert seen["rules"].trailing_drawdown == 2000.0
+    assert seen["rules"].trailing_drawdown_lock_balance == 52100.0
+    assert seen["rules"].trailing_drawdown_locked_floor == 50100.0
+    assert seen["rules"].funded_initial_drawdown_floor == 48000.0
+    assert payload["summary"]["prop_rules_used"]["account_lifecycle_enabled"] is True
+    assert payload["summary"]["prop_rules_used"]["challenge_profit_target_amount"] == 3000.0
+    assert payload["summary"]["prop_rules_used"]["drawdown_limit_amount"] == 2000.0
+    assert seen["mc_cfg"]["cluster_losses"] is False
     assert (tmp_path / "wfa_oos_monte_carlo_summary.json").exists()
 
 
@@ -929,13 +943,16 @@ def test_wfa_oos_monte_carlo_does_not_inherit_tighter_top_level_drawdown_by_defa
     )
     seen = {}
 
-    def fake_run_monte_carlo(source_trades, mc_cfg, rules):
+    def fake_run_monte_carlo_with_audit(source_trades, mc_cfg, rules):
         seen["rules"] = rules
-        return pd.DataFrame([{"run_id": 1, "net_pnl": 100.0}]), {
-            "probability_profit_before_drawdown": 0.6
-        }
+        return (
+            pd.DataFrame([{"run_id": 1, "net_pnl": 100.0}]),
+            {"probability_profit_before_drawdown": 0.6},
+            pd.DataFrame(),
+            pd.DataFrame(),
+        )
 
-    monkeypatch.setattr(campaign_stages, "run_monte_carlo", fake_run_monte_carlo)
+    monkeypatch.setattr(campaign_stages, "run_monte_carlo_with_audit", fake_run_monte_carlo_with_audit)
 
     payload = campaign_stages._run_wfa_oos_monte_carlo(
         {
@@ -952,12 +969,12 @@ def test_wfa_oos_monte_carlo_does_not_inherit_tighter_top_level_drawdown_by_defa
         {"wfa_trades": trades},
     )
 
-    assert seen["rules"].starting_balance == 150000
+    assert seen["rules"].starting_balance == 50000.0
     assert seen["rules"].max_contracts == 10
-    assert seen["rules"].daily_loss_limit == 10000.0
-    assert seen["rules"].trailing_drawdown == 10000.0
-    assert payload["summary"]["prop_rules_used"]["daily_loss_limit"] == 10000.0
-    assert payload["summary"]["prop_rules_used"]["trailing_drawdown"] == 10000.0
+    assert seen["rules"].daily_loss_limit == 2000.0
+    assert seen["rules"].trailing_drawdown == 2000.0
+    assert payload["summary"]["prop_rules_used"]["daily_loss_limit"] == 2000.0
+    assert payload["summary"]["prop_rules_used"]["trailing_drawdown"] == 2000.0
 
 
 def test_wfa_oos_monte_carlo_stage_prop_rules_can_tighten_drawdown_defaults(
@@ -969,13 +986,16 @@ def test_wfa_oos_monte_carlo_stage_prop_rules_can_tighten_drawdown_defaults(
     )
     seen = {}
 
-    def fake_run_monte_carlo(source_trades, mc_cfg, rules):
+    def fake_run_monte_carlo_with_audit(source_trades, mc_cfg, rules):
         seen["rules"] = rules
-        return pd.DataFrame([{"run_id": 1, "net_pnl": 100.0}]), {
-            "probability_profit_before_drawdown": 0.6
-        }
+        return (
+            pd.DataFrame([{"run_id": 1, "net_pnl": 100.0}]),
+            {"probability_profit_before_drawdown": 0.6},
+            pd.DataFrame(),
+            pd.DataFrame(),
+        )
 
-    monkeypatch.setattr(campaign_stages, "run_monte_carlo", fake_run_monte_carlo)
+    monkeypatch.setattr(campaign_stages, "run_monte_carlo_with_audit", fake_run_monte_carlo_with_audit)
 
     campaign_stages._run_wfa_oos_monte_carlo(
         {
@@ -1597,3 +1617,25 @@ def test_random_fraction_stage_subset_uses_seeded_ten_percent_avoiding_covid_and
 
     assert subset == {"start_date": "2011-02-22", "end_date": "2012-09-06", "session_labels": ["RTH"]}
     assert pd.Timestamp(subset["end_date"]) < pd.Timestamp("2026-06-09") - pd.Timedelta(days=365)
+
+
+def test_stage_subset_data_window_falls_back_to_core_data_subset():
+    cfg = {
+        "core": {
+            "data_subset": {
+                "start_date": "2011-01-03",
+                "end_date": "2026-06-09",
+                "session_labels": ["RTH"],
+            }
+        },
+        "core_grid": {},
+        "data": {},
+    }
+
+    subset = campaign_stages._stage_subset(
+        cfg,
+        {"data_window": campaign_stages.DEFAULT_SHORTLIST_DATA_WINDOW},
+        "core_grid",
+    )
+
+    assert subset == {"start_date": "2011-02-22", "end_date": "2012-09-06", "session_labels": ["RTH"]}

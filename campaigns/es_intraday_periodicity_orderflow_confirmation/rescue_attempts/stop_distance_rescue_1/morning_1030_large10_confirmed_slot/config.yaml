@@ -26,7 +26,7 @@ research_metadata:
   - Keep intraday-periodicity plus completed-orderflow confirmation mechanics unchanged.
   - Increase fixed min_mean_return_bps from 0.5 to 0.75 to require a stronger prior same-clock tendency without starving trade density.
   - Replace stop_pct grid [0.001, 0.0015, 0.0025] with [0.0015, 0.0025, 0.0035] to test more realistic room for half-hour slot continuation.
-  - Replace target_r_multiple grid [0.75, 1.0, 1.25] with [1.0, 1.25, 1.5] to test whether only larger R capture can overcome costs.
+  - Replace historical invalid target_r_multiple grid [0.75, 1.0, 1.25] with current valid grid [1.0, 1.25, 1.5] to test whether only larger R capture can overcome costs.
   rescue_rationale: Original runs failed limited core, with most variants losing across the grid. The rescue does not add filters or alter the edge. It strengthens the prior same-clock return requirement and widens fixed risk/reward geometry because a weak 0.5 bp historical slot tendency and tight stops may under-express a continuation edge after costs. A pre-PnL density replay confirmed the stricter threshold remains above the 50 signals/year floor in the shortlist and latest-year slices.
   pre_test_decision: approve_rescue_for_testing_after_density_audit
   user_authorized_additional_rescue:

@@ -1,0 +1,25 @@
+campaign_id: nq_archive_range_compression_retest
+variant_id: nr7_or30_1130_range_capped
+strategy_name: range_compression_breakout
+mechanic:
+  entry_module: range_compression_breakout
+  take_profit_module: cost_adjusted_fixed_r
+  stop_loss_module: percent_from_entry
+  flatten_time: '15:59:00'
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: scaffold

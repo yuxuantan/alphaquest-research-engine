@@ -13,6 +13,7 @@ from propstack.backtest.metrics import benchmark
 from propstack.utils.params import apply_dotted_params
 from propstack.utils.progress import progress_bar
 from propstack.utils.reports import market_timezone, write_report_csv
+from propstack.utils.target_rr import require_minimum_target_rr
 
 _WORKER_DATA = None
 _WORKER_DETAIL_DATA = None
@@ -316,6 +317,7 @@ def _sum_rejects(rejects: dict) -> int:
 def _validate_parameter_grid(params: dict, label: str) -> None:
     if not isinstance(params, dict):
         raise ValueError(f"{label} must be a mapping of dotted parameter paths to value lists.")
+    require_minimum_target_rr(params, context=label)
     for key, values in params.items():
         if not isinstance(values, list):
             raise ValueError(f"{label}.{key} must be a list of values.")

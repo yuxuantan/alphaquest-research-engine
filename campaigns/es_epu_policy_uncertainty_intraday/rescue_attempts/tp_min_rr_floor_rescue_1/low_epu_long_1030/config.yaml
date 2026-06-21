@@ -1,0 +1,222 @@
+campaign_id: es_epu_policy_uncertainty_intraday
+variant_id: low_epu_long_1030
+test_run_id: tp_min_rr_rescue1
+strategy_name: epu_policy_uncertainty
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Baker, Bloom, and Davis (2016); Brogaard and Detzel (2015); Pastor and Veronesi (2012); PolicyUncertainty.com Daily U.S. EPU
+  edge_thesis: Lagged Daily U.S. EPU states may identify ES risk-off pressure or compensating equity-index risk-premium states after the cash open.
+  mechanic: Rescue attempt 1 changed only declared EPU threshold and stop/target parameter space; original mechanic retained. At 10:30 ET, long ES when the 30-day-lagged Daily U.S. EPU index rank is in the lower tail; flatten by 15:55.
+  timeframe_rationale: A 1-minute completed-bar signal preserves deterministic next-bar-open execution while the EPU state is already at least 30 calendar days old.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-19'
+  mechanics_review:
+    mechanic_expresses_edge: 'This user-authorized minimum-RR rescue preserves the existing es_epu_policy_uncertainty_intraday/low_epu_long_1030 entry mechanic: Rescue attempt 1 changed only declared EPU threshold and stop/target parameter space; original mechanic retained. At 10:30 ET, long ES when the 30-day-lagged Daily U.S. EPU index rank is in the lower tail; flatten by 15:55..'
+    entry_logic_rationale: Entry logic is unchanged from the selected tested source run; no signal, direction, time-window, filter, data, or execution rule is altered.
+    stop_loss_rationale: Stop-loss logic and parameter space are unchanged. This rescue is isolated to a take-profit RR floor so the failure/success attribution remains auditable.
+    target_exit_rationale: Only target_r_multiple values below 1.0R are raised to 1.0R. Sub-1R variants can have their gross edge consumed by slippage, commissions, and exchange fees; this tests whether the same signal needs at least 1R payoff distance to survive costs.
+    profitability_rationale: If the original edge produces directional follow-through beyond a sub-1R target, a 1R floor should improve average win size without changing signal causality.
+    known_failure_modes: A 1R floor may reduce win rate, increase holding time, miss too many exits, or simply expose that the signal has no sustained follow-through; all normal staged gates still apply.
+    pre_test_decision: approve_for_testing
+  user_authorized_additional_rescue:
+    id: tp_min_rr_floor_rescue_1
+    created_at: '2026-06-19T00:00:00'
+    source_campaign_id: es_epu_policy_uncertainty_intraday
+    source_variant_id: low_epu_long_1030
+    source_run_id: rescue1
+    source_config_path: campaigns/es_epu_policy_uncertainty_intraday/rescue_attempts/parameter_space_rescue_1/low_epu_long_1030/config.yaml
+    selection_rule: one existing tested run per campaign, preferring variants whose limited-core target grid used sub-1R target values and showed stronger performance at larger targets; candidates without any sub-1R target_r_multiple are skipped
+    allowed_change_scope: target_r_multiple_floor_only
+    minimum_target_r_multiple: 1.0
+    target_selection_metrics:
+      target_key: tp.params.target_r_multiple
+      target_grid_values:
+      - 0.75
+      - 1.0
+      - 1.25
+      target_grid_values_below_1r:
+      - 0.75
+      target_grid_has_below_1r: true
+      top_target_value: 1.25
+      top_target_is_grid_max: true
+      higher_target_net_slope: 588.8888888888889
+      higher_target_pf_slope: 0.056594155160964554
+      higher_target_profitable_rate_slope: 0.1111111111111111
+      higher_target_evidence_score: 4.0
+      target_grid_note: target_grid_evaluated
+    normal_rescue_policy_override: true
+    target_changes:
+    - path: core_grid.parameters.tp.params.target_r_multiple
+      old:
+      - 0.75
+      - 1.0
+      - 1.25
+      new: &id002
+      - 1.0
+      - 1.25
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: epu_policy_uncertainty
+    params:
+      feature_csv: data/external/es_epu_policy_uncertainty_features_20110103_20260609.csv
+      setup_mode: low_epu_long
+      bar_interval_minutes: 1
+      entry_time: '10:30:00'
+      flatten_time: '15:55:00'
+      max_trades_per_day: 1
+      stop_pct: 0.004
+      target_r_multiple: 1.0
+      epu_rank_max: 0.3
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.004
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id003
+    entry.params.epu_rank_max:
+    - 0.35
+    - 0.3
+    - 0.25
+    sl.params.stop_pct:
+    - 0.003
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple: *id002
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id003
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

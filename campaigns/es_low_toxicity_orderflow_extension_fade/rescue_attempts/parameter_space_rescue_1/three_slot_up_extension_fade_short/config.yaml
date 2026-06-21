@@ -1,0 +1,304 @@
+campaign_id: es_low_toxicity_orderflow_extension_fade
+variant_id: three_slot_up_extension_fade_short
+test_run_id: rescue1
+strategy_name: trade_orderflow_multi_state_rank
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Cont, Kukanov, and Stoikov (2014); Easley, Lopez de Prado, and O'Hara (2012); Madhavan, Richardson, and Roomans (1997)
+  edge_thesis: Three short-only slots fade upside extensions when same-clock orderflow imbalance is unusually low.
+  mechanic: Three short-only slots fade upside extensions when same-clock orderflow imbalance is unusually low.
+  timeframe_rationale: Five-minute bars let the campaign form 15/30/60-minute completed orderflow-state windows while preserving next-bar execution and enough yearly observations.
+  pre_pnl_density: 2666 full-sample pre-PnL signals, about 172.77 per year.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: Three short-only slots fade upside extensions when same-clock orderflow imbalance is unusually low. Each slot requires low same-clock absolute orderflow imbalance plus a completed price extension, so the entry expresses weak-pressure extension fade rather than raw orderflow momentum.
+    entry_logic_rationale: Parameter-space rescue 1 keeps the same completed-bar slot definitions and fade direction, but requires lower same-clock low-toxicity ranks and larger completed return extensions. This tests a stricter version of the same weak-pressure extension-fade thesis rather than changing the trigger mechanics.
+    stop_loss_rationale: Parameter-space rescue 1 keeps the percent-from-entry stop model but widens the volatility budget. This is allowed because the original core rows usually selected the widest stop, suggesting normal ES noise may be too large for the initial stop grid.
+    target_exit_rationale: A fixed-R target keeps the payoff tied to initial risk rather than future intraday levels. The target grid starts at 1.0R because sub-1R targets are invalid under the methodology.
+    profitability_rationale: The setup should be profitable only if low same-clock imbalance identifies extensions with weak informed pressure and therefore better odds of reversion. Pre-PnL density was 2666 signals, about 172.77 per year, so this is not a rare-event thesis.
+    known_failure_modes: Low imbalance may simply mean quiet continuation, same-clock ranks may fail in new regimes, fixed slots may encode intraday seasonality, and costs may consume small fades even when direction is often right.
+    pre_test_decision: approve_for_testing
+  rescue_attempt:
+    id: parameter_space_rescue_1
+    created_at: '2026-06-20T00:00:00'
+    source_config_path: campaigns/es_low_toxicity_orderflow_extension_fade/variants/three_slot_up_extension_fade_short/config.yaml
+    source_run_id: run1
+    reason: Original surfaces failed before WFA; top rows tended to use stricter low-toxicity ranks, larger return extensions, and wider stops, so the one allowed rescue tests a stricter same-mechanic state/extension space with a wider volatility budget.
+    allowed_change_scope: entry_threshold_and_stop_parameter_space_only
+    changed:
+      entry.params.rank_threshold: 0.35
+      entry.params.min_return_ticks: 5
+      strategy.sl.params.stop_pct: 0.006
+      core_grid/wfa rank_threshold:
+      - 0.25
+      - 0.35
+      - 0.45
+      core_grid/wfa min_return_ticks:
+      - 4
+      - 5
+      - 6
+      core_grid/wfa stop_pct:
+      - 0.004
+      - 0.006
+      - 0.008
+    unchanged:
+    - entry module
+    - slot definitions
+    - low-toxicity orderflow extension-fade mechanic
+    - take-profit module and parameter grid
+    - data source
+    - timeframe
+    - costs
+    - fills
+    - sessions
+    - validation gates
+    - target reward:risk floor
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 90
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  trade_orderflow_features:
+    enabled: true
+    windows:
+    - 3
+    - 6
+    - 12
+    tick_size: 0.25
+    large_trade_sizes:
+    - 10
+    - 20
+    min_period_fraction: 0.67
+    same_clock_ranks:
+      enabled: true
+      columns:
+      - trade_orderflow_abs_imbalance_3
+      - trade_orderflow_abs_imbalance_6
+      - trade_orderflow_abs_imbalance_12
+      - trade_orderflow_effort_vs_result_6
+      rank_windows:
+      - 63
+      rank_min_periods: 21
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: trade_orderflow_multi_state_rank
+    params:
+      bar_interval_minutes: 5
+      filter_mode: rank
+      threshold_side: le
+      rank_window: 63
+      rank_min_periods: 21
+      rank_threshold: 0.35
+      min_return_ticks: 5
+      stop_pct: 0.006
+      target_r_multiple: 1.5
+      max_trades_per_day: 3
+      slots:
+      - slot_id: u1030
+        entry_time: '10:30:00'
+        flatten_time: '12:00:00'
+        feature_column: trade_orderflow_abs_imbalance_3
+        rank_column: trade_orderflow_abs_imbalance_3_rank63
+        return_column: trade_orderflow_return_ticks_3
+        return_mode: up
+        direction: short
+      - slot_id: u1330
+        entry_time: '13:30:00'
+        flatten_time: '15:00:00'
+        feature_column: trade_orderflow_abs_imbalance_6
+        rank_column: trade_orderflow_abs_imbalance_6_rank63
+        return_column: trade_orderflow_return_ticks_6
+        return_mode: up
+        direction: short
+      - slot_id: u1430
+        entry_time: '14:30:00'
+        flatten_time: '15:55:00'
+        feature_column: trade_orderflow_abs_imbalance_12
+        rank_column: trade_orderflow_abs_imbalance_12_rank63
+        return_column: trade_orderflow_return_ticks_12
+        return_mode: up
+        direction: short
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.006
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 3
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.rank_threshold:
+    - 0.25
+    - 0.35
+    - 0.45
+    entry.params.min_return_ticks:
+    - 4
+    - 5
+    - 6
+    sl.params.stop_pct:
+    - 0.004
+    - 0.006
+    - 0.008
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.rank_threshold:
+    - 0.25
+    - 0.35
+    - 0.45
+    entry.params.min_return_ticks:
+    - 4
+    - 5
+    - 6
+    sl.params.stop_pct:
+    - 0.004
+    - 0.006
+    - 0.008
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

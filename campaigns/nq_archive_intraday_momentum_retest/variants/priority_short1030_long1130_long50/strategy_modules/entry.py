@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry
+
+ENTRY_MODULE = IntradayMomentumPriorityEntry

@@ -1,0 +1,65 @@
+campaign_id: es_prior_lvn_orderflow_rejection
+title: ES Prior-Session LVN Orderflow Rejection
+status: completed
+created: '2026-06-20'
+instrument: ES
+timeframe: 5m
+edge_type: price_action_prior_profile_low_volume_node_rejection_with_aggregate_orderflow
+hypothesis: Prior-session low-volume nodes approximate prices where the prior RTH auction found little acceptance. If the current session sweeps through one of those prices but the completed signal bar closes back on the opposite side with aligned aggregate orderflow, the failed auction should have a higher chance of moving away from the LVN before costs.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/medialibrary/media/research/epr/00v06n2/0007osle.pdf
+  use: Supports the premise that trader-identified intraday support/resistance levels can affect short-horizon price behavior.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://doi.org/10.1093/rfs/hhg053
+  use: Links technical levels to liquidity provision and order placement behavior.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://doi.org/10.1093/jjfinec/nbt003
+  use: Motivates requiring same-direction orderflow imbalance instead of using price levels alone.
+- title: CME Market Profile / volume-at-price educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  use: Motivates value-area, POC, and low-volume-node auction-market framing while keeping this implementation as an approximation.
+rationale: The edge is a failed-auction/rejection structure, not a trend-following breakout. A prior RTH LVN is frozen before the current session begins. The signal bar must sweep beyond the LVN by a predeclared number of ticks, close back through the LVN, and show aggregate orderflow in the direction of the rejection. Because the signal uses the completed bar close, the backtest engine must enter no earlier than the next bar open.
+data_needs:
+- Local Sierra ES 1-minute RTH OHLCV and aggregate signed-volume cache.
+- No TBBO, market-by-order, paid Databento, or print-sequence data required.
+- Prior-session volume profile is approximated by distributing each completed 5-minute bar volume uniformly across its high-low tick range; this is not true volume-at-price.
+lookahead_risks:
+- Prior LVNs must use only the completed prior RTH session.
+- Current-session signal must use only the completed signal bar and must enter on the next bar open or later.
+- No current-session final VWAP, final profile, future session high/low, or future volume data is allowed.
+- Approximate LVN construction can be wrong when the high-low range is wide; manual chart review must compare against true footprint/profile tools before incubation.
+failure_modes:
+- LVN approximation from OHLCV may mislocate the true low-volume price.
+- Trend days may sweep and continue through LVNs instead of rejecting them.
+- Aggregate signed volume may confirm price after the move is already over.
+- Signal-bar sweep stops may be too close in volatile sessions, especially with one-tick-worse slippage.
+- Large-orderflow variants may be sparse in older data regimes even though the density audit cleared 50 signals/year.
+pre_pnl_density_audit: research_artifacts/es_prior_lvn_orderflow_rejection_density_audit_20260620.md
+rescue_policy: Each failed variant may receive one parameter/fixed-parameter rescue only; rescue may not change entry/SL/TP modules or core mechanic.
+variants:
+- variant_id: morning_signed_two_sided_lvn_rejection
+  mechanic: Both downside LVN reclaims and upside LVN rejects are allowed in the first two RTH hours, where overnight inventory and opening auction activity often force a quick decision around prior low-acceptance prices.
+- variant_id: morning_downside_signed_lvn_reclaim_long
+  mechanic: Only downside sweeps and reclaims are traded, expressing a failed-auction long where sellers push through a prior LVN but cannot hold price below it and signed flow confirms buyers reclaiming the low-acceptance zone.
+- variant_id: late_morning_large10_two_sided_lvn_rejection
+  mechanic: The 10:30-12:30 window filters out the open and asks whether larger trade participation confirms rejection of a prior LVN after the first-hour auction has chosen reference levels.
+- variant_id: midday_signed_two_sided_lvn_rejection
+  mechanic: The midday variant tests whether lower-liquidity lunch auctions still reject prior low-volume prices when signed aggregate flow aligns with the reclaim/reject bar.
+- variant_id: afternoon_large20_two_sided_lvn_rejection
+  mechanic: The afternoon variant asks whether institutional-size aggregate flow confirms failed auctions around prior LVNs as the session moves toward closing inventory and forced flatten windows.
+decision: FAIL
+decision_reason: All five original variants failed limited_core_grid_test. Each failed variant received exactly one parameter-space/fixed-parameter rescue preserving the same prior-LVN rejection mechanic; all five rescues also failed limited_core_grid_test. No run reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or frozen validation.
+results: backtest-campaigns/es_prior_lvn_orderflow_rejection/campaign_test_summary.json

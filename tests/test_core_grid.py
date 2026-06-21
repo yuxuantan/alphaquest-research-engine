@@ -36,6 +36,11 @@ def test_parameter_combinations_requires_lists():
         parameter_combinations({"entry.params.reclaim_window_bars": 3})
 
 
+def test_parameter_combinations_rejects_target_r_multiple_below_one():
+    with pytest.raises(ValueError, match="target_r_multiple must be >= 1.0"):
+        parameter_combinations({"tp.params.target_r_multiple": [0.75, 1.0]})
+
+
 def test_core_grid_pass_percentage():
     df, _, _ = clean_data(DATA_CFG)
     data = build_features(df, DATA_CFG)

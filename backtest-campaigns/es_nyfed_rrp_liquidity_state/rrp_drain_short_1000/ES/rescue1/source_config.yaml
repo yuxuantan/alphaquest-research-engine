@@ -1,0 +1,244 @@
+campaign_id: es_nyfed_rrp_liquidity_state
+variant_id: rrp_drain_short_1000
+test_run_id: rescue1
+strategy_name: nyfed_rrp_liquidity_state
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Brunnermeier and Pedersen (2009); Federal Reserve Bank of New York
+    RRP FAQ
+  edge_thesis: Lagged changes in NY Fed overnight reverse-repo usage proxy changes
+    in private-market funding-liquidity capacity; RRP increases may drain reserves/risk
+    appetite while RRP declines may release cash back toward private markets and support
+    ES intraday risk appetite.
+  mechanic: At the completed 10:00 ET bar, short ES when the prior-day lagged five-day
+    ON RRP increase z-score is nonnegative to moderately high, indicating cash moving
+    into the Fed RRP facility and tighter private-market liquidity.
+  timeframe_rationale: Five-minute bars reduce one-minute noise for a daily funding-liquidity
+    state signal while preserving deterministic completed-bar timing and next-bar
+    execution with one-minute detail data for same-bar stop/target handling.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: At the completed 10:00 ET bar, short ES when the prior-day
+      lagged five-day ON RRP increase z-score is nonnegative to moderately high, indicating
+      cash moving into the Fed RRP facility and tighter private-market liquidity.
+      The prior-day RRP state is the only edge variable and directly maps to the funding-liquidity
+      balance-sheet channel. Rescue threshold space removes weak near-zero RRP states
+      but preserves the same prior-day RRP funding-liquidity state mechanic.
+    entry_logic_rationale: The entry module reads the lag-one local feature file,
+      checks the single RRP leg with operator `>=` at the completed 10:00:00 ET 5-minute
+      bar, and emits at most one signal per day. The feature value is known before
+      RTH because source rows were shifted by one listed trade date.
+    stop_loss_rationale: A fixed percent-from-entry stop is used because the edge
+      is a daily funding-liquidity state rather than a discrete chart boundary. The
+      stop is declared before testing, tick-rounded, and subject to pessimistic same-bar
+      stop/target ordering.
+    target_exit_rationale: A fixed-R target with same-day flatten tests whether the
+      lagged liquidity state produces enough intraday premium to pay at least 1.0R
+      before the configured cutoff. The target grid never goes below 1.0R.
+    profitability_rationale: If RRP balances are rising, cash is being absorbed into
+      a Fed liability and private-market risk capacity may be weaker, favoring a short
+      ES intraday risk-premium test. Neighboring RRP thresholds should stay profitable
+      if the balance-sheet liquidity mechanism is real rather than one threshold artifact.
+      The rescue should only help if stronger prior-day RRP states have a monotonic
+      relationship with intraday ES risk appetite; otherwise it should fail the same
+      robustness gates.
+    known_failure_modes: RRP usage can measure abundant cash rather than stress, the
+      state may be too slow for intraday ES, the 2014-start feature span gives fewer
+      WFA windows than full ES history, and results may be dominated by one rate cycle.
+    pre_test_decision: approve_for_testing
+  pre_pnl_density:
+    full_history_min_signals_per_year: 60.0
+    limited_core_window_min_signals_per_year: 75.6
+    density_method: PnL-free count over stricter rescue threshold grid using lag-one
+      feature file.
+  rescue_attempt:
+    id: parameter_space_rescue_1
+    trigger: all original variants failed limited_core_grid_test
+    allowed_change_scope: parameter_space_and_fixed_threshold_only
+    mechanics_unchanged: true
+    tp_floor_rule: No target_r_multiple below 1.0R; TP grid unchanged.
+    rationale: Rescue narrows the short setup to clearer RRP-drain states after near-zero
+      drain states diluted the original core grid. This keeps the same funding-liquidity
+      mechanism but requires a stronger prior-day cash absorption signal.
+    forbidden_changes_observed: false
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: market_plumbing_priority
+    params:
+      feature_file: data/external/nyfed_rrp_liquidity_state_lag1_features_20140811_20260529.csv
+      direction: short
+      bar_interval_minutes: 5
+      max_trades_per_day: 1
+      academic_source_key: brunnermeier_pedersen_2009_market_liquidity_funding_liquidity
+      external_dataset: nyfed_on_rrp_lag1_local_feature_file
+      priority_order:
+      - rrp_drain
+      legs:
+      - key: rrp_drain
+        source: nyfed_on_rrp
+        feature_name: reverserepo_total_bil_diff5_z504
+        operator: '>='
+        threshold: 0.25
+        entry_time: '10:00:00'
+        flatten_time: '15:55:00'
+        stop_pct: 0.005
+        target_r_multiple: 1.5
+        availability_rule: Local feature file shifts the RRP z-score by one listed
+          trade_date before ES eligibility.
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.005
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2014-08-11'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.rrp_drain_threshold:
+    - 0.125
+    - 0.25
+    - 0.375
+    sl.params.stop_pct:
+    - 0.003
+    - 0.005
+    - 0.007
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

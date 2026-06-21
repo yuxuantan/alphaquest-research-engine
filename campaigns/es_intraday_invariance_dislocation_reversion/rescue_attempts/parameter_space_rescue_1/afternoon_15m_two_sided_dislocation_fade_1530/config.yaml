@@ -1,0 +1,220 @@
+campaign_id: es_intraday_invariance_dislocation_reversion
+variant_id: afternoon_15m_two_sided_dislocation_fade_1530
+test_run_id: rescue1
+strategy_name: intraday_invariance_dislocation_reversion
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Andersen, Bondarenko, Kyle, and Obizhaeva (2018); Kyle and Obizhaeva (2016); Ane and Geman (2000)
+  edge_thesis: Completed ES bars with unusually large price movement per transaction, scaled by average trade size and ranked against prior same-clock observations, may identify temporary liquidity dislocations that mean-revert when aggregate signed flow does not strongly sponsor the move.
+  mechanic: From 13:00 through 15:30 ET, fade completed 15-minute dislocation moves when the invariance score is high relative to prior same-clock history and aggregate signed flow is not strongly aligned.
+  timeframe_rationale: One-minute bars are required because the edge uses completed-bar trade count, volume, signed volume, and price displacement. The strategy does not use print sequencing or intra-minute fills.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: From 13:00 through 15:30 ET, fade completed 15-minute dislocation moves when the invariance score is high relative to prior same-clock history and aggregate signed flow is not strongly aligned.
+    entry_logic_rationale: The entry computes a completed rolling return, completed rolling trade count, completed rolling volume, completed average trade size, and completed signed-flow imbalance. The invariance dislocation score is ranked against prior same-clock observations only; the current score is appended after the decision, so the rank is not lookahead. The trade fades the move only when signed flow is not strongly aligned with the move.
+    stop_loss_rationale: A fixed percent stop is used because the edge is a statistical liquidity-dislocation state rather than a discrete chart level. The stop is predeclared, tick-rounded by the engine, and subject to pessimistic same-bar target/stop handling.
+    target_exit_rationale: Rescue target grid remains fixed-R and never below 1.0R. The grid tests 1.0R, 1.25R, and 1.5R without adding discretionary exits.
+    profitability_rationale: Afternoon liquidity demand can push ES inefficiently; when price movement per transaction is abnormal and signed flow fails to confirm sponsorship, the completed move should have reversion pressure before the flat cutoff.
+    known_failure_modes: The dislocation may be informed price discovery, signed flow may be too noisy, high-rank scores may cluster in crisis regimes, and one-tick slippage plus commissions can erase short-horizon reversion.
+    pre_test_decision: approve_for_testing
+    rescue_rationale: Parameter-space-only rescue after all original variants failed limited core. Entry mechanic, module, data, session window, costs, fills, and stage gates are unchanged; the grid shifts away from sparse extreme-rank settings toward still-high same-clock dislocation ranks and uses only 1.0R+ targets.
+  rescue_attempt:
+    id: parameter_space_rescue_1
+    source_config: campaigns/es_intraday_invariance_dislocation_reversion/variants/afternoon_15m_two_sided_dislocation_fade_1530/config.yaml
+    source_run: run1
+    allowed_change_scope: parameter_space_and_fixed_defaults_only
+    mechanics_changed: false
+    entry_module_changed: false
+    stop_module_changed: false
+    target_module_changed: false
+    data_window_changed: false
+    costs_or_fills_changed: false
+    target_rr_floor: All target_r_multiple values are >= 1.0R.
+    changed_parameters: &id002
+      entry.params.invariance_rank_threshold:
+      - 0.85
+      - 0.9
+      - 0.95
+      entry.params.min_return_ticks:
+      - 4
+      - 5
+      - 6
+      sl.params.stop_pct:
+      - 0.0025
+      - 0.0035
+      - 0.0045
+      tp.params.target_r_multiple:
+      - 1.0
+      - 1.25
+      - 1.5
+    fixed_default_changes:
+      entry.params.invariance_rank_threshold: 0.9
+      entry.params.min_return_ticks: 5
+      sl.params.stop_pct: 0.0035
+      tp.params.target_r_multiple: 1.25
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  validation: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.validation.json
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 260
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: intraday_invariance_dislocation_reversion
+    params:
+      setup_mode: afternoon_15m_two_sided_dislocation_fade_1530
+      start_time: '13:00:00'
+      end_time: '15:30:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 1
+      tick_size: 0.25
+      window_minutes: 15
+      same_clock_rank_window: 252
+      min_same_clock_observations: 60
+      invariance_rank_threshold: 0.9
+      min_return_ticks: 5
+      max_aligned_flow_imbalance: 0.05
+      direction: both
+      max_trades_per_day: 2
+      stop_pct: 0.0035
+      target_r_multiple: 1.25
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0035
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.25
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  max_trades_per_day: 2
+  flatten_time: '15:55:00'
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: *id002
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

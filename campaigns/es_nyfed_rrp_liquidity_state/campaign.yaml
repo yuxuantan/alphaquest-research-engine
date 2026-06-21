@@ -1,0 +1,116 @@
+campaign_id: es_nyfed_rrp_liquidity_state
+title: ES NY Fed reverse-repo liquidity state
+decision: FAIL
+created_at: '2026-06-20'
+instrument: ES
+market_timezone: America/New_York
+edge_family: funding_liquidity_state_rrp_balance_sheet_channel
+hypothesis: Lagged changes in NY Fed overnight reverse-repo usage proxy changes in
+  private-market funding-liquidity capacity; RRP increases may drain reserves/risk
+  appetite while RRP declines may release cash back toward private markets and support
+  ES intraday risk appetite.
+sources:
+- title: Market Liquidity and Funding Liquidity
+  authors: Markus K. Brunnermeier and Lasse Heje Pedersen
+  year: 2009
+  venue: The Review of Financial Studies
+  link: https://academic.oup.com/rfs/article-abstract/22/6/2201/1592184
+  doi: 10.1093/rfs/hhn098
+  relevance: Provides the funding-liquidity mechanism linking intermediary funding
+    constraints, market liquidity, volatility, and risk premia.
+- title: 'FAQs: Reverse Repurchase Agreement Operations'
+  authors: Federal Reserve Bank of New York
+  year: 2026
+  venue: New York Fed Markets
+  link: https://www.newyorkfed.org/markets/rrp_faq
+  relevance: Official source defining ON RRP operations, daily operation timing, balance-sheet
+    liability effects, and publication of operation results.
+rationale: 'This campaign isolates one market-plumbing edge: prior-day changes in
+  ON RRP usage as a funding-liquidity state variable. The implementation intentionally
+  uses a one-business-day lagged local feature file so all signals are known before
+  the ES RTH session begins. It is not a price pattern, orderflow persistence signal,
+  VX open-interest state, primary-dealer lending state, CFTC positioning state, OFR
+  stress index, or Treasury-rate shock.'
+data_needs:
+- local Sierra ES RTH 1-minute bars aggregated to 5-minute strategy bars
+- 'lag-one local RRP feature file: data/external/nyfed_rrp_liquidity_state_lag1_features_20140811_20260529.csv'
+- America/New_York timestamps and same-day forced flattening
+lookahead_risks:
+- The raw RRP z-score feature is shifted by one listed trade date before strategy
+  use; signals never use same-day RRP results.
+- Entries are generated at completed 5-minute bar closes and filled no earlier than
+  next bar open by the engine.
+- No final session high/low, final VWAP, future orderflow, future RRP values, or post-signal
+  path information is used.
+failure_modes:
+- RRP changes may be a slow policy plumbing variable that does not affect same-day
+  ES after costs.
+- 'The sign can be ambiguous: high RRP usage may mean abundant cash rather than stressed
+  liquidity.'
+- The usable lagged z-score span begins in 2014, producing fewer WFA windows than
+  the full ES cache.
+- Thresholds may pass only because broad regimes dominate one market side or one rate-cycle
+  period.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_market_plumbing_liquidity_capacity
+  - es_ofr_financial_stress_intraday
+  - es_treasury_rate_shock_intraday
+  - es_cftc_tff_hedging_pressure
+  - es_finra_margin_leverage
+  - es_dollar_risk_appetite_intraday
+  conclusion: Eligible as a distinct active campaign because the prior market-plumbing
+    campaign used primary-dealer securities-lending and VX open-interest features,
+    not the NY Fed ON RRP balance-sheet liability channel. It also differs from OFR
+    stress, Treasury-rate shocks, CFTC positioning, FINRA leverage, and dollar-risk-appetite
+    campaigns.
+feature_lag_audit: research_artifacts/es_nyfed_rrp_liquidity_state_lag_audit_20260620.md
+pre_pnl_density_audit: research_artifacts/es_nyfed_rrp_liquidity_state_density_audit_20260620.md
+variants:
+- rrp_drain_short_1000
+- rrp_drain_short_1330
+- rrp_drain_short_1500
+- rrp_release_long_1000
+- rrp_release_long_1330
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core prior-day RRP funding-liquidity state mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  - use target_r_multiple below 1.0
+  attempts:
+  - id: parameter_space_rescue_1
+    date: '2026-06-20'
+    scope: per_failed_variant
+    variants:
+    - rrp_drain_short_1000
+    - rrp_drain_short_1330
+    - rrp_drain_short_1500
+    - rrp_release_long_1000
+    - rrp_release_long_1330
+    changes: Dropped weak near-zero RRP states; drain thresholds [0.125,0.25,0.375],
+      release thresholds [-0.25,-0.375,-0.5]. Stop/target modules and TP grid unchanged.
+    result: all_failed_limited_core_grid_test
+result_summary:
+  decision: FAIL
+  original_runs: 5
+  rescue_runs: 5
+  terminal_stage: limited_core_grid_test
+  best_variant: rrp_release_long_1330
+  best_run_id: run1
+  best_profitable_combo_rate: 0.37037037037037035
+  best_benchmark_pass_combos: 4
+  best_top_net_profit: 2895.0
+  summary_path: backtest-campaigns/es_nyfed_rrp_liquidity_state/campaign_test_summary.json
+pre_pnl_rescue_density_audit: research_artifacts/es_nyfed_rrp_liquidity_state_rescue_attempt_1_density_audit_20260620.md

@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.variance_ratio_orderflow_regime import VarianceRatioOrderflowRegimeEntry
+
+ENTRY_MODULE = VarianceRatioOrderflowRegimeEntry

@@ -1,0 +1,16 @@
+# first30_signed_flow_two_sided_1530
+
+Campaign: `es_gao_last_half_hour_orderflow_confirmation`
+
+Mechanic: First 30-minute price return and total signed-flow imbalance point the same way; enter for last-half-hour continuation.
+
+Entry module: `gao_last_half_hour_orderflow`. Stop module: `percent_from_entry`. Target module: `fixed_r`.
+
+Parameter grid: `entry.params.min_first_return_ticks` x `entry.params.min_orderflow_imbalance` x `sl.params.stop_pct` x `tp.params.target_r_multiple` = 36 combinations.
+
+Lookahead controls: first-window price and aggregate orderflow are completed before the 15:30 ET signal; the engine enters no earlier than the next bar open and flattens at 15:55 ET.
+
+
+## tp_min_rr_floor_rescue_1
+
+User-authorized additional rescue created on 2026-06-19. Source run: `es_gao_last_half_hour_orderflow_confirmation/first30_signed_flow_two_sided_1530/rescue1`. Only target_r_multiple values below 1.0R were raised to 1.0R; entry, stop, data, costs, fills, sessions, and validation gates are unchanged.

@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.market_structure_pivot_continuation import MarketStructurePivotContinuationEntry
+
+ENTRY_MODULE = MarketStructurePivotContinuationEntry

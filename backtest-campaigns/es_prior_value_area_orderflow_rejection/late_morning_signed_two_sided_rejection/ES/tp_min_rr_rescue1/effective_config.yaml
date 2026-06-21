@@ -1,0 +1,400 @@
+campaign_id: es_prior_value_area_orderflow_rejection
+variant_id: late_morning_signed_two_sided_rejection
+test_run_id: tp_min_rr_rescue1
+strategy_name: prior_value_area_orderflow_rejection
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Osler (2000); Kavajecz and Odders-White (2004); CME market profile
+    documentation; Cont, Kukanov, and Stoikov (2014)
+  edge_thesis: Prior-session accepted-value boundaries can reject failed probes when
+    liquidity provision and aggregate counterflow push price back inside value.
+  mechanic: late-morning two-sided rejection of prior value boundaries with signed
+    aggregate counterflow between 10:30:00 and 12:30:00; enter at the next 5-minute
+    bar open after the completed rejection bar.
+  timeframe_rationale: Five-minute bars reduce one-minute noise around approximate
+    value-area boundaries while retaining next-bar execution and using 1-minute detail
+    for pessimistic same-bar stop/target ordering where available.
+  mechanics_review_required: true
+  mechanics_review:
+    mechanic_expresses_edge: This variant expresses prior value-area rejection by
+      requiring late-morning two-sided rejection of prior value boundaries with signed
+      aggregate counterflow. The prior VAH/VAL are frozen from the previous completed
+      RTH session, and the trade only fires after the current completed bar probes
+      outside value and closes back inside with counterflow, which is the actual failed-acceptance
+      mechanism.
+    entry_logic_rationale: The entry waits for a completed 5-minute rejection bar
+      and then relies on the engine for next-bar-open execution, so it cannot assume
+      the reversal path inside the signal bar. The signal is allowed only within a
+      predeclared RTH window and at most once per session to avoid repeated probing
+      of the same boundary.
+    stop_loss_rationale: The signal-bar high for VAH rejection shorts or signal-bar
+      low for VAL rejection longs is the natural invalidation point because price
+      continuation beyond the completed probe means value rejection failed. A small
+      tick offset grid keeps the stop tied to observable price action instead of a
+      fitted dollar amount.
+    target_exit_rationale: 'User-authorized minimum-RR rescue: entry and stop mechanics
+      are unchanged, while any existing target_r_multiple below 1.0R is raised to
+      1.0R. Targets already at or above 1.0R are not changed.'
+    profitability_rationale: If prior value-area boundaries attract liquidity and
+      a failed outside probe traps breakout traders, counterflow back into value should
+      produce a repeatable short-horizon reversal. Using aggregate flow confirmation
+      may filter random touches while preserving enough opportunities for the 50 trades/year
+      floor.
+    known_failure_modes: The approximate value profile may be too crude versus true
+      volume-at-price, and a close back inside value can be a pause before a second
+      breakout. Aggregate Sierra flow can lag price, and one-tick worse slippage or
+      pessimistic same-bar ordering may erase any small return-to-value edge.
+    pre_test_decision: approve_for_testing
+  mechanics_review_version: '2026-06-19'
+  user_authorized_additional_rescue:
+    id: tp_min_rr_floor_rescue_1
+    created_at: '2026-06-19T00:00:00'
+    source_campaign_id: es_prior_value_area_orderflow_rejection
+    source_variant_id: late_morning_signed_two_sided_rejection
+    source_run_id: run1
+    source_config_path: campaigns/es_prior_value_area_orderflow_rejection/variants/late_morning_signed_two_sided_rejection/config.yaml
+    selection_rule: one existing tested run per campaign, preferring variants whose
+      limited-core target grid used sub-1R target values and showed stronger performance
+      at larger targets; candidates without any sub-1R target_r_multiple are skipped
+    allowed_change_scope: target_r_multiple_floor_only
+    minimum_target_r_multiple: 1.0
+    target_selection_metrics:
+      target_key: tp.params.target_r_multiple
+      target_grid_values:
+      - 0.5
+      - 0.75
+      - 1.0
+      target_grid_values_below_1r:
+      - 0.5
+      - 0.75
+      target_grid_has_below_1r: true
+      top_target_value: 1.0
+      top_target_is_grid_max: true
+      higher_target_net_slope: 1059.9537037037035
+      higher_target_pf_slope: 0.23780951247625254
+      higher_target_profitable_rate_slope: 0.0
+      higher_target_evidence_score: 4.0
+      target_grid_note: target_grid_evaluated
+    normal_rescue_policy_override: true
+    target_changes:
+    - path: strategy.tp.params.target_r_multiple
+      old: 0.75
+      new: 1.0
+    - path: core_grid.parameters.tp.params.target_r_multiple
+      old:
+      - 0.5
+      - 0.75
+      - 1.0
+      new: &id001
+      - 1.0
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 5
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: prior_value_area_orderflow_rejection
+    params:
+      setup_mode: two_sided_rejection
+      start_time: '10:30:00'
+      end_time: '12:30:00'
+      flatten_time: '13:00:00'
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      value_area_fraction: 0.7
+      rejection_buffer_ticks: 1
+      min_orderflow_imbalance: 0.02
+      flow_mode: signed_volume
+      allow_long: true
+      allow_short: true
+      max_trades_per_day: 1
+      min_prior_profile_bars: 50
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 2
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: '13:00:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '13:00:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.rejection_buffer_ticks:
+    - 0
+    - 1
+    - 2
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple: *id001
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 3
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

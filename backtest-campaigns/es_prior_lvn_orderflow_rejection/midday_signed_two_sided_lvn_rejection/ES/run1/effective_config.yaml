@@ -1,0 +1,407 @@
+campaign_id: es_prior_lvn_orderflow_rejection
+variant_id: midday_signed_two_sided_lvn_rejection
+test_run_id: run1
+strategy_name: prior_lvn_orderflow_rejection
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Osler (2000); Kavajecz and Odders-White (2004); Cont, Kukanov,
+    and Stoikov (2014); CME market-profile documentation
+  edge_thesis: Prior-session low-volume nodes approximate prices where the prior RTH
+    auction found little acceptance. If the current session sweeps through one of
+    those prices but the completed signal bar closes back on the opposite side with
+    aligned aggregate orderflow, the failed auction should have a higher chance of
+    moving away from the LVN before costs.
+  mechanic: Midday Signed Two-Sided LVN Rejection freezes approximate LVNs from the
+    completed prior RTH session, then trades a two-sided failed-auction rejection
+    from 12:00:00 to 14:00:00 ET. The signal bar must sweep at least two ticks beyond
+    a prior LVN, close back through the LVN, and show signed_volume imbalance in the
+    direction of the rejection. Because the signal uses the completed bar close, the
+    engine enters at the next bar open; stops use the signal-bar sweep extreme plus
+    a predeclared offset and targets are cost-adjusted fixed-R with no sub-1R values.
+  timeframe_rationale: Five-minute bars reduce one-minute noise around an approximate
+    profile level while preserving next-bar execution close to the rejection bar.
+    The configured intraday window is part of the variant definition, not selected
+    from results.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: Midday Signed Two-Sided LVN Rejection freezes approximate
+      LVNs from the completed prior RTH session, then trades a two-sided failed-auction
+      rejection from 12:00:00 to 14:00:00 ET. The signal bar must sweep at least two
+      ticks beyond a prior LVN, close back through the LVN, and show signed_volume
+      imbalance in the direction of the rejection. Because the signal uses the completed
+      bar close, the engine enters at the next bar open; stops use the signal-bar
+      sweep extreme plus a predeclared offset and targets are cost-adjusted fixed-R
+      with no sub-1R values.
+    entry_logic_rationale: Entry is evaluated only after a completed 5-minute bar
+      close from 12:00:00 through 14:00:00 ET. The prior-session LVN list is built
+      before the current session from completed prior RTH bars only. A long requires
+      a downside sweep below an LVN and close back above it with positive flow; a
+      short requires an upside sweep above an LVN and close back below it with negative
+      flow. This directly expresses failed auction rejection rather than a breakout
+      chase.
+    stop_loss_rationale: The sweep_extreme stop is placed beyond the signal bar's
+      sweep high for shorts or sweep low for longs plus a fixed tick offset. That
+      invalidates the thesis when price resumes through the swept LVN instead of accepting
+      the rejection away from the low-volume node.
+    target_exit_rationale: The target is a cost-adjusted fixed-R exit with target_r_multiple
+      values of 1.0R, 1.5R, and 2.0R only. No sub-1R target is allowed, so fees and
+      slippage cannot dominate a tiny gross target by construction; unresolved trades
+      flatten at 15:55 ET.
+    profitability_rationale: This variant is convincing enough to test because The
+      midday variant tests whether lower-liquidity lunch auctions still reject prior
+      low-volume prices when signed aggregate flow aligns with the reclaim/reject
+      bar. The strict pre-PnL density corner cleared at least 50 signals per year
+      on both full history and the seeded limited-core window, so the result will
+      not rely on rare-event cherry picking.
+    known_failure_modes: The LVN is approximated from OHLCV rather than true volume-at-price,
+      so some levels may be wrong. Trend days can continue through LVNs, aggregate
+      orderflow can confirm too late, and the sweep-extreme stop can be vulnerable
+      to noisy retests or one-tick-worse slippage.
+    pre_test_decision: approve_for_testing
+  pre_pnl_density:
+    strict_corner: lvn_quantile=0.10 and min_orderflow_imbalance=0.04
+    artifact: research_artifacts/es_prior_lvn_orderflow_rejection_density_audit_20260620.md
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: prior_lvn_orderflow_rejection
+    params:
+      setup_mode: two_sided_lvn_rejection
+      start_time: '12:00:00'
+      end_time: '14:00:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      min_prior_profile_bars: 50
+      lvn_quantile: 0.2
+      min_sweep_ticks: 2
+      reclaim_buffer_ticks: 0
+      min_orderflow_imbalance: 0.02
+      flow_mode: signed_volume
+      allow_long: true
+      allow_short: true
+      max_trades_per_day: 1
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 3
+  tp:
+    module: cost_adjusted_fixed_r
+    params:
+      target_r_multiple: 1.5
+      tick_size: 0.25
+      tick_value: 12.5
+      commission_per_contract: 2.5
+      slippage_ticks: 1
+      round_to_tick: true
+  flatten_time: '15:55:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+  min_core_grid_profitable_iteration_rate: 0.7
+core_grid:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.lvn_quantile:
+    - 0.1
+    - 0.2
+    - 0.3
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_offset_ticks:
+    - 1
+    - 3
+    - 5
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  objective: MAR
+  selection:
+    metric: MAR
+    min_trades_per_year: 50
+    early_exit_min_in_sample_profit_factor: 1.0
+  parameters: *id002
+  parallel:
+    enabled: true
+    scope: window_grid
+    workers: 3
+wfa_oos_monkey:
+  runs: 300
+  seed: 17
+  beat_threshold: 0.8
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+monte_carlo:
+  iterations: 2000
+  seed: 23
+  trade_source: wfa_oos
+  prop_rules:
+    initial_balance: 150000
+    profit_target: 50000
+    max_drawdown: 10000
+    max_contracts: 1
+    payout_target: 50000
+  stress:
+    reshuffle: true
+    skip_trade_probability: 0.05
+    extra_slippage_ticks: 1
+    clustered_losses: true
+  parallel:
+    enabled: true
+    scope: runs
+    workers: 3
+simulated_incubation_core:
+  train_selection:
+    data_subset:
+      start_date: '2021-06-10'
+      end_date: '2025-06-09'
+      session_labels:
+      - RTH
+    parameters: *id002
+    objective: MAR
+    selection:
+      metric: MAR
+      min_trades_per_year: 50
+  oos_data_subset:
+    start_date: '2025-06-10'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+simulated_incubation_monkey:
+  runs: 300
+  seed: 29
+  beat_threshold: 0.8
+acceptance_oos_test:
+  train_months: 24
+  test_months: 6
+  parameters: *id002
+  objective: MAR
+  selection:
+    metric: MAR
+    min_trades_per_year: 50
+campaign_tests:
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 3
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  acceptance_oos_test:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 24
+    test_months: 6
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3

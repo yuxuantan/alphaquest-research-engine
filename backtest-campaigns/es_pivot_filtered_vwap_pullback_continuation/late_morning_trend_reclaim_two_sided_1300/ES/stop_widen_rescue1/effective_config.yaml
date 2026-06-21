@@ -1,0 +1,371 @@
+campaign_id: es_pivot_filtered_vwap_pullback_continuation
+variant_id: late_morning_trend_reclaim_two_sided_1300
+test_run_id: stop_widen_rescue1
+strategy_name: pivot_filtered_vwap_pullback_continuation
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Bialkowski, Darolles, and Le Fol (2008); McCulloch and Kazakov
+    (2007); Gueant and Pu (2015); Lo, Mamaysky, and Wang (2000); Moskowitz, Ooi, and
+    Pedersen (2012)
+  edge_thesis: VWAP pullback continuation may improve when continuation direction
+    agrees with completed 5/15-minute swing-pivot market structure and is not opposed
+    by either checked timeframe.
+  mechanic: From 10:00 to 13:00 ET, require a completed VWAP-side trend, pullback
+    to VWAP, and reclaim/rejection back in the trend direction. Accept only when carried
+    5/15-minute completed pivot structure agrees and does not oppose.
+  timeframe_rationale: 5-minute bars reduce single-minute VWAP noise while preserving
+    completed-bar next-bar execution. The pivot filter uses carried completed 5/15-minute
+    swing structure built only from completed bars.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: Late-morning VWAP pullback continuation after the opening
+      noise window, filtered by completed pivot direction. The base VWAP module must
+      emit first; the pivot filter cannot create trades by itself.
+    entry_logic_rationale: VWAP, opening-drive/trend context, pullback, reclaim/rejection,
+      and pivot structure are all based on completed bars at signal close. The wrapper
+      accepts only same-direction completed pivot bias with no opposite checked timeframe.
+      Engine execution remains next-bar open or later.
+    stop_loss_rationale: The stop remains a percent-from-entry stop rounded to ES
+      tick size. It is tied to actual fill price and does not use future swing levels
+      or post-entry VWAP information.
+    target_exit_rationale: The target remains a predeclared fixed-R exit with target_r_multiple
+      at or above 1.0R. Unresolved positions flatten at the configured intraday cutoff.
+    profitability_rationale: VWAP is a widely used execution benchmark, and reclaiming/rejecting
+      VWAP back in the direction of completed pivot structure may identify continuation
+      of benchmark-driven participation rather than random VWAP noise.
+    known_failure_modes: VWAP reclaims may be late after costs, pivot structure may
+      lag reversals, broad windows may admit weak first signals, and trend days can
+      still whipsaw through VWAP before continuation.
+    pre_test_decision: approve_for_testing
+    rescue_attempt: 'stop_widen_rescue_1: parameter-only rescue after original run
+      failed staged validation. Entry mechanics, signal windows, VWAP setup mode,
+      pivot filter, data windows, costs, and target grid are unchanged; only stop_pct
+      fixed value/grid is widened from 0.0025/[0.0015, 0.0025, 0.004] to 0.004/[0.0025,
+      0.004, 0.006].'
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: intraday_capitulation_mr
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: market_structure_filtered_entry
+    params:
+      base_module: vwap_pullback_continuation
+      base_params:
+        setup_mode: trend_reclaim
+        start_time: '10:00:00'
+        end_time: '13:00:00'
+        required_trend_closes: 3
+        min_drive_points: 2.0
+        pullback_tolerance_ticks: 1
+        reclaim_buffer_ticks: 0
+        reclaim_window_bars: 3
+        allow_long: true
+        allow_short: true
+        bar_interval_minutes: 5
+        tick_size: 0.25
+        max_trades_per_day: 1
+      rth_start: 09:30:00
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      timeframes_minutes:
+      - 5
+      - 15
+      min_aligned_timeframes: 1
+      pivot_left_bars: 1
+      pivot_right_bars: 1
+      min_pivot_move_ticks: 0
+      carry_pivots_across_sessions: true
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.004
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.base_params.required_trend_closes:
+    - 2
+    - 3
+    - 4
+    entry.params.base_params.min_drive_points:
+    - 1.5
+    - 2.5
+    - 4.0
+    sl.params.stop_pct: &id002
+    - 0.0025
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.base_params.required_trend_closes:
+    - 2
+    - 3
+    - 4
+    entry.params.base_params.min_drive_points:
+    - 1.5
+    - 2.5
+    - 4.0
+    sl.params.stop_pct: *id002
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 3
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.probability_profit_before_drawdown
+      exclusive_min: 0.5
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from research.preflight import _is_archived_path, run_preflight
+from research.preflight import _config_paths, _is_archived_path, run_preflight
 
 
 def _write_csv(path, *, duplicate: bool = False) -> None:
@@ -122,6 +122,32 @@ def test_preflight_default_discovery_treats_archive_paths_as_inactive():
     assert not _is_archived_path(Path("campaigns/es_active/variants/baseline/config.yaml"))
 
 
+def test_preflight_default_discovery_uses_authored_configs_only(tmp_path, monkeypatch):
+    import research.preflight as preflight
+
+    variant = tmp_path / "campaigns/es_active/variants/baseline/config.yaml"
+    rescue = tmp_path / "campaigns/es_active/rescue_attempts/rescue1/baseline/config.yaml"
+    generated = tmp_path / "backtest-campaigns/es_active/baseline/ES/run1/effective_config.yaml"
+    archived = tmp_path / "_archived/campaigns/es_old/variants/baseline/config.yaml"
+    for path in (variant, rescue, generated, archived):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("campaign_id: test\n", encoding="utf-8")
+
+    monkeypatch.setattr(preflight, "PROJECT_ROOT", tmp_path)
+
+    default_paths = {path.relative_to(tmp_path) for path in _config_paths(None)}
+    generated_paths = {
+        path.relative_to(tmp_path) for path in _config_paths(None, include_generated_results=True)
+    }
+
+    assert default_paths == {
+        Path("campaigns/es_active/variants/baseline/config.yaml"),
+        Path("campaigns/es_active/rescue_attempts/rescue1/baseline/config.yaml"),
+    }
+    assert Path("backtest-campaigns/es_active/baseline/ES/run1/effective_config.yaml") in generated_paths
+    assert Path("_archived/campaigns/es_old/variants/baseline/config.yaml") not in generated_paths
+
+
 def test_preflight_rejects_missing_timezone(tmp_path):
     data = tmp_path / "bars.csv"
     config = tmp_path / "config.yaml"
@@ -202,6 +228,40 @@ def test_preflight_rejects_parameter_combination_cap(tmp_path):
 
     assert not result["passed"]
     assert any("methodology cap is 120" in failure for failure in result["failures"])
+
+
+def test_preflight_rejects_target_r_multiple_below_one(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    cfg = _config(data)
+    cfg["strategy"]["tp"]["params"]["target_r_multiple"] = 0.75
+    cfg["core_grid"] = {
+        "parameters": {
+            "sl.params.stop_pct": [0.01],
+            "tp.params.target_r_multiple": [0.75, 1.0],
+        }
+    }
+    _write_config(config, cfg)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("minimum allowed reward:risk" in failure for failure in result["failures"])
+
+
+def test_preflight_rejects_unsupported_continuous_contract_rule(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    cfg = _config(data)
+    cfg["data"]["continuous_contract"] = "explicit_roll"
+    _write_config(config, cfg)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("data.continuous_contract=explicit_roll is unsupported" in failure for failure in result["failures"])
 
 
 def test_preflight_rejects_required_mechanics_review_without_approval(tmp_path):

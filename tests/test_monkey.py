@@ -65,7 +65,7 @@ def test_monkey_can_use_supplied_core_trades():
     assert summary["core_metrics"]["total_trades"] == len(core_trades)
 
 
-def test_trade_path_stress_perturbs_supplied_core_trades():
+def test_trade_path_stress_is_globally_skipped():
     df, _, _ = clean_data(DATA_CFG)
     data = build_features(df, DATA_CFG)
     core_trades = monkey_module.BacktestEngine(BASE_CFG).run(data)["trades"]
@@ -88,12 +88,11 @@ def test_trade_path_stress_perturbs_supplied_core_trades():
         core_trades=core_trades,
     )
 
-    assert len(results) == 3
-    assert summary["enabled"] is True
-    assert summary["mode"] == "actual_trade_path_perturbation"
-    assert summary["one_tick_worse"]["total_trades"] <= len(core_trades)
-    assert summary["stressors"]["max_entry_delay_bars"] == 1
-    assert set(["missed_trades", "delayed_entries", "fill_order_conflicts"]).issubset(results.columns)
+    assert results.empty
+    assert list(results.columns) == ["run_id", "skipped", "skip_reason"]
+    assert summary["enabled"] is False
+    assert summary["skipped"] is True
+    assert "globally disabled" in summary["skip_reason"]
 
 
 def test_monkey_retains_iteration_reports(tmp_path):

@@ -1,0 +1,62 @@
+campaign_id: es_archive_morning_orderflow_hold_retest
+title: ES archived morning orderflow hold retest
+decision: FAIL
+created_at: '2026-06-21'
+instrument: ES
+market_timezone: America/New_York
+edge_family: archive_opening_window_orderflow_continuation_late_hold
+hypothesis: A completed first-hour ES move should have same-day continuation value when completed aggregate
+  trade-side orderflow confirms aggressive participation in the same direction.
+sources:
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  doi: 10.1016/j.jfineco.2018.05.009
+  relevance: Supports testing whether completed early intraday information predicts later same-day index
+    futures returns.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure proxy, while this implementation
+    uses aggregate completed-bar Sierra proxies rather than full-depth quote OFI.
+rationale: This revamp retest ports archive strategies that passed many historical stages or were close
+  to passing into the current authored campaign tree. Only pre-result parameter spaces are declared here,
+  and old over-wide grids are narrowed solely to satisfy current methodology caps.
+data_needs:
+- local completed-bar Sierra RTH orderflow parquet
+- America/New_York timestamp handling and RTH session labels
+- commission, slippage, tick size, point value, and forced flatten configured in each variant
+lookahead_risks:
+- All signal windows are completed before the engine can enter on the next bar.
+- No final session value, future daily range, future VWAP, or post-entry orderflow is used in the signal.
+- Any pass remains only a candidate strategy pending source comparison and manual due diligence.
+duplicate_edge_check:
+  archive_retest_scope: true
+  active_revamp_direct_test_missing: true
+  conclusion: These variants retest specific archived mechanics that were not directly present under the
+    revamp source tree. They are not evidence for a new economic edge unless the current staged flow also
+    passes.
+variants:
+- signed_flow_1030_flatten_1515
+- signed_flow_1030_flatten_1530
+- large10_flow_1030_flatten_1515
+- large20_flow_1030_flatten_1515
+- broad_large_alignment_1030_flatten_1515
+rescue_policy:
+  allowed: false
+  reason: Archive retests must be accepted or rejected under the predeclared current-compliant grids;
+    no post-result rescue is authorized.
+result_summary:
+  decision: FAIL
+  report_root: backtest-campaigns/es_archive_morning_orderflow_hold_retest
+  variants_tested: 5
+  variants_passed: 0
+  terminal_stage: limited_core_grid_test
+  failure_reason: All five ES archive orderflow late-hold variants failed limited_core_grid_test under
+    the current parameter caps and Sierra completed-bar data. No variant reached monkey, WFA, Monte Carlo,
+    simulated incubation, acceptance OOS, or candidate reporting.

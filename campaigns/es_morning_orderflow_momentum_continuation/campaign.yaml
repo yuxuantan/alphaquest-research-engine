@@ -1,0 +1,117 @@
+campaign_id: es_morning_orderflow_momentum_continuation
+title: ES morning orderflow momentum continuation
+decision: FAIL
+created_at: '2026-06-19'
+instrument: ES
+market_timezone: America/New_York
+edge_family: opening_window_price_action_confirmed_by_aggregate_orderflow_continuation
+hypothesis: A completed opening-window ES price move has higher continuation odds when aggregate signed orderflow over the same completed window confirms aggressive participation in the move direction.
+sources:
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  doi: 10.1016/j.jfineco.2018.05.009
+  relevance: Documents that early intraday market information can forecast later same-day returns; this campaign tests immediate post-opening-window continuation rather than last-half-hour-only continuation.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Supports orderflow imbalance as a short-horizon price-pressure proxy; this implementation uses completed Sierra aggregate trade-side flow, not full-depth quote OFI.
+- title: How Markets Slowly Digest Changes in Supply and Demand
+  authors: Jean-Philippe Bouchaud, J. Doyne Farmer, Fabrizio Lillo
+  year: 2009
+  venue: Handbook of Financial Markets
+  link: https://arxiv.org/abs/0809.0822
+  relevance: Reviews persistent order flow and gradual supply-demand digestion, motivating continuation only when opening-window price action and aggregate flow agree.
+rationale: This is a bounded price-action plus aggregate-orderflow campaign. The price-action component is the completed RTH opening-window return; the orderflow component requires completed aggregate signed flow over the same window to agree with that return. Entry is next bar open after the source window closes, with fixed intraday flattening and no overnight exposure.
+data_needs:
+- local Sierra ES RTH 1-minute aggregate orderflow parquet
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, and large20_volume
+- America/New_York timestamp handling and RTH session labels
+lookahead_risks:
+- Opening-window return and orderflow are complete at the signal timestamp before the engine can enter on the next bar open.
+- No final session close, future VWAP, future high/low, final daily range, or post-entry orderflow is used.
+- Same-bar stop/target conflicts use configured detail/pessimistic handling, and all variants flatten before the configured cutoff.
+failure_modes:
+- Sierra aggregate signed volume is a proxy and may not match true aggressor-side labels.
+- Opening-window continuation may be too short-lived after next-bar execution, slippage, and commission.
+- Large-trade filters may select exhausted participation rather than informed continuation.
+- Any positive result may concentrate in high-volatility crisis windows or one market side.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_signed_orderflow_persistence
+  - es_gao_last_half_hour_orderflow_confirmation
+  - es_late_day_intraday_momentum
+  - es_opening_range_orderflow_breakout
+  - es_opening_drive_inventory_absorption
+  - es_opening_gap_orderflow_continuation
+  conclusion: Eligible as a narrowly defined active campaign because it trades immediate post-opening-window continuation only when the same completed opening window has aligned aggregate flow. It is not standalone rolling signed-flow persistence, not Gao last-half-hour prediction, not price-only late-day intraday momentum, and not a breakout through an opening-range level.
+pre_pnl_density_audit: research_artifacts/es_morning_orderflow_momentum_continuation_density_audit_20260619.md
+variants:
+- first30_signed_flow_continuation_1000
+- first45_large10_flow_continuation_1015
+- first60_signed_flow_continuation_1030
+- first60_large20_flow_continuation_1030
+- first90_broad_large_alignment_1100
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core opening-window price-action plus same-window orderflow-confirmation mechanic
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, data windows, or validation gates
+  - use target_r_multiple below 1.0
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant
+    variants:
+    - first30_signed_flow_continuation_1000
+    - first45_large10_flow_continuation_1015
+    - first60_large20_flow_continuation_1030
+    - first60_signed_flow_continuation_1030
+    - first90_broad_large_alignment_1100
+    allowed_change_summary: Changed only existing entry-threshold and stop-distance parameter spaces; target grid remained [1.0, 1.5, 2.0] and no sub-1R target was used.
+    audit: research_artifacts/es_morning_orderflow_momentum_continuation_rescue_attempt_1_density_audit_20260619.md
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_morning_orderflow_momentum_continuation/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time parameter-space rescues failed limited_core_grid_test before monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  best_original:
+    variant_id: first30_signed_flow_continuation_1000
+    run_id: run1
+    profitable_combo_rate: 0.12345679012345678
+    number_passing_benchmark: 3
+    top_net_profit: 2227.5
+    top_profit_factor: 1.2052995391705068
+    top_mar: 0.6633788420899629
+    top_trades_per_year: 79.29228122899285
+    top_failure_reason: ''
+  best_rescue:
+    variant_id: first30_signed_flow_continuation_1000
+    run_id: rescue1
+    profitable_combo_rate: 0.2839506172839506
+    number_passing_benchmark: 11
+    top_net_profit: 2227.5
+    top_profit_factor: 1.2052995391705068
+    top_mar: 0.6633788420899629
+    top_trades_per_year: 79.29228122899285
+    top_failure_reason: ''

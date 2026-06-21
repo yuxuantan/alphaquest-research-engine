@@ -1,0 +1,285 @@
+campaign_id: es_impulse_pause_orderflow_continuation
+variant_id: afternoon_large10_two_sided_impulse_pause_breakout_1530
+test_run_id: rescue1
+strategy_name: impulse_pause_orderflow_continuation
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Llorente et al. (2002); Cont, Kukanov, and Stoikov (2014); Bouchaud, Farmer, and Lillo (2009);
+    Lo, Mamaysky, and Wang (2000)
+  edge_thesis: Completed impulse-pause-breakout sequences with aligned aggregate orderflow may continue intraday
+    if order splitting or liquidity-taking pressure persists after the breakout close.
+  mechanic: From 12:30:00 through 15:30:00 ET, wait for 5 completed 5-minute bars to move at least the declared
+    impulse threshold, then require 2 completed pause bars whose retrace is no more than 60% of that impulse. A
+    trade is signaled only when the next completed bar closes beyond the pause boundary with same-direction large10
+    imbalance; direction is long and short.
+  timeframe_rationale: Five-minute bars reduce one-minute noise but still keep the completed breakout close close
+    enough to the pressure event for realistic next-bar execution and enough annual opportunities.
+  pre_pnl_density: rescue parameter-space change preserves active variant density feasibility; no PnL was inspected
+    beyond the allowed failed original core grid before this rescue was written
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: 'This variant expresses impulse-pause continuation because it separates the setup into
+      three completed phases: directional impulse, shallow pause, and breakout close. From 12:30:00 through 15:30:00
+      ET, wait for 5 completed 5-minute bars to move at least the declared impulse threshold, then require 2 completed
+      pause bars whose retrace is no more than 60% of that impulse. A trade is signaled only when the next completed
+      bar closes beyond the pause boundary with same-direction large10 imbalance; direction is long and short.'
+    entry_logic_rationale: 'The entry decision uses only completed 5-minute RTH bars. The impulse and pause are
+      prior completed bars; the breakout and large10 confirmation are known only at the signal bar close, so execution
+      is no earlier than the next bar open. The afternoon version targets renewed directional participation after
+      the lunch lull and demands larger-trade flow on the breakout to reduce false late-session pushes. Rescue note:
+      entry module and impulse-pause-breakout definition are unchanged; only declared entry threshold values are
+      adjusted where listed in the rescue log.'
+    stop_loss_rationale: 'The percent-from-entry stop is fixed before testing, independent of future session levels,
+      and invalidates the continuation premise if the post-breakout move cannot tolerate ordinary ES noise. The
+      stop is the only stop tunable. Rescue note: stop module is unchanged; only the predeclared stop_pct parameter
+      space/fixed value is adjusted where listed in the rescue log.'
+    target_exit_rationale: 'The fixed-R target uses the initial stop distance and starts at exactly 1.0R, satisfying
+      the hard rule that no target_r_multiple below 1.0 may be tested. It avoids fitting exits to future highs,
+      lows, VWAP, or orderflow. Rescue note: target module and target_r_multiple grid are unchanged at [1.0, 1.5,
+      2.0]; no sub-1R or extra TP widening is introduced.'
+    profitability_rationale: The variant should be profitable only if a shallow pause after a real impulse marks
+      absorption of counterflow and the breakout close with aligned aggregate flow captures unfinished order splitting
+      or liquidity-taking pressure after costs.
+    known_failure_modes: The breakout bar can be terminal exhaustion, the pause can be random noise rather than
+      absorption, aggregate orderflow may lag price, and the edge can disappear under one-tick worse slippage, delayed
+      entry, or low-volatility regimes.
+    pre_test_decision: approve_for_testing
+  rescue_attempt:
+    id: parameter_space_rescue_1
+    source_run: run1
+    scope: parameter_space_only
+    core_mechanic_unchanged: true
+    tp_adjustment: none; original grid already satisfies target_r_multiple >= 1.0
+    changed_parameters:
+      sl.params.stop_pct: &id002
+      - 0.005
+      - 0.0075
+      - 0.01
+    changed_fixed_defaults:
+      strategy.sl.params.stop_pct: 0.0075
+    rationale: Original grid results improved as stop distance widened, with the best run at the widest declared
+      stop. The rescue tests whether the same signal needs more room before invalidation, without changing entry
+      or TP mechanics.
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  rolling_volume_window: 20
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: impulse_pause_orderflow_continuation
+    params:
+      setup_mode: afternoon_large10_two_sided_impulse_pause_breakout_1530
+      start_time: '12:30:00'
+      end_time: '15:30:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      impulse_bars: 5
+      pause_bars: 2
+      max_pullback_fraction: 0.6
+      flow_mode: large10
+      min_impulse_ticks: 10
+      min_orderflow_imbalance: 0.03
+      allow_long: true
+      allow_short: true
+      max_trades_per_day: 1
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0075
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id003
+    entry.params.min_impulse_ticks:
+    - 6
+    - 10
+    - 14
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.03
+    - 0.06
+    sl.params.stop_pct: *id002
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id003
+campaign_tests:
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    data_window: &id004
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parameters: *id003
+  limited_monkey_test:
+    data_window: *id004
+    runs: 300
+    seed: 7
+    beat_threshold: 0.9
+  walk_forward_analysis:
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parameters: *id003
+  wfa_oos_monkey_test:
+    runs: 300
+    seed: 17
+    beat_threshold: 0.8
+  wfa_oos_monte_carlo:
+    runs: 300
+    seed: 19
+  simulated_incubation_core:
+    train_months: 48
+    test_months: 12
+    parameters: *id003
+  simulated_incubation_monkey:
+    runs: 300
+    seed: 29
+    beat_threshold: 0.8
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+    parameters: *id003
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

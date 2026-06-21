@@ -1,0 +1,167 @@
+campaign_id: es_market_structure_pivot_trend_bias
+title: ES completed swing-pivot multi-timeframe market-structure trend bias
+decision: FAIL
+created_at: '2026-06-20'
+instrument: ES
+market_timezone: America/New_York
+edge_family: market_structure_pivot_trend_bias
+hypothesis: ES should show same-session continuation when the latest confirmed swing-pivot sequence across multiple intraday
+  horizons shows a higher-high/higher-low uptrend or lower-high/lower-low downtrend. The signal is deliberately delayed until
+  pivots are confirmed by right-side bars, then entered no earlier than the next bar open.
+sources:
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/0022-1082.00265
+  relevance: 'Uses algorithmic local extrema to define technical patterns and test whether price patterns contain information
+    beyond random walks. This campaign uses a simpler extrema sequence: confirmed swing highs/lows forming HH/HL or LH/LL.'
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  authors: William Brock, Josef Lakonishok, and Blake LeBaron
+  year: 1992
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/j.1540-6261.1992.tb04681.x
+  relevance: Documents that trading-range breakout rules have statistical content in equity-index data. This supports testing
+    price-level structure rules, but does not by itself validate this ES intraday implementation.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2011.11.003
+  relevance: Shows trend continuation across futures markets at longer horizons. This campaign tests whether a completed intraday
+    pivot-state proxy is strong enough after ES costs and same-day flatten rules.
+- title: A Century of Evidence on Trend-Following Investing
+  authors: Brian Hurst, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2017
+  venue: AQR white paper
+  link: https://www.aqr.com/Insights/Research/Journal-Article/A-Century-of-Evidence-on-Trend-Following-Investing
+  relevance: Provides robust practitioner evidence that trend-following has persisted across many markets. This is supporting
+    context only; the campaign still must pass the local staged ES methodology.
+rationale: The first fixed-time draft was rejected before PnL because signal density was below 50 trades/year. This reformulation
+  still tests the same edge, but acts when a completed multi-timeframe pivot bias first appears inside a predeclared time
+  window. A long is allowed only when the latest four alternating pivots imply higher high and higher low; a short is allowed
+  only when they imply lower high and lower low. Ambiguous, mixed, or insufficient structure means no trade.
+data_needs:
+- data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+- 5-minute strategy bars aggregated from local 1-minute RTH Sierra bars
+- 1-minute detail data for higher-timeframe stop/target conflict handling
+lookahead_risks:
+- A swing pivot is not usable until the configured right-side confirmation bars are complete.
+- The current higher-timeframe bucket is used only after its close time has passed; incomplete buckets do not define pivots.
+- Signals generated from completed bars are filled at the next bar open or later by the engine.
+- No final session high, low, VWAP, volume profile, or future orderflow is used.
+- Same-bar stop/target conflicts use 1-minute detail data when available and pessimistic fallback otherwise.
+failure_modes:
+- Confirmed pivots may lag so much that continuation is exhausted before entry.
+- Intraday HH/HL and LH/LL states may be common but not predictive after ES commissions and slippage.
+- The effect may exist only on high-volatility days and fail profit-concentration checks.
+- Generic percent stops may not match swing-structure invalidation.
+- The latest locked holdout may reject apparent trend persistence from earlier regimes.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_trend_aligned_orderflow_continuation
+  - es_trend_filtered_mes_participation_crowding
+  - es_trend_filtered_prior_session_breakout_orderflow
+  - es_vwap_pullback_continuation
+  - es_opening_range_orderflow_breakout
+  conclusion: Eligible only as a reformulated market-structure edge because existing trend-aligned active campaigns used block
+    high/low or return-trend proxies and/or orderflow confirmation. This campaign uses confirmed swing-pivot sequences as
+    the primary and only entry edge.
+variants:
+- late_morning_5_15_first_bias_1030_1330
+- midday_5_15_first_bias_1130_1400
+- afternoon_5_15_first_bias_1300_1530
+- midday_5_15_30_first_bias_1200_1500
+- afternoon_15_30_first_bias_1300_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change the entry module
+  - change the stop-loss module
+  - change the take-profit module
+  - add orderflow, VWAP, macro, calendar, or other filters after seeing results
+  - use target_r_multiple below 1.0
+  - alter costs, fills, sessions, data windows, or validation gates
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed_failed
+    scope: per_failed_variant
+    variants:
+    - afternoon_15_30_first_bias_1300_1530
+    - afternoon_5_15_first_bias_1300_1530
+    - late_morning_5_15_first_bias_1030_1330
+    - midday_5_15_30_first_bias_1200_1500
+    - midday_5_15_first_bias_1130_1400
+    allowed_change_summary: Stricter completed-pivot move grid `[4, 6, 8]` and wider percent-stop grid `[0.003, 0.005, 0.007]`;
+      target grid remains `[1.0, 1.5, 2.0]` with no sub-1R target.
+combination_plan:
+  status: queued_after_standalone_failed
+  artifact: research_artifacts/es_market_structure_pivot_combination_queue_20260620.md
+  selection_rule: Choose dense existing price-action or aggregate-orderflow campaigns where the pivot bias is a predeclared
+    direction filter, not a post-failure patch. Avoid rare/event-only campaigns unlikely to keep 50 trades per year after
+    filtering.
+  selected_campaigns:
+  - base_campaign_id: es_mes_participation_crowding_reversion
+    composite_campaign_id: es_pivot_filtered_mes_participation_crowding_reversion
+    status: completed_failed
+    reason: MES crowding fade can be reframed as pullback-with-structure only when the fade direction agrees with confirmed
+      pivots.
+  - base_campaign_id: es_prior_value_area_orderflow_acceptance
+    composite_campaign_id: es_pivot_filtered_prior_value_area_acceptance
+    status: completed_failed
+    reason: Prior value acceptance is a price-action/orderflow continuation edge where confirmed structure is a natural direction
+      gate.
+  - base_campaign_id: es_vwap_pullback_continuation
+    composite_campaign_id: es_pivot_filtered_vwap_pullback_continuation
+    status: completed_failed
+    reason: VWAP pullback continuation should only pass the composite gate when benchmark reclaim direction agrees with confirmed
+      structure.
+  - base_campaign_id: es_opening_range_orderflow_breakout
+    composite_campaign_id: es_pivot_filtered_opening_range_orderflow_breakout
+    status: queued_next
+    reason: Opening-range breakout is a high-density price-action/orderflow edge and the pivot filter is a predeclared continuation
+      direction gate.
+  - base_campaign_id: es_spx_0dte_expiration_pressure
+    composite_campaign_id: es_pivot_filtered_spx_0dte_expiration_pressure
+    status: queued_after_density_check
+    reason: 0DTE pressure can be tested only if post-May-2022 full-week variants retain enough trade density after the structure
+      gate; otherwise it will be rejected before PnL and replaced with another dense price-action/orderflow base campaign.
+pre_pnl_reformulations:
+- id: fixed_time_draft_rejected
+  reason: No fixed-time variant reached 50 trades/year in all required density windows before PnL testing.
+  artifact: research_artifacts/es_market_structure_pivot_trend_bias_density_summary_fixed_20260620.csv
+  change: Replace arbitrary fixed signal timestamps with first confirmed bias inside fixed windows; keep completed pivot-sequence
+    edge, no orderflow or other filter added.
+- id: morning_window_rejected
+  reason: The 10:00-12:00 5/15-minute first-bias variant reached only 24.0-35.0 trades/year across required windows.
+  artifact: research_artifacts/es_market_structure_pivot_trend_bias_density_summary_fixed_window_20260620.csv
+  change: Replace with 10:30-13:30 5/15-minute first-bias variant, selected on signal density only before PnL testing.
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_market_structure_pivot_trend_bias/campaign_test_summary.json
+  original_runs: 5
+  rescue_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five original variants and all five one-time parameter-space rescues failed limited_core_grid_test;
+    no branch reached monkey, WFA, Monte Carlo, incubation, or frozen validation.
+  best_original:
+    variant_id: afternoon_15_30_first_bias_1300_1530
+    run_id: run1
+    top_net_profit: -1290.0
+    top_profit_factor: 0.7782552642887839
+    profitable_combo_rate: 0.0
+  best_rescue:
+    variant_id: midday_5_15_first_bias_1130_1400
+    run_id: rescue1
+    top_net_profit: 945.0
+    top_profit_factor: 1.1147540983606556
+    profitable_combo_rate: 0.1111111111111111

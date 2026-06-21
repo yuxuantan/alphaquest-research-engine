@@ -133,11 +133,172 @@ def test_max_contracts_caps_contract_count_instead_of_breaching():
     assert "max_contracts_capped" in events[0]["event"]
 
 
+def test_prop_lifecycle_challenge_requires_target_and_consistency():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 2000.0},
+            {"trade_id": 2, "session_date": "2024-01-03", "contracts": 1, "net_pnl": 1000.0},
+            {"trade_id": 3, "session_date": "2024-01-04", "contracts": 1, "net_pnl": 1000.0},
+        ]
+    )
+
+    result, events = simulate_prop_path_with_events(
+        trades,
+        PropRules(
+            account_lifecycle_enabled=True,
+            starting_balance=50000,
+            trailing_drawdown=2000,
+            challenge_fee=98,
+            challenge_profit_target_amount=3000,
+            challenge_consistency_limit=0.50,
+            trailing_drawdown_lock_balance=52100,
+            trailing_drawdown_locked_floor=50100,
+            daily_loss_limit=100000,
+        ),
+    )
+
+    assert result["challenge_passes"] == 1
+    assert result["profit_before_drawdown"] is True
+    assert result["total_challenge_fees"] == 98.0
+    assert result["net_pnl"] == -98.0
+    trade_events = [row for row in events if str(row["event"]).startswith("trade")]
+    assert "challenge_passed" not in trade_events[1]["event"]
+    assert "challenge_passed" in trade_events[2]["event"]
+    assert trade_events[2]["challenge_consistency_ratio"] == 0.5
+
+
+def test_prop_lifecycle_replacement_fee_after_breach_ignores_account_loss():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": -2100.0},
+            {"trade_id": 2, "session_date": "2024-01-03", "contracts": 1, "net_pnl": 1500.0},
+            {"trade_id": 3, "session_date": "2024-01-04", "contracts": 1, "net_pnl": 1500.0},
+        ]
+    )
+
+    result = simulate_prop_path(
+        trades,
+        PropRules(
+            account_lifecycle_enabled=True,
+            starting_balance=50000,
+            trailing_drawdown=2000,
+            challenge_fee=98,
+            challenge_profit_target_amount=3000,
+            challenge_consistency_limit=0.50,
+            daily_loss_limit=100000,
+        ),
+    )
+
+    assert result["accounts_purchased"] == 2
+    assert result["accounts_breached"] == 1
+    assert result["challenge_passes"] == 1
+    assert result["total_challenge_fees"] == 196.0
+    assert result["net_pnl"] == -196.0
+
+
+def test_prop_lifecycle_funded_payout_uses_profit_share_and_resets_profit_days():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 1500.0},
+            {"trade_id": 2, "session_date": "2024-01-03", "contracts": 1, "net_pnl": 1500.0},
+            {"trade_id": 3, "session_date": "2024-01-04", "contracts": 1, "net_pnl": 400.0},
+            {"trade_id": 4, "session_date": "2024-01-05", "contracts": 1, "net_pnl": 400.0},
+            {"trade_id": 5, "session_date": "2024-01-08", "contracts": 1, "net_pnl": 400.0},
+            {"trade_id": 6, "session_date": "2024-01-09", "contracts": 1, "net_pnl": 400.0},
+            {"trade_id": 7, "session_date": "2024-01-10", "contracts": 1, "net_pnl": 400.0},
+        ]
+    )
+
+    result, events = simulate_prop_path_with_events(
+        trades,
+        PropRules(
+            account_lifecycle_enabled=True,
+            starting_balance=50000,
+            trailing_drawdown=2000,
+            challenge_fee=98,
+            challenge_profit_target_amount=3000,
+            challenge_consistency_limit=0.50,
+            funded_starting_balance=50000,
+            funded_payout_min_profit_day=150,
+            funded_payout_required_profit_days=5,
+            funded_payout_profit_fraction=0.50,
+            funded_payout_profit_share=0.90,
+            funded_payout_max_amount=2000,
+            daily_loss_limit=100000,
+        ),
+    )
+
+    assert result["payout_count"] == 1
+    assert result["gross_payouts"] == 1000.0
+    assert result["net_payouts"] == 900.0
+    assert result["net_pnl"] == 802.0
+    payout_events = [row for row in events if "funded_payout" in str(row["event"])]
+    assert len(payout_events) == 1
+    assert payout_events[0]["payout_request"] == 1000.0
+    assert payout_events[0]["payout_net"] == 900.0
+    assert payout_events[0]["funded_profit_days"] == 0
+
+
+def test_prop_lifecycle_eod_trailing_drawdown_locks_at_configured_floor():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 2100.0},
+            {"trade_id": 2, "session_date": "2024-01-03", "contracts": 1, "net_pnl": -1999.0},
+            {"trade_id": 3, "session_date": "2024-01-04", "contracts": 1, "net_pnl": -2.0},
+        ]
+    )
+
+    result, events = simulate_prop_path_with_events(
+        trades,
+        PropRules(
+            account_lifecycle_enabled=True,
+            starting_balance=50000,
+            trailing_drawdown=2000,
+            challenge_profit_target_amount=99999,
+            trailing_drawdown_lock_balance=52100,
+            trailing_drawdown_locked_floor=50100,
+            daily_loss_limit=100000,
+        ),
+    )
+
+    assert result["accounts_breached"] == 1
+    eod_events = [row for row in events if str(row["event"]).startswith("eod_update")]
+    assert eod_events[0]["trailing_floor"] == 50100.0
+    breach_events = [row for row in events if "trailing_drawdown_breach" in str(row["event"])]
+    assert breach_events[0]["balance"] == 50099.0
+
+
 def test_monte_carlo_summary():
     trades = _trades()
     results, summary = run_monte_carlo(trades, {"runs": 5, "seed": 1}, PropRules())
     assert len(results) == 5
     assert "probability_account_breach" in summary
+    assert summary["mean_net_pnl"] == summary["average_net_pnl"]
+    assert summary["sampling"] == {
+        "seed": 1,
+        "skip_trade_probability": 0.0,
+        "skip_winning_trade_probability": 0.0,
+        "cluster_losses": False,
+    }
+
+
+def test_lifecycle_monte_carlo_benchmark_uses_strict_positive_mean_net_pnl():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 0.0},
+        ]
+    )
+
+    _, summary = run_monte_carlo(
+        trades,
+        {"runs": 1, "seed": 1},
+        PropRules(account_lifecycle_enabled=True, challenge_fee=0.0),
+    )
+
+    assert summary["mean_net_pnl"] == 0.0
+    assert summary["prop_pass_chance_benchmark_metric"] == "mean_net_pnl"
+    assert summary["prop_pass_chance_benchmark_threshold"] == 0.0
+    assert summary["meets_prop_pass_chance_benchmark"] is False
 
 
 def test_monte_carlo_audit_logs_path_trades_and_events():

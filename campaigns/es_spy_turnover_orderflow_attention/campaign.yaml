@@ -1,0 +1,149 @@
+campaign_id: es_spy_turnover_orderflow_attention
+title: ES SPY Turnover Orderflow Attention
+decision: FAIL
+created_at: '2026-06-20'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: Prior-day SPY abnormal turnover or return-volume attention identifies broad market attention/information
+  events. ES continuation attempts are only credible when the prior SPY return direction, completed same-session
+  ES price movement, and aggregate signed orderflow agree before next-bar entry.
+rationale: This is a bounded composite edge using a free tradable broad-market ETF state rather than another ES
+  intraday volume-shock rule. SPY daily close and volume are known only after the prior ETF close and are mapped
+  strictly before the ES session. The ES trigger then requires completed RTH movement and signed-volume confirmation
+  so the campaign does not trade the lagged SPY state alone.
+sources:
+- title: The High-Volume Return Premium
+  authors: Simon Gervais, Ron Kaniel, and Dan H. Mingelgrin
+  year: 2001
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00349
+  link: https://doi.org/10.1111/0022-1082.00349
+  relevance: Documents that abnormal trading volume can identify attention/visibility events with subsequent return
+    predictability.
+- title: Dynamic Volume-Return Relation of Individual Stocks
+  authors: Guillermo Llorente, Roni Michaely, Gideon Saar, and Jiang Wang
+  year: 2002
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v15y2002i4p1005-1047.html
+  relevance: Motivates conditioning return continuation versus reversal on whether high volume reflects information/speculation
+    or risk-sharing.
+- title: 'All That Glitters: The Effect of Attention and News on the Buying Behavior of Individual and Institutional
+    Investors'
+  authors: Brad M. Barber and Terrance Odean
+  year: 2008
+  venue: Review of Financial Studies
+  link: https://academic.oup.com/rfs/article-abstract/21/2/785/1607197
+  relevance: Supports abnormal volume and extreme returns as attention-grabbing market states.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Supports requiring contemporaneous orderflow imbalance confirmation instead of trading the daily attention
+    proxy alone.
+- title: Yahoo Finance daily SPY adjusted-close and volume history
+  authors: Yahoo Finance
+  year: 2026
+  venue: Free public chart data already cached locally
+  link: https://query1.finance.yahoo.com/v8/finance/chart/SPY
+  relevance: Free no-paid-data source used for prior-day SPY close, return, volume, and attention features.
+data_needs:
+- timezone-aware ES RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- existing local free Yahoo SPY daily adjusted-close and volume CSV
+- derived SPY turnover/attention feature file with strict prior-session daily-close availability
+- 5-minute completed-bar ES aggregation with next-bar execution
+data_quality_caveats:
+- Yahoo SPY data is a free public adjusted-close and volume source and should be cross-checked before manual incubation.
+- ETF close/volume timestamps are daily; same-day intraday SPY prints are not used.
+- Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor truth.
+- The six decision times are used to preserve 50/year feasibility and should be manually reviewed for late-day mechanics
+  if anything passes.
+lookahead_risks:
+- An ES session dated D may only use SPY observations strictly before D.
+- Rolling ranks use only SPY observations through the mapped observation date.
+- Signals use completed ES bars only; entries must occur at the next bar open or later.
+- No future ES bar, final session VWAP, final high/low, or same-day/future SPY close is used.
+failure_modes:
+- SPY abnormal volume may be a lagging attention marker rather than a tradable lead for ES.
+- High volume can reflect liquidity/risk-sharing trades that reverse rather than continue.
+- Same-day ES confirmation may enter too late after the move has already happened.
+- Results may concentrate in crisis or high-volatility regimes.
+- The full-day decision schedule may dilute the attention mechanism if late-day signals behave differently from
+  morning signals.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_volume_shock_liquidity_reversal
+  - es_opening_drive_inventory_absorption
+  - es_trade_fragmentation_liquidity_reversion
+  - es_vpin_toxicity_continuation
+  - es_credit_etf_orderflow_risk_appetite
+  - es_sector_opening_breadth_orderflow_continuation
+  conclusion: Eligible as a distinct bounded composite. Existing active volume campaigns used ES intraday volume/flow
+    states; this campaign uses lagged free SPY daily abnormal turnover/attention as the primary state, then requires
+    ES price/orderflow confirmation.
+feature_construction:
+  builder: tools/build_es_spy_turnover_features.py
+  spy_source_cache: data/external/yahoo_sector_etfs/yahoo_spy_daily_1998-12-01_2026-06-10.csv
+  output: data/external/es_spy_turnover_attention_features_20110103_20260609.csv
+  availability_rule: latest SPY daily close and volume strictly before ES session_date
+  pre_pnl_density_audit: research_artifacts/es_spy_turnover_orderflow_attention_density_audit_20260620.md
+  target_reward_risk_floor: 1.0
+variants:
+- spy_1d_volume_attention_continuation_1530
+- spy_1d_absret_attention_continuation_1530
+- spy_3d_volume_attention_continuation_1530
+- spy_3d_absret_attention_continuation_1530
+- spy_5d_volume_attention_continuation_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  - use any target_r_multiple below 1.0
+  attempts:
+  - id: parameter_space_rescue_1
+    status: completed
+    decision: FAIL
+    scope: per_failed_variant
+    reason: All five original variants failed limited core. Each failed variant
+      received one parameter-space-only rescue that preserved the entry, stop,
+      target, data, timeframe, costs, sessions, fills, signal schedule, and
+      validation gates. Rescue changes only adjusted existing attention-rank,
+      signed-flow-threshold, and stop-distance parameter spaces. TP was unchanged
+      because every target_r_multiple was already at least 1.0R.
+    configs:
+    - campaigns/es_spy_turnover_orderflow_attention/rescue_attempts/parameter_space_rescue_1/spy_1d_absret_attention_continuation_1530/config.yaml
+    - campaigns/es_spy_turnover_orderflow_attention/rescue_attempts/parameter_space_rescue_1/spy_1d_volume_attention_continuation_1530/config.yaml
+    - campaigns/es_spy_turnover_orderflow_attention/rescue_attempts/parameter_space_rescue_1/spy_3d_absret_attention_continuation_1530/config.yaml
+    - campaigns/es_spy_turnover_orderflow_attention/rescue_attempts/parameter_space_rescue_1/spy_3d_volume_attention_continuation_1530/config.yaml
+    - campaigns/es_spy_turnover_orderflow_attention/rescue_attempts/parameter_space_rescue_1/spy_5d_volume_attention_continuation_1530/config.yaml
+    summary: backtest-campaigns/es_spy_turnover_orderflow_attention/campaign_test_summary.json
+test_results:
+  decision: FAIL
+  summary: backtest-campaigns/es_spy_turnover_orderflow_attention/campaign_test_summary.json
+  campaign_results: backtest-campaigns/es_spy_turnover_orderflow_attention/campaign_results.csv
+  trade_logs_manifest: backtest-campaigns/es_spy_turnover_orderflow_attention/trade_logs_manifest.csv
+  equity_curves_manifest: backtest-campaigns/es_spy_turnover_orderflow_attention/equity_curves_manifest.csv
+  wfa_table: backtest-campaigns/es_spy_turnover_orderflow_attention/wfa_table.csv
+  monte_carlo_summary: backtest-campaigns/es_spy_turnover_orderflow_attention/monte_carlo_summary.csv
+  failure_reason: The strongest rescue, spy_3d_absret_attention_continuation_1530/rescue1,
+    passed limited core and monkey but failed WFA by early exit, with stitched
+    PF 0.9450324342779105, MAR -0.16161731136310653, trades/year
+    52.17242192103712, net profit -805.0, and negative expectancy. The
+    five-day volume rescue passed core but failed limited monkey/stress because
+    max-drawdown robustness was 0.86 versus the 0.90 threshold and the
+    one-tick-worse run was unprofitable.

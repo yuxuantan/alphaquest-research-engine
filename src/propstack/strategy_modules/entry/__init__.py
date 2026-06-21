@@ -19,7 +19,11 @@ from propstack.strategy_modules.entry.chicagofed_cfnai_activity_state import (
 from propstack.strategy_modules.entry.consumer_sentiment_state import ConsumerSentimentStateEntry
 from propstack.strategy_modules.entry.connors_rsi2_mean_reversion import ConnorsRsi2MeanReversionEntry
 from propstack.strategy_modules.entry.credit_spread_state import CreditSpreadStateEntry
+from propstack.strategy_modules.entry.credit_etf_orderflow_state import CreditEtfOrderflowStateEntry
 from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
+from propstack.strategy_modules.entry.default_spread_orderflow_state import (
+    DefaultSpreadOrderflowStateEntry,
+)
 from propstack.strategy_modules.entry.daily_short_term_reversal import DailyShortTermReversalEntry
 from propstack.strategy_modules.entry.daily_reversal_orderflow_confirmation import (
     DailyReversalOrderflowConfirmationEntry,
@@ -36,6 +40,9 @@ from propstack.strategy_modules.entry.es_nq_relative_value_reversion import EsNq
 from propstack.strategy_modules.entry.es_nq_relative_value_orderflow_absorption_reversion import (
     EsNqRelativeValueOrderflowAbsorptionReversionEntry,
 )
+from propstack.strategy_modules.entry.es_nq_semivariance_filtered_relative_value_absorption import (
+    EsNqSemivarianceFilteredRelativeValueAbsorptionEntry,
+)
 from propstack.strategy_modules.entry.es_term_structure_lead_lag import EsTermStructureLeadLagEntry
 from propstack.strategy_modules.entry.finra_margin_leverage import FinraMarginLeverageEntry
 from propstack.strategy_modules.entry.fomc_pre_announcement_drift import FomcPreAnnouncementDriftEntry
@@ -45,12 +52,19 @@ from propstack.strategy_modules.entry.footprint_absorption_initiation import (
 from propstack.strategy_modules.entry.gao_last_half_hour_orderflow import GaoLastHalfHourOrderflowEntry
 from propstack.strategy_modules.entry.halloween_seasonal_premium import HalloweenSeasonalPremiumEntry
 from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
+from propstack.strategy_modules.entry.impulse_pause_orderflow_continuation import (
+    ImpulsePauseOrderflowContinuationEntry,
+)
+from propstack.strategy_modules.entry.import_export_price_pressure import ImportExportPricePressureEntry
 from propstack.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry
 from propstack.strategy_modules.entry.intraday_periodicity_orderflow_confirmation import (
     IntradayPeriodicityOrderflowConfirmationEntry,
 )
 from propstack.strategy_modules.entry.intraday_periodicity_persistence import IntradayPeriodicityPersistenceEntry
 from propstack.strategy_modules.entry.intraday_range_orderflow_breakout import IntradayRangeOrderflowBreakoutEntry
+from propstack.strategy_modules.entry.intraday_invariance_dislocation_reversion import (
+    IntradayInvarianceDislocationReversionEntry,
+)
 from propstack.strategy_modules.entry.key_reversal_orderflow_reversal import (
     KeyReversalOrderflowReversalEntry,
 )
@@ -58,9 +72,19 @@ from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayI
 from propstack.strategy_modules.entry.leveraged_etf_rebalance_pressure import LeveragedEtfRebalancePressureEntry
 from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import LiquidityRiskCapacityPriorityEntry
 from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
+from propstack.strategy_modules.entry.market_structure_filtered_entry import MarketStructureFilteredEntry
+from propstack.strategy_modules.entry.market_structure_pivot_continuation import (
+    MarketStructurePivotContinuationEntry,
+)
 from propstack.strategy_modules.entry.mes_participation_crowding import MesParticipationCrowdingEntry
+from propstack.strategy_modules.entry.mes_footprint_liquidity_sweep_reversion import (
+    MesFootprintLiquiditySweepReversionEntry,
+)
 from propstack.strategy_modules.entry.trend_filtered_mes_participation_crowding import (
     TrendFilteredMesParticipationCrowdingEntry,
+)
+from propstack.strategy_modules.entry.volatility_filtered_trend_mes_participation_crowding import (
+    VolatilityFilteredTrendMesParticipationCrowdingEntry,
 )
 from propstack.strategy_modules.entry.monthly_opex_pressure import MonthlyOpexPressureEntry
 from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIntradayMomentumEntry
@@ -100,6 +124,7 @@ from propstack.strategy_modules.entry.orderflow_regime import OrderflowRegimeEnt
 from propstack.strategy_modules.entry.orderflow_recent_pocket_combo import OrderflowRecentPocketComboEntry
 from propstack.strategy_modules.entry.overnight_return_late_day_momentum import OvernightReturnLateDayMomentumEntry
 from propstack.strategy_modules.entry.overnight_intraday_reversal import OvernightIntradayReversalEntry
+from propstack.strategy_modules.entry.overnight_drift import OvernightDriftEntry
 from propstack.strategy_modules.entry.overnight_inventory_reversion import OvernightInventoryReversionEntry
 from propstack.strategy_modules.entry.overnight_range_orderflow_breakout import (
     OvernightRangeOrderflowBreakoutEntry,
@@ -122,12 +147,14 @@ from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSe
 from propstack.strategy_modules.entry.prior_session_benchmark_orderflow_reaction import (
     PriorSessionBenchmarkOrderflowReactionEntry,
 )
+from propstack.strategy_modules.entry.prior_lvn_orderflow_rejection import PriorLvnOrderflowRejectionEntry
 from propstack.strategy_modules.entry.prior_value_area_orderflow_acceptance import (
     PriorValueAreaOrderflowAcceptanceEntry,
 )
 from propstack.strategy_modules.entry.prior_value_area_orderflow_rejection import (
     PriorValueAreaOrderflowRejectionEntry,
 )
+from propstack.strategy_modules.entry.prior_poc_orderflow_magnet import PriorPocOrderflowMagnetEntry
 from propstack.strategy_modules.entry.trend_filtered_prior_value_area_acceptance import (
     TrendFilteredPriorValueAreaAcceptanceEntry,
 )
@@ -157,13 +184,25 @@ from propstack.strategy_modules.entry.session_extreme_delta_divergence import (
     SessionExtremeDeltaDivergenceEntry,
 )
 from propstack.strategy_modules.entry.session_open_orderflow_reclaim import SessionOpenOrderflowReclaimEntry
+from propstack.strategy_modules.entry.semivariance_filtered_trend_mes_participation_crowding import (
+    SemivarianceFilteredTrendMesParticipationCrowdingEntry,
+)
 from propstack.strategy_modules.entry.sector_dispersion_state import SectorDispersionStateEntry
+from propstack.strategy_modules.entry.sector_rotation_orderflow_pullback import (
+    SectorRotationOrderflowPullbackEntry,
+)
+from propstack.strategy_modules.entry.sector_opening_breadth_orderflow import (
+    SectorOpeningBreadthOrderflowEntry,
+)
 from propstack.strategy_modules.entry.sector_rotation_risk_appetite import SectorRotationRiskAppetiteEntry
 from propstack.strategy_modules.entry.spx_0dte_expiration_pressure import Spx0dteExpirationPressureEntry
 from propstack.strategy_modules.entry.spx_0dte_orderflow_continuation import (
     Spx0dteOrderflowContinuationEntry,
 )
 from propstack.strategy_modules.entry.spx_0dte_trend_aligned_pressure import Spx0dteTrendAlignedPressureEntry
+from propstack.strategy_modules.entry.spy_turnover_orderflow_attention import (
+    SpyTurnoverOrderflowAttentionEntry,
+)
 from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
 from propstack.strategy_modules.entry.trade_orderflow_multi_pressure import TradeOrderflowMultiPressureEntry
 from propstack.strategy_modules.entry.trade_orderflow_multi_state_rank import TradeOrderflowMultiStateRankEntry
@@ -177,10 +216,14 @@ from propstack.strategy_modules.entry.trend_aligned_orderflow_continuation impor
     TrendAlignedOrderflowContinuationEntry,
 )
 from propstack.strategy_modules.entry.treasury_auction_pressure import TreasuryAuctionPressureEntry
+from propstack.strategy_modules.entry.treasury_rate_orderflow_state import TreasuryRateOrderflowStateEntry
 from propstack.strategy_modules.entry.treasury_rate_state import TreasuryRateStateEntry
 from propstack.strategy_modules.entry.turn_of_year_effect import TurnOfYearEffectEntry
 from propstack.strategy_modules.entry.usdjpy_safe_haven import UsdJpySafeHavenEntry
 from propstack.strategy_modules.entry.variance_risk_premium_intraday import VarianceRiskPremiumIntradayEntry
+from propstack.strategy_modules.entry.variance_ratio_orderflow_regime import (
+    VarianceRatioOrderflowRegimeEntry,
+)
 from propstack.strategy_modules.entry.vix_expiration_pressure import VixExpirationPressureEntry
 from propstack.strategy_modules.entry.volatility_managed_intraday_premium import (
     VolatilityManagedIntradayPremiumEntry,
@@ -223,7 +266,9 @@ ENTRY_MODULES = {
     ConsumerSentimentStateEntry.name: ConsumerSentimentStateEntry,
     ConnorsRsi2MeanReversionEntry.name: ConnorsRsi2MeanReversionEntry,
     CreditSpreadStateEntry.name: CreditSpreadStateEntry,
+    CreditEtfOrderflowStateEntry.name: CreditEtfOrderflowStateEntry,
     DailyTimeSeriesMomentumEntry.name: DailyTimeSeriesMomentumEntry,
+    DefaultSpreadOrderflowStateEntry.name: DefaultSpreadOrderflowStateEntry,
     DailyShortTermReversalEntry.name: DailyShortTermReversalEntry,
     DailyReversalOrderflowConfirmationEntry.name: DailyReversalOrderflowConfirmationEntry,
     DollarRiskAppetiteEntry.name: DollarRiskAppetiteEntry,
@@ -234,24 +279,32 @@ ENTRY_MODULES = {
     EsNqLeadLagEntry.name: EsNqLeadLagEntry,
     EsNqRelativeValueReversionEntry.name: EsNqRelativeValueReversionEntry,
     EsNqRelativeValueOrderflowAbsorptionReversionEntry.name: EsNqRelativeValueOrderflowAbsorptionReversionEntry,
+    EsNqSemivarianceFilteredRelativeValueAbsorptionEntry.name: EsNqSemivarianceFilteredRelativeValueAbsorptionEntry,
     EsTermStructureLeadLagEntry.name: EsTermStructureLeadLagEntry,
     FinraMarginLeverageEntry.name: FinraMarginLeverageEntry,
     FomcPreAnnouncementDriftEntry.name: FomcPreAnnouncementDriftEntry,
     FootprintAbsorptionInitiationEntry.name: FootprintAbsorptionInitiationEntry,
     GaoLastHalfHourOrderflowEntry.name: GaoLastHalfHourOrderflowEntry,
     HalloweenSeasonalPremiumEntry.name: HalloweenSeasonalPremiumEntry,
+    ImpulsePauseOrderflowContinuationEntry.name: ImpulsePauseOrderflowContinuationEntry,
+    ImportExportPricePressureEntry.name: ImportExportPricePressureEntry,
     IntradayCapitulationMREntry.name: IntradayCapitulationMREntry,
     IntradayMomentumPriorityEntry.name: IntradayMomentumPriorityEntry,
     IntradayPeriodicityOrderflowConfirmationEntry.name: IntradayPeriodicityOrderflowConfirmationEntry,
     IntradayRangeOrderflowBreakoutEntry.name: IntradayRangeOrderflowBreakoutEntry,
+    IntradayInvarianceDislocationReversionEntry.name: IntradayInvarianceDislocationReversionEntry,
     IntradayPeriodicityPersistenceEntry.name: IntradayPeriodicityPersistenceEntry,
     KeyReversalOrderflowReversalEntry.name: KeyReversalOrderflowReversalEntry,
     LateDayIntradayMomentumEntry.name: LateDayIntradayMomentumEntry,
     LeveragedEtfRebalancePressureEntry.name: LeveragedEtfRebalancePressureEntry,
     LiquidityRiskCapacityPriorityEntry.name: LiquidityRiskCapacityPriorityEntry,
     MarketPlumbingPriorityEntry.name: MarketPlumbingPriorityEntry,
+    MarketStructureFilteredEntry.name: MarketStructureFilteredEntry,
+    MarketStructurePivotContinuationEntry.name: MarketStructurePivotContinuationEntry,
     MesParticipationCrowdingEntry.name: MesParticipationCrowdingEntry,
+    MesFootprintLiquiditySweepReversionEntry.name: MesFootprintLiquiditySweepReversionEntry,
     TrendFilteredMesParticipationCrowdingEntry.name: TrendFilteredMesParticipationCrowdingEntry,
+    VolatilityFilteredTrendMesParticipationCrowdingEntry.name: VolatilityFilteredTrendMesParticipationCrowdingEntry,
     MonthlyOpexPressureEntry.name: MonthlyOpexPressureEntry,
     MorningIntradayMomentumEntry.name: MorningIntradayMomentumEntry,
     MorningOrderflowMomentumEntry.name: MorningOrderflowMomentumEntry,
@@ -276,6 +329,7 @@ ENTRY_MODULES = {
     OrderflowRecentPocketComboEntry.name: OrderflowRecentPocketComboEntry,
     OvernightReturnLateDayMomentumEntry.name: OvernightReturnLateDayMomentumEntry,
     OvernightIntradayReversalEntry.name: OvernightIntradayReversalEntry,
+    OvernightDriftEntry.name: OvernightDriftEntry,
     OvernightInventoryReversionEntry.name: OvernightInventoryReversionEntry,
     OvernightRangeOrderflowBreakoutEntry.name: OvernightRangeOrderflowBreakoutEntry,
     PdhPdlBreakoutContinuationEntry.name: PdhPdlBreakoutContinuationEntry,
@@ -287,6 +341,8 @@ ENTRY_MODULES = {
     PreholidayEffectEntry.name: PreholidayEffectEntry,
     PriorSessionBenchmarkOrderflowReactionEntry.name: PriorSessionBenchmarkOrderflowReactionEntry,
     PriorSessionIbsReversionEntry.name: PriorSessionIbsReversionEntry,
+    PriorLvnOrderflowRejectionEntry.name: PriorLvnOrderflowRejectionEntry,
+    PriorPocOrderflowMagnetEntry.name: PriorPocOrderflowMagnetEntry,
     PriorValueAreaOrderflowAcceptanceEntry.name: PriorValueAreaOrderflowAcceptanceEntry,
     PriorValueAreaOrderflowRejectionEntry.name: PriorValueAreaOrderflowRejectionEntry,
     TrendFilteredPriorValueAreaAcceptanceEntry.name: TrendFilteredPriorValueAreaAcceptanceEntry,
@@ -306,11 +362,15 @@ ENTRY_MODULES = {
     RthGapFadeEntry.name: RthGapFadeEntry,
     SessionExtremeDeltaDivergenceEntry.name: SessionExtremeDeltaDivergenceEntry,
     SessionOpenOrderflowReclaimEntry.name: SessionOpenOrderflowReclaimEntry,
+    SemivarianceFilteredTrendMesParticipationCrowdingEntry.name: SemivarianceFilteredTrendMesParticipationCrowdingEntry,
     SectorDispersionStateEntry.name: SectorDispersionStateEntry,
+    SectorOpeningBreadthOrderflowEntry.name: SectorOpeningBreadthOrderflowEntry,
+    SectorRotationOrderflowPullbackEntry.name: SectorRotationOrderflowPullbackEntry,
     SectorRotationRiskAppetiteEntry.name: SectorRotationRiskAppetiteEntry,
     Spx0dteExpirationPressureEntry.name: Spx0dteExpirationPressureEntry,
     Spx0dteOrderflowContinuationEntry.name: Spx0dteOrderflowContinuationEntry,
     Spx0dteTrendAlignedPressureEntry.name: Spx0dteTrendAlignedPressureEntry,
+    SpyTurnoverOrderflowAttentionEntry.name: SpyTurnoverOrderflowAttentionEntry,
     TurnOfMonthBiasEntry.name: TurnOfMonthBiasEntry,
     TradeOrderflowMultiPressureEntry.name: TradeOrderflowMultiPressureEntry,
     TradeOrderflowMultiStateRankEntry.name: TradeOrderflowMultiStateRankEntry,
@@ -320,10 +380,12 @@ ENTRY_MODULES = {
     TradeSizeSegmentOrderflowEntry.name: TradeSizeSegmentOrderflowEntry,
     TrendAlignedOrderflowContinuationEntry.name: TrendAlignedOrderflowContinuationEntry,
     TreasuryAuctionPressureEntry.name: TreasuryAuctionPressureEntry,
+    TreasuryRateOrderflowStateEntry.name: TreasuryRateOrderflowStateEntry,
     TreasuryRateStateEntry.name: TreasuryRateStateEntry,
     TurnOfYearEffectEntry.name: TurnOfYearEffectEntry,
     UsdJpySafeHavenEntry.name: UsdJpySafeHavenEntry,
     VarianceRiskPremiumIntradayEntry.name: VarianceRiskPremiumIntradayEntry,
+    VarianceRatioOrderflowRegimeEntry.name: VarianceRatioOrderflowRegimeEntry,
     VixExpirationPressureEntry.name: VixExpirationPressureEntry,
     VolatilityManagedIntradayPremiumEntry.name: VolatilityManagedIntradayPremiumEntry,
     VolumeConditionedLiquidityReversalEntry.name: VolumeConditionedLiquidityReversalEntry,
@@ -363,7 +425,9 @@ __all__ = [
     "ChicagoFedCfnaiActivityStateEntry",
     "ConsumerSentimentStateEntry",
     "ConnorsRsi2MeanReversionEntry",
+    "CreditEtfOrderflowStateEntry",
     "DailyTimeSeriesMomentumEntry",
+    "DefaultSpreadOrderflowStateEntry",
     "DailyShortTermReversalEntry",
     "DailyReversalOrderflowConfirmationEntry",
     "DollarRiskAppetiteEntry",
@@ -373,11 +437,14 @@ __all__ = [
     "EsNqLeadLagEntry",
     "EsNqRelativeValueReversionEntry",
     "EsNqRelativeValueOrderflowAbsorptionReversionEntry",
+    "EsNqSemivarianceFilteredRelativeValueAbsorptionEntry",
     "EsTermStructureLeadLagEntry",
     "FootprintAbsorptionInitiationEntry",
     "FomcPreAnnouncementDriftEntry",
     "GaoLastHalfHourOrderflowEntry",
     "HalloweenSeasonalPremiumEntry",
+    "ImpulsePauseOrderflowContinuationEntry",
+    "ImportExportPricePressureEntry",
     "IntradayCapitulationMREntry",
     "IntradayMomentumPriorityEntry",
     "IntradayPeriodicityOrderflowConfirmationEntry",
@@ -388,7 +455,9 @@ __all__ = [
     "LiquidityRiskCapacityPriorityEntry",
     "MarketPlumbingPriorityEntry",
     "MesParticipationCrowdingEntry",
+    "MesFootprintLiquiditySweepReversionEntry",
     "TrendFilteredMesParticipationCrowdingEntry",
+    "VolatilityFilteredTrendMesParticipationCrowdingEntry",
     "MonthlyOpexPressureEntry",
     "MorningIntradayMomentumEntry",
     "MorningOrderflowMomentumEntry",
@@ -408,6 +477,7 @@ __all__ = [
     "OfrFinancialStressEntry",
     "OvernightReturnLateDayMomentumEntry",
     "OvernightIntradayReversalEntry",
+    "OvernightDriftEntry",
     "OvernightInventoryReversionEntry",
     "PdhPdlBreakoutContinuationEntry",
     "PdhPdlOrderflowBreakoutContinuationEntry",
@@ -418,6 +488,8 @@ __all__ = [
     "PreholidayEffectEntry",
     "PriorSessionBenchmarkOrderflowReactionEntry",
     "PriorSessionIbsReversionEntry",
+    "PriorLvnOrderflowRejectionEntry",
+    "PriorPocOrderflowMagnetEntry",
     "PriorValueAreaOrderflowAcceptanceEntry",
     "PriorValueAreaOrderflowRejectionEntry",
     "TrendFilteredPriorValueAreaAcceptanceEntry",
@@ -436,10 +508,14 @@ __all__ = [
     "RthGapFadeEntry",
     "SessionExtremeDeltaDivergenceEntry",
     "SessionOpenOrderflowReclaimEntry",
+    "SemivarianceFilteredTrendMesParticipationCrowdingEntry",
     "SectorDispersionStateEntry",
+    "SectorOpeningBreadthOrderflowEntry",
+    "SectorRotationOrderflowPullbackEntry",
     "SectorRotationRiskAppetiteEntry",
     "Spx0dteExpirationPressureEntry",
     "Spx0dteTrendAlignedPressureEntry",
+    "SpyTurnoverOrderflowAttentionEntry",
     "TurnOfMonthBiasEntry",
     "TradeOrderflowMultiPressureEntry",
     "TradeOrderflowMultiStateRankEntry",
@@ -451,10 +527,12 @@ __all__ = [
     "OpeningRangeTrendOrderflowBreakoutEntry",
     "OpeningRangeNqOrderflowBreakoutEntry",
     "TreasuryAuctionPressureEntry",
+    "TreasuryRateOrderflowStateEntry",
     "TreasuryRateStateEntry",
     "TurnOfYearEffectEntry",
     "UsdJpySafeHavenEntry",
     "VarianceRiskPremiumIntradayEntry",
+    "VarianceRatioOrderflowRegimeEntry",
     "VixExpirationPressureEntry",
     "VolatilityManagedIntradayPremiumEntry",
     "VolumeConditionedLiquidityReversalEntry",

@@ -1612,23 +1612,36 @@ profitable_window_rate >= 0.70
 ```yaml
 prop_rules:
   starting_balance: 50000
-  daily_loss_limit: 1000
-  trailing_drawdown: 2500
+  trailing_drawdown: 2000
   max_contracts: 5
-  max_best_day_profit_percentage: 0.40
-  min_trading_days: 2
-  payout_threshold: 1000
-  profit_target_pct: 0.06
-  drawdown_limit_pct: 0.03
+  account_lifecycle_enabled: true
+  challenge_fee: 98
+  challenge_profit_target_amount: 3000
+  challenge_consistency_limit: 0.50
+  trailing_drawdown_lock_balance: 52100
+  trailing_drawdown_locked_floor: 50100
+  funded_starting_balance: 50000
+  funded_initial_drawdown_floor: 48000
+  funded_payout_min_profit_day: 150
+  funded_payout_required_profit_days: 5
+  funded_payout_profit_fraction: 0.50
+  funded_payout_profit_share: 0.90
+  funded_payout_max_amount: 2000
+  max_payouts_per_account: 5
 ```
 
-The Monte Carlo prop-pass benchmark uses:
+The WFA OOS Monte Carlo stage defaults to this single-account lifecycle. It
+charges the challenge fee when a new account is bought, ignores account losses
+as external PnL, and counts only net payout share as external profit.
+
+The default lifecycle benchmark uses:
 
 ```text
-probability_profit_before_drawdown
+mean_net_pnl > 0
 ```
 
-This estimates how often shuffled/stressed paths reach `profit_target_pct` before hitting `drawdown_limit_pct`.
+This requires the arithmetic average of all simulated external PnL values to be
+positive after challenge fees and payout profit share.
 
 ## 11. Run Monte Carlo
 
@@ -1700,20 +1713,29 @@ Monte Carlo mechanics:
 7. If simulated contracts exceed prop_rules.max_contracts, contracts are capped at that max.
 8. adverse_slippage_per_trade is subtracted from each retained trade's simulated PnL.
 9. The stressed path is evaluated against prop_rules.
+10. When account_lifecycle_enabled is true, output net_pnl is external PnL:
+    net payout share minus challenge fees.
 ```
 
-The prop-rule simulation starts at `prop_rules.starting_balance`, walks the
-sampled trade path trade by trade, updates the trailing drawdown floor from the
-account high-water mark, and records whether the account breaches. It also
-tracks whether the path reaches `profit_target_pct` before hitting
-`drawdown_limit_pct`. `payout_eligible` is a first-touch check: it is true when
-the path reaches `starting_balance + payout_threshold` before it reaches the
-`drawdown_limit_pct` balance.
+With account lifecycle enabled, each sampled path can trade only one account at
+a time. A new $50k challenge account is bought only at path start, after a
+breach, or after five funded payouts terminate the account. Challenge pass
+requires $3,000 account profit and 50% consistency, meaning no single winning
+trade can exceed 50% of total challenge profit. Passing resets the funded
+account balance and drawdown floor.
 
-After the path is evaluated, daily PnL is grouped by `session_date` to test
-`daily_loss_limit`, calculate worst/best day, and check best-day profit
-concentration. These fields are still reported for risk review, but they do
-not gate `payout_eligible` in the Monte Carlo engine.
+The lifecycle drawdown is an EOD trailing floor. The floor starts $2,000 below
+the account balance, moves up only from end-of-day account balance, locks at
+$50,100 when EOD balance reaches $52,100, and any later intraday balance below
+the active floor breaches the account. Funded payout eligibility requires five
+days with at least $150 simulated account profit since the previous payout.
+The requested payout is 50% of account profit, capped at $2,000, and only 90%
+of the requested amount is credited to external PnL.
+
+For staged WFA OOS lifecycle Monte Carlo, trade order is shuffled without loss
+clustering by default. A top-level `monte_carlo.cluster_losses: true` stress
+setting is not inherited by this lifecycle stage unless
+`campaign_tests.wfa_oos_monte_carlo.cluster_losses: true` is set explicitly.
 
 Monte Carlo position sizing:
 
@@ -1755,10 +1777,11 @@ monte_carlo:
 
 `fixed_contracts` forces every retained MC trade to the configured contract
 count. `risk_percent_net_liq` sizes every retained MC trade from the current MC
-path balance before that trade. `risk_percent_initial_balance` sizes every
-retained MC trade from `prop_rules.starting_balance`, so trade order and prior
-PnL do not change the risk base. Percent sizing uses `risk_points` from the
-source trade log, or `dollar_risk_per_contract` if `risk_points` is missing.
+path account balance before that trade. `risk_percent_initial_balance` sizes
+every retained MC trade from `prop_rules.starting_balance`, so trade order and
+prior account PnL do not change the risk base. Percent sizing uses `risk_points`
+from the source trade log, or `dollar_risk_per_contract` if `risk_points` is
+missing.
 The simulated trade PnL is scaled from the source trade's per-contract PnL,
 then `adverse_slippage_per_trade` is subtracted. This is why
 `source_contracts` can differ from `sim_contracts`, and why `source_net_pnl`
@@ -1777,7 +1800,7 @@ Important implementation details:
 - Sampling is permutation/subset based, not bootstrap-with-replacement.
 - The simulation uses trade-log rows, not new bar-level market paths.
 - path_months is currently configured but not used by the Monte Carlo engine.
-- Daily-loss checks use simulated PnL grouped by the sampled trades' original session_date values.
+- Lifecycle EOD updates use sampled path order and the sampled trades' session_date values.
 ```
 
 Audit reports are optional because they can get large. Enable them when you
@@ -1788,6 +1811,10 @@ monte_carlo:
   retain_path_trades: true
   retain_path_events: true
 ```
+
+The staged WFA OOS Monte Carlo lifecycle enables these path logs by default
+because challenge purchases, breaches, funded resets, payout requests, and
+account terminations are otherwise hard to audit.
 
 `monte_carlo_path_trades.csv` records every shuffled source trade for every
 run, including skipped trades:
@@ -1812,6 +1839,14 @@ was_skipped
 skip_reason
 was_loss_clustered
 was_applied
+account_number
+account_phase
+balance
+trailing_floor
+event
+trader_net_pnl
+total_challenge_fees
+net_payouts
 ```
 
 `monte_carlo_path_events.csv` records the account-state event trail for
@@ -1819,6 +1854,7 @@ retained path trades:
 
 ```text
 run_id
+event_sequence
 path_index
 source_trade_id
 source_session_date
@@ -1842,6 +1878,20 @@ profit_target_balance
 event
 breach_reason
 daily_pnl
+account_number
+account_phase
+trader_net_pnl
+total_challenge_fees
+gross_payouts
+net_payouts
+total_payout_count
+account_payout_count
+funded_profit_days
+challenge_total_profit
+challenge_largest_trade_profit
+challenge_consistency_ratio
+payout_request
+payout_net
 ```
 
 `monte_carlo.parallel.scope: runs` runs independent path simulations across
@@ -1870,11 +1920,21 @@ Review:
 number_of_runs
 median_ending_balance
 p5_ending_balance
+mean_net_pnl
+average_net_pnl
+median_net_pnl
+p5_net_pnl
+p95_net_pnl
 p95_drawdown
 probability_account_breach
 probability_payout_eligible
 probability_profit_before_drawdown
 probability_net_profit_gt_0
+probability_challenge_passed
+probability_funded_payout
+median_accounts_purchased
+median_total_challenge_fees
+median_net_payouts
 parallel
 meets_prop_pass_chance_benchmark
 trade_source
@@ -1904,24 +1964,45 @@ probability_account_breach
   drawdown or daily loss limit.
 
 probability_payout_eligible
-  Fraction of runs that reached starting_balance + payout_threshold before
-  reaching the drawdown_limit_pct balance. This is a first-touch metric; a run
-  can be payout eligible and still breach later.
+  In lifecycle mode, fraction of runs that reached at least one funded payout.
+  In legacy mode, fraction of runs that reached starting_balance +
+  payout_threshold before reaching the drawdown_limit_pct balance.
+
+mean_net_pnl
+  Arithmetic average external PnL across all simulations. In lifecycle mode,
+  this is net payout share minus challenge fees. The staged WFA OOS Monte Carlo
+  pass gate requires this value to be strictly greater than 0.
+
+average_net_pnl
+  Alias for mean_net_pnl.
+
+median_net_pnl
+  Median external PnL across simulations.
+
+p5_net_pnl
+  5th percentile external PnL across simulations.
+
+p95_net_pnl
+  95th percentile external PnL across simulations.
 
 probability_profit_before_drawdown
-  Fraction of runs that reached starting_balance * (1 + profit_target_pct)
-  before reaching starting_balance * (1 - drawdown_limit_pct). This is the
-  main prop-pass benchmark metric.
+  In lifecycle mode, fraction of runs that passed at least one challenge before
+  account replacement. In legacy mode, fraction of runs that reached
+  starting_balance * (1 + profit_target_pct) before reaching starting_balance *
+  (1 - drawdown_limit_pct).
 
 probability_net_profit_gt_0
-  Fraction of runs whose final simulated net PnL was greater than zero.
+  Fraction of runs whose external PnL was greater than zero. In lifecycle mode,
+  external PnL is net payout share minus challenge fees. This is diagnostic; it
+  is not the default staged WFA OOS Monte Carlo pass gate.
 
 parallel
   Execution metadata showing whether runs were distributed across workers.
 
 meets_prop_pass_chance_benchmark
-  True when probability_profit_before_drawdown is greater than or equal to
-  benchmarks.min_monte_carlo_prop_pass_chance.
+  True when the configured prop benchmark metric clears its benchmark
+  threshold. Lifecycle mode defaults this benchmark metric to mean_net_pnl with
+  a strict threshold of 0 unless explicitly overridden.
 
 trade_source
   Existing report trade log used as the Monte Carlo input, such as core/trade_log.csv

@@ -46,6 +46,14 @@ def _simulate_prop_path(
     sizing_config: dict | None = None,
     collect_events: bool = False,
 ) -> tuple[dict, list[dict]]:
+    if bool(getattr(rules, "account_lifecycle_enabled", False)):
+        return _simulate_prop_account_lifecycle_path(
+            trades,
+            rules,
+            sizing_config=sizing_config,
+            collect_events=collect_events,
+        )
+
     sizing_config = dict(sizing_config or {})
     sizing_config.setdefault("initial_net_liq", rules.starting_balance)
     balance = rules.starting_balance
@@ -240,6 +248,446 @@ def _simulate_prop_path(
     return result, events
 
 
+def _simulate_prop_account_lifecycle_path(
+    trades: pd.DataFrame,
+    rules: PropRules,
+    sizing_config: dict | None = None,
+    collect_events: bool = False,
+) -> tuple[dict, list[dict]]:
+    sizing_config = dict(sizing_config or {})
+    sizing_config.setdefault("initial_net_liq", rules.starting_balance)
+    events = []
+    event_sequence = 0
+    state = None
+    day_pnls = []
+    total_challenge_fees = 0.0
+    gross_payouts = 0.0
+    net_payouts = 0.0
+    accounts_purchased = 0
+    accounts_breached = 0
+    accounts_terminated = 0
+    challenge_passes = 0
+    funded_accounts_started = 0
+    payout_count = 0
+    first_account_breached_before_challenge_pass = False
+    last_breach_reason = ""
+    max_consec = cur = 0
+    max_dd = 0.0
+    challenge_starting_balance = float(rules.starting_balance)
+    funded_starting_balance = float(getattr(rules, "funded_starting_balance", rules.starting_balance))
+
+    def trader_net_pnl() -> float:
+        return net_payouts - total_challenge_fees
+
+    def append_event(
+        path_index,
+        source_trade_id,
+        source_session_date,
+        event: str,
+        breach_reason: str = "",
+        daily_pnl=None,
+        sim_values: dict | None = None,
+        payout_request: float | None = None,
+        payout_net: float | None = None,
+    ) -> None:
+        nonlocal event_sequence
+        if not collect_events:
+            return
+        event_sequence += 1
+        active = state or {}
+        events.append(
+            _event_row(
+                path_index,
+                source_trade_id,
+                source_session_date,
+                active.get("balance", funded_starting_balance),
+                active.get("account_high", funded_starting_balance),
+                active.get("floor", funded_starting_balance - float(rules.trailing_drawdown)),
+                active.get("max_drawdown", max_dd),
+                active.get("floor", funded_starting_balance - float(rules.trailing_drawdown)),
+                active.get("next_payout_target_balance"),
+                active.get("profit_target_balance"),
+                event,
+                breach_reason,
+                daily_pnl=daily_pnl,
+                sim_values=sim_values,
+                event_sequence=event_sequence,
+                account_number=active.get("account_number"),
+                account_phase=active.get("phase"),
+                trader_net_pnl=trader_net_pnl(),
+                total_challenge_fees=total_challenge_fees,
+                gross_payouts=gross_payouts,
+                net_payouts=net_payouts,
+                total_payout_count=payout_count,
+                account_payout_count=active.get("account_payout_count"),
+                funded_profit_days=active.get("funded_profit_days"),
+                challenge_total_profit=active.get("challenge_total_profit"),
+                challenge_largest_trade_profit=active.get("challenge_largest_trade_profit"),
+                challenge_consistency_ratio=_challenge_consistency_ratio(active),
+                payout_request=payout_request,
+                payout_net=payout_net,
+                account_breached=bool(breach_reason),
+            )
+        )
+
+    def purchase_account(path_index, source_trade_id, source_session_date, reason: str) -> None:
+        nonlocal state, accounts_purchased, total_challenge_fees
+        accounts_purchased += 1
+        total_challenge_fees += float(getattr(rules, "challenge_fee", 0.0))
+        state = _new_challenge_account_state(accounts_purchased, rules)
+        append_event(
+            path_index,
+            source_trade_id,
+            source_session_date,
+            f"account_purchased|{reason}",
+        )
+
+    def close_account_for_breach(
+        path_index,
+        source_trade_id,
+        source_session_date,
+        reason: str,
+        sim_values: dict | None = None,
+    ) -> None:
+        nonlocal state, accounts_breached, first_account_breached_before_challenge_pass
+        nonlocal last_breach_reason, max_dd
+        if state is None:
+            return
+        accounts_breached += 1
+        last_breach_reason = reason
+        if challenge_passes == 0:
+            first_account_breached_before_challenge_pass = True
+        max_dd = max(max_dd, float(state.get("max_drawdown", 0.0)))
+        append_event(
+            path_index,
+            source_trade_id,
+            source_session_date,
+            "account_breached",
+            breach_reason=reason,
+            daily_pnl=state.get("current_day_pnl"),
+            sim_values=sim_values,
+        )
+        if state.get("current_session_date") is not None:
+            day_pnls.append(float(state.get("current_day_pnl", 0.0)))
+        state = None
+
+    def start_funded_account(source_session_date) -> None:
+        nonlocal state, funded_accounts_started
+        if state is None:
+            return
+        funded_accounts_started += 1
+        account_number = int(state["account_number"])
+        state = _new_funded_account_state(account_number, rules)
+        append_event(
+            None,
+            None,
+            source_session_date,
+            "funded_account_started_after_challenge_pass",
+        )
+
+    def finalize_current_day(next_session_date=None) -> None:
+        nonlocal state, gross_payouts, net_payouts, payout_count, accounts_terminated, max_dd
+        if state is None or state.get("current_session_date") is None:
+            return
+        session_date = state["current_session_date"]
+        daily_pnl = float(state.get("current_day_pnl", 0.0))
+        day_pnls.append(daily_pnl)
+        _update_eod_trailing_floor(state, rules)
+        event_names = ["eod_update"]
+        payout_request = None
+        payout_net = None
+        if state.get("phase") == "funded":
+            if daily_pnl >= float(getattr(rules, "funded_payout_min_profit_day", 150.0)):
+                state["funded_profit_days"] += 1
+                event_names.append("funded_profit_day")
+            required_days = int(getattr(rules, "funded_payout_required_profit_days", 5))
+            if state["funded_profit_days"] >= required_days:
+                payout_request = _funded_payout_request(state, rules)
+                if payout_request > 0:
+                    payout_net = payout_request * float(getattr(rules, "funded_payout_profit_share", 0.90))
+                    state["balance"] -= payout_request
+                    state["account_payout_count"] += 1
+                    state["funded_profit_days"] = 0
+                    gross_payouts += payout_request
+                    net_payouts += payout_net
+                    payout_count += 1
+                    state["max_drawdown"] = max(
+                        float(state.get("max_drawdown", 0.0)),
+                        float(state["account_high"]) - float(state["balance"]),
+                    )
+                    state["next_payout_target_balance"] = _next_payout_target_balance(state, rules)
+                    max_dd = max(max_dd, float(state.get("max_drawdown", 0.0)))
+                    event_names.append("funded_payout")
+                    if state["account_payout_count"] >= int(getattr(rules, "max_payouts_per_account", 5)):
+                        event_names.append("account_terminated_after_max_payouts")
+        append_event(
+            None,
+            None,
+            session_date,
+            "|".join(event_names),
+            daily_pnl=daily_pnl,
+            payout_request=payout_request,
+            payout_net=payout_net,
+        )
+        if state is not None and int(state.get("account_payout_count") or 0) >= int(
+            getattr(rules, "max_payouts_per_account", 5)
+        ):
+            accounts_terminated += 1
+            state = None
+            return
+        if state is not None:
+            state["current_session_date"] = next_session_date
+            state["current_day_pnl"] = 0.0
+
+    for _, trade in trades.iterrows():
+        path_index = _trade_value(trade, "_path_index")
+        source_trade_id = _trade_value(trade, "_source_trade_id", _trade_value(trade, "trade_id"))
+        source_session_date = _trade_value(trade, "session_date")
+        if state is None:
+            purchase_account(path_index, source_trade_id, source_session_date, "initial_or_replacement")
+        if state is not None and state.get("current_session_date") is None:
+            state["current_session_date"] = source_session_date
+        elif state is not None and state.get("current_session_date") != source_session_date:
+            finalize_current_day(next_session_date=source_session_date)
+            if state is None:
+                purchase_account(path_index, source_trade_id, source_session_date, "after_termination")
+            if state is not None and state.get("current_session_date") is None:
+                state["current_session_date"] = source_session_date
+
+        sim = _simulated_trade_values(trade, float(state["balance"]), sizing_config)
+        if sim["sim_contracts"] < 1:
+            append_event(
+                path_index,
+                source_trade_id,
+                source_session_date,
+                "position_size_skip",
+                sim_values=sim,
+            )
+            continue
+        max_contracts_capped = False
+        if int(sim["sim_contracts"]) > rules.max_contracts:
+            sim = _cap_sim_contracts(sim, rules.max_contracts, sizing_config)
+            max_contracts_capped = True
+            if sim["sim_contracts"] < 1:
+                append_event(
+                    path_index,
+                    source_trade_id,
+                    source_session_date,
+                    "position_size_skip",
+                    sim_values=sim,
+                )
+                continue
+
+        pnl = float(sim["sim_net_pnl"])
+        state["balance"] += pnl
+        state["current_day_pnl"] = float(state.get("current_day_pnl", 0.0)) + pnl
+        state["account_high"] = max(float(state["account_high"]), float(state["balance"]))
+        state["max_drawdown"] = max(
+            float(state.get("max_drawdown", 0.0)),
+            float(state["account_high"]) - float(state["balance"]),
+        )
+        max_dd = max(max_dd, float(state["max_drawdown"]))
+        if pnl < 0:
+            cur += 1
+            max_consec = max(max_consec, cur)
+        else:
+            cur = 0
+
+        event_names = ["trade"]
+        if max_contracts_capped:
+            event_names.append("max_contracts_capped")
+        phase = state.get("phase")
+        if phase == "challenge":
+            state["challenge_largest_trade_profit"] = max(
+                float(state.get("challenge_largest_trade_profit", 0.0)),
+                pnl if pnl > 0 else 0.0,
+            )
+            state["challenge_total_profit"] = float(state["balance"]) - challenge_starting_balance
+            if _challenge_is_passed(state, rules):
+                challenge_passes += 1
+                event_names.append("challenge_passed")
+                append_event(
+                    path_index,
+                    source_trade_id,
+                    source_session_date,
+                    "|".join(event_names),
+                    sim_values=sim,
+                )
+                if state.get("current_session_date") is not None:
+                    day_pnls.append(float(state.get("current_day_pnl", 0.0)))
+                start_funded_account(source_session_date)
+                continue
+            if float(state["balance"]) < float(state["floor"]):
+                event_names.append("trailing_drawdown_breach")
+                append_event(
+                    path_index,
+                    source_trade_id,
+                    source_session_date,
+                    "|".join(event_names),
+                    breach_reason="trailing_drawdown",
+                    sim_values=sim,
+                )
+                close_account_for_breach(
+                    path_index,
+                    source_trade_id,
+                    source_session_date,
+                    "trailing_drawdown",
+                    sim_values=sim,
+                )
+                continue
+        elif phase == "funded":
+            if float(state["balance"]) < float(state["floor"]):
+                event_names.append("trailing_drawdown_breach")
+                append_event(
+                    path_index,
+                    source_trade_id,
+                    source_session_date,
+                    "|".join(event_names),
+                    breach_reason="trailing_drawdown",
+                    sim_values=sim,
+                )
+                close_account_for_breach(
+                    path_index,
+                    source_trade_id,
+                    source_session_date,
+                    "trailing_drawdown",
+                    sim_values=sim,
+                )
+                continue
+
+        append_event(
+            path_index,
+            source_trade_id,
+            source_session_date,
+            "|".join(event_names),
+            sim_values=sim,
+        )
+
+    finalize_current_day()
+    account_ending_balance = None if state is None else float(state["balance"])
+    final_phase = "" if state is None else str(state["phase"])
+    worst_day = min(day_pnls) if day_pnls else 0.0
+    best_day = max(day_pnls) if day_pnls else 0.0
+    concentration_base = sum(pnl for pnl in day_pnls if pnl > 0)
+    concentration = best_day / concentration_base if concentration_base > 0 else 0.0
+    net_pnl = trader_net_pnl()
+    result = {
+        "ending_balance": funded_starting_balance + net_pnl,
+        "net_pnl": net_pnl,
+        "trader_net_pnl": net_pnl,
+        "account_ending_balance": account_ending_balance,
+        "final_account_phase": final_phase,
+        "max_drawdown": max_dd,
+        "worst_day": float(worst_day),
+        "best_day": float(best_day),
+        "best_day_concentration": float(concentration),
+        "max_consecutive_losses": max_consec,
+        "account_breached": accounts_breached > 0,
+        "breach_reason": last_breach_reason,
+        "payout_eligible": payout_count > 0,
+        "profit_before_drawdown": challenge_passes > 0,
+        "drawdown_before_profit": first_account_breached_before_challenge_pass,
+        "accounts_purchased": accounts_purchased,
+        "accounts_breached": accounts_breached,
+        "accounts_terminated": accounts_terminated,
+        "challenge_passes": challenge_passes,
+        "funded_accounts_started": funded_accounts_started,
+        "payout_count": payout_count,
+        "gross_payouts": gross_payouts,
+        "net_payouts": net_payouts,
+        "total_challenge_fees": total_challenge_fees,
+    }
+    return result, events
+
+
+def _new_challenge_account_state(account_number: int, rules: PropRules) -> dict:
+    balance = float(rules.starting_balance)
+    floor = balance - float(rules.trailing_drawdown)
+    return {
+        "account_number": int(account_number),
+        "phase": "challenge",
+        "balance": balance,
+        "account_high": balance,
+        "eod_high": balance,
+        "floor": floor,
+        "max_drawdown": 0.0,
+        "current_session_date": None,
+        "current_day_pnl": 0.0,
+        "challenge_total_profit": 0.0,
+        "challenge_largest_trade_profit": 0.0,
+        "profit_target_balance": balance + float(getattr(rules, "challenge_profit_target_amount", 3000.0)),
+        "next_payout_target_balance": None,
+        "funded_profit_days": None,
+        "account_payout_count": None,
+    }
+
+
+def _new_funded_account_state(account_number: int, rules: PropRules) -> dict:
+    balance = float(getattr(rules, "funded_starting_balance", rules.starting_balance))
+    floor = getattr(rules, "funded_initial_drawdown_floor", None)
+    if floor is None:
+        floor = balance - float(rules.trailing_drawdown)
+    return {
+        "account_number": int(account_number),
+        "phase": "funded",
+        "balance": balance,
+        "account_high": balance,
+        "eod_high": balance,
+        "floor": float(floor),
+        "max_drawdown": 0.0,
+        "current_session_date": None,
+        "current_day_pnl": 0.0,
+        "challenge_total_profit": None,
+        "challenge_largest_trade_profit": None,
+        "profit_target_balance": None,
+        "next_payout_target_balance": balance + float(getattr(rules, "funded_payout_min_profit_day", 150.0)),
+        "funded_profit_days": 0,
+        "account_payout_count": 0,
+    }
+
+
+def _update_eod_trailing_floor(state: dict, rules: PropRules) -> None:
+    state["eod_high"] = max(float(state.get("eod_high", state["balance"])), float(state["balance"]))
+    floor_candidate = float(state["eod_high"]) - float(rules.trailing_drawdown)
+    lock_balance = getattr(rules, "trailing_drawdown_lock_balance", None)
+    locked_floor = getattr(rules, "trailing_drawdown_locked_floor", None)
+    if lock_balance is not None and locked_floor is not None and float(state["eod_high"]) >= float(lock_balance):
+        floor_candidate = float(locked_floor)
+    elif locked_floor is not None:
+        floor_candidate = min(floor_candidate, float(locked_floor))
+    state["floor"] = max(float(state["floor"]), floor_candidate)
+
+
+def _challenge_is_passed(state: dict, rules: PropRules) -> bool:
+    total_profit = float(state.get("challenge_total_profit", 0.0))
+    if total_profit < float(getattr(rules, "challenge_profit_target_amount", 3000.0)):
+        return False
+    ratio = _challenge_consistency_ratio(state)
+    return ratio <= float(getattr(rules, "challenge_consistency_limit", 0.50))
+
+
+def _challenge_consistency_ratio(state: dict) -> float | None:
+    total_profit = state.get("challenge_total_profit")
+    largest_profit = state.get("challenge_largest_trade_profit")
+    if total_profit is None or largest_profit is None or float(total_profit) <= 0:
+        return None
+    return float(largest_profit) / float(total_profit)
+
+
+def _funded_payout_request(state: dict, rules: PropRules) -> float:
+    funded_start = float(getattr(rules, "funded_starting_balance", rules.starting_balance))
+    profit = float(state["balance"]) - funded_start
+    if profit <= 0:
+        return 0.0
+    request = profit * float(getattr(rules, "funded_payout_profit_fraction", 0.50))
+    return min(request, float(getattr(rules, "funded_payout_max_amount", 2000.0)))
+
+
+def _next_payout_target_balance(state: dict, rules: PropRules) -> float:
+    funded_start = float(getattr(rules, "funded_starting_balance", rules.starting_balance))
+    return funded_start + (2.0 * float(getattr(rules, "funded_payout_min_profit_day", 150.0)))
+
+
 def _event_row(
     path_index,
     source_trade_id,
@@ -255,9 +703,10 @@ def _event_row(
     breach_reason: str,
     daily_pnl=None,
     sim_values: dict | None = None,
+    **extra,
 ) -> dict:
     sim_values = sim_values or {}
-    return {
+    row = {
         "path_index": path_index,
         "source_trade_id": source_trade_id,
         "source_session_date": source_session_date,
@@ -282,6 +731,8 @@ def _event_row(
         "breach_reason": breach_reason,
         "daily_pnl": daily_pnl,
     }
+    row.update(extra)
+    return row
 
 
 def _trade_value(trade, key: str, default=None):

@@ -85,7 +85,7 @@ core_grid:
     entry.params.min_es_return_ticks: [2, 4, 8]
     entry.params.min_mes_flow_imbalance: [0.01, 0.02, 0.05]
     sl.params.stop_offset_ticks: [1, 2, 4]
-    tp.params.target_r_multiple: [0.75, 1.0, 1.5]
+    tp.params.target_r_multiple: [1.0, 1.5]
 monkey: {data_subset: *data_subset, runs: 300, seed: 7, beat_threshold: 0.9, retain_iteration_reports: false, constraints: {trade_count_tolerance_pct: 0.05, long_short_ratio_tolerance: 0.05, average_bars_tolerance_pct: 0.1, duration_shape: 0.7, rth_only: true, enforce_non_overlapping: true, enforce_max_trades_per_day: false}}
 wfa: {data_subset: *data_subset, mode: unanchored, train_months: 48, test_months: 12, step_months: 12, objective: MAR, selection_exclusive_min_trades_per_year: 50, early_exit_min_train_profit_factor: 1.0, parameters: *parameters}
 campaign_tests: {acceptance_oos_test: {train_months: 24, test_months: 6}}

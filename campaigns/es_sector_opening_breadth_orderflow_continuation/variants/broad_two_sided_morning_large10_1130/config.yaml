@@ -1,0 +1,155 @@
+campaign_id: es_sector_opening_breadth_orderflow_continuation
+variant_id: broad_two_sided_morning_large10_1130
+test_run_id: run1
+strategy_name: sector_opening_breadth_orderflow
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Moskowitz and Grinblatt (1999); Chordia and Shivakumar (2002); Cont, Kukanov, and Stoikov (2014)
+  edge_thesis: Broad same-day sector ETF opening breadth should identify cash-market risk-on or risk-off direction; large-trade ES aggregate orderflow should help confirm whether stronger participants are still aligned.
+  mechanic: Two-sided ES continuation after broad sector cash-open breadth, ES movement from RTH open, and same-direction large-10 aggregate orderflow confirmation.
+  timeframe_rationale: The 10:00 through 11:30 ET window gives time for cash-market breadth and larger ES participation to align while staying early enough for same-day continuation.
+  pre_pnl_density: 1789 full-sample pre-PnL signals, about 115.84 per year; limited-core reference 200 signals, about 129.98 per year.
+  mechanics_review_required: true
+  mechanics_review_version: "2026-06-20"
+  mechanics_review:
+    mechanic_expresses_edge: >
+      This variant expresses the same edge on both sides: broad sector-up openings
+      plus ES/large-10 buying allow longs, while broad sector-down openings plus
+      ES/large-10 selling allow shorts. The large-10 filter asks whether bigger
+      prints align with the cash breadth state.
+    entry_logic_rationale: The entry uses only same-day ETF opens, completed ES bars, and cumulative large-10 orderflow at 10:00, 10:30, or 11:30 ET. Direction is mechanically determined from breadth and ES confirmation before next-bar execution.
+    stop_loss_rationale: A fixed percent stop treats long and short setups symmetrically and avoids using future intraday levels.
+    target_exit_rationale: A fixed-R target keeps payoff distance comparable across both directions and enforces the 1.0R minimum.
+    profitability_rationale: If sector opening breadth captures real cash-market risk appetite and larger ES prints confirm institutional participation, the aligned sessions should have better continuation than mixed-breadth sessions.
+    known_failure_modes: Two-sided logic may combine asymmetric long and short behavior, large-10 aggregation is only a Sierra proxy, and the higher signal count may include weaker marginal setups.
+    pre_test_decision: approve_for_testing
+data:
+  dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  warmup_days: 30
+  rth_start: "09:30:00"
+  rth_end: "15:59:00"
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: "16:59:59"
+  force_flatten_enabled: true
+  force_flatten_time: "16:58:30"
+  latest_entry_time: "16:45:00"
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: sector_opening_breadth_orderflow
+    params:
+      feature_csv: data/external/es_sector_opening_breadth_features_20110103_20260609.csv
+      setup_mode: broad_two_sided
+      flow_mode: large10
+      signal_times: ["10:00:00", "10:30:00", "11:30:00"]
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      min_sector_count: 4
+      min_open_gap: 0.0
+      min_relative_gap: 0.0
+      min_es_move_ticks: 2
+      min_orderflow_imbalance: 0.0
+      max_trades_per_day: 1
+  sl:
+    module: percent_from_entry
+    params: {stop_pct: 0.0025, round_to_tick: true}
+  tp:
+    module: fixed_r
+    params: {target_r_multiple: 1.5}
+  flatten_time: "15:55:00"
+core:
+  data_subset: {start_date: "2011-01-03", end_date: "2026-06-09", session_labels: [RTH]}
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing: {mode: fixed_contracts, contracts: 1}
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: "15:55:00"
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: {start_date: "2011-01-03", end_date: "2026-06-09", session_labels: [RTH]}
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel: {enabled: true, workers: 6, scope: grid}
+  parameters:
+    entry.params.min_sector_count: [4, 5, 6]
+    entry.params.min_orderflow_imbalance: [0.0, 0.02, 0.04]
+    sl.params.stop_pct: [0.0015, 0.0025, 0.004]
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
+monkey:
+  data_subset: {start_date: "2011-01-03", end_date: "2026-06-09", session_labels: [RTH]}
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel: {enabled: true, workers: 6, scope: runs}
+wfa:
+  data_subset: {start_date: "2011-01-03", end_date: "2026-06-09", session_labels: [RTH]}
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel: {enabled: true, workers: 6, scope: window_grid}
+  parameters:
+    entry.params.min_sector_count: [4, 5, 6]
+    entry.params.min_orderflow_imbalance: [0.0, 0.02, 0.04]
+    sl.params.stop_pct: [0.0015, 0.0025, 0.004]
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
+campaign_tests:
+  acceptance_oos_test: {train_months: 24, test_months: 6}
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing: {mode: fixed_contracts}

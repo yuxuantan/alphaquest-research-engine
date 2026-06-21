@@ -103,3 +103,43 @@ def test_mes_participation_entry_respects_direction_and_entry_time():
     signal = entry.on_bar_close(valid_time)
     assert signal is not None
     assert signal.direction == "short"
+
+
+def test_mes_participation_entry_first_signal_window_uses_completed_bars():
+    entry = MesParticipationCrowdingEntry(
+        {
+            "signal_mode": "first_signal_in_window",
+            "start_time": "10:00:00",
+            "end_time": "10:05:00",
+            "lookback_minutes": 30,
+            "direction": "long",
+            "share_rank_min": 0.65,
+            "min_abs_return_ticks": 4,
+        }
+    )
+    before_window = _crowding_bar("2024-01-03 09:58:00", -5.0)
+    first_window_close = _crowding_bar("2024-01-03 09:59:00", -5.0)
+    later_window_close = _crowding_bar("2024-01-03 10:00:00", -5.0)
+
+    assert entry.on_bar_close(before_window, trades_today=0) is None
+    signal = entry.on_bar_close(first_window_close, trades_today=0)
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.report_fields["crowding_signal_timestamp"] == pd.Timestamp("2024-01-03 10:00:00")
+    assert entry.on_bar_close(later_window_close, trades_today=1) is None
+
+
+def _crowding_bar(timestamp: str, es_return_ticks: float) -> pd.Series:
+    return pd.Series(
+        {
+            "timestamp": pd.Timestamp(timestamp),
+            "is_rth": True,
+            "open": 100.0,
+            "high": 100.5,
+            "low": 99.0,
+            "close": 99.5,
+            "mes_participation_share_30": 0.08,
+            "mes_participation_share_30_rank252": 0.8,
+            "es_return_ticks_30": es_return_ticks,
+        }
+    )

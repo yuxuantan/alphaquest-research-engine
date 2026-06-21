@@ -1,0 +1,153 @@
+campaign_id: es_sector_rotation_orderflow_pullback
+title: ES Sector-Rotation Gated Orderflow Pullback
+decision: TEST
+created_at: "2026-06-20"
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 5m
+hypothesis: >
+  Lagged cross-sector ETF leadership can define a broad equity risk-appetite state, but the prior
+  fixed-time sector-rotation campaign was too blunt. Conditioning ES entries on that lagged state
+  plus a completed-bar VWAP/EMA pullback and same-bar aggregate orderflow confirmation may isolate
+  intraday continuation attempts where institutions are already rotating risk in the same direction.
+rationale: >
+  This is a bounded composite edge. The sector state supplies the directional prior and is available
+  before the ES session because it uses ETF closes at least one business day old. The ES price-action
+  trigger then requires a live intraday pullback/reclaim or pullback/rejection against VWAP/EMA, and
+  Sierra aggregate signed volume must confirm the completed signal bar. The campaign is not the
+  already-rejected pure sector fixed-time entry, and it is not a pure VWAP/orderflow pullback because
+  trades are only allowed in the sector-implied direction.
+sources:
+  - title: "Do Industries Explain Momentum?"
+    authors: Tobias J. Moskowitz and Mark Grinblatt
+    year: 1999
+    venue: Journal of Finance
+    doi: 10.1111/0022-1082.00146
+    link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00146
+    relevance: >
+      Supports industry/sector leadership as a meaningful component of momentum and a possible
+      cross-sectional risk-appetite proxy.
+  - title: "Momentum, Business Cycle, and Time-varying Expected Returns"
+    authors: Tarun Chordia and Lakshmanan Shivakumar
+    year: 2002
+    venue: Journal of Finance
+    doi: 10.1111/1540-6261.00449
+    link: https://onlinelibrary.wiley.com/doi/abs/10.1111/1540-6261.00449
+    relevance: >
+      Motivates treating sector leadership as a time-varying expected-return state rather than a
+      same-day technical signal.
+  - title: "The Price Impact of Order Book Events"
+    authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+    year: 2014
+    venue: Journal of Financial Econometrics
+    doi: 10.1093/jjfinec/nbt003
+    link: https://academic.oup.com/jfec/article/12/1/47/816163
+    relevance: >
+      Supports the use of contemporaneous orderflow imbalance as a short-horizon pressure proxy.
+      This campaign uses completed-bar aggregate Sierra signed volume, not print-level LOB data.
+  - title: "The myth of business cycle sector rotation"
+    authors: Alexander Molchanov and Jeffrey Stangl
+    year: 2024
+    venue: International Journal of Finance and Economics
+    doi: 10.1002/ijfe.2882
+    link: https://onlinelibrary.wiley.com/doi/10.1002/ijfe.2882
+    relevance: >
+      A cautionary source: naive sector-rotation timing can fail after costs, so this campaign must
+      pass the full staged robustness process and may not rely on the sector state alone.
+data_needs:
+  - timezone-aware ES RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+  - 5-minute completed-bar aggregation with intraday VWAP features
+  - lagged sector ETF daily adjusted-close feature file with one-business-day availability lag
+  - same-day stop, target, forced-flatten, and no-overnight enforcement
+data_quality_caveats:
+  - Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor truth.
+  - Yahoo ETF adjusted closes can be revised for corporate actions; this is acceptable only as a research proxy.
+  - VWAP is intraday cumulative to the completed signal bar only; final-session VWAP is not used.
+  - Same-bar stop/target conflicts must remain pessimistic because no tick path is used.
+lookahead_risks:
+  - Sector features for ES session D must use only ETF observations on or before D minus one business day.
+  - ES signal decisions are made on completed 5-minute bars and must enter at the next bar open or later.
+  - No future ES bar, future sector close, final session high/low/range, or final VWAP is allowed.
+failure_modes:
+  - Sector leadership may be stale or already priced before the ES RTH session.
+  - VWAP/EMA pullback continuation can be crowded and may reverse after confirmation.
+  - Aggregate orderflow may confirm late after most of the move has already occurred.
+  - The composite may reduce trade count below the methodology floor in stricter parameter regions.
+  - Results may concentrate in crisis/trend windows or one directional side.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - es_sector_rotation_risk_appetite
+    - es_sector_dispersion_state
+    - es_vwap_orderflow_pullback_continuation
+    - es_ema_pullback_orderflow_continuation
+    - es_trend_aligned_orderflow_continuation
+    - es_vix_term_structure_orderflow_pullback
+  conclusion: >
+    Eligible as a new composite campaign under the user's mix-and-match allowance. The prior sector
+    campaign entered at fixed times from sector state alone; the prior VWAP/EMA orderflow campaigns
+    did not use lagged cross-sector leadership to define permitted direction. This campaign requires
+    both components before any signal.
+feature_construction:
+  sector_builder: tools/build_es_sector_rotation_features.py
+  sector_output: data/external/es_sector_rotation_features_20110103_20260609.csv
+  orderflow_source: data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet
+  pre_pnl_density_audit: research_artifacts/es_sector_rotation_orderflow_pullback_density_audit_20260620.md
+  target_reward_risk_floor: 1.0
+variants:
+  - growth_vwap_reclaim_large10_long_1130
+  - cyclical_vwap_reclaim_signed_long_1400
+  - financial_industrial_ema_pullback_large10_long_1500
+  - defensive_vwap_reject_large10_short_1130
+  - defensive_ema_pullback_signed_short_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+    - change fixed parameters inside existing strategy modules
+    - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+    - change entry module
+    - change stop-loss module
+    - change take-profit module
+    - change core economic edge
+    - change timeframe or data window
+    - add or remove filters after seeing results
+    - alter costs, fills, sessions, validation gates, or prop rules
+    - use any target_r_multiple below 1.0
+  attempts:
+    - id: parameter_space_rescue_1
+      status: failed
+      scope: per_failed_variant
+      changed_only:
+        - stop-loss fixed default
+        - stop-loss parameter space
+      unchanged:
+        - sector-rotation state mechanic
+        - VWAP/EMA pullback trigger mechanic
+        - aggregate orderflow confirmation mechanic
+        - entry parameter grid
+        - take-profit module and parameter grid
+        - data source and timeframe
+        - costs, fills, sessions, validation gates, and prop rules
+      audit: backtest-campaigns/es_sector_rotation_orderflow_pullback/campaign_test_summary.json
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/es_sector_rotation_orderflow_pullback/campaign_test_summary.json
+  results_csv: backtest-campaigns/es_sector_rotation_orderflow_pullback/campaign_results.csv
+  density_audit: research_artifacts/es_sector_rotation_orderflow_pullback_density_audit_20260620.md
+  original_runs: 5
+  rescue_runs: 5
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  best_original: financial_industrial_ema_pullback_large10_long_1500/run1
+  best_rescue: financial_industrial_ema_pullback_large10_long_1500/rescue1
+  failure_reason: >
+    All five original variants and all five one-time stop-parameter-space rescues
+    failed the limited_core_grid_test profitable-combination gate before monkey,
+    WFA, Monte Carlo, simulated incubation, or frozen validation. The best rescue
+    reached 54/81 profitable combinations (0.6666666666666666), below the required
+    0.70 threshold, so the campaign fails closed.

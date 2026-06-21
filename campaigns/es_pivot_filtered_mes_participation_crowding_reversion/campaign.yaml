@@ -1,0 +1,105 @@
+campaign_id: es_pivot_filtered_mes_participation_crowding_reversion
+title: ES MES participation crowding reversion filtered by completed pivot market structure
+decision: FAIL
+created_at: '2026-06-20'
+symbol: ES
+dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+hypothesis: High MES participation during a completed ES move may mark smaller-contract crowding and temporary pressure when
+  the reversal direction agrees with the last completed multi-timeframe swing-pivot structure. The carried pivot filter converts
+  raw crowding fade into a pullback-with-structure reversion test rather than a blind fade.
+rationale: 'This is a bounded composite campaign: the primary edge is MES participation crowding reversion; the fixed secondary
+  condition is completed swing-pivot market-structure direction. A fade is allowed only when carried multi-timeframe pivot
+  structure supports the fade direction. The filter, signal windows, and carry behavior are fixed before PnL testing and do
+  not add tunables.'
+sources:
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Retail order-flow predictability depends on retail trading intensity; this motivates conditioning on smaller-contract
+    participation intensity.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures trading and includes Micro E-mini examples, supporting MES as a relevant smaller-contract
+    futures participation venue.
+- title: Micro E-mini futures and options
+  authors: CME Group
+  year: 2026
+  venue: CME product documentation
+  link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+  relevance: CME states Micro E-mini products provide lower-capital access and convert with classic E-mini futures at a 1:10
+    ratio.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/0022-1082.00265
+  relevance: Supports using algorithmic local extrema to define technical price patterns. Here it justifies a fixed completed-pivot
+    directional filter, not the primary MES crowding thesis.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2011.11.003
+  relevance: Provides broader futures-market support for trend persistence; this campaign uses it only as the rationale for
+    requiring the reversion direction to align with completed intraday structure.
+data_needs:
+- local Sierra ES and MES completed 1-minute RTH OHLCV/trade-count cache
+- aligned ES/MES active-contract minutes from 2019-05-06 through 2026-06-09
+- MES notional-equivalent share using the 1:10 MES-to-ES contract ratio
+- same-clock prior ranks shifted by one prior session; no current or future session rank information
+- completed ES OHLC bars for 5/10/15/30-minute pivot states built only from current-or-prior completed 1-minute bars
+lookahead_risks:
+- MES participation ranks use only prior same-clock observations.
+- Base ES return and MES share use completed 1-minute bars only.
+- Pivot structure confirms swing highs/lows only after the right-side confirmation bars are complete.
+- Carried pivot state uses only completed prior-session pivot patterns and current-or-prior completed bars.
+- Signals generated from completed bars are filled no earlier than the next bar open by the engine.
+- No final session high/low, final VWAP, post-entry MES data, or future pivot is used.
+failure_modes:
+- The pivot filter may still lag and admit reversals after the structure has already changed.
+- MES participation may be informed activity rather than crowding.
+- A pullback within pivot trend may continue against the fade, especially during trend days.
+- The shorter MES history from 2019 onward may leave too few WFA windows.
+- Costs and slippage may erase the smaller-contract crowding effect.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_mes_participation_crowding_reversion
+  - es_market_structure_pivot_trend_bias
+  - es_trend_filtered_mes_participation_crowding
+  conclusion: Eligible as a composite campaign because the prior standalone MES crowding campaign did not require completed
+    swing-pivot direction, and the standalone pivot campaign did not condition on MES participation crowding. The combination
+    is a predeclared pullback-with-trend crowding-fade thesis, not a rescue of either failed campaign.
+variants:
+- morning_notional_down_reversal_long_window_1100
+- morning_notional_two_sided_reversal_window_1130
+- late_morning_trade_two_sided_reversal_window_1200
+- midday_notional_two_sided_reversal_window_1330
+- afternoon_trade_two_sided_reversal_window_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change MES participation feature definition
+  - add or remove filters after seeing results
+  - make pivot filter tunable after seeing results
+  - use target_r_multiple below 1.0
+  - alter costs, fills, sessions, data windows, or validation gates
+pre_pnl_density_audit: research_artifacts/es_pivot_filtered_mes_participation_crowding_reversion_density_audit_20260620.md
+decision_reason: No variant or allowed per-variant rescue reached WFA. Four originals and four rescues failed limited_core_grid_test;
+  the afternoon original and rescue passed limited core but failed limited_monkey_test.
+campaign_test_summary: backtest-campaigns/es_pivot_filtered_mes_participation_crowding_reversion/campaign_test_summary.json

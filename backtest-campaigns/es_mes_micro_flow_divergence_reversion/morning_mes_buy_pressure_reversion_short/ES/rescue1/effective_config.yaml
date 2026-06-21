@@ -3,36 +3,86 @@ variant_id: morning_mes_buy_pressure_reversion_short
 test_run_id: rescue1
 strategy_name: trade_orderflow_pressure
 symbol: ES
-dataset_id: es_mes_trade_orderflow_1m_20250610_20260608
+dataset_id: es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny
 timeframe: 1m
 research_metadata:
-  academic_source: Kaniel, Saar, and Titman (2008); Barber, Odean, and Zhu (2009); Hasbrouck (1995)
-  edge_thesis: MES/ES aggressive-flow divergence can mark temporary liquidity demand in the smaller-notional contract; trade ES for same-session mean reversion.
-  mechanic: At 10:00 ET, use only completed 09:30-09:59 ES and MES bars. Go short ES when MES-minus-ES 30-minute imbalance exceeds the threshold, then flatten at 11:31 ET unless the fixed percent stop or fixed-R target is hit first.
+  academic_source: Kaniel, Saar, and Titman (2008); Barber, Odean, and Zhu (2009);
+    Hasbrouck (1995)
+  edge_thesis: MES/ES aggressive-flow divergence can mark temporary liquidity demand
+    in the smaller-notional contract; trade ES for same-session mean reversion.
+  mechanic: At 10:00 ET, use only completed 09:30-09:59 ES and MES bars. Go short
+    ES when MES-minus-ES 30-minute imbalance exceeds the threshold, then flatten at
+    11:31 ET unless the fixed percent stop or fixed-R target is hit first.
   rescue_attempt: parameter_space_rescue_1
-  rescue_reason: Original variant failed core at 24/36 profitable but the low-threshold neighborhood had enough trades and positive PF/MAR; test the same mechanic with denser adjacent lower flow thresholds.
-  rescue_constraints: Same entry module, setup mode, signal time, direction, timeframe, stop module, target module, costs, data window, and stage criteria. Only existing flow-threshold parameter space is changed.
+  rescue_reason: Original variant failed core at 24/36 profitable but the low-threshold
+    neighborhood had enough trades and positive PF/MAR; test the same mechanic with
+    denser adjacent lower flow thresholds.
+  rescue_constraints: Same entry module, setup mode, signal time, direction, timeframe,
+    stop module, target module, costs, data window, and stage criteria. Only existing
+    flow-threshold parameter space is changed.
+  data_refresh_retry: Local Sierra MES data now extends the paired ES/MES feature
+    cache back to 2019-05-06; this rerun keeps the same existing parameter-space rescue
+    mechanic, parameter grid, costs, fills, and stage gates while widening only the
+    available completed-bar data window.
+  source_config_before_refresh: campaigns/es_mes_micro_flow_divergence_reversion/rescue_attempts/parameter_space_rescue_1/morning_mes_buy_pressure_reversion_short/config.yaml
+  data_refresh_source_kind: rescue
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-21'
+  mechanics_review:
+    mechanic_expresses_edge: This data-refresh rerun preserves the existing existing
+      parameter-space rescue for morning_mes_buy_pressure_reversion_short. At 10:00
+      ET, use only completed 09:30-09:59 ES and MES bars. Go short ES when MES-minus-ES
+      30-minute imbalance exceeds the threshold, then flatten at 11:31 ET unless the
+      fixed percent stop or fixed-R target is hit first. The only intended change
+      is replacing the stale one-year cache with the longer paired ES/MES completed-bar
+      cache.
+    entry_logic_rationale: 'Entry logic is unchanged: module trade_orderflow_pressure
+      keeps setup_mode=morning_mes_buy_pressure_reversion_short, entry_time=10:00:00,
+      flow_column=mes_minus_es_imbalance_30, flow_threshold=0.02, and the same direction
+      flags. Signals use completed bars before the decision time.'
+    stop_loss_rationale: 'Stop-loss mechanics are unchanged: module percent_from_entry
+      with params {''stop_pct'': 0.004, ''round_to_tick'': True}. The data refresh
+      does not tune risk after seeing results; it tests the same declared stop parameter
+      space on a longer sample.'
+    target_exit_rationale: 'Take-profit and exit mechanics are unchanged: module fixed_r
+      with params {''target_r_multiple'': 2.0}, plus strategy flatten_time=11:31:00.
+      Any improvement must come from sample length, not changed profit-taking.'
+    profitability_rationale: MES/ES aggressive-flow divergence can mark temporary
+      liquidity demand in the smaller-notional contract; trade ES for same-session
+      mean reversion. A valid result must survive commissions, slippage, neighbouring
+      parameters, monkey tests, WFA, prop-rule simulation, and acceptance OOS without
+      special exclusions.
+    known_failure_modes: The apparent edge may be a Sierra aggregate-orderflow artifact,
+      may depend on stale large-trade proxy semantics, may decay across regimes, may
+      fail after costs, or may only work in a narrow parameter pocket that should
+      be rejected.
+    pre_test_decision: approve_for_testing
 data:
-  dataset_id: es_mes_trade_orderflow_1m_20250610_20260608
+  dataset_id: es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny
   source_timeframe: 1m
   source: csv
-  raw_csv: data/cache/orderflow/es_mes_flow_divergence_1m_20250610_20260608.csv
+  raw_csv: data/cache/orderflow/es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny.csv
   symbol: ES
   timezone: America/New_York
   exchange_timezone: America/New_York
   feature_set: none
   warmup_days: 0
-  rth_start: "09:30:00"
-  rth_end: "15:59:00"
-  eth_start: "17:00:00"
-  eth_end: "09:29:00"
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  eth_start: '17:00:00'
+  eth_end: 09:29:00
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels: &id001
+    - RTH
 apex_rules:
   enabled: true
   timezone: America/New_York
-  latest_flat_time: "16:59:59"
+  latest_flat_time: '16:59:59'
   force_flatten_enabled: true
-  force_flatten_time: "16:58:30"
-  latest_entry_time: "16:45:00"
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
   cancel_pending_orders_before_flatten: true
   no_overnight_positions: true
   reject_if_position_after_flatten_deadline: true
@@ -44,8 +94,8 @@ strategy:
     params:
       setup_mode: morning_mes_buy_pressure_reversion_short
       bar_interval_minutes: 1
-      entry_time: "10:00:00"
-      flatten_time: "11:31:00"
+      entry_time: '10:00:00'
+      flatten_time: '11:31:00'
       flow_column: mes_minus_es_imbalance_30
       flow_threshold: 0.02
       positive_flow_direction: short
@@ -64,12 +114,12 @@ strategy:
     module: fixed_r
     params:
       target_r_multiple: 2.0
-  flatten_time: "11:31:00"
+  flatten_time: '11:31:00'
 core:
-  data_subset: &data_subset
-    start_date: "2025-06-10"
-    end_date: "2026-06-08"
-    session_labels: [RTH]
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels: *id001
   initial_balance: 150000
   tick_size: 0.25
   point_value: 50.0
@@ -81,9 +131,9 @@ core:
     contracts: 1
   daily_loss_limit: 3000
   daily_profit_stop: 5000
-  flatten_time: "11:31:00"
+  flatten_time: '11:31:00'
   max_trades_per_day: 1
-benchmarks: &benchmarks
+benchmarks:
   min_trades_per_year: 50
   preferred_min_total_trades: 500
   min_profit_factor: 1.3
@@ -99,8 +149,11 @@ benchmarks: &benchmarks
   min_positive_month_rate: 0.5
   min_wfa_profitable_window_rate: 0.7
   min_monte_carlo_prop_pass_chance: 0.5
-core_grid: &grid
-  data_subset: *data_subset
+core_grid:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels: *id001
   objective: MAR
   min_profitable_iteration_rate: 0.7
   retain_iteration_reports: false
@@ -109,12 +162,25 @@ core_grid: &grid
     workers: 6
     scope: grid
   parameters:
-    entry.params.flow_threshold: [0.005, 0.01, 0.015, 0.02]
-    sl.params.stop_pct: [0.0025, 0.004, 0.006]
-    tp.params.target_r_multiple: [1.0, 2.0, 3.0]
+    entry.params.flow_threshold:
+    - 0.005
+    - 0.01
+    - 0.015
+    - 0.02
+    sl.params.stop_pct:
+    - 0.0025
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 2.0
+    - 3.0
 monkey:
-  data_subset: *data_subset
-  runs: 300
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels: *id001
+  runs: 8000
   seed: 7
   beat_threshold: 0.9
   retain_iteration_reports: false
@@ -131,7 +197,10 @@ monkey:
     enforce_non_overlapping: true
     enforce_max_trades_per_day: false
 wfa:
-  data_subset: *data_subset
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels: *id001
   mode: unanchored
   train_months: 4
   test_months: 1
@@ -144,17 +213,120 @@ wfa:
     workers: 6
     scope: window_grid
   parameters:
-    entry.params.flow_threshold: [0.005, 0.01, 0.015, 0.02]
-    sl.params.stop_pct: [0.0025, 0.004, 0.006]
-    tp.params.target_r_multiple: [1.0, 2.0, 3.0]
+    entry.params.flow_threshold:
+    - 0.005
+    - 0.01
+    - 0.015
+    - 0.02
+    sl.params.stop_pct:
+    - 0.0025
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 2.0
+    - 3.0
 campaign_tests:
   walk_forward_analysis:
     data_window:
-      mode: exclude_last_months
-      months: 0
+      mode: first_fraction
+      fraction: 0.9
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
   acceptance_oos_test:
     train_months: 6
     test_months: 3
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.mean_net_pnl
+      exclusive_min: 0.0
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
 prop_rules:
   starting_balance: 150000
   daily_loss_limit: 4000

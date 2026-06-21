@@ -1,0 +1,260 @@
+campaign_id: es_high_semivariance_mes_trend_pullback_crowding
+variant_id: afternoon60_notional_high_downside_window_1530
+test_run_id: run1
+strategy_name: semivariance_filtered_trend_mes_participation_crowding
+symbol: ES
+dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Barber, Lin, and Odean (2024); CFTC Retail Traders in Futures Markets (2024); Moskowitz, Ooi, and Pedersen
+    (2012); Barndorff-Nielsen, Kinnebrock, and Shephard (2010); Patton and Sheppard (2015)
+  edge_thesis: Elevated MES smaller-contract participation during a completed ES trend pullback may mark crowded temporary
+    pressure, and high prior downside semivariance may create larger same-day unwind payoffs.
+  mechanic: From 13:00:00 through 15:30:00 ET, take the first completed one-minute bar per session where MES notional participation
+    is elevated, ES has pulled back at least 4 ticks over the completed 60-minute lookback, the prior completed ES trend window
+    of 120 minutes points opposite the pullback, and prior-session downside-semivariance rank is in the upper-half regime.
+    Entry is next bar open.
+  timeframe_rationale: One-minute bars preserve completed ES/MES participation ranks, exact next-bar execution, and fixed
+    intraday windows while keeping stop/target conflict handling on the native bar stream.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: 'This variant expresses the edge through afternoon notional MES participation during slow pullbacks
+      after a longer prior trend and requires all three components: MES crowding, completed ES trend-pullback price action,
+      and lagged high downside semivariance.'
+    entry_logic_rationale: From 13:00:00 through 15:30:00 ET, take the first completed one-minute bar per session where MES
+      notional participation is elevated, ES has pulled back at least 4 ticks over the completed 60-minute lookback, the prior
+      completed ES trend window of 120 minutes points opposite the pullback, and prior-session downside-semivariance rank
+      is in the upper-half regime. Entry is next bar open. The first-signal-in-window rule was selected before PnL because
+      fixed-time high-semivariance versions failed the 50 trades/year density floor. Max one trade per day prevents repeated
+      window firing.
+    stop_loss_rationale: The percent-from-entry stop is declared before testing and rounded to the ES tick. It invalidates
+      the pullback-reversal thesis if ES continues through the crowded pullback after next-bar execution.
+    target_exit_rationale: The fixed-R target uses no future MES/ES bars, future orderflow, VWAP, or discretionary levels.
+      Target reward:risk is always at least 1.0, and unresolved trades flatten at the configured intraday cutoff.
+    profitability_rationale: The setup is convincing enough to test because the prior MES trend-crowding family showed robust
+      OOS structure but insufficient prop-style payoff robustness; high downside semivariance is a predeclared risk regime
+      that may increase payoff size while the trend-pullback condition keeps direction disciplined.
+    known_failure_modes: High downside semivariance can also mark informed trend continuation, MES participation can be noisy,
+      windowed signals can dilute the best fixed-time signal, and drawdown can expand in volatile sessions.
+    pre_test_decision: approve_for_testing
+  pre_pnl_density:
+    artifact: research_artifacts/es_high_semivariance_mes_trend_pullback_crowding_density_audit_20260620.md
+    entry_combo_count: 6
+    passing_entry_combos: 6
+    full_min_trades_per_year: 73.16
+    limited_core_min_trades_per_year: 110.42
+    wfa90_min_trades_per_year: 73.8
+    latest_one_year_min_trades_per_year: 52.18
+data:
+  dataset_id: es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny
+  source_timeframe: 1m
+  source: csv
+  raw_csv: data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  feature_csv: data/external/es_realized_semivariance_features_20110103_20260609.csv
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: semivariance_filtered_trend_mes_participation_crowding
+    params:
+      setup_mode: afternoon60_notional_high_downside_window_1530
+      signal_mode: first_signal_in_window
+      entry_time: '13:00:00'
+      start_time: '13:00:00'
+      end_time: '15:30:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 1
+      lookback_minutes: 60
+      trend_lookback_minutes: 120
+      rank_window: 252
+      share_mode: notional
+      direction: both
+      share_rank_min: 0.5
+      min_abs_return_ticks: 4
+      min_trend_return_ticks: 8
+      feature_csv: data/external/es_realized_semivariance_features_20110103_20260609.csv
+      semivar_value_column: prior_downside_semivariance_1d
+      semivar_rank_column: downside1_rank_252
+      semivar_rank_min: 0.6
+      max_trades_per_day: 1
+      stop_pct: 0.003
+      target_r_multiple: 1.5
+      tick_size: 0.25
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.003
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 250
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.share_rank_min:
+    - 0.4
+    - 0.5
+    - 0.6
+    entry.params.semivar_rank_min:
+    - 0.5
+    - 0.6
+    sl.params.stop_pct:
+    - 0.002
+    - 0.003
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.share_rank_min:
+    - 0.4
+    - 0.5
+    - 0.6
+    entry.params.semivar_rank_min:
+    - 0.5
+    - 0.6
+    sl.params.stop_pct:
+    - 0.002
+    - 0.003
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
