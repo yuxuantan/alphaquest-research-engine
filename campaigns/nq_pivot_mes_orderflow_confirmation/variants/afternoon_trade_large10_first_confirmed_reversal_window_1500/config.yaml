@@ -1,0 +1,266 @@
+campaign_id: nq_pivot_mes_orderflow_confirmation
+variant_id: afternoon_trade_large10_first_confirmed_reversal_window_1500
+test_run_id: run1
+strategy_name: nq_pivot_mes_orderflow_confirmation
+symbol: NQ
+dataset_id: nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Barber, Lin, and Odean (2024); CFTC Retail Traders in Futures Markets (2024); Lo, Mamaysky, and Wang (2000);
+    Moskowitz, Ooi, and Pedersen (2012); Cont, Kukanov, and Stoikov (2014)
+  edge_thesis: MES participation crowding fades are more robust on NQ when completed swing-pivot structure supports the fade
+    and completed native NQ large-trade signed flow confirms the fade direction before entry.
+  mechanic: From 13:00 through 15:00 ET, fade the first pivot-aligned MES trade-share crowding signal whose completed 30-minute
+    native NQ large-10 signed flow agrees with the fade direction; flatten by 15:45 ET.
+  timeframe_rationale: One-minute bars preserve completed NQ/MES participation ranks, native NQ aggregate orderflow fields,
+    completed pivot state construction, next-bar execution, and deterministic intrabar stop/target pessimism.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-23'
+  mechanics_review:
+    mechanic_expresses_edge: From 13:00 through 15:00 ET, fade the first pivot-aligned MES trade-share crowding signal whose
+      completed 30-minute native NQ large-10 signed flow agrees with the fade direction; flatten by 15:45 ET.
+    entry_logic_rationale: The base pivot-filtered MES crowding signal is evaluated on completed NQ return and prior-history
+      MES participation rank. The variant waits for the first such signal in the predeclared window whose completed 30-minute
+      native NQ large-trade signed-flow imbalance agrees with the proposed fade direction.
+    stop_loss_rationale: The percent-from-entry stop is declared before testing, rounded to the NQ tick, and varied only through
+      the stop grid.
+    target_exit_rationale: The fixed-R target and intraday flatten are predeclared; target_r_multiple is never below 1.0R.
+    profitability_rationale: The source NQ pivot/MES branch had strong limited-core evidence but weak random-timing robustness.
+      Requiring completed native large-trade confirmation is intended to reduce entries where pivot/MES crowding is not supported
+      by same-market NQ flow.
+    known_failure_modes: Large-trade flow can indicate continuation, first-confirmed entries can be late, and the campaign
+      may still fail monkey, WFA, Monte Carlo, or prop-rule simulation.
+    pre_test_decision: approve_for_testing
+    source_nq_template: campaigns/nq_pivot_filtered_mes_participation_crowding_reversion/variants/afternoon_trade_two_sided_reversal_window_1500/config.yaml
+    ported_before_new_pnl: true
+  pre_pnl_density:
+    artifact: research_artifacts/nq_pivot_mes_orderflow_confirmation_density_audit_20260623.md
+    csv: research_artifacts/nq_pivot_mes_orderflow_confirmation_density_audit_20260623.csv
+    variant_min_signals_per_year: 60.52312138728323
+    variant_median_signals_per_year: 73.47225433526012
+    variant_max_signals_per_year: 80.93208092485548
+    nq_grid_fixed_before_pnl: true
+  source_nq_failed_campaign: nq_pivot_filtered_mes_participation_crowding_reversion
+data:
+  dataset_id: nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: csv
+  raw_csv: data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: nq_pivot_mes_orderflow_confirmation
+    params:
+      base_module: mes_participation_crowding
+      base_params:
+        setup_mode: afternoon_trade_large10_first_confirmed_reversal_window_1500
+        signal_mode: first_signal_in_window
+        start_time: '13:00:00'
+        end_time: '15:00:00'
+        entry_time: '15:00:00'
+        flatten_time: '15:55:00'
+        bar_interval_minutes: 1
+        lookback_minutes: 30
+        rank_window: 252
+        share_mode: trade
+        direction: both
+        share_rank_min: 0.55
+        min_abs_return_ticks: 2
+        max_trades_per_day: 1
+        stop_pct: 0.004
+        target_r_multiple: 1.5
+        return_column_prefix: nq
+      rth_start: 09:30:00
+      bar_interval_minutes: 1
+      tick_size: 0.25
+      timeframes_minutes:
+      - 15
+      - 30
+      min_aligned_timeframes: 2
+      pivot_left_bars: 1
+      pivot_right_bars: 1
+      min_pivot_move_ticks: 0
+      carry_pivots_across_sessions: true
+      orderflow_window_minutes: 30
+      flow_mode: large10_imbalance
+      min_orderflow_imbalance: 0.0
+      consume_unconfirmed_base_signal: false
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.004
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 250
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.base_params.share_rank_min:
+    - 0.45
+    - 0.55
+    - 0.65
+    entry.params.base_params.min_abs_return_ticks:
+    - 1
+    - 2
+    - 3
+    sl.params.stop_pct:
+    - 0.0025
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2019-05-06'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.base_params.share_rank_min:
+    - 0.45
+    - 0.55
+    - 0.65
+    entry.params.base_params.min_abs_return_ticks:
+    - 1
+    - 2
+    - 3
+    sl.params.stop_pct:
+    - 0.0025
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn; after OOS, only rejection or promotion is allowed.

@@ -1,0 +1,132 @@
+campaign_id: nq_overnight_inventory_sweep_reversion
+title: NQ Overnight Inventory Sweep Reversion
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll
+timeframe: 5m
+edge_type: overnight_extreme_sweep_reclaim_reversion
+hypothesis: NQ may mean-revert after completed RTH sweeps and reclaims of the fully known overnight high
+  or low because those levels concentrate stops, liquidity provision, and stale overnight inventory reference
+  points.
+rationale: This is an NQ-specific test of failed overnight-extreme sweeps using a newly generated explicit-roll
+  NQ ETH/RTH Databento cache. It is distinct from prior NQ overnight return reversal and RTH-only orderflow
+  campaigns because it trades only completed sweeps of pre-known overnight highs/lows and requires next-bar
+  execution plus same-day flattening.
+sources:
+- title: Currency Orders and Exchange Rate Dynamics
+  authors: Carol L. Osler
+  year: 2003
+  venue: Journal of Finance / NY Fed Staff Report 125
+  link: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  relevance: Documents order clustering around technical levels, motivating strict tests around overnight
+    highs/lows as public reference levels.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v17y2004i4p1043-1071.html
+  relevance: Supports the idea that support/resistance levels can align with liquidity supply and may
+    produce reversals or breakouts.
+- title: Stop-loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  venue: Journal of International Money and Finance
+  link: https://ideas.repec.org/a/eee/jimfin/v24y2005i2p219-241.html
+  relevance: Motivates distinguishing stop cascades from failed sweeps that reverse after liquidity is
+    consumed.
+data_needs:
+- timezone-aware NQ ETH and RTH 1-minute OHLCV bars in America/New_York
+- explicit NQ roll-calendar selection with no same-day volume lookahead
+- completed ETH overnight high/low mapped to RTH bars only after the overnight session is complete
+- deterministic 5-minute aggregation and 1-minute detail data for same-bar stop/target conflict handling
+- same-day forced flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The NQ explicit-roll calendar was derived by translating the ES MotiveWave/Rithmic CME equity-index
+  quarterly roll dates to NQ contract symbols and requires manual review before promotion.
+- The local Databento cache is OHLCV bar data, not tick path or order book data.
+- Same-bar stop/target conflicts must use 1-minute detail where available and pessimistic fallback otherwise.
+lookahead_risks:
+- Overnight high/low are computed from ETH bars assigned to the current RTH session and are only used
+  on RTH bars after the ETH session is complete.
+- Sweep and reclaim conditions use only completed 5-minute bars; entries are next-bar open or later.
+- No final RTH high/low, final VWAP, future session return, future volume profile, or future orderflow
+  information is used.
+- Roll selection uses a fixed translated calendar, not same-day realized volume or future price action.
+- All variants flatten before the configured prop cutoff and disallow overnight positions.
+failure_modes:
+- Overnight high/low sweeps may be informed breakouts rather than failed stop runs.
+- Bar-level OHLC may overstate fill quality during fast RTH open moves.
+- The NQ roll-calendar translation may introduce contract-boundary issues that require manual review.
+- The effect may concentrate in crisis sessions or roll weeks.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_overnight_intraday_reversal
+  - nq_opening_gap_orderflow_absorption_fade
+  - nq_prior_session_level_breakout_continuation
+  - nq_prior_day_stop_run_reclaim
+  - nq_intraday_capitulation_mean_reversion
+  conclusion: Eligible as a distinct NQ overnight-extreme sweep/reclaim campaign. It uses completed ETH
+    overnight highs/lows, not overnight return sign, RTH prior-session highs/lows, opening gaps, or sell-flush
+    capitulation bars.
+variants:
+- morning_low_extreme_reclaim_long_1130
+- morning_high_extreme_reject_short_1130
+- extended_low_extreme_reclaim_long_1230
+- extended_high_extreme_reject_short_1230
+- morning_two_sided_extreme_reclaim_1130
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - min_overnight_range_points
+  - reclaim_buffer_ticks
+  stop_tunables:
+  - stop_pct
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.min_overnight_range_points:
+    - 20
+    - 40
+    - 60
+    entry.params.reclaim_buffer_ticks:
+    - 0
+    - 1
+    - 2
+    sl.params.stop_pct:
+    - 0.002
+    - 0.0035
+    - 0.005
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  target_rr_floor: No target_r_multiple below 1.0R is allowed.
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue authorized for this NQ search; final variants and grid are fixed before
+    PnL testing.
+pre_pnl_density_audit:
+  status: PASS_AFTER_REFORMULATION
+  generated_at: '2026-06-23'
+  artifact: research_artifacts/nq_overnight_inventory_sweep_reversion_density_audit_20260623.md
+  detail_csv: research_artifacts/nq_overnight_inventory_sweep_reversion_density_audit_20260623.csv
+  initial_rejected_detail: research_artifacts/nq_overnight_inventory_sweep_reversion_density_reform_candidates_20260623.csv
+  decision: Proceed to preflight and staged testing without changing mechanics or parameter space after
+    this point.
+status: completed_failed
+completed_at: '2026-06-23'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_overnight_inventory_sweep_reversion/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_overnight_inventory_sweep_reversion/campaign_results.csv
+  methodology_audit: campaigns/nq_overnight_inventory_sweep_reversion/methodology_audit.md
+  failure_reason: All five final NQ overnight inventory sweep/reclaim variants failed limited_core_grid_test.
+    No run reached limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation,
+    or candidate reporting.
+  best_variant: extended_high_extreme_reject_short_1230
+  best_top_net: 1415.0
+  best_profitable_combo_rate: 0.3333333333333333
+  candidate_strategy_report_created: false

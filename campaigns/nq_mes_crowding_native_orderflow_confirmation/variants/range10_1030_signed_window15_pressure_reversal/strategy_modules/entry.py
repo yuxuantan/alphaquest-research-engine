@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.nq_mes_crowding_orderflow_window_confirmation import NqMesCrowdingOrderflowWindowConfirmationEntry
+
+ENTRY_MODULE = NqMesCrowdingOrderflowWindowConfirmationEntry

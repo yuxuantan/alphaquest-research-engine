@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.cboe_vix_orderflow_confirmation import CboeVixOrderflowConfirmationEntry
+
+ENTRY_MODULE = CboeVixOrderflowConfirmationEntry

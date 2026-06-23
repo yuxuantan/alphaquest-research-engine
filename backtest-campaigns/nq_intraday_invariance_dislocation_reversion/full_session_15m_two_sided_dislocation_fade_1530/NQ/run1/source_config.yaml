@@ -1,0 +1,227 @@
+campaign_id: nq_intraday_invariance_dislocation_reversion
+test_run_id: run1
+strategy_name: nq_intraday_invariance_dislocation_reversion
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+variant_id: full_session_15m_two_sided_dislocation_fade_1530
+research_metadata:
+  academic_source: Andersen, Bondarenko, Kyle, and Obizhaeva (2018); Kyle and Obizhaeva (2016); Ane and
+    Geman (2000)
+  edge_thesis: Completed NQ bars with unusually large price movement per transaction, scaled by average
+    trade size and ranked against prior same-clock observations, may identify temporary liquidity dislocations
+    that mean-revert when aggregate signed flow does not strongly sponsor the move.
+  mechanic: From 10:00 through 15:30 ET, fade completed 15-minute high-dislocation NQ moves across the
+    liquid RTH day when aggregate signed flow is not strongly aligned.
+  timeframe_rationale: One-minute bars preserve completed-bar timing for the transaction-clock score.
+    The entry uses completed NQ OHLCV, aggregate signed volume, and completed trade count; it does not
+    use print sequencing or intra-minute fill ordering.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-23'
+  mechanics_review:
+    mechanic_expresses_edge: From 10:00 through 15:30 ET, fade completed 15-minute high-dislocation NQ
+      moves across the liquid RTH day when aggregate signed flow is not strongly aligned.
+    entry_logic_rationale: The entry computes rolling completed-bar return, volume, trade count, average
+      trade size, and signed-flow imbalance. The same-clock invariance rank uses only prior observations
+      because the current score is appended after the signal decision.
+    stop_loss_rationale: A fixed percent stop is used because the edge is a statistical liquidity-dislocation
+      state rather than a discrete chart level. The stop is predeclared, NQ tick-rounded by the engine,
+      and subject to pessimistic same-bar target/stop handling.
+    target_exit_rationale: A fixed-R target at 1.0R or greater tests bounded reversion without future
+      VWAP, final range, discretionary chart levels, or post-entry orderflow. Unresolved trades are force-flattened
+      at the declared same-day time.
+    profitability_rationale: A full-session formulation tests whether the transaction-clock dislocation
+      mechanism is broad enough to survive across NQ intraday regimes rather than relying on one narrow
+      slot.
+    known_failure_modes: The dislocation may be informed price discovery, aggregate signed flow may be
+      too noisy, NQ may trend after high movement-per-transaction bursts, and top performance may be concentrated
+      in crisis regimes or narrow parameter neighborhoods.
+    pre_test_decision: approve_for_testing
+  pre_pnl_density:
+    artifact: research_artifacts/nq_intraday_invariance_dislocation_reversion_density_audit_20260623.md
+    detail_csv: research_artifacts/nq_intraday_invariance_dislocation_reversion_density_audit_20260623.csv
+    entry_combo_count: 9
+    nq_grid_fixed_before_pnl: true
+    screen_rule: All variants must exceed 50 signals/year and 50 latest-252-session signals at the strictest
+      entry-grid corner before staged PnL testing.
+  nq_only_note: This campaign is formulated directly for NQ transaction-clock dislocation behaviour after
+    the ES analogue failed its own validation; it is not promoted from ES performance.
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  validation: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.validation.json
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 260
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: intraday_invariance_dislocation_reversion
+    params:
+      setup_mode: full_session_15m_two_sided_dislocation_fade_1530
+      start_time: '10:00:00'
+      end_time: '15:30:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 1
+      tick_size: 0.25
+      window_minutes: 15
+      same_clock_rank_window: 252
+      min_same_clock_observations: 60
+      invariance_rank_threshold: 0.9
+      min_return_ticks: 12
+      max_aligned_flow_imbalance: 0.05
+      direction: both
+      max_trades_per_day: 2
+      stop_pct: 0.0025
+      target_r_multiple: 1.5
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0025
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 2
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.invariance_rank_threshold:
+    - 0.85
+    - 0.9
+    - 0.95
+    entry.params.min_return_ticks:
+    - 8
+    - 12
+    - 16
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.0035
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

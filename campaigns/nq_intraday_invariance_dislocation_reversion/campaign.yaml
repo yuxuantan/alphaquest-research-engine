@@ -1,6 +1,6 @@
 campaign_id: nq_intraday_invariance_dislocation_reversion
 title: NQ Intraday Trading-Invariance Dislocation Reversion
-decision: PENDING
+decision: FAIL
 created_at: '2026-06-23'
 symbol: NQ
 dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
@@ -116,4 +116,17 @@ pre_pnl_density_audit:
   detail_csv: research_artifacts/nq_intraday_invariance_dislocation_reversion_density_audit_20260623.csv
   decision: Proceed to preflight and staged testing without changing mechanics or parameter space after
     this point.
-status: pending_staged_testing
+status: completed_failed
+completed_at: '2026-06-23'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_intraday_invariance_dislocation_reversion/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_intraday_invariance_dislocation_reversion/campaign_results.csv
+  methodology_audit: campaigns/nq_intraday_invariance_dislocation_reversion/methodology_audit.md
+  failure_reason: All five predeclared NQ intraday trading-invariance dislocation variants failed limited_core_grid_test.
+    Every variant had 0/81 profitable combinations and 0 benchmark-passing combinations; no run reached
+    limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, or candidate
+    reporting.
+  best_variant: opening_15m_two_sided_dislocation_fade_1130
+  best_top_net: -875.0
+  candidate_strategy_report_created: false

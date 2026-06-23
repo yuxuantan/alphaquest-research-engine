@@ -9,9 +9,18 @@ from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessi
 from propstack.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from propstack.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
 from propstack.strategy_modules.entry.cboe_put_call_sentiment import CboePutCallSentimentEntry
+from propstack.strategy_modules.entry.cboe_put_call_orderflow_confirmation import (
+    CboePutCallOrderflowConfirmationEntry,
+)
 from propstack.strategy_modules.entry.cboe_implied_correlation import CboeImpliedCorrelationEntry
+from propstack.strategy_modules.entry.cboe_implied_correlation_orderflow_confirmation import (
+    CboeImpliedCorrelationOrderflowConfirmationEntry,
+)
 from propstack.strategy_modules.entry.cboe_skew_tail_risk import CboeSkewTailRiskEntry
 from propstack.strategy_modules.entry.cboe_vix_level_state import CboeVixLevelStateEntry
+from propstack.strategy_modules.entry.cboe_vix_orderflow_confirmation import (
+    CboeVixOrderflowConfirmationEntry,
+)
 from propstack.strategy_modules.entry.cboe_vix_term_structure import CboeVixTermStructureEntry
 from propstack.strategy_modules.entry.cboe_vxn_vix_dispersion import CboeVxnVixDispersionEntry
 from propstack.strategy_modules.entry.chicagofed_cfnai_activity_state import (
@@ -46,6 +55,9 @@ from propstack.strategy_modules.entry.nq_es_relative_value_orderflow_absorption_
     NqEsRelativeValueOrderflowAbsorptionReversionEntry,
 )
 from propstack.strategy_modules.entry.nq_tech_relative_strength import NqTechRelativeStrengthEntry
+from propstack.strategy_modules.entry.nq_tech_relative_orderflow_confirmation import (
+    NqTechRelativeOrderflowConfirmationEntry,
+)
 from propstack.strategy_modules.entry.es_nq_semivariance_filtered_relative_value_absorption import (
     EsNqSemivarianceFilteredRelativeValueAbsorptionEntry,
 )
@@ -106,6 +118,12 @@ from propstack.strategy_modules.entry.trend_filtered_mes_participation_crowding 
 )
 from propstack.strategy_modules.entry.volatility_filtered_trend_mes_participation_crowding import (
     VolatilityFilteredTrendMesParticipationCrowdingEntry,
+)
+from propstack.strategy_modules.entry.nq_mes_crowding_orderflow_window_confirmation import (
+    NqMesCrowdingOrderflowWindowConfirmationEntry,
+)
+from propstack.strategy_modules.entry.nq_pivot_mes_orderflow_confirmation import (
+    NqPivotMesOrderflowConfirmationEntry,
 )
 from propstack.strategy_modules.entry.monthly_opex_pressure import MonthlyOpexPressureEntry
 from propstack.strategy_modules.entry.morning_intraday_momentum import MorningIntradayMomentumEntry
@@ -236,6 +254,9 @@ from propstack.strategy_modules.entry.spx_0dte_expiration_pressure import Spx0dt
 from propstack.strategy_modules.entry.spx_0dte_orderflow_continuation import (
     Spx0dteOrderflowContinuationEntry,
 )
+from propstack.strategy_modules.entry.spx_0dte_orderflow_confirmation import (
+    Spx0dteOrderflowConfirmationEntry,
+)
 from propstack.strategy_modules.entry.spx_0dte_trend_aligned_pressure import Spx0dteTrendAlignedPressureEntry
 from propstack.strategy_modules.entry.spy_turnover_orderflow_attention import (
     SpyTurnoverOrderflowAttentionEntry,
@@ -295,9 +316,12 @@ ENTRY_MODULES = {
     CftcTffHedgingPressureEntry.name: CftcTffHedgingPressureEntry,
     CftcTffTieredHedgingPressureEntry.name: CftcTffTieredHedgingPressureEntry,
     CboePutCallSentimentEntry.name: CboePutCallSentimentEntry,
+    CboePutCallOrderflowConfirmationEntry.name: CboePutCallOrderflowConfirmationEntry,
     CboeImpliedCorrelationEntry.name: CboeImpliedCorrelationEntry,
+    CboeImpliedCorrelationOrderflowConfirmationEntry.name: CboeImpliedCorrelationOrderflowConfirmationEntry,
     CboeSkewTailRiskEntry.name: CboeSkewTailRiskEntry,
     CboeVixLevelStateEntry.name: CboeVixLevelStateEntry,
+    CboeVixOrderflowConfirmationEntry.name: CboeVixOrderflowConfirmationEntry,
     CboeVixTermStructureEntry.name: CboeVixTermStructureEntry,
     CboeVxnVixDispersionEntry.name: CboeVxnVixDispersionEntry,
     ChicagoFedCfnaiActivityStateEntry.name: ChicagoFedCfnaiActivityStateEntry,
@@ -320,6 +344,7 @@ ENTRY_MODULES = {
     EsNqRelativeValueOrderflowAbsorptionReversionEntry.name: EsNqRelativeValueOrderflowAbsorptionReversionEntry,
     NqEsRelativeValueOrderflowAbsorptionReversionEntry.name: NqEsRelativeValueOrderflowAbsorptionReversionEntry,
     NqTechRelativeStrengthEntry.name: NqTechRelativeStrengthEntry,
+    NqTechRelativeOrderflowConfirmationEntry.name: NqTechRelativeOrderflowConfirmationEntry,
     EsNqSemivarianceFilteredRelativeValueAbsorptionEntry.name: EsNqSemivarianceFilteredRelativeValueAbsorptionEntry,
     EsTermStructureLeadLagEntry.name: EsTermStructureLeadLagEntry,
     FinraMarginLeverageEntry.name: FinraMarginLeverageEntry,
@@ -353,6 +378,8 @@ ENTRY_MODULES = {
     MesFootprintLiquiditySweepReversionEntry.name: MesFootprintLiquiditySweepReversionEntry,
     TrendFilteredMesParticipationCrowdingEntry.name: TrendFilteredMesParticipationCrowdingEntry,
     VolatilityFilteredTrendMesParticipationCrowdingEntry.name: VolatilityFilteredTrendMesParticipationCrowdingEntry,
+    NqMesCrowdingOrderflowWindowConfirmationEntry.name: NqMesCrowdingOrderflowWindowConfirmationEntry,
+    NqPivotMesOrderflowConfirmationEntry.name: NqPivotMesOrderflowConfirmationEntry,
     MonthlyOpexPressureEntry.name: MonthlyOpexPressureEntry,
     MorningIntradayMomentumEntry.name: MorningIntradayMomentumEntry,
     MorningOrderflowMomentumEntry.name: MorningOrderflowMomentumEntry,
@@ -423,6 +450,7 @@ ENTRY_MODULES = {
     SectorRotationRiskAppetiteEntry.name: SectorRotationRiskAppetiteEntry,
     Spx0dteExpirationPressureEntry.name: Spx0dteExpirationPressureEntry,
     Spx0dteOrderflowContinuationEntry.name: Spx0dteOrderflowContinuationEntry,
+    Spx0dteOrderflowConfirmationEntry.name: Spx0dteOrderflowConfirmationEntry,
     Spx0dteTrendAlignedPressureEntry.name: Spx0dteTrendAlignedPressureEntry,
     SpyTurnoverOrderflowAttentionEntry.name: SpyTurnoverOrderflowAttentionEntry,
     TurnOfMonthBiasEntry.name: TurnOfMonthBiasEntry,
@@ -473,8 +501,11 @@ __all__ = [
     "CftcTffHedgingPressureEntry",
     "CftcTffTieredHedgingPressureEntry",
     "CboePutCallSentimentEntry",
+    "CboePutCallOrderflowConfirmationEntry",
     "CboeImpliedCorrelationEntry",
+    "CboeImpliedCorrelationOrderflowConfirmationEntry",
     "CboeSkewTailRiskEntry",
+    "CboeVixOrderflowConfirmationEntry",
     "CboeVixTermStructureEntry",
     "CboeVxnVixDispersionEntry",
     "ChicagoFedCfnaiActivityStateEntry",
@@ -495,6 +526,7 @@ __all__ = [
     "EsNqRelativeValueOrderflowAbsorptionReversionEntry",
     "NqEsRelativeValueOrderflowAbsorptionReversionEntry",
     "NqTechRelativeStrengthEntry",
+    "NqTechRelativeOrderflowConfirmationEntry",
     "EsNqSemivarianceFilteredRelativeValueAbsorptionEntry",
     "EsTermStructureLeadLagEntry",
     "FootprintAbsorptionInitiationEntry",
@@ -523,6 +555,8 @@ __all__ = [
     "MesFootprintLiquiditySweepReversionEntry",
     "TrendFilteredMesParticipationCrowdingEntry",
     "VolatilityFilteredTrendMesParticipationCrowdingEntry",
+    "NqMesCrowdingOrderflowWindowConfirmationEntry",
+    "NqPivotMesOrderflowConfirmationEntry",
     "MonthlyOpexPressureEntry",
     "MorningIntradayMomentumEntry",
     "MorningOrderflowMomentumEntry",
@@ -585,6 +619,7 @@ __all__ = [
     "SectorRotationOrderflowPullbackEntry",
     "SectorRotationRiskAppetiteEntry",
     "Spx0dteExpirationPressureEntry",
+    "Spx0dteOrderflowConfirmationEntry",
     "Spx0dteTrendAlignedPressureEntry",
     "SpyTurnoverOrderflowAttentionEntry",
     "TurnOfMonthBiasEntry",

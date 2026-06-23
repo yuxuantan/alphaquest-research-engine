@@ -1,0 +1,118 @@
+campaign_id: nq_mes_flow_price_extension_reversion
+title: NQ MES flow plus NQ price-extension reversion
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+edge_family: cross_index_mes_flow_price_extension_reversion
+hypothesis: >
+  Completed MES-vs-NQ flow pressure should be more likely to mean-revert when
+  NQ has already extended in the same direction by the signal close. The edge
+  fades a completed micro-flow/price extension rather than trading raw MES flow
+  divergence alone.
+rationale: >
+  The prior NQ MES micro-flow divergence campaign failed monkey robustness
+  before WFA. This is not a stop/target rescue of that campaign. It is a
+  distinct predeclared expression that requires the same-session NQ price move
+  to confirm an extension before fading the MES/NQ flow pressure. The
+  additional completed-price condition is available at the signal close and was
+  density-screened before any PnL for this campaign was inspected.
+sources:
+- title: One Security, Many Markets
+  authors: Joel Hasbrouck
+  year: 1995
+  doi: 10.1111/j.1540-6261.1995.tb04054.x
+  relevance: Motivates temporary price-discovery differences across linked index markets.
+- title: Individual Investor Trading and Stock Returns
+  authors: Ron Kaniel, Gideon Saar, and Sheridan Titman
+  year: 2008
+  doi: 10.1111/j.1540-6261.2008.01316.x
+  relevance: Motivates liquidity-demand flow as a possible short-horizon reversal pressure.
+- title: Do Retail Trades Move Markets?
+  authors: Brad M. Barber, Terrance Odean, and Ning Zhu
+  year: 2009
+  doi: 10.1093/rfs/hhn035
+  relevance: Supports testing whether small-trade-like flow pressure can be transitory after costs.
+data_needs:
+- data/cache/orderflow/nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny.csv
+- completed NQ and MES RTH one-minute trade-orderflow bars with rolling imbalance and return features
+lookahead_risks:
+- Signals use only rolling completed same-session features at the configured signal close.
+- Entry can occur only after the completed signal bar through next-bar execution.
+- No final session high, low, VWAP, daily range, future return, or post-entry flow is used.
+- MES is a cross-index micro-flow proxy for NQ, not native MNQ orderflow.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_mes_micro_flow_divergence_reversion
+  - nq_mes_crowding_native_orderflow_confirmation
+  - nq_pivot_filtered_mes_participation_crowding_reversion
+  - nq_pivot_mes_orderflow_confirmation
+  conclusion: >
+    Eligible as a distinct NQ test because every signal requires completed NQ
+    price extension in addition to MES/NQ flow pressure. Prior campaigns traded
+    flow divergence, participation crowding, or pivot-confirmed crowding without
+    this explicit price-extension reversion gate.
+pre_pnl_density_audit:
+  status: PASS
+  artifact: research_artifacts/nq_mes_flow_price_extension_reversion_density_audit_20260623.md
+  csv: research_artifacts/nq_mes_flow_price_extension_reversion_density_audit_20260623.csv
+  min_signals_per_year: 57.848844
+  max_signals_per_year: 139.625434
+  method: Signal-count only on completed NQ/MES rolling-flow and NQ return columns; no PnL inspected.
+parameter_space:
+  entry.params.flow_threshold:
+  - 0.005
+  - 0.0075
+  - 0.01
+  entry.params.min_return_ticks:
+  - 0
+  - 2
+  - 4
+  sl.params.stop_pct:
+  - 0.0025
+  - 0.004
+  - 0.006
+  tp.params.target_r_multiple:
+  - 1.0
+  - 2.0
+  - 3.0
+  total_combinations_per_variant: 81
+variants:
+- morning15_mes_buy_nq_up_extension_short_1000
+- morning15_mes_sell_nq_down_extension_long_1000
+- late_morning30_mes_buy_nq_up_extension_short_1030
+- late_morning30_mes_sell_nq_down_extension_long_1100
+- midday60_mes_two_sided_nq_extension_reversion_1200
+rescue_policy:
+  allowed: false
+  reason: >
+    This is a fresh predeclared NQ-only expression. If it fails, do not retune
+    mechanics, filters, stops, targets, time windows, or grids without explicit
+    user authorization.
+testing_plan:
+  methodology: current staged research pipeline including acceptance_oos_test
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+status: completed_failed
+result_summary:
+  evaluated_run_id: run1
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_core_grid_test: 4
+    limited_monkey_test: 1
+  failure_reason: >
+    All five variants failed the staged flow. Four failed limited_core_grid_test
+    stability and one passed core but failed limited_monkey_test robustness
+    before WFA.
+  best_variant_by_core_net: morning15_mes_buy_nq_up_extension_short_1000
+  best_variant_by_stage: morning15_mes_buy_nq_up_extension_short_1000
+  campaign_test_summary_json: backtest-campaigns/nq_mes_flow_price_extension_reversion/campaign_test_summary.json
+  campaign_test_summary_md: backtest-campaigns/nq_mes_flow_price_extension_reversion/campaign_test_summary.md
+  campaign_results_csv: backtest-campaigns/nq_mes_flow_price_extension_reversion/campaign_results.csv
+  candidate_strategy_report_created: false

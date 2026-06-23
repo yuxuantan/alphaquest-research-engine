@@ -1,0 +1,135 @@
+campaign_id: nq_pivot_mes_orderflow_confirmation
+title: NQ Pivot-Filtered MES Crowding With Native Large-Trade Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+edge_family: nq_pivot_mes_crowding_native_large_trade_confirmation
+hypothesis: MES participation crowding fades are more robust on NQ when completed swing-pivot structure supports the fade
+  and completed native NQ large-trade signed flow confirms the fade direction before entry.
+rationale: This is a distinct NQ composite derived from the strongest failed pivot-filtered MES crowding family. The prior
+  NQ pivot/MES branch had strong core evidence but failed monkey robustness; this campaign adds a fixed completed native NQ
+  large-trade orderflow confirmation and waits for the first confirmed pivot/MES candidate inside the predeclared window.
+sources:
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates smaller-participant crowding as a temporary pressure source.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail and Micro E-mini participation relevant to MES participation proxies.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/0022-1082.00265
+  relevance: Supports fixed completed-pivot swing-state filters.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2011.11.003
+  relevance: Motivates requiring the fade direction to align with a completed intraday structure state rather than fighting
+    persistent repricing.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as short-horizon pressure evidence; this campaign uses completed aggregate NQ trade-flow
+    fields, not quote-level OFI.
+data_needs:
+- data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv
+- NQ completed-bar OHLCV and aggregate native signed-volume fields
+- MES notional and trade-share rank252 fields
+- completed pivot state derived only from RTH bars
+lookahead_risks:
+- MES participation ranks use prior same-clock history and completed current bars only.
+- NQ returns, pivot states, and orderflow windows are evaluated only after the signal bar close.
+- Pivot highs/lows become usable only after right-side confirmation bars are complete.
+- The orderflow veto uses completed rolling bars through the signal close and does not inspect post-signal bars.
+- Entries are generated at signal close and filled no earlier than the next bar boundary by the staged engine.
+failure_modes:
+- Large-trade flow can indicate informed persistence rather than exhaustion.
+- Waiting for a confirmed signal may select late entries after the reversal has already occurred.
+- The MES participation proxy may still be informed activity rather than crowded weak-hand flow.
+- NQ trend days may continue through pivot-aligned fade signals.
+- The added orderflow gate may improve core results but still fail monkey, WFA, Monte Carlo, or prop-rule simulation.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_pivot_filtered_mes_participation_crowding_reversion
+  - nq_mes_crowding_native_orderflow_confirmation
+  - nq_mes_crowding_vol_filtered_trend_pullback_reversion
+  conclusion: Eligible as a distinct composite because no prior NQ campaign combined completed pivot-filtered MES crowding
+    with native NQ large-trade orderflow confirmation and first-confirmed window semantics.
+pre_pnl_density_audit:
+  method: Signal-count only on completed NQ/MES cache rows and completed native NQ large-trade orderflow windows; no PnL or
+    trade outcomes inspected.
+  artifact_csv: research_artifacts/nq_pivot_mes_orderflow_confirmation_density_audit_20260623.csv
+  artifact_md: research_artifacts/nq_pivot_mes_orderflow_confirmation_density_audit_20260623.md
+  decision: PASS_FOR_SELECTED_FIVE
+  selected_trade_count_gate_before_pnl: 50
+  min_selected_signals_per_year: 51.655780346820805
+  max_selected_signals_per_year: 90.36242774566473
+parameter_space:
+  entry_parameters:
+    entry.params.base_params.share_rank_min:
+    - 0.45
+    - 0.55
+    - 0.65
+    entry.params.base_params.min_abs_return_ticks:
+    - 1
+    - 2
+    - 3
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  target_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  combinations_per_variant: 81
+  fixed_orderflow_parameters:
+  - entry.params.flow_mode
+  - entry.params.orderflow_window_minutes
+  - entry.params.min_orderflow_imbalance
+  - entry.params.consume_unconfirmed_base_signal
+variants:
+- late_morning_trade_large10_first_confirmed_reversal_window_1200
+- late_morning_trade_large20_first_confirmed_reversal_window_1200
+- morning_notional_large10_first_confirmed_reversal_window_1130
+- morning_notional_large20_first_confirmed_reversal_window_1130
+- afternoon_trade_large10_first_confirmed_reversal_window_1500
+source_nq_campaign: nq_pivot_filtered_mes_participation_crowding_reversion
+source_nq_evidence:
+  why_selected: 'The source NQ campaign produced the strongest nearby evidence among existing NQ ports: late-morning passed
+    limited core and failed monkey, while morning and afternoon branches had materially positive core but insufficient grid
+    stability. This campaign is frozen before any PnL from the new large-trade orderflow composite is inspected.'
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this campaign sees staged results; after OOS only rejection or promotion is allowed.
+status: completed_failed
+completed_at: '2026-06-23'
+testing_outcome:
+  terminal_stage_counts:
+    limited_monkey_test: 2
+    limited_core_grid_test: 3
+  failure_reason: All five frozen variants failed the staged flow. Three failed limited core grid stability; late_morning_trade_large20_first_confirmed_reversal_window_1200
+    and afternoon_trade_large10_first_confirmed_reversal_window_1500 passed core but failed limited monkey robustness. No
+    WFA, Monte Carlo, incubation, acceptance, or candidate report survivor.
+  results_csv: backtest-campaigns/nq_pivot_mes_orderflow_confirmation/campaign_results.csv
+  campaign_summary: backtest-campaigns/nq_pivot_mes_orderflow_confirmation/campaign_test_summary.json
+  methodology_audit: campaigns/nq_pivot_mes_orderflow_confirmation/methodology_audit.md
+  candidate_strategy_report_created: false

@@ -1,0 +1,216 @@
+campaign_id: nq_spx_0dte_orderflow_confirmation
+variant_id: all_available_1430_signed120_continue
+test_run_id: run1
+strategy_name: spx_0dte_orderflow_confirmation
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Cboe Global Markets (2022, 2023); Brogaard, Han, and Won (2023); Fagerlid and Skarpnes (2024); Cont, Kukanov,
+    and Stoikov (2014)
+  edge_thesis: SPX 0DTE calendar pressure should be more tradable on NQ when the completed late-day NQ move and completed
+    rolling NQ signed flow agree before entry.
+  mechanic: At 14:30:00 ET, trade NQ continuation in the completed open-to-signal move direction on all available SPX 0DTE
+    sessions, excluding standard monthly expirations, only when completed 120-minute NQ signed flow aligns with the move.
+  timeframe_rationale: One-minute bars preserve the deterministic SPX calendar, completed NQ open-to-signal move, rolling
+    signed-flow confirmation, next-bar execution, and stop/target ordering.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-23'
+  mechanics_review:
+    mechanic_expresses_edge: The variant only trades when calendar pressure, completed NQ move, and completed rolling NQ signed
+      flow agree.
+    entry_logic_rationale: Calendar membership is known before the session; NQ move and flow use only completed bars through
+      the signal close.
+    stop_loss_rationale: Percent-from-entry stop is predeclared, rounded to NQ tick, and varied only through the stop grid.
+    target_exit_rationale: The fixed-R target is declared before testing and uses only the initial entry and stop distance.
+      It does not reference future session highs/lows, final VWAP, option flow, dealer gamma, or discretionary levels; any
+      unresolved position is force-flattened at the configured same-day flatten time.
+    profitability_rationale: The prior 0DTE continuation branch passed core and monkey but failed WFA; requiring signed-flow
+      alignment targets unstable continuation windows without using future option information.
+    known_failure_modes: Flow may be late, 0DTE direction may require unavailable dealer-gamma sign, and WFA can still fail
+      due limited post-2022 regime history.
+    pre_test_decision: approve_for_testing
+  pre_pnl_density:
+    artifact: research_artifacts/nq_spx_0dte_orderflow_confirmation_density_audit_20260623.md
+    grid_min_median_max_signals_per_year: 38.15/46.05/56.16
+    nq_grid_fixed_before_pnl: true
+  source_nq_failed_campaign: nq_spx_0dte_expiration_pressure
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: spx_0dte_orderflow_confirmation
+    params:
+      setup_mode: all_available_1430_signed120_continue
+      event_calendar_csv: data/external/nq_spx_0dte_calendar_sessions_20110103_20260612.csv
+      calendar_bucket: all_available
+      trigger_mode: continue_move
+      direction: two_sided
+      signal_time: '14:30:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 1
+      max_trades_per_day: 1
+      tick_size: 0.25
+      min_abs_move_ticks: 140
+      exclude_standard_monthly: true
+      orderflow_window_minutes: 120
+      flow_mode: signed_imbalance
+      min_orderflow_imbalance: 0.0025
+      stop_pct: 0.006
+      target_r_multiple: 1.5
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.006
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 35
+  preferred_min_total_trades: 250
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.min_abs_move_ticks:
+    - 100
+    - 140
+    - 180
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.0025
+    - 0.005
+    sl.params.stop_pct:
+    - 0.004
+    - 0.006
+    - 0.008
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 35
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: wfa_oos
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

@@ -1,0 +1,379 @@
+campaign_id: nq_overnight_drift_european_open
+variant_id: eu_open_down_no_recovery_long_0200
+test_run_id: run1
+strategy_name: overnight_drift
+symbol: NQ
+dataset_id: nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll
+timeframe: 5m
+research_metadata:
+  academic_source: Boyarchenko, Larsen, and Whelan (2020), Federal Reserve Bank of
+    New York Staff Reports No. 917
+  edge_thesis: 'NQ futures may earn a positive overnight return around the European-open
+    transfer window after prior U.S. selloffs, but the edge should be cleaner when
+    the ETH session has not already recovered strongly before the signal.
+
+    '
+  mechanic: 'Enter long after the completed 01:55-02:00 ET ETH bar when the prior
+    RTH session sold off and the ETH session has not already recovered more than the
+    declared pre-signal return threshold, then flatten by 03:00 ET.
+
+    '
+  timeframe_rationale: 'Five-minute ETH bars keep the European-open window auditable
+    while avoiding one-minute noise; all signals use completed bars and the engine
+    enters at the next 5-minute open.
+
+    '
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-23'
+  pre_pnl_density:
+    artifact: research_artifacts/nq_overnight_drift_european_open_density_audit_20260623.md
+    selected_grid_min_signals_per_year: 50.518133
+    rejected_pre_pnl_corner: max_pre_signal_return_ticks=0
+    p_n_l_inspected: false
+  eth_session_risk_caveat: 'This variant is not RTH-only. Apex-style checks remain
+    enabled with an explicit 04:00 ET ETH cutoff and no_overnight_positions=false.
+
+    '
+  mechanics_review:
+    mechanic_expresses_edge: 'Enter long after the completed 01:55-02:00 ET ETH bar
+      when the prior RTH session sold off and the ETH session has not already recovered
+      more than the declared pre-signal return threshold. This directly tests whether
+      unrepaired NQ overnight imbalance is absorbed in the European-open window.
+
+      '
+    entry_logic_rationale: 'The signal clock is fixed before testing and uses only
+      the completed ETH bar ending at the declared signal time, the ETH session open
+      already observed earlier in the same session, and prior RTH open and close values.
+      Entry is next bar open and no future session information is referenced.
+
+      '
+    stop_loss_rationale: 'A fixed percent stop is used because the source defines
+      a time-window risk premium rather than a chart level. The stop grid is declared
+      before PnL testing and scaled to short ETH-window NQ movement.
+
+      '
+    target_exit_rationale: 'A fixed-R target plus a strict time flatten tests whether
+      the overnight drift can monetize inside the source window without discretionary
+      exits, future orderflow, or holding into the RTH session.
+
+      '
+    profitability_rationale: 'The source links the overnight drift to prior U.S. order
+      imbalances. This version focuses on sessions where prior selling exists and
+      the ETH session has not already repaired the imbalance before the European-open
+      signal.
+
+      '
+    known_failure_modes: 'The recovery filter may remove too much sample, the NQ overnight
+      drift may be weaker than ES, fills during ETH may be worse than one-tick slippage,
+      and broker or prop rules may reject the overnight-session exposure.
+
+      '
+    pre_test_decision: approve_for_testing
+data:
+  dataset_id: nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/databento/nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll.parquet
+  validation: data/cache/databento/nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll.validation.json
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: full
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  eth_start: '18:00:00'
+  eth_end: 09:29:00
+  continuous_contract: none
+  roll_boundary_policy:
+    skip_sessions_around_roll: 1
+    reset_previous_day_levels: true
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: 04:05:00
+  force_flatten_enabled: true
+  force_flatten_time: 04:00:00
+  latest_entry_time: 03:05:00
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: false
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: overnight_drift
+    params:
+      setup_mode: eu_open_down_no_recovery_long_0200
+      signal_time: 02:00:00
+      flatten_time: 03:00:00
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      direction: long
+      require_eth: true
+      max_trades_per_day: 1
+      stop_pct: 0.0018
+      target_r_multiple: 1.25
+      min_prior_rth_down_ticks: 16
+      max_pre_signal_return_ticks: 16
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0018
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.25
+  flatten_time: 03:00:00
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-05-29'
+    session_labels:
+    - ETH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: 03:00:00
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 12
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.min_prior_rth_down_ticks:
+    - 0
+    - 16
+    - 32
+    entry.params.max_pre_signal_return_ticks:
+    - 16
+    - 32
+    sl.params.stop_pct:
+    - 0.0012
+    - 0.0018
+    - 0.0024
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.25
+    - 1.5
+monkey:
+  data_subset: *id001
+  runs: 8000
+  seed: 71
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: false
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 3
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.mean_net_pnl
+      exclusive_min: 0.0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 73
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

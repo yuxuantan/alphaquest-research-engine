@@ -1,0 +1,123 @@
+campaign_id: nq_mes_crowding_native_orderflow_confirmation
+title: NQ MES Crowding With Native Orderflow Window Confirmation
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+edge_family: nq_mes_crowding_native_orderflow_confirmed_pullback_reversion
+hypothesis: MES micro-participation crowding during an NQ trend-pullback is more informative for NQ when native completed-window
+  NQ orderflow confirms pressure in the pullback direction before the fade entry.
+rationale: This is a distinct NQ-specific expression of the strongest ES MES-crowding volatility-veto family. The prior NQ
+  cross-index port failed monkey robustness; this campaign keeps the pre-existing crowding/volatility thesis but requires
+  native NQ completed-window signed-flow pressure, targeting the random-timing weakness without using future bars.
+sources:
+- title: Retail Trading and Asset Prices
+  authors: Brad M. Barber, Xing Huang, Terrance Odean, and Christopher Schwarz / related retail-attention literature
+  year: 2024
+  venue: Practitioner and academic retail-flow research
+  link: ''
+  relevance: Motivates smaller-participant crowding as a temporary pressure source.
+- title: Retail Traders in Futures Markets
+  authors: U.S. Commodity Futures Trading Commission staff
+  year: 2024
+  venue: CFTC research
+  link: https://www.cftc.gov/
+  relevance: Documents retail participation and Micro E-mini usage relevant to MES/MNQ-style participation proxies.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse H. Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2011.11.003
+  relevance: Motivates conditioning pullback fades on an established prior trend.
+- title: Volatility-Managed Portfolios
+  authors: Alan Moreira and Tyler Muir
+  year: 2017
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/jofi.12513
+  relevance: Motivates ex-ante volatility state filters for path-risk control.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as short-horizon pressure evidence; this campaign uses completed aggregate NQ trade-flow
+    fields, not quote-level OFI.
+data_needs:
+- data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv
+- data/external/nq_lagged_volatility_features_20110103_20260612.csv
+- completed native NQ signed-volume fields embedded in the NQ/MES crowding cache
+lookahead_risks:
+- MES crowding ranks use same-clock prior-session history and completed current NQ pullback fields only.
+- The NQ trend window ends before the pullback/crowding/orderflow confirmation window.
+- Lagged NQ volatility gates are shifted to prior-session feature rows.
+- Native NQ orderflow confirmation uses only completed bars in the configured window ending at the signal close.
+- Entry is emitted at the signal-bar close and filled no earlier than the next-bar boundary by the staged engine.
+failure_modes:
+- MES may remain an ES-specific proxy and fail to capture NQ/MNQ crowding.
+- Native NQ signed flow can confirm exhaustion rather than tradable reversal pressure.
+- The orderflow gate can remove winners and keep losers if pressure persists after entry.
+- The 10:30 reversal may remain vulnerable to randomized-timing monkey tests.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_mes_crowding_vol_filtered_trend_pullback_reversion
+  - nq_mes_crowding_trend_pullback_reversion
+  - nq_mes_participation_crowding_reversion
+  conclusion: Eligible as a distinct NQ-specific composite because prior NQ MES-crowding ports did not require native completed-window
+    NQ signed-flow pressure confirmation.
+pre_pnl_density_audit:
+  method: Signal-count only on completed NQ/MES cache rows, lagged NQ volatility features, and completed native NQ orderflow
+    window fields; no PnL or trade outcomes inspected.
+  artifact_csv: research_artifacts/nq_mes_crowding_native_orderflow_window_confirmation_density_audit_20260623.csv
+  artifact_extra_csv: research_artifacts/nq_mes_crowding_native_orderflow_window_confirmation_extra_density_20260623.csv
+  artifact_md: research_artifacts/nq_mes_crowding_native_orderflow_window_confirmation_density_audit_20260623.md
+  decision: PASS_FOR_SELECTED_FIVE
+  selected_trade_count_gate_before_pnl: 35
+  min_trend_return_ticks_fixed_before_pnl: 8
+  min_orderflow_imbalance_grid:
+  - 0.0
+  - 0.005
+  - 0.01
+parameter_space:
+  entry_parameters:
+    entry.params.share_rank_min:
+    - 0.35
+    - 0.45
+    - 0.55
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.005
+    - 0.01
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.003
+    - 0.004
+    - 0.006
+  target_parameters:
+    tp.params.target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+  combinations_per_variant: 81
+variants:
+- absret5_1030_signed_window15_pressure_reversal
+- downside20_1030_signed_window15_pressure_reversal
+- range10_1030_signed_window15_pressure_reversal
+- vol20_1030_signed_window15_pressure_reversal
+- absret5_1030_notional_signed_window15_pressure_reversal
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this campaign sees staged results; after OOS only rejection or promotion is allowed.
+status: completed_failed
+completed_at: '2026-06-23'
+testing_outcome:
+  terminal_stage_counts:
+    limited_monkey_test: 5
+  failure_reason: All five frozen variants passed limited core but failed limited monkey; no variant reached WFA.
+  results_csv: backtest-campaigns/nq_mes_crowding_native_orderflow_confirmation/campaign_results.csv
+  campaign_summary: backtest-campaigns/nq_mes_crowding_native_orderflow_confirmation/campaign_test_summary.json
+  methodology_audit: campaigns/nq_mes_crowding_native_orderflow_confirmation/methodology_audit.md
+  candidate_strategy_report_created: false

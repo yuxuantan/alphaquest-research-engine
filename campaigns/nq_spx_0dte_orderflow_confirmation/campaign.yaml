@@ -1,0 +1,104 @@
+campaign_id: nq_spx_0dte_orderflow_confirmation
+title: NQ SPX 0DTE With Completed Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: nq_spx_0dte_calendar_move_orderflow_continuation
+hypothesis: SPX 0DTE calendar pressure should be more tradable on NQ when the completed late-day NQ move and completed rolling
+  NQ signed flow agree before entry.
+rationale: 'The prior NQ SPX 0DTE late-day continuation variant passed limited core and monkey but failed WFA. This is a distinct
+  composite: it does not trade the calendar/move signal alone and requires completed native NQ signed-flow alignment at the
+  signal close.'
+sources:
+- title: The Evolution of Same Day Options Trading
+  authors: Cboe Global Markets
+  year: 2023
+  link: https://www.cboe.com/insights/posts/the-evolution-of-same-day-options-trading/
+  relevance: Documents SPX 0DTE expansion and weekday coverage.
+- title: Cboe to Add Tuesday and Thursday Expirations for SPX Weeklys Options
+  authors: Cboe Global Markets
+  year: 2022
+  link: https://ir.cboe.com/news/news-details/2022/Cboe-to-Add-Tuesday-and-Thursday-Expirations-for-SPX-Weeklys-Options-04-13-2022/default.aspx
+  relevance: Official launch dates for Tuesday and Thursday SPX Weeklys.
+- title: Does 0DTE Options Trading Increase Volatility?
+  authors: Jonathan Brogaard, Jaehee Han, and Peter Y. Won
+  year: 2023
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4426358
+  relevance: Motivates testing 0DTE-linked underlying volatility and hedging pressure.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Motivates completed orderflow imbalance as short-horizon pressure evidence.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_spx_0dte_calendar_sessions_20110103_20260612.csv
+- completed NQ signed-volume fields through the signal close
+lookahead_risks:
+- SPX 0DTE calendar membership is generated from published listing rules and is known before each session.
+- Open-to-signal move uses only NQ session open and completed signal-bar close.
+- Orderflow confirmation uses completed NQ bars in the configured rolling window ending at signal close.
+- Entry is emitted at signal-bar close and filled no earlier than next-bar boundary.
+- No option flow, same-day option prices, final VWAP, final high/low, or post-entry orderflow is used.
+failure_modes:
+- 0DTE pressure may affect ES/SPX but not directional NQ after costs.
+- Signed flow may confirm late after most continuation has occurred.
+- The effect may remain unstable in WFA because full-week SPX 0DTE history is short.
+- Direction may depend on unavailable dealer-gamma sign.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_spx_0dte_expiration_pressure
+  - nq_spx_0dte_trend_aligned_pressure
+  conclusion: Eligible as a distinct composite because the prior 0DTE campaign traded calendar plus completed NQ move only;
+    this campaign also requires completed rolling NQ signed-flow alignment.
+pre_pnl_density_audit:
+  method: Signal-count only on deterministic SPX 0DTE calendar, completed NQ open-to-signal move, and completed rolling NQ
+    signed-flow alignment; no PnL inspected.
+  artifact_csv: research_artifacts/nq_spx_0dte_orderflow_confirmation_density_audit_20260623.csv
+  artifact_md: research_artifacts/nq_spx_0dte_orderflow_confirmation_density_audit_20260623.md
+  decision: PASS_FOR_SELECTED_FIVE
+  selected_trade_count_gate_before_pnl: 35
+parameter_space:
+  entry_parameters:
+    entry.params.min_abs_move_ticks:
+    - 100
+    - 140
+    - 180
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.0025
+    - 0.005
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.004
+    - 0.006
+    - 0.008
+  target_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  combinations_per_variant: 81
+variants:
+- all_available_1400_signed60_continue
+- all_available_1430_signed60_continue
+- all_available_1430_signed120_continue
+- all_available_1500_signed60_continue
+- all_available_1515_signed120_continue
+testing_outcome:
+  completed_at: '2026-06-23'
+  terminal_stage_counts:
+    limited_core_grid_test: 5
+  failure_reason: All five frozen variants failed limited core with zero benchmark-pass combinations; no variant reached monkey,
+    WFA, Monte Carlo, or simulated incubation.
+  aggregate_summary: backtest-campaigns/nq_spx_0dte_orderflow_confirmation/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_spx_0dte_orderflow_confirmation/campaign_results.csv
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after staged results; after OOS only rejection or promotion is allowed.
+status: completed_failed

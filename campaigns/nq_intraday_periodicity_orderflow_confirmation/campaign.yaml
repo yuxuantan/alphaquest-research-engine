@@ -1,0 +1,126 @@
+campaign_id: nq_intraday_periodicity_orderflow_confirmation
+title: NQ Intraday Periodicity With Aggregate Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: nq_intraday_periodicity_orderflow_confirmation
+hypothesis: Same-clock NQ intraday return tendencies may persist across nearby sessions
+  when the immediately preceding completed NQ orderflow window confirms the prior-slot
+  direction.
+rationale: This is an NQ-specific expression of the Heston-Korajczyk-Sadka intraday
+  periodicity anomaly with one ex-ante orderflow confirmation condition. It is not
+  a generic weekday, overnight, opening gap, LETF rebalance, or raw orderflow momentum
+  strategy.
+sources:
+- title: Intraday Patterns in the Cross-Section of Stock Returns
+  authors: Steven L. Heston, Robert A. Korajczyk, and Ronnie Sadka
+  year: 2010
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2010.01573.x
+  relevance: Documents same-clock intraday return continuation at half-hour intervals
+    using only prior occurrences of the same intraday interval.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Supports orderflow imbalance as a short-horizon price-pressure proxy.
+    This campaign uses completed Sierra aggregate trade-side flow, not full-depth
+    OFI.
+data_needs:
+- local Sierra NQ RTH one-minute OHLCV and aggregate orderflow bars
+- prebuilt NQ intraday periodicity feature CSV with prior-session-only same-slot rolling
+  means
+- completed pre-entry source-window signed, large10, and large20 imbalances
+lookahead_risks:
+- Same-clock return means are shifted one occurrence within each slot; the current
+  slot return is never used for its own signal.
+- Orderflow confirmation uses only completed bars before the entry timestamp.
+- Signals use bar close and engine execution must occur no earlier than the next bar
+  open.
+- No final session high/low, final VWAP, future orderflow, or future slot return is
+  used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_morning_orderflow_momentum_continuation
+  - nq_spx_0dte_orderflow_confirmation
+  - nq_leveraged_etf_rebalance_pressure
+  - nq_calendar_weekday_bias
+  - es_intraday_periodicity_orderflow_confirmation
+  conclusion: Eligible as an NQ-specific test because no active NQ campaign has tested
+    prior-session-only same-clock slot persistence with a single completed NQ orderflow
+    confirmation window.
+feature_construction:
+  builder: tools/build_es_intraday_periodicity_features.py
+  source: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  output: data/external/nq_intraday_periodicity_features_20110103_20260612.csv
+  lookahead_control: shift(1) within each slot excludes the current session slot return
+pre_pnl_density_audit:
+  status: PASS_WITH_GRID_PRUNING
+  artifact: research_artifacts/nq_intraday_periodicity_orderflow_confirmation_density_audit_20260623.md
+  csv: research_artifacts/nq_intraday_periodicity_orderflow_confirmation_density_audit_20260623.csv
+  selected_grid_min_signals_per_year: 72.415233
+  rejected_pre_pnl_corner: min_orderflow_imbalance=0.02 for morning_1000_signed_confirmed_slot
+  method: Signal-count only on prior-slot feature direction and completed pre-entry
+    orderflow; no PnL inspected.
+parameter_space:
+  entry.params.lookback_days:
+  - 10
+  - 20
+  - 40
+  entry.params.min_orderflow_imbalance:
+  - 0.0
+  - 0.01
+  sl.params.stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.0035
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.25
+  - 1.5
+  total_combinations_per_variant: 54
+  fixed_entry_params:
+    min_mean_return_bps: 0.75
+    direction_mode: two_sided
+variants:
+- morning_1000_signed_confirmed_slot
+- morning_1030_large10_confirmed_slot
+- late_morning_1130_signed_confirmed_slot
+- afternoon_1330_large20_confirmed_slot
+- late_afternoon_1430_large20_confirmed_slot
+rescue_policy:
+  allowed: false
+  reason: Fresh NQ-specific expression; if it fails, do not alter slots, flow modes,
+    thresholds, stops, targets, data windows, or stage criteria without explicit user
+    authorization.
+testing_plan:
+  methodology: current staged research pipeline including acceptance_oos_test
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+status: completed_failed
+result_summary:
+  evaluated_run_id: run1
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_core_grid_test: 5
+  failure_reason: >
+    All five predeclared variants failed limited_core_grid_test. Across 270
+    tested core-grid combinations, 7 were profitable and 0 passed the benchmark
+    gate. No WFA, monkey, Monte Carlo, simulated incubation, acceptance, or
+    candidate report survivor was reached.
+  best_variant_by_core_net: afternoon_1330_large20_confirmed_slot
+  best_top_core_net_profit: 657.5
+  best_top_core_profit_factor: 1.0974074074074074
+  best_top_core_failure_reason: max_best_day_concentration
+  campaign_test_summary_json: backtest-campaigns/nq_intraday_periodicity_orderflow_confirmation/campaign_test_summary.json
+  campaign_test_summary_md: backtest-campaigns/nq_intraday_periodicity_orderflow_confirmation/campaign_test_summary.md
+  campaign_results_csv: backtest-campaigns/nq_intraday_periodicity_orderflow_confirmation/campaign_results.csv
+  candidate_strategy_report_created: false

@@ -1,0 +1,113 @@
+campaign_id: nq_tech_nonleadership_orderflow_confirmation
+title: NQ Tech Non-Leadership With Completed Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: nq_tech_relative_nonleadership_orderflow_confirmation
+hypothesis: When technology-sector relative strength is not in a leadership regime, NQ downside continuation should be more plausible only if the current RTH session also shows completed aggregate sell-flow confirmation.
+rationale: This is a distinct NQ-specific composite, not a rescue of the prior state-only tech relative-strength campaign. The prior edge traded lagged XLK/SPY ranks alone; this campaign requires completed NQ price/orderflow evidence before any signal can fire.
+sources:
+- title: Do Industries Explain Momentum?
+  authors: Tobias J. Moskowitz and Mark Grinblatt
+  year: 1999
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00146
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00146
+  relevance: Motivates industry-relative momentum and the possibility that technology-sector leadership can matter for the technology-heavy Nasdaq futures contract.
+- title: Do Industries Lead Stock Markets?
+  authors: Harrison Hong, Walter Torous, and Rossen Valkanov
+  year: 2007
+  venue: Journal of Financial Economics 83(2), 367-396
+  doi: 10.1016/j.jfineco.2005.09.010
+  link: https://doi.org/10.1016/j.jfineco.2005.09.010
+  relevance: Supports testing whether industry returns contain information for broad index futures, with NQ as the technology-heavy expression.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates using orderflow imbalance as short-horizon price-pressure evidence; this campaign uses completed-bar Sierra aggregate signed volume, not quote-level OFI.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_tech_relative_strength_features_20110103_20260612.csv
+- completed NQ RTH one-minute aggregate signed-volume fields
+data_quality_caveats:
+- XLK and SPY adjusted-close histories come from the local Yahoo daily cache and may require vendor verification before any promotion beyond candidate review.
+- Sierra orderflow fields are completed-bar aggregates, not tick-path or quote-level OFI.
+- The rank threshold includes non-leadership states up to 0.60 for density viability, so this campaign is not labelled as a lower-tail weakness-only strategy.
+lookahead_risks:
+- A session dated D can only use XLK/SPY observations on or before D minus one business day.
+- The NQ confirmation gate uses only completed RTH bars through the signal bar close.
+- Entry is emitted at the signal-bar close and filled no earlier than the next-bar boundary by the staged engine.
+- No same-day ETF close, final session high/low, final VWAP, future orderflow, or post-entry return is used.
+failure_modes:
+- XLK/SPY relative strength may be too stale for intraday NQ exposure.
+- Broad non-leadership thresholds may be too weak after costs.
+- Orderflow confirmation may arrive after the profitable portion of the move.
+- Aggregate Sierra flow may not represent informed pressure.
+- The edge may still fail monkey, WFA, Monte Carlo, or prop-rule simulation even if core net profit is positive.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_tech_relative_strength_intraday
+  - nq_sector_rotation_risk_appetite
+  - nq_sector_opening_breadth_orderflow_continuation
+  - nq_spy_turnover_orderflow_attention
+  conclusion: Eligible as a distinct NQ-only composite because the prior tech-relative-strength campaign used ETF state alone, while this campaign requires completed NQ price/orderflow confirmation before any signal.
+pre_pnl_density_audit:
+  method: Signal-count only on lagged XLK/SPY features and completed NQ bars; no PnL or trade outcomes inspected.
+  artifact_csv: research_artifacts/nq_tech_nonleadership_orderflow_confirmation_density_audit_20260623.csv
+  artifact_md: research_artifacts/nq_tech_nonleadership_orderflow_confirmation_density_audit_20260623.md
+  decision: PASS
+  rank_max_grid: &id001
+  - 0.6
+  - 0.55
+  - 0.5
+  min_orderflow_imbalance_grid: &id002
+  - 0.0
+  - 0.0025
+  - 0.005
+  fixed_price_tolerance_ticks: -8
+  min_signal_density_per_year: 31.94
+  max_signal_density_per_year: 50.81
+  trade_count_gate_selected_before_pnl: 35
+parameter_space:
+  entry_parameters:
+    entry.params.rank_max: *id001
+    entry.params.min_orderflow_imbalance: *id002
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.004
+    - 0.006
+    - 0.008
+  target_parameters:
+    tp.params.target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+  combinations_per_variant: 81
+variants:
+- tech5d_nonleadership_1030_signed_flow_short
+- tech5d_nonleadership_1130_signed_flow_short
+- tech5d_nonleadership_1130_vwap_signed_short
+- tech5d_nonleadership_1200_signed_flow_short
+- tech1d_nonleadership_1130_signed_flow_short
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ campaign sees staged results; after OOS only rejection or promotion is allowed.
+status: completed_failed
+completed_at: '2026-06-23'
+testing_outcome:
+  decision: FAIL
+  variants_tested: 5
+  terminal_stage_summary:
+    limited_core_grid_test: 5
+  monkey_reached: 0
+  wfa_reached: 0
+  candidate_strategy_report_created: false
+  campaign_summary_path: backtest-campaigns/nq_tech_nonleadership_orderflow_confirmation/campaign_test_summary.json
+  failure_reason: All five frozen NQ tech non-leadership/orderflow-confirmation variants failed limited_core_grid_test. No run reached limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, frozen validation, acceptance, or candidate reporting.

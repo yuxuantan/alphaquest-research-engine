@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.cboe_implied_correlation_orderflow_confirmation import CboeImpliedCorrelationOrderflowConfirmationEntry
+
+ENTRY_MODULE = CboeImpliedCorrelationOrderflowConfirmationEntry

@@ -1,0 +1,103 @@
+campaign_id: nq_implied_correlation_orderflow_confirmation
+title: NQ Implied Correlation With Completed Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: cboe_implied_correlation_nq_orderflow_confirmation
+hypothesis: Lagged SPX implied-correlation stress states may transmit broad-index risk pressure into NQ only when completed same-session NQ orderflow confirms downside pressure.
+rationale: This is a distinct composite after the state-only NQ implied-correlation campaign failed WFA. The new edge does not trade the Cboe state alone; every signal requires completed NQ aggregate or large-lot flow confirmation before entry.
+sources:
+- title: 'The Price of Correlation Risk: Evidence from Equity Options'
+  authors: Joost Driessen, Pascal Maenhout, and Grigory Vilkov
+  year: 2009
+  venue: Journal of Finance
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2009.01467.x
+  relevance: Motivates option-implied correlation as a priced marketwide risk state.
+- title: Option-Implied Correlations and the Price of Correlation Risk
+  authors: Joost Driessen, Pascal Maenhout, and Grigory Vilkov
+  year: 2013
+  venue: SSRN working paper
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2166829
+  relevance: Documents option-implied correlation and correlation-risk premia distinct from variance risk.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as short-horizon pressure evidence; this campaign uses completed-bar Sierra aggregate flow, not quote-level OFI.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_cboe_implied_correlation_features_20110103_20260612.csv
+- completed NQ RTH one-minute aggregate signed-volume and large-lot fields
+lookahead_risks:
+- Cboe implied-correlation observations are strictly lagged before the NQ session date.
+- The NQ flow confirmation gate uses only completed RTH bars through the signal bar close.
+- Entry is emitted at the signal-bar close and filled no earlier than the next-bar boundary by the staged engine.
+- No same-day Cboe close, final NQ session high/low, final VWAP, future orderflow, or post-entry return is used.
+failure_modes:
+- Daily implied-correlation states may be too slow for intraday NQ.
+- High implied correlation can indicate stress but direction may invert without dealer-position sign information.
+- Sierra aggregate flow may confirm exhaustion rather than informed pressure.
+- The state may still fail WFA even if limited core and monkey improve.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_cboe_implied_correlation_intraday
+  - nq_cboe_vxn_vix_dispersion_intraday
+  - nq_cboe_put_call_sentiment_intraday
+  - nq_vix_pressure_orderflow_confirmation
+  conclusion: Eligible as a distinct composite because the prior NQ implied-correlation campaign traded fixed-time lagged state alone, while this campaign requires completed NQ orderflow confirmation.
+pre_pnl_density_audit:
+  method: Signal-count only on lagged Cboe implied-correlation features and completed NQ flow; no PnL or trade outcomes inspected.
+  artifact_csv: research_artifacts/nq_implied_correlation_orderflow_confirmation_density_audit_20260623.csv
+  artifact_md: research_artifacts/nq_implied_correlation_orderflow_confirmation_density_audit_20260623.md
+  decision: PASS
+  rank_grid: &id001
+  - 0.55
+  - 0.6
+  - 0.65
+  min_orderflow_imbalance_grid: &id002
+  - 0.0
+  - 0.0025
+  - 0.005
+  trade_count_gate_selected_before_pnl: 35
+parameter_space:
+  entry_parameters:
+    entry.params.<correlation_rank_key>: *id001
+    entry.params.min_orderflow_imbalance: *id002
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0025
+    - 0.004
+    - 0.006
+  target_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  combinations_per_variant: 81
+variants:
+- shortterm_corr_1200_signed_flow_short
+- shortterm_corr_1330_signed_flow_short
+- shortterm_corr_1330_large20_flow_short
+- rising_corr_1330_signed_flow_short
+- rising_corr_1330_large20_flow_short
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ campaign sees staged results; after OOS only rejection or promotion is allowed.
+status: completed_failed
+completed_at: '2026-06-23'
+testing_outcome:
+  terminal_stage_counts:
+    limited_core_grid_test: 2
+    limited_monkey_test: 1
+    walk_forward_analysis: 2
+  failure_reason: No frozen variant passed the full staged validation flow. Two variants reached walk-forward analysis and both failed OOS robustness.
+  results_csv: backtest-campaigns/nq_implied_correlation_orderflow_confirmation/campaign_results.csv
+  campaign_summary: backtest-campaigns/nq_implied_correlation_orderflow_confirmation/campaign_test_summary.json
+  methodology_audit: campaigns/nq_implied_correlation_orderflow_confirmation/methodology_audit.md
+  candidate_strategy_report_created: false
