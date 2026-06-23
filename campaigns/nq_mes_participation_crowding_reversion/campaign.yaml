@@ -1,0 +1,94 @@
+campaign_id: nq_mes_participation_crowding_reversion
+title: NQ MES Participation Crowding Reversion
+decision: FAIL
+created_at: '2026-06-22'
+status: completed_failed
+instrument: NQ
+market_timezone: America/New_York
+edge_family: nq_mes_participation_crowding_reversion
+hypothesis: NQ may mean-revert intraday after directional NQ moves that occur while MES notional-equivalent or trade-count
+  participation is unusually high for the same clock time.
+rationale: This is a direct, pre-PnL NQ port of the ES/MES participation crowding edge. It treats MES participation as a smaller-contract
+  crowding proxy while measuring the tradable move with NQ return columns.
+sources:
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates conditioning on retail-like trading intensity when testing whether short-horizon order pressure predicts
+    or reverses.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures trading and Micro E-mini examples; MES is used here only as a smaller-contract participation
+    proxy.
+- title: Micro E-mini futures and options
+  authors: CME Group
+  year: 2026
+  link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+  relevance: Supports the Micro E-mini smaller-contract participation proxy and 1:10 notional relationship used by the local
+    feature cache.
+data_needs:
+- data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv
+- NQ/MES aligned completed one-minute RTH bars from 2019-05-06 through 2026-06-12
+- same-clock prior MES participation ranks shifted to exclude current/future observations
+lookahead_risks:
+- Entry uses only completed one-minute bars; a 10:30 decision uses the completed 10:29-10:30 bar and enters next bar open
+  or later.
+- Same-clock ranks use prior same-clock observations only and are unavailable during rank warmup.
+- NQ return columns measure only the completed lookback ending at the signal close.
+- No future NQ return, final session high/low, final VWAP, or post-entry MES participation is used.
+failure_modes:
+- MES participation may be an ES-specific proxy and may not explain NQ reversals.
+- High MES participation may accompany valid information shocks instead of crowding.
+- The 2019-plus post-MES-launch history may be too short or regime-specific for WFA robustness.
+- The edge may be a sibling of already rejected trend-filtered NQ MES crowding variants and fail as the same economic family.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_mes_crowding_trend_pullback_reversion
+  - nq_mes_crowding_vol_filtered_trend_pullback_reversion
+  - nq_high_semivariance_mes_trend_pullback_crowding
+  conclusion: Eligible as a final direct port because this campaign removes trend-pullback and semivariance filters and tests
+    the simpler fixed-time participation-crowding fade; it should be rejected if staged evidence behaves like the prior NQ
+    MES-crowding failures.
+source_es_template: campaigns/es_mes_participation_crowding_reversion
+pre_pnl_density:
+  status: completed
+  artifact: research_artifacts/nq_mes_participation_crowding_reversion_density_audit_20260622.md
+  initial_density_rejection_artifact: research_artifacts/nq_mes_participation_crowding_reversion_initial_density_rejected_20260622.md
+  reformulated_before_pnl:
+  - morning_notional_up_reversal_short_1030
+  - afternoon_trade_up_reversal_short_1400
+  limited_core_all_variants_passed_50_signals_per_year: true
+  full_history_caveat: afternoon_trade_down_reversal_long_1400 and morning_notional_down_reversal_long_1030 have weakest
+    full-history parameter corners below 50 signals/year; later WFA and trade-count gates must reject sparse selections.
+variants:
+- morning_notional_down_reversal_long_1030
+- morning_notional_up_reversal_short_1030
+- midday_notional_two_sided_reversal_1200
+- afternoon_trade_down_reversal_long_1400
+- afternoon_trade_up_reversal_short_1400
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn; after OOS, only rejection or promotion is allowed.
+result_summary:
+  verdict: FAIL
+  completed_at: 2026-06-22
+  campaign_test_summary: backtest-campaigns/nq_mes_participation_crowding_reversion/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_mes_participation_crowding_reversion/campaign_results.csv
+  methodology_audit: campaigns/nq_mes_participation_crowding_reversion/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    limited_core_grid_test: 3
+    limited_monkey_test: 2
+testing_plan:
+  methodology: current staged research pipeline
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0

@@ -1,0 +1,128 @@
+campaign_id: nq_mes_micro_flow_divergence_reversion
+title: NQ MES micro-flow divergence reversion
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+edge_family: cross_index_mes_micro_flow_divergence_reversion
+hypothesis: Completed MES-vs-NQ signed-flow or price divergence may identify broad equity-index micro-flow pressure
+  that NQ mean-reverts intraday.
+rationale: This is an ES-derived microstructure edge port. ES evidence showed MES-vs-ES flow divergence could pass
+  core and sometimes monkey gates before failing later validation. For NQ, MES is only a cross-index micro-flow
+  proxy because no MNQ trade-orderflow cache is available locally; the campaign must fail closed if that proxy does
+  not survive the full staged pipeline.
+sources:
+- title: Individual Investor Trading and Stock Returns
+  authors: Ron Kaniel, Gideon Saar, and Sheridan Titman
+  year: 2008
+  doi: 10.1111/j.1540-6261.2008.01316.x
+  relevance: Motivates retail-like flow as short-horizon liquidity provision and reversal pressure.
+- title: Do Retail Trades Move Markets?
+  authors: Brad M. Barber, Terrance Odean, and Ning Zhu
+  year: 2009
+  doi: 10.1093/rfs/hhn035
+  relevance: Motivates small-trade imbalance as coordinated retail-like pressure.
+- title: One Security, Many Markets
+  authors: Joel Hasbrouck
+  year: 1995
+  doi: 10.1111/j.1540-6261.1995.tb04054.x
+  relevance: Motivates linked-market price discovery differences and temporary dislocations.
+data_needs:
+- data/cache/orderflow/nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny.csv
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/cache/orderflow/mes_sierra_trade_orderflow_1m_20190506_20260616_full_rth_ny.parquet
+- completed NQ and MES RTH one-minute trade-orderflow bars with signed volume and large-trade aggregates
+data_caveat: MES is a cross-index micro-flow proxy for NQ. This is not native MNQ orderflow and must be rejected
+  if validation does not support the proxy.
+lookahead_risks:
+- Entry uses completed one-minute bars and enters no earlier than the next bar open.
+- Flow-divergence features are rolling same-session windows using only current and prior completed bars.
+- Signal timestamps are fixed by config and do not use future session high/low, final VWAP, future returns, or post-entry
+  flow.
+- NQ/MES alignment is one-to-one by timestamp in America/New_York RTH bars.
+failure_modes:
+- MES may proxy ES-specific retail flow rather than NQ-specific micro-flow.
+- MES may be the informed market rather than a crowding/liquidity-demand proxy.
+- NQ volatility and larger point swings can overwhelm percent-stop variants after costs.
+- The best ES evidence still failed later validation, so NQ must pass full staged tests rather than core-only profitability.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_mes_participation_crowding_reversion
+  - nq_mes_crowding_trend_pullback_reversion
+  - nq_mes_crowding_vol_filtered_trend_pullback_reversion
+  - nq_trend_filtered_mes_participation_crowding
+  - nq_pivot_filtered_mes_participation_crowding_reversion
+  conclusion: Eligible as a distinct NQ test because it uses signed-flow and price-divergence features, not participation-share
+    rank or trend-pullback crowding mechanics.
+pre_pnl_density_audit:
+  status: PASS
+  artifact: research_artifacts/nq_mes_micro_flow_divergence_reversion_density_audit_final_20260622.md
+  csv: research_artifacts/nq_mes_micro_flow_divergence_reversion_density_audit_final_20260622.csv
+  min_signals_per_year: 50.4
+  max_signals_per_year: 247.561364
+  sessions: 1760
+  years_252: 6.984127
+  initial_status: FAIL
+  initial_artifact: research_artifacts/nq_mes_micro_flow_divergence_reversion_density_audit_20260622.md
+  initial_csv: research_artifacts/nq_mes_micro_flow_divergence_reversion_density_audit_20260622.csv
+  reform_attempt_1:
+    status: applied_pre_pnl
+    changed_variants:
+      morning_mes_buy_pressure_reversion_short:
+      - 0.005
+      - 0.01
+      - 0.015
+      - 0.02
+      morning_mes_sell_pressure_reversion_long:
+      - 0.005
+      - 0.01
+      - 0.015
+      - 0.02
+      afternoon_mes_large20_buy_pressure_short:
+      - 0.005
+      - 0.01
+      - 0.02
+      - 0.03
+    reason: Density only; no NQ PnL inspected.
+    unchanged: entry module, stop module, take-profit module, direction, signal times, data window, costs, fills,
+      sessions, validation gates
+source_es_campaign: es_mes_micro_flow_divergence_reversion
+source_es_evidence:
+  best_source_run: midday_mes_price_richness_fade/ES/stop_widen_rescue1
+  why_selected: After duplicate NQ ports were excluded, this remaining ES family had 36/36 profitable core combinations
+    and passed limited monkey before failing WFA; NQ port was declared before NQ PnL.
+variants:
+- morning_mes_sell_pressure_reversion_long
+- morning_mes_buy_pressure_reversion_short
+- midday_mes_price_richness_fade
+- afternoon_mes_large20_buy_pressure_short
+- afternoon_mes_large20_sell_pressure_long
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue is authorized for this NQ search turn.
+pre_pnl_config_fix_1:
+  status: applied
+  reason: run1 halted before testing because data.feature_set used a descriptive unsupported value.
+  change: set all variant data.feature_set values to none and rerun as run2
+  unchanged: strategy mechanics, grids, costs, data file, sessions, and gates
+status: completed_failed
+completed_at: '2026-06-22'
+result_summary:
+  evaluated_run_id: run2
+  ignored_run_note: run1 halted before testing due unsupported data.feature_set; all result rollups use clean run2
+    only.
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_core_grid_test: 2
+    limited_monkey_test: 3
+  failure_reason: All five variants failed the clean run2 staged flow. Two variants failed limited core grid stability;
+    three variants passed core but failed limited monkey robustness before WFA.
+  best_variant_by_core_net: morning_mes_buy_pressure_reversion_short
+  best_variant_by_stage: morning_mes_buy_pressure_reversion_short
+  campaign_test_summary_json: backtest-campaigns/nq_mes_micro_flow_divergence_reversion/campaign_test_summary.json
+  campaign_test_summary_md: backtest-campaigns/nq_mes_micro_flow_divergence_reversion/campaign_test_summary.md
+  campaign_results_csv: backtest-campaigns/nq_mes_micro_flow_divergence_reversion/campaign_results.csv
+  candidate_strategy_report_created: false

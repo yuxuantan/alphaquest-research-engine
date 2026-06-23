@@ -1,0 +1,73 @@
+campaign_id: nq_daily_time_series_momentum
+title: NQ Daily Time-Series Momentum
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Completed multi-session NQ RTH trends may continue intraday because trend-following demand and delayed
+  information diffusion can persist after the cash open.
+rationale: This campaign tests the trend-following counterpart to the rejected NQ daily short-term reversal campaign.
+  Signals use only completed prior NQ RTH closes; no current-session final close or overnight exposure is used.
+sources:
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics 104(2), 228-250
+  doi: 10.1016/j.jfineco.2011.11.003
+  link: https://doi.org/10.1016/j.jfineco.2011.11.003
+  relevance: Documents time-series momentum across futures and motivates testing prior trend continuation in NQ.
+- title: A Century of Evidence on Trend-Following Investing
+  authors: Brian Hurst, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2017
+  venue: AQR practitioner research
+  link: https://www.aqr.com/Insights/Research/White-Papers/A-Century-of-Evidence-on-Trend-Following-Investing
+  relevance: Provides practitioner evidence that trend-following effects can persist across long histories but require
+    robust out-of-sample validation.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV cache in America/New_York
+- deterministic 5-minute aggregation from completed 1-minute bars
+- prior completed RTH closes with enough warmup history
+- same-day stop, target, and forced-flatten checks
+lookahead_risks:
+- Trend direction uses only RTH closes recorded before the signal session.
+- Signals at 10:00, 10:30, or 11:30 ET use completed bars and enter no earlier than next bar open.
+- No current-session final close, future high/low, final VWAP, or future volume is used.
+failure_modes:
+- NQ daily trend may reverse intraday after the cash open rather than continue.
+- The effect may require overnight holding, which this campaign forbids.
+- Results may concentrate in one side, one regime, or one narrow threshold and fail monkey/WFA robustness.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_daily_time_series_momentum
+  - nq_daily_short_term_reversal
+  - nq_overnight_intraday_reversal
+  conclusion: Eligible as the NQ trend-following counterpart to the rejected NQ daily reversal campaign; no active
+    NQ daily time-series momentum campaign exists.
+pre_pnl_density:
+  status: approved_for_authoring
+  artifact: research_artifacts/nq_daily_time_series_momentum_density_audit_20260622.md
+  screen: research_artifacts/nq_daily_time_series_momentum_density_audit_20260622.csv
+  note: All five variants have frozen NQ entry grids selected from completed-close signal counts before PnL testing.
+source_es_campaign: es_daily_time_series_momentum
+variants:
+- short_5d_continuation_two_sided_1000
+- twenty_day_trend_two_sided_1000
+- sixty_day_trend_two_sided_1030
+- twenty_day_long_only_1000
+- vol_norm_20d_trend_two_sided_1130
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in current NQ search; thresholds are fixed from pre-PnL density only.
+status: completed_failed
+completed_at: '2026-06-22'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_daily_time_series_momentum/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_daily_time_series_momentum/campaign_results.csv
+  methodology_audit: campaigns/nq_daily_time_series_momentum/methodology_audit.md
+  density_audit: research_artifacts/nq_daily_time_series_momentum_density_audit_20260622.md
+  failure_reason: All five variants failed limited_core_grid_test; no variant reached monkey, WFA, Monte Carlo,
+    simulated incubation, acceptance, or candidate reporting.

@@ -23,6 +23,7 @@ def build_features(
     rank_window: int = 252,
     rank_min_periods: int = 80,
     start_session: str = "2011-01-03",
+    market_label: str = "ES",
 ) -> pd.DataFrame:
     bars = pd.read_parquet(bars_input, columns=["timestamp"])
     bars["timestamp"] = pd.to_datetime(bars["timestamp"])
@@ -69,7 +70,7 @@ def build_features(
         direction="backward",
         allow_exact_matches=False,
     ).sort_values("session_ts", kind="mergesort")
-    merged["availability_rule"] = "latest ETF daily close strictly before ES session_date"
+    merged["availability_rule"] = f"latest ETF daily close strictly before {market_label} session_date"
     out = merged[merged["session_date"] >= start_session].copy()
     out["observation_date"] = pd.to_datetime(out["observation_date"]).dt.date.astype(str)
     columns = [
@@ -136,8 +137,16 @@ def main() -> None:
     parser.add_argument("--lqd-input", default=DEFAULT_LQD_INPUT)
     parser.add_argument("--spy-input", default=DEFAULT_SPY_INPUT)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument("--market-label", default="ES")
     args = parser.parse_args()
-    features = build_features(args.bars_input, args.hyg_input, args.lqd_input, args.spy_input, args.output)
+    features = build_features(
+        args.bars_input,
+        args.hyg_input,
+        args.lqd_input,
+        args.spy_input,
+        args.output,
+        market_label=args.market_label,
+    )
     valid = features.dropna(subset=["hyg_ret_1d_rank_252", "hyg_ret_3d_rank_252", "hyg_ret_5d_rank_252"])
     print(f"wrote {args.output}")
     print(f"rows={len(features)} valid_rank_rows={len(valid)}")

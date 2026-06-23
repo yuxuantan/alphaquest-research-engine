@@ -1,0 +1,1 @@
+from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry

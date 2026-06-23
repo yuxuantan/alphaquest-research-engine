@@ -1,0 +1,1 @@
+from propstack.strategy_modules.entry.ofr_financial_stress import OfrFinancialStressEntry

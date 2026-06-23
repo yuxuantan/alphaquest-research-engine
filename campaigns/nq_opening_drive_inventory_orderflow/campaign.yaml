@@ -1,0 +1,90 @@
+campaign_id: nq_opening_drive_inventory_orderflow
+title: NQ opening-drive inventory orderflow
+decision: FAIL
+created_at: '2026-06-22'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: opening_drive_inventory_orderflow
+hypothesis: A high-volume first-30/60-minute NQ opening drive with aligned aggressive orderflow can leave
+  intraday inventory pressure. If price and cumulative delta remain aligned, continuation may persist;
+  if price stalls or diverges from opening pressure, the same inventory pressure may be absorbed and fadeable.
+sources:
+- title: Market Intraday Momentum
+  authors: Gao, Lei; Han, Yufeng; Li, Sophia Zhengzi; Zhou, Guofu
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  relevance: 'Documents that early intraday market returns contain predictive information for later same-day
+    market returns, especially on higher volume and volatility days.
+
+    '
+- title: Intraday Patterns in the Cross-Section of Stock Returns
+  authors: Heston, Steven L.; Korajczyk, Robert A.; Sadka, Ronnie
+  year: 2010
+  venue: Journal of Finance / working paper
+  link: https://arxiv.org/abs/1005.3535
+  relevance: 'Shows systematic intraday continuation and short-horizon reversal patterns linked to trading-flow
+    timing, volume, imbalance, volatility, and bid-ask effects.
+
+    '
+- title: The Price Impact of Order Book Events
+  authors: Cont, Rama; Kukanov, Arseniy; Stoikov, Sasha
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: 'Motivates using orderflow imbalance as a short-horizon price-pressure proxy. This campaign
+    uses aggregated trade-side flow, not full depth OFI.
+
+    '
+rationale: This campaign ports the ES opening-drive inventory/absorption mechanics to NQ before any NQ
+  staged result is inspected, with NQ-scaled opening-return thresholds based on unconditional opening-drive
+  distributions. It remains distinct from fixed-time signed-flow persistence because the signal is anchored
+  to the completed RTH opening window and prior-session opening-volume rank.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- 1-minute RTH bars with signed_volume, total volume, and completed-bar OHLC
+lookahead_risks:
+- Opening-window return, imbalance, and volume are only used after the relevant 30-minute or 60-minute
+  window is complete.
+- Entry signals are emitted at the completed bar close and filled at the next bar open by the backtest
+  engine.
+- Opening-volume rank is computed from prior sessions only inside the entry module; the current session
+  is appended after the due slot is evaluated.
+- VWAP and cumulative delta fields are built only from bars completed up to the signal bar.
+- No final-session high, low, VWAP, volume profile, or future range is used.
+failure_modes:
+- Opening-drive effects may be absorbed by NQ liquidity and vanish after commissions/slippage.
+- The edge may be concentrated in crisis or high-volatility years.
+- Directional variants may be sparse after volume-rank and opening-pressure filters.
+- Continuation and fade mechanics may be regime-dependent and fail WFA.
+- Aggregated signed-volume is a Sierra bar-level proxy, not quote-level OFI.
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue is authorized for this NQ campaign; all mechanics and parameter spaces
+    are frozen before staged testing.
+variants:
+- open30_flow_continuation_1030
+- open60_flow_continuation_1130
+- open30_absorbed_pressure_fade_1015
+- open60_exhaustion_fade_1300
+- open30_price_flow_divergence_fade_1400
+result_summary:
+  decision: FAIL
+  report_path: backtest-campaigns/nq_opening_drive_inventory_orderflow/campaign_test_summary.json
+  runs: 5
+  passed_variants: 0
+  terminal_stage_counts:
+    walk_forward_analysis: 1
+    limited_core_grid_test: 2
+    limited_monkey_test: 2
+  failure_reason: All five predeclared NQ opening-drive inventory/orderflow variants failed before completing
+    the full staged flow; no rescue applied.
+  best_core_profitable_rate: 1.0
+  best_core_variant: open30_flow_continuation_1030
+  notes:
+  - open30_flow_continuation_1030 passed limited core and monkey but failed WFA early-exit because no
+    in-sample grid row satisfied the configured selection filter.
+  - open60_flow_continuation_1130 and open30_price_flow_divergence_fade_1400 passed limited core but failed
+    limited_monkey_test.
+  - open30_absorbed_pressure_fade_1015 and open60_exhaustion_fade_1300 failed limited_core_grid_test.

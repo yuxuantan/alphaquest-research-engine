@@ -1,0 +1,90 @@
+campaign_id: nq_vwap_pullback_continuation
+title: NQ VWAP Pullback Continuation
+decision: FAIL
+created_at: '2026-06-22'
+status: completed_failed
+instrument: NQ
+market_timezone: America/New_York
+edge_family: nq_vwap_pullback_continuation
+hypothesis: NQ may continue in the direction of an established intraday move after a completed pullback to session VWAP reclaims
+  or rejects the VWAP side of value.
+rationale: This is an NQ port of the ES VWAP pullback continuation family with min-drive thresholds scaled from local ES/NQ
+  completed-session range ratios before any NQ PnL testing.
+sources:
+- title: 'Improving VWAP Strategies: A Dynamical Volume Approach'
+  authors: Jedrzej Bialkowski, Serge Darolles, Gaelle Le Fol
+  year: 2008
+  link: https://ideas.repec.org/p/eve/wpaper/06-08.html
+  relevance: Frames VWAP as an institutional execution benchmark and models intraday volume dynamics.
+- title: Optimal VWAP Trading Strategy and Relative Volume
+  authors: James McCulloch and Vladimir Kazakov
+  year: 2007
+  link: https://ideas.repec.org/p/uts/rpaper/201.html
+  relevance: Describes VWAP as an institutional execution-quality benchmark.
+- title: Volume Weighted Average Price Optimal Execution
+  authors: Olivier Gueant and Jiang Pu
+  year: 2015
+  link: https://stanford.edu/~boyd/papers/vwap_opt_exec
+  relevance: Frames VWAP benchmark execution under transaction costs and intraday information.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- completed NQ 5-minute RTH bars with session VWAP from completed bars
+- one-minute execution detail for fills
+lookahead_risks:
+- VWAP uses only current and prior completed intraday bars at signal time.
+- Opening-drive state uses only completed early RTH bars.
+- Signals use completed-bar conditions and enter next bar open or later.
+- No final session VWAP, final high/low, future return, or future volume profile is used.
+failure_modes:
+- NQ VWAP pullbacks may mean-revert instead of continue.
+- A VWAP reclaim signal may arrive too late after slippage and commissions.
+- Performance may concentrate in high-volatility regimes or one side only.
+- Opening-drive variants may have too few trades for WFA density gates.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_opening_drive_inventory_orderflow
+  - nq_morning_orderflow_momentum_continuation
+  - nq_daily_time_series_momentum
+  - nq_range_compression_breakout
+  conclusion: Eligible as a distinct VWAP benchmark-pullback test, not opening-drive inventory, pure momentum, daily trend,
+    or compression breakout.
+source_es_template: campaigns/es_vwap_pullback_continuation/variants
+pre_pnl_density:
+  status: approved_for_testing
+  artifact: research_artifacts/nq_vwap_pullback_continuation_density_audit_20260622.md
+  initial_density_rejection_artifact: research_artifacts/nq_vwap_pullback_continuation_initial_density_rejected_20260622.md
+  reform1_density_rejection_artifact: research_artifacts/nq_vwap_pullback_continuation_density_reform1_rejected_20260622.md
+  limited_core_all_variants_passed_50_signals_per_year: true
+  full_history_all_variants_passed_50_signals_per_year: true
+  reformulated_before_pnl:
+  - Initial NQ-scaled drive grid [5, 9, 14] left sparse strict corners in limited-core density.
+  - Final grids use min_drive_points [2, 3, 5], required_trend_closes [2, 3] where applicable, and failed_break_min_ticks
+    [0, 1, 2] where applicable.
+variants:
+- morning_trend_reclaim_two_sided
+- morning_opening_drive_pullback_long
+- morning_opening_drive_pullback_short
+- midday_trend_reclaim_two_sided
+- failed_vwap_break_two_sided
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn; after OOS, only rejection or promotion is allowed.
+result_summary:
+  verdict: FAIL
+  completed_at: 2026-06-22
+  campaign_test_summary: backtest-campaigns/nq_vwap_pullback_continuation/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_vwap_pullback_continuation/campaign_results.csv
+  methodology_audit: campaigns/nq_vwap_pullback_continuation/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    limited_core_grid_test: 5
+testing_plan:
+  methodology: current staged research pipeline
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0

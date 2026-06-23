@@ -1,0 +1,133 @@
+campaign_id: nq_volatility_managed_intraday_premium
+title: NQ Volatility Managed Intraday Premium
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: NQ intraday long exposure may have better risk-adjusted performance when lagged realized volatility, range, absolute
+  movement, or downside semivolatility is low or falling.
+rationale: This is an NQ port of the existing ES volatility-managed intraday premium campaign. NQ expresses the same U.S.
+  equity-index risk premium with higher technology/growth sensitivity and larger intraday volatility, so the volatility-management
+  edge is tested with NQ-specific lagged RTH volatility features and NQ costs.
+sources:
+- title: Volatility-Managed Portfolios
+  authors: Alan Moreira and Tyler Muir
+  year: 2017
+  venue: Journal of Finance 72(4), 1611-1644
+  doi: 10.1111/jofi.12513
+  link: https://doi.org/10.1111/jofi.12513
+  relevance: Lagged volatility states can condition factor exposure because volatility changes are not fully offset by expected-return
+    changes.
+- title: Volatility Managed Portfolios
+  authors: Alan Moreira and Tyler Muir
+  year: 2016
+  venue: NBER Working Paper 22208
+  link: https://www.nber.org/papers/w22208
+  relevance: Working-paper version documents volatility-managed exposure across equity and other risk premia.
+- title: The Economic Value of Volatility Timing
+  authors: Jeff Fleming, Chris Kirby, and Barbara Ostdiek
+  year: 2001
+  venue: Journal of Finance 56(1), 329-352
+  doi: 10.1111/0022-1082.00327
+  link: https://doi.org/10.1111/0022-1082.00327
+  relevance: Short-horizon volatility timing can add economic value under realistic estimation and transaction-cost assumptions.
+- title: On the Performance of Volatility-Managed Portfolios
+  authors: Scott Cederburg, Michael S. O Doherty, Feifei Wang, and Xuemin Yan
+  year: 2020
+  venue: Journal of Financial Economics 138(1), 95-117
+  doi: 10.1016/j.jfineco.2020.04.015
+  link: https://doi.org/10.1016/j.jfineco.2020.04.015
+  relevance: Documents instability caveats, motivating fail-closed robustness gates.
+data_needs:
+- timezone-aware NQ RTH 1-minute bars
+- lagged prior-session NQ volatility feature rows from data/external/nq_lagged_volatility_features_20110103_20260612.csv
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The lagged volatility features are computed from completed NQ RTH OHLC bars and shifted one RTH session.
+- This is a fixed-contract intraday approximation, not continuous volatility-scaled portfolio exposure.
+- Same-bar stop/target conflicts use pessimistic OHLC handling.
+lookahead_risks:
+- No current-session realized volatility, range, high, low, close, final VWAP, or final daily return is used in the volatility
+  state.
+- The signal uses the completed entry-time bar and the engine enters no earlier than the next bar open.
+- Thresholds and feature definitions are declared before staged PnL testing.
+failure_modes:
+- The NQ intraday long premium may be too weak after costs in fixed-contract form.
+- Low-volatility states may simply reduce trade count and create sparse fragile winners.
+- Performance may be crisis-regime or recent-date concentrated.
+- WFA may reject because selected in-sample windows do not generalize.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_volatility_managed_intraday_premium
+  - nq_volatility_filtered_intraday_momentum_priority
+  - nq_vpin_toxicity_continuation
+  - nq_morning_orderflow_momentum_continuation
+  conclusion: Eligible as a direct NQ port of the ES volatility-managed intraday premium edge; distinct from NQ orderflow
+    momentum, VPIN toxicity, and volatility-filtered momentum priority.
+pre_pnl_density_audit:
+  method: Entry-condition count only on the shifted NQ lagged-volatility feature file; no PnL, stop, target, monkey, WFA,
+    Monte Carlo, prop simulation, or holdout result was inspected.
+  date_range: 2011-01-03 through 2026-06-12
+  valid_rank_rows: 3733
+  vol20_rank_252: <=0.25/0.35/0.45 produced about 70/90/110 candidate sessions per year before execution filters.
+  range10_rank_252: <=0.25/0.35/0.45 produced about 71/90/113 candidate sessions per year before execution filters.
+  absret5_rank_252: <=0.25/0.35/0.45 produced about 65/89/110 candidate sessions per year before execution filters.
+  downside20_rank_252: <=0.25/0.35/0.45 produced about 65/87/113 candidate sessions per year before execution filters.
+  vol5_over_vol20: <=0.60/0.70/0.80 produced about 57/82/111 candidate sessions per year before execution filters.
+  decision: PASS
+parameter_space:
+  rank_variants:
+    entry.params.vol_rank_max:
+    - 0.25
+    - 0.35
+    - 0.45
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  vol_downshift_variant:
+    entry.params.vol_ratio_max:
+    - 0.6
+    - 0.7
+    - 0.8
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  combinations_per_variant: 27
+variants:
+- low_20d_vol_open_long_1000
+- low_10d_range_midmorning_long_1030
+- low_5d_abs_move_lunch_long_1200
+- low_downside20_afternoon_long_1330
+- vol_downshift_late_morning_long_1100
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request.
+status: completed
+testing_outcome:
+  completed_at: '2026-06-22'
+  decision: FAIL
+  original_runs: 5
+  rescue_runs: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  campaign_summary_path: backtest-campaigns/nq_volatility_managed_intraday_premium/campaign_test_summary.json
+  failure_reason: All five predeclared variants failed limited_core_grid_test.
+final_result:
+  decision: FAIL
+  candidate_strategy_report_created: false
+  reason: All five variants failed the core parameter-stability gate; no rescue authorized.
+  report_path: backtest-campaigns/nq_volatility_managed_intraday_premium/campaign_test_summary.json

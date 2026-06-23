@@ -1,0 +1,121 @@
+campaign_id: nq_prior_session_breakout_orderflow_confirmation
+title: NQ Prior-Session Level Breakout Continuation With Signed Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-22'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: prior_session_level_breakout_orderflow_confirmation
+hypothesis: NQ breaks beyond the prior RTH high or low should be more likely to continue intraday when the completed breakout
+  or hold bar also shows same-direction aggregate signed trade flow.
+rationale: This ports the ES prior-session breakout/orderflow family to NQ but excludes NQ large-trade and retest variants
+  that failed pre-PnL density. Price alone cannot trigger; completed signed-flow confirmation is required.
+sources:
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  authors: William Brock, Josef Lakonishok, and Blake LeBaron
+  year: 1992
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1992.tb04681.x
+  link: https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04681.x
+  relevance: Supports testing support/resistance trading-range break rules as mechanical price-action signals.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Links technical support/resistance levels with liquidity supply, motivating prior-session highs/lows as public
+    liquidity boundaries.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  venue: Journal of International Money and Finance
+  link: https://www.newyorkfed.org/research/staff_reports/sr150.html
+  relevance: Documents clustered stop orders around technical levels; this campaign tests continuation after completed acceptance
+    outside the level.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports orderflow imbalance as a short-horizon pressure proxy; this campaign uses completed Sierra aggregate
+    trade-side flow, not quote-depth OFI.
+data_needs:
+- NQ Sierra RTH 1-minute orderflow cache aggregated to 5-minute strategy bars
+- prior RTH high/low and fresh-level flags from `pdh_pdl_sweep` features
+- completed-bar signed_volume and volume fields
+lookahead_risks:
+- Prior RTH high and low are known only after the prior RTH session is complete.
+- Fresh break, gap hold, and orderflow confirmation use only completed 5-minute bars.
+- Signals generated from a completed bar are filled no earlier than the next bar open by the engine.
+- No current-session final high/low, final VWAP, final volume profile, future orderflow, or future daily range is used.
+failure_modes:
+- Aligned aggregate flow may represent exhaustion into liquidity rather than informed continuation.
+- Prior-session level breaks may remain false breakouts after costs and slippage.
+- The effect may concentrate in crisis trend days or one side of the market.
+- Bar-level signed volume may be too noisy to distinguish stop cascades from informed flow.
+- Gap-hold variant is borderline sparse in the pre-PnL density audit.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_prior_session_breakout_orderflow_confirmation
+  - nq_self_lead_opening_range_breakout
+  - nq_opening_gap_orderflow_continuation
+  - nq_opening_gap_orderflow_absorption_fade
+  - nq_archive_range_compression_retest
+  conclusion: Eligible as a bounded NQ prior-session high/low breakout plus signed-flow confirmation campaign. It is not an
+    opening-range, opening-gap-only, range-compression, or raw orderflow momentum campaign.
+pre_pnl_density_audit:
+  method: Prepared 5-minute NQ strategy bars through the same `pdh_pdl_sweep` feature path; counted entry-condition sessions
+    only. No PnL, stop, target, monkey, WFA, Monte Carlo, prop simulation, or holdout result was inspected.
+  all_day_signed_buffer: about 57.2 signals/year at buffer 0 and threshold 0.0; about 51.8/year at buffer 1 and threshold
+    0.02
+  first_half_signed_no_buffer: about 51.6/year at threshold 0.0; about 48.6/year at threshold 0.02
+  all_day_signed_high_volume: about 55.6/year at volume ratio 0.75 and threshold 0.0; about 47.9/year at volume ratio 1.0
+    and threshold 0.02
+  morning_signed_no_buffer: included as a window-distinct expression; expected lower density than first-half but same parameter
+    grid
+  opening_gap_hold_signed_continuation: 'borderline sparse: about 48.1/year at threshold 0.0 and 37.1/year at threshold 0.02;
+    retained as a distinct acceptance expression with fail-closed caveat'
+  excluded: large10, large20, and retest-hold variants were excluded before PnL because NQ pre-PnL density was materially
+    below the 50 trades/year screen.
+parameter_space:
+  entry.params.min_orderflow_imbalance:
+  - 0.0
+  - 0.005
+  - 0.01
+  - 0.02
+  sl.params.stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.5
+  variant_specific_entry_param: close_buffer_ticks for buffer variant or min_volume_ratio for high-volume variant
+variants:
+- all_day_signed_buffer_break_two_sided
+- first_half_signed_no_buffer_break_two_sided
+- all_day_signed_high_volume_break_two_sided
+- morning_signed_no_buffer_break_two_sided
+- opening_gap_hold_signed_continuation
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request.
+status: completed
+testing_outcome:
+  completed_at: '2026-06-22'
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  rescue_runs: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  campaign_summary_path: backtest-campaigns/nq_prior_session_breakout_orderflow_confirmation/campaign_test_summary.json
+  failure_reason: All five variants failed limited_core_grid_test; no rescue authorized.
+final_result:
+  decision: FAIL
+  candidate_strategy_report_created: false
+  reason: All five variants failed limited_core_grid_test; no rescue authorized.
+  report_path: backtest-campaigns/nq_prior_session_breakout_orderflow_confirmation/campaign_test_summary.json

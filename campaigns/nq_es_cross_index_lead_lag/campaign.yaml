@@ -1,0 +1,70 @@
+campaign_id: nq_es_cross_index_lead_lag
+title: NQ ES Cross-Index Lead-Lag Catch-Up
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_es_lead_lag_1m_20110103_20260609_full_rth_ny
+timeframe: 1m
+hypothesis: Completed ES price movement can lead short-horizon NQ movement when broad-index futures incorporate
+  macro or risk-appetite information before NQ fully follows. If ES moves materially over a completed
+  intraday window and NQ has not fully followed, NQ may continue in the ES direction after the signal
+  bar closes.
+rationale: This is the NQ execution-leg mirror of the existing ES/NQ lead-lag family. The ES-traded NQ-leader
+  version failed, so this campaign tests the opposite information direction on NQ using only the already-built
+  aligned local NQ/ES cache and predeclared density-screened thresholds.
+sources:
+- title: High Frequency Lead/Lag Relationships - Empirical Facts
+  authors: Nicolas Huth and Frederic Abergel
+  year: 2014
+  link: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+  relevance: Documents high-frequency lead-lag asymmetry among related instruments.
+- title: Lead-Lag Relationships in Market Microstructure
+  authors: Julian Schmidt, Tino Cestonaro, and Micha Bender
+  year: 2024
+  link: https://doi.org/10.2139/ssrn.5043260
+  relevance: Supports cross-asset transaction-price information transfer as a testable short-horizon mechanism.
+- title: A GCN-LSTM Approach for ES-Mini and VX Futures Forecasting
+  authors: Nikolas Michael, Mihai Cucuringu, and Sam Howison
+  year: 2024
+  link: https://arxiv.org/abs/2408.05659
+  relevance: Motivates futures-market signals propagating across related futures contracts.
+data_needs:
+- NQ/ES aligned 1-minute RTH lead-lag cache
+- completed ES and NQ return columns for 5/15/30/60-minute windows
+- NQ 1-minute OHLCV/orderflow execution bars
+lookahead_risks:
+- Signal uses only completed ES and NQ bars ending at the configured timestamp.
+- Entry occurs no earlier than the next NQ bar open after the signal bar closes.
+- No final-session VWAP, final daily range, future high/low, or post-signal return is used.
+- The aligned cache uses same-clock completed RTH windows and no random bar sampling.
+failure_modes:
+- ES may not lead NQ at one-minute resolution because NQ usually reacts faster to growth/technology information.
+- The threshold grids may capture generic broad-market momentum rather than durable cross-index information
+  transfer.
+- Any payoff may concentrate in macro-crisis years or isolated technology-led regimes.
+- Trading costs and pessimistic OHLC stop-target ordering may overwhelm any catch-up effect.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_nq_cross_index_lead_lag
+  - nq_es_relative_value_orderflow_absorption_reversion
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_volatility_filtered_intraday_momentum_priority
+  conclusion: Eligible as a NQ execution-leg mirror. Prior active tests did not trade NQ on completed
+    ES-leads-NQ catch-up with the nq_es_lead_lag module; the rejected NQ/ES relative-value absorption
+    campaign faded dispersion instead of following ES leadership.
+feature_construction:
+  feature_method: completed same-session ES and NQ rolling returns from aligned 1-minute RTH cache
+  pre_pnl_density_audit: research_artifacts/nq_es_cross_index_lead_lag_density_audit_20260622.md
+variants:
+- early30_two_sided_lag_follow_1000
+- early15_two_sided_lag_follow_1030
+- late_morning60_two_sided_lag_follow_1130
+- midday60_confirmed_lag_follow_1230
+- late_day30_confirmed_lag_follow_1530
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; all thresholds are predeclared before
+    NQ PnL testing.
+status: completed_failed

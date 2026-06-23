@@ -2,6 +2,9 @@ import pandas as pd
 
 from propstack.data.es_mes_participation import build_es_mes_participation_features
 from propstack.strategy_modules.entry.mes_participation_crowding import MesParticipationCrowdingEntry
+from propstack.strategy_modules.entry.trend_filtered_mes_participation_crowding import (
+    TrendFilteredMesParticipationCrowdingEntry,
+)
 
 
 def test_mes_participation_features_use_prior_same_clock_history_only():
@@ -105,6 +108,39 @@ def test_mes_participation_entry_respects_direction_and_entry_time():
     assert signal.direction == "short"
 
 
+def test_mes_participation_entry_can_use_nq_return_prefix():
+    entry = MesParticipationCrowdingEntry(
+        {
+            "entry_time": "10:30:00",
+            "lookback_minutes": 30,
+            "return_column_prefix": "nq",
+            "direction": "long",
+            "share_rank_min": 0.65,
+            "min_abs_return_ticks": 4,
+        }
+    )
+    bar = pd.Series(
+        {
+            "timestamp": pd.Timestamp("2024-01-03 10:29:00"),
+            "is_rth": True,
+            "open": 100.0,
+            "high": 100.5,
+            "low": 99.0,
+            "close": 99.5,
+            "mes_participation_share_30": 0.08,
+            "mes_participation_share_30_rank252": 0.8,
+            "nq_return_ticks_30": -5.0,
+        }
+    )
+
+    signal = entry.on_bar_close(bar)
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.report_fields["return_column_prefix"] == "nq"
+    assert signal.report_fields["return_column"] == "nq_return_ticks_30"
+
+
 def test_mes_participation_entry_first_signal_window_uses_completed_bars():
     entry = MesParticipationCrowdingEntry(
         {
@@ -127,6 +163,52 @@ def test_mes_participation_entry_first_signal_window_uses_completed_bars():
     assert signal.direction == "long"
     assert signal.report_fields["crowding_signal_timestamp"] == pd.Timestamp("2024-01-03 10:00:00")
     assert entry.on_bar_close(later_window_close, trades_today=1) is None
+
+
+def test_trend_filtered_mes_participation_can_use_nq_return_prefix():
+    entry = TrendFilteredMesParticipationCrowdingEntry(
+        {
+            "entry_time": "10:30:00",
+            "lookback_minutes": 15,
+            "trend_lookback_minutes": 30,
+            "rank_window": 252,
+            "share_mode": "trade",
+            "return_column_prefix": "nq",
+            "direction": "long",
+            "share_rank_min": 0.65,
+            "min_abs_return_ticks": 4,
+            "min_trend_return_ticks": 4,
+            "tick_size": 0.25,
+        }
+    )
+
+    for minute in range(46):
+        timestamp = pd.Timestamp("2024-01-03 09:44:00") + pd.Timedelta(minutes=minute)
+        bar_close = timestamp + pd.Timedelta(minutes=1)
+        minutes_from_trend_start = int((bar_close - pd.Timestamp("2024-01-03 09:45:00")).total_seconds() / 60)
+        close = 100.0 + min(max(minutes_from_trend_start, 0), 30) * 0.25
+        if bar_close > pd.Timestamp("2024-01-03 10:15:00"):
+            close = 107.5 - (minutes_from_trend_start - 30) * 0.25
+        bar = pd.Series(
+            {
+                "timestamp": timestamp,
+                "session_date": pd.Timestamp("2024-01-03").date(),
+                "is_rth": True,
+                "open": close,
+                "high": close + 0.25,
+                "low": close - 0.25,
+                "close": close,
+                "mes_trade_share_15": 0.08,
+                "mes_trade_share_15_rank252": 0.8,
+                "nq_return_ticks_15": -5.0,
+            }
+        )
+        signal = entry.on_bar_close(bar)
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.report_fields["return_column_prefix"] == "nq"
+    assert signal.report_fields["pullback_return_column"] == "nq_return_ticks_15"
 
 
 def _crowding_bar(timestamp: str, es_return_ticks: float) -> pd.Series:

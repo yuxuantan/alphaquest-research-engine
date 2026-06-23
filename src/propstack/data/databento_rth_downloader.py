@@ -113,7 +113,8 @@ def filter_available_sessions(
 
 def session_output_path(config: DownloadConfig, session: RthSession) -> Path:
     day = session.session_date.strftime("%Y%m%d")
-    return config.output_dir / f"{config.file_prefix}-{day}.rth.trades.dbn.zst"
+    schema = _safe_schema_label(config.schema)
+    return config.output_dir / f"{config.file_prefix}-{day}.rth.{schema}.dbn.zst"
 
 
 def build_download_plan(
@@ -375,3 +376,10 @@ def _result(
 def _emit(callback: Callable[[str], None] | None, message: str) -> None:
     if callback:
         callback(message)
+
+
+def _safe_schema_label(schema: str) -> str:
+    label = str(schema).strip().lower().replace("_", "-")
+    if not label:
+        raise ValueError("schema must not be empty.")
+    return "".join(char if char.isalnum() or char == "-" else "-" for char in label)

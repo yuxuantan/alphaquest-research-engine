@@ -1,0 +1,83 @@
+campaign_id: nq_realized_semivariance_asymmetry
+title: NQ Realized Semivariance Asymmetry
+decision: TEST
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged NQ realized semivariance separates bad volatility from good volatility. NQ may either rebound after downside-volatility
+  states or continue risk-off after downside-volatility dominance; upside semivariance may identify good-volatility states
+  with weaker subsequent expected return.
+rationale: This is a direct NQ port of the ES realized-semivariance asymmetry campaign. NQ has higher growth/technology sensitivity
+  and larger intraday volatility than ES, so downside and upside realized semivariance states may be more economically distinct,
+  but the campaign remains fail-closed because semivariance primarily forecasts volatility rather than intraday direction.
+sources:
+- title: Measuring Downside Risk - Realized Semivariance
+  authors: Ole E. Barndorff-Nielsen, Silvia Kinnebrock, and Neil Shephard
+  year: 2010
+  link: https://academic.oup.com/book/5659/chapter/148715572
+  relevance: Introduces realized semivariance as a high-frequency measure separating downside and upside variation.
+- title: 'Good Volatility, Bad Volatility: Signed Jumps and the Persistence of Volatility'
+  authors: Andrew J. Patton and Kevin Sheppard
+  year: 2015
+  doi: 10.1162/REST_a_00503
+  link: https://doi.org/10.1162/REST_a_00503
+  relevance: Shows future volatility is more strongly related to volatility from past negative returns than from positive
+    returns.
+- title: 'Good and Bad Uncertainty: Macroeconomic and Financial Market Implications'
+  authors: Gill Segal, Ivan Shaliastovich, and Amir Yaron
+  year: 2015
+  link: https://www.gillsegal.com/research
+  relevance: Supports separate tests of upside and downside uncertainty states.
+data_needs:
+- timezone-aware NQ RTH 1-minute OHLCV/orderflow bars in America/New_York
+- derived lagged NQ realized-semivariance feature file
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- Semivariance is built from bar-close returns, not tick-level path returns.
+- The feature file is shifted one completed RTH session; current-session realized semivariance is not used.
+- Same-bar stop/target conflicts use pessimistic OHLC handling.
+lookahead_risks:
+- No current-session realized semivariance, high, low, close, or post-entry return is used in the signal state.
+- Rolling ranks use only prior completed sessions.
+- Signals use completed 1-minute bars only and enter no earlier than next bar open.
+- No overnight exposure is allowed.
+failure_modes:
+- Semivariance may forecast volatility more directly than intraday direction.
+- Bad-volatility compensation and risk-off continuation may cancel across regimes.
+- The effect may require multi-day holds, which this methodology forbids.
+- Performance may concentrate in crisis months or narrow thresholds.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_realized_semivariance_asymmetry
+  - nq_volatility_managed_intraday_premium
+  - nq_cboe_put_call_sentiment_intraday
+  - nq_spy_turnover_orderflow_attention
+  conclusion: Eligible as a direct NQ port of the ES realized-semivariance asymmetry edge and distinct from volatility-managed
+    premium and external sentiment features.
+feature_construction:
+  builder: tools/build_es_realized_semivariance_features.py with NQ input override
+  output: data/external/nq_realized_semivariance_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3749
+  lookahead_control: all tradable features shifted one completed RTH session
+  pre_pnl_density_audit: research_artifacts/nq_realized_semivariance_asymmetry_density_audit_20260622.md
+pre_pnl_density_audit:
+  method: Feature-threshold count only; no PnL or robustness result inspected.
+  decision: PASS_WITH_SPARSE_STRICT_CORNERS
+variants:
+- high_1d_badvol_rebound_long_1000
+- high_1d_badvol_continuation_short_1030
+- high_downside_share_rebound_long_1130
+- high_goodvol_fade_short_1200
+- two_sided_5d_bad_good_balance_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request.
+status: completed_failed
+decision: FAIL
+test_summary: backtest-campaigns/nq_realized_semivariance_asymmetry/campaign_test_summary.json
+methodology_audit: campaigns/nq_realized_semivariance_asymmetry/methodology_audit.md
+failure_reason: Two variants passed core but failed monkey robustness; three variants failed the limited core grid. No variant reached WFA or downstream staged validation.

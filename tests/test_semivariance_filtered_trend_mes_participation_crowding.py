@@ -54,6 +54,29 @@ def test_high_semivariance_mes_trend_pullback_blocks_low_semivariance_rank(tmp_p
     )
 
 
+def test_high_semivariance_mes_trend_pullback_can_use_nq_return_prefix(tmp_path):
+    params = _params(_feature_csv(tmp_path, rank=0.70))
+    params["return_column_prefix"] = "nq"
+    entry = SemivarianceFilteredTrendMesParticipationCrowdingEntry(params)
+
+    entry.on_bar_close(_bar("2024-01-03 09:44:00", close=100.0))
+    entry.on_bar_close(_bar("2024-01-03 10:14:00", close=102.0))
+    signal = entry.on_bar_close(
+        _bar(
+            "2024-01-03 10:29:00",
+            close=101.0,
+            nq_return_ticks_15=-4.0,
+            mes_trade_rank_15=0.70,
+        )
+    )
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.report_fields["return_column_prefix"] == "nq"
+    assert signal.report_fields["pullback_return_column"] == "nq_return_ticks_15"
+    assert signal.report_fields["pullback_return_ticks"] == -4.0
+
+
 def test_high_semivariance_mes_trend_pullback_rejects_invalid_semivar_cutoff(tmp_path):
     params = _params(_feature_csv(tmp_path, rank=0.70))
     params["semivar_rank_min"] = 1.1
@@ -75,6 +98,7 @@ def _params(feature_csv: Path) -> dict:
         "trend_lookback_minutes": 30,
         "rank_window": 252,
         "share_mode": "trade",
+        "return_column_prefix": "es",
         "direction": "both",
         "share_rank_min": 0.50,
         "min_abs_return_ticks": 4,
@@ -105,6 +129,7 @@ def _bar(
     *,
     close: float,
     es_return_ticks_15: float | None = None,
+    nq_return_ticks_15: float | None = None,
     mes_trade_rank_15: float | None = None,
 ) -> pd.Series:
     ts = pd.Timestamp(timestamp)
@@ -118,6 +143,7 @@ def _bar(
             "low": close,
             "close": close,
             "es_return_ticks_15": es_return_ticks_15,
+            "nq_return_ticks_15": nq_return_ticks_15,
             "mes_trade_share_15": 0.10 if mes_trade_rank_15 is not None else None,
             "mes_trade_share_15_rank252": mes_trade_rank_15,
         }

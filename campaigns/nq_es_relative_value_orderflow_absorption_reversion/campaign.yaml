@@ -1,0 +1,121 @@
+campaign_id: nq_es_relative_value_orderflow_absorption_reversion
+title: NQ/ES Relative-Value Reversion With NQ Orderflow Absorption
+decision: FAIL
+created_at: '2026-06-22'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: cross_index_relative_value_orderflow_absorption_reversion
+hypothesis: NQ/ES return divergences are more likely to mean-revert on the NQ leg when completed NQ aggregate signed flow
+  is counter to the NQ price move, indicating absorption rather than continuation pressure.
+rationale: This ports the ES/NQ relative-value absorption family to the NQ execution leg using the dedicated NQ/ES lead-lag
+  cache. NQ must be the dislocated leg versus ES, and NQ orderflow absorption must confirm before entry.
+sources:
+- title: 'Pairs Trading: Performance of a Relative-Value Arbitrage Rule'
+  authors: Evan Gatev, William N. Goetzmann, and K. Geert Rouwenhorst
+  year: 2006
+  venue: Review of Financial Studies
+  link: https://academic.oup.com/rfs/article-abstract/19/3/797/1585302
+  relevance: Relative-value foundation for temporary divergence and convergence between related instruments.
+- title: High Frequency Lead/Lag Relationships - Empirical Facts
+  authors: Nicolas Huth and Frederic Abergel
+  year: 2014
+  venue: Empirical market microstructure working paper
+  link: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+  relevance: Motivates high-frequency dependencies between related equity-index futures.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports imbalance as a short-horizon pressure proxy; this campaign uses completed aggregate signed trade flow,
+    not quote-depth OFI.
+- title: Lead-Lag Relationships in Market Microstructure
+  authors: Julian Schmidt, Tino Cestonaro, and Micha Bender
+  year: 2024
+  venue: SSRN
+  link: https://doi.org/10.2139/ssrn.5043260
+  relevance: Reviews predictive cross-market relationships in microstructure data.
+data_needs:
+- data/cache/orderflow/nq_es_lead_lag_1m_20110103_20260609_full_rth_ny.parquet
+- completed ES/NQ rolling return-spread columns
+- completed NQ signed-imbalance columns over 15/30/60 minute windows
+lookahead_risks:
+- Rolling return and signed-imbalance features must use completed bars only.
+- Signal inside the declared window enters no earlier than the next one-minute bar open.
+- No future ES/NQ bars, final VWAP, final daily range, or future orderflow is used.
+- All variants flatten intraday before their configured cutoff.
+failure_modes:
+- Divergence may be information-driven rather than temporary.
+- Signed flow can be noisy or mark late capitulation.
+- Trading only NQ may not monetize true pair convergence.
+- The effect can concentrate in one side, volatility regime, or small number of dates.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_nq_relative_value_orderflow_absorption_reversion
+  - nq_self_lead_opening_range_breakout
+  - nq_opening_gap_orderflow_continuation
+  - nq_opening_gap_orderflow_absorption_fade
+  - nq_morning_orderflow_momentum_continuation
+  conclusion: Eligible as an NQ execution-leg mirror of the ES/NQ absorption family. It is not an opening-range, opening-gap,
+    or standalone NQ momentum campaign; the trigger requires NQ/ES relative-value divergence plus NQ signed-flow absorption.
+pre_pnl_density_audit:
+  decision: PASS
+  method: Entry-condition session count only over declared windows and entry grids; no PnL, stop, target, monkey, WFA, Monte
+    Carlo, prop simulation, or holdout result was inspected.
+  common_strict_corner: min_spread_bps=8 and min_absorption_imbalance=0.01
+  strict_corner_signals_per_year:
+    morning15_two_sided_absorption_1000: 115.7
+    morning30_underperform_absorption_long_1030: 50.8
+    morning30_outperform_absorption_short_1030: 68.3
+    late_morning30_two_sided_absorption_1130: 108.3
+    midday60_two_sided_absorption_1400: 76.3
+parameter_space:
+  entry.params.min_spread_bps:
+  - 4
+  - 6
+  - 8
+  entry.params.min_absorption_imbalance:
+  - 0.0
+  - 0.005
+  - 0.01
+  sl.params.stop_pct:
+  - 0.0025
+  - 0.004
+  - 0.006
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 81
+variants:
+- morning15_two_sided_absorption_1000
+- morning30_underperform_absorption_long_1030
+- morning30_outperform_absorption_short_1030
+- late_morning30_two_sided_absorption_1130
+- midday60_two_sided_absorption_1400
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; after OOS-stage failure, allow only rejection or promotion
+    unless the user explicitly authorizes one rescue.
+status: completed
+testing_outcome:
+  completed_at: '2026-06-22'
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  rescue_runs: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  campaign_summary_path: backtest-campaigns/nq_es_relative_value_orderflow_absorption_reversion/campaign_test_summary.json
+  failure_reason: All five variants failed limited_core_grid_test; profitable-combination rates ranged from 0.000 to 0.074
+    except the midday variant at 0.012, below the required 0.700 threshold.
+final_result:
+  decision: FAIL
+  candidate_strategy_report_created: false
+  reason: All five variants failed limited_core_grid_test; profitable-combination rates ranged from 0.000 to 0.074 except
+    the midday variant at 0.012, below the required 0.700 threshold.
+  report_path: backtest-campaigns/nq_es_relative_value_orderflow_absorption_reversion/campaign_test_summary.json

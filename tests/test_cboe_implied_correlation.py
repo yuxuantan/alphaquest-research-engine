@@ -46,6 +46,24 @@ def test_low_cor3m_entry_emits_long(tmp_path):
     assert signal.direction == "long"
 
 
+def test_availability_rule_can_label_nq_sessions(tmp_path):
+    features = _feature_file(tmp_path, "2024-01-03", cor_rank=0.18)
+    entry = CboeImpliedCorrelationEntry(
+        {
+            "feature_csv": str(features),
+            "setup_mode": "low_cor3m_long",
+            "correlation_rank_max": 0.35,
+            "availability_market": "NQ",
+            "entry_time": "10:30:00",
+        }
+    )
+
+    signal = entry.on_bar_close(_bar("2024-01-03 10:29", close=4801.0))
+
+    assert signal is not None
+    assert "NQ session_date" in signal.report_fields["availability_rule"]
+
+
 def test_rising_cor3m_requires_change_rank_threshold(tmp_path):
     features = _feature_file(tmp_path, "2024-01-03", cor_rank=0.5, change_rank=0.58)
     entry = CboeImpliedCorrelationEntry(

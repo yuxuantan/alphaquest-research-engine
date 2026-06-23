@@ -1,0 +1,11 @@
+# spy_1d_absret_attention_continuation_1530
+
+Campaign: `nq_spy_turnover_orderflow_attention`
+
+Mechanic: NQ two-sided continuation using Prior SPY 1-day return direction with one-day absolute-return-times-volume attention rank. Completed same-session NQ movement and aggregate signed orderflow must agree before next-bar entry.
+
+Feature timing: `data/external/nq_spy_turnover_attention_features_20110103_20260612.csv` maps only SPY daily observations strictly before the NQ session date.
+
+Entry module: `spy_turnover_orderflow_attention`.
+Stop module: `percent_from_entry`.
+Target module: `fixed_r`.

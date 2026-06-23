@@ -1,0 +1,5 @@
+from propstack.strategy_modules.entry.volatility_filtered_intraday_momentum_priority import (
+    VolatilityFilteredIntradayMomentumPriorityEntry,
+)
+
+ENTRY_MODULE = VolatilityFilteredIntradayMomentumPriorityEntry

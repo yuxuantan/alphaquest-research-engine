@@ -1,0 +1,115 @@
+campaign_id: nq_trend_filtered_mes_participation_crowding
+title: NQ trend-filtered MES participation crowding reversion
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: NQ may mean-revert after high MES smaller-contract participation during a completed pullback, but only
+  when the fade rejoins a prior completed NQ trend rather than fighting it.
+rationale: This is a direct NQ port of the strongest unported ES campaign family. MES participation is used as a
+  smaller-contract crowding proxy; NQ completed-bar returns and prior NQ trend windows drive the traded-instrument
+  signal.
+sources:
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates conditioning on retail-like or smaller-ticket participation intensity rather than treating
+    all volume as equally informed.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures participation and Micro E-mini usage, supporting MES participation as a relevant
+    smaller-contract proxy.
+- title: Micro E-mini futures and options
+  authors: CME Group
+  year: 2026
+  venue: CME product documentation
+  link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+  relevance: Documents the 1:10 Micro E-mini to classic E-mini relationship used for notional-equivalent MES participation.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2011.11.003
+  relevance: Motivates a directional price-action trend filter, used here only from completed NQ bars before the
+    pullback window.
+data_needs:
+- local completed-bar NQ/MES participation cache from 2019-05-06 through 2026-06-12
+- MES notional-equivalent share and MES trade-count share
+- same-clock rank252 fields shifted to prior same-clock observations
+- NQ return tick columns for the completed pullback windows
+data_quality_caveats:
+- Sierra cache is completed-bar aggregate data, not tick-path or LOB data.
+- MES participation is a proxy for smaller-contract activity, not an account-classified retail feed.
+- Same-bar stop/target conflicts require pessimistic OHLC ordering.
+- The 2019 MES launch date shortens WFA history compared with the full NQ history.
+lookahead_risks:
+- Entry uses only completed 1-minute bars and can execute no earlier than the next bar open.
+- Same-clock ranks must use only prior same-clock observations and are unavailable during warmup.
+- The NQ trend window ends before the pullback/MES participation window begins.
+- No future NQ return, final session high/low, final VWAP, post-entry MES/ES data, or post-entry orderflow is used.
+failure_modes:
+- MES participation may not isolate retail or less-informed NQ flow.
+- High MES share may coincide with informed macro or tech-sector shocks rather than crowding.
+- Trend-filtered pullback reversals may still be too small to overcome NQ commission, slippage, and pessimistic
+  OHLC sequencing.
+- The apparent ES edge may not transfer to NQ.
+- The effect may pass core but fail monkey, WFA, Monte Carlo, or prop-rule simulation.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_mes_participation_crowding_reversion
+  - nq_high_semivariance_mes_trend_pullback_crowding
+  - nq_semivariance_orderflow_confirmation
+  - nq_mes_crowding_vol_filtered_trend_pullback_reversion
+  - nq_mes_crowding_trend_pullback_reversion
+  conclusion: Eligible as a bounded composite campaign. The prior NQ MES participation campaign faded high-MES-share
+    moves without a separate prior NQ trend window; this campaign only fades completed pullbacks that rejoin a prior
+    completed NQ trend. The semivariance campaigns add a daily semivariance state filter, which this campaign intentionally
+    omits.
+variants:
+- morning_trade_trend_pullback_reversal_1030
+- morning_notional_trend_pullback_reversal_1030
+- midday_notional_trend_pullback_reversal_1200
+- early_afternoon_notional_trend_pullback_reversal_1300
+- afternoon_notional_trend_pullback_reversal_1400
+pre_pnl_density_audit:
+  artifact: research_artifacts/nq_trend_filtered_mes_participation_crowding_density_audit_20260622.md
+  csv: research_artifacts/nq_trend_filtered_mes_participation_crowding_density_audit_20260622.csv
+  summary: All declared entry-grid corners cleared the 50 signals/year pre-PnL density floor before any NQ PnL was
+    inspected.
+  min_signals_per_year: 53.787779
+  max_signals_per_year: 80.400058
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn; after OOS, only rejection or promotion is allowed.
+source_es_campaign: es_trend_filtered_mes_participation_crowding
+source_es_evidence:
+  best_source_run: morning_trade_trend_pullback_reversal_1030/ES/rescue1
+  why_selected: The ES source family was the strongest unported ES result, reaching WFA OOS Monte Carlo after a
+    100% profitable core grid; the NQ port is declared before inspecting NQ PnL.
+status: completed_failed
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_trend_filtered_mes_participation_crowding/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_trend_filtered_mes_participation_crowding/campaign_results.csv
+  methodology_audit: campaigns/nq_trend_filtered_mes_participation_crowding/methodology_audit.md
+  variants_tested: 5
+  core_failed_variants: 4
+  monkey_failed_variants: 1
+  wfa_reached: 0
+  candidate_report_created: false
+  failure_reason: All five variants failed the staged flow. Four failed limited core grid stability; one passed
+    core but failed limited monkey robustness before WFA.
+  best_core_variant: midday_notional_trend_pullback_reversal_1200
+  best_core_top_net_profit: 7025.0
+  best_core_top_profit_factor: 1.2636022514071295
+  best_core_top_mar: 1.8820010873579347
+  best_core_monkey_percentage_profitable: 0.47025
+  best_core_monkey_median_net_profit: -540.0

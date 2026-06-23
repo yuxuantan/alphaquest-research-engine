@@ -34,6 +34,7 @@ def test_low_vix_entry_emits_short(tmp_path):
         {
             "feature_csv": str(features),
             "setup_mode": "low_vix_complacency_short",
+            "availability_market": "NQ",
             "vix_rank_max": 0.35,
             "entry_time": "10:30:00",
         }
@@ -43,6 +44,7 @@ def test_low_vix_entry_emits_short(tmp_path):
 
     assert signal is not None
     assert signal.direction == "short"
+    assert "NQ session_date" in signal.report_fields["availability_rule"]
 
 
 def test_vix_spike_requires_change_threshold(tmp_path):

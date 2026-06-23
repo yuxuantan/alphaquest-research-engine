@@ -21,6 +21,7 @@ class TrendFilteredMesParticipationCrowdingEntry:
         self.trend_lookback_minutes = int(params.get("trend_lookback_minutes", 30))
         self.rank_window = int(params.get("rank_window", 252))
         self.share_mode = str(params.get("share_mode", "notional")).lower()
+        self.return_column_prefix = str(params.get("return_column_prefix", "es")).lower()
         self.direction = str(params.get("direction", "both")).lower()
         self.share_rank_min = float(params.get("share_rank_min", 0.55))
         self.min_abs_return_ticks = float(params.get("min_abs_return_ticks", 4.0))
@@ -79,9 +80,12 @@ class TrendFilteredMesParticipationCrowdingEntry:
             "trend_lookback_minutes": self.trend_lookback_minutes,
             "rank_window": self.rank_window,
             "configured_direction": self.direction,
+            "return_column_prefix": self.return_column_prefix,
             "share_rank": metrics["share_rank"],
             "share_value": metrics["share_value"],
             "es_pullback_return_ticks": metrics["es_return_ticks"],
+            "pullback_return_ticks": metrics["es_return_ticks"],
+            "pullback_return_column": metrics["return_col"],
             "trend_return_ticks": trend["trend_return_ticks"],
             "trend_start_timestamp": trend["trend_start_timestamp"],
             "trend_end_timestamp": trend["trend_end_timestamp"],
@@ -114,6 +118,7 @@ class TrendFilteredMesParticipationCrowdingEntry:
                 "share_mode": self.share_mode,
                 "lookback_minutes": self.lookback_minutes,
                 "trend_lookback_minutes": self.trend_lookback_minutes,
+                "return_column_prefix": self.return_column_prefix,
                 "share_rank_min": self.share_rank_min,
                 "min_abs_return_ticks": self.min_abs_return_ticks,
                 "min_trend_return_ticks": self.min_trend_return_ticks,
@@ -154,7 +159,7 @@ class TrendFilteredMesParticipationCrowdingEntry:
         else:
             share_col = f"mes_participation_share_{suffix}"
             rank_col = f"mes_participation_share_{suffix}_rank{self.rank_window}"
-        return_col = f"es_return_ticks_{suffix}"
+        return_col = f"{self.return_column_prefix}_return_ticks_{suffix}"
         share_rank = _finite_float(bar.get(rank_col))
         share_value = _finite_float(bar.get(share_col))
         es_return_ticks = _finite_float(bar.get(return_col))
@@ -164,6 +169,7 @@ class TrendFilteredMesParticipationCrowdingEntry:
             "share_rank": share_rank,
             "share_value": share_value,
             "es_return_ticks": es_return_ticks,
+            "return_col": return_col,
         }
 
     def _trend_return_ticks(self, state: dict, signal_timestamp: pd.Timestamp) -> dict[str, object] | None:
@@ -210,6 +216,8 @@ class TrendFilteredMesParticipationCrowdingEntry:
             raise ValueError("rank_window must be greater than 0.")
         if self.share_mode not in {"notional", "trade"}:
             raise ValueError("share_mode must be notional or trade.")
+        if not self.return_column_prefix.replace("_", "").isalnum():
+            raise ValueError("return_column_prefix must contain only letters, numbers, or underscores.")
         if self.direction not in {"long", "short", "both"}:
             raise ValueError("direction must be long, short, or both.")
         if not 0 <= self.share_rank_min <= 1:

@@ -1,0 +1,110 @@
+campaign_id: nq_halloween_seasonal_premium
+title: NQ Halloween Seasonal Premium
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: NQ may earn stronger intraday long returns in November-April than May-October,
+  while May-October weakness may support short-only variants.
+expected_mechanism: The calendar half-year is treated as an ex-ante seasonal risk-premium
+  state; NQ may inherit broad equity seasonal return asymmetry through Nasdaq equity
+  beta.
+why_it_may_apply_to_nq: NQ tracks a major U.S. equity-index futures market and may
+  express the same broad equity risk-premium seasonality studied in Halloween/Sell-in-May
+  research, although the intraday-only and no-overnight constraints are stricter than
+  the original anomaly.
+rationale: This campaign ports the cheap, data-light ES seasonal edge after stronger
+  volatility-state NQ ports failed. The ES evidence is weak and failed WFA, so this
+  is a skeptical test rather than a high-conviction candidate.
+sources:
+- title: 'The Halloween Indicator, Sell in May and Go Away: Another Puzzle'
+  authors: Sven Bouman and Ben Jacobsen
+  year: 2002
+  link: https://doi.org/10.1257/000282802762024683
+  relevance: Documents stronger November-April equity-index returns than May-October.
+- title: 'The Halloween indicator, Sell in May and Go Away: Everywhere and all the
+    time'
+  authors: Cherry Y. Zhang and Ben Jacobsen
+  year: 2021
+  link: https://doi.org/10.1016/j.jimonfin.2020.102268
+  relevance: Provides broader long-history evidence for the seasonal anomaly.
+data_needs:
+- timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+- calendar month known before each session
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The original anomaly is usually measured over monthly or overnight-inclusive horizons,
+  not intraday-only RTH exposure.
+- No feature file is required, but timestamps and session dates must be timezone-aware.
+- Sierra data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+- Changing seasonal month definitions after results is forbidden.
+- Using realized month-to-date or future monthly returns is forbidden.
+- Holding overnight to capture the original anomaly is forbidden unless explicitly
+  allowed; it is not allowed here.
+- Adding post-result filters or exclusions is forbidden.
+failure_modes:
+- The anomaly may be mostly overnight/monthly and not survive intraday-only exposure.
+- The effect may have decayed after publication.
+- Summer returns may be lower but not negative enough for shorts after costs.
+- Profit may be concentrated in a few crisis/rebound months and fail monkey/WFA.
+density_check:
+  sample_start: '2011-01-03'
+  sample_end: '2026-06-12'
+  winter_sessions: approximately half the sample
+  summer_sessions: approximately half the sample
+  tradecount_rule: expected to clear 50 trades/year before fills because the signal
+    fires once per active seasonal session
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+parameter_space:
+  source: latest relevant ES rescue/parameter-space grids
+  combinations_per_variant: 12 for rescue grids
+variants:
+- winter_midday_long_1200
+- winter_open_long_1000
+- winter_afternoon_long_1330
+- summer_open_short_1000
+- summer_afternoon_short_1330
+rescue_policy:
+  rescue_scope: not_authorized_for_nq_run
+  max_rescue_attempts_per_failed_variant: 0
+  allowed_changes: []
+  forbidden_changes:
+  - core strategy mechanic
+  - month definitions
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  - parameter grid after NQ results
+status: completed_failed
+outcome:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  summary_path: backtest-campaigns/nq_halloween_seasonal_premium/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_halloween_seasonal_premium/campaign_results.csv
+  methodology_audit: campaigns/nq_halloween_seasonal_premium/methodology_audit.md
+  best_core:
+    variant: summer_afternoon_short_1330
+    top_net_profit: 1670.0
+    terminal_stage: limited_core_grid_test
+  variant_terminal_stages:
+    summer_afternoon_short_1330: limited_core_grid_test
+    summer_open_short_1000: limited_core_grid_test
+    winter_afternoon_long_1330: limited_core_grid_test
+    winter_midday_long_1200: limited_core_grid_test
+    winter_open_long_1000: limited_core_grid_test

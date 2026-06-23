@@ -1,0 +1,85 @@
+campaign_id: nq_sector_dispersion_state
+title: NQ Sector Dispersion State
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged cross-sector return dispersion may proxy breadth stress, concentration risk, or breadth repair that has stronger intraday impact on growth-heavy NQ than ES.
+rationale: This NQ port reuses the ES sector-dispersion family before any NQ PnL inspection. It keeps the one-business-day ETF-close availability lag and tests whether NQ has stronger transfer from breadth/dispersion states.
+sources:
+- title: Cross-Sectional Return Dispersion and Time-Variation in Value and Momentum Premia
+  authors: Chris Stivers and Licheng Sun
+  year: 2010
+  venue: Journal of Financial and Quantitative Analysis
+  relevance: Supports cross-sectional dispersion as a state variable related to market conditions and risk premia.
+- title: 'Stock Returns and Volatility: A Firm-Level Analysis'
+  authors: Gregory R. Duffee
+  year: 2001
+  venue: Journal of Financial Economics
+  relevance: Supports links between return dispersion, volatility, and equity risk states.
+- title: Cross-Sectional Dispersion and Expected Returns
+  authors: Thanos Verousis and Nikolaos Voukelatos
+  year: 2015
+  venue: Journal of Banking and Finance
+  relevance: Practitioner/academic support for dispersion as an expected-return/risk-state proxy.
+data_needs:
+- timezone-aware NQ RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- cached adjusted daily ETF histories for SPY and sector ETFs
+- derived sector-dispersion feature file with one-business-day availability lag
+- next-bar execution with commission, slippage, same-day flatten, and no-overnight enforcement
+data_quality_caveats:
+- Sector ETF adjusted closes are daily state variables, not intraday breadth observations.
+- ETF adjusted-close histories may include vendor adjustment conventions; the one-business-day lag avoids same-day close leakage.
+- Same-bar stop/target conflicts must remain pessimistic because no tick path is used.
+lookahead_risks:
+- A session dated D may only use sector ETF closes observed on or before D minus one business day.
+- Signals use completed one-minute bars and enter next bar open or later.
+- No final session high/low, final VWAP, same-day ETF close, future sector return, or post-entry path information is used.
+failure_modes:
+- Sector dispersion may be too slow for same-day NQ RTH returns.
+- Direction can flip between risk-off breadth deterioration and compensating risk-premium effects.
+- Profits may concentrate in crisis regimes or narrow rank thresholds.
+- The strongest ES pocket still failed the 70% profitable-combo core gate, so NQ transfer must be broadly robust to continue.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_sector_rotation_risk_appetite
+  - nq_sector_opening_breadth_orderflow_continuation
+  - nq_epu_policy_uncertainty_intraday
+  conclusion: 'Eligible as a distinct bounded dispersion edge: it uses cross-sector realized return dispersion ranks, not sector rotation returns, opening breadth, or macro policy uncertainty.'
+feature_construction:
+  builder: tools/build_es_sector_dispersion_features.py
+  source_cache_dir: data/external/sector_rotation
+  output: data/external/nq_sector_dispersion_features_20110103_20260612.csv
+  availability_lag_business_days: 1
+  pre_pnl_density_audit: research_artifacts/nq_sector_dispersion_state_density_audit_20260623.md
+variants:
+- rising_1d_dispersion_short_1130
+- falling_5d_dispersion_long_1330
+- high_1d_dispersion_short_1000
+- high_5d_dispersion_short_1030
+- low_1d_dispersion_long_1200
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized; after staged failure, allow only rejection or promotion unless the user explicitly authorizes one rescue.
+source_es_campaign: es_sector_dispersion_state
+status: completed_failed
+density_reform:
+  initial_audit: research_artifacts/nq_sector_dispersion_state_initial_density_rejected_20260623.md
+  final_audit: research_artifacts/nq_sector_dispersion_state_density_audit_20260623.md
+  no_pnl_inspected_before_reform: true
+  changes:
+  - variant: low_1d_dispersion_long_1200
+    entry_grid_change: removed rank_max 0.25 because latest-252 signal count was below 50
+nq_port_provenance:
+  source_campaign_id: es_sector_dispersion_state
+  source_config_family: 'mixed: rising_1d stop_distance_rescue_1, other variants parameter_space_rescue_1'
+  ported_before_nq_pnl: true
+  nq_rescue_authorized: false
+result_summary:
+  stage: limited_core_grid_test
+  report: backtest-campaigns/nq_sector_dispersion_state/campaign_test_summary.json
+  failure_reason: All five variants failed limited_core_grid_test. The best variant, rising_1d_dispersion_short_1130, had 17/27 profitable combinations and 13 benchmark-pass combinations but missed the required 70% profitable-combination gate.
+  candidate_strategy_report_created: false

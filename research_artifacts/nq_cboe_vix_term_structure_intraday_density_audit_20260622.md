@@ -1,0 +1,21 @@
+# NQ Cboe VIX Term Structure Density Audit - 2026-06-22
+
+This audit uses only pre-PnL Cboe term-structure feature ranks from `data/external/nq_cboe_vix_term_structure_features_20110103_20260612.csv`. It checks whether the ES-derived NQ port has enough candidate signal sessions before any NQ backtest results are inspected.
+
+| variant | driver_column | operator | threshold | valid_sessions | signal_sessions | signal_rate | annualized_signals | min_year_signals | max_year_signals | active_years |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| backwardation_short_1000 | vix_vix3m_ratio_rank_252 | >= | 0.65 | 3753 | 1329 | 0.3541 | 89.24 | 43 | 163 | 16 |
+| backwardation_short_1000 | vix_vix3m_ratio_rank_252 | >= | 0.7 | 3753 | 1164 | 0.3102 | 78.16 | 36 | 144 | 16 |
+| backwardation_short_1000 | vix_vix3m_ratio_rank_252 | >= | 0.75 | 3753 | 992 | 0.2643 | 66.61 | 27 | 128 | 16 |
+| contango_long_1030 | vix_vix3m_ratio_rank_252 | <= | 0.3 | 3753 | 1224 | 0.3261 | 82.19 | 21 | 137 | 16 |
+| contango_long_1030 | vix_vix3m_ratio_rank_252 | <= | 0.35 | 3753 | 1413 | 0.3765 | 94.88 | 30 | 152 | 16 |
+| contango_long_1030 | vix_vix3m_ratio_rank_252 | <= | 0.4 | 3753 | 1589 | 0.4234 | 106.7 | 33 | 169 | 16 |
+| front_stress_short_1130 | vix9d_vix_ratio_rank_252 | >= | 0.6 | 3753 | 1465 | 0.3904 | 98.37 | 49 | 160 | 16 |
+| front_stress_short_1130 | vix9d_vix_ratio_rank_252 | >= | 0.65 | 3753 | 1285 | 0.3424 | 86.28 | 43 | 145 | 16 |
+| front_stress_short_1130 | vix9d_vix_ratio_rank_252 | >= | 0.7 | 3753 | 1114 | 0.2968 | 74.8 | 38 | 133 | 16 |
+| curve_flattening_short_1200 | vix3m_vix6m_ratio_rank_252 | >= | 0.575 | 3753 | 1626 | 0.4333 | 109.18 | 21 | 213 | 16 |
+| curve_flattening_short_1200 | vix3m_vix6m_ratio_rank_252 | >= | 0.6 | 3753 | 1528 | 0.4071 | 102.6 | 20 | 203 | 16 |
+| curve_flattening_short_1200 | vix3m_vix6m_ratio_rank_252 | >= | 0.625 | 3753 | 1422 | 0.3789 | 95.48 | 17 | 189 | 16 |
+| backwardation_surge_short_1330 | vix_vix3m_ratio_change_1d_rank_252 | >= | 0.65 | 3752 | 1332 | 0.355 | 89.46 | 43 | 96 | 16 |
+| backwardation_surge_short_1330 | vix_vix3m_ratio_change_1d_rank_252 | >= | 0.7 | 3752 | 1149 | 0.3062 | 77.17 | 37 | 85 | 16 |
+| backwardation_surge_short_1330 | vix_vix3m_ratio_change_1d_rank_252 | >= | 0.75 | 3752 | 956 | 0.2548 | 64.21 | 32 | 73 | 16 |

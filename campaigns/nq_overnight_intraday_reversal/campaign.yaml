@@ -1,0 +1,67 @@
+campaign_id: nq_overnight_intraday_reversal
+title: NQ Overnight Intraday Reversal
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Large NQ overnight returns may partially reverse during the RTH session as overnight inventory,
+  liquidity demand, and price-discovery imbalances normalize after the cash open.
+rationale: This NQ-only overnight/session-structure campaign uses only prior RTH close, current RTH open,
+  and completed opening-window confirmation. It is distinct from orderflow, round-number, gap-orderflow,
+  and opening-range campaigns.
+sources:
+- title: Overnight Returns and Firm-Specific Investor Sentiment
+  authors: Berkman, Koch, Tuttle, and Zhang
+  year: 2012
+  link: https://doi.org/10.1016/j.jfineco.2012.05.010
+  relevance: Supports testing whether overnight demand pressure can reverse intraday.
+- title: Overnight and Intraday Stock Returns
+  authors: Branch and Ma
+  year: 2012
+  link: https://papers.ssrn.com/
+  relevance: Motivates separating overnight and intraday return behavior; bibliographic details require
+    manual review.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.csv
+- deterministic 5-minute bars from completed NQ RTH 1-minute data
+- previous RTH close available before current RTH open
+lookahead_risks:
+- Previous RTH close is known before current RTH open.
+- Opening confirmation windows are completed before the 10:00 signal.
+- Entry is next bar open or later; no same-close fill.
+- No current-session final high/low, VWAP, close, or future return is used.
+failure_modes:
+- Overnight moves may continue rather than reverse in NQ.
+- Opening confirmation may be noise or already exhaust the effect.
+- The effect may be asymmetric, but side-only variants were underpowered and excluded before PnL.
+- The effect may be regime-dependent and fail WFA or monkey perturbations.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_opening_gap_orderflow_continuation
+  - nq_opening_gap_orderflow_absorption_fade
+  - nq_round_number_barrier_reaction
+  conclusion: Eligible as distinct because it uses prior RTH close and overnight return reversal, not
+    gap orderflow, round handles, or opening range breakouts.
+pre_pnl_density:
+  status: approved_for_authoring
+  artifact: research_artifacts/nq_overnight_intraday_reversal_density_audit_20260622.md
+  screen: research_artifacts/nq_overnight_intraday_reversal_density_audit_20260622.csv
+  note: All five two-sided variants cleared the >=50 signals/year density floor before PnL testing.
+source_es_campaign: es_overnight_intraday_reversal
+variants:
+- first5_confirm_reversal_1000
+- first15_confirm_reversal_1000
+- first30_confirm_reversal_1000
+- first30_noncontinuation_1000
+- overnight_only_two_sided_1000
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in current NQ search; thresholds fixed from pre-PnL density only.
+status: completed_failed
+completed_at: '2026-06-22'
+failure_summary: All five two-sided overnight reversal variants failed the limited core grid. Four variants
+  had zero profitable combinations and one had only one profitable combination out of 54. No rescue was
+  authorized or used.

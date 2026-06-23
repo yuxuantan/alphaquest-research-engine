@@ -100,7 +100,25 @@ def _config(raw_csv, **overrides):
 
 
 def _write_config(path, cfg) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+
+
+def _write_campaign_yaml(campaign_root: Path, *, variant_count: int, expansion_rationale: str | None = None) -> None:
+    campaign = {
+        "campaign_id": campaign_root.name,
+        "title": "Preflight test campaign",
+        "variants": [
+            {
+                "variant_id": f"v{index:02d}",
+                "rationale": "Distinct predeclared mechanics for the same edge.",
+            }
+            for index in range(1, variant_count + 1)
+        ],
+    }
+    if expansion_rationale is not None:
+        campaign["variant_expansion_rationale"] = expansion_rationale
+    _write_config(campaign_root / "campaign.yaml", campaign)
 
 
 def test_preflight_accepts_valid_config_and_timezone_aware_data(tmp_path):
@@ -108,6 +126,63 @@ def test_preflight_accepts_valid_config_and_timezone_aware_data(tmp_path):
     config = tmp_path / "config.yaml"
     _write_csv(data)
     _write_config(config, _config(data))
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert result["passed"]
+    assert result["failures"] == []
+
+
+def test_preflight_rejects_campaign_with_more_than_eight_variants(tmp_path):
+    data = tmp_path / "bars.csv"
+    campaign_root = tmp_path / "campaigns" / "es_active"
+    config = campaign_root / "variants" / "v01" / "config.yaml"
+    _write_csv(data)
+    _write_campaign_yaml(
+        campaign_root,
+        variant_count=9,
+        expansion_rationale=(
+            "The extra mechanics are predeclared for density screening, but this text should not matter "
+            "because the hard campaign cap is eight variants."
+        ),
+    )
+    _write_config(config, _config(data, campaign_id="es_active", variant_id="v01"))
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("campaign variant cap is 8" in failure for failure in result["failures"])
+
+
+def test_preflight_requires_expansion_rationale_above_default_variant_count(tmp_path):
+    data = tmp_path / "bars.csv"
+    campaign_root = tmp_path / "campaigns" / "es_active"
+    config = campaign_root / "variants" / "v01" / "config.yaml"
+    _write_csv(data)
+    _write_campaign_yaml(campaign_root, variant_count=6)
+    _write_config(config, _config(data, campaign_id="es_active", variant_id="v01"))
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("variant_expansion_rationale" in failure for failure in result["failures"])
+
+
+def test_preflight_accepts_six_to_eight_variants_with_expansion_rationale(tmp_path):
+    data = tmp_path / "bars.csv"
+    campaign_root = tmp_path / "campaigns" / "es_active"
+    config = campaign_root / "variants" / "v01" / "config.yaml"
+    _write_csv(data)
+    _write_campaign_yaml(
+        campaign_root,
+        variant_count=8,
+        expansion_rationale=(
+            "Variants six through eight are predeclared because they express materially different "
+            "area-of-interest interaction mechanics under the same edge, and each will be rejected "
+            "unless it passes the same frozen staged workflow."
+        ),
+    )
+    _write_config(config, _config(data, campaign_id="es_active", variant_id="v01"))
 
     result = run_preflight(config_paths=[config], run_tests=False)
 

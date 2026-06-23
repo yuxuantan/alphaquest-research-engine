@@ -1,0 +1,114 @@
+campaign_id: es_large200_record_aoi_profile_reaction
+title: ES Large200 Record AOI Profile Reaction
+decision: FAIL
+created_at: '2026-06-22'
+instrument: ES
+timeframe: 1m
+edge_family: sierra_large_record_aoi_profile_absorption_reaction
+hypothesis: Strictly filtered large Sierra SCID records at known auction-market areas
+  may identify failed initiative pressure or accepted continuation when those records
+  align with prior RTH high/low, opening-range high/low, or prior-session profile
+  value levels.
+sources:
+- title: 74% Win Rate Trader Shares His EXACT OrderFlow Strategy ($2M+ Payouts)
+  authors: Chart Fanatics / Trader Yush
+  year: n.d.
+  venue: Practitioner video notes supplied by user
+  link: not available in attached notes
+  relevance: Defines the discretionary playbook being tested: mark AOIs from market-generated
+    levels and volume profile, then require large-trade/orderflow evidence before entry.
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the idea that public support/resistance levels can concentrate
+    short-horizon order placement and reactions.
+- title: Do Investors Place Orders to Exploit Technical Analysis?
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/j.1540-6261.2004.00665.x
+  relevance: Connects technical reference levels with visible order placement and
+    liquidity behavior.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow pressure as a short-horizon price-impact mechanism,
+    while this campaign uses completed-bar Sierra record proxies rather than full depth data.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates POC, value-area, and low-volume-node auction-market context.
+data_needs:
+- Merged local Sierra ES 1-minute footprint cache with strict large200 SCID-record
+  proxy columns in America/New_York.
+- Prior RTH high/low features shifted from completed prior RTH session only.
+- Prior-session approximate POC, VAH, VAL, and LVNs built inside the entry module
+  from completed prior RTH bars only.
+- Opening-range high/low available only after the first 30 completed RTH one-minute bars.
+data_quality_caveats:
+- This campaign does not have vendor-equivalent ES print data. `large200_record_*`
+  fields are a strict Sierra SCID record proxy filtered to records with volume >= 200,
+  `num_trades == 1`, and exact side-volume coverage.
+- Sierra SCID records are not guaranteed to equal individual exchange prints across
+  the full archive. Any passing result is at most a candidate requiring manual review
+  and independent print-source verification.
+- Prior profile levels are approximated by distributing each completed 1-minute bar
+  volume uniformly across its high-low tick range; this is not true volume-at-price.
+- The local cache is RTH-only, so overnight high/low variants are not tested here.
+lookahead_risks:
+- Prior profile, VAH, VAL, POC, LVNs, prior RTH high, and prior RTH low are computed
+  only after the previous RTH session is complete.
+- Opening-range levels are unavailable until the first 30 RTH bars have closed.
+- Signals use only the completed signal bar; entry is no earlier than the next
+  1-minute open.
+- No final current-session VWAP, final profile, final daily range, future high/low,
+  future footprint, or future orderflow is used.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_large200_record_aoi_profile_reaction_density_audit_20260622.md
+  data_source: data/cache/orderflow/es_sierra_footprint_large200_record_proxy_1m_20120103_20260609_rth_ny.parquet
+  rows: 1395420
+  sessions: 3578
+  period: 2012-01-03 through 2026-06-09 RTH
+  decision: approve_for_testing_as_proxy_only
+  note: Combined, market-AOI trap, and market-AOI continuation variants clear one-signal-per-day
+    density. Profile-only variants clear raw signal density and are configured with a fixed
+    two-trades-per-day cap.
+variants:
+- market_aoi_large200_two_sided_trap_1500
+- market_aoi_large200_two_sided_continuation_1500
+- profile_value_large200_two_sided_trap_1500
+- profile_value_large200_two_sided_continuation_1500
+- combined_aoi_profile_large200_reaction_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - core large-record AOI/profile reaction mechanic
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+test_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run1
+  tested_at: '2026-06-22'
+  campaign_summary: backtest-campaigns/es_large200_record_aoi_profile_reaction/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_large200_record_aoi_profile_reaction/methodology_audit.md
+  variants_tested: 5
+  variants_passed: 0
+  failure_reason: All five predeclared variants failed limited_core_grid_test with
+    0/27 profitable iterations and 0 benchmark-passing combinations.
+  rescue_attempts_used: 0

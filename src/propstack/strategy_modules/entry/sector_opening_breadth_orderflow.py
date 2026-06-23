@@ -37,7 +37,7 @@ class SectorOpeningBreadthOrderflowEntry:
         self.min_sector_count = int(params.get("min_sector_count", 4))
         self.min_open_gap = float(params.get("min_open_gap", 0.0))
         self.min_relative_gap = float(params.get("min_relative_gap", 0.0))
-        self.min_es_move_ticks = float(params.get("min_es_move_ticks", 2.0))
+        self.min_move_ticks = float(params.get("min_move_ticks", params.get("min_es_move_ticks", 2.0)))
         self.min_orderflow_imbalance = float(params.get("min_orderflow_imbalance", 0.0))
         self.min_flow_volume = float(params.get("min_flow_volume", 0.0))
         self.max_trades_per_day = int(params.get("max_trades_per_day", 1))
@@ -101,8 +101,10 @@ class SectorOpeningBreadthOrderflowEntry:
             "confirmation_close": close,
             "confirmation_high": high,
             "confirmation_low": low,
+            "instrument_move_ticks": state["move_ticks"],
+            "min_move_ticks": self.min_move_ticks,
             "es_move_ticks": state["move_ticks"],
-            "min_es_move_ticks": self.min_es_move_ticks,
+            "min_es_move_ticks": self.min_move_ticks,
             "confirmation_signed_volume": signed_volume,
             "confirmation_flow_volume": flow_volume,
             "confirmation_orderflow_imbalance": imbalance,
@@ -123,6 +125,7 @@ class SectorOpeningBreadthOrderflowEntry:
                 "breadth_label": breadth_label,
                 "flow_mode": self.flow_mode,
                 "orderflow_imbalance": imbalance,
+                "instrument_move_ticks": state["move_ticks"],
                 "es_move_ticks": state["move_ticks"],
                 "target_r_multiple": self.params.get("target_r_multiple"),
             },
@@ -170,11 +173,11 @@ class SectorOpeningBreadthOrderflowEntry:
         if move_ticks is None:
             return None
         if self.setup_mode == "broad_up_long":
-            if self._broad_up(row) and move_ticks >= self.min_es_move_ticks:
+            if self._broad_up(row) and move_ticks >= self.min_move_ticks:
                 return "long", "broad_up"
             return None
         if self.setup_mode == "broad_down_short":
-            if self._broad_down(row) and move_ticks <= -self.min_es_move_ticks:
+            if self._broad_down(row) and move_ticks <= -self.min_move_ticks:
                 return "short", "broad_down"
             return None
         if self.setup_mode == "cyclical_up_long":
@@ -185,7 +188,7 @@ class SectorOpeningBreadthOrderflowEntry:
                 and cyc_gap is not None
                 and cyc_count >= self.min_sector_count
                 and cyc_gap >= self.min_open_gap
-                and move_ticks >= self.min_es_move_ticks
+                and move_ticks >= self.min_move_ticks
             ):
                 return "long", "cyclical_up"
             return None
@@ -199,14 +202,14 @@ class SectorOpeningBreadthOrderflowEntry:
                 and def_gap is not None
                 and cyc_count >= self.min_sector_count
                 and def_gap - cyc_gap >= self.min_relative_gap
-                and move_ticks <= -self.min_es_move_ticks
+                and move_ticks <= -self.min_move_ticks
             ):
                 return "short", "riskoff_cycdown"
             return None
         if self.setup_mode == "broad_two_sided":
-            if self._broad_up(row) and move_ticks >= self.min_es_move_ticks:
+            if self._broad_up(row) and move_ticks >= self.min_move_ticks:
                 return "long", "broad_up"
-            if self._broad_down(row) and move_ticks <= -self.min_es_move_ticks:
+            if self._broad_down(row) and move_ticks <= -self.min_move_ticks:
                 return "short", "broad_down"
             return None
         raise ValueError(f"Unsupported setup_mode: {self.setup_mode}")
@@ -257,7 +260,7 @@ class SectorOpeningBreadthOrderflowEntry:
             raise ValueError("entry.params count limits must be positive.")
         if self.min_open_gap < 0 or self.min_relative_gap < 0:
             raise ValueError("entry.params open-gap thresholds must be non-negative.")
-        if self.min_es_move_ticks < 0 or self.min_orderflow_imbalance < 0 or self.min_flow_volume < 0:
+        if self.min_move_ticks < 0 or self.min_orderflow_imbalance < 0 or self.min_flow_volume < 0:
             raise ValueError("entry.params confirmation thresholds must be non-negative.")
 
 

@@ -16,6 +16,9 @@ from propstack.strategy_modules.entry.intraday_invariance_dislocation_reversion 
     IntradayInvarianceDislocationReversionEntry,
 )
 from propstack.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry
+from propstack.strategy_modules.entry.volatility_filtered_intraday_momentum_priority import (
+    VolatilityFilteredIntradayMomentumPriorityEntry,
+)
 from propstack.strategy_modules.entry.key_reversal_orderflow_reversal import (
     KeyReversalOrderflowReversalEntry,
 )
@@ -2015,6 +2018,28 @@ def test_morning_orderflow_momentum_requires_completed_window_and_no_future_flow
     assert entry.on_bar_close(future) is None
 
 
+def test_morning_orderflow_momentum_can_gate_source_return_by_bps():
+    params = {
+        "bar_interval_minutes": 30,
+        "min_signal_return_ticks": 0,
+        "min_signal_return_bps": 250,
+        "min_orderflow_imbalance": 0.05,
+    }
+    weak = MorningOrderflowMomentumEntry(params)
+    signal = None
+    for bar in _mom_source_window_bars(close=102.0, signed_volume=75):
+        signal = weak.on_bar_close(bar)
+    assert signal is None
+
+    passing = MorningOrderflowMomentumEntry(params)
+    signal = None
+    for bar in _mom_source_window_bars(close=103.0, signed_volume=75):
+        signal = passing.on_bar_close(bar)
+    assert signal.direction == "long"
+    assert signal.report_fields["source_window_return_bps"] == pytest.approx(300.0)
+    assert signal.report_fields["min_signal_return_bps"] == 250
+
+
 def test_morning_orderflow_momentum_broad_large_alignment_filter():
     params = {
         "bar_interval_minutes": 30,
@@ -3062,6 +3087,72 @@ def test_intraday_momentum_priority_filters_source_window_shape():
     assert signal.direction == "long"
     assert round(signal.report_fields["source_window_directional_close_location"], 6) == round(1.3 / 1.4, 6)
     assert round(signal.report_fields["source_window_efficiency"], 6) == round(1.1 / 1.4, 6)
+
+
+def test_volatility_filtered_intraday_momentum_priority_adds_lagged_gate_metadata(tmp_path):
+    feature_csv = tmp_path / "features.csv"
+    feature_csv.write_text("session_date,range10_rank_252\n2024-01-03,0.4\n", encoding="utf-8")
+    entry = VolatilityFilteredIntradayMomentumPriorityEntry(
+        {
+            "feature_csv": str(feature_csv),
+            "volatility_gate_column": "range10_rank_252",
+            "volatility_gate_max": 0.6,
+            "bar_interval_minutes": 30,
+            "tick_size": 0.25,
+            "slots": [
+                {
+                    "slot_id": "nq_1030_long_strength",
+                    "direction": "long",
+                    "signal_time": "10:30:00",
+                    "min_signal_return_bps": 50,
+                }
+            ],
+        }
+    )
+
+    signal = None
+    for bar in [
+        _mim_bar("2024-01-03 09:30", 100.0, 100.6, 99.9, 100.5),
+        _mim_bar("2024-01-03 10:00", 100.5, 101.2, 100.4, 101.0),
+    ]:
+        signal = entry.on_bar_close(bar)
+
+    assert signal is not None
+    assert signal.level_type == "intraday_momentum_priority_nq_1030_long_strength_volatility_filtered"
+    assert signal.metadata["volatility_gate_column"] == "range10_rank_252"
+    assert signal.metadata["volatility_gate_value"] == 0.4
+    assert signal.report_fields["volatility_gate_max"] == 0.6
+
+
+def test_volatility_filtered_intraday_momentum_priority_rejects_high_lagged_gate(tmp_path):
+    feature_csv = tmp_path / "features.csv"
+    feature_csv.write_text("session_date,range10_rank_252\n2024-01-03,0.8\n", encoding="utf-8")
+    entry = VolatilityFilteredIntradayMomentumPriorityEntry(
+        {
+            "feature_csv": str(feature_csv),
+            "volatility_gate_column": "range10_rank_252",
+            "volatility_gate_max": 0.6,
+            "bar_interval_minutes": 30,
+            "tick_size": 0.25,
+            "slots": [
+                {
+                    "slot_id": "nq_1030_long_strength",
+                    "direction": "long",
+                    "signal_time": "10:30:00",
+                    "min_signal_return_bps": 50,
+                }
+            ],
+        }
+    )
+
+    signal = None
+    for bar in [
+        _mim_bar("2024-01-03 09:30", 100.0, 100.6, 99.9, 100.5),
+        _mim_bar("2024-01-03 10:00", 100.5, 101.2, 100.4, 101.0),
+    ]:
+        signal = entry.on_bar_close(bar)
+
+    assert signal is None
 
 
 def _orb_bar(timestamp, open_price, high, low, close, session_date=None, volume_ratio=1.0, vwap=100.0):

@@ -1,0 +1,88 @@
+campaign_id: nq_spx_0dte_trend_aligned_pressure
+title: NQ SPX 0DTE trend-aligned calendar pressure
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: spx_0dte_calendar_pressure_trend_alignment
+hypothesis: Known SPX same-day option-expiration sessions may transmit broad-index dealer-hedging or liquidity-demand
+  pressure into NQ futures when completed NQ intraday structure agrees across 30-minute and 120-minute windows.
+rationale: This is a pre-PnL NQ port of the ES 0DTE trend-aligned pressure campaign. The prior NQ 0DTE test used
+  open-to-signal move fade/continuation variants; this campaign keeps the ES fixed multi-window trend-alignment
+  mechanic and tests whether that pressure transfers to higher-beta NQ after costs.
+sources:
+- title: Does 0DTE Options Trading Increase Volatility?
+  authors: Brogaard, Han, and Won
+  year: 2023
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4426358
+  relevance: Documents the market-impact question around 0DTE option activity.
+- title: Volatility Insights - Evaluating the Market Impact of SPX 0 DTE Options
+  authors: Cboe
+  year: 2024
+  link: https://www.cboe.com/insights/posts/volatility-insights-evaluating-the-market-impact-of-spx-0-dte-options/
+  relevance: Provides exchange/practitioner context for SPX 0DTE mechanics and hedging concerns.
+- title: Time Series Momentum
+  authors: Moskowitz, Ooi, and Pedersen
+  year: 2012
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2089463
+  relevance: Supports the secondary trend-persistence direction filter.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_spx_0dte_calendar_sessions_20110103_20260612.csv
+lookahead_risks:
+- SPX 0DTE calendar membership is ex-ante and must not encode realized outcomes.
+- Trend windows use only completed NQ one-minute bars ending at the signal timestamp.
+- Signals generated from a completed bar must execute no earlier than the next bar open through the engine.
+- No option volume, dealer position, final VWAP, future high/low, or post-signal path is used.
+failure_modes:
+- SPX 0DTE pressure may affect ES more directly than NQ.
+- NQ trend alignment may select late exhausted moves rather than persistent pressure.
+- 0DTE calendar direction is ambiguous without dealer-position sign information.
+- Positive results may concentrate in a few volatility regimes or large trend days.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_spx_0dte_expiration_pressure
+  conclusion: Eligible as a distinct ES-derived NQ test because the prior NQ 0DTE campaign used open-to-signal move
+    thresholds and fade/continuation mechanics; this one uses fixed completed 30-minute and 120-minute NQ trend
+    alignment as the direction filter.
+source_es_campaign: es_spx_0dte_trend_aligned_pressure
+source_es_evidence:
+  best_source_run: all_0dte_trend_only_1500/ES/rescue1
+  why_selected: Among remaining non-duplicate ES-derived candidates, this family reached WFA; the 15:00 trend-only
+    rescue passed limited monkey but failed WFA, while other variants provide the required five mechanic expressions
+    of the same edge.
+variants:
+- all_0dte_trend_only_1330
+- all_0dte_trend_only_1500
+- all_0dte_trend_continuation_1330
+- all_0dte_trend_continuation_1400
+- all_0dte_trend_continuation_1500
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue is authorized for this NQ search turn.
+pre_pnl_density_audit:
+  status: PASS
+  artifact: research_artifacts/nq_spx_0dte_trend_aligned_pressure_density_audit_20260622.md
+  csv: research_artifacts/nq_spx_0dte_trend_aligned_pressure_density_audit_20260622.csv
+  sessions: 2564
+  years_252: 10.174603
+  min_signals_per_year: 51.205928
+  max_signals_per_year: 60.837754
+  method: completed-window trend/calendar signal count only; no PnL, stops, targets, or fills evaluated
+status: completed_failed
+completed_at: '2026-06-22'
+result_summary:
+  evaluated_run_id: run1
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_core_grid_test: 5
+  failure_reason: All five variants failed limited_core_grid_test with 0 profitable combinations; no variant reached
+    monkey, WFA, Monte Carlo, simulated incubation, acceptance, or candidate reporting.
+  best_variant_by_core_net: all_0dte_trend_continuation_1500
+  campaign_test_summary_json: backtest-campaigns/nq_spx_0dte_trend_aligned_pressure/campaign_test_summary.json
+  campaign_test_summary_md: backtest-campaigns/nq_spx_0dte_trend_aligned_pressure/campaign_test_summary.md
+  campaign_results_csv: backtest-campaigns/nq_spx_0dte_trend_aligned_pressure/campaign_results.csv
+  candidate_strategy_report_created: false

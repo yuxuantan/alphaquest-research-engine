@@ -1,0 +1,83 @@
+campaign_id: nq_mes_crowding_trend_pullback_reversion
+title: NQ MES-Crowding Trend-Pullback Reversion
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: MES smaller-contract participation may proxy broad equity-index micro crowding; when NQ completes
+  a pullback against a prior completed NQ trend, elevated MES participation may mark crowded temporary
+  pressure that mean-reverts on the NQ execution leg.
+rationale: 'This is an NQ execution-leg port of the ES trend-filtered MES participation crowding family.
+  It is tested after the lagged-volatility veto port failed, because this base family has distinct mechanics:
+  no volatility gate, only completed NQ trend/pullback plus MES micro-participation ranks.'
+sources:
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates conditioning on retail-like or smaller-ticket participation intensity.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures participation and Micro E-mini usage.
+- title: Micro E-mini futures and options
+  authors: CME Group
+  year: 2026
+  venue: CME product documentation
+  link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+  relevance: Documents the Micro E-mini relationship used for notional-equivalent MES participation.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2011.11.003
+  relevance: Motivates requiring the fade to align with a prior completed trend.
+data_needs:
+- data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv
+- completed NQ RTH 1-minute OHLCV/orderflow bars
+- aligned MES completed-bar volume/trade counts used only as a cross-index micro-participation proxy
+lookahead_risks:
+- Entry uses completed one-minute bars and enters no earlier than the next bar open.
+- MES ranks use only prior same-clock observations.
+- The NQ trend window ends before the pullback/crowding lookback.
+- No future NQ return, final session high/low, final VWAP, post-entry MES/NQ data, or post-entry orderflow
+  is used.
+failure_modes:
+- MES may not proxy MNQ or NQ-specific micro crowding.
+- The effect may be ES-specific and fail to transmit to NQ after costs.
+- Removing the volatility veto may admit path-risk sessions that fail monkey or Monte Carlo.
+- Later-day variants may have crowding that is informational rather than temporary.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_mes_crowding_vol_filtered_trend_pullback_reversion
+  - nq_morning_orderflow_momentum_continuation
+  - nq_es_cross_index_lead_lag
+  conclusion: Eligible as a distinct NQ test because it removes the lagged-volatility veto and tests the
+    base MES/NQ trend-pullback crowding mechanism.
+pre_pnl_density:
+  status: approved_for_authoring
+  artifact: research_artifacts/nq_mes_crowding_trend_pullback_reversion_density_audit_20260622.md
+  screen: research_artifacts/nq_mes_crowding_trend_pullback_reversion_density_audit_20260622.csv
+  note: All variants cleared roughly 50 signals/year at the strict grid corner before any NQ PnL testing.
+source_es_campaign: es_trend_filtered_mes_participation_crowding
+variants:
+- morning_trade_trend_pullback_reversal_1030
+- morning_notional_trend_pullback_reversal_1030
+- midday_notional_trend_pullback_reversal_1200
+- early_afternoon_notional_trend_pullback_reversal_1300
+- afternoon_notional_trend_pullback_reversal_1400
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; NQ thresholds are fixed from pre-PnL
+    density only.
+status: completed_failed
+completed_at: '2026-06-22'
+failure_summary: Two variants passed the limited core grid but failed the limited monkey test with negative
+  monkey median net profit and insufficient core beat rates; three variants failed the limited core grid.
+  No rescue was authorized or used.

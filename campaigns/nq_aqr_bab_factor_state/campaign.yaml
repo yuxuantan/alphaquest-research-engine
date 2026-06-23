@@ -1,0 +1,105 @@
+campaign_name: nq_aqr_bab_factor_state
+campaign_id: nq_aqr_bab_factor_state
+instrument: NQ
+decision: FAIL
+created_at: '2026-06-22'
+reason_for_decision: Ported from the strongest remaining ES-derived campaign after prior NQ rejections. The edge
+  uses public lagged AQR BAB state data and does not depend on ES-specific orderflow.
+edge_hypothesis: Lagged U.S. Betting Against Beta factor weakness may identify leverage-constraint or defensive-factor
+  stress states that condition same-day NQ intraday risk appetite after a conservative public-data availability
+  lag.
+why_it_may_apply_to_nq_futures: NQ is more growth- and high-beta-sensitive than ES, so lagged BAB stress may condition
+  technology-heavy index futures risk demand more strongly than broad-market ES. The test must still survive NQ
+  costs, next-bar execution, WFA, monkey robustness, and prop-style drawdown rules.
+research_sources:
+- title: Betting Against Beta
+  author: Andrea Frazzini and Lasse H. Pedersen
+  year: 2014
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2013.10.005
+  expected_mechanism: Documents the BAB anomaly and its link to leverage constraints, high-beta demand, and funding-liquidity
+    pressure.
+- title: 'Betting Against Beta: Equity Factors, Daily'
+  author: AQR Capital Management
+  year: 2026
+  link_or_doi: https://www.aqr.com/Insights/Datasets/Betting-Against-Beta-Equity-Factors-Daily
+  expected_mechanism: Provides free public daily long/short BAB equity factor returns for U.S. equities and international
+    markets, updated monthly.
+behavioural_or_microstructure_rationale: A poor lagged BAB state may reflect recent pressure in low-beta-versus-high-beta
+  relative value and leverage-constrained positioning. NQ trades test whether that state carries into same-day technology-index
+  futures risk demand without requiring overnight exposure.
+expected_failure_modes:
+- The BAB anomaly is cross-sectional and may not predict NQ direction.
+- AQR daily factor values are updated monthly, so the 45-calendar-day lag may make the state too stale.
+- The effect may be concentrated in a few crisis or tech-beta unwind periods.
+- Costs, one-tick-worse slippage, WFA selection, or prop-style drawdown rules may erase any apparent edge.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/aqr_bab_equity_factors_daily.xlsx
+- data/external/nq_aqr_bab_features_20110103_20260612.csv
+feature_construction:
+  builder: tools/build_es_aqr_bab_features.py
+  output: data/external/nq_aqr_bab_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3813
+  lookahead_control: Each NQ session uses only the latest AQR BAB observation at least 45 calendar days old; no
+    same-day or prior-day AQR values are used because the public file is updated monthly.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+forbidden_forms_of_lookahead:
+- Using an AQR BAB observation that is not at least 45 calendar days old on the NQ session date.
+- Using current-session NQ OHLCV, final RTH close, or post-entry data to form the signal.
+- Changing BAB feature columns, entry times, direction, threshold grids, stop grids, or target grids after seeing
+  NQ results.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_campaigns_checked:
+  - nq_daily_time_series_momentum
+  - nq_daily_short_term_reversal
+  - nq_volatility_managed_intraday_premium
+  - nq_sector_rotation_risk_appetite
+  - nq_tech_relative_strength_intraday
+  conclusion: Eligible as an external defensive-factor/leverage-constraint state test, distinct from NQ price-momentum,
+    volatility-state, option-state, and local orderflow campaigns.
+variants:
+- low_bab_daily_rebound_long_0935
+- low_bab_21d_rebound_long_1000
+- low_bab_63d_rebound_long_1030
+- low_bab_z63_rebound_long_1100
+- bab_63d_extreme_two_sided_1330
+pre_pnl_density_audit:
+  artifact: research_artifacts/nq_aqr_bab_factor_state_density_audit_20260622.md
+  csv: research_artifacts/nq_aqr_bab_factor_state_density_audit_20260622.csv
+  summary: All declared BAB threshold settings cleared the 50 signals/year pre-PnL density floor before any NQ PnL
+    was inspected.
+  min_signals_per_year: 58.553999
+  max_signals_per_year: 82.843545
+source_es_campaign: es_aqr_bab_factor_state
+source_es_evidence:
+  best_source_run: low_bab_z63_rebound_long_1100/ES/rescue1
+  why_selected: This was the strongest remaining ES-derived campaign after prior NQ rejections, reaching WFA after
+    passing limited core and monkey. The NQ port is declared before inspecting NQ PnL.
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn; after OOS, only rejection or promotion is allowed.
+status: completed_failed
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_aqr_bab_factor_state/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_aqr_bab_factor_state/campaign_results.csv
+  methodology_audit: campaigns/nq_aqr_bab_factor_state/methodology_audit.md
+  variants_tested: 5
+  core_failed_variants: 5
+  wfa_reached: 0
+  candidate_report_created: false
+  failure_reason: All five variants failed limited_core_grid_test. The closest variant, low_bab_daily_rebound_long_0935,
+    reached 18/27 profitable combinations but remained below the 70% core stability gate.
+  best_core_stability_variant: low_bab_daily_rebound_long_0935
+  best_core_stability_profitable_combo_rate: 0.6666666666666666
+  best_core_top_net_profit: 2615.0
+  best_core_top_profit_factor: 1.297328027288232
+  best_core_top_mar: 0.9811879806991302

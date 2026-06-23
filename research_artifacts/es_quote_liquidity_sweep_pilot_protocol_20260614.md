@@ -36,17 +36,63 @@ Added reusable TBBO plumbing:
 
 - `src/propstack/data/tbbo_liquidity.py`
 - `src/propstack/build_tbbo_liquidity_cache.py`
+- `src/propstack/download_databento_rth_trades.py`
 - `src/propstack/strategy_modules/entry/quote_liquidity_sweep_reversion.py`
 - `tests/test_quote_liquidity_sweep_reversion.py`
+- `tests/test_databento_rth_downloader.py`
 
-Added data-gated pilot config:
+Current source-layout note:
 
-- `configs/campaigns/quote_liquidity_sweep_reversion/campaign.yaml`
-- `configs/campaigns/quote_liquidity_sweep_reversion/variants/ES/1m/tbbo_failed_pdh_pdl_or30_sweep_reclaim.yaml`
+- The older `configs/campaigns/...` pilot path referenced by this 2026-06-14
+  note is no longer present in the active repo layout.
+- When TBBO data is approved and present, author the active campaign under
+  `campaigns/` with exactly five variants, then run the normal preflight and
+  staged runner. Do not leave an active `campaigns/**/variants/**/config.yaml`
+  pointing to a missing TBBO cache.
 
-The config expects the cache:
+The intended active config should expect the cache:
 
 `data/cache/orderflow/es_tbbo_liquidity_1m_20250609_20260609.csv`
+
+Final metadata/cost dry-run before any paid pull:
+
+```bash
+PYTHONPATH=src python3 -m propstack.download_databento_rth_trades \
+  --start-date 2025-06-09 \
+  --end-date 2026-06-09 \
+  --out-dir data/raw/ES/databento-es-tbbo-20250609-20260609 \
+  --schema tbbo \
+  --symbols ES.FUT \
+  --stype-in parent \
+  --estimate-cost sample \
+  --sample-days 20 \
+  --dry-run \
+  --manifest research_artifacts/databento_es_tbbo_20250609_20260609_final_dry_run_manifest.json
+```
+
+Paid download command, only after explicit approval for this exact pull:
+
+```bash
+PYTHONPATH=src python3 -m propstack.download_databento_rth_trades \
+  --start-date 2025-06-09 \
+  --end-date 2026-06-09 \
+  --out-dir data/raw/ES/databento-es-tbbo-20250609-20260609 \
+  --schema tbbo \
+  --symbols ES.FUT \
+  --stype-in parent \
+  --estimate-cost exact \
+  --max-cost 25 \
+  --paid-data-approved \
+  --manifest data/raw/ES/databento-es-tbbo-20250609-20260609/download_manifest.json
+```
+
+Downloader compatibility check:
+
+- `src/propstack/data/databento_rth_downloader.py::session_output_path` now uses
+  the requested Databento schema in filenames.
+- TBBO downloads are written as `*.rth.tbbo.dbn.zst`, which matches
+  `build_tbbo_liquidity_cache`'s `*.tbbo.dbn*` input glob.
+- Default `trades` downloads retain the existing `*.rth.trades.dbn.zst` suffix.
 
 Build command after an approved TBBO download:
 
@@ -63,8 +109,8 @@ Pilot run command after the cache exists:
 
 ```bash
 PYTHONPATH=src python3 -m propstack.run_campaign_stages \
-  --config configs/campaigns/quote_liquidity_sweep_reversion/variants/ES/1m/tbbo_failed_pdh_pdl_or30_sweep_reclaim.yaml \
-  --skip-validation
+  --config campaigns/es_quote_liquidity_sweep_reversion/variants/<variant_id>/config.yaml \
+  --fast-runtime-defaults
 ```
 
 ## Pilot Mechanics

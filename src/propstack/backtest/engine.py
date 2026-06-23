@@ -382,6 +382,7 @@ class BacktestEngine:
             "cftc_tff_tiered_hedging_pressure": {"is_rth"},
             "connors_rsi2_mean_reversion": {"is_rth"},
             "daily_time_series_momentum": {"is_rth"},
+            "daily_short_term_reversal": {"is_rth"},
             "daily_reversal_orderflow_confirmation": {
                 "is_rth",
                 "trade_orderflow_imbalance_12",
@@ -574,6 +575,7 @@ class BacktestEngine:
                 "large20_signed_volume",
                 "large20_volume",
             },
+            "sector_rotation_risk_appetite": {"is_rth"},
             "sector_rotation_orderflow_pullback": {
                 "is_rth",
                 "vwap",
@@ -631,6 +633,8 @@ class BacktestEngine:
                 "mes_trade_share_60_rank252",
                 "es_return_ticks_30",
                 "es_return_ticks_60",
+                "nq_return_ticks_30",
+                "nq_return_ticks_60",
             },
             "volatility_filtered_trend_mes_participation_crowding": {
                 "is_rth",
@@ -643,6 +647,21 @@ class BacktestEngine:
                 "es_return_ticks_15",
                 "es_return_ticks_30",
                 "es_return_ticks_60",
+            },
+            "semivariance_filtered_trend_mes_participation_crowding": {
+                "is_rth",
+                "mes_participation_share_15_rank252",
+                "mes_participation_share_30_rank252",
+                "mes_participation_share_60_rank252",
+                "mes_trade_share_15_rank252",
+                "mes_trade_share_30_rank252",
+                "mes_trade_share_60_rank252",
+                "es_return_ticks_15",
+                "es_return_ticks_30",
+                "es_return_ticks_60",
+                "nq_return_ticks_15",
+                "nq_return_ticks_30",
+                "nq_return_ticks_60",
             },
             "mes_footprint_liquidity_sweep_reversion": {
                 "is_rth",
@@ -700,6 +719,17 @@ class BacktestEngine:
                 "nq_minus_es_return_bps_60",
                 "es_signed_imbalance_60",
             },
+            "nq_es_lead_lag": {
+                "is_rth",
+                "es_return_bps_5",
+                "nq_return_bps_5",
+                "es_return_bps_15",
+                "nq_return_bps_15",
+                "es_return_bps_30",
+                "nq_return_bps_30",
+                "es_return_bps_60",
+                "nq_return_bps_60",
+            },
             "es_mes_aligned_flow_continuation": {
                 "is_rth",
                 "es_trade_orderflow_return_ticks_15",
@@ -729,6 +759,7 @@ class BacktestEngine:
             "monthly_opex_pressure": {"is_rth"},
             "morning_intraday_momentum": {"is_rth", "volume_ratio"},
             "morning_orderflow_momentum": {"is_rth", "signed_volume", "large20_signed_volume", "large20_volume"},
+            "nq_tech_relative_strength": {"is_rth"},
             "morning_trend_lunch_reversal_orderflow": {
                 "is_rth",
                 "signed_volume",

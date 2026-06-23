@@ -75,7 +75,7 @@ class AqrBabFactorStateEntry:
             "availability_cutoff": row.get("availability_cutoff"),
             "publication_lag_calendar_days": row.get("publication_lag_calendar_days"),
             "observation_age_days": row.get("observation_age_days"),
-            "availability_rule": "latest AQR BAB observation at least configured calendar days before the ES session",
+            "availability_rule": "latest AQR BAB observation at least configured calendar days before the futures session",
             "signal_timestamp": signal_timestamp,
             "intended_entry_timestamp": signal_timestamp,
             "bab_rank_column": self.rank_column,

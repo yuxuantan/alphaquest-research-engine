@@ -23,6 +23,7 @@ class MesParticipationCrowdingEntry:
         self.lookback_minutes = int(params.get("lookback_minutes", 30))
         self.rank_window = int(params.get("rank_window", 252))
         self.share_mode = str(params.get("share_mode", "notional")).lower()
+        self.return_column_prefix = str(params.get("return_column_prefix", "es")).lower()
         self.direction = str(params.get("direction", "both")).lower()
         self.share_rank_min = float(params.get("share_rank_min", 0.65))
         self.min_abs_return_ticks = float(params.get("min_abs_return_ticks", 4.0))
@@ -60,10 +61,10 @@ class MesParticipationCrowdingEntry:
             return None
         if metrics["share_rank"] < self.share_rank_min:
             return None
-        if abs(metrics["es_return_ticks"]) < self.min_abs_return_ticks:
+        if abs(metrics["return_ticks"]) < self.min_abs_return_ticks:
             return None
 
-        direction = self._direction(metrics["es_return_ticks"])
+        direction = self._direction(metrics["return_ticks"])
         if direction is None:
             return None
 
@@ -78,9 +79,12 @@ class MesParticipationCrowdingEntry:
             "lookback_minutes": self.lookback_minutes,
             "rank_window": self.rank_window,
             "configured_direction": self.direction,
+            "return_column_prefix": self.return_column_prefix,
             "share_rank": metrics["share_rank"],
             "share_value": metrics["share_value"],
-            "es_return_ticks": metrics["es_return_ticks"],
+            "es_return_ticks": metrics["return_ticks"],
+            "return_ticks": metrics["return_ticks"],
+            "return_column": metrics["return_col"],
             "share_rank_min": self.share_rank_min,
             "min_abs_return_ticks": self.min_abs_return_ticks,
             "crowding_signal_timestamp": signal_timestamp,
@@ -109,6 +113,8 @@ class MesParticipationCrowdingEntry:
                 "signal_window_start": self.start_time.strftime("%H:%M:%S"),
                 "signal_window_end": self.end_time.strftime("%H:%M:%S"),
                 "share_mode": self.share_mode,
+                "return_column_prefix": self.return_column_prefix,
+                "return_column": metrics["return_col"],
                 "lookback_minutes": self.lookback_minutes,
                 "rank_window": self.rank_window,
                 "share_rank_min": self.share_rank_min,
@@ -133,6 +139,8 @@ class MesParticipationCrowdingEntry:
             raise ValueError("rank_window must be greater than 0.")
         if self.share_mode not in {"notional", "trade"}:
             raise ValueError("share_mode must be notional or trade.")
+        if not self.return_column_prefix.replace("_", "").isalnum():
+            raise ValueError("return_column_prefix must contain only letters, numbers, or underscores.")
         if self.direction not in {"long", "short", "both"}:
             raise ValueError("direction must be long, short, or both.")
         if not 0 <= self.share_rank_min <= 1:
@@ -150,22 +158,23 @@ class MesParticipationCrowdingEntry:
         else:
             share_col = f"mes_participation_share_{suffix}"
             rank_col = f"mes_participation_share_{suffix}_rank{self.rank_window}"
-        return_col = f"es_return_ticks_{suffix}"
+        return_col = f"{self.return_column_prefix}_return_ticks_{suffix}"
         share_rank = _finite_float(bar.get(rank_col))
         share_value = _finite_float(bar.get(share_col))
-        es_return_ticks = _finite_float(bar.get(return_col))
-        if None in {share_rank, share_value, es_return_ticks}:
+        return_ticks = _finite_float(bar.get(return_col))
+        if None in {share_rank, share_value, return_ticks}:
             return None
         return {
             "share_rank": share_rank,
             "share_value": share_value,
-            "es_return_ticks": es_return_ticks,
+            "return_ticks": return_ticks,
+            "return_col": return_col,
         }
 
-    def _direction(self, es_return_ticks: float) -> str | None:
-        if es_return_ticks <= -self.min_abs_return_ticks and self.direction in {"long", "both"}:
+    def _direction(self, return_ticks: float) -> str | None:
+        if return_ticks <= -self.min_abs_return_ticks and self.direction in {"long", "both"}:
             return "long"
-        if es_return_ticks >= self.min_abs_return_ticks and self.direction in {"short", "both"}:
+        if return_ticks >= self.min_abs_return_ticks and self.direction in {"short", "both"}:
             return "short"
         return None
 

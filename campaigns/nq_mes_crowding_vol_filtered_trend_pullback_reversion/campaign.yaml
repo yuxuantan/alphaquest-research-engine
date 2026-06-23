@@ -1,0 +1,101 @@
+campaign_id: nq_mes_crowding_vol_filtered_trend_pullback_reversion
+title: NQ MES-Crowding Volatility-Filtered Trend-Pullback Reversion
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+edge_family: mes_cross_index_participation_crowding_trend_pullback_extreme_volatility_veto
+hypothesis: MES smaller-contract participation can proxy broad equity-index retail/micro crowding; when
+  NQ completes a trend-pullback against a prior trend and lagged NQ volatility is not extreme, crowded
+  MES participation may mark temporary pressure that mean-reverts on the NQ execution leg.
+rationale: This is an NQ execution-leg port of the strongest ES MES-crowding volatility-veto evidence.
+  Because no MNQ participation cache exists locally, MES is explicitly treated as a cross-index micro-participation
+  proxy rather than a native NQ crowding measure, and the campaign must fail closed if the full staged
+  pipeline does not validate that proxy.
+sources:
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates conditioning on retail-like or smaller-ticket participation intensity.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures participation and Micro E-mini usage.
+- title: Micro E-mini futures and options
+  authors: CME Group
+  year: 2026
+  venue: CME product documentation
+  link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+  relevance: Documents the Micro E-mini relationship used for notional-equivalent MES participation.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2011.11.003
+  relevance: Motivates requiring a prior completed trend before fading a completed pullback.
+- title: Volatility-Managed Portfolios
+  authors: Alan Moreira and Tyler Muir
+  year: 2017
+  venue: Journal of Finance
+  doi: 10.1111/jofi.12513
+  relevance: Motivates using lagged realized-volatility states as ex-ante exposure filters.
+data_needs:
+- data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv
+- data/external/nq_lagged_volatility_features_20110103_20260612.csv
+- completed NQ RTH 1-minute OHLCV/orderflow bars
+- aligned MES completed-bar volume/trade counts used only as a cross-index micro-participation proxy
+lookahead_risks:
+- Entry uses completed one-minute bars and enters no earlier than the next bar open.
+- MES participation ranks are same-clock prior-session ranks; current value is ranked only against prior
+  same-clock history.
+- The NQ trend window ends before the pullback/crowding lookback, so the trend filter does not see the
+  pullback or future bars.
+- The volatility gate is loaded from prior-session lagged NQ features and cannot use current-session high,
+  low, close, range, or realized volatility.
+- No future NQ return, final daily high/low, final VWAP, post-entry MES/NQ data, or post-entry orderflow
+  is used.
+failure_modes:
+- MES may not proxy MNQ or NQ-specific retail/micro crowding.
+- Cross-index MES crowding may be ES-specific and fail to transmit to NQ after costs.
+- Lagged volatility gates can remove winners as well as losses.
+- Fixed 10:30 NQ reversals may be too noisy or too small after NQ costs.
+- The edge may fail prop-style path tests even if core/WFA aggregate metrics look acceptable.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_morning_orderflow_momentum_continuation
+  - nq_volatility_filtered_intraday_momentum_priority
+  - nq_realized_semivariance_asymmetry
+  - nq_es_cross_index_lead_lag
+  - nq_spx_0dte_expiration_pressure
+  conclusion: Eligible as a distinct NQ test because it uses MES micro-participation crowding plus NQ
+    trend-pullback and lagged NQ volatility gates; no active NQ campaign has tested this cross-index MES-crowding
+    proxy.
+pre_pnl_density:
+  status: approved_for_authoring
+  artifact: research_artifacts/nq_mes_crowding_vol_filtered_trend_pullback_reversion_density_audit_20260622.md
+  screen: research_artifacts/nq_mes_crowding_vol_filtered_trend_pullback_reversion_density_audit_20260622.csv
+  note: All five fixed-gate variants cleared approximately 50 signals/year at the strict grid corner before
+    any NQ PnL testing.
+source_es_campaign: es_extreme_vol_filtered_mes_trend_pullback_crowding
+variants:
+- exclude_extreme_vol20_trade_morning_1030
+- exclude_extreme_range10_trade_morning_1030
+- exclude_extreme_absret5_trade_morning_1030
+- exclude_extreme_downside20_trade_morning_1030
+- vol_downshift_trade_morning_1030
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; NQ thresholds are fixed from pre-PnL
+    density only before staged testing.
+status: completed_failed
+completed_at: '2026-06-22'
+failure_summary: Four variants passed the limited core grid but failed the limited monkey test with negative
+  monkey median net profit and core beat rates below the required threshold; the remaining variant failed the
+  limited core grid. No rescue was authorized or used.

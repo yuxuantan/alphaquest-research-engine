@@ -23,6 +23,7 @@ class CboeVixTermStructureEntry:
                 "data/external/es_cboe_vix_term_structure_features_20110103_20260609.csv",
             )
         )
+        self.availability_market = str(params.get("availability_market", "ES"))
         self.features = _load_features(self.feature_csv)
         self.entry_time = parse_time(params.get("entry_time", "10:00:00"))
         self.flatten_time = parse_time(params.get("flatten_time", "15:55:00"))
@@ -74,7 +75,10 @@ class CboeVixTermStructureEntry:
             "feature_csv": self.feature_csv,
             "feature_session_date": session_date.isoformat(),
             "cboe_observation_date": row.get("observation_date"),
-            "availability_rule": "latest Cboe VIX term-structure close strictly before ES session_date",
+            "availability_rule": (
+                "latest Cboe VIX term-structure close strictly before "
+                f"{self.availability_market} session_date"
+            ),
             "signal_timestamp": signal_timestamp,
             "intended_entry_timestamp": signal_timestamp,
             "term_structure_driver_column": driver_column,

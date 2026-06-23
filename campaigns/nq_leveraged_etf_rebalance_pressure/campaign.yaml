@@ -1,0 +1,77 @@
+campaign_id: nq_leveraged_etf_rebalance_pressure
+title: NQ Leveraged ETF Rebalance Pressure
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Leveraged and inverse Nasdaq ETFs rebalance mechanically near the close
+  to restore daily leverage targets. After a sufficiently large completed same-day
+  NQ return from the prior RTH close, positive-feedback demand may create same-direction
+  late-day NQ futures pressure.
+rationale: This is an NQ-specific formulation of the LETF rebalance mechanism. The
+  ES version failed, but Nasdaq leveraged ETF assets and NQ volatility make the mechanism
+  more plausible on NQ; it still must fail closed under full staged validation.
+sources:
+- title: Are Leveraged and Inverse ETFs the New Portfolio Insurers?
+  authors: Tugkan Tuzun
+  year: 2013
+  venue: Federal Reserve Finance and Economics Discussion Series 2013-48
+  link: https://www.federalreserve.gov/econres/feds/are-leveraged-and-inverse-etfs-the-new-portfolio-insurers.htm
+  relevance: Documents mechanical positive-feedback leveraged ETF rebalancing demand
+    after index moves.
+- title: Are Leveraged and Inverse ETFs the New Portfolio Insurers?
+  authors: Tugkan Tuzun
+  year: 2014
+  venue: SSRN / Paris December 2014 Finance Meeting EUROFIDAI-AFFI Paper
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2190708
+  relevance: Working-paper record for the LETF positive-feedback rebalancing mechanism.
+- title: Intraday Share Price Volatility and Leveraged ETF Rebalancing
+  authors: Pauline Shum, Walid Hejazi, Edgar Haryanto, and Arthur Rodier
+  year: 2016
+  venue: Review of Finance
+  link: https://doi.org/10.1093/rof/rfv053
+  relevance: Empirically studies intraday volatility effects around leveraged ETF
+    rebalancing demand.
+data_needs:
+- NQ RTH 1-minute Sierra OHLCV/orderflow cache
+- previous RTH close feature from the local Sierra RTH cache
+- completed 1-minute NQ bars in America/New_York
+lookahead_risks:
+- A signal at HH:MM uses only the bar closing at HH:MM and enters no earlier than
+  the next NQ bar open.
+- Prior RTH close is known before the current RTH session opens.
+- No final current-session close, final high/low, final VWAP, future volume profile,
+  or post-signal return is used.
+- Late-acceleration variant uses only the completed recent window ending at the signal
+  timestamp.
+failure_modes:
+- LETF rebalance demand may be priced before the configured signal time.
+- The effect may concentrate in high-volatility crisis years or a few large NQ moves.
+- Generic late-day momentum may dominate the mechanism and fail robustness tests.
+- One-sided variants may be unstable if upside and downside rebalance pressure is
+  asymmetric.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_leveraged_etf_rebalance_pressure
+  - nq_gao_last_half_hour_orderflow_confirmation
+  - nq_volatility_managed_intraday_premium
+  conclusion: Eligible as NQ-specific research because it tests late-day leveraged
+    Nasdaq ETF rebalance pressure from completed NQ return, not first/last-half-hour
+    momentum or volatility-managed state.
+feature_construction:
+  feature_method: prev_rth_close from NQ bars plus completed same-day return
+  pre_pnl_density_audit: research_artifacts/nq_leveraged_etf_rebalance_pressure_density_audit_20260622.md
+variants:
+- two_sided_day_move_1430
+- two_sided_day_move_1500
+- up_day_rebalance_long_1500
+- down_day_rebalance_short_1500
+- late_acceleration_two_sided_1530
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; selected ES rescue
+    parameter spaces are used only as predeclared NQ baselines before NQ PnL testing.
+status: completed_failed

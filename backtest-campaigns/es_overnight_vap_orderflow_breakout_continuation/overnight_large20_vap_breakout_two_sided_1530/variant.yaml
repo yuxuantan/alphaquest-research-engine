@@ -1,0 +1,25 @@
+campaign_id: es_overnight_vap_orderflow_breakout_continuation
+variant_id: overnight_large20_vap_breakout_two_sided_1530
+strategy_name: true_vap_aoi_breakout_continuation
+mechanic:
+  entry_module: true_vap_aoi_breakout_continuation
+  take_profit_module: cost_adjusted_fixed_r
+  stop_loss_module: sweep_extreme
+  flatten_time: '15:55:00'
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: scaffold

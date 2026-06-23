@@ -1,0 +1,97 @@
+campaign_id: es_overnight_vap_orderflow_breakout_continuation
+title: ES Overnight VAP Orderflow Breakout Continuation
+decision: FAIL
+created_at: '2026-06-22'
+instrument: ES
+timeframe: 1m
+edge_family: overnight_aoi_true_vap_orderflow_breakout_continuation
+hypothesis: Breakouts through the completed overnight high or low may continue when
+  the level is near a frozen prior-session true VAP level and the completed breakout
+  bar shows same-direction aggregate orderflow plus footprint imbalance.
+sources:
+- title: 74% Win Rate Trader Shares His EXACT OrderFlow Strategy ($2M+ Payouts)
+  authors: Chart Fanatics / Trader Yush
+  year: n.d.
+  venue: Practitioner video notes supplied by user
+  link: not available in attached notes
+  relevance: Defines the discretionary framework of AOIs, volume-profile confluence,
+    delta pressure, large-trade interest, and trapped traders.
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports public technical levels as reference prices around which stop
+    activity can cluster and sometimes continue after breaks.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/hhg057
+  relevance: Links technical levels to liquidity provision and order placement.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates same-direction order-flow pressure around breakouts, while this
+    campaign uses completed Sierra aggregate-flow proxies rather than full LOB OFI.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates POC, VAH, VAL, and LVN profile levels as auction-market context.
+data_needs:
+- Validated local Sierra ES 1-minute footprint/VAP cache in America/New_York.
+- Completed overnight high/low merged from 18:00-09:29 ET overnight sessions by RTH session_date.
+- Prior-session POC, VAH, VAL, and high/low LVNs from the true Sierra VAP cache.
+- Completed-bar signed-volume and Sierra large10/large20 aggregate-flow proxies.
+data_quality_caveats:
+- Sierra large10/large20 fields are aggregate bar-level proxies, not vendor-equivalent
+  true >200-lot ES print sequencing or trade-fragmentation analysis.
+- Footprint imbalance fields are completed-bar research proxies and are not a full
+  reconstruction of order-book events.
+lookahead_risks:
+- Overnight high/low levels end no later than 09:29 ET and are merged onto the same RTH session.
+- Prior VAP levels are shifted from completed prior RTH sessions.
+- Signals use only the completed breakout bar; entry is no earlier than the next 1-minute open.
+- No final current-session profile, VWAP, daily range, future high/low, future footprint,
+  or future orderflow is used.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_overnight_vap_orderflow_breakout_continuation_density_audit_20260622.md
+  decision: approve_for_testing_before_pnl
+  note: Signed-flow, large10, and large20 variants all retained enough completed-bar
+    signal density to satisfy the configured 50 trades/year gate before PnL testing.
+variants:
+- overnight_vap_immediate_breakout_two_sided_1500
+- overnight_vap_two_sided_breakout_1530
+- overnight_vap_morning_breakout_two_sided_1200
+- overnight_large10_vap_breakout_two_sided_1530
+- overnight_large20_vap_breakout_two_sided_1530
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - core overnight-VAP orderflow breakout-continuation mechanic
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+test_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run1
+  tested_at: '2026-06-22'
+  campaign_summary: backtest-campaigns/es_overnight_vap_orderflow_breakout_continuation/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_overnight_vap_orderflow_breakout_continuation/methodology_audit.md
+  variants_tested: 5
+  variants_passed: 0
+  failure_reason: All five predeclared overnight-VAP orderflow breakout-continuation
+    variants failed limited_core_grid_test with zero benchmark-passing core combinations.
+  rescue_attempts_used: 0

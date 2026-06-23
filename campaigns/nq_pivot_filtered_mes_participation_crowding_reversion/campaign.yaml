@@ -1,0 +1,100 @@
+campaign_id: nq_pivot_filtered_mes_participation_crowding_reversion
+title: NQ MES participation crowding reversion filtered by completed pivot market structure
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: High MES participation during a completed NQ move may mark smaller-contract crowding and temporary pressure when
+  the reversal direction agrees with completed multi-timeframe swing-pivot structure.
+rationale: This is an ES-derived composite edge. The primary edge is MES participation crowding reversion; the fixed secondary
+  condition is completed swing-pivot market-structure direction. A fade is allowed only when carried multi-timeframe pivot
+  structure supports the fade direction.
+sources:
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates conditioning on smaller-contract participation intensity.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures trading and Micro E-mini participation.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/0022-1082.00265
+  relevance: Supports algorithmic local extrema as a fixed completed-pivot directional filter.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2011.11.003
+  relevance: Motivates requiring the reversion direction to align with completed intraday structure.
+data_needs:
+- data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv
+- NQ return tick columns for completed 30-minute moves
+- MES notional-equivalent and trade-share rank252 fields
+- completed NQ OHLC bars for 5/10/15/30-minute pivot states depending on variant
+lookahead_risks:
+- MES participation ranks use only prior same-clock observations.
+- Base NQ return and MES share use completed bars only.
+- Pivot structure confirms swing highs/lows only after right-side confirmation bars are complete.
+- Signals generated from completed bars are filled no earlier than next bar open.
+- No final session high/low, final VWAP, post-entry MES data, or future pivot is used.
+failure_modes:
+- The pivot filter may lag regime changes.
+- MES participation may be informed activity rather than crowding.
+- NQ trend days may continue against the fade.
+- Costs and NQ volatility may erase the smaller-contract crowding effect.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_mes_participation_crowding_reversion
+  - nq_trend_filtered_mes_participation_crowding
+  - nq_high_semivariance_mes_trend_pullback_crowding
+  conclusion: Eligible as a distinct composite because prior NQ MES crowding tests did not require completed swing-pivot direction,
+    and this campaign omits daily semivariance filters.
+variants:
+- morning_notional_down_reversal_long_window_1100
+- morning_notional_two_sided_reversal_window_1130
+- late_morning_trade_two_sided_reversal_window_1200
+- midday_notional_two_sided_reversal_window_1330
+- afternoon_trade_two_sided_reversal_window_1500
+pre_pnl_density_audit:
+  initial_artifact: research_artifacts/nq_pivot_filtered_mes_participation_crowding_reversion_density_audit_20260622.md
+  final_artifact: research_artifacts/nq_pivot_filtered_mes_participation_crowding_reversion_density_audit_final_20260622.md
+  final_csv: research_artifacts/nq_pivot_filtered_mes_participation_crowding_reversion_density_audit_final_20260622.csv
+  summary: Initial NQ density failed only the morning long variant; a pre-PnL density-only share-rank relaxation produced
+    final passing density for every declared entry-grid corner.
+  min_signals_per_year: 55.195837
+  max_signals_per_year: 147.141962
+source_es_campaign: es_pivot_filtered_mes_participation_crowding_reversion
+source_es_evidence:
+  best_source_run: afternoon_trade_two_sided_reversal_window_1500/ES/stop_widen_rescue1
+  why_selected: 'Strong remaining ES-derived campaign: afternoon stop-widen source had 80/81 profitable core combinations
+    and failed only monkey drawdown-beat robustness. NQ port declared before NQ PnL.'
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn; after OOS, only rejection or promotion is allowed.
+status: completed_failed
+completed_at: '2026-06-22'
+result_summary:
+  verdict: FAIL
+  variants_tested: 5
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_core_grid_test: 4
+    limited_monkey_test: 1
+  best_variant_by_stage: late_morning_trade_two_sided_reversal_window_1200
+  best_variant_by_core_net: late_morning_trade_two_sided_reversal_window_1200
+  failure_reason: All five variants failed the staged flow. Four failed limited core grid stability; late_morning_trade_two_sided_reversal_window_1200
+    passed core but failed limited monkey robustness before WFA.
+  campaign_test_summary: backtest-campaigns/nq_pivot_filtered_mes_participation_crowding_reversion/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_pivot_filtered_mes_participation_crowding_reversion/campaign_results.csv
+  methodology_audit: campaigns/nq_pivot_filtered_mes_participation_crowding_reversion/methodology_audit.md

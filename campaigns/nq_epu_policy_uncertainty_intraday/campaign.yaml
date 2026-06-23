@@ -1,0 +1,102 @@
+campaign_id: nq_epu_policy_uncertainty_intraday
+title: NQ EPU Policy Uncertainty Intraday
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Daily U.S. Economic Policy Uncertainty ranks may proxy risk appetite, risk-off pressure, or a compensating equity risk premium that is stronger in growth-heavy NQ than ES.
+rationale: This NQ port reuses the ES EPU edge family before any NQ PnL inspection. It keeps the conservative 30-calendar-day EPU availability lag and tests whether NQ responds more strongly to the same slow policy-uncertainty states.
+sources:
+- title: Measuring Economic Policy Uncertainty
+  authors: Scott R. Baker, Nicholas Bloom, and Steven J. Davis
+  year: 2016
+  venue: Quarterly Journal of Economics
+  doi: 10.1093/qje/qjw024
+  link: https://doi.org/10.1093/qje/qjw024
+  relevance: Defines the EPU index and documents links between policy uncertainty, investment, employment, and market volatility.
+- title: The Asset-Pricing Implications of Government Economic Policy Uncertainty
+  authors: Jonathan Brogaard and Andrew Detzel
+  year: 2015
+  venue: Management Science
+  doi: 10.1287/mnsc.2014.2044
+  link: https://doi.org/10.1287/mnsc.2014.2044
+  relevance: Supports policy uncertainty as a priced risk state in equities.
+- title: Uncertainty about Government Policy and Stock Prices
+  authors: Lubos Pastor and Pietro Veronesi
+  year: 2012
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2012.01746.x
+  link: https://doi.org/10.1111/j.1540-6261.2012.01746.x
+  relevance: Provides a theoretical channel between policy uncertainty, risk premia, and stock prices.
+- title: Daily U.S. Economic Policy Uncertainty Index
+  authors: PolicyUncertainty.com
+  year: 2026
+  venue: PolicyUncertainty.com
+  link: https://www.policyuncertainty.com/media/All_Daily_Policy_Data.csv
+  relevance: Free source for the Daily U.S. EPU index; this campaign applies a 30-calendar-day lag to avoid revision leakage.
+data_needs:
+- timezone-aware NQ RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- free public Daily U.S. EPU CSV cached locally
+- derived EPU feature file with 30-calendar-day availability lag
+- next-bar execution with commission, slippage, same-day flatten, and no-overnight enforcement
+data_quality_caveats:
+- Daily EPU is a newspaper-based index, not a traded intraday quote.
+- Recent Daily EPU observations can revise; this campaign uses a 30-calendar-day lag to reduce revision leakage.
+- The 30-day lag may make the signal stale for intraday futures trading.
+- Same-bar stop/target conflicts must remain pessimistic because no tick path is used.
+lookahead_risks:
+- A session dated D may only use the latest Daily EPU observation on or before D minus 30 calendar days.
+- Signals use completed one-minute bars and enter next bar open or later.
+- No final session high/low, final VWAP, future EPU observation, or post-entry path information is used for signal generation.
+failure_modes:
+- Policy-uncertainty states may be too slow or stale for same-day NQ RTH returns.
+- NQ may respond differently to policy uncertainty than ES, with direction unstable across regimes.
+- Profits may concentrate in crisis or post-crisis windows.
+- The strongest ES pocket did not pass full core robustness, so NQ transfer must fail closed if not broadly robust.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_ofr_financial_stress_intraday
+  - nq_default_spread_orderflow_risk_premium
+  - nq_nyfed_rrp_liquidity_state
+  - nq_usdjpy_safe_haven_spillover
+  conclusion: Eligible as a distinct bounded policy-uncertainty edge. It uses the Daily U.S. EPU index with a 30-day lag, not OFR stress, credit spreads, RRP liquidity, or FX safe-haven states.
+feature_construction:
+  builder: tools/build_es_epu_policy_uncertainty_features.py
+  source_cache: data/external/us_daily_epu_policy_uncertainty_1985_2026.csv
+  output: data/external/nq_epu_policy_uncertainty_features_20110103_20260612.csv
+  availability_lag_calendar_days: 30
+  pre_pnl_density_audit: research_artifacts/nq_epu_policy_uncertainty_intraday_density_audit_20260623.md
+variants:
+- low_epu_long_1030
+- rising_epu_short_1130
+- high_epu_short_1000
+- falling_epu_long_1200
+- high_epu_ma_short_1330
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized; after staged failure, allow only rejection or promotion unless the user explicitly authorizes one rescue.
+source_es_campaign: es_epu_policy_uncertainty_intraday
+status: completed_failed
+density_reform:
+  initial_audit: research_artifacts/nq_epu_policy_uncertainty_intraday_initial_density_rejected_20260623.md
+  final_audit: research_artifacts/nq_epu_policy_uncertainty_intraday_density_audit_20260623.md
+  no_pnl_inspected_before_reform: true
+  changes:
+  - variant: low_epu_long_1030
+    entry_grid_change: removed epu_rank_max 0.25 and 0.30 because latest-252 counts were below 50
+    non_signal_grid_change: added target_r_multiple 1.5 to keep 9 total grid combinations after density trim
+  - variant: high_epu_ma_short_1330
+    entry_grid_change: removed epu_ma_rank_min 0.75 because latest-252 count was below 50
+nq_port_provenance:
+  source_campaign_id: es_epu_policy_uncertainty_intraday
+  source_config_family: 'mixed: low_epu stop_distance_rescue_1, other variants parameter_space_rescue_1'
+  ported_before_nq_pnl: true
+  nq_rescue_authorized: false
+result_summary:
+  stage: limited_core_grid_test
+  report: backtest-campaigns/nq_epu_policy_uncertainty_intraday/campaign_test_summary.json
+  failure_reason: All five variants failed limited_core_grid_test. Positive pockets in low_epu_long_1030 and rising_epu_short_1130 did not meet the required 70% profitable-combination gate.
+  candidate_strategy_report_created: false

@@ -1,0 +1,116 @@
+campaign_id: nq_sector_opening_breadth_orderflow_continuation
+title: NQ Sector Opening Breadth Orderflow Continuation
+decision: TEST
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Same-day cash-market sector ETF opening breadth can reveal broad equity
+  risk appetite shortly after the 09:30 ET cash open. NQ continuation attempts should
+  be more credible when sector-open breadth, completed NQ morning price move, and
+  aggregate NQ orderflow all point in the same direction before next-bar entry.
+rationale: This is a direct NQ port of the ES sector opening-breadth orderflow campaign.
+  NQ may be especially sensitive to growth and cyclical breadth through XLK/XLY leadership,
+  but the campaign remains fail-closed because sector ETF opens may already be priced
+  into NQ before confirmation.
+sources:
+- title: Do Industries Explain Momentum?
+  authors: Tobias J. Moskowitz and Mark Grinblatt
+  year: 1999
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00146
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00146
+  relevance: Supports the idea that sector and industry leadership can contain broad
+    equity return information.
+- title: Momentum, Business Cycle, and Time-varying Expected Returns
+  authors: Tarun Chordia and Lakshmanan Shivakumar
+  year: 2002
+  venue: Journal of Finance
+  doi: 10.1111/1540-6261.00449
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/1540-6261.00449
+  relevance: Motivates treating sector leadership as a time-varying expected-return
+    and risk-appetite state.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Supports using contemporaneous orderflow imbalance as a short-horizon
+    pressure proxy.
+- title: The myth of business cycle sector rotation
+  authors: Alexander Molchanov and Jeffrey Stangl
+  year: 2024
+  venue: International Journal of Finance and Economics
+  doi: 10.1002/ijfe.2882
+  link: https://onlinelibrary.wiley.com/doi/10.1002/ijfe.2882
+  relevance: 'Cautionary source: naive sector rotation can fail after timing error
+    and costs.'
+data_needs:
+- timezone-aware NQ RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- existing local no-cost Yahoo daily ETF files for XLK, XLY, XLF, XLI, XLV, XLP, and
+  XLU
+- same-day raw ETF Open and prior raw Close only; no same-day ETF high, low, close,
+  or adjusted close
+- 5-minute completed-bar NQ aggregation with next-bar execution
+data_quality_caveats:
+- Yahoo ETF raw opens are research proxies, not exchange-grade point-in-time records.
+- ETF dividend/ex-date gaps may enter the opening breadth calculation.
+- Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor
+  truth.
+- Yahoo sector ETF cache is available through 2026-06-10, so the staged test window
+  ends on 2026-06-10.
+lookahead_risks:
+- Sector open features for session D use only ETF raw Open on D and raw Close from
+  the prior ETF trading day.
+- Signals are no earlier than 10:00 ET, after cash ETF opens are observable and NQ
+  confirmation bars have closed.
+- NQ signal decisions use completed bars and must enter at the next bar open or later.
+- No future NQ bar, same-day ETF close, final session VWAP, final high/low, or post-entry
+  orderflow is used.
+failure_modes:
+- ETF opening breadth may be stale by the time NQ confirms at 10:00 or later.
+- Opening sector breadth may simply reflect overnight information already priced into
+  NQ.
+- Orderflow confirmation may arrive after most continuation movement is complete.
+- Short-side breadth may have lower density or worse slippage sensitivity.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_sector_opening_breadth_orderflow_continuation
+  - nq_spy_turnover_orderflow_attention
+  - nq_credit_etf_orderflow_risk_appetite
+  conclusion: Eligible as a direct NQ port of the ES same-day sector opening-breadth/orderflow
+    edge. It is distinct from SPY turnover attention and HYG credit-risk state campaigns.
+feature_construction:
+  builder: tools/build_es_sector_opening_breadth_features.py with NQ bars input
+  sector_output: data/external/nq_sector_opening_breadth_features_20110103_20260612.csv
+  orderflow_source: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  rows: 3813
+  valid_open_breadth_rows: 3811
+  valid_period_end: '2026-06-10'
+  pre_pnl_density_audit: research_artifacts/nq_sector_opening_breadth_orderflow_continuation_density_audit_20260622.md
+pre_pnl_density_adjustment:
+  decision: widen_nq_sector_count_grids_before_testing
+  reason: Initial NQ pre-PnL density audit showed several ES-rescue sector-count grids were structurally below the configured trade-count opportunity gate. No PnL, stop, target, WFA, Monte Carlo, or holdout result was inspected.
+  changed_variants:
+  - broad_up_early_signed_long_1000
+  - broad_down_morning_signed_short_1130
+  - broad_two_sided_morning_large10_1130
+  - riskoff_cycdown_midday_signed_short_1230
+variants:
+- broad_up_early_signed_long_1000
+- broad_down_morning_signed_short_1130
+- cyclical_up_morning_signed_long_1130
+- riskoff_cycdown_midday_signed_short_1230
+- broad_two_sided_morning_large10_1130
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; ES rescue parameter
+    spaces are used only as predeclared NQ baselines before NQ PnL testing.
+status: completed_failed
+decision: FAIL
+test_summary: backtest-campaigns/nq_sector_opening_breadth_orderflow_continuation/campaign_test_summary.json
+methodology_audit: campaigns/nq_sector_opening_breadth_orderflow_continuation/methodology_audit.md
+failure_reason: Rejected at the pre-PnL density gate. After sector-count widening based only on opportunity counts, three of five variants still had no declared corner above 50 candidate sessions per year.

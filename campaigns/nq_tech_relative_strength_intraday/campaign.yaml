@@ -1,0 +1,79 @@
+campaign_id: nq_tech_relative_strength_intraday
+title: NQ Tech Relative Strength Intraday
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged technology-sector relative strength versus the broad equity market may proxy Nasdaq-specific
+  risk appetite and forecast same-day NQ intraday drift.
+rationale: This campaign is NQ-specific because it uses XLK relative strength versus SPY as a technology-sector
+  state input rather than broad sector rotation. XLK/SPY observations are lagged by one business day and only current
+  NQ bars drive execution timing.
+sources:
+- title: Do Industries Explain Momentum?
+  authors: Tobias J. Moskowitz and Mark Grinblatt
+  year: 1999
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00146
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00146
+  relevance: Documents industry momentum and motivates testing whether technology-sector leadership can proxy NQ
+    intraday risk appetite.
+- title: Do Industries Lead Stock Markets?
+  authors: Harrison Hong, Walter Torous, and Rossen Valkanov
+  year: 2007
+  venue: Journal of Financial Economics 83(2), 367-396
+  doi: 10.1016/j.jfineco.2005.09.010
+  link: https://doi.org/10.1016/j.jfineco.2005.09.010
+  relevance: Supports the possibility that industry returns can contain information about subsequent broad-market
+    returns, with NQ tested as the technology-heavy futures expression.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV cache in America/New_York
+- local Yahoo adjusted-close and volume histories for XLK and SPY
+- derived NQ tech-relative-strength feature file using one-business-day availability lag
+- same-day stop, target, and forced-flatten checks
+lookahead_risks:
+- A session dated D can only use XLK/SPY observations on or before D minus one business day.
+- Rolling ranks are computed before the session-level as-of join.
+- Signals use a completed NQ bar and enter no earlier than the next bar open.
+- No future NQ bar, final session VWAP/range, future ETF close, or post-entry ETF information is used.
+failure_modes:
+- XLK daily relative strength may be too stale for intraday NQ exposure.
+- Technology leadership can invert during rate-shock or rotation regimes.
+- Yahoo adjusted-close revision risk can require manual rejection even if backtest gates pass.
+- Results may concentrate in one side or fail monkey/WFA robustness.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_sector_rotation_risk_appetite
+  - nq_sector_opening_breadth_orderflow_continuation
+  - nq_spy_turnover_orderflow_attention
+  conclusion: Eligible as a fresh NQ-specific technology relative-strength expression; it is narrower than rejected
+    broad sector-rotation or SPY-turnover campaigns.
+feature_construction:
+  builder: tools/build_nq_tech_relative_strength_features.py
+  output: data/external/nq_tech_relative_strength_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3813
+  availability_lag_business_days: 1
+  density_audit: research_artifacts/nq_tech_relative_strength_density_audit_20260622.md
+variants:
+- tech_1d_strength_long_1000
+- tech_5d_strength_long_1030
+- tech_1d_weakness_short_1000
+- tech_5d_weakness_short_1130
+- tech_attention_strength_long_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in current NQ search; rank thresholds are fixed from pre-PnL density only.
+status: completed_failed
+completed_at: '2026-06-22'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_tech_relative_strength_intraday/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_tech_relative_strength_intraday/campaign_results.csv
+  methodology_audit: campaigns/nq_tech_relative_strength_intraday/methodology_audit.md
+  density_audit: research_artifacts/nq_tech_relative_strength_density_audit_20260622.md
+  failure_reason: Four variants failed limited_core_grid_test; tech_5d_weakness_short_1130 passed core but failed
+    limited_monkey_test with only 18.85% profitable randomized schedules and negative median randomized net.

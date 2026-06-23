@@ -1,0 +1,102 @@
+campaign_id: es_overnight_vap_footprint_trap_reversion
+title: ES Overnight VAP Footprint Trap Reversion
+decision: FAIL
+created_at: '2026-06-22'
+instrument: ES
+timeframe: 1m
+edge_family: overnight_aoi_true_vap_footprint_absorption_trap_reversion
+hypothesis: Failed probes through the completed overnight high or low are more likely
+  to revert when the overnight AOI is also near a frozen prior-session true
+  volume-at-price level and the completed signal bar shows footprint absorption
+  against aggressive traders.
+sources:
+- title: 74% Win Rate Trader Shares His EXACT OrderFlow Strategy ($2M+ Payouts)
+  authors: Chart Fanatics / Trader Yush
+  year: n.d.
+  venue: Practitioner video notes supplied by user
+  link: not available in attached notes
+  relevance: Defines the discretionary framework of preplanned AOIs, volume-profile
+    confluence, absorption, delta pressure, and trapped traders.
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports public support/resistance levels as short-horizon reference
+    prices around which stop activity and reversals can cluster.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/hhg057
+  relevance: Links technical levels to liquidity provision and order placement.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates short-horizon order-flow pressure and failed aggressive flow,
+    while this campaign uses completed Sierra footprint fields rather than full LOB OFI.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates POC, VAH, VAL, and LVN profile levels as auction-market context.
+data_needs:
+- Validated local Sierra ES 1-minute footprint/VAP cache in America/New_York.
+- Completed overnight high/low merged from 18:00-09:29 ET overnight sessions by RTH session_date.
+- Previous-session POC, VAH, VAL, and high/low LVNs from the true Sierra VAP cache.
+data_quality_caveats:
+- The campaign uses Sierra SCID-derived completed-bar footprint and VAP fields. It
+  does not have vendor-equivalent >200-lot ES print sequencing or depth queue data.
+- Footprint absorption fields are completed-bar research proxies and are not a full
+  reconstruction of order-book events.
+- Six 2014 RTH sessions in the bounded cache lack completed overnight feature rows;
+  the strategy fails closed on those sessions because overnight_high/overnight_low are null.
+lookahead_risks:
+- Overnight high/low levels end no later than 09:29 ET and are merged onto the same
+  RTH session before any RTH signal can occur.
+- Prior VAP levels are shifted from completed prior RTH sessions.
+- Signals use only the completed signal bar; entry is no earlier than the next 1-minute open.
+- No final current-session VWAP, final profile, final daily range, future high/low,
+  future footprint, or future orderflow is used.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_overnight_vap_footprint_trap_reversion_density_audit_20260622.md
+  decision: approve_for_testing_before_pnl
+  note: Two-sided variants retained enough full-history completed-bar signal density
+    at wider VAP-distance settings to satisfy the configured 50 trades/year gate before PnL testing.
+variants:
+- overnight_vap_immediate_open_trap_two_sided_1500
+- overnight_vap_two_sided_trap_1530
+- overnight_vap_confirmed_reclaim_two_sided_1530
+- overnight_vap_deep_probe_two_sided_1530
+- overnight_vap_morning_trap_two_sided_1200
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - core overnight-VAP footprint trap reversion mechanic
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+test_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run1
+  tested_at: '2026-06-22'
+  campaign_summary: backtest-campaigns/es_overnight_vap_footprint_trap_reversion/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_overnight_vap_footprint_trap_reversion/methodology_audit.md
+  variants_tested: 5
+  variants_passed: 0
+  failure_reason: All five predeclared overnight-VAP footprint trap/reversion variants
+    failed limited_core_grid_test; four had 0/81 profitable iterations, the morning-only
+    variant had 3/81 profitable iterations, and the campaign had zero benchmark-passing
+    core combinations.
+  rescue_attempts_used: 0

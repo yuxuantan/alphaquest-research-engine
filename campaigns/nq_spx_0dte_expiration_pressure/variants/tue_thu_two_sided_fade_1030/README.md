@@ -1,0 +1,4 @@
+# tue_thu_two_sided_fade_1030
+
+Campaign: `nq_spx_0dte_expiration_pressure`.
+Entry module: `spx_0dte_expiration_pressure`.

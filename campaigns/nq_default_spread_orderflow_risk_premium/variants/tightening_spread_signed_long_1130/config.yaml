@@ -1,0 +1,242 @@
+campaign_id: nq_default_spread_orderflow_risk_premium
+variant_id: tightening_spread_signed_long_1130
+test_run_id: run1
+strategy_name: default_spread_orderflow_state
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Fama and French (1989); Keim and Stambaugh (1986); FRED DAAA/DBAA; Cont, Kukanov, and
+    Stoikov (2014)
+  edge_thesis: Default-spread tightening may proxy credit relief; NQ longs require completed upside movement
+    and positive signed orderflow confirmation.
+  mechanic: Lower-tail default-spread-change rank gates long-only NQ continuation with signed-volume confirmation.
+  timeframe_rationale: The 10:00-11:30 ET window keeps relief entries in the morning while requiring completed
+    NQ confirmation.
+  pre_pnl_density: FAILED pre-PnL NQ density audit; min full-history density 11.7885 signals/year
+    and min latest-252 count 6. See research_artifacts/nq_default_spread_orderflow_risk_premium_density_audit_20260623.md.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-20'
+  mechanics_review:
+    mechanic_expresses_edge: 'This variant expresses default-spread relief: the lagged one-day spread
+      change rank must be in the lower tail, NQ must be up from its RTH open, and cumulative signed volume
+      must confirm buying before the long entry.
+
+      '
+    entry_logic_rationale: 'The setup uses a completed NQ confirmation window at 10:00, 10:30, or 11:30
+      ET. It avoids same-day credit data and tests whether credit-spread tightening maps to intraday NQ
+      upside only when NQ itself agrees.
+
+      '
+    stop_loss_rationale: The rescue tests wider percent stops because original top rows frequently sat
+      at the widest tested stop, which suggests the declared signal may need more intraday noise tolerance
+      without changing its economic trigger.
+    target_exit_rationale: The fixed-R target logic and target grid are intentionally unchanged. All tested
+      target_r_multiple values are at least 1.0R, so the corrected RR rule permits no TP widening; any
+      rescue effect must come from entry-threshold and stop-distance robustness.
+    profitability_rationale: If spread tightening marks relief from credit pressure, NQ should be more
+      likely to continue higher when signed orderflow confirms morning buying.
+    known_failure_modes: Spread tightening can lag equity gains, the relief effect may be overnight rather
+      than intraday, and upside continuation may be crowded.
+    pre_test_decision: reject_pre_pnl_density
+  rescue_reason: Original profitable rows were too sparse, so the rescue keeps the tightening-spread risk-on
+    mechanic but broadens the rank threshold enough to preserve annual trade density while testing wider
+    stops.
+  rescue_constraints: Same default-spread/orderflow edge, entry module, setup mode, flow bucket, signal
+    times, timeframe, data window, costs, stop module, target module, target grid, flatten rule, prop
+    rules, and validation gates. Only existing credit threshold, orderflow threshold, and stop-distance
+    fixed values/parameter grids are changed. TP is unchanged because all target_r_multiple values are
+    already >= 1.0R.
+  source_run_report: backtest-campaigns/es_default_spread_orderflow_risk_premium/tightening_spread_signed_long_1130/ES/rescue1/variant_test_summary.json
+  nq_port_provenance:
+    source_campaign_id: es_default_spread_orderflow_risk_premium
+    source_config_path: campaigns/es_default_spread_orderflow_risk_premium/rescue_attempts/parameter_space_rescue_1/tightening_spread_signed_long_1130/config.yaml
+    source_run_role: ES parameter-space rescue config, ported before any NQ PnL inspection
+    nq_mechanics_changed_after_results: false
+    nq_rescue_authorized: false
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: default_spread_orderflow_state
+    params:
+      feature_csv: data/external/nq_default_spread_features_20110103_20260612.csv
+      setup_mode: tightening_spread_long
+      flow_mode: signed_volume
+      signal_times:
+      - '10:00:00'
+      - '10:30:00'
+      - '11:30:00'
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      credit_rank_threshold: 0.55
+      min_es_move_ticks: 2
+      min_orderflow_imbalance: 0.02
+      max_trades_per_day: 1
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.004
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.credit_rank_threshold:
+    - 0.5
+    - 0.55
+    - 0.6
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_pct:
+    - 0.003
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.credit_rank_threshold:
+    - 0.5
+    - 0.55
+    - 0.6
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_pct:
+    - 0.003
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts

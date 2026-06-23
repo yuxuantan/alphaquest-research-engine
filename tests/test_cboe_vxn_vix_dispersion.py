@@ -17,6 +17,7 @@ def test_high_vxn_vix_ratio_entry_emits_short_on_completed_bar(tmp_path):
             "ratio_rank_min": 0.65,
             "entry_time": "10:00:00",
             "bar_interval_minutes": 1,
+            "availability_market": "NQ",
         }
     )
 
@@ -26,6 +27,7 @@ def test_high_vxn_vix_ratio_entry_emits_short_on_completed_bar(tmp_path):
     assert signal.direction == "short"
     assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 10:00")
     assert signal.report_fields["vxn_vix_driver_column"] == "vxn_vix_ratio_rank_252"
+    assert signal.report_fields["availability_rule"] == "latest Cboe VIX and VXN closes strictly before NQ session_date"
 
 
 def test_low_vxn_vix_ratio_entry_emits_long(tmp_path):

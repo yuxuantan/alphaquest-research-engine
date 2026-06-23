@@ -1,0 +1,114 @@
+campaign_id: nq_cboe_put_call_sentiment_intraday
+title: NQ Cboe Put/Call Sentiment Intraday
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged public Cboe put/call volume imbalance can proxy option-market directional demand or sentiment pressure
+  that may spill into same-day NQ RTH returns after the cash open.
+rationale: This is a direct NQ port of the ES Cboe put/call sentiment campaign. NQ may be more sensitive to option-market
+  sentiment because of technology/growth concentration, but the campaign remains fail-closed because Cboe ratios are broad
+  daily summaries rather than intraday buyer-initiated option flow.
+sources:
+- title: The Information in Option Volume for Future Stock Prices
+  authors: Jun Pan and Allen M. Poteshman
+  year: 2006
+  venue: Review of Financial Studies 19(3), 871-908
+  link: https://doi.org/10.1093/rfs/hhj024
+  relevance: Shows option volume put/call measures contain information about future equity returns.
+- title: Cboe Equity Volume and Put/Call Ratios
+  authors: Cboe Global Markets
+  year: 2026
+  venue: Official Cboe CSV
+  link: https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/equitypc.csv
+  relevance: Free public daily equity-option volume and put/call ratio source.
+- title: Cboe Index Volume and Put/Call Ratios Archive
+  authors: Cboe Global Markets
+  year: 2026
+  venue: Official Cboe CSV
+  link: https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/indexpcarchive.csv
+  relevance: Free public daily index-option volume and put/call ratio source.
+- title: Cboe Total Volume and Put/Call Ratios
+  authors: Cboe Global Markets
+  year: 2026
+  venue: Official Cboe CSV
+  link: https://cdn.cboe.com/resources/options/volume_and_call_put_ratios/totalpc.csv
+  relevance: Free public daily total Cboe option volume and put/call ratio source.
+data_needs:
+- timezone-aware NQ RTH 1-minute OHLCV/orderflow bars in America/New_York
+- free public Cboe equity/index/total put-call ratio CSVs
+- derived session feature file using only Cboe observations strictly before the NQ session date
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- Cboe states the volume and put/call ratio data is provided for convenience and may use preliminary volume.
+- Equity volume methodology changed in 2012 when exchange-traded products were excluded from equity option products.
+- Cboe put/call ratios are completed daily summaries, not intraday option-flow observations.
+- Sierra data is aggregated bar-level data, not tick-path data.
+lookahead_risks:
+- Using same-day Cboe put/call volume would leak unavailable end-of-day data; this campaign forbids it.
+- Signals use only a completed NQ bar at the configured timestamp plus lagged Cboe daily ratios from strictly prior Cboe trade
+  dates.
+- Rolling ranks are computed over lagged session features only.
+- No final session high/low, final VWAP, future returns, or post-entry option volume is used.
+failure_modes:
+- Single-name option-volume predictability may not transfer to aggregate NQ futures returns.
+- Public put/call ratios may be too noisy versus buyer-initiated open-buy option volume used in the source paper.
+- Aggregate put/call extremes may behave contrarian in some regimes and directional in others, failing parameter stability.
+- Cboe methodology changes and preliminary-volume caveats may make results fragile or unsuitable for promotion.
+- The edge may require overnight exposure, which this intraday campaign forbids.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_cboe_put_call_sentiment_intraday
+  - nq_spy_turnover_orderflow_attention
+  - nq_volatility_managed_intraday_premium
+  - nq_vpin_toxicity_continuation
+  conclusion: Eligible as a direct NQ port of the ES Cboe put/call sentiment edge and distinct from SPY attention, volatility-managed
+    premium, and VPIN toxicity.
+feature_construction:
+  builder: tools/build_es_cboe_put_call_features.py with NQ bars-input override
+  output: data/external/nq_cboe_put_call_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3753
+  lookahead_control: latest Cboe put/call observation strictly before NQ session_date
+  pre_pnl_density_audit: research_artifacts/nq_cboe_put_call_sentiment_density_audit_20260622.md
+pre_pnl_density_audit:
+  method: Feature-threshold count only; no PnL or robustness result inspected.
+  decision: PASS_WITH_SPARSE_STRICT_CORNERS
+parameter_space:
+  stop_pct:
+  - 0.004
+  - 0.006
+  - 0.008
+  target_r_multiple:
+  - 1.5
+  - 2.0
+  - 2.5
+  combinations_per_variant: 27
+variants:
+- low_equity_pc_long_1000
+- high_equity_pc_short_1030
+- falling_total_pc_long_1130
+- rising_total_pc_short_1200
+- high_total_vs_equity_pc_short_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request.
+status: completed
+testing_outcome:
+  completed_at: '2026-06-22'
+  decision: FAIL
+  original_runs: 5
+  rescue_runs: 0
+  wfa_reached: 2
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  campaign_summary_path: backtest-campaigns/nq_cboe_put_call_sentiment_intraday/campaign_test_summary.json
+  failure_reason: Two variants failed WFA after passing core and monkey; three variants failed limited_monkey_test.
+final_result:
+  decision: FAIL
+  candidate_strategy_report_created: false
+  reason: No variant passed the full staged robustness flow; no rescue authorized.
+  report_path: backtest-campaigns/nq_cboe_put_call_sentiment_intraday/campaign_test_summary.json

@@ -1,0 +1,126 @@
+campaign_id: es_true_vap_value_area_orderflow_acceptance
+title: ES True VAP Value-Area Orderflow Acceptance
+decision: FAIL
+created_at: '2026-06-22'
+instrument: ES
+timeframe: 1m
+edge_family: true_volume_profile_value_acceptance_orderflow
+hypothesis: >
+  Prior-session true volume-at-price value boundaries can mark accepted auction
+  value. A completed ES close outside prior VAH or VAL with same-direction
+  completed-bar orderflow may identify value migration that persists after
+  next-bar execution.
+variant_expansion_rationale: >
+  The first five variants cover the core long, short, two-sided, large10, and
+  large20 expressions of the frozen true-VAP value-acceptance edge. Variants
+  six through eight are included because they test materially different fixed
+  mechanics that are plausibly better: afternoon continuation after morning
+  discovery, gap-above-VAH hold with footprint confirmation, and gap-below-VAL
+  hold with footprint confirmation. These are not extra parameter searches; all
+  variants use the same predeclared two-entry-parameter grid and the added
+  variants change fixed market-state mechanics only.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the idea that public support and resistance reference levels
+    can affect intraday order placement and short-horizon price behavior.
+- title: Do Investors Place Orders to Exploit Technical Analysis?
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2004.00665.x
+  link: https://doi.org/10.1111/j.1540-6261.2004.00665.x
+  relevance: Connects technical reference levels with visible order placement and
+    liquidity provision behavior.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow imbalance as a short-horizon price-impact proxy,
+    while this campaign uses completed-bar Sierra aggregate flow rather than LOB data.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates POC, value area, and volume-at-price auction context.
+data_needs:
+- data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny.parquet
+- Frozen prior-session true VAP columns: prior_vap_poc, prior_vap_vah, prior_vap_val.
+- Completed 1-minute Sierra aggregate signed-volume and large-trade aggregate flow columns.
+- Optional completed-bar footprint imbalance volume for fixed gap-hold variants.
+data_quality_caveats:
+- Sierra aggregate signed-volume and large10/large20 fields are completed-bar research
+  proxies, not full exchange order-book imbalance.
+- The true VAP columns are prior-session frozen features from local Sierra footprint
+  processing; they must not be reinterpreted as current-session final profile data.
+- The cache does not provide print-level sequencing, so same-bar stop/target conflicts
+  still use the engine's pessimistic handling.
+lookahead_risks:
+- Prior VAP levels are frozen from the previous completed RTH session before any
+  current-session signal.
+- The signal uses only the completed 1-minute bar and enters no earlier than the
+  next 1-minute open.
+- Start-location filters use only the first completed RTH bar's open, available
+  before later signal bars.
+- No current-session final profile, VWAP, high/low, or post-entry orderflow is used.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_true_vap_value_area_orderflow_acceptance_density_audit_20260622.md
+  data_source: data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny.parquet
+  rows: 1485900
+  period: 2011-01-03 through 2026-05-29 RTH
+  strict_corner: breakout_buffer_ticks=2 and min_orderflow_imbalance=0.04
+  decision: approve_for_testing_before_pnl
+variants:
+- morning_true_vah_signed_acceptance_long_1130
+- morning_true_val_signed_acceptance_short_1130
+- morning_inside_value_escape_signed_two_sided_1130
+- late_morning_true_value_large10_two_sided_1230
+- midday_true_value_large20_two_sided_1400
+- afternoon_true_value_signed_two_sided_1500
+- morning_gap_above_vah_hold_footprint_long_1030
+- morning_gap_below_val_hold_footprint_short_1030
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - breakout_buffer_ticks
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_pct
+  target_tunables:
+  - target_r_multiple
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - true VAP value-area acceptance thesis
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+test_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run1
+  tested_at: '2026-06-22'
+  campaign_summary: backtest-campaigns/es_true_vap_value_area_orderflow_acceptance/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_true_vap_value_area_orderflow_acceptance/methodology_audit.md
+  variants_tested: 8
+  variants_passed: 0
+  rescue_attempts_used: 0
+  failure_reason: >
+    All eight predeclared true-VAP value-area orderflow acceptance variants failed
+    limited_core_grid_test. No variant reached monkey, WFA, Monte Carlo,
+    simulated incubation, frozen validation, or candidate reporting.
+  best_variant: morning_inside_value_escape_signed_two_sided_1130
+  best_variant_note: >
+    The only positive pocket was 4/81 profitable combinations with zero
+    benchmark-passing combinations and best-day concentration failure, so it is
+    rejected rather than rescued.

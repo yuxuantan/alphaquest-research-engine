@@ -84,3 +84,29 @@ def test_build_es_mes_flow_divergence_cache_accepts_parquet_inputs(tmp_path):
 
     assert out["timestamp"].tolist() == pd.to_datetime(pd.read_csv(es_csv)["timestamp"]).tolist()
     assert out.loc[1, "es_minus_mes_imbalance_2"] == pytest.approx(0.4)
+
+
+def test_build_es_mes_flow_divergence_cache_supports_nq_mes_feature_prefix(tmp_path):
+    nq_csv = tmp_path / "nq.csv"
+    mes_csv = tmp_path / "mes.csv"
+    _write_cache(nq_csv, "NQ", [4, -2, 6], [1, 1, 3])
+    _write_cache(mes_csv, "MES", [-2, -4, 2], [-1, -3, 1])
+
+    out = build_es_mes_flow_divergence_cache(
+        es_csv=nq_csv,
+        mes_csv=mes_csv,
+        windows=[2],
+        large_trade_sizes=[20],
+        price_cap_ticks=[16],
+        tick_size=0.25,
+        min_period_fraction=1.0,
+        market_symbol="NQ",
+        market_prefix="nq",
+    )
+
+    assert out["symbol"].unique().tolist() == ["NQ"]
+    assert out.loc[1, "nq_trade_orderflow_imbalance_2"] == pytest.approx(0.1)
+    assert out.loc[1, "nq_minus_mes_imbalance_2"] == pytest.approx(0.4)
+    assert out.loc[1, "mes_minus_nq_return_ticks_2"] == pytest.approx(0.0)
+    assert out.loc[1, "mes_large20_imbalance_nq_return_lte_16_2"] == pytest.approx(-0.4)
+    assert "mes_large20_imbalance_es_return_lte_16_2" not in out.columns

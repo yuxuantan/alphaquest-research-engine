@@ -1,0 +1,225 @@
+campaign_id: nq_round_number_barrier_reaction
+strategy_name: nq_round_number_barrier
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: csv
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  raw_csv: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.csv
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: &id002
+    entry.params.barrier_interval_points:
+    - 25.0
+    - 50.0
+    - 100.0
+    entry.params.buffer_ticks:
+    - 0
+    - 1
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+variant_id: round_number_upside_breakout_long
+test_run_id: run1
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: *id002
+research_metadata:
+  academic_source: Donaldson and Kim (1993); Osler (2003, 2005)
+  edge_thesis: NQ may react around fixed 25/50/100-point psychological handles through clustered stops,
+    targets, and discretionary liquidity.
+  mechanic: upside_breakout_long on completed 5-minute NQ bars from 09:45:00 to 13:30:00, using fixed
+    ex-ante round-number barriers and next-bar execution.
+  timeframe_rationale: Five-minute bars reduce one-minute noise around fixed psychological handles while
+    preserving completed-bar next-open execution.
+  rescue_status: none
+  pre_pnl_density:
+    artifact: research_artifacts/nq_round_number_barrier_reaction_density_audit_20260622.md
+    entry_combo_count: 6
+    strict_corner_min_signals_per_year: 81.4833
+    nq_grid_fixed_before_pnl: true
+  source_es_campaign: es_round_number_barrier_reaction
+  nq_port_note: NQ-specific barrier intervals were selected from pre-PnL density only.
+  mechanics_review:
+    mechanic_expresses_edge: 'round_number_upside_breakout_long expresses the fixed psychological barrier
+      edge by using only price handles that are known before the session: 25, 50, and 100 NQ points. The
+      setup mode upside_breakout_long tests either failed probes that reclaim/reject a barrier or completed
+      crosses that may trigger clustered stops; no prior high/low, VWAP, volume profile, orderflow-derived
+      level, or post-entry information defines the level.'
+    entry_logic_rationale: The entry condition is evaluated only after a completed 5-minute RTH bar inside
+      the predeclared time window. The intended fill is the next bar open or later, so a bar close that
+      creates the signal is not filled on the same close. Breakout variants use only the previous completed
+      bar close and current completed bar close around the fixed barrier.
+    stop_loss_rationale: The stop is a predeclared percent-from-entry distance rounded to the NQ tick.
+      It is not fitted to a particular barrier, day, or volatility regime after results, and it is intended
+      to reject the premise when a reclaim/reject fails or a breakout reverses back through the clustered-liquidity
+      zone. Same-bar stop/target conflicts remain pessimistic under the staged engine.
+    target_exit_rationale: The take-profit is a predeclared fixed-R multiple tied to the initial stop
+      distance. It does not use future price action, final VWAP, session range, discretionary barrier
+      extensions, or orderflow after entry, keeping the exit auditable across neighboring barrier and
+      buffer parameters.
+    profitability_rationale: The NQ index level is highly visible and frequently crosses salient handles,
+      so clustered discretionary orders, stops, and targets could create either reversal after failed
+      probes or continuation after completed breaks. The campaign is still only a candidate test and must
+      pass the full staged validation before any manual-review promotion.
+    known_failure_modes: The pattern may be obvious and arbitraged, 25-point handles may be too noisy,
+      100-point handles may be regime-dependent, and OHLC bars may not reveal the true tick path around
+      a fast barrier touch. Breakout and reclaim behavior can also flip sign across volatility regimes,
+      causing a strong-looking top combo to fail neighboring-parameter and monkey robustness gates.
+    pre_test_decision: approve_for_testing
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-22'
+strategy:
+  entry:
+    module: round_number_barrier
+    params:
+      setup_mode: upside_breakout_long
+      start_time: 09:45:00
+      end_time: '13:30:00'
+      max_trades_per_day: 1
+      tick_size: 0.25
+      bar_interval_minutes: 5
+      barrier_interval_points: 50.0
+      buffer_ticks: 1
+      max_close_distance_ticks: 8
+      min_bar_range_ticks: 2
+      stop_pct: 0.0025
+      target_r_multiple: 1.5
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0025
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'

@@ -1,0 +1,114 @@
+campaign_id: nq_nyfed_rrp_liquidity_state
+title: NQ NY Fed reverse-repo liquidity state
+decision: FAIL
+created_at: '2026-06-23'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: funding_liquidity_state_rrp_balance_sheet_channel
+hypothesis: Lagged changes in NY Fed overnight reverse-repo usage proxy changes in private-market funding-liquidity
+  capacity; NQ may be more sensitive than broad ES to liquidity-state shifts because its index exposure
+  is more growth/duration heavy.
+sources:
+- title: Market Liquidity and Funding Liquidity
+  authors: Markus K. Brunnermeier and Lasse Heje Pedersen
+  year: 2009
+  venue: The Review of Financial Studies
+  link: https://academic.oup.com/rfs/article-abstract/22/6/2201/1592184
+  doi: 10.1093/rfs/hhn098
+  relevance: Provides the funding-liquidity mechanism linking intermediary funding constraints, market
+    liquidity, volatility, and risk premia.
+- title: 'FAQs: Reverse Repurchase Agreement Operations'
+  authors: Federal Reserve Bank of New York
+  year: 2026
+  venue: New York Fed Markets
+  link: https://www.newyorkfed.org/markets/rrp_faq
+  relevance: Official source defining ON RRP operations, daily operation timing, balance-sheet liability
+    effects, and publication of operation results.
+rationale: This NQ port isolates the same prior-day ON RRP funding-liquidity state used by the ES campaign,
+  but tests it on the NQ execution leg. The port was authored before any NQ PnL inspection and keeps the
+  ES rescue threshold families as predeclared NQ parameter space.
+data_needs:
+- local Sierra NQ RTH 1-minute bars aggregated to 5-minute strategy bars
+- 'lag-one local RRP feature file: data/external/nyfed_rrp_liquidity_state_lag1_features_20140811_20260529.csv'
+- America/New_York timestamps and same-day forced flattening
+lookahead_risks:
+- The raw RRP z-score feature is shifted by one listed trade date before strategy use; signals never use
+  same-day RRP results.
+- Entries are generated at completed 5-minute bar closes and filled no earlier than next bar open by the
+  engine.
+- No final session high/low, final VWAP, future orderflow, future RRP values, or post-signal path information
+  is used.
+failure_modes:
+- RRP changes may be a slow policy plumbing variable that does not affect same-day NQ after costs.
+- 'The sign can be ambiguous: high RRP usage may mean abundant cash rather than stressed liquidity.'
+- The usable lagged z-score span begins in 2014, producing fewer WFA windows than the full NQ cache.
+- Thresholds may pass only because broad regimes dominate one market side or one rate-cycle period.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_market_plumbing_liquidity_capacity
+  - es_ofr_financial_stress_intraday
+  - es_treasury_rate_shock_intraday
+  - es_cftc_tff_hedging_pressure
+  - es_finra_margin_leverage
+  - es_dollar_risk_appetite_intraday
+  conclusion: Eligible as a distinct active campaign because the prior market-plumbing campaign used primary-dealer
+    securities-lending and VX open-interest features, not the NY Fed ON RRP balance-sheet liability channel.
+    It also differs from OFR stress, Treasury-rate shocks, CFTC positioning, FINRA leverage, and dollar-risk-appetite
+    campaigns.
+feature_lag_audit: research_artifacts/nq_nyfed_rrp_liquidity_state_lag_audit_20260623.md
+pre_pnl_density_audit: research_artifacts/nq_nyfed_rrp_liquidity_state_density_audit_20260623.md
+variants:
+- rrp_drain_short_1000
+- rrp_drain_short_1130
+- rrp_drain_short_1330
+- rrp_drain_short_1430
+- rrp_drain_short_1500
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized; after staged failure, allow only rejection or promotion unless the
+    user explicitly authorizes one rescue.
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+source_es_campaign: es_nyfed_rrp_liquidity_state
+pre_pnl_density_screen: research_artifacts/nq_nyfed_rrp_liquidity_state_density_audit_20260623.csv
+status: completed_failed
+nq_port_provenance:
+  source_campaign_id: es_nyfed_rrp_liquidity_state
+  source_config_family: parameter_space_rescue_1
+  ported_before_nq_pnl: true
+  nq_rescue_authorized: false
+pre_pnl_density_reform:
+  date: '2026-06-23'
+  initial_screen: research_artifacts/nq_nyfed_rrp_liquidity_state_initial_density_rejected_20260623.md
+  initial_screen_csv: research_artifacts/nq_nyfed_rrp_liquidity_state_initial_density_rejected_20260623.csv
+  final_screen: research_artifacts/nq_nyfed_rrp_liquidity_state_density_audit_20260623.md
+  final_screen_csv: research_artifacts/nq_nyfed_rrp_liquidity_state_density_audit_20260623.csv
+  reason: Release-long variants and the 0.375 drain threshold failed the latest-252 signal-density sanity
+    screen before any NQ PnL was inspected.
+  changes:
+  - Archived rrp_release_long_1000 and rrp_release_long_1330 under rejected_pre_pnl_density/.
+  - Final NQ campaign tests five RRP-drain short timing variants only.
+  - Final entry threshold grid is entry.params.rrp_drain_threshold=[0.125, 0.25].
+  pnl_inspected_before_reform: false
+completed_at: '2026-06-23'
+testing_outcome:
+  completed_at: '2026-06-23'
+  decision: FAIL
+  terminal_stage: limited_monkey_test
+  original_runs: 5
+  rescue_runs: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  campaign_summary_path: backtest-campaigns/nq_nyfed_rrp_liquidity_state/campaign_test_summary.json
+  failure_reason: All five variants failed the staged flow. The 10:00 drain variant passed limited core
+    but failed limited monkey robustness; the other four variants failed limited_core_grid_test.
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_nyfed_rrp_liquidity_state/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_nyfed_rrp_liquidity_state/campaign_results.csv
+  methodology_audit: campaigns/nq_nyfed_rrp_liquidity_state/methodology_audit.md
+  failure_reason: All five variants failed the staged flow. The 10:00 drain variant passed limited core
+    but failed limited monkey robustness; the other four variants failed limited_core_grid_test.

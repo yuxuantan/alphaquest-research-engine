@@ -35,6 +35,7 @@ def test_low_vvix_entry_emits_long(tmp_path):
         {
             "feature_csv": str(features),
             "setup_mode": "low_vvix_long",
+            "availability_market": "NQ",
             "tail_rank_max": 0.35,
             "entry_time": "10:30:00",
         }
@@ -44,6 +45,7 @@ def test_low_vvix_entry_emits_long(tmp_path):
 
     assert signal is not None
     assert signal.direction == "long"
+    assert "NQ session_date" in signal.report_fields["availability_rule"]
 
 
 def test_rising_vvix_requires_change_rank_threshold(tmp_path):

@@ -1,0 +1,1 @@
+from propstack.strategy_modules.entry.usdjpy_safe_haven import UsdjpySafeHavenEntry

@@ -1,0 +1,75 @@
+campaign_id: nq_self_lead_opening_range_breakout
+title: NQ self-lead opening-range breakout
+decision: FAIL
+created_at: '2026-06-22'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: nq_self_lead_opening_range_breakout
+hypothesis: NQ upside opening-range breakouts are more likely to continue when NQ itself is outperforming
+  ES over a completed short lookback and NQ trade-side flow confirms the breakout.
+sources:
+- title: Market Intraday Momentum
+  authors: Gao, Lei; Han, Yufeng; Li, Sophia Zhengzi; Zhou, Guofu
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  relevance: Motivates intraday continuation after early same-day returns, especially in high-activity
+    regimes.
+- title: 'High Frequency Lead-Lag Relationships: Empirical Facts'
+  authors: Huth, Nicolas; Abergel, Frederic
+  year: 2014
+  venue: arXiv / market microstructure working paper
+  link: https://arxiv.org/abs/1111.7102
+  relevance: Motivates testing whether short-horizon cross-instrument leadership can condition breakout
+    continuation.
+- title: The Price Impact of Order Book Events
+  authors: Cont, Rama; Kukanov, Arseniy; Stoikov, Sasha
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports using orderflow imbalance as a short-horizon pressure proxy, with the caveat that
+    this campaign uses Sierra aggregate trade-side flow, not full-depth OFI.
+rationale: This is an NQ-traded version of the opening-range/lead-lag premise, not the prior ES campaign
+  that traded ES when NQ led. The tradeable OHLCV and orderflow columns are NQ, while ES is only a completed-bar
+  relative benchmark.
+data_needs:
+- data/cache/orderflow/nq_es_lead_lag_1m_20110103_20260609_full_rth_ny.parquet
+- Derived NQ-primary ES/NQ lead-lag cache with completed rolling ES and NQ return features.
+lookahead_risks:
+- Opening-range high/low are frozen only after the configured opening window is complete.
+- NQ and ES leadership features are completed rolling returns on bars available at the signal decision
+  time.
+- Signals use completed bar close and the engine performs next-bar execution.
+- Only long NQ breakouts are tested; no short-side or post-result direction selection is added after PnL.
+failure_modes:
+- NQ may already exhaust by the time it leads ES and breaks the opening range.
+- Opening-range edge stops may be too wide for prop-style risk even with a max-stop cap.
+- NQ signed-volume and large-trade-flow proxies may mark exhaustion rather than continuation.
+- Long-only upside effects may concentrate in technology-led regimes and fail WFA.
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue is authorized for this NQ campaign; all mechanics and parameter spaces
+    are frozen before staged testing.
+variants:
+- or15_nq5_signed_long_1015
+- or15_nq15_signed_long_1030
+- or30_nq15_signed_long_1030
+- or30_nq30_signed_long_1130
+- or30_nq30_large10_long_1130
+result_summary:
+  decision: FAIL
+  report_path: backtest-campaigns/nq_self_lead_opening_range_breakout/campaign_test_summary.json
+  runs: 5
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_core_grid_test: 5
+  failure_reason: All five predeclared NQ self-lead opening-range breakout variants failed limited_core_grid_test;
+    no rescue applied.
+  best_core_profitable_rate: 0.07407407407407407
+  best_core_variant: or15_nq5_signed_long_1015
+  notes:
+  - Dense entry-only signal counts did not translate to positive expectancy after NQ costs and OR-edge
+    risk.
+  - Four variants had 0/81 profitable core-grid configurations; the best variant had 6/81 profitable configurations
+    and essentially flat top net profit.

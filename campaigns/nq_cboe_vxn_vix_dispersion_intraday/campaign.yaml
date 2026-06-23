@@ -1,0 +1,99 @@
+campaign_id: nq_cboe_vxn_vix_dispersion_intraday
+title: NQ Cboe VXN/VIX Dispersion Intraday
+decision: TEST
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Nasdaq-versus-S&P implied-volatility dispersion, measured by VXN/VIX
+  and VXN-minus-VIX states, may identify NQ intraday risk-off continuation or risk-appetite
+  rebound because VXN is directly tied to Nasdaq-100 option-implied volatility.
+rationale: This is NQ-specific follow-on research after ES VXN/VIX dispersion failed.
+  The same Cboe daily features are more economically direct for NQ than ES, but the
+  campaign remains fail-closed because daily implied-volatility states may still be
+  too slow for intraday direction.
+sources:
+- title: Relationships Between Implied Volatility Indexes and Stock Index Returns
+  authors: Pierre Giot
+  year: 2005
+  venue: Journal of Portfolio Management, 31(3), 92-100
+  doi: 10.3905/jpm.2005.500363
+  link: https://www.pm-research.com/content/iijpormgmt/31/3/92
+  relevance: Studies VIX/VXN relationships with stock-index returns and motivates
+    testing relative implied-volatility states.
+- title: Relationships among US S&P500 Stock Index, its Futures and Nasdaq Index Futures
+  authors: M. Kablan, S. Emiroglu, and S. Danisoglu
+  year: 2021
+  venue: Borsa Istanbul Review / Risk Market Journals
+  link: https://ideas.repec.org/a/rmk/rmkbae/v8y2021i1p121-148.html
+  relevance: Documents cross-market relationships and volatility spillovers among
+    S&P 500 and Nasdaq futures markets.
+- title: VIX and VXN Historical Price Data
+  authors: Cboe Global Markets
+  year: 2026
+  venue: Official Cboe daily historical CSV endpoints
+  link: https://www.cboe.com/us/indices/dashboard/VXN/
+  relevance: Provides free official daily VIX and VXN histories used to construct
+    strictly lagged dispersion features.
+data_needs:
+- timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+- free official Cboe VIX and VXN daily historical CSVs or local cached copies
+- derived session feature file using only Cboe observations strictly before the NQ
+  session date
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- VIX and VXN are daily closes, not intraday option snapshots.
+- Same-day Cboe closes are unavailable to intraday NQ signals and must not be used.
+- Sierra data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+- Using VIX or VXN closes from the same NQ session date would leak unavailable data
+  and is forbidden.
+- Signals use only a completed NQ bar at the configured timestamp and lagged Cboe
+  daily state.
+- Rolling ranks are computed on Cboe observations and then mapped with an as-of merge
+  using strictly prior observation dates.
+- No final session high/low, final VWAP, future returns, or post-entry Cboe values
+  are used.
+failure_modes:
+- Relative VXN/VIX states may proxy broad volatility level and fail to add information
+  beyond rejected VIX-state families.
+- Daily VXN/VIX states may be too slow for same-day NQ direction after costs.
+- High relative tech volatility may mark either continuing risk-off pressure or a
+  rebound/risk-premium state.
+- Performance may concentrate in crisis periods or single technology-sector shock
+  years.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_cboe_vxn_vix_dispersion_intraday
+  - nq_volatility_managed_intraday_premium
+  - nq_realized_semivariance_asymmetry
+  conclusion: Eligible as NQ-specific research because VXN is Nasdaq-100 implied volatility
+    and the campaign tests relative VXN/VIX dispersion rather than realized-volatility
+    or Cboe put/call sentiment states.
+feature_construction:
+  builder: tools/build_es_cboe_vxn_vix_dispersion_features.py with NQ bars input
+  vix_cache: data/external/cboe_vix_history.csv
+  vxn_cache: data/external/cboe_vxn_history.csv
+  output: data/external/nq_cboe_vxn_vix_dispersion_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3813
+  lookahead_control: latest Cboe VIX and VXN closes strictly before NQ session_date
+  pre_pnl_density_audit: research_artifacts/nq_cboe_vxn_vix_dispersion_intraday_density_audit_20260622.md
+variants:
+- high_vxn_vix_ratio_short_1000
+- rising_vxn_vix_ratio_short_1030
+- low_vxn_vix_ratio_long_1130
+- falling_vxn_vix_ratio_long_1200
+- high_vxn_minus_vix_short_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; selected ES rescue
+    parameter spaces are used only as predeclared NQ baselines before NQ PnL testing.
+status: completed_failed
+decision: FAIL
+test_summary: backtest-campaigns/nq_cboe_vxn_vix_dispersion_intraday/campaign_test_summary.json
+methodology_audit: campaigns/nq_cboe_vxn_vix_dispersion_intraday/methodology_audit.md
+failure_reason: All five variants failed the limited core grid. No variant reached monkey robustness, WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

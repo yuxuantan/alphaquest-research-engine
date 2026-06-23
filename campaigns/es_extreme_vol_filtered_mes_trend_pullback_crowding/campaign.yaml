@@ -1,26 +1,25 @@
 campaign_id: es_extreme_vol_filtered_mes_trend_pullback_crowding
 title: Extreme-Volatility-Filtered MES Trend-Pullback Crowding Reversion
-decision: TEST
+decision: FAIL
 created_at: '2026-06-20'
 instrument: ES
 market_timezone: America/New_York
 edge_family: mes_participation_crowding_trend_pullback_extreme_volatility_veto
-hypothesis: Elevated MES trade participation during a completed ES pullback can mark crowded temporary pressure,
-  but the payoff path should be more robust when lagged realized-volatility features do not place the session in
-  an extreme volatility or range tail.
-rationale: This is a bounded composite campaign. The base economic signal remains MES smaller-contract crowding
-  during a completed ES trend pullback. The added lagged-volatility gate is a pre-entry risk-state veto intended
-  to remove sessions where prior volatility, range, absolute movement, downside volatility, or short-term volatility
-  spikes can turn pullback fades into large path-risk events. It uses only prior-session features available before
-  the RTH signal.
+hypothesis: Elevated MES trade participation during a completed ES pullback can mark crowded temporary pressure, but the payoff
+  path should be more robust when lagged realized-volatility features do not place the session in an extreme volatility or
+  range tail.
+rationale: This is a bounded composite campaign. The base economic signal remains MES smaller-contract crowding during a completed
+  ES trend pullback. The added lagged-volatility gate is a pre-entry risk-state veto intended to remove sessions where prior
+  volatility, range, absolute movement, downside volatility, or short-term volatility spikes can turn pullback fades into
+  large path-risk events. It uses only prior-session features available before the RTH signal.
 sources:
 - title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
   authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
   year: 2024
   venue: Journal of Financial and Quantitative Analysis
   link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
-  relevance: Motivates conditioning on retail-like or smaller-ticket participation intensity rather than treating
-    all volume as equally informed.
+  relevance: Motivates conditioning on retail-like or smaller-ticket participation intensity rather than treating all volume
+    as equally informed.
 - title: Retail Traders in Futures Markets
   authors: CFTC Office of the Chief Economist
   year: 2024
@@ -45,37 +44,33 @@ sources:
   year: 2017
   venue: Journal of Finance
   doi: 10.1111/jofi.12513
-  relevance: Motivates using lagged realized-volatility states as ex-ante exposure/risk filters rather than reacting
-    to future volatility.
+  relevance: Motivates using lagged realized-volatility states as ex-ante exposure/risk filters rather than reacting to future
+    volatility.
 - title: The Economic Value of Volatility Timing
   authors: Jeff Fleming, Chris Kirby, and Barbara Ostdiek
   year: 2001
   venue: Journal of Finance
   doi: 10.1111/0022-1082.00327
-  relevance: Supports testing whether short-horizon volatility information can have economic value after costs and
-    realistic constraints.
+  relevance: Supports testing whether short-horizon volatility information can have economic value after costs and realistic
+    constraints.
 data_needs:
 - data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv
 - data/external/es_lagged_volatility_features_20110103_20260609.csv
 - completed ES/MES RTH 1-minute bars and same-clock MES trade-share ranks
-- lagged prior-session volatility/range/absolute-return/downside-volatility features available before the current
-  RTH session
+- lagged prior-session volatility/range/absolute-return/downside-volatility features available before the current RTH session
 lookahead_risks:
 - Entry uses completed 1-minute bars only and enters no earlier than the next bar open.
 - MES participation ranks are same-clock historical ranks already present in the local cache.
-- The ES trend window ends before the pullback/crowding lookback, so the trend filter does not see the pullback
-  or future bars.
-- The volatility gate is loaded from prior-session lagged features and cannot use current-session high, low, close,
-  range, or realized volatility.
+- The ES trend window ends before the pullback/crowding lookback, so the trend filter does not see the pullback or future
+  bars.
+- The volatility gate is loaded from prior-session lagged features and cannot use current-session high, low, close, range,
+  or realized volatility.
 - No future ES return, final daily high/low, final VWAP, post-entry MES/ES data, or post-entry orderflow is used.
 failure_modes:
 - MES participation may not isolate retail or less-informed crowding.
-- Extreme-volatility exclusion can remove both large losses and the largest winners, causing fragile or underpowered
-  results.
-- Lagged volatility regimes can be unstable across market structure changes and may not map cleanly to intraday
-  path risk.
-- Fixed 10:30 signals may be too sparse or too small after ES commission, slippage, and pessimistic stop-target
-  sequencing.
+- Extreme-volatility exclusion can remove both large losses and the largest winners, causing fragile or underpowered results.
+- Lagged volatility regimes can be unstable across market structure changes and may not map cleanly to intraday path risk.
+- Fixed 10:30 signals may be too sparse or too small after ES commission, slippage, and pessimistic stop-target sequencing.
 - The effect may still fail prop-style path tests even if WFA aggregate metrics look acceptable.
 duplicate_edge_check:
   active_scope_only: true
@@ -86,16 +81,16 @@ duplicate_edge_check:
   - es_high_semivariance_mes_trend_pullback_crowding
   - es_volatility_managed_intraday_premium
   - es_pivot_filtered_mes_participation_crowding_reversion
-  conclusion: 'Eligible as a bounded composite. The standalone volatility-managed premium campaign tested long-only
-    exposure by volatility state; the prior MES trend-pullback campaign had no lagged-volatility veto; the high-semivariance
-    branch required high downside risk. This campaign tests the opposite risk-control proposition: keep the dense
-    MES trend-pullback entry but reject extreme lagged volatility/path-risk states.'
+  conclusion: 'Eligible as a bounded composite. The standalone volatility-managed premium campaign tested long-only exposure
+    by volatility state; the prior MES trend-pullback campaign had no lagged-volatility veto; the high-semivariance branch
+    required high downside risk. This campaign tests the opposite risk-control proposition: keep the dense MES trend-pullback
+    entry but reject extreme lagged volatility/path-risk states.'
 pre_pnl_density:
   status: approved_for_authoring
   artifact: research_artifacts/es_extreme_vol_filtered_mes_trend_pullback_crowding_density_summary_20260620.csv
   screen: research_artifacts/es_extreme_vol_filtered_mes_trend_pullback_crowding_density_screen_20260620.csv
-  note: All five fixed-gate variants cleared the >=50 signals/year density floor across full, latest-year, limited-core
-    reference, and first-90-percent reference windows before PnL testing.
+  note: All five fixed-gate variants cleared the >=50 signals/year density floor across full, latest-year, limited-core reference,
+    and first-90-percent reference windows before PnL testing.
 variants:
 - exclude_extreme_vol20_trade_morning_1030
 - exclude_extreme_range10_trade_morning_1030
@@ -127,3 +122,21 @@ testing_plan:
     slippage_ticks: 1
     tick_size: 0.25
     point_value: 50.0
+decision_updated_at: '2026-06-23'
+terminal_stage: simulated_incubation_core
+failure_reason: All original and rescue runs failed. Best-stage variants reached WFA OOS Monte Carlo but failed simulated_incubation_core;
+  no run reached acceptance OOS or candidate reporting.
+result_summary_path: backtest-campaigns/es_extreme_vol_filtered_mes_trend_pullback_crowding/campaign_test_summary.json
+test_result:
+  decision: FAIL
+  terminal_stage: simulated_incubation_core
+  tested_at: '2026-06-23T02:25:39'
+  campaign_summary: backtest-campaigns/es_extreme_vol_filtered_mes_trend_pullback_crowding/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_extreme_vol_filtered_mes_trend_pullback_crowding/methodology_audit.md
+  variants_tested: 5
+  runs_tested: 9
+  variants_passed: 0
+  rescue_attempts_used: 4
+  failure_reason: All original and rescue runs failed. Best-stage variants reached WFA OOS Monte Carlo but failed simulated_incubation_core;
+    no run reached acceptance OOS or candidate reporting.
+  best_run_by_stage: exclude_extreme_range10_trade_morning_1030/rescue1 failed simulated_incubation_core

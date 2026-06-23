@@ -1,0 +1,1 @@
+from propstack.strategy_modules.entry.vvix_tail_risk import VvixTailRiskEntry

@@ -132,3 +132,24 @@ def test_credit_etf_blocks_before_configured_signal_time(tmp_path):
     )
 
     assert entry.on_bar_close(_bar("2024-01-03 09:50:00"), trades_today=0) is None
+
+
+def test_credit_etf_accepts_generic_min_move_ticks_alias(tmp_path):
+    entry = CreditEtfOrderflowStateEntry(
+        {
+            "feature_csv": _feature_csv(tmp_path),
+            "setup_mode": "hyg_strength_long",
+            "rank_mode": "hyg_1d",
+            "signal_times": ["10:00:00"],
+            "bar_interval_minutes": 5,
+            "rank_threshold": 0.65,
+            "min_move_ticks": 2,
+            "min_orderflow_imbalance": 0.10,
+        }
+    )
+
+    signal = entry.on_bar_close(_bar("2024-01-03 09:55:00"), trades_today=0)
+
+    assert signal is not None
+    assert signal.report_fields["instrument_move_ticks"] == 3.0
+    assert signal.report_fields["min_move_ticks"] == 2.0

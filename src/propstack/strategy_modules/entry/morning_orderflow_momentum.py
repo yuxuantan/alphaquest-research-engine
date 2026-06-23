@@ -22,6 +22,7 @@ class MorningOrderflowMomentumEntry:
         self.bar_interval_minutes = float(params.get("bar_interval_minutes", 1))
         self.tick_size = float(params.get("tick_size", 0.25))
         self.min_signal_return_ticks = float(params.get("min_signal_return_ticks", 20))
+        self.min_signal_return_bps = float(params.get("min_signal_return_bps", 0.0))
         self.min_orderflow_imbalance = float(params.get("min_orderflow_imbalance", 0.02))
         self.stop_pct = float(params.get("stop_pct", 0.002))
         self.target_r_multiple = float(params.get("target_r_multiple", 6.0))
@@ -74,7 +75,10 @@ class MorningOrderflowMomentumEntry:
         source_close = float(source["close"])
         source_return_points = source_close - source_open
         source_return_ticks = source_return_points / self.tick_size
+        source_return_bps = (source_close / source_open - 1.0) * 10000.0 if source_open else 0.0
         if abs(source_return_ticks) < self.min_signal_return_ticks:
+            return None
+        if self.min_signal_return_bps > 0 and abs(source_return_bps) < self.min_signal_return_bps:
             return None
 
         metrics = _orderflow_metrics(source)
@@ -101,6 +105,7 @@ class MorningOrderflowMomentumEntry:
             "source_window_close": source_close,
             "source_window_return_points": source_return_points,
             "source_window_return_ticks": source_return_ticks,
+            "source_window_return_bps": source_return_bps,
             "source_window_volume": float(source["volume"]),
             "source_window_signed_volume": float(source["signed_volume"]),
             "source_window_imbalance": metrics["signed_imbalance"],
@@ -109,6 +114,7 @@ class MorningOrderflowMomentumEntry:
             "primary_orderflow_imbalance": primary,
             "secondary_orderflow_imbalance": secondary,
             "min_signal_return_ticks": self.min_signal_return_ticks,
+            "min_signal_return_bps": self.min_signal_return_bps,
             "min_orderflow_imbalance": self.min_orderflow_imbalance,
             "morning_orderflow_signal_timestamp": signal_timestamp,
             "morning_orderflow_intended_entry_timestamp": signal_timestamp,
@@ -223,6 +229,8 @@ class MorningOrderflowMomentumEntry:
     def _validate(self) -> None:
         if self.min_signal_return_ticks < 0:
             raise ValueError("min_signal_return_ticks must be non-negative.")
+        if self.min_signal_return_bps < 0:
+            raise ValueError("min_signal_return_bps must be non-negative.")
         if self.min_orderflow_imbalance < 0:
             raise ValueError("min_orderflow_imbalance must be non-negative.")
         if self.max_trades_per_day < 1:

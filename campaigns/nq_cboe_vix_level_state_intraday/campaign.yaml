@@ -1,0 +1,135 @@
+campaign_id: nq_cboe_vix_level_state_intraday
+title: NQ Cboe VIX Level State Intraday
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Cboe VIX level and change states may identify NQ intraday risk
+  pressure or rebound because Nasdaq futures have high broad-equity beta and sensitivity
+  to volatility repricing.
+expected_mechanism: Elevated or rising VIX may create risk-off pressure or later rebound
+  depending on setup; low VIX may indicate complacency vulnerable to reversal; VIX
+  crush may indicate volatility relief and risk appetite.
+why_it_may_apply_to_nq: VIX is SPX-based rather than Nasdaq-specific, but NQ often
+  reprices strongly with broad volatility regime changes because of growth and duration
+  exposure.
+rationale: This campaign is an NQ execution-leg port of the remaining ES VIX-level
+  evidence after term-structure and VVIX NQ ports failed. The source grids are selected
+  from ES evidence before NQ PnL inspection.
+sources:
+- title: The Investor Fear Gauge
+  authors: Robert E. Whaley
+  year: 2000
+  venue: Journal of Portfolio Management
+  link: https://www.pm-research.com/content/iijinvest/26/3/12
+  relevance: Foundational VIX interpretation as an investor fear/risk state.
+- title: Cboe VIX Index Historical Data
+  authors: Cboe Global Markets
+  year: 2026
+  venue: Official Cboe volatility-index data
+  link: https://www.cboe.com/tradable-products/vix/
+  relevance: Official source for lagged VIX closes used in the campaign.
+data_needs:
+- timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+- official free Cboe VIX daily historical CSV
+- derived session feature file using only VIX observations strictly before the NQ
+  session date
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- VIX is a daily closing SPX option-implied index, not an intraday option snapshot.
+- Same-day VIX close is unavailable to intraday NQ signals and must not be used.
+- Sierra data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+- Using the VIX close from the same NQ session date would leak unavailable data and
+  is forbidden.
+- Signals use only a completed NQ bar at the configured timestamp and lagged VIX state.
+- Rolling ranks are computed over the lagged session feature sequence only.
+- No final session high/low, final VWAP, future returns, or post-entry VIX values
+  are used.
+failure_modes:
+- VIX state may be too broad and already priced before RTH.
+- NQ response may flip between continuation and rebound across regimes.
+- This edge may be redundant with rejected NQ VIX term-structure and VVIX campaigns.
+- ES evidence was weak and did not survive monkey for the best expression.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_cboe_vix_term_structure_intraday
+  - nq_vvix_tail_risk_intraday
+  - nq_cboe_vxn_vix_dispersion_intraday
+  - nq_volatility_managed_intraday_premium
+  conclusion: Not a duplicate of the rejected term-structure/VVIX/VXN dispersion campaigns
+    because this uses only VIX level and VIX daily change states.
+feature_construction:
+  builder: tools/build_es_cboe_vix_level_features.py
+  bars_input: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  sources:
+  - https://cdn.cboe.com/api/global/us_indices/daily_prices/VIX_History.csv
+  cache_dir: data/external
+  output: data/external/nq_cboe_vix_level_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3813
+  lookahead_control: latest Cboe VIX close strictly before NQ session_date
+density_check:
+  artifact_csv: research_artifacts/nq_cboe_vix_level_state_intraday_density_audit_20260622.csv
+  artifact_md: research_artifacts/nq_cboe_vix_level_state_intraday_density_audit_20260622.md
+  sample_start: '2011-01-03'
+  sample_end: '2026-06-12'
+  threshold_trade_density_per_year: planned rank thresholds produce about 68 to 127
+    eligible sessions/year before bar availability checks
+  tradecount_rule: expected to clear the 50 trades/year gate before strategy filters
+    and fills
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+parameter_space:
+  combinations_per_variant: 18 to 27
+  source: latest relevant ES rescue/parameter-space grids
+variants:
+- vix_spike_riskoff_short_1130
+- low_vix_complacency_short_1030
+- high_vix_rebound_long_1000
+- vix_crush_rebound_long_1200
+- persistent_high_vix_long_1330
+rescue_policy:
+  rescue_scope: not_authorized_for_nq_run
+  max_rescue_attempts_per_failed_variant: 0
+  allowed_changes: []
+  forbidden_changes:
+  - core strategy mechanic
+  - Cboe availability lag rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  - parameter grid after NQ results
+status: completed_failed
+outcome:
+  decision: FAIL
+  terminal_stage: limited_monkey_test
+  summary_path: backtest-campaigns/nq_cboe_vix_level_state_intraday/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_cboe_vix_level_state_intraday/campaign_results.csv
+  methodology_audit: campaigns/nq_cboe_vix_level_state_intraday/methodology_audit.md
+  best_core:
+    variant: vix_spike_riskoff_short_1130
+    top_net_profit: 7842.5
+    terminal_stage: limited_monkey_test
+  variant_terminal_stages:
+    high_vix_rebound_long_1000: limited_core_grid_test
+    low_vix_complacency_short_1030: limited_core_grid_test
+    persistent_high_vix_long_1330: limited_core_grid_test
+    vix_crush_rebound_long_1200: limited_core_grid_test
+    vix_spike_riskoff_short_1130: limited_monkey_test

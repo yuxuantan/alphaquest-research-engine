@@ -1,0 +1,101 @@
+campaign_id: nq_ofr_financial_stress_intraday
+title: NQ OFR financial-stress intraday risk-off pressure
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: ofr_financial_stress_intraday_risk_off
+hypothesis: Lagged daily OFR systemic financial-stress states may identify same-day risk-off pressure that spills
+  into high-beta NQ RTH returns.
+rationale: This is a pre-PnL NQ port of the ES OFR financial-stress campaign. OFR stress features are market-wide
+  and built with a two-business-day availability lag from official OFR data; NQ is tested as the higher-beta equity-index
+  expression of the same risk-off state.
+sources:
+- title: The OFR Financial Stress Index
+  authors: Phillip Monin
+  year: 2017
+  link: https://www.financialresearch.gov/working-papers/2017/10/25/the-ofr-financial-stability-index/
+  relevance: Introduces the daily market-based OFR FSI and systemic stress episodes.
+- title: OFR Financial Stress Index
+  authors: Office of Financial Research
+  year: 2026
+  link: https://www.financialresearch.gov/financial-stress-index/
+  relevance: Official source for OFR FSI and component contribution data with publication lag caveat.
+- title: Business Conditions and Expected Returns on Stocks and Bonds
+  authors: Eugene F. Fama and Kenneth R. French
+  year: 1989
+  link: https://www-2.rotman.utoronto.ca/~kan/3032/pdf/PredictabilityOfReturns_InstrumentalVariables/Fama_French_JFE_1989.pdf
+  relevance: Motivates stress/business-condition variables as return-state predictors.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_ofr_financial_stress_features_20110103_20260612.csv
+- data/external/ofr_financial_stress_index_2000_2026.csv
+feature_construction:
+  builder: tools/build_es_ofr_financial_stress_features.py
+  source_cache: data/external/ofr_financial_stress_index_2000_2026.csv
+  output: data/external/nq_ofr_financial_stress_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3754
+  lookahead_control: latest OFR observation on or before session_date minus two business days
+lookahead_risks:
+- Using same-day OFR observations would leak unavailable data and is forbidden.
+- Signals use only the completed bar at the configured timestamp and lagged daily stress state.
+- No final session high/low, final VWAP, future returns, or post-entry stress data are used.
+failure_modes:
+- Financial-stress states may affect multi-day risk premia but not same-day intraday NQ returns.
+- High-stress states may be mean-reverting or already priced by the signal time.
+- Performance may concentrate in crisis windows or isolated volatility regimes.
+- OFR revisions and publication timing make this a research proxy, not a real-time feed.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_cboe_vix_level_state_intraday
+  - nq_cboe_vix_term_structure_intraday
+  - nq_vvix_tail_risk_intraday
+  - nq_volatility_managed_intraday_premium
+  conclusion: Eligible as a distinct ES-derived NQ test because it uses lagged official OFR systemic-stress contribution
+    ranks, not Cboe volatility levels, term structure, VVIX, or realized-volatility scaling.
+source_es_campaign: es_ofr_financial_stress_intraday
+source_es_evidence:
+  best_source_run: high_credit_stress_short_1030/ES/stop_widen_rescue1
+  why_selected: After duplicate ES-derived NQ families were excluded, this distinct market-wide stress family had
+    enough ES trade density and one high-credit variant reached WFA, though it failed robustness and must be retested
+    from scratch on NQ.
+variants:
+- rising_global_stress_short_1000
+- high_credit_stress_short_1030
+- funding_stress_short_1130
+- us_stress_short_1200
+- volatility_stress_short_1330
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue is authorized for this NQ search turn.
+pre_pnl_density_audit:
+  status: PASS
+  artifact: research_artifacts/nq_ofr_financial_stress_intraday_density_audit_20260622.md
+  csv: research_artifacts/nq_ofr_financial_stress_intraday_density_audit_20260622.csv
+  sessions: 3813
+  years_252: 15.130952
+  min_signals_per_year: 64.173092
+  max_signals_per_year: 93.450826
+  method: lagged OFR feature threshold count only; no PnL, stops, targets, or fills evaluated
+status: completed_failed
+completed_at: '2026-06-22'
+result_summary:
+  evaluated_run_id: run1
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_core_grid_test: 3
+    limited_monkey_test: 1
+    walk_forward_analysis: 1
+  failure_reason: All five variants failed the staged flow. Three failed limited_core_grid_test, volatility_stress_short_1330
+    failed limited_monkey_test, and high_credit_stress_short_1030 reached WFA but failed with negative stitched
+    OOS performance and early exit.
+  best_variant_by_core_net: high_credit_stress_short_1030
+  best_variant_by_stage: high_credit_stress_short_1030
+  campaign_test_summary_json: backtest-campaigns/nq_ofr_financial_stress_intraday/campaign_test_summary.json
+  campaign_test_summary_md: backtest-campaigns/nq_ofr_financial_stress_intraday/campaign_test_summary.md
+  campaign_results_csv: backtest-campaigns/nq_ofr_financial_stress_intraday/campaign_results.csv
+  candidate_strategy_report_created: false

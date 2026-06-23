@@ -1,0 +1,90 @@
+campaign_id: nq_semivariance_orderflow_confirmation
+title: NQ Realized Semivariance With Price and Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-22'
+status: completed_failed
+instrument: NQ
+market_timezone: America/New_York
+edge_family: nq_realized_semivariance_orderflow_confirmation
+hypothesis: Lagged NQ realized semivariance state should be tradable intraday only when same-session NQ price action and completed
+  aggregate NQ orderflow confirm the direction before entry.
+rationale: This is a constrained NQ composite port. The semivariance state alone cannot trigger; the current session must
+  confirm direction with open-to-signal movement and rolling completed aggregate orderflow.
+sources:
+- title: Measuring Downside Risk - Realized Semivariance
+  authors: Ole E. Barndorff-Nielsen, Silvia Kinnebrock, Neil Shephard
+  year: 2010
+  link: https://academic.oup.com/book/5659/chapter/148715572
+  relevance: Introduces realized semivariance as a high-frequency downside/upside risk measure.
+- title: 'Good Volatility, Bad Volatility: Signed Jumps and the Persistence of Volatility'
+  authors: Andrew J. Patton and Kevin Sheppard
+  year: 2015
+  doi: 10.1162/REST_a_00503
+  link: https://doi.org/10.1162/REST_a_00503
+  relevance: Shows negative-return volatility has different predictive content from positive-return volatility.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as short-horizon price-pressure evidence; this campaign uses Sierra completed-bar
+    aggregate flow, not quote-level OFI.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_realized_semivariance_features_20110103_20260612.csv
+- 5-minute NQ bars with rolling trade_orderflow_imbalance and large10 imbalance features
+lookahead_risks:
+- Semivariance features are shifted one completed RTH session; no current-session semivariance is used.
+- The current-session price confirmation uses only the RTH open and the completed signal bar close.
+- Orderflow confirmation uses rolling completed bars ending at the signal bar close.
+- Signals generated from bar close are filled no earlier than next bar open.
+- No final session high/low, final VWAP, future orderflow, or future returns are used.
+failure_modes:
+- The semivariance literature forecasts volatility more directly than intraday direction.
+- Same-session confirmation may arrive after the edge has decayed.
+- Orderflow confirmation may mark exhaustion rather than informed continuation.
+- The signal may still fail WFA if the bad-volatility premium changes sign across regimes.
+- Performance may concentrate in crisis periods or a small number of high-volatility sessions.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_realized_semivariance_asymmetry
+  - nq_daily_short_term_reversal
+  - nq_daily_time_series_momentum
+  conclusion: Eligible as a bounded NQ composite. Existing NQ semivariance variants could trade from lagged semivariance state
+    alone; this campaign requires same-session price and aggregate orderflow confirmation before any signal can occur.
+source_es_template: campaigns/es_semivariance_orderflow_confirmation/rescue_attempts/parameter_space_rescue_1
+pre_pnl_density:
+  status: completed
+  artifact: research_artifacts/nq_semivariance_orderflow_confirmation_density_audit_20260622.md
+  limited_core_all_variants_passed_50_signals_per_year: true
+  full_history_caveat: downside_share_signed_multitime_short has a weakest full-history parameter corner at 44.62 signals/year;
+    later WFA and trade-count gates must reject it if that sparse corner is selected.
+variants:
+- badvol_signed_multitime_short
+- downside_share_signed_multitime_short
+- badvol_signed_multitime_twosided
+- semivar_balance_signed_multitime_twosided
+- low_badvol_signed_multitime_long
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn; after OOS, only rejection or promotion is allowed.
+result_summary:
+  verdict: FAIL
+  completed_at: 2026-06-22
+  campaign_test_summary: backtest-campaigns/nq_semivariance_orderflow_confirmation/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_semivariance_orderflow_confirmation/campaign_results.csv
+  methodology_audit: campaigns/nq_semivariance_orderflow_confirmation/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    limited_core_grid_test: 3
+    walk_forward_analysis: 2
+testing_plan:
+  methodology: current staged research pipeline
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0

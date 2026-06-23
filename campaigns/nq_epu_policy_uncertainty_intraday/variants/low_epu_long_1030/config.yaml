@@ -1,0 +1,238 @@
+campaign_id: nq_epu_policy_uncertainty_intraday
+variant_id: low_epu_long_1030
+test_run_id: run1
+strategy_name: epu_policy_uncertainty
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Baker, Bloom, and Davis (2016); Brogaard and Detzel (2015); Pastor and Veronesi (2012); PolicyUncertainty.com Daily U.S. EPU
+  edge_thesis: Lagged Daily U.S. EPU states may identify NQ risk-off pressure or compensating growth-equity risk-premium states after the cash open.
+  mechanic: Rescue attempt 1 changed only declared EPU threshold and stop/target parameter space; original mechanic retained. At 10:30 ET, long NQ when the 30-day-lagged Daily U.S. EPU index rank is in the lower tail; flatten by 15:55.
+  timeframe_rationale: A 1-minute completed-bar signal preserves deterministic next-bar-open execution while the EPU state is already at least 30 calendar days old.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-23'
+  mechanics_review:
+    mechanic_expresses_edge: 'This NQ port preserves the ES EPU setup family: setup_mode=low_epu_long, entry_time=10:30:00, 30-calendar-day-lagged EPU rank state, next-bar execution, same-day flatten.'
+    entry_logic_rationale: Entry logic is unchanged from the selected ES source config except for the NQ execution leg and NQ feature-session mapping; no NQ PnL was inspected before authoring.
+    stop_loss_rationale: This NQ port inherits the ES stop-distance rescue config because it was the strongest ES low-EPU evidence; this is provenance, not an authorized NQ post-result rescue.
+    target_exit_rationale: Target/exit logic is fixed before any NQ PnL inspection; the added 1.5R neighbor only keeps the density-trimmed grid within the runner's valid combination floor.
+    profitability_rationale: If policy-uncertainty states proxy risk appetite or compensation for bearing growth-equity risk, the effect may transfer more strongly to NQ than ES.
+    known_failure_modes: Daily EPU is slow and revised, the 30-day lag may make it stale, and any NQ profits may be regime-concentrated or vanish after costs.
+    pre_test_decision: approve_for_testing
+  pre_pnl_density: PASS after density-only pre-PnL grid trim; see research_artifacts/nq_epu_policy_uncertainty_intraday_density_audit_20260623.md.
+  source_run_report: backtest-campaigns/es_epu_policy_uncertainty_intraday/low_epu_long_1030/ES/stop_widen_rescue1/variant_test_summary.json
+  nq_port_provenance:
+    source_campaign_id: es_epu_policy_uncertainty_intraday
+    source_config_path: campaigns/es_epu_policy_uncertainty_intraday/rescue_attempts/stop_distance_rescue_1/low_epu_long_1030/config.yaml
+    source_run_role: strongest ES low-EPU stop-distance rescue config, ported before any NQ PnL inspection
+    ported_before_nq_pnl: true
+    nq_mechanics_changed_after_results: false
+    nq_rescue_authorized: false
+  nq_density_reform:
+    reform1:
+      created_at: '2026-06-23'
+      reason: remove declared entry-grid corners with latest-252 signal count below 50 before any NQ PnL inspection
+      changed_path: core_grid/wfa.parameters.entry.params.epu_rank_max
+      new_values: &id001
+      - 0.35
+      mechanics_changed: false
+      pnl_inspected_before_change: false
+    reform2_grid_size:
+      created_at: '2026-06-23'
+      reason: add one non-signal target neighbor before NQ PnL so the density-trimmed grid keeps at least 8 combinations required by the runner
+      changed_path: core_grid/wfa.parameters.tp.params.target_r_multiple
+      new_values:
+      - 1.0
+      - 1.25
+      - 1.5
+      mechanics_changed: false
+      pnl_inspected_before_change: false
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: epu_policy_uncertainty
+    params:
+      feature_csv: data/external/nq_epu_policy_uncertainty_features_20110103_20260612.csv
+      setup_mode: low_epu_long
+      bar_interval_minutes: 1
+      entry_time: '10:30:00'
+      flatten_time: '15:55:00'
+      max_trades_per_day: 1
+      stop_pct: 0.006
+      target_r_multiple: 1.0
+      epu_rank_max: 0.3
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.006
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: '15:55:00'
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.epu_rank_max: *id001
+    sl.params.stop_pct:
+    - 0.0045
+    - 0.006
+    - 0.009
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.25
+    - 1.5
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.epu_rank_max: *id001
+    sl.params.stop_pct:
+    - 0.0045
+    - 0.006
+    - 0.009
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.25
+    - 1.5
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized; after staged failure, allow only rejection or promotion unless the user explicitly authorizes one rescue.

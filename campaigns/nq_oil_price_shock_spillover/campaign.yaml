@@ -1,0 +1,121 @@
+campaign_id: nq_oil_price_shock_spillover
+title: NQ Oil Price Shock Spillover
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged crude-oil price shocks may spill into same-day NQ RTH returns through
+  inflation, discount-rate, production-cost, and risk-appetite channels.
+rationale: This pre-PnL NQ port reuses the ES oil-shock edge family after ES showed
+  one WTI-up short core pass but failed robustness. It tests whether growth-heavy
+  NQ has a stronger or cleaner response to the same lagged oil shock states.
+sources:
+- title: Oil and the Stock Markets
+  authors: Charles M. Jones and Gautam Kaul
+  year: 1996
+  venue: Journal of Finance 51(2), 463-491
+  doi: 10.1111/j.1540-6261.1996.tb02691.x
+  link: https://doi.org/10.1111/j.1540-6261.1996.tb02691.x
+  relevance: Documents that oil-price shocks affect aggregate stock-market cash flows
+    and returns, motivating a predeclared ES spillover test.
+- title: The Impact of Oil Price Shocks on the U.S. Stock Market
+  authors: Lutz Kilian and Cheolbeom Park
+  year: 2009
+  venue: International Economic Review 50(4), 1267-1287
+  doi: 10.1111/j.1468-2354.2009.00568.x
+  link: https://doi.org/10.1111/j.1468-2354.2009.00568.x
+  relevance: Shows U.S. stock-market response depends on the source and direction
+    of oil shocks, supporting separate WTI, Brent, volatility, and spread variants.
+- title: Cushing, OK WTI Spot Price FOB
+  authors: U.S. Energy Information Administration
+  year: 2026
+  venue: Official EIA XLS
+  link: https://www.eia.gov/dnav/pet/hist_xls/RWTCd.xls
+  relevance: Free public daily WTI spot-price source.
+- title: Europe Brent Spot Price FOB
+  authors: U.S. Energy Information Administration
+  year: 2026
+  venue: Official EIA XLS
+  link: https://www.eia.gov/dnav/pet/hist_xls/RBRTEd.xls
+  relevance: Free public daily Brent spot-price source.
+data_needs:
+- timezone-aware NQ RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- free public EIA WTI and Brent daily spot-price files
+- derived session feature file using only oil observations on or before session date
+  minus two business days
+- next-bar execution with commission, slippage, same-day flatten, and no-overnight
+  enforcement
+data_quality_caveats:
+- EIA spot-price series are daily exogenous observations, not intraday crude futures
+  prices.
+- The two-business-day availability lag is deliberately conservative and may understate
+  information available from contemporaneous crude futures trading.
+- Sierra NQ data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must remain pessimistic because no tick path is used.
+lookahead_risks:
+- A session dated D may only use the latest EIA oil observation on or before D minus
+  two business days.
+- Rolling ranks are computed over lagged session features only.
+- Signals use completed one-minute bars and engine entry is next-bar-open or later.
+- No final session high/low, final VWAP, future oil value, future returns, or post-entry
+  data is used for signal generation.
+failure_modes:
+- Oil-shock effects in the source literature may operate over daily or longer horizons,
+  not intraday NQ holds.
+- The response to oil shocks is regime-dependent and may flip between supply, demand,
+  inflation, and growth interpretations.
+- EIA spot-price publication lag may make the signal stale relative to tradable crude
+  futures prices.
+- The strongest ES pocket failed robustness, so the NQ port must fail closed unless
+  the staged evidence is broad.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_ofr_financial_stress_intraday
+  - nq_epu_policy_uncertainty_intraday
+  - nq_default_spread_orderflow_risk_premium
+  - nq_nyfed_rrp_liquidity_state
+  - nq_usdjpy_safe_haven_spillover
+  - nq_import_export_price_pressure
+  conclusion: Eligible as a distinct bounded crude-oil spillover edge. It uses lagged
+    EIA WTI/Brent spot shocks, not financial stress, policy uncertainty, credit spreads,
+    RRP liquidity, FX safe-haven states, or import/export price pressure.
+feature_construction:
+  builder: tools/build_es_oil_price_shock_features.py
+  wti_cache: data/external/eia_wti_spot_daily_1986_2026.csv
+  brent_cache: data/external/eia_brent_spot_daily_1987_2026.csv
+  output: data/external/nq_oil_price_shock_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3754
+  oil_observation_range: 2010-12-30..2026-06-08
+  availability_lag_business_days: 2
+  pre_pnl_density_audit: research_artifacts/nq_oil_price_shock_spillover_density_audit_20260623.md
+variants:
+- wti_down_relief_long_1000
+- wti_up_risk_off_short_1030
+- brent_up_global_shock_short_1130
+- oil_volatility_stress_short_1200
+- brent_wti_spread_widen_short_1330
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized; after staged failure, allow only rejection or
+    promotion unless the user explicitly authorizes one rescue.
+source_es_campaign: es_oil_price_shock_spillover
+status: completed_failed
+nq_port_provenance:
+  source_campaign_id: es_oil_price_shock_spillover
+  source_config_family: parameter_space_rescue_1, with WTI-up provenance tied to methodology_fix_rerun1
+    evidence
+  ported_before_nq_pnl: true
+  nq_rescue_authorized: false
+result_summary:
+  stage: limited_monkey_test
+  report: backtest-campaigns/nq_oil_price_shock_spillover/campaign_test_summary.json
+  failure_reason: Four variants failed limited_core_grid_test. The only core-passing
+    branch, wti_up_risk_off_short_1030, had 25/27 profitable core combinations and
+    1 benchmark-pass combination, but failed limited_monkey_test with profitable random-entry
+    rate 0.235875 and median net profit -1537.5. No WFA, Monte Carlo, simulated incubation,
+    or acceptance OOS stage was reached.
+  candidate_strategy_report_created: false

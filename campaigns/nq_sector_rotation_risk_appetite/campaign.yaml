@@ -1,0 +1,85 @@
+campaign_id: nq_sector_rotation_risk_appetite
+title: NQ Sector-Rotation Risk-Appetite Intraday
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged sector ETF leadership, especially growth versus defensive sectors, may proxy Nasdaq-specific
+  risk appetite and forecast same-day NQ intraday drift.
+rationale: This campaign applies cross-sector ETF rotation states to NQ rather than ES because NQ is more directly
+  exposed to growth and technology leadership. Sector ETF observations are lagged by one business day and only current
+  NQ bars drive execution timing.
+sources:
+- title: Do Industries Explain Momentum?
+  authors: Tobias J. Moskowitz and Mark Grinblatt
+  year: 1999
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00146
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00146
+  relevance: Documents industry momentum, motivating sector leadership as a possible risk-state input.
+- title: Momentum, Business Cycle, and Time-varying Expected Returns
+  authors: Tarun Chordia and Lakshmanan Shivakumar
+  year: 2002
+  venue: Journal of Finance
+  doi: 10.1111/1540-6261.00449
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/1540-6261.00449
+  relevance: Links momentum payoffs to time-varying expected returns and macro state.
+- title: The myth of business cycle sector rotation
+  authors: Alexander Molchanov and Jeffrey Stangl
+  year: 2024
+  venue: International Journal of Finance and Economics
+  doi: 10.1002/ijfe.2882
+  link: https://onlinelibrary.wiley.com/doi/10.1002/ijfe.2882
+  relevance: 'Cautionary source: common sector-rotation rules may fail after timing error and costs.'
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV cache in America/New_York
+- public Yahoo adjusted-close sector ETF histories cached under data/external/yahoo_sector_etfs
+- derived NQ sector-rotation feature file using one-business-day availability lag
+- same-day stop, target, and forced-flatten checks
+lookahead_risks:
+- A session dated D can only use sector ETF observations on or before D minus one business day.
+- Rolling sector ranks are computed before the session-level as-of join.
+- Signals use a completed NQ bar and enter at the next bar open or later.
+- No future NQ bar, final session VWAP/range, future ETF close, or post-entry sector information is used.
+failure_modes:
+- Sector ETF closes may be too stale for intraday NQ exposure.
+- Growth/cyclical leadership can invert during rate-shock regimes.
+- Yahoo adjusted-close revision risk can require manual rejection even if backtest gates pass.
+- Results may concentrate in one side or crisis window and fail monkey/WFA robustness.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_cboe_vxn_vix_dispersion_intraday
+  - nq_spy_turnover_orderflow_attention
+  - nq_sector_opening_breadth_orderflow_continuation
+  - es_sector_rotation_risk_appetite
+  conclusion: Eligible as a fresh NQ-specific expression of sector ETF rotation risk appetite; no active NQ sector-rotation
+    risk-appetite campaign exists.
+feature_construction:
+  builder: tools/build_es_sector_rotation_features.py
+  output: data/external/nq_sector_rotation_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3813
+  availability_lag_business_days: 1
+  density_audit: research_artifacts/nq_sector_rotation_risk_appetite_density_audit_20260622.md
+variants:
+- cyclical_lead_long_1000
+- defensive_lead_short_1000
+- growth_lead_long_1030
+- defensive_rotation_short_1130
+- growth_acceleration_long_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in current NQ search; rank thresholds are fixed from pre-PnL density only.
+status: completed_failed
+completed_at: '2026-06-22'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_sector_rotation_risk_appetite/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_sector_rotation_risk_appetite/campaign_results.csv
+  methodology_audit: campaigns/nq_sector_rotation_risk_appetite/methodology_audit.md
+  density_audit: research_artifacts/nq_sector_rotation_risk_appetite_density_audit_20260622.md
+  failure_reason: Four variants failed limited_core_grid_test; growth_lead_long_1030 passed core but failed the
+    limited_monkey_test with only 28.6125% profitable randomized schedules and negative median randomized net.

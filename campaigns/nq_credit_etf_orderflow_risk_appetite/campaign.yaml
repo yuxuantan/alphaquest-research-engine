@@ -1,0 +1,108 @@
+campaign_id: nq_credit_etf_orderflow_risk_appetite
+title: NQ Credit ETF Orderflow Risk-Appetite
+decision: TEST
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Lagged high-yield corporate bond ETF return tails proxy credit-market
+  risk appetite or risk aversion. NQ continuation attempts are only credible when
+  the HYG state, completed NQ movement from the RTH open, and aggregate signed orderflow
+  agree before next-bar entry.
+rationale: This is a direct NQ port of the ES credit-ETF orderflow risk-appetite campaign.
+  NQ has higher growth-duration and risk-appetite sensitivity than ES, so HYG risk-on/risk-off
+  tails may transmit more strongly, but the campaign remains fail-closed because HYG
+  can lag equities or reflect rates rather than equity beta.
+sources:
+- title: Predicting Returns in the Stock and Bond Markets
+  authors: Donald B. Keim and Robert F. Stambaugh
+  year: 1986
+  venue: Journal of Financial Economics
+  doi: 10.1016/0304-405X(86)90070-X
+  link: https://doi.org/10.1016/0304-405X(86)90070-X
+  relevance: Supports bond-market and default-risk variables as predictors of time-varying
+    expected returns.
+- title: Business Conditions and Expected Returns on Stocks and Bonds
+  authors: Eugene F. Fama and Kenneth R. French
+  year: 1989
+  venue: Journal of Financial Economics
+  link: https://www-2.rotman.utoronto.ca/~kan/3032/pdf/PredictabilityOfReturns_InstrumentalVariables/Fama_French_JFE_1989.pdf
+  relevance: Documents that business-condition and credit-spread variables contain
+    expected-return information across stocks and bonds.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Supports requiring contemporaneous orderflow imbalance confirmation instead
+    of trading the lagged credit proxy alone.
+- title: Yahoo Finance daily HYG and LQD adjusted-close histories
+  authors: Yahoo Finance
+  year: 2026
+  venue: Free public chart endpoint
+  link: https://query1.finance.yahoo.com/v8/finance/chart/HYG
+  relevance: Free no-paid-data source used for the tradable high-yield and investment-grade
+    ETF histories.
+data_needs:
+- timezone-aware NQ RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- free local Yahoo HYG and LQD daily adjusted-close CSV files
+- existing local SPY daily adjusted-close CSV for diagnostic excess-return features
+- derived credit ETF feature file with strict prior-session daily-close availability
+- 5-minute completed-bar NQ aggregation with next-bar execution
+data_quality_caveats:
+- Yahoo chart data is a free public adjusted-close source and should be cross-checked
+  before manual incubation.
+- ETF close timestamps are daily; intraday HYG/LQD prints are not used.
+- Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor
+  truth.
+lookahead_risks:
+- An NQ session dated D may only use ETF observations strictly before D.
+- Rolling ranks use only ETF observations through the mapped observation date.
+- Signals are no earlier than 10:00 ET and use completed NQ 5-minute bars only.
+- Entries must occur at the next bar open or later.
+- No overnight exposure is allowed.
+failure_modes:
+- HYG may react after NQ rather than lead it.
+- Credit ETF moves may be dominated by rates or ETF-specific liquidity rather than
+  equity risk appetite.
+- Requiring NQ confirmation may enter after the tradable move has already occurred.
+- Results may concentrate around credit-stress or high-volatility regimes.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_credit_etf_orderflow_risk_appetite
+  - nq_spy_turnover_orderflow_attention
+  - nq_cboe_put_call_sentiment_intraday
+  - nq_volatility_managed_intraday_premium
+  conclusion: Eligible as a direct NQ port of the ES HYG/LQD credit-risk appetite
+    edge and distinct from SPY attention, Cboe option sentiment, and realized-volatility
+    state campaigns.
+feature_construction:
+  builder: tools/build_es_credit_etf_features.py with NQ bars input and --market-label
+    NQ
+  hyg_source_cache: data/external/yahoo_credit_etfs/yahoo_hyg_daily_20020726_20260610.csv
+  lqd_source_cache: data/external/yahoo_credit_etfs/yahoo_lqd_daily_20020726_20260610.csv
+  spy_source_cache: data/external/yahoo_sector_etfs/yahoo_spy_daily_1998-12-01_2026-06-10.csv
+  output: data/external/nq_credit_etf_risk_appetite_features_20110103_20260612.csv
+  availability_rule: latest ETF daily close strictly before NQ session_date
+  rows: 3813
+  valid_rank_rows: 3813
+  pre_pnl_density_audit: research_artifacts/nq_credit_etf_orderflow_risk_appetite_density_audit_20260622.md
+  density_decision: PASS_WITH_SPARSE_STRICT_CORNERS
+variants:
+- hyg_1d_strength_signed_long_1230
+- hyg_1d_weakness_signed_short_1230
+- hyg_1d_two_sided_signed_1230
+- hyg_3d_two_sided_signed_1230
+- hyg_5d_two_sided_signed_1230
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; ES rescue parameter
+    spaces are used only as predeclared NQ baselines before NQ PnL testing.
+status: completed_failed
+decision: FAIL
+test_summary: backtest-campaigns/nq_credit_etf_orderflow_risk_appetite/campaign_test_summary.json
+methodology_audit: campaigns/nq_credit_etf_orderflow_risk_appetite/methodology_audit.md
+failure_reason: All five variants failed the limited core grid. No variant reached monkey robustness, WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

@@ -1,0 +1,114 @@
+campaign_id: nq_gao_last_half_hour_orderflow_confirmation
+title: NQ Gao last-half-hour orderflow confirmation
+decision: FAIL
+created_at: '2026-06-22'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: last_half_hour_orderflow_confirmed_intraday_momentum
+hypothesis: Completed early-RTH NQ price action may predict last-half-hour continuation
+  when completed aggregate orderflow confirms the same direction.
+sources:
+- title: Market Intraday Momentum
+  authors: Gao, Lei; Han, Yufeng; Li, Sophia Zhengzi; Zhou, Guofu
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  relevance: Documents that early intraday market returns contain predictive information
+    for later same-day market returns; this campaign tests the effect directly on
+    NQ futures.
+- title: The Price Impact of Order Book Events
+  authors: Cont, Rama; Kukanov, Arseniy; Stoikov, Sasha
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates signed orderflow imbalance as a short-horizon price-pressure
+    proxy. This campaign uses Sierra aggregate trade-side flow, not full depth OFI.
+rationale: This campaign ports the existing ES Gao last-half-hour orderflow family
+  to true NQ execution before inspecting NQ PnL. Thresholds are anchored to unconditional
+  NQ first-window return and imbalance distributions, with five frozen mechanics expressing
+  the same edge through predictor-window, directionality, and orderflow-confirmation
+  differences.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- 1-minute RTH bars with completed-bar OHLC, volume, signed_volume, large10 aggregate
+  flow, and large20 aggregate flow
+lookahead_risks:
+- First-window return and orderflow are only used after the relevant 30-minute or
+  60-minute window is complete.
+- The 15:30 ET signal is emitted only after the bar closing at 15:30, and the engine
+  handles next-bar execution.
+- Stop and target are configured modules using entry price and declared parameters;
+  no final-session high, low, VWAP, volume profile, or future range is used.
+- The strategy-level flatten time is 15:55 ET, before the configured prop-firm flatten
+  deadline.
+failure_modes:
+- The Gao effect may be weaker or absent in NQ futures after costs and slippage.
+- Orderflow confirmation can select exhaustion rather than continuation.
+- Late-day NQ continuation may be concentrated in high-volatility regimes or a small
+  number of sessions.
+- Sierra aggregate signed-volume is a bar-level proxy and not quote-level order-book
+  imbalance.
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue is authorized for this NQ campaign; mechanics and
+    parameter spaces are frozen before staged testing.
+pre_pnl_density_audit:
+  decision: PASS_WITH_SPARSE_NEIGHBORS
+  method: Raw NQ RTH cache signal-count and distribution audit only; no PnL, stop,
+    target, WFA, monkey, Monte Carlo, prop simulation, or holdout result was inspected.
+  source_cache: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  date_range: 2011-01-03 to 2026-06-12
+  threshold_basis:
+    first30_abs_return_ticks_quantiles:
+      q25: 25.0
+      q50: 60.0
+      q60: 84.0
+      q70: 124.0
+    first60_abs_return_ticks_quantiles:
+      q25: 29.0
+      q50: 77.0
+      q60: 109.0
+      q70: 165.0
+    first30_signed_imbalance_abs_quantiles:
+      q50: 0.0194
+      q70: 0.0309
+      q80: 0.0396
+    first60_signed_imbalance_abs_quantiles:
+      q50: 0.0147
+      q70: 0.0238
+      q80: 0.0307
+    first30_large20_imbalance_abs_quantiles:
+      q25: 0.117
+      q50: 0.2533
+      q70: 0.4045
+  note: Some strict grid corners are intentionally sparse neighboring settings; the
+    full staged gates must reject them if trade density or robustness is inadequate.
+variants:
+- first30_signed_flow_two_sided_1530
+- first60_signed_flow_two_sided_1530
+- first30_signed_flow_long_only_1530
+- first30_large20_flow_two_sided_1530
+- first30_broad_large_alignment_1530
+result_summary:
+  decision: FAIL
+  report_path: backtest-campaigns/nq_gao_last_half_hour_orderflow_confirmation/campaign_test_summary.json
+  runs: 5
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_core_grid_test: 5
+  failure_reason: All five predeclared NQ Gao last-half-hour orderflow variants failed
+    limited_core_grid_test; no downstream monkey, WFA, Monte Carlo, simulated incubation,
+    or acceptance stages were reached.
+  best_core_profitable_rate: 0.4074074074074074
+  best_core_variant: first30_large20_flow_two_sided_1530
+  best_top_net_variant: first30_broad_large_alignment_1530
+  best_top_net_profit: 652.5
+  notes:
+  - The best profitable-combo rate was first30_large20_flow_two_sided_1530 at 33/81
+    = 0.4074, below the 0.70 gate.
+  - The best top-net variant was first30_broad_large_alignment_1530, but its top row
+    had only 10 trades and failed trade-density gates.
+  - first30_large20_flow_two_sided_1530 had 2 benchmark-passing core rows but still
+    failed because profitable-iteration stability was insufficient.
+  - No rescue was authorized or applied.

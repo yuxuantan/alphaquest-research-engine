@@ -1,0 +1,119 @@
+campaign_id: nq_intraday_invariance_dislocation_reversion
+title: NQ Intraday Trading-Invariance Dislocation Reversion
+decision: PENDING
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_type: intraday_trading_invariance_dislocation_reversion
+hypothesis: Completed NQ bars with unusually large price movement per transaction, scaled by average trade
+  size and ranked against prior same-clock observations, may identify temporary liquidity dislocations
+  that mean-revert when aggregate signed flow does not strongly sponsor the move.
+rationale: This is an NQ-only formulation after the ES analogue failed validation. NQ has concentrated
+  technology and growth-duration exposure, sharper intraday risk-transfer bursts, and frequent liquidity
+  air pockets; the test asks whether transaction-clock dislocation ranks contain broad, robust mean-reversion
+  information after realistic NQ costs.
+sources:
+- title: Intraday Trading Invariance in the E-mini S&P 500 Futures Market
+  authors: Torben G. Andersen, Oleg Bondarenko, Albert S. Kyle, and Anna A. Obizhaeva
+  year: 2018
+  link: https://pages.nes.ru/aobizhaeva/ABKO-intradayinv.pdf
+  relevance: Motivates completed-bar transaction-clock measures combining price movement, trade count,
+    and average trade size. The NQ test is a cross-market application, not an ES performance port.
+- title: 'Market Microstructure Invariance: Empirical Hypotheses'
+  authors: Albert S. Kyle and Anna A. Obizhaeva
+  year: 2016
+  venue: Econometrica
+  doi: 10.3982/ECTA10486
+  relevance: Provides the market-microstructure-invariance framework linking risk transfer, trade arrival,
+    and trade size.
+- title: Order Flow, Transaction Clock, and Normality of Asset Returns
+  authors: Thierry Ane and Helyette Geman
+  year: 2000
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00268
+  relevance: Supports using transaction-clock information when interpreting short-horizon returns.
+data_needs:
+- timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+- Sierra completed-bar aggregate volume, signed_volume, and trades fields
+- prior same-clock rank history computed online from earlier sessions only
+- next-bar execution, NQ tick size/point value, commissions, slippage, pessimistic same-bar ordering,
+  and forced flatten from config
+data_quality_caveats:
+- Sierra signed_volume is an aggregate bid/ask-volume proxy, not quote-level OFI.
+- Sierra trades is a completed-bar aggregate and is not used for print sequencing, queue position, or
+  intra-minute fill truth.
+- The invariance score is a bar-level proxy, not the exact bet-size object in the theory.
+lookahead_risks:
+- Rolling price, volume, signed_volume, and trades use only completed bars ending at the signal bar close.
+- Same-clock ranks compare the current completed score only with prior same-clock observations; the current
+  score is appended after the signal decision.
+- A signal at HH:MM uses the bar that closed at HH:MM and can enter only at the next bar open.
+- No final current-session range, final VWAP, future orderflow, future trades, or future session totals
+  are used.
+- All variants flatten same day before configured prop cutoff.
+failure_modes:
+- High transaction-clock dislocation may identify informed NQ price discovery rather than temporary liquidity
+  pressure.
+- Aggregate signed flow may be too noisy to distinguish sponsored from unsponsored moves.
+- The score may overlap generic volatility/liquidity states and fail after costs.
+- The edge may exist only in specific crisis periods or a narrow time of day, causing concentration failure.
+- One-minute bars cannot resolve same-bar stop/target order without pessimistic handling.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_intraday_capitulation_mean_reversion
+  - nq_vpin_toxicity_continuation
+  - nq_mes_micro_flow_divergence_reversion
+  - nq_mes_participation_crowding_reversion
+  - nq_opening_drive_inventory_orderflow
+  - nq_vwap_pullback_continuation
+  - es_intraday_invariance_dislocation_reversion
+  conclusion: Eligible as a distinct NQ-only campaign. It uses same-clock transaction-clock dislocation
+    ranks from completed NQ price, volume, trade count, average trade size, and aggregate signed flow,
+    not capitulation bars, VPIN toxicity, MES divergence, opening drive, or VWAP pullback mechanics.
+variants:
+- opening_15m_two_sided_dislocation_fade_1130
+- lunch_15m_two_sided_dislocation_fade_1330
+- midday_30m_two_sided_dislocation_fade_1430
+- afternoon_15m_two_sided_dislocation_fade_1530
+- full_session_15m_two_sided_dislocation_fade_1530
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - invariance_rank_threshold
+  - min_return_ticks
+  stop_tunables:
+  - stop_pct
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.invariance_rank_threshold:
+    - 0.85
+    - 0.9
+    - 0.95
+    entry.params.min_return_ticks:
+    - 8
+    - 12
+    - 16
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.0035
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  target_rr_floor: No target_r_multiple below 1.0R is allowed.
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue authorized for this NQ search; all parameters are fixed before PnL testing.
+pre_pnl_density_audit:
+  status: PASS
+  generated_at: '2026-06-23'
+  artifact: research_artifacts/nq_intraday_invariance_dislocation_reversion_density_audit_20260623.md
+  detail_csv: research_artifacts/nq_intraday_invariance_dislocation_reversion_density_audit_20260623.csv
+  decision: Proceed to preflight and staged testing without changing mechanics or parameter space after
+    this point.
+status: pending_staged_testing

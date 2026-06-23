@@ -1,0 +1,112 @@
+campaign_id: es_nq_nonconfirming_vap_aoi_trap
+title: ES NQ-Nonconfirming VAP AOI Trap Reversion
+decision: FAIL
+created_at: '2026-06-22'
+instrument: ES
+timeframe: 1m
+edge_family: cross_index_nonconfirmation_vap_aoi_trap_reversion
+hypothesis: When ES probes a market-generated AOI on the side of prior true VAP context but NQ does not confirm the ES extension, a completed reclaim/reject bar with adverse ES signed delta may identify trapped initiative flow and short-horizon reversion after next-bar entry.
+variant_expansion_rationale: 'Eight variants are justified before PnL because the direct AOI/profile families already tested in this repository were weak, and this composite edge has several materially distinct mechanics worth testing in one controlled campaign: all-market AOIs, prior/opening-only AOIs, near-value versus beyond-POC VAP context, a deeper fixed probe, 15/30/60 minute ES/NQ non-confirmation windows, opening-range-only AOIs, and overnight-only AOIs. These are not extra parameter searches; all variants share the same two-entry-parameter grid and differ only by predeclared fixed market structure mechanics.'
+sources:
+- title: 'Pairs Trading: Performance of a Relative-Value Arbitrage Rule'
+  authors: Evan Gatev, William N. Goetzmann, and K. Geert Rouwenhorst
+  year: 2006
+  venue: Review of Financial Studies
+  link: https://academic.oup.com/rfs/article-abstract/19/3/797/1585302
+  relevance: Supports temporary convergence among related assets as a relative-value foundation.
+- title: High Frequency Lead/Lag Relationships - Empirical Facts
+  authors: Nicolas Huth and Frederic Abergel
+  year: 2014
+  venue: Empirical market microstructure working paper
+  link: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+  relevance: Motivates short-horizon dependencies and non-confirmation between related equity-index futures.
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the premise that visible support/resistance reference levels can affect intraday order placement.
+- title: Do Investors Place Orders to Exploit Technical Analysis?
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2004.00665.x
+  link: https://doi.org/10.1111/j.1540-6261.2004.00665.x
+  relevance: Links technical levels to liquidity provision and order placement.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates completed-bar signed flow as a coarse pressure proxy, while this campaign does not claim LOB-level OFI.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates prior true volume-at-price POC/value-area context around auction references.
+data_needs:
+- Derived local cache joining ES true VAP/overnight/footprint fields with completed ES/NQ lead-lag fields by timestamp.
+- Prior VAP POC/VAH/VAL/LVN fields frozen from completed prior RTH sessions.
+- Prior RTH high/low computed by the pdh_pdl_sweep feature set from completed sessions only.
+- Opening range high/low available only after the first 30 completed RTH minutes.
+- Completed-bar ES signed volume and completed rolling ES/NQ return divergence fields.
+data_quality_caveats:
+- The derived cache drops 3900 unmatched ES minutes where NQ lead-lag rows were absent; this is recorded in the validation sidecar.
+- Sierra signed-volume and footprint fields are completed-bar research proxies, not exchange print sequencing or quote-depth data.
+- Dense variants use VAP context such as beyond prior POC or near side of value, not exact VAP-node price confluence on every signal.
+- Any passing result would remain a candidate strategy requiring manual chart review and independent data-source review.
+lookahead_risks:
+- Prior VAP and prior RTH levels are shifted from completed sessions before current-session use.
+- Opening-range levels are unavailable until the opening range has fully closed.
+- ES/NQ divergence and ES signed delta use completed bars only; entry is no earlier than the next one-minute open.
+- No current-session final profile, final VWAP, future high/low, or post-entry orderflow is used.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_nq_nonconfirming_vap_aoi_trap_density_audit_20260622.md
+  detail_csv: research_artifacts/es_nq_nonconfirming_vap_aoi_trap_density_audit_20260622.csv
+  data_source: data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_nq_leadlag_1m_20110103_20260529_rth_ny.parquet
+  decision: approve_for_testing_before_pnl
+  strict_corner: min_nq_es_return_gap_bps=0.5, min_adverse_delta_imbalance=0.005, min_probe_ticks fixed by variant
+variants:
+- all_market_beyond_poc_nq30_1500
+- market_beyond_poc_nq30_1500
+- market_near_value_nq30_1500
+- market_deep_probe_beyond_poc_nq30_1500
+- market_beyond_poc_nq15_1500
+- market_beyond_poc_nq60_1500
+- opening_beyond_poc_nq30_1500
+- overnight_beyond_poc_nq30_1530
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - min_nq_es_return_gap_bps
+  - min_adverse_delta_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - cross-index non-confirmation plus VAP AOI trap thesis
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+test_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run1
+  tested_at: '2026-06-22T16:47:21'
+  campaign_summary: backtest-campaigns/es_nq_nonconfirming_vap_aoi_trap/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_nq_nonconfirming_vap_aoi_trap/methodology_audit.md
+  variants_tested: 8
+  variants_passed: 0
+  rescue_attempts_used: 0
+  failure_reason: All eight predeclared NQ-nonconfirming VAP/AOI trap variants failed limited_core_grid_test. No variant reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  best_variant: market_beyond_poc_nq60_1500
+  best_variant_note: 'Only `market_beyond_poc_nq60_1500` had a positive top row: 1/81 profitable, zero benchmark-passing combinations, and max losing streak / best-day concentration failures. It is rejected, not promoted.'

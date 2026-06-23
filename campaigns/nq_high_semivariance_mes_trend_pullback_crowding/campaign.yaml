@@ -1,0 +1,119 @@
+campaign_id: nq_high_semivariance_mes_trend_pullback_crowding
+title: NQ High-Semivariance MES Crowding Trend-Pullback Reversion
+decision: FAIL
+created_at: '2026-06-22'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: nq_mes_participation_crowding_trend_pullback_high_downside_semivariance
+hypothesis: Elevated MES smaller-contract participation during a completed NQ pullback may proxy broad equity-index crowding.
+  When the prior completed NQ RTH session had high downside semivariance, same-day unwind payoffs may be larger, but continuation
+  risk should cause rejection if the effect is not robust.
+rationale: 'This is a direct pre-PnL NQ port of the strongest local ES high-semivariance MES-crowding template. A trade requires
+  all three predeclared components: MES participation intensity, completed NQ prior-trend/pullback structure, and lagged high
+  NQ downside-semivariance rank.'
+sources:
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates conditioning on retail-like/smaller-ticket participation intensity rather than treating all volume
+    as equally informed.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures participation and Micro E-mini usage, supporting MES participation as a smaller-contract
+    proxy.
+- title: Micro E-mini futures and options
+  authors: CME Group
+  year: 2026
+  venue: CME product documentation
+  link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+  relevance: Documents the 1:10 Micro E-mini to classic E-mini relationship used for notional-equivalent MES participation.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2011.11.003
+  relevance: Motivates requiring the pullback fade to rejoin a completed NQ trend rather than fight it.
+- title: 'Measuring Downside Risk: Realised Semivariance'
+  authors: Ole E. Barndorff-Nielsen, Silja Kinnebrock, and Neil Shephard
+  year: 2010
+  venue: Volatility and Time Series Econometrics
+  link: https://doi.org/10.1093/acprof:oso/9780199549498.003.0007
+  relevance: Defines lagged downside semivariance as a completed-return risk-state feature.
+- title: 'Good Volatility, Bad Volatility: Signed Jumps and the Persistence of Volatility'
+  authors: Andrew J. Patton and Kevin Sheppard
+  year: 2015
+  venue: Review of Economics and Statistics
+  link: https://doi.org/10.1162/REST_a_00503
+  relevance: Supports treating downside variation as a distinct regime where payoffs and risk can differ from ordinary sessions.
+data_needs:
+- data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv
+- data/external/nq_realized_semivariance_features_20110103_20260612.csv
+- completed NQ/MES RTH 1-minute bars and same-clock MES participation ranks
+- lagged prior-session NQ downside-semivariance ranks available before the current RTH session
+lookahead_risks:
+- Entry uses completed 1-minute bars only and enters no earlier than the next bar open.
+- MES participation ranks are same-clock historical ranks already present in the local cache.
+- The NQ trend window ends before the pullback/crowding lookback, so the trend filter does not see the pullback or future
+  bars.
+- The semivariance feature is a prior-session lagged NQ value and cannot use current-session returns.
+- No future NQ return, final daily high/low, final VWAP, post-entry MES/NQ data, or post-entry orderflow is used.
+failure_modes:
+- MES participation may not isolate NQ-specific retail or less-informed crowding.
+- High downside semivariance may indicate information-driven NQ continuation rather than temporary pullback pressure.
+- The windowed first-signal design can increase trade count but may include weaker signals than fixed-time entries.
+- High-volatility payoffs may also produce larger drawdowns and fail monkey or Monte Carlo prop-rule stress.
+- Profits can concentrate in a small number of high-volatility sessions.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_mes_crowding_trend_pullback_reversion
+  - nq_mes_crowding_vol_filtered_trend_pullback_reversion
+  - nq_realized_semivariance_asymmetry
+  conclusion: Eligible as a bounded ES-to-NQ composite port. Previous NQ MES crowding campaigns did not require high NQ downside
+    semivariance; previous NQ semivariance campaigns did not require MES crowding during a completed NQ trend pullback.
+source_es_template: campaigns/es_high_semivariance_mes_trend_pullback_crowding/rescue_attempts/stop_target_widen_rescue_1
+pre_pnl_density:
+  status: approved_for_testing
+  artifact: research_artifacts/nq_high_semivariance_mes_trend_pullback_crowding_density_audit_20260622.md
+  detail_csv: research_artifacts/nq_high_semivariance_mes_trend_pullback_crowding_density_audit_20260622.csv
+  entry_combos_per_variant: 6
+  passing_entry_combos_total: 30
+  total_entry_combos: 30
+  full_min_trades_per_year: 78.57
+  latest_one_year_min_trades_per_year: 67
+variants:
+- morning15_trade_high_downside_window_1130
+- morning15_notional_high_downside_window_1130
+- late_morning30_notional_high_downside_window_1230
+- midday60_notional_high_downside_window_1430
+- afternoon60_notional_high_downside_window_1530
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn; after OOS, only rejection or promotion is allowed.
+testing_plan:
+  methodology: current staged research pipeline
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+status: completed_failed
+decision_reason: All five variants failed the staged workflow. Four failed limited_core_grid_test. The only core-passing variant,
+  afternoon60_notional_high_downside_window_1530, failed limited_monkey_test with insufficient profitable monkey rate and
+  insufficient beat rates. No variant reached WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance, or candidate
+  reporting.
+testing_outcome:
+  report_path: backtest-campaigns/nq_high_semivariance_mes_trend_pullback_crowding/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_high_semivariance_mes_trend_pullback_crowding/campaign_results.csv
+  variants_failed: 5
+  terminal_failure_summary:
+    limited_core_grid_test: 4
+    limited_monkey_test: 1
+  candidate_strategy_report_created: false

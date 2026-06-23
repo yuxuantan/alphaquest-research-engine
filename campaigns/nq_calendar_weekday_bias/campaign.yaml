@@ -1,0 +1,78 @@
+campaign_id: nq_calendar_weekday_bias
+title: NQ Calendar Weekday Bias
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Pre-known weekday calendar effects may create persistent intraday NQ return bias after the cash open.
+rationale: This NQ-specific campaign tests day-of-week calendar anomaly expressions with no market-derived signal
+  variables. Weekday is known before the session starts, and entries use completed 5-minute bars with same-day flattening.
+sources:
+- title: Stock returns and the weekend effect
+  authors: Kenneth R. French
+  year: 1980
+  venue: Journal of Financial Economics 8(1), 55-69
+  doi: 10.1016/0304-405X(80)90021-5
+  link: https://econpapers.repec.org/RePEc:eee:jfinec:v:8:y:1980:i:1:p:55-69
+  relevance: Documents the weekend effect and motivates Monday/Friday asymmetry variants.
+- title: Day of the Week Effects and Asset Returns
+  authors: Michael R. Gibbons and Patrick Hess
+  year: 1981
+  venue: The Journal of Business 54(4), 579-596
+  doi: 10.1086/296147
+  link: https://ideas.repec.org/a/ucp/jnlbus/v54y1981i4p579-96.html
+  relevance: Documents day-of-week return effects and motivates weekday-bias variants.
+- title: 'Calendar anomalies in cash and stock index futures: International evidence'
+  authors: Christos Floros
+  year: 2014
+  venue: Economic Modelling 37, 216-223
+  doi: 10.1016/j.econmod.2013.11.017
+  link: https://ideas.repec.org/a/eee/ecmode/v37y2014icp216-223.html
+  relevance: Directly studies calendar anomalies in cash and stock index futures, including Nasdaq100 indexes.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV cache in America/New_York
+- deterministic 5-minute aggregation from completed 1-minute bars
+- session_date weekday computed before session open
+- same-day stop, target, and forced-flatten checks
+lookahead_risks:
+- Weekday is known before the trading session and contains no price information.
+- Signals use a completed NQ bar and enter no earlier than the next bar open.
+- No current-session final close, future high/low, final VWAP, or future volume is used.
+failure_modes:
+- Calendar anomalies may have decayed or inverted in electronic NQ futures.
+- Weekday-pair variants may be too blunt and fail after costs.
+- Results may be regime-dependent or fail monkey/WFA robustness.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_halloween_seasonal_premium
+  - nq_daily_time_series_momentum
+  conclusion: 'Eligible as a different calendar edge: weekday/session bias rather than half-year seasonality or
+    return-state momentum.'
+pre_pnl_density:
+  status: approved_for_authoring
+  artifact: research_artifacts/nq_calendar_weekday_bias_density_audit_20260622.md
+  screen: research_artifacts/nq_calendar_weekday_bias_density_audit_20260622.csv
+  note: All five weekday-pair variants have 95-102 signals/year before PnL testing.
+variants:
+- mon_fri_weekend_reversal_1000
+- tue_wed_midweek_strength_1000
+- thu_fri_lateweek_strength_1030
+- mon_tue_turnaround_1000
+- wed_thu_midweek_fade_1130
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in current NQ search; weekday mappings are fixed from literature and signal density
+    before PnL testing.
+status: completed_failed
+completed_at: '2026-06-22'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_calendar_weekday_bias/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_calendar_weekday_bias/campaign_results.csv
+  methodology_audit: campaigns/nq_calendar_weekday_bias/methodology_audit.md
+  density_audit: research_artifacts/nq_calendar_weekday_bias_density_audit_20260622.md
+  failure_reason: All five variants failed limited_core_grid_test; thu_fri_lateweek_strength_1030 was closest
+    at 6/9 profitable combinations but did not clear the 0.70 core breadth gate.

@@ -1,0 +1,110 @@
+campaign_id: nq_opening_gap_orderflow_continuation
+title: NQ opening gap hold continuation with aggregate orderflow
+decision: FAIL
+created_at: '2026-06-22'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: opening_gap_orderflow_continuation
+hypothesis: NQ RTH opening gaps from the prior RTH close may continue intraday when
+  the post-open window holds on the gap side of the prior close and completed aggregate
+  orderflow remains aligned with the gap direction.
+sources:
+- title: Market Intraday Momentum
+  authors: Lei Gao; Yufeng Han; Sophia Zhengzi Li; Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2018.05.009
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  relevance: Supports testing whether completed intraday index returns forecast later
+    same-day direction.
+- title: Overnight-Intraday Reversal Everywhere
+  authors: Chun Liu; Yang Liu; Tianyu Wang; Guofu Zhou; Yingzi Zhu
+  year: 2016
+  venue: SSRN working paper
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2730304
+  relevance: Provides a competing overnight reversal benchmark; this campaign tests
+    the accepted-gap condition rather than unconditional gap fade.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont; Arseniy Kukanov; Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon pressure proxy. This
+    campaign uses completed Sierra aggregate trade-side flow, not quote-depth OFI.
+rationale: This is a true NQ continuation test of accepted RTH opening gaps. The signal
+  requires a known prior RTH close, a current RTH open away from that close, a completed
+  post-open source window that has not filled back through the prior close, and same-direction
+  aggregate orderflow.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- previous RTH close derived from completed prior sessions
+- completed source-window signed_volume, volume, large10_signed_volume, large10_volume,
+  large20_signed_volume, and large20_volume
+lookahead_risks:
+- Prior RTH close is known only after the previous RTH session completes.
+- Current RTH open is known at the open, but no signal is emitted until the configured
+  source window closes.
+- The gap-hold and orderflow checks use only completed bars ending at or before the
+  signal timestamp.
+- The engine handles next-bar execution after the completed source-window signal.
+- The opening-gap boundary stop uses the known prior close and next-bar entry price;
+  no final session high, low, VWAP, volume profile, or future orderflow is used.
+failure_modes:
+- NQ gaps may fill despite early acceptance.
+- Same-direction aggregate flow can mark exhaustion rather than continuation sponsorship.
+- Boundary stops around the prior close can be wide in NQ and reduce MAR.
+- Performance may concentrate in macro-event or high-volatility sessions.
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue is authorized for this NQ campaign; all mechanics
+    and parameter spaces are frozen before staged testing.
+pre_pnl_density_audit:
+  decision: PASS_WITH_SPARSE_STRICT_CORNERS
+  method: Raw NQ RTH cache count audit using prior-session close, current RTH open,
+    completed source-window gap hold, and same-direction aggregate flow only. No PnL,
+    stop, target, WFA, monkey, Monte Carlo, prop simulation, or holdout result was
+    inspected.
+  source_cache: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  date_range: 2011-01-05 to 2026-06-12
+  threshold_basis:
+    opening_gap_abs_ticks_quantiles:
+      q25: 36.0
+      q50: 95.0
+      q60: 138.0
+      q70: 204.0
+    held_gap_distance_points_quantiles_by_window:
+      early_1000_q50: 41.38
+      morning_1030_q50: 44.25
+      late_1100_q50: 45.5
+      midday_1200_q50: 47.88
+  note: Broad and middle entry corners are dense enough for the 50 trades/year rule;
+    strict gap/flow corners are retained as neighboring stability checks and must
+    be rejected by staged gates if too sparse.
+variants:
+- early_signed_gap_hold_continuation_1000
+- morning_signed_gap_hold_continuation_1030
+- late_morning_large10_gap_hold_continuation_1100
+- late_morning_large20_gap_hold_continuation_1100
+- midday_signed_gap_hold_continuation_1200
+result_summary:
+  decision: FAIL
+  report_path: backtest-campaigns/nq_opening_gap_orderflow_continuation/campaign_test_summary.json
+  runs: 5
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_monkey_test: 2
+    limited_core_grid_test: 3
+  failure_reason: 'No NQ opening-gap continuation variant completed the full staged
+    flow: two variants failed limited_monkey_test after core and three failed limited_core_grid_test.'
+  best_core_profitable_rate: 1.0
+  best_core_variant: early_signed_gap_hold_continuation_1000
+  best_top_net_variant: early_signed_gap_hold_continuation_1000
+  best_top_net_profit: 4860.0
+  notes:
+  - early_signed_gap_hold_continuation_1000 passed core with 81/81 profitable combinations
+    but failed monkey with net beat 0.870875 and drawdown beat 0.565.
+  - morning_signed_gap_hold_continuation_1030 barely cleared core at 58/81 profitable
+    combinations and failed monkey on net beat 0.754125.
+  - The large10, large20, and midday signed variants failed limited_core_grid_test.
+  - No rescue was authorized or applied.

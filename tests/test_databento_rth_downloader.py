@@ -58,6 +58,16 @@ def test_session_output_path_and_download_plan_skip_existing_file(tmp_path):
     assert [session.session_date.isoformat() for session in plan] == ["2026-06-02"]
 
 
+def test_session_output_path_uses_schema_specific_suffix_for_tbbo(tmp_path):
+    config = DownloadConfig(output_dir=tmp_path, schema="tbbo")
+    session = iter_rth_sessions("2026-06-01", "2026-06-01")[0]
+
+    path = session_output_path(config, session)
+
+    assert path.name == "glbx-mdp3-20260601.rth.tbbo.dbn.zst"
+    assert path.match("*.tbbo.dbn.zst")
+
+
 def test_download_plan_force_keeps_existing_file(tmp_path):
     config = DownloadConfig(output_dir=tmp_path, force=True)
     sessions = iter_rth_sessions("2026-06-01", "2026-06-01")

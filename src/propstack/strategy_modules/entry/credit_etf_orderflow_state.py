@@ -44,7 +44,7 @@ class CreditEtfOrderflowStateEntry:
         self.bar_interval_minutes = float(params.get("bar_interval_minutes", 5))
         self.tick_size = float(params.get("tick_size", 0.25))
         self.rank_threshold = float(params.get("rank_threshold", 0.65))
-        self.min_es_move_ticks = float(params.get("min_es_move_ticks", 2.0))
+        self.min_move_ticks = float(params.get("min_move_ticks", params.get("min_es_move_ticks", 2.0)))
         self.min_orderflow_imbalance = float(params.get("min_orderflow_imbalance", 0.0))
         self.min_flow_volume = float(params.get("min_flow_volume", 0.0))
         self.max_trades_per_day = int(params.get("max_trades_per_day", 1))
@@ -101,8 +101,10 @@ class CreditEtfOrderflowStateEntry:
             "flow_mode": self.flow_mode,
             "session_open": state["session_open"],
             "confirmation_close": bar.get("close"),
+            "instrument_move_ticks": state["move_ticks"],
+            "min_move_ticks": self.min_move_ticks,
             "es_move_ticks": state["move_ticks"],
-            "min_es_move_ticks": self.min_es_move_ticks,
+            "min_es_move_ticks": self.min_move_ticks,
             "confirmation_signed_volume": signed_volume,
             "confirmation_flow_volume": flow_volume,
             "confirmation_orderflow_imbalance": imbalance,
@@ -125,6 +127,7 @@ class CreditEtfOrderflowStateEntry:
                 "credit_driver_value": driver_value,
                 "flow_mode": self.flow_mode,
                 "orderflow_imbalance": imbalance,
+                "instrument_move_ticks": state["move_ticks"],
                 "es_move_ticks": state["move_ticks"],
             },
             report_fields=report_fields,
@@ -176,17 +179,17 @@ class CreditEtfOrderflowStateEntry:
             return None, rank_column, float("nan")
         low_tail = 1.0 - self.rank_threshold
         if self.setup_mode == "hyg_strength_long":
-            if rank >= self.rank_threshold and move_ticks >= self.min_es_move_ticks:
+            if rank >= self.rank_threshold and move_ticks >= self.min_move_ticks:
                 return "long", rank_column, rank
             return None, rank_column, rank
         if self.setup_mode == "hyg_weakness_short":
-            if rank <= low_tail and move_ticks <= -self.min_es_move_ticks:
+            if rank <= low_tail and move_ticks <= -self.min_move_ticks:
                 return "short", rank_column, rank
             return None, rank_column, rank
         if self.setup_mode == "hyg_two_sided_continuation":
-            if rank >= self.rank_threshold and move_ticks >= self.min_es_move_ticks:
+            if rank >= self.rank_threshold and move_ticks >= self.min_move_ticks:
                 return "long", rank_column, rank
-            if rank <= low_tail and move_ticks <= -self.min_es_move_ticks:
+            if rank <= low_tail and move_ticks <= -self.min_move_ticks:
                 return "short", rank_column, rank
             return None, rank_column, rank
         raise ValueError(f"Unsupported setup_mode: {self.setup_mode}")
@@ -223,7 +226,7 @@ class CreditEtfOrderflowStateEntry:
             raise ValueError("entry.params.bar_interval_minutes and tick_size must be greater than zero.")
         if not 0.5 <= self.rank_threshold < 1.0:
             raise ValueError("entry.params.rank_threshold must be in [0.5, 1.0).")
-        if self.min_es_move_ticks < 0 or self.min_orderflow_imbalance < 0 or self.min_flow_volume < 0:
+        if self.min_move_ticks < 0 or self.min_orderflow_imbalance < 0 or self.min_flow_volume < 0:
             raise ValueError("entry.params confirmation thresholds must be non-negative.")
         if self.max_trades_per_day < 1:
             raise ValueError("entry.params.max_trades_per_day must be positive.")

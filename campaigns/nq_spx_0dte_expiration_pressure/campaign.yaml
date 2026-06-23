@@ -1,0 +1,81 @@
+campaign_id: nq_spx_0dte_expiration_pressure
+title: NQ SPX 0DTE Expiration Pressure
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: The expansion of SPX same-day-expiring options may create intraday NQ futures pressure through
+  index-level dealer hedging, gamma feedback, liquidity demand, and broad equity-index risk transfer.
+  NQ is not the primary SPX hedge, so the campaign must fail closed unless the effect survives full staged
+  validation on the NQ execution leg.
+rationale: This ports the SPX 0DTE calendar-regime edge to NQ using only deterministic Cboe listing rules
+  and completed NQ intraday movement. It does not use option flow, open interest, strike gamma, same-day
+  option prices, final VWAP, or future highs/lows.
+sources:
+- title: The Evolution of Same Day Options Trading
+  authors: Cboe Global Markets
+  year: 2023
+  link: https://www.cboe.com/insights/posts/the-evolution-of-same-day-options-trading/
+  relevance: Documents the SPX Weeklys launch path and weekday coverage.
+- title: Cboe to Add Tuesday and Thursday Expirations for SPX Weeklys Options
+  authors: Cboe Global Markets
+  year: 2022
+  link: https://ir.cboe.com/news/news-details/2022/Cboe-to-Add-Tuesday-and-Thursday-Expirations-for-SPX-Weeklys-Options-04-13-2022/default.aspx
+  relevance: Official launch dates for Tuesday and Thursday SPX Weeklys.
+- title: Does 0DTE Options Trading Increase Volatility?
+  authors: Jonathan Brogaard, Jaehee Han, and Peter Y. Won
+  year: 2023
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4426358
+  relevance: Motivates testing 0DTE-linked underlying volatility and hedging channels.
+- title: The Rise and Impacts of Zero Days-to-Expiration Options
+  authors: Christian Madtzog Fagerlid and Bendik Skarpnes
+  year: 2024
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=4724972
+  relevance: Investigates 0DTE options and S&P 500 market impacts.
+data_needs:
+- NQ RTH 1-minute Sierra OHLCV/orderflow bars
+- deterministic SPX 0DTE calendar generated from Cboe launch rules and NQ sessions
+- next-bar-open entry after completed NQ signal bar
+lookahead_risks:
+- Using realized option flow, strike pins, final same-day option volume, or dealer gamma is forbidden.
+- Signals use only completed NQ open-to-signal movement plus ex-ante calendar membership.
+- No final NQ session high/low, final VWAP, future returns, or post-entry option information is used.
+- Standard monthly OPEX Fridays are excluded by default to avoid duplicate monthly/quarterly OPEX effects.
+failure_modes:
+- The 0DTE effect may affect ES/SPX volatility but not directional NQ returns after costs.
+- Direction may depend on unavailable option-positioning or dealer-gamma sign.
+- Post-May-2022 full-week 0DTE history is short and may fail WFA/sample stability.
+- The variants may duplicate generic intraday mean reversion or momentum once stressed by monkey tests.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_cboe_put_call_sentiment_intraday
+  - nq_cboe_vxn_vix_dispersion_intraday
+  - nq_leveraged_etf_rebalance_pressure
+  - nq_volatility_filtered_intraday_momentum_priority
+  conclusion: Eligible as a distinct NQ SPX 0DTE calendar-regime test; it uses deterministic option listing
+    calendar plus NQ open-to-signal move, not Cboe sentiment, VXN/VIX dispersion, LETF rebalance, or generic
+    volatility-filtered momentum.
+feature_construction:
+  builder: tools/build_spx_0dte_calendar.py with NQ bars input
+  output: data/external/nq_spx_0dte_calendar_sessions_20110103_20260612.csv
+  lookahead_control: calendar membership is known from Cboe listing rules before each session; no option-flow
+    or same-day settlement data is used
+  pre_pnl_density_audit: research_artifacts/nq_spx_0dte_expiration_pressure_density_audit_20260622.md
+variants:
+- full_week_down_move_fade_long_1000
+- full_week_up_move_fade_short_1000
+- tue_thu_two_sided_fade_1030
+- mwf_two_sided_fade_1030
+- full_week_late_move_continuation_1430
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; NQ move-threshold grids are predeclared
+    from density only before PnL testing.
+status: completed_failed
+completed_at: '2026-06-22'
+failure_summary: One variant passed core and monkey but failed stitched WFA with negative OOS net profit,
+  PF below 1.0, and WFA early exit; the other four variants failed the limited core grid. No rescue was
+  authorized or used.

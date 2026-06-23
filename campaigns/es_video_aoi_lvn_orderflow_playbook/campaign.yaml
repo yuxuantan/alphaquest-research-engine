@@ -1,0 +1,108 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+title: ES Video AOI LVN Orderflow Playbook
+decision: FAIL
+created_at: '2026-06-21'
+instrument: ES
+timeframe: 1m
+edge_family: video_aoi_volume_profile_orderflow_range_and_trend_playbook
+hypothesis: The video playbook claims orderflow at predefined auction-market areas of interest
+  can identify trapped traders. This campaign converts that discretionary idea into completed-bar
+  ES rules using prior value-area edges for the range model and prior LVN pullbacks for the
+  trend model.
+sources:
+- title: 74% Win Rate Trader Shares His EXACT OrderFlow Strategy ($2M+ Payouts)
+  authors: Chart Fanatics / Trader Yush
+  year: n.d.
+  venue: Practitioner video notes supplied by user
+  link: not available in attached notes
+  relevance: 'Defines the tested process: build AOIs from market-generated levels and volume
+    profile, then require absorption, delta, and trapped-trader confirmation.'
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports public support/resistance levels as short-horizon reference prices.
+- title: Do Investors Place Orders to Exploit Technical Analysis?
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/j.1540-6261.2004.00665.x
+  relevance: Links technical levels to order placement and liquidity behavior.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow imbalance and pressure, while this campaign uses completed
+    Sierra footprint fields rather than full depth-of-book OFI.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates value area, POC, and LVN auction-market context.
+data_needs:
+- Validated local Sierra ES 1-minute footprint imbalance cache in America/New_York.
+- Prior RTH high/low features shifted from completed prior RTH session only.
+- Prior-session approximate POC, VAH, VAL, and LVNs built inside the entry module from completed
+  prior RTH bars only.
+- Opening range high/low available only after the first 30 completed RTH one-minute bars.
+data_quality_caveats:
+- The supplied video discusses large trades above 200 ES lots, but the validated full-history
+  local cache has no vendor-equivalent >200-lot print field. That branch is data-gated and
+  not claimed here.
+- The local cache is RTH-only for this footprint file, so overnight high/low variants are
+  not tested in this campaign.
+- Prior profile levels are approximated by distributing each completed 1-minute bar volume
+  uniformly across its high-low tick range; this is not true volume-at-price.
+- Sierra footprint imbalance and absorption fields are completed-bar research fields, not
+  full queue reconstruction.
+lookahead_risks:
+- Prior profile, VAH, VAL, POC, LVNs, prior RTH high, and prior RTH low are computed only
+  after the previous RTH session is complete.
+- Opening-range levels are unavailable until the first 30 RTH bars have closed.
+- Signals use only the completed signal bar; entry is no earlier than the next 1-minute open.
+- No final current-session VWAP, final profile, final daily range, future high/low, future
+  footprint, or future orderflow is used.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_video_aoi_lvn_orderflow_playbook_density_audit_20260621.md
+  rows: 1489410
+  sessions: 3819
+  period: 2010-12-14 through 2026-06-10 raw file, staged subset 2011-01-03 through 2026-06-09
+  decision: approve_for_testing_before_pnl_with_range_density_warning
+  note: The strict range model is sparse; it is retained for fidelity to the supplied strategy,
+    while the denser trend-LVN branch is the main testable expression.
+variants:
+- range_value_edge_aoi_reentry_1500
+- trend_lvn_two_sided_base_1500
+- trend_lvn_two_sided_strong_1500
+- trend_lvn_seller_trap_long_1500
+- trend_lvn_buyer_trap_short_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - core video AOI/orderflow playbook mechanic
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+test_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run1
+  tested_at: '2026-06-21'
+  campaign_summary: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/methodology_audit.md
+  variants_tested: 5
+  variants_passed: 0
+  failure_reason: All five predeclared variants failed limited_core_grid_test; no variant
+    reached WFA, Monte Carlo, simulated incubation, or acceptance OOS.
+  rescue_attempts_used: 0

@@ -1,0 +1,109 @@
+campaign_id: nq_monthly_opex_pressure
+title: NQ Monthly OPEX Pressure
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Monthly non-quarterly equity-option expiration may create predictable
+  intraday NQ pressure through option-hedging, ETF/index basket hedging, and post-expiration
+  inventory release.
+rationale: This pre-PnL NQ port reuses the ES monthly OPEX edge family after the ES
+  Thursday-positioning short passed core and monkey before WFA failed. NQ is a plausible
+  stronger target because option and ETF hedging pressure is concentrated in large
+  growth constituents.
+sources:
+- title: Program trading and expiration day effects
+  author: Hans R. Stoll and Robert E. Whaley
+  year: 1987
+  link_or_doi: https://rpc.cfainstitute.org/research/financial-analysts-journal/1987/program-trading-and-expiration-day-effects
+  expected_mechanism: Expiration-day program trading and liquidity demand can create
+    abnormal index price effects near derivative expiration.
+- title: Stock price clustering on option expiration dates
+  author: Xiaoyan Ni, Neil D. Pearson, and Allen M. Poteshman
+  year: 2005
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2004.06.015
+  expected_mechanism: Option expiration can alter underlying prices and pull closes
+    toward option strike concentrations.
+- title: SPX End-of-Month Options Contract Specifications
+  author: Cboe
+  year: 2026
+  link_or_doi: https://www.cboe.com/tradable_products/sp_500/spx_end_of_month_options/specifications/
+  expected_mechanism: Cboe distinguishes end-of-month expirations from standard third-Friday
+    expirations, supporting an ex-ante monthly OPEX calendar definition.
+- title: Options Expiration Calendar
+  author: The Options Industry Council
+  year: 2026
+  link_or_doi: https://www.optionseducation.org/referencelibrary/expiration-calendar
+  expected_mechanism: Listed-option expiration processing is a deterministic calendar
+    event; holiday adjustments must be known before testing.
+data_needs:
+- timezone-aware NQ RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- NYSE monthly OPEX session calendar with previous, OPEX, and next regular-session
+  signal dates
+- next-bar execution with commission, slippage, same-day flatten, and no-overnight
+  enforcement
+data_quality_caveats:
+- The OPEX calendar is deterministic and public, but the strategy has low event count
+  by construction.
+- Calendar effects can be unstable across microstructure regimes and option-market
+  structure changes.
+- Sierra NQ data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must remain pessimistic because no tick path is used.
+lookahead_risks:
+- The monthly OPEX calendar is known before the event and does not use future price
+  data.
+- Signals trigger only on predeclared previous, OPEX, or next regular-session dates.
+- Signals use completed one-minute bars and engine entry is next-bar-open or later.
+- No final session high/low, final VWAP, future return, or post-entry path information
+  is used for signal generation.
+failure_modes:
+- The event count is low, so apparent profitability can be dominated by a handful
+  of expiration cycles.
+- The ES source failed WFA, so NQ must fail closed unless robustness is broad.
+- NQ option hedging can flip direction depending on dealer gamma, index level, and
+  constituent concentration.
+- Monthly OPEX seasonality may affect volatility more than direction after costs.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_spx_0dte_expiration_pressure
+  - nq_leveraged_etf_rebalance_pressure
+  - nq_halloween_seasonal_premium
+  - nq_calendar_weekday_bias
+  conclusion: Eligible as a distinct bounded monthly OPEX calendar edge. It is not
+    0DTE daily expiration pressure, leveraged ETF rebalance pressure, broad seasonal
+    Halloween exposure, or generic weekday bias.
+feature_construction:
+  builder: tools/build_nyse_monthly_opex_calendar.py
+  output: data/external/nyse_monthly_opex_sessions_20110103_20260612.csv
+  rows: 555
+  event_density_audit: research_artifacts/nq_monthly_opex_pressure_event_density_audit_20260623.md
+variants:
+- nonquarterly_opex_thursday_positioning_short_1330
+- nonquarterly_post_opex_monday_reversal_long_1000
+- nonquarterly_opex_late_short_1500
+- nonquarterly_opex_midday_long_1200
+- nonquarterly_opex_open_short_1000
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized; after staged failure, allow only rejection or
+    promotion unless the user explicitly authorizes one rescue.
+source_es_campaign: es_monthly_opex_pressure
+status: completed_failed
+nq_port_provenance:
+  source_campaign_id: es_monthly_opex_pressure
+  source_config_family: 'mixed: Thursday stop_distance_rescue_1, post-OPEX tp_min_rr_floor_rescue_1,
+    other variants parameter_space_rescue_1'
+  ported_before_nq_pnl: true
+  nq_rescue_authorized: false
+result_summary:
+  stage: walk_forward_analysis
+  report: backtest-campaigns/nq_monthly_opex_pressure/campaign_test_summary.json
+  failure_reason: 'Four variants failed limited_core_grid_test or did not meet benchmark
+    concentration requirements. The only core-and-monkey passing branch, nonquarterly_opex_thursday_positioning_short_1330,
+    failed walk_forward_analysis: first training window had no selectable row and
+    stitched OOS trades were 0. No Monte Carlo, simulated incubation, or acceptance
+    OOS stage was reached.'
+  candidate_strategy_report_created: false

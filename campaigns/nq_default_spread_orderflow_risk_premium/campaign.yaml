@@ -1,0 +1,123 @@
+campaign_id: nq_default_spread_orderflow_risk_premium
+title: NQ Default-Spread Orderflow Risk-Premium
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Lagged Moody's Baa-minus-Aaa default-spread state can proxy time-varying equity risk premia
+  and credit-risk pressure. NQ may react more sharply than ES when credit-premium state, completed NQ
+  price movement, and aggregate NQ orderflow agree before next-bar entry.
+rationale: This NQ port tests whether the default-spread/orderflow confirmation mechanism is stronger
+  on the growth-heavy NQ execution leg. The feature file is rebuilt on NQ sessions with the same two-business-day
+  FRED availability lag before any NQ PnL inspection.
+sources:
+- title: Business Conditions and Expected Returns on Stocks and Bonds
+  authors: Eugene F. Fama and Kenneth R. French
+  year: 1989
+  venue: Journal of Financial Economics
+  link: https://www-2.rotman.utoronto.ca/~kan/3032/pdf/PredictabilityOfReturns_InstrumentalVariables/Fama_French_JFE_1989.pdf
+  relevance: 'Documents that default-spread and business-condition variables contain information about
+    expected stock and bond returns.
+
+    '
+- title: Predicting Returns in the Stock and Bond Markets
+  authors: Donald B. Keim and Robert F. Stambaugh
+  year: 1986
+  venue: Journal of Financial Economics
+  doi: 10.1016/0304-405X(86)90070-X
+  link: https://doi.org/10.1016/0304-405X(86)90070-X
+  relevance: 'Supports default-spread and term/spread state variables as predictors of time-varying expected
+    returns.
+
+    '
+- title: Moody's Seasoned Aaa Corporate Bond Yield
+  authors: Federal Reserve Bank of St. Louis
+  year: 2026
+  venue: FRED
+  link: https://fred.stlouisfed.org/series/DAAA
+  relevance: Free official source for the Aaa yield leg.
+- title: Moody's Seasoned Baa Corporate Bond Yield
+  authors: Federal Reserve Bank of St. Louis
+  year: 2026
+  venue: FRED
+  link: https://fred.stlouisfed.org/series/DBAA
+  relevance: Free official source for the Baa yield leg.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: 'Supports using contemporaneous orderflow imbalance as a short-horizon pressure proxy. This
+    campaign uses completed-bar Sierra aggregate signed volume, not print-level LOB data.
+
+    '
+data_needs:
+- timezone-aware NQ RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- free local FRED DAAA and DBAA daily CSV files
+- derived default-spread feature file with two-business-day availability lag
+- 5-minute completed-bar NQ aggregation with next-bar execution
+- same-day stop, target, forced-flatten, and no-overnight enforcement
+data_quality_caveats:
+- FRED default-spread series are daily macro/credit proxies, not intraday quotes.
+- The two-business-day lag is conservative but exact historical publication timestamps are not modeled.
+- Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor truth.
+- Same-bar stop/target conflicts must remain pessimistic because no tick path is used.
+lookahead_risks:
+- A session dated D may only use the latest FRED Aaa/Baa observation on or before D minus two business
+  days.
+- Signals are no earlier than 10:00 ET and use completed NQ bars only.
+- Entries must occur at the next bar open or later.
+- No future NQ bar, final session VWAP, final high/low, or same-day/future credit observation is used.
+failure_modes:
+- Default-spread regimes may affect multi-day risk premia but not same-day NQ RTH returns.
+- High spread can mean either high expected returns or ongoing stress, making direction unstable.
+- Credit-spread changes can lag equity futures rather than lead them.
+- Aggregate orderflow may confirm late after most of the move is complete.
+- Results may concentrate in crisis regimes or narrow rank thresholds.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_ofr_financial_stress_intraday
+  - es_market_plumbing_liquidity_capacity
+  - es_treasury_rate_shock_intraday
+  - es_dollar_risk_appetite_intraday
+  - es_variance_risk_premium_intraday
+  - es_sector_opening_breadth_orderflow_continuation
+  conclusion: 'Eligible as a distinct bounded composite. OFR stress used a composite systemic stress index
+    and subcomponents; this campaign uses a long-history Moody''s Baa-minus-Aaa default-spread regime
+    with required NQ price/orderflow confirmation.
+
+    '
+feature_construction:
+  builder: tools/build_es_default_spread_features.py
+  aaa_source_cache: data/external/fred_default_spread/fred_daaa_aaa_corporate_yield.csv
+  baa_source_cache: data/external/fred_default_spread/fred_dbaa_baa_corporate_yield.csv
+  output: data/external/nq_default_spread_features_20110103_20260612.csv
+  availability_lag_business_days: 2
+  pre_pnl_density_audit: research_artifacts/nq_default_spread_orderflow_risk_premium_density_audit_20260623.md
+variants:
+- high_spread_large10_long_1230
+- high_spread_signed_long_1230
+- tightening_spread_signed_long_1130
+- two_sided_spread_change_large10_1130
+- widening_spread_signed_short_1230
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized; after staged failure, allow only rejection or promotion unless the
+    user explicitly authorizes one rescue.
+source_es_campaign: es_default_spread_orderflow_risk_premium
+status: completed_failed_pre_pnl_density
+result_summary:
+  stage: pre_pnl_density_screen
+  report: backtest-campaigns/nq_default_spread_orderflow_risk_premium/campaign_test_summary.json
+  density_audit: research_artifacts/nq_default_spread_orderflow_risk_premium_density_audit_20260623.md
+  failure_reason: Only 1/5 variants cleared full-history and latest-252 declared entry-grid signal-density
+    requirements; no NQ PnL was inspected.
+nq_port_provenance:
+  source_campaign_id: es_default_spread_orderflow_risk_premium
+  source_config_family: parameter_space_rescue_1
+  ported_before_nq_pnl: true
+  nq_rescue_authorized: false

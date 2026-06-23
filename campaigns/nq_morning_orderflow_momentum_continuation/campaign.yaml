@@ -1,0 +1,93 @@
+campaign_id: nq_morning_orderflow_momentum_continuation
+title: NQ Morning Orderflow Momentum Continuation
+decision: FAIL
+created_at: '2026-06-22'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: opening_window_orderflow_confirmed_intraday_momentum
+hypothesis: >
+  A completed first-hour NQ move should have same-day continuation value when
+  aggregate completed-bar signed or large-trade orderflow confirms aggressive
+  participation in the same direction.
+rationale: >
+  This campaign ports the ES morning-orderflow continuation mechanics to NQ
+  before observing NQ PnL. NQ has a stronger growth/technology risk profile and
+  often sharper intraday directional moves, so first-hour momentum confirmed by
+  completed aggregate orderflow is a plausible market-specific expression. The
+  NQ version uses a basis-point return threshold rather than the ES fixed-tick
+  threshold because NQ's nominal price level changes materially from 2011 to
+  2026.
+sources:
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  doi: 10.1016/j.jfineco.2018.05.009
+  relevance: Supports testing whether completed early intraday information predicts later same-day index futures returns.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure proxy, while this implementation uses aggregate completed-bar Sierra proxies rather than full-depth quote OFI.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2011.11.003
+  relevance: Motivates trend continuation testing in liquid futures markets after costs and realistic execution constraints.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- completed NQ RTH 1-minute OHLCV, signed_volume, large10_volume, large10_signed_volume, large20_volume, and large20_signed_volume
+- America/New_York session labels and same-day forced flatten handling
+lookahead_risks:
+- The signal window is 09:30 ET through the completed 10:30 ET bar.
+- Entry can occur only after the source window closes, through the engine's next-bar execution.
+- No future session high, low, VWAP, volume profile, daily range, or post-entry orderflow is used.
+- All variants flatten intraday before the configured prop-rule cutoff.
+duplicate_edge_check:
+  active_scope_only: true
+  existing_results_checked:
+  - es_archive_morning_orderflow_hold_retest
+  - nq_archive_intraday_momentum_retest
+  - nq_archive_range_compression_retest
+  conclusion: >
+    This is a bounded ES-to-NQ port of the morning orderflow momentum edge, not
+    a duplicate of the prior NQ price-only momentum retest. The added orderflow
+    confirmation is part of the predeclared edge expression.
+variants:
+- signed_flow_1030_flatten_1515
+- signed_flow_1030_flatten_1530
+- large10_flow_1030_flatten_1515
+- large20_flow_1030_flatten_1515
+- broad_large_alignment_1030_flatten_1515
+rescue_policy:
+  allowed: false
+  reason: >
+    This is the predeclared NQ port of the ES mechanics. If it fails, do not
+    retune this family after seeing results without an explicitly authorized
+    rescue attempt.
+testing_plan:
+  methodology: current staged research pipeline including acceptance_oos_test
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+result_summary:
+  decision: FAIL
+  report_root: backtest-campaigns/nq_morning_orderflow_momentum_continuation
+  variants_tested: 5
+  variants_passed: 0
+  terminal_stages:
+    limited_core_grid_test: 5
+  failure_reason: >
+    All five ES-to-NQ orderflow momentum port variants failed limited_core_grid_test.
+    The best profitable-iteration rates were 45/81 for signed_flow_1030_flatten_1530
+    and 40/81 for signed_flow_1030_flatten_1515, both below the required 70%.
+    Large-trade proxy variants were much weaker. No variant reached monkey, WFA,
+    Monte Carlo, simulated incubation, or acceptance.
+  rescue_used: false

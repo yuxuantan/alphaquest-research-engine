@@ -45,7 +45,7 @@ def test_engine_enters_overnight_range_breakout_on_next_bar_open(tmp_path):
         [
             _bar(timestamps[0], open_=104.75, high=105.0, low=104.0, close=104.75, signed_volume=0).to_dict(),
             _bar(timestamps[1], open_=104.75, high=105.75, low=104.5, close=105.5, signed_volume=300).to_dict(),
-            _bar(timestamps[2], open_=105.5, high=106.5, low=105.25, close=106.0, signed_volume=0).to_dict(),
+            _bar(timestamps[2], open_=105.5, high=112.0, low=105.25, close=106.0, signed_volume=0).to_dict(),
             _bar(timestamps[3], open_=106.0, high=106.25, low=105.75, close=106.0, signed_volume=0).to_dict(),
         ]
     )
@@ -58,7 +58,7 @@ def test_engine_enters_overnight_range_breakout_on_next_bar_open(tmp_path):
                 "params": {**_entry_params(tmp_path), "flatten_time": "10:00:00"},
             },
             "sl": {"module": "sweep_extreme", "params": {"stop_offset_ticks": 1}},
-            "tp": {"module": "fixed_r", "params": {"target_r_multiple": 0.5}},
+            "tp": {"module": "fixed_r", "params": {"target_r_multiple": 1.0}},
             "flatten_time": "10:00:00",
         },
         "core": {

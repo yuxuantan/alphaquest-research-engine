@@ -1,0 +1,114 @@
+campaign_id: nq_intraday_capitulation_mean_reversion
+title: NQ Intraday Capitulation Mean Reversion
+decision: FAIL
+created_at: '2026-06-23'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: mixed_5m_10m_15m
+edge_type: intraday_capitulation_mean_reversion
+hypothesis: NQ can experience intraday liquidation cascades where a completed high-volume
+  down bar closes near its low below cumulative session VWAP with oversold session
+  RSI; temporary liquidity pressure may mean-revert after next-bar execution before
+  the prop-firm flatten cutoff.
+rationale: 'This campaign is NQ-specific because Nasdaq futures have high growth-duration
+  beta, concentrated mega-cap exposure, and sharp intraday de-risking/re-risking bursts.
+  The edge is not a port of a failed ES campaign: each variant requires a completed
+  NQ sell-flush bar and trades only long snapback, with no future VWAP, final session
+  range, or post-signal orderflow.'
+sources:
+- title: Fads, Martingales, and Market Efficiency
+  authors: Bruce M. Lehmann
+  year: 1990
+  venue: Quarterly Journal of Economics
+  doi: 10.2307/2938264
+  link: https://doi.org/10.2307/2938264
+  relevance: Documents short-horizon reversal behavior that can arise from temporary
+    price pressure.
+- title: The Dynamic Volume-Return Relation of Individual Stocks
+  authors: Guillermo Llorente, Roni Michaely, Gideon Saar, and Jiang Wang
+  year: 2002
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v15y2002i4p1005-1047.html
+  relevance: Motivates distinguishing high-volume informed continuation from liquidity-driven
+    reversal; this campaign tests sell-side flush snapback.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Provides microstructure context for temporary price pressure; signed-volume
+    confirmation was screened but density-rejected before PnL.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV and aggregate signed-volume cache
+- cumulative session VWAP built from completed bars only
+- completed-bar volume, RSI, and next-bar-open execution
+- same-day forced flatten and no overnight exposure
+lookahead_risks:
+- Signal uses only completed bars through the sell-flush bar close.
+- VWAP is cumulative through completed bars only, not final session VWAP.
+- RSI and average volume use completed bars in the same session before or including
+  the signal bar.
+- Entry is next bar open or later; same-bar stop/target conflicts remain pessimistic.
+failure_modes:
+- Sell flushes may continue into trend days instead of mean-reverting.
+- Removing signed-flow from the grid improves density but may admit non-capitulation
+  down bars.
+- VWAP and RSI conditions may be too late after the move.
+- Top combinations may depend on a narrow regime and fail monkey, WFA, Monte Carlo,
+  or incubation.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_overnight_intraday_reversal
+  - nq_opening_gap_orderflow_absorption_fade
+  - nq_vwap_pullback_continuation
+  - nq_round_number_barrier_reaction
+  - nq_opening_drive_inventory_orderflow
+  - nq_realized_semivariance_asymmetry
+  conclusion: 'Eligible as a distinct NQ-only capitulation snapback edge: it is not
+    a prior-session, opening-gap, VWAP pullback, round-number, opening-drive, or macro-state
+    campaign.'
+pre_pnl_density:
+  status: passed_after_vwap_feature_fix
+  initial_rejected_artifact: research_artifacts/nq_intraday_capitulation_mean_reversion_initial_density_rejected_20260623.md
+  final_artifact: research_artifacts/nq_intraday_capitulation_mean_reversion_density_audit_20260623.md
+  screen: research_artifacts/nq_intraday_capitulation_mean_reversion_density_audit_20260623.csv
+  reformulation: Removed signed-sell imbalance from the tunable grid before any PnL
+    inspection; final grid tunes min_down_move_ticks and max_close_location_from_low
+    only.
+variants:
+- opening_5m_volume_flush_reclaim_long_1100
+- morning_10m_volume_flush_reclaim_long_1230
+- midday_15m_vwap_flush_reclaim_long_1430
+- afternoon_15m_liquidation_snapback_long_1530
+- full_session_15m_structural_flush_reclaim_long_1530
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue authorized for this NQ search; all parameters are
+    fixed before PnL testing.
+status: completed_failed
+methodology_fix_before_pnl:
+  run1_error: strategy.entry.params.timeframe_minutes did not match variant timeframe;
+    no PnL metrics were produced.
+  run2_change: Align each variant timeframe and entry bar interval to its declared
+    completed-bar window.
+  run2_issue: data.feature_set none omitted VWAP, so all signals were rejected; run2
+    is invalid as a strategy result.
+  run3_change: Enable data.feature_set intraday_capitulation_mr and rerun density/preflight/stages.
+completed_at: '2026-06-23'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_intraday_capitulation_mean_reversion/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_intraday_capitulation_mean_reversion/campaign_results.csv
+  methodology_audit: campaigns/nq_intraday_capitulation_mean_reversion/methodology_audit.md
+  failure_reason: All five valid run3 NQ intraday capitulation mean-reversion variants
+    failed limited_core_grid_test. The best branch, full_session_15m_structural_flush_reclaim_long_1530,
+    had 33/81 profitable combinations (40.7%) and 16 benchmark-passing combinations,
+    below the 70% profitable-combination gate. No monkey, WFA, Monte Carlo, simulated
+    incubation, acceptance OOS, or candidate reporting stage was reached.
+  best_variant: full_session_15m_structural_flush_reclaim_long_1530
+  best_profitable_combo_rate: 0.4074074074074074
+  best_top_net: 1945.0
+  candidate_strategy_report_created: false

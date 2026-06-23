@@ -1,0 +1,127 @@
+campaign_id: nq_vpin_toxicity_continuation
+title: NQ VPIN Toxicity Continuation
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Elevated shifted prior-session NQ VPIN proxy states may identify toxic-flow sessions where liquidity providers
+  face adverse-selection pressure; if NQ has already generated a positive same-session return by 13:30 ET, the pressure may
+  continue into the afternoon after costs.
+rationale: This is a direct NQ port of the ES VPIN/order-flow-toxicity family using NQ Sierra aggregate OHLCV/orderflow bars.
+  The local implementation is an OHLCV volume-bucket proxy, not a true tick-classified VPIN estimate.
+sources:
+- title: Flow Toxicity and Liquidity in a High-frequency World
+  authors: David Easley, Marcos Lopez de Prado, and Maureen O Hara
+  year: 2012
+  venue: Review of Financial Studies 25(5), 1457-1493
+  doi: 10.1093/rfs/hhs053
+  link: https://academic.oup.com/rfs/article-abstract/25/5/1457/1569929
+  relevance: Introduces VPIN as a volume-time flow-toxicity measure based on volume imbalance and trade intensity.
+- title: Assessing Measures of Order Flow Toxicity and Early Warning Signals for Market Turbulence
+  authors: Torben G. Andersen and Oleg Bondarenko
+  year: 2015
+  venue: Review of Finance 19(1), 1-54
+  link: https://ideas.repec.org/p/aah/create/2013-43.html
+  relevance: Questions VPIN forecast power and motivates strict fail-closed robustness requirements.
+data_needs:
+- timezone-aware NQ RTH 1-minute bars aggregated to 5-minute strategy bars
+- volume and OHLC fields sufficient for the local VPIN proxy feature builder
+- shifted prior-session VPIN rank columns at 13:30 ET
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The local feature is an OHLCV volume-bucket toxicity proxy, not tick-level VPIN with true buyer/seller classification.
+- VPIN ranks are shifted prior-session rolling ranks to avoid same-session rank lookahead.
+- Same-bar stop/target conflicts use pessimistic OHLC handling.
+lookahead_risks:
+- The VPIN rank used at 13:30 is shifted from prior sessions only.
+- Current-session return is known only through the completed 13:25-13:30 ET bar.
+- Entry is next-bar open because the signal uses the completed 5-minute close.
+- No future volatility, final session return, final VWAP, or future volume bucket is used.
+failure_modes:
+- The OHLCV proxy may be too crude versus true trade-classified VPIN.
+- Toxicity may predict volatility rather than positive directional continuation.
+- Any apparent edge may be dominated by a few crisis sessions.
+- The 13:30 signal may be too late after costs and slippage.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_vpin_toxicity_continuation
+  - nq_morning_orderflow_momentum_continuation
+  - nq_volatility_filtered_intraday_momentum_priority
+  - nq_opening_drive_inventory_orderflow
+  - nq_es_relative_value_orderflow_absorption_reversion
+  conclusion: Eligible as a distinct NQ VPIN/order-flow-toxicity proxy state test, not raw signed-flow persistence, opening-drive
+    inventory, relative-value absorption, or volatility-filtered momentum.
+pre_pnl_density_audit:
+  method: Entry-condition count only on NQ cache after VPIN feature construction; no PnL, stop, target, monkey, WFA, Monte
+    Carlo, prop simulation, or holdout result was inspected.
+  signal_bar: completed 13:25-13:30 ET 5-minute bar approximated from the last 1-minute timestamp before 13:30
+  baseline_b010_l5: rank 0.55 and return 0.0005 about 58.9 signals/year; rank 0.65 and return 0.001 about 43.5 signals/year
+  fast_b005_l3: rank 0.55 and return 0.0005 about 59.7 signals/year; rank 0.65 and return 0.001 about 44.2 signals/year
+  medium_b015_l6: rank 0.55 and return 0.0005 about 60.2 signals/year; rank 0.65 and return 0.001 about 44.8 signals/year
+  slow_b020_l8: rank 0.55 and return 0.0005 about 58.6 signals/year; rank 0.65 and return 0.001 about 42.8 signals/year
+  drawdown_confirmed: rank 0.55, drawdown rank 0.2, and return 0.0005 about 47.8 signals/year; stricter drawdown corners are
+    known sparse but retained as a separate robustness expression.
+parameter_space:
+  return_variants:
+    entry.params.vpin_rank_cutoff:
+    - 0.45
+    - 0.55
+    - 0.65
+    entry.params.min_session_return:
+    - 0.00025
+    - 0.0005
+    - 0.001
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+  drawdown_variant:
+    entry.params.vpin_rank_cutoff:
+    - 0.45
+    - 0.55
+    - 0.65
+    entry.params.drawdown_rank_cutoff:
+    - 0.2
+    - 0.3
+    - 0.4
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+  combinations_per_variant: 54
+variants:
+- baseline_high_toxicity_positive_ret_long_1330
+- fast_bucket_toxicity_long_1330
+- medium_bucket_toxicity_long_1330
+- slow_bucket_toxicity_long_1330
+- drawdown_rank_confirmed_long_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request.
+status: completed
+testing_outcome:
+  completed_at: '2026-06-22'
+  decision: FAIL
+  original_runs: 5
+  rescue_runs: 0
+  wfa_reached: 1
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  campaign_summary_path: backtest-campaigns/nq_vpin_toxicity_continuation/campaign_test_summary.json
+  failure_reason: Four variants failed limited_core_grid_test; slow_bucket_toxicity_long_1330 passed core and monkey but failed
+    walk_forward_analysis early exit with selected train profit factor below 1.00.
+final_result:
+  decision: FAIL
+  candidate_strategy_report_created: false
+  reason: Four variants failed limited_core_grid_test; slow_bucket_toxicity_long_1330 passed core and monkey but failed walk_forward_analysis
+    early exit with selected train profit factor below 1.00.
+  report_path: backtest-campaigns/nq_vpin_toxicity_continuation/campaign_test_summary.json

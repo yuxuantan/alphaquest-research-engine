@@ -42,6 +42,9 @@ REQUIRED_MECHANICS_RATIONALE_FIELDS = (
     "known_failure_modes",
 )
 SUPPORTED_CONTINUOUS_CONTRACT_RULES = {"none", "dominant_session_volume", "session_volume", "explicit_roll_calendar"}
+DEFAULT_CAMPAIGN_VARIANT_COUNT = 5
+MAX_CAMPAIGN_VARIANT_COUNT = 8
+VARIANT_EXPANSION_RATIONALE_MIN_CHARS = 80
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,6 +110,7 @@ def run_preflight(
         try:
             cfg = _load_yaml(path)
             _validate_config(cfg, path, failures, warnings)
+            _validate_campaign_variant_count(path, failures, warnings)
             _validate_data(cfg, path, failures, warnings)
         except Exception as exc:  # fail closed on malformed config or data loaders
             failures.append(f"{_display_path(path)}: preflight exception: {exc}")
@@ -287,6 +291,42 @@ def _validate_minimum_target_rr(cfg: dict, path: Path, failures: list[str]) -> N
         )
 
 
+def _validate_campaign_variant_count(path: Path, failures: list[str], warnings: list[str]) -> None:
+    campaign_root = _source_campaign_root(path)
+    if campaign_root is None:
+        return
+
+    prefix = str(_display_path(path))
+    campaign_yaml = campaign_root / "campaign.yaml"
+    if not campaign_yaml.is_file():
+        warnings.append(f"{prefix}: campaign.yaml is absent; variant-count policy could not be checked.")
+        return
+
+    campaign = _load_yaml(campaign_yaml)
+    variants = campaign.get("variants")
+    campaign_prefix = str(_display_path(campaign_yaml))
+    if variants is None:
+        warnings.append(f"{campaign_prefix}: variants list is absent; variant-count policy could not be checked.")
+        return
+    if not isinstance(variants, list):
+        failures.append(f"{campaign_prefix}: variants must be a list.")
+        return
+
+    variant_count = len(variants)
+    if variant_count > MAX_CAMPAIGN_VARIANT_COUNT:
+        failures.append(
+            f"{campaign_prefix}: campaign variant cap is {MAX_CAMPAIGN_VARIANT_COUNT}; found {variant_count} variants."
+        )
+    if variant_count > DEFAULT_CAMPAIGN_VARIANT_COUNT:
+        rationale = campaign.get("variant_expansion_rationale")
+        if not isinstance(rationale, str) or len(rationale.strip()) < VARIANT_EXPANSION_RATIONALE_MIN_CHARS:
+            failures.append(
+                f"{campaign_prefix}: campaigns with {variant_count} variants must include "
+                "a detailed pre-test variant_expansion_rationale explaining why variants 6-8 "
+                "are better distinct mechanics within the same edge."
+            )
+
+
 def _validate_data(cfg: dict, path: Path, failures: list[str], warnings: list[str]) -> None:
     data_cfg = cfg.get("data")
     if not isinstance(data_cfg, dict):
@@ -333,6 +373,16 @@ def _resolved_data_config(data_cfg: dict, config_path: Path) -> dict:
         if out.get(key):
             out[key] = str(_resolve_path(out[key], config_path))
     return out
+
+
+def _source_campaign_root(config_path: Path) -> Path | None:
+    parts = config_path.parts
+    if "campaigns" not in parts:
+        return None
+    campaigns_index = len(parts) - 1 - list(reversed(parts)).index("campaigns")
+    if len(parts) <= campaigns_index + 1:
+        return None
+    return Path(*parts[: campaigns_index + 2])
 
 
 def _resolve_path(value: str | Path, config_path: Path) -> Path:

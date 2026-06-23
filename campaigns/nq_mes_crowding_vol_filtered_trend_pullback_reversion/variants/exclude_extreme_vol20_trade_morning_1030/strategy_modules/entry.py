@@ -1,0 +1,5 @@
+from propstack.strategy_modules.entry.volatility_filtered_trend_mes_participation_crowding import (
+    VolatilityFilteredTrendMesParticipationCrowdingEntry,
+)
+
+ENTRY_MODULE = VolatilityFilteredTrendMesParticipationCrowdingEntry

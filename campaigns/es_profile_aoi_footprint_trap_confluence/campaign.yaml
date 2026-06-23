@@ -1,0 +1,131 @@
+campaign_id: es_profile_aoi_footprint_trap_confluence
+title: ES Profile-AOI Footprint Trap Confluence
+decision: FAIL
+created_at: '2026-06-21'
+instrument: ES
+timeframe: 1m
+edge_family: market_generated_aoi_profile_confluence_with_footprint_absorption
+hypothesis: ES reactions at market-generated areas of interest should be more selective
+  when the AOI overlaps a frozen prior-session profile level and the completed footprint
+  bar shows trapped aggressive buyers or sellers rather than simple price contact.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the idea that public support and resistance levels can influence
+    short-horizon price behavior.
+- title: Do Investors Place Orders to Exploit Technical Analysis?
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/j.1540-6261.2004.00665.x
+  relevance: Links technical price levels to order placement and liquidity provision
+    behavior.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow imbalance as a short-horizon pressure proxy. This
+    campaign uses Sierra footprint imbalance fields, not full depth-of-book OFI.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates value-area, POC, and low-volume-node auction-market framing
+    while this implementation remains an OHLCV approximation.
+data_needs:
+- Validated local Sierra ES 1-minute footprint imbalance cache in America/New_York.
+- Prior RTH high/low features shifted from the completed prior RTH session only.
+- Prior-session approximate POC, VAH, VAL, and LVNs built inside the entry module
+  from completed prior RTH bars only.
+- Opening range high/low available only after the configured first 30 completed RTH
+  one-minute bars.
+data_quality_caveats:
+- The footprint cache is at-price Sierra bid/ask imbalance research data, not full
+  market-by-order or queue reconstruction.
+- Prior profile levels are approximated by distributing each completed 1-minute bar
+  volume uniformly across its high-low tick range; this is not true volume-at-price.
+- The validated full-history cache does not contain vendor-equivalent ES prints above
+  200 lots. True >200-lot large-print logic is data-gated and is not claimed in this
+  campaign.
+- Sierra large10 and large20 fields remain aggregate proxies and are not used as >200-lot
+  evidence here.
+lookahead_risks:
+- Prior profile, prior RTH high, and prior RTH low are computed only after the previous
+  RTH session is complete.
+- Opening-range high and low are unavailable until the first 30 completed RTH bars
+  have closed.
+- Footprint absorption and close/reclaim tests use only the completed signal bar;
+  the engine enters no earlier than the next 1-minute bar open.
+- No final current-session VWAP, final volume profile, future high/low, future footprint,
+  or future orderflow is used.
+failure_modes:
+- Confluence may still be descriptive rather than predictive after costs, slippage,
+  and pessimistic same-bar ordering.
+- Prior profile approximation can misplace true POC, VAH, VAL, or LVNs on wide bars.
+- Opening-range and prior-extreme traps can fail repeatedly on trend days where absorption
+  does not stop continuation.
+- The footprint imbalance fields may not match true aggressor or queue-level absorption
+  in all Sierra records.
+- Signals may cluster in volatile regimes or be dominated by one side of the market.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_footprint_absorption_initiation
+  - es_prior_lvn_orderflow_rejection
+  - es_prior_value_area_orderflow_rejection
+  - es_prior_poc_orderflow_magnet
+  - es_opening_range_retest_orderflow
+  - es_session_extreme_delta_divergence
+  - es_prior_level_delta_dislocation
+  conclusion: Eligible as a distinct confluence campaign. A signal requires both market-generated
+    AOI contact and proximity to a frozen prior profile level plus at-price footprint
+    absorption. Prior active tests covered these ingredients separately, not this
+    three-way confluence.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_profile_aoi_footprint_trap_confluence_density_audit_20260621.md
+  rows: 1488630
+  sessions: 3817
+  period: 2011-01-03 through 2026-06-09
+  decision: approve_for_testing_before_pnl
+  note: A narrow one-sided prior-low variant was rejected before PnL because it remained
+    below 50 raw signals/year. The final five variants use density-eligible prior
+    two-sided and opening-range confluence forms.
+variants:
+- prior_extreme_profile_two_sided_trap_1500
+- opening_profile_two_sided_morning_trap_1200
+- opening_profile_two_sided_trap_1500
+- orl_profile_seller_trap_long_1500
+- orh_profile_buyer_trap_short_1500
+test_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run1
+  tested_at: '2026-06-21'
+  campaign_summary: backtest-campaigns/es_profile_aoi_footprint_trap_confluence/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_profile_aoi_footprint_trap_confluence/methodology_audit.md
+  variants_tested: 5
+  variants_passed: 0
+  failure_reason: All five predeclared variants failed limited_core_grid_test
+    with 0/81 profitable iterations and 0 benchmark-passing combinations.
+  rescue_attempts_used: 0
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - core AOI/profile/footprint confluence mechanic
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates

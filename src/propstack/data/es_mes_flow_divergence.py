@@ -22,31 +22,39 @@ def build_es_mes_flow_divergence_cache(
     price_cap_ticks: Iterable[int] = DEFAULT_PRICE_CAP_TICKS,
     tick_size: float = 0.25,
     min_period_fraction: float = 1.0,
+    market_symbol: str = "ES",
+    market_prefix: str = "es",
     status_callback: Callable[[str], None] | None = None,
 ) -> pd.DataFrame:
-    """Build an ES trading cache with MES-vs-ES completed-flow features.
+    """Build a trading cache with MES-vs-market completed-flow features.
 
-    The output keeps ES OHLCV/orderflow columns as the tradable market and adds
-    rolling ES/MES imbalance, return, and divergence columns. Rolling windows are
-    grouped by session date, include the current completed minute, and never use
-    later bars.
+    The output keeps the market OHLCV/orderflow columns as the tradable market
+    and adds rolling market/MES imbalance, return, and divergence columns.
+    Rolling windows are grouped by session date, include the current completed
+    minute, and never use later bars.
     """
 
     windows = _positive_ints(windows, "windows")
     large_trade_sizes = _positive_ints(large_trade_sizes, "large_trade_sizes")
     price_cap_ticks = _positive_ints(price_cap_ticks, "price_cap_ticks")
+    market_symbol = str(market_symbol).upper()
+    market_prefix = str(market_prefix).strip().lower()
+    if not market_symbol:
+        raise ValueError("market_symbol must be non-empty.")
+    if not market_prefix or not market_prefix.replace("_", "").isalnum():
+        raise ValueError("market_prefix must be a non-empty alphanumeric/underscore string.")
     if tick_size <= 0:
         raise ValueError("tick_size must be greater than 0.")
     if not (0 < min_period_fraction <= 1):
         raise ValueError("min_period_fraction must be in (0, 1].")
 
-    _emit(status_callback, f"Reading ES trade-orderflow cache: {es_csv}")
-    es = _load_source_csv(es_csv, "ES")
+    _emit(status_callback, f"Reading {market_symbol} trade-orderflow cache: {es_csv}")
+    es = _load_source_csv(es_csv, market_symbol)
     _emit(status_callback, f"Reading MES trade-orderflow cache: {mes_csv}")
     mes = _load_source_csv(mes_csv, "MES")
-    _emit(status_callback, "Aligning ES and MES bars by timestamp.")
-    out = _align_sources(es, mes)
-    _emit(status_callback, f"Aligned {len(out):,} shared ES/MES minute bars.")
+    _emit(status_callback, f"Aligning {market_symbol} and MES bars by timestamp.")
+    out = _align_sources(es, mes, market_symbol=market_symbol)
+    _emit(status_callback, f"Aligned {len(out):,} shared {market_symbol}/MES minute bars.")
     out = _add_completed_flow_features(
         out,
         windows=windows,
@@ -54,6 +62,7 @@ def build_es_mes_flow_divergence_cache(
         price_cap_ticks=price_cap_ticks,
         tick_size=tick_size,
         min_period_fraction=min_period_fraction,
+        market_prefix=market_prefix,
     )
     out = out.replace([np.inf, -np.inf], np.nan)
     if output_csv is not None:
@@ -62,7 +71,7 @@ def build_es_mes_flow_divergence_cache(
         write_out = out.copy()
         write_out["timestamp"] = write_out["timestamp"].dt.strftime("%Y-%m-%d %H:%M:%S")
         write_out.to_csv(output_path, index=False)
-        _emit(status_callback, f"Wrote ES/MES flow-divergence cache: {output_path}")
+        _emit(status_callback, f"Wrote {market_symbol}/MES flow-divergence cache: {output_path}")
     return out
 
 
@@ -94,7 +103,7 @@ def _parse_timestamp(values: pd.Series) -> pd.Series:
     return timestamps
 
 
-def _align_sources(es: pd.DataFrame, mes: pd.DataFrame) -> pd.DataFrame:
+def _align_sources(es: pd.DataFrame, mes: pd.DataFrame, *, market_symbol: str) -> pd.DataFrame:
     es_columns = list(es.columns)
     mes_feature_columns = [
         column for column in mes.columns if column not in {"timestamp", "symbol", "contract_symbol"}
@@ -103,7 +112,7 @@ def _align_sources(es: pd.DataFrame, mes: pd.DataFrame) -> pd.DataFrame:
         columns={column: f"mes_{column}" for column in mes_feature_columns}
     )
     out = es[es_columns].merge(mes_prefixed, on="timestamp", how="inner", validate="one_to_one")
-    out["symbol"] = "ES"
+    out["symbol"] = market_symbol
     return out.sort_values("timestamp").reset_index(drop=True)
 
 
@@ -115,6 +124,7 @@ def _add_completed_flow_features(
     price_cap_ticks: list[int],
     tick_size: float,
     min_period_fraction: float,
+    market_prefix: str,
 ) -> pd.DataFrame:
     frames = []
     work = df.copy()
@@ -124,10 +134,10 @@ def _add_completed_flow_features(
         feature_columns: dict[str, pd.Series] = {}
         for window in windows:
             min_periods = max(1, int(window * min_period_fraction))
-            es_imbalance = _rolling_imbalance(group, "signed_volume", "volume", window, min_periods)
+            market_imbalance = _rolling_imbalance(group, "signed_volume", "volume", window, min_periods)
             mes_imbalance = _rolling_imbalance(group, "mes_signed_volume", "mes_volume", window, min_periods)
             suffix = str(window)
-            es_return_ticks = (
+            market_return_ticks = (
                 pd.to_numeric(group["close"], errors="coerce")
                 - pd.to_numeric(group["open"], errors="coerce").shift(window - 1)
             ) / tick_size
@@ -135,16 +145,16 @@ def _add_completed_flow_features(
                 pd.to_numeric(group["mes_close"], errors="coerce")
                 - pd.to_numeric(group["mes_open"], errors="coerce").shift(window - 1)
             ) / tick_size
-            feature_columns[f"es_trade_orderflow_imbalance_{suffix}"] = es_imbalance
+            feature_columns[f"{market_prefix}_trade_orderflow_imbalance_{suffix}"] = market_imbalance
             feature_columns[f"mes_trade_orderflow_imbalance_{suffix}"] = mes_imbalance
-            feature_columns[f"es_minus_mes_imbalance_{suffix}"] = es_imbalance - mes_imbalance
-            feature_columns[f"mes_minus_es_imbalance_{suffix}"] = mes_imbalance - es_imbalance
-            feature_columns[f"es_trade_orderflow_return_ticks_{suffix}"] = es_return_ticks
+            feature_columns[f"{market_prefix}_minus_mes_imbalance_{suffix}"] = market_imbalance - mes_imbalance
+            feature_columns[f"mes_minus_{market_prefix}_imbalance_{suffix}"] = mes_imbalance - market_imbalance
+            feature_columns[f"{market_prefix}_trade_orderflow_return_ticks_{suffix}"] = market_return_ticks
             feature_columns[f"mes_trade_orderflow_return_ticks_{suffix}"] = mes_return_ticks
-            feature_columns[f"es_minus_mes_return_ticks_{suffix}"] = es_return_ticks - mes_return_ticks
-            feature_columns[f"mes_minus_es_return_ticks_{suffix}"] = mes_return_ticks - es_return_ticks
+            feature_columns[f"{market_prefix}_minus_mes_return_ticks_{suffix}"] = market_return_ticks - mes_return_ticks
+            feature_columns[f"mes_minus_{market_prefix}_return_ticks_{suffix}"] = mes_return_ticks - market_return_ticks
             for size in large_trade_sizes:
-                es_large = _rolling_imbalance(
+                market_large = _rolling_imbalance(
                     group,
                     f"large{size}_signed_volume",
                     f"large{size}_volume",
@@ -158,13 +168,13 @@ def _add_completed_flow_features(
                     window,
                     min_periods,
                 )
-                feature_columns[f"es_trade_orderflow_large{size}_imbalance_{suffix}"] = es_large
+                feature_columns[f"{market_prefix}_trade_orderflow_large{size}_imbalance_{suffix}"] = market_large
                 feature_columns[f"mes_trade_orderflow_large{size}_imbalance_{suffix}"] = mes_large
-                feature_columns[f"es_minus_mes_large{size}_imbalance_{suffix}"] = es_large - mes_large
-                feature_columns[f"mes_minus_es_large{size}_imbalance_{suffix}"] = mes_large - es_large
+                feature_columns[f"{market_prefix}_minus_mes_large{size}_imbalance_{suffix}"] = market_large - mes_large
+                feature_columns[f"mes_minus_{market_prefix}_large{size}_imbalance_{suffix}"] = mes_large - market_large
                 for cap_ticks in price_cap_ticks:
-                    cap_col = f"mes_large{size}_imbalance_es_return_lte_{cap_ticks}_{suffix}"
-                    feature_columns[cap_col] = mes_large.where(es_return_ticks <= cap_ticks)
+                    cap_col = f"mes_large{size}_imbalance_{market_prefix}_return_lte_{cap_ticks}_{suffix}"
+                    feature_columns[cap_col] = mes_large.where(market_return_ticks <= cap_ticks)
         features = pd.DataFrame(feature_columns, index=group.index)
         frames.append(pd.concat([group, features], axis=1))
     return pd.concat(frames, ignore_index=True).drop(columns=["_session_date"])

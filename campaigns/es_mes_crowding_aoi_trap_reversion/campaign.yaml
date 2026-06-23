@@ -1,0 +1,123 @@
+campaign_id: es_mes_crowding_aoi_trap_reversion
+title: ES MES Crowding AOI Trap Reversion
+decision: FAIL
+created_at: '2026-06-22'
+instrument: ES
+timeframe: 1m
+edge_family: mes_smaller_contract_crowding_at_market_generated_and_true_vap_aois
+hypothesis: When high MES smaller-contract participation coincides with a completed ES push into a predefined market-generated
+  or true volume-profile AOI, a completed-bar rejection back away from that level may identify trapped crowded flow and short-horizon
+  ES reversion.
+variant_expansion_rationale: 'Eight variants are justified before PnL because the edge has materially distinct AOI mechanics
+  worth separating: prior RTH extremes, opening range, overnight range, combined market AOIs, true value-area boundaries,
+  true LVNs, true-profile AOIs with footprint absorption, and an all-AOI notional-participation variant. These variants share
+  one entry module and the same two-entry-parameter grid.'
+sources:
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates smaller or retail-like participation as a crowding proxy rather than informed flow.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures participation and Micro E-mini usage, supporting MES participation as a smaller-contract
+    proxy.
+- title: Micro E-mini futures and options
+  authors: CME Group
+  year: 2026
+  venue: CME product documentation
+  link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+  relevance: Documents the MES-to-ES contract relationship used for notional-equivalent participation.
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports public support/resistance levels as short-horizon reference prices.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates signed orderflow and absorption as short-horizon pressure proxies.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates POC, value-area, and LVN auction-market context.
+data_needs:
+- Derived local cache joining ES/MES participation-crowding features with true prior VAP, overnight, and footprint fields
+  by timestamp.
+- Prior RTH high/low computed by feature_set from completed sessions only.
+- Opening range high/low available only after the opening range has closed.
+- Completed-bar MES participation ranks and ES return over the lookback window.
+data_quality_caveats:
+- MES participation is a smaller-contract crowding proxy, not account-classified retail data.
+- Sierra signed-volume and footprint fields are completed-bar research features, not full depth-of-book or queue reconstruction.
+- True VAP fields are prior-session cached levels and do not include current-session final profile information.
+- Any passing result would remain a candidate requiring manual chart and independent data-source review.
+lookahead_risks:
+- Prior VAP and prior RTH levels are shifted from completed sessions before current-session use.
+- Opening-range levels are unavailable until all opening-range bars have closed.
+- MES rank, ES return, signed volume, and footprint fields use completed bars only; entry is no earlier than the next one-minute
+  open.
+- No current-session final VWAP, final profile, future daily range, or future orderflow is used.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_mes_crowding_aoi_trap_reversion_density_audit_20260622.md
+  detail_csv: research_artifacts/es_mes_crowding_aoi_trap_reversion_density_audit_20260622.csv
+  data_source: data/cache/orderflow/es_mes_crowding_vap_aoi_1m_20190506_20250529_rth_ny.parquet
+  decision: approve_for_testing_before_pnl
+variants:
+- prior_extreme_trade15_delta_1500
+- opening_range_trade15_delta_1200
+- overnight_trade15_delta_1500
+- market_aoi_trade15_delta_1500
+- value_area_trade15_delta_1500
+- lvn_trade15_delta_1500
+- profile_aoi_trade15_absorption_1500
+- all_aoi_notional30_delta_1500
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - min_share_rank
+  - min_abs_return_ticks
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - MES-crowding-at-AOI trap thesis
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+test_result:
+  verdict: FAIL
+  tested_at: '2026-06-22T18:12:34'
+  summary_path: backtest-campaigns/es_mes_crowding_aoi_trap_reversion/campaign_test_summary.json
+  variant_results_csv: backtest-campaigns/es_mes_crowding_aoi_trap_reversion/campaign_variant_results.csv
+  terminal_stage: limited_core_grid_test
+  variants_tested: 8
+  variants_passed: 0
+  rescue_attempts_used: 0
+  failure_reason: All eight predeclared MES-crowding AOI trap-reversion variants failed limited_core_grid_test. No variant
+    reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  best_variant:
+    variant_id: all_aoi_notional30_delta_1500
+    profitable_iterations: 35
+    total_combinations_tested: 81
+    top_net_profit: 2465.0
+    top_profit_factor: 1.3677732189481537
+    top_mar: 5.508196271079035
+    top_failure_reason: ''

@@ -1,0 +1,92 @@
+campaign_id: nq_market_plumbing_liquidity_capacity
+title: NQ Market Plumbing Liquidity Capacity
+decision: FAIL
+created_at: '2026-06-22'
+status: completed_failed
+instrument: NQ
+market_timezone: America/New_York
+edge_family: nq_market_plumbing_liquidity_capacity
+hypothesis: Lagged market-plumbing and funding-liquidity capacity states may condition same-day NQ intraday risk premia under
+  constrained intermediation.
+rationale: This is a direct pre-PnL NQ port of the corrected ES market-plumbing liquidity-capacity campaign. The signal uses
+  lagged external daily/weekly state variables and completed NQ bars, not intraday NQ price-pattern tuning.
+sources:
+- title: Market Liquidity and Funding Liquidity
+  authors: Markus K. Brunnermeier and Lasse Heje Pedersen
+  year: 2009
+  doi: 10.1093/rfs/hhn098
+  link: https://academic.oup.com/rfs/article-abstract/22/6/2201/1592184
+  relevance: Motivates funding-liquidity and market-liquidity constraints as a state variable for risk premia.
+- title: Primary Dealer Statistics
+  authors: Federal Reserve Bank of New York
+  year: 2026
+  link: https://www.newyorkfed.org/markets/counterparties/primary-dealers-statistics
+  relevance: Official source family for weekly primary-dealer activity data used in the lagged dealer-lending proxy.
+- title: Cboe Futures Exchange Daily Market Statistics
+  authors: Cboe Global Markets
+  year: 2026
+  link: https://www.cboe.com/markets/us/futures/market-statistics/daily/futures/
+  relevance: Official source family for VX futures volume/open-interest statistics used in the lagged volatility-risk capacity
+    proxy.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/market_plumbing_priority_features_lag1_no_lookahead.csv
+- 5-minute NQ RTH bars generated from completed 1-minute bars
+lookahead_risks:
+- External market-plumbing features are lagged one listed trade date before being joined to an NQ session.
+- Signals use completed 5-minute bars plus the lagged feature state and enter no earlier than next bar open.
+- CFE daily statistics are not used on the same listed date; the lagged feature file is deliberately conservative.
+- No final session high/low, final VWAP, future return, or same-row external feature value is used.
+failure_modes:
+- Market-plumbing states may explain broad ES risk premia better than NQ intraday returns.
+- The external variables may be too slow or too indirect for same-day NQ RTH execution after costs.
+- Long-only liquidity-capacity legs may fail during technology-led selloffs or event-driven NQ repricing.
+- Tail thresholds may produce enough signals but unstable WFA or weak monkey robustness.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_cboe_vix_term_structure_intraday
+  - nq_cboe_vix_level_state_intraday
+  - nq_credit_etf_orderflow_risk_appetite
+  - nq_volatility_managed_intraday_premium
+  conclusion: Eligible as a distinct NQ port because it uses lagged dealer-lending and VX open-interest market-plumbing state,
+    not standalone VIX level, VIX term structure, credit ETF flow, or realized-volatility management.
+source_es_template: campaigns/es_market_plumbing_liquidity_capacity/variants
+pre_pnl_density:
+  status: approved_for_testing
+  artifact: research_artifacts/nq_market_plumbing_liquidity_capacity_density_audit_20260622.md
+  initial_density_rejection_artifact: research_artifacts/nq_market_plumbing_liquidity_capacity_initial_density_rejected_20260622.md
+  reform1_density_rejection_artifact: research_artifacts/nq_market_plumbing_liquidity_capacity_density_reform1_rejected_20260622.md
+  limited_core_all_variants_passed_50_signals_per_year: true
+  full_history_all_variants_passed_50_signals_per_year: true
+  reformulated_before_pnl:
+  - vx_oi_crowding_short_1330: VX OI upper-tail grid widened to [0.85, 1.0, 1.2] from signal density only.
+  - vx_oi_stress_long_1330: VX OI lower-tail grid widened to [-1.1, -1.0, -0.9] from signal density only.
+variants:
+- dealer_lending_pressure_long_1130
+- dealer_lending_pressure_long_1330
+- vx_oi_stress_long_1330
+- vx_oi_crowding_short_1330
+- dual_pressure_priority_long_1130
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn; after OOS, only rejection or promotion is allowed.
+result_summary:
+  verdict: FAIL
+  completed_at: 2026-06-22
+  campaign_test_summary: backtest-campaigns/nq_market_plumbing_liquidity_capacity/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_market_plumbing_liquidity_capacity/campaign_results.csv
+  methodology_audit: campaigns/nq_market_plumbing_liquidity_capacity/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    limited_core_grid_test: 3
+    limited_monkey_test: 2
+testing_plan:
+  methodology: current staged research pipeline
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0

@@ -1,0 +1,73 @@
+campaign_id: nq_round_number_barrier_reaction
+title: NQ Round-Number Barrier Reaction
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: NQ futures may react around fixed psychological index handles because stop-loss, take-profit,
+  discretionary, and systematic liquidity can cluster near salient 25/50/100-point barriers. Failed probes
+  may reverse, while completed breaks may continue as stop pressure is triggered.
+rationale: This is an NQ-specific formulation of the round-number barrier mechanism. NQ has large visible
+  index handles and frequent intraday crossings; all levels are fixed ex ante and require no prior-session
+  high/low, VWAP, profile, or orderflow-derived level.
+sources:
+- title: Price Barriers in the Dow Jones Industrial Average
+  authors: R. Glen Donaldson and Harold Y. Kim
+  year: 1993
+  link: https://ideas.repec.org/a/cup/jfinqa/v28y1993i03p313-330_00.html
+  relevance: Documents support/resistance and continuation behavior around salient index barriers.
+- title: Currency Orders and Exchange-Rate Dynamics
+  authors: Carol L. Osler
+  year: 2003
+  link: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  relevance: Documents order clustering at round-number support/resistance levels.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  link: https://ideas.repec.org/a/eee/jimfin/v24y2005i2p219-241.html
+  relevance: Supports the continuation mechanism after clustered stops are triggered.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.csv
+- deterministic 5-minute NQ bars aggregated from completed 1-minute RTH data
+lookahead_risks:
+- Round-number levels are fixed ex ante from price handles only.
+- Signals use completed 5-minute bars and enter no earlier than next bar open.
+- No future session high/low, VWAP, volume profile, or future orderflow defines the barrier.
+- Pessimistic same-bar stop/target handling remains required.
+failure_modes:
+- NQ round handles may be too obvious and arbitraged.
+- 25-point barriers may be too frequent and noisy, while 100-point barriers may be regime-dependent.
+- Breakout and rejection behavior may cancel across volatility regimes.
+- Bar-level OHLC may be insufficient around fast barrier touches.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_self_lead_opening_range_breakout
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_opening_gap_orderflow_continuation
+  conclusion: Eligible as a distinct NQ price-structure test because barriers are fixed psychological
+    handles, not opening ranges, prior-session levels, gaps, VWAP, or orderflow-derived levels.
+pre_pnl_density:
+  status: approved_for_authoring
+  artifact: research_artifacts/nq_round_number_barrier_reaction_density_audit_20260622.md
+  screen: research_artifacts/nq_round_number_barrier_reaction_density_audit_20260622.csv
+  note: All five variants cleared the >=50 signals/year density floor across the declared barrier grid
+    before PnL testing.
+source_es_campaign: es_round_number_barrier_reaction
+variants:
+- morning_round_support_reclaim_long
+- morning_round_resistance_reject_short
+- midday_two_sided_round_reclaim
+- round_number_upside_breakout_long
+- round_number_downside_breakout_short
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; barrier grid is fixed from pre-PnL density
+    only.
+status: completed_failed
+completed_at: '2026-06-22'
+failure_summary: All five variants failed the limited core grid. The best top combination was the downside
+  breakout variant, but only 23 of 54 parameter combinations were profitable, below the required stability
+  floor. No rescue was authorized or used.

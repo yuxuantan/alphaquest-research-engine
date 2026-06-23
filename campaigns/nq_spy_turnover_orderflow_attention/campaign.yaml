@@ -1,0 +1,131 @@
+campaign_id: nq_spy_turnover_orderflow_attention
+title: NQ SPY Turnover Orderflow Attention
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Prior-day SPY abnormal turnover or return-volume attention identifies broad market attention/information events.
+  NQ continuation attempts are only credible when the prior SPY return direction, completed same-session NQ price movement,
+  and aggregate NQ signed orderflow agree before next-bar entry.
+rationale: This is a direct NQ port of the ES SPY turnover/orderflow attention edge. SPY daily close and volume are known
+  only after the prior ETF close and are mapped strictly before the NQ session. NQ is the technology/growth-heavy equity-index
+  expression most likely to respond to broad SPY attention states when its own completed price movement and signed orderflow
+  confirm continuation.
+sources:
+- title: The High-Volume Return Premium
+  authors: Simon Gervais, Ron Kaniel, and Dan H. Mingelgrin
+  year: 2001
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00349
+  link: https://doi.org/10.1111/0022-1082.00349
+  relevance: Documents that abnormal trading volume can identify attention/visibility events with subsequent return predictability.
+- title: Dynamic Volume-Return Relation of Individual Stocks
+  authors: Guillermo Llorente, Roni Michaely, Gideon Saar, and Jiang Wang
+  year: 2002
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v15y2002i4p1005-1047.html
+  relevance: Motivates conditioning continuation versus reversal on whether high volume reflects information/speculation or
+    risk sharing.
+- title: 'All That Glitters: The Effect of Attention and News on the Buying Behavior of Individual and Institutional Investors'
+  authors: Brad M. Barber and Terrance Odean
+  year: 2008
+  venue: Review of Financial Studies
+  link: https://academic.oup.com/rfs/article-abstract/21/2/785/1607197
+  relevance: Supports abnormal volume and extreme returns as attention-grabbing market states.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Supports requiring contemporaneous orderflow imbalance confirmation instead of trading the daily attention proxy
+    alone.
+data_needs:
+- timezone-aware NQ RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- local Yahoo SPY daily adjusted-close and volume CSV
+- derived NQ session-mapped SPY turnover/attention feature file with strict prior-session daily-close availability
+- 5-minute completed-bar NQ aggregation with next-bar execution
+data_quality_caveats:
+- Yahoo SPY data is a free public adjusted-close and volume source and should be cross-checked before manual incubation.
+- ETF close/volume timestamps are daily; same-day intraday SPY prints are not used.
+- Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor truth.
+- The inherited module parameter name `min_es_move_ticks` means the executing index session-open move; here it is NQ ticks.
+lookahead_risks:
+- An NQ session dated D may only use SPY observations strictly before D.
+- Rolling ranks use only SPY observations through the mapped observation date.
+- Signals use completed NQ 5-minute bars only; entries must occur at the next bar open or later.
+- No future NQ bar, final session VWAP, final high/low, or same-day/future SPY close is used.
+failure_modes:
+- SPY abnormal volume may be a lagging attention marker rather than a tradable lead for NQ.
+- High volume can reflect liquidity or risk-sharing trades that reverse rather than continue.
+- Same-day NQ confirmation may enter too late after the move has already happened.
+- Results may concentrate in crisis or high-volatility regimes.
+- The full-day decision schedule may dilute the attention mechanism if late-day signals behave differently from morning signals.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_spy_turnover_orderflow_attention
+  - nq_morning_orderflow_momentum_continuation
+  - nq_opening_gap_orderflow_continuation
+  - nq_volatility_managed_intraday_premium
+  - nq_vpin_toxicity_continuation
+  conclusion: Eligible as a direct NQ port of the ES SPY turnover-attention edge. It is distinct from NQ intraday orderflow-only
+    momentum, opening-gap continuation, volatility-managed premium, and VPIN toxicity.
+feature_construction:
+  builder: tools/build_es_spy_turnover_features.py with NQ bars-input override
+  spy_source_cache: data/external/yahoo_sector_etfs/yahoo_spy_daily_1998-12-01_2026-06-10.csv
+  output: data/external/nq_spy_turnover_attention_features_20110103_20260612.csv
+  availability_rule: latest SPY daily close and volume strictly before NQ session_date
+  pre_pnl_density_audit: research_artifacts/nq_spy_turnover_orderflow_attention_density_audit_20260622.md
+pre_pnl_density_audit:
+  method: Entry-condition count only; no PnL, stop, target, monkey, WFA, Monte Carlo, prop simulation, or holdout result was
+    inspected.
+  decision: PASS_WITH_SPARSE_STRICT_CORNERS
+  broad_corners: about 67-69 signals/year across variants at attention 0.55 and orderflow 0.0
+  strict_corners: about 44-46 signals/year across variants at attention 0.65 and orderflow 0.006
+parameter_space:
+  shared_grid:
+    entry.params.attention_rank_threshold:
+    - 0.55
+    - 0.6
+    - 0.65
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.003
+    - 0.006
+    sl.params.stop_pct:
+    - 0.003
+    - 0.004
+    - 0.006
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  combinations_per_variant: 81
+variants:
+- spy_1d_volume_attention_continuation_1530
+- spy_1d_absret_attention_continuation_1530
+- spy_3d_volume_attention_continuation_1530
+- spy_3d_absret_attention_continuation_1530
+- spy_5d_volume_attention_continuation_1530
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request.
+status: completed
+testing_outcome:
+  completed_at: '2026-06-22'
+  decision: FAIL
+  original_runs: 5
+  rescue_runs: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  campaign_summary_path: backtest-campaigns/nq_spy_turnover_orderflow_attention/campaign_test_summary.json
+  failure_reason: One variant failed limited_monkey_test after passing core; four variants failed limited_core_grid_test.
+final_result:
+  decision: FAIL
+  candidate_strategy_report_created: false
+  reason: No variant passed the required robustness flow; no rescue authorized.
+  report_path: backtest-campaigns/nq_spy_turnover_orderflow_attention/campaign_test_summary.json

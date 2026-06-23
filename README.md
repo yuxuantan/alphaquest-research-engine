@@ -256,7 +256,7 @@ A campaign keeps authored edge research and the planned variant list here:
 campaigns/{campaign_id}/campaign.yaml
 ```
 
-Use `campaign.yaml` for the academic source, thesis, intended market, caveats, and exactly five planned trade-mechanics variants. The backtest runner does not use it as the executable strategy config, but run summaries and manifests record its path and hash when it exists.
+Use `campaign.yaml` for the academic source, thesis, intended market, caveats, and the planned trade-mechanics variants. Five variants is the default campaign size. A campaign may declare six to eight variants only when clearly better distinct mechanics exist within the same edge and `campaign.yaml` includes a pre-test `variant_expansion_rationale`; more than eight variants fails preflight. The backtest runner does not use it as the executable strategy config, but run summaries and manifests record its path and hash when it exists.
 
 A variant is one concrete strategy shape under that campaign. Its authored source config lives here:
 

@@ -1,0 +1,111 @@
+campaign_id: es_large200_delayed_aoi_confirmation
+title: ES Large200 Delayed AOI Confirmation
+decision: FAIL
+created_at: '2026-06-22'
+instrument: ES
+timeframe: 1m
+edge_family: large_record_delayed_confirmation_at_market_generated_and_true_vap_aois
+hypothesis: 'Large 200+ Sierra SCID record proxies at prior RTH, overnight, opening-range, or true VAP value boundaries may
+  be more informative after a one-bar confirmation delay: failed initiative pressure should reclaim/reject the AOI on the
+  next completed bar, while accepted initiative pressure should continue beyond it.'
+variant_expansion_rationale: 'Eight variants are justified before PnL because the prior immediate large200 campaign failed
+  and this delayed-confirmation edge has materially different mechanics worth testing in one controlled campaign: all-AOI
+  traps, market-AOI traps, opening-only traps, overnight-only traps, true-value traps, all-AOI continuations, market-AOI continuations,
+  and true-value continuations. These variants share the same two-entry-parameter grid and differ only by fixed AOI/reaction
+  mechanics.'
+sources:
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow pressure as a short-horizon price-impact mechanism.
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports trader-visible support and resistance levels affecting intraday behavior.
+- title: Do Investors Place Orders to Exploit Technical Analysis?
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2004.00665.x
+  link: https://doi.org/10.1111/j.1540-6261.2004.00665.x
+  relevance: Links technical reference levels with order placement and liquidity provision.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates POC, value-area, and auction-market context.
+data_needs:
+- Derived local cache joining ES true VAP/overnight/footprint fields with strict large200 SCID record proxy fields by timestamp.
+- Prior RTH high/low computed by feature set from completed sessions only.
+- Opening range high/low available only after the opening range has closed.
+- Completed one-minute confirmation bar after the large200 event bar.
+data_quality_caveats:
+- large200_record fields are strict Sierra SCID record proxies, not exchange print sequencing or quote-depth data.
+- The strategy waits for a completed confirmation bar, so it intentionally sacrifices immediacy for lower lookahead and less
+  intrabar ambiguity.
+- Any passing result would remain a candidate requiring manual chart and independent data-source review.
+lookahead_risks:
+- Prior VAP and prior RTH levels are shifted from completed sessions before current-session use.
+- Opening-range levels are unavailable until all opening-range bars have closed.
+- Large200 event and confirmation conditions use completed bars only; entry is no earlier than the next one-minute open after
+  the confirmation bar.
+- No current-session final VWAP, final profile, future daily range, or future orderflow is used.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_large200_delayed_aoi_confirmation_density_audit_20260622.md
+  detail_csv: research_artifacts/es_large200_delayed_aoi_confirmation_density_audit_20260622.csv
+  data_source: data/cache/orderflow/es_sierra_footprint_vap_overnight_large200_1m_20120103_20260529_rth_ny.parquet
+  decision: approve_for_testing_before_pnl
+variants:
+- all_aoi_delayed_trap_1500
+- market_aoi_delayed_trap_1500
+- opening_aoi_delayed_trap_1200
+- overnight_aoi_delayed_trap_1530
+- value_area_delayed_trap_1500
+- all_aoi_delayed_continuation_1500
+- market_aoi_delayed_continuation_1500
+- value_area_delayed_continuation_1500
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - min_large200_record_volume
+  - min_confirm_delta_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - large200 delayed-confirmation thesis
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+test_result:
+  verdict: FAIL
+  tested_at: '2026-06-22T17:43:44'
+  summary_path: backtest-campaigns/es_large200_delayed_aoi_confirmation/campaign_test_summary.json
+  variant_results_csv: backtest-campaigns/es_large200_delayed_aoi_confirmation/campaign_variant_results.csv
+  terminal_stage: limited_core_grid_test
+  variants_tested: 8
+  variants_passed: 0
+  rescue_attempts_used: 0
+  failure_reason: All eight predeclared large200 delayed AOI confirmation variants failed limited_core_grid_test. No variant
+    reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  best_variant:
+    variant_id: market_aoi_delayed_trap_1500
+    profitable_iterations: 0
+    total_combinations_tested: 81
+    top_net_profit: -1527.5
+    top_profit_factor: 0.8557601510859302
+    top_mar: -0.27651839093624697
+    top_failure_reason: min_total_net_profit;max_consecutive_losses

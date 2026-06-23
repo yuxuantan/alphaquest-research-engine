@@ -1,0 +1,82 @@
+campaign_id: es_true_vap_aoi_breakout_continuation
+title: ES True Volume-at-Price AOI Breakout Continuation
+decision: FAIL
+decision_updated_at: '2026-06-22'
+terminal_stage: limited_core_grid_test
+failure_reason: All five predeclared variants failed limited_core_grid_test with 0/81 profitable iterations and 0 benchmark-passing combinations.
+result_summary_path: backtest-campaigns/es_true_vap_aoi_breakout_continuation/campaign_test_summary.json
+created_at: '2026-06-22'
+instrument: ES
+timeframe: 1m
+edge_family: true_vap_aoi_breakout_continuation_with_completed_orderflow
+hypothesis: ES breakouts through market-generated areas of interest should be more selective when the broken level overlaps a frozen previous-session true volume-at-price profile level and the completed breakout bar shows same-direction orderflow participation.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports trader-visible support and resistance levels having short-horizon predictive content.
+- title: Do Investors Place Orders to Exploit Technical Analysis?
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/j.1540-6261.2004.00665.x
+  relevance: Connects technical levels with order placement and liquidity provision.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates requiring completed-bar orderflow imbalance confirmation instead of using price levels alone.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates POC, value area, and low-volume-node auction-market framing.
+data_needs:
+- Validated local Sierra ES 1-minute footprint imbalance cache in America/New_York.
+- Previous-session true volume-at-price POC, VAH, VAL, and nearest high/low LVN levels built from Sierra SCID price-volume records.
+- Prior RTH high/low shifted from the completed prior RTH session only.
+- Opening range high/low available only after the configured opening range has completed.
+data_quality_caveats:
+- The profile cache is true Sierra SCID volume-at-price aggregation, not an OHLCV uniform profile approximation.
+- Sierra SCID data is still not market-by-order, queue reconstruction, or vendor-equivalent print sequencing.
+- Footprint and signed-flow columns are completed-bar research proxies and do not prove exact intrabar execution path.
+- Large10 and large20 fields are Sierra aggregate proxies, not vendor-equivalent large-print truth.
+lookahead_risks:
+- Prior VAP levels are shifted forward one session and are unavailable on the first session.
+- Opening-range levels are unavailable until all configured opening-range bars have closed.
+- The breakout and orderflow tests use only the completed signal bar; entry must be next bar open or later.
+- No final current-session profile, final VWAP, future high/low, future orderflow, or post-entry bars are used.
+duplicate_edge_check:
+  active_rejected_edges_checked:
+  - es_profile_aoi_footprint_trap_confluence
+  - es_prior_lvn_orderflow_rejection
+  - es_prior_poc_orderflow_magnet
+  - es_prior_value_area_orderflow_acceptance
+  - es_opening_range_orderflow_breakout
+  - es_video_aoi_lvn_orderflow_playbook
+  conclusion: Eligible as a distinct continuation campaign. This tests acceptance and continuation through an AOI/VAP confluence after a completed breakout with same-direction flow, not a trap/reversal, POC magnet, LVN rejection, or OHLCV-approximated profile.
+variants:
+- prior_high_true_vap_breakout_long_1200
+- prior_low_true_vap_breakdown_short_1200
+- prior_extreme_large10_true_vap_two_sided_1500
+- opening_range_true_vap_two_sided_1130
+- combined_large20_true_vap_two_sided_1500
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  allowed_changes:
+  - fixed parameters inside existing strategy modules
+  - tunable parameter space inside existing strategy modules
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - true VAP AOI breakout-continuation mechanic
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates

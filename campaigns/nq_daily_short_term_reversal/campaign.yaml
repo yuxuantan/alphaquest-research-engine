@@ -1,0 +1,84 @@
+campaign_id: nq_daily_short_term_reversal
+title: NQ Daily Short-Term Return Reversal
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Completed short-horizon NQ RTH returns may partly reverse intraday when recent price pressure reflects
+  temporary liquidity demand rather than permanent information.
+rationale: This NQ-focused campaign tests whether daily short-term reversal mechanics rejected on ES transfer to
+  the more volatile Nasdaq futures contract. ES PnL is not used as evidence; NQ thresholds were selected from pre-PnL
+  signal-density checks only.
+sources:
+- title: Fads, Martingales, and Market Efficiency
+  authors: Bruce N. Lehmann
+  year: 1990
+  venue: Quarterly Journal of Economics 105(1), 1-28
+  doi: 10.2307/2937816
+  link: https://ideas.repec.org/a/oup/qjecon/v105y1990i1p1-28..html
+  relevance: Documents short-horizon return reversals and motivates testing liquidity-pressure reversal after costs.
+- title: Evaporating Liquidity
+  authors: Stefan Nagel
+  year: 2012
+  venue: Review of Financial Studies 25(7), 2005-2039
+  doi: 10.1093/rfs/hhs066
+  link: https://ideas.repec.org/a/oup/rfinst/v25y2012i7p2005-2039.html
+  relevance: Interprets short-term reversal returns as liquidity-provision compensation, a plausible but unproven
+    NQ intraday mechanism.
+- title: Reversals and the Returns to Liquidity Provision
+  authors: Wei Dai, Mamdouh Medhat, Robert Novy-Marx, and Savina Rizova
+  year: 2023
+  venue: NBER Working Paper 30917
+  doi: 10.3386/w30917
+  link: https://www.nber.org/papers/w30917
+  relevance: Motivates raw and volatility-normalized reversal variants while requiring robustness checks.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV/orderflow cache in America/New_York
+- deterministic 5-minute aggregation from completed 1-minute bars
+- prior completed RTH closes with enough warmup history
+- same-day stop, target, and forced-flatten checks
+lookahead_risks:
+- Return direction uses only RTH closes recorded before the signal session.
+- Signals at 10:00, 11:30, 12:00, or 13:30 ET use completed bars and enter no earlier than next bar open.
+- No current-session final close, future high/low, final VWAP, or future volume is used.
+failure_modes:
+- NQ short-horizon moves may trend rather than reverse after costs.
+- The reversal effect may require overnight holding, which this campaign forbids.
+- The result may be concentrated in one side, one regime, or one narrow threshold.
+- Higher NQ volatility may increase same-day stopouts and fail monkey/WFA robustness.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - es_daily_short_term_reversal
+  - es_daily_reversal_orderflow_confirmation
+  - nq_overnight_intraday_reversal
+  - nq_realized_semivariance_asymmetry
+  conclusion: Eligible as the NQ expression of a daily close-to-close short-term reversal edge; it is distinct from
+    overnight reversal and realized-semivariance state campaigns.
+pre_pnl_density:
+  status: approved_for_authoring
+  artifact: research_artifacts/nq_daily_short_term_reversal_density_audit_20260622.md
+  screen: research_artifacts/nq_daily_short_term_reversal_density_audit_20260622.csv
+  note: All five variants have frozen NQ entry grids selected from raw signal counts before PnL testing.
+source_es_campaign: es_daily_short_term_reversal
+variants:
+- prior_1d_loss_reversal_long_1000
+- prior_1d_gain_reversal_short_1000
+- prior_3d_two_sided_reversal_1130
+- prior_5d_two_sided_reversal_1330
+- vol_norm_5d_two_sided_reversal_1200
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in current NQ search; thresholds are fixed from pre-PnL density only.
+status: completed_failed
+completed_at: '2026-06-22'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_daily_short_term_reversal/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_daily_short_term_reversal/campaign_results.csv
+  methodology_audit: campaigns/nq_daily_short_term_reversal/methodology_audit.md
+  density_audit: research_artifacts/nq_daily_short_term_reversal_density_audit_20260622.md
+  failure_reason: All five variants failed limited_core_grid_test with zero profitable combinations; no later stages
+    reached.

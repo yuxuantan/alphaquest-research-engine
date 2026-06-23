@@ -1,0 +1,77 @@
+campaign_id: nq_cboe_implied_correlation_intraday
+title: NQ Cboe Implied Correlation Intraday
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Cboe SPX implied-correlation states may identify NQ intraday risk-on or risk-off pressure
+  because high expected component co-movement proxies marketwide no-place-to-hide stress, while low or
+  falling correlation may proxy healthier dispersion and risk appetite.
+rationale: This is a marketwide option-implied correlation state test ported to the NQ execution leg.
+  It is not the NQ VXN/VIX dispersion, put/call sentiment, realized-volatility, or ES-lead-lag edge already
+  rejected in this search.
+sources:
+- title: 'The Price of Correlation Risk: Evidence from Equity Options'
+  authors: Joost Driessen, Pascal Maenhout, and Grigory Vilkov
+  year: 2009
+  venue: Journal of Finance
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2009.01467.x
+  relevance: Shows marketwide correlation risk is priced using equity index and component options.
+- title: Option-Implied Correlations and the Price of Correlation Risk
+  authors: Joost Driessen, Pascal Maenhout, and Grigory Vilkov
+  year: 2013
+  venue: SSRN working paper
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2166829
+  relevance: Documents option-implied correlations and correlation risk premia as distinct from variance
+    risk alone.
+- title: EOD Implied Correlation Index
+  authors: Cboe Global Markets
+  year: 2026
+  venue: Official Cboe index page and daily historical CSV endpoints
+  link: https://www.cboe.com/us/indices/implied/
+  relevance: Official source and definition for COR1M/COR3M implied-correlation histories.
+data_needs:
+- NQ RTH 1-minute Sierra OHLCV/orderflow cache
+- official free Cboe COR1M and COR3M daily histories
+- NQ session feature file using only Cboe observations strictly before the NQ session date
+lookahead_risks:
+- Signals use only a completed NQ bar at the configured timestamp and a lagged prior Cboe daily state.
+- Using same-session Cboe implied-correlation closes is forbidden because they are unavailable intraday.
+- Rolling ranks are computed over the lagged session feature sequence only.
+- No final NQ session high/low, final VWAP, future returns, or post-entry implied-correlation values are
+  used.
+failure_modes:
+- Correlation risk premia may apply to option returns or longer horizons rather than same-day NQ futures.
+- High implied correlation can mean risk-off pressure or a compensated equity risk premium, making directional
+  signs unstable.
+- Daily implied-correlation states may be too slow for intraday NQ timing.
+- Any performance may concentrate in crisis windows or overlap with broad volatility regimes already rejected.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_cboe_vxn_vix_dispersion_intraday
+  - nq_cboe_put_call_sentiment_intraday
+  - nq_realized_semivariance_asymmetry
+  - nq_volatility_managed_intraday_premium
+  conclusion: Eligible as a distinct NQ marketwide implied-correlation state test, not VXN/VIX dispersion,
+    put/call volume sentiment, realized semivariance, or volatility-managed exposure.
+feature_construction:
+  builder: tools/build_es_cboe_implied_correlation_features.py with NQ bars input
+  output: data/external/nq_cboe_implied_correlation_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3753
+  lookahead_control: latest Cboe COR1M/COR3M close strictly before NQ session_date
+  pre_pnl_density_audit: research_artifacts/nq_cboe_implied_correlation_intraday_density_audit_20260622.md
+variants:
+- high_cor3m_short_1000
+- low_cor3m_long_1030
+- rising_cor3m_short_1130
+- falling_cor3m_long_1200
+- high_short_term_correlation_short_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; selected grids are predeclared before
+    NQ PnL testing.
+status: completed_failed

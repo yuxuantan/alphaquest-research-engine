@@ -1,0 +1,102 @@
+campaign_id: nq_usdjpy_safe_haven_spillover
+title: NQ USDJPY safe-haven spillover
+decision: FAIL
+created_at: '2026-06-22'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: usdjpy_safe_haven_carry_unwind_spillover
+hypothesis: Lagged yen safe-haven/carry-unwind states, measured by USDJPY level and return ranks, may identify same-day
+  NQ risk-off pressure or risk-on continuation.
+rationale: This is a pre-PnL NQ port of the ES USDJPY safe-haven campaign. The Japanese yen is a safe-haven/carry-unwind
+  proxy; NQ may react more strongly than ES to global risk appetite shifts, but the daily FRED series is strictly
+  lagged by one business day.
+sources:
+- title: Safe Haven Currencies
+  authors: Angelo Ranaldo and Paul Soderlind
+  year: 2010
+  doi: 10.1093/rof/rfq007
+  link: https://academic.oup.com/rof/article-abstract/14/3/385/1592162
+  relevance: Identifies the Japanese yen as a safe-haven currency.
+- title: Carry Trades and Currency Crashes
+  authors: Markus K. Brunnermeier, Stefan Nagel, and Lasse H. Pedersen
+  year: 2008
+  link: https://www.nber.org/papers/w14473
+  relevance: Links carry-trade unwind risk to falling risk appetite and funding liquidity.
+- title: Japanese Yen to U.S. Dollar Spot Exchange Rate [DEXJPUS]
+  authors: Board of Governors of the Federal Reserve System via FRED
+  year: 2026
+  link: https://fred.stlouisfed.org/series/DEXJPUS
+  relevance: Free daily USDJPY series used to build strictly lagged session features.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_usdjpy_safe_haven_features_20110103_20260612.csv
+- data/external/fred_dexjpus_usdjpy_1971_2026.csv
+feature_construction:
+  builder: tools/build_es_usdjpy_safe_haven_features.py
+  source_cache: data/external/fred_dexjpus_usdjpy_1971_2026.csv
+  output: data/external/nq_usdjpy_safe_haven_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3754
+  availability_lag_business_days: 1
+lookahead_risks:
+- Signals never use same-date USDJPY observations.
+- Rolling ranks are computed after applying the one-business-day availability lag to NQ session dates.
+- Signals use a completed one-minute bar and enter at the next bar open or later.
+- No final NQ session close/high/low, future FX observation, final VWAP, or future orderflow is used.
+failure_modes:
+- Yen safe-haven effects may be contemporaneous rather than predictive after a one-business-day lag.
+- USDJPY can move for Japan-specific policy reasons unrelated to U.S. equity risk appetite.
+- The effect may be regime-dependent or crisis-concentrated.
+- Fixed intraday exits may be too noisy after NQ costs and slippage.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_sector_rotation_risk_appetite
+  - nq_credit_etf_orderflow_risk_appetite
+  - nq_ofr_financial_stress_intraday
+  conclusion: Eligible as a distinct ES-derived NQ test because it uses lagged yen-specific safe-haven/carry-unwind
+    state, not sector rotation, credit ETF flow, OFR stress, or broad dollar risk appetite.
+source_es_campaign: es_usdjpy_safe_haven_spillover
+source_es_evidence:
+  best_source_run: weak_yen_long_1200/ES/rescue1
+  why_selected: The ES weak-yen rescue passed core with 27/27 profitable combinations before failing monkey, and
+    the strong-yen stop-widen rescue also reached monkey. The family is distinct and has locally available NQ-safe
+    feature construction.
+variants:
+- yen_appreciation_short_1000
+- yen_depreciation_long_1030
+- strong_yen_short_1130
+- weak_yen_long_1200
+- five_day_yen_appreciation_short_1330
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue is authorized for this NQ search turn.
+pre_pnl_density_audit:
+  status: PASS
+  artifact: research_artifacts/nq_usdjpy_safe_haven_spillover_density_audit_20260622.md
+  csv: research_artifacts/nq_usdjpy_safe_haven_spillover_density_audit_20260622.csv
+  sessions: 3813
+  years_252: 15.130952
+  min_signals_per_year: 53.466562
+  max_signals_per_year: 137.664831
+  method: lagged USDJPY feature threshold count only; no PnL, stops, targets, or fills evaluated
+status: completed_failed
+completed_at: '2026-06-22'
+result_summary:
+  evaluated_run_id: run1
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_core_grid_test: 3
+    limited_monkey_test: 1
+    walk_forward_analysis: 1
+  failure_reason: All five variants failed the staged flow. Three failed limited_core_grid_test, weak_yen_long_1200
+    failed limited_monkey_test, and strong_yen_short_1130 reached WFA but failed with early exit and negative stitched
+    OOS performance.
+  best_variant_by_core_net: strong_yen_short_1130
+  best_variant_by_stage: strong_yen_short_1130
+  campaign_test_summary_json: backtest-campaigns/nq_usdjpy_safe_haven_spillover/campaign_test_summary.json
+  campaign_test_summary_md: backtest-campaigns/nq_usdjpy_safe_haven_spillover/campaign_test_summary.md
+  campaign_results_csv: backtest-campaigns/nq_usdjpy_safe_haven_spillover/campaign_results.csv
+  candidate_strategy_report_created: false

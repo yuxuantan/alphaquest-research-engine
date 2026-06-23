@@ -1,0 +1,1 @@
+from propstack.strategy_modules.entry.vpin_toxicity_continuation import VpinToxicityContinuationEntry as EntryModule

@@ -1,0 +1,83 @@
+campaign_id: nq_prior_session_level_breakout_continuation
+title: NQ Prior-Session Level Breakout Continuation
+decision: FAIL
+created_at: '2026-06-22'
+status: rejected_before_pnl
+instrument: NQ
+market_timezone: America/New_York
+edge_family: nq_prior_session_level_breakout_continuation
+hypothesis: Confirmed NQ breaks beyond the prior RTH high or low may continue intraday because watched support/resistance
+  levels concentrate liquidity and stop orders.
+rationale: This is an NQ port of the ES prior-session level breakout-continuation campaign. It differs from rejected NQ prior-session
+  orderflow confirmation because the level breakout itself is the tested edge.
+sources:
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  authors: William Brock, Josef Lakonishok, Blake LeBaron
+  year: 1992
+  doi: 10.1111/j.1540-6261.1992.tb04681.x
+  link: https://onlinelibrary.wiley.com/doi/10.1111/j.1540-6261.1992.tb04681.x
+  relevance: Tests trading-range break rules based on support/resistance levels.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Shows support/resistance levels can coincide with order-book depth.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  link: https://www.newyorkfed.org/research/staff_reports/sr150.html
+  relevance: Documents stop-order cascades around levels.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- previous RTH high/low and fresh-level flags from completed bars
+- 5-minute NQ RTH bars with one-minute execution detail
+lookahead_risks:
+- Prior RTH high/low are from the fully completed previous RTH session only.
+- Fresh close-break and retest-hold signals use only completed 5-minute signal bars.
+- Gap-hold variants use the RTH open plus completed hold bars.
+- No future session high/low, final VWAP, final range, or future orderflow is used.
+failure_modes:
+- Prior high/low breakouts may be false breaks that reverse after costs.
+- The effect may be confined to a narrow volatility regime or a few trend days.
+- Gap-hold continuation may duplicate overnight information without same-day follow-through.
+- Bar-level OHLC may overstate fills during fast cascades, so pessimistic same-bar ordering is required.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_prior_value_area_orderflow_acceptance
+  - nq_range_compression_breakout
+  conclusion: Eligible as a distinct NQ test because it enters on confirmed prior high/low breaks or holds without requiring
+    orderflow confirmation, value-area levels, or range-compression filters.
+source_es_template: campaigns/es_prior_session_level_breakout_continuation/variants
+pre_pnl_density:
+  status: rejected_before_pnl
+  artifact: research_artifacts/nq_prior_session_level_breakout_continuation_density_audit_20260622.md
+  reason: Four of five variants failed the 50-signals-per-year density screen.
+variants:
+- morning_prior_high_breakout_long
+- morning_prior_low_breakout_short
+- midday_two_sided_close_break
+- retest_hold_two_sided_breakout
+- gap_hold_two_sided_continuation
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn; after OOS, only rejection or promotion is allowed.
+result_summary:
+  verdict: FAIL
+  completed_at: 2026-06-22
+  campaign_test_summary: backtest-campaigns/nq_prior_session_level_breakout_continuation/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_prior_session_level_breakout_continuation/campaign_results.csv
+  methodology_audit: campaigns/nq_prior_session_level_breakout_continuation/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    pre_pnl_density: 5
+testing_plan:
+  methodology: current staged research pipeline
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0

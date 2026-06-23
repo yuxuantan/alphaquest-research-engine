@@ -1,0 +1,219 @@
+campaign_id: nq_self_lead_opening_range_breakout
+variant_id: or30_nq30_signed_long_1130
+test_run_id: run1
+strategy_name: opening_range_nq_orderflow_breakout
+symbol: NQ
+dataset_id: nq_es_lead_lag_1m_20110103_20260609_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Gao et al. (2018) intraday momentum; Huth and Abergel (2014) lead-lag; Cont, Kukanov,
+    and Stoikov (2014) orderflow imbalance.
+  edge_thesis: NQ upside opening-range continuation should improve when NQ is already leading ES in the
+    breakout direction and NQ aggregate flow confirms the breakout.
+  mechanic: 30-minute NQ opening-range upside breakout before 11:30 ET with 30-minute NQ-over-ES leadership
+    and NQ signed-flow confirmation.
+  timeframe_rationale: 1-minute bars preserve the opening-range boundary, completed ES/NQ lead-lag features,
+    and next-bar-open execution on the native cache.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-22'
+  mechanics_review:
+    mechanic_expresses_edge: This variant freezes the completed 30-minute NQ opening range, then trades
+      only a completed upside close beyond that range when NQ flow confirms and NQ has outpaced ES over
+      the completed 30-minute window.
+    entry_logic_rationale: The opening-range boundary is unavailable until 30 RTH minutes have completed.
+      Later completed bars before 11:30:00 ET can trigger one long NQ trade; entry is next-bar open.
+    stop_loss_rationale: The stop uses the opposite opening-range edge with a predeclared NQ max-risk
+      cap; unusually wide opening ranges are rejected by the stop module.
+    target_exit_rationale: The fixed-R target is declared before testing and varied only through tp.params.target_r_multiple;
+      unresolved trades flatten at 15:55 ET.
+    profitability_rationale: A real NQ self-lead breakout effect should remain profitable across neighboring
+      flow, lead-gap, stop-cap, and target settings after commission and slippage.
+    known_failure_modes: NQ leadership may be contemporaneous rather than predictive, the first breakout
+      can be an exhaustion event, OR-edge stops may be too wide, and upside momentum may be regime concentrated.
+    pre_test_decision: approve_for_testing
+  pre_pnl_density_audit:
+    decision: PASS
+    method: Entry-only session signal-count audit over declared entry grids; no PnL, stop, target, WFA,
+      monkey, Monte Carlo, or holdout result was inspected.
+    full_min_signals_per_year: 126.69
+    limited_core_min_signals_per_year: 127.58
+    limited_core_period: 2011-02-22 to 2012-09-07
+data:
+  dataset_id: nq_es_lead_lag_1m_20110103_20260609_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_es_lead_lag_1m_20110103_20260609_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: opening_range_nq_orderflow_breakout
+    params:
+      rth_start: 09:30:00
+      opening_range_minutes: 30
+      confirmation_minutes: 1
+      bar_interval_minutes: 1
+      last_entry_time: '11:30:00'
+      max_opening_range_pct_of_open: 0.018
+      tick_size: 0.25
+      breakout_buffer_ticks: 0
+      min_orderflow_imbalance: 0.03
+      flow_mode: signed_volume
+      min_flow_volume: 0
+      nq_lookback_minutes: 30
+      min_nq_return_bps: 8.0
+      min_nq_lead_gap_bps: 1.5
+      allow_long: true
+      allow_short: false
+      max_trades_per_day: 1
+  sl:
+    module: opening_range_edge
+    params:
+      max_stop_points: 75.0
+      stop_offset_ticks: 0
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 250
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.03
+    - 0.06
+    entry.params.min_nq_lead_gap_bps:
+    - 0.0
+    - 1.5
+    - 3.0
+    sl.params.max_stop_points:
+    - 45.0
+    - 75.0
+    - 105.0
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

@@ -1,0 +1,135 @@
+campaign_id: es_low_toxicity_aoi_false_breakout
+title: ES Low-Toxicity AOI False Breakout
+decision: FAIL
+created_at: '2026-06-23'
+instrument: ES
+timeframe: 1m
+edge_family: low_toxicity_false_breakouts_at_market_generated_and_true_vap_aois
+hypothesis: When ES probes a predefined market-generated or frozen prior-session volume-profile AOI but completed-bar signed
+  pressure and optionally large20 participation are weak, the extension may be liquidity seeking rather than informed initiative
+  pressure and may revert after next-bar entry.
+variant_count_decision: Eight variants selected because each isolates a distinct AOI family or low-large-volume confirmation
+  before any PnL testing.
+variant_expansion_rationale: 'Variants 6-8 are not parameter variants: value-area, LVN, and POC mechanics target different
+  frozen volume-profile reference prices than market-AOI, opening-range, overnight, and all-AOI mechanics. The largequiet
+  variants add a fixed low-large-volume condition rather than tuning it after results. All eight cleared strict pre-PnL density
+  before staged testing.'
+sources:
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Motivates signed orderflow pressure as a short-horizon state variable; this campaign tests weak pressure at AOI
+    probes.
+- title: Flow Toxicity and Liquidity in a High-frequency World
+  authors: David Easley, Marcos M. Lopez de Prado, and Maureen O'Hara
+  year: 2012
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/hhs053
+  link: https://academic.oup.com/rfs/article/25/5/1457/1586220
+  relevance: Supports the idea that low-toxicity flow can change liquidity provision and the meaning of price extensions.
+- title: Why Do Security Prices Change? A Transaction-Level Analysis of NYSE Stocks
+  authors: Ananth Madhavan, Matthew Richardson, and Mark Roomans
+  year: 1997
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/10.4.1035
+  link: https://academic.oup.com/rfs/article-abstract/10/4/1035/1589322
+  relevance: Links transaction flow, liquidity, and price changes, motivating pressure-state interpretation rather than pure
+    chart pattern matching.
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports public support/resistance levels as short-horizon reference prices where false breakouts can cluster.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates POC, value-area, and LVN auction-market context for frozen prior-session profile levels.
+data_needs:
+- Validated local Sierra ES 1-minute footprint/VAP/overnight cache in America/New_York.
+- Prior RTH high/low computed by the feature pipeline from completed prior RTH sessions only.
+- Opening range high/low available only after the first 30 completed RTH bars.
+- Previous-session POC, VAH, VAL, and LVNs from the true Sierra VAP cache.
+- Completed-bar signed-volume and large20-volume proxies.
+data_quality_caveats:
+- Sierra signed-volume and large20 fields are completed-bar proxies, not full market-by-order or vendor-equivalent large-print
+  sequencing.
+- True VAP fields are prior-session cached levels and do not include current-session final profile information.
+- Low toxicity can also describe quiet continuation, so any passing result remains a candidate requiring manual review.
+lookahead_risks:
+- Prior VAP, overnight levels, and prior RTH levels are available before current-session use.
+- Opening-range levels are unavailable until all opening-range bars have closed.
+- Signal uses completed bar values only; entry is no earlier than the next one-minute open.
+- No current-session final VWAP, final volume profile, future daily range, future high/low, or post-entry orderflow is used.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_low_toxicity_aoi_false_breakout_density_audit_20260623.md
+  detail_csv: research_artifacts/es_low_toxicity_aoi_false_breakout_density_audit_20260623.csv
+  data_source: data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny.parquet
+  decision: approve_eight_variants_for_testing_before_pnl
+variants:
+- all_aoi_signedquiet_1500
+- market_aoi_signedquiet_1500
+- market_aoi_largequiet_1500
+- opening_aoi_signedquiet_1200
+- overnight_signedquiet_1500
+- value_area_signedquiet_1500
+- lvn_largequiet_1500
+- poc_signedquiet_1500
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - max_abs_delta_imbalance
+  - min_probe_ticks
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+  fixed_not_tuned_after_results:
+  - setup_mode
+  - session_window
+  - max_large_volume_share
+  - confirmation_ticks
+  - require_reversal_body
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - core low-toxicity AOI false-breakout thesis
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+test_result:
+  verdict: FAIL
+  tested_at: '2026-06-23T01:29:08'
+  summary_path: backtest-campaigns/es_low_toxicity_aoi_false_breakout/campaign_test_summary.json
+  variant_results_csv: backtest-campaigns/es_low_toxicity_aoi_false_breakout/campaign_variant_results.csv
+  terminal_stage: limited_core_grid_test
+  variants_tested: 8
+  variants_passed: 0
+  rescue_attempts_used: 0
+  failure_reason: All eight predeclared low-toxicity AOI false-breakout variants failed limited_core_grid_test. No variant
+    reached monkey, WFA, Monte Carlo, simulated incubation, frozen validation, or candidate reporting.
+  best_variant_by_profitable_iteration_count:
+    variant_id: market_aoi_largequiet_1500
+    profitable_iterations: 37
+    total_combinations_tested: 81
+    top_net_profit: 442.5
+    top_profit_factor: 4.612244897959184
+    top_mar: 8.341261845379838
+    top_failure_reason: min_trades_per_year;preferred_min_total_trades;max_best_day_concentration
+  best_variant_by_top_net_profit:
+    variant_id: overnight_signedquiet_1500
+    profitable_iterations: 4
+    total_combinations_tested: 81
+    top_net_profit: 1740.0
+    top_profit_factor: 1.1647727272727273
+    top_mar: 0.7147006678112944
+    top_failure_reason: max_consecutive_losses;max_best_day_concentration

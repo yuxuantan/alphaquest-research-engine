@@ -1,0 +1,365 @@
+campaign_id: es_overnight_vap_orderflow_breakout_continuation
+strategy_name: true_vap_aoi_breakout_continuation
+variant_id: overnight_vap_immediate_breakout_two_sided_1500
+test_run_id: run1
+symbol: ES
+dataset_id: es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny
+timeframe: 1m
+data:
+  dataset_id: es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-05-29'
+    session_labels: &id001
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-05-29'
+    session_labels: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.max_profile_distance_ticks: &id002
+    - 4
+    - 8
+    - 16
+    entry.params.min_orderflow_imbalance: &id003
+    - 0.01
+    - 0.02
+    - 0.05
+    sl.params.stop_offset_ticks: &id004
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple: &id005
+    - 1.25
+    - 2.0
+    - 3.0
+monkey:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-05-29'
+    session_labels: *id001
+  runs: 8000
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2011-01-03'
+    end_date: '2026-05-29'
+    session_labels: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.max_profile_distance_ticks: *id002
+    entry.params.min_orderflow_imbalance: *id003
+    sl.params.stop_offset_ticks: *id004
+    tp.params.target_r_multiple: *id005
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 3
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.mean_net_pnl
+      exclusive_min: 0.0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  academic_source: Osler (2000); Kavajecz and Odders-White (2004); Cont, Kukanov,
+    and Stoikov (2014); CME market profile educational material.
+  edge_thesis: Completed overnight high/low breakouts may continue when the AOI aligns
+    with frozen prior-session true VAP levels and the breakout bar shows same-direction
+    aggregate orderflow plus footprint imbalance.
+  mechanic: Signed-volume breakout continuation including the first completed RTH
+    bar after the overnight range is known.
+  timeframe_rationale: The Sierra aggregate-flow, footprint, VAP, and overnight AOI
+    fields are completed 1-minute or completed-session fields, so the signal is evaluated
+    only after bar close and enters no earlier than the next 1-minute open.
+  mechanics_review:
+    mechanic_expresses_edge: The completed overnight high and low define public breakout
+      AOIs, prior true VAP levels supply profile confluence, and same-direction aggregate
+      flow plus footprint imbalance supplies continuation pressure before any next-bar
+      entry is allowed.
+    entry_logic_rationale: Overnight levels are complete by 09:29 ET, prior VAP is
+      shifted from completed sessions, and the breakout bar must trade beyond and
+      close in the breakout direction before a next-bar entry can be generated.
+    stop_loss_rationale: The sweep-extreme stop sits beyond the completed breakout
+      bar plus a tunable tick offset, which keeps invalidation tied to the observed
+      breakout bar rather than a fitted dollar amount.
+    target_exit_rationale: The cost-adjusted fixed-R target uses only the known entry
+      and stop distance plus configured ES tick value, slippage, and commission, so
+      reward is declared before the trade outcome.
+    profitability_rationale: If overnight high/low breaks near prior VAP levels attract
+      same-direction flow, continuation should occur often enough and travel far enough
+      to overcome one-tick slippage and commissions across neighboring parameters.
+    known_failure_modes: Overnight breaks often fail and revert, same-direction flow
+      may arrive late, Sierra large-flow fields are aggregate proxies, VAP confluence
+      may be too common, and any apparent edge may concentrate in the widest distance
+      setting.
+    pre_test_decision: approve_for_testing
+strategy:
+  flatten_time: '15:55:00'
+  entry:
+    module: true_vap_aoi_breakout_continuation
+    params:
+      setup_mode: overnight_extreme_vap_two_sided_breakout
+      cached_profile_prefix: prior_vap
+      start_time: 09:31:00
+      end_time: '15:00:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 1
+      tick_size: 0.25
+      opening_range_minutes: 30
+      max_profile_distance_ticks: 8
+      min_breakout_ticks: 1
+      close_buffer_ticks: 0
+      flow_mode: signed_volume
+      min_orderflow_imbalance: 0.02
+      min_footprint_imbalance_volume: 100
+      max_trades_per_day: 1
+      allow_long: true
+      allow_short: true
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 2
+  tp:
+    module: cost_adjusted_fixed_r
+    params:
+      target_r_multiple: 2.0
+      tick_size: 0.25
+      tick_value: 12.5
+      commission_per_contract: 2.5
+      slippage_ticks: 1

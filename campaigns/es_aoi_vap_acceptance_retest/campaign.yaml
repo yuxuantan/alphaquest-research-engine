@@ -1,0 +1,132 @@
+campaign_id: es_aoi_vap_acceptance_retest
+title: ES AOI VAP acceptance retest continuation
+created_at: '2026-06-22'
+status: planned_for_testing
+hypothesis: Accepted retests of market-generated ES levels should continue more reliably
+  when the AOI is near frozen prior true volume-at-price structure and completed-bar
+  orderflow confirms the retest.
+expected_mechanism: Public AOIs such as PDH/PDL, overnight high/low, and ORH/ORL attract
+  stop and breakout flow. If price breaks the level, then later retests and holds
+  the level with same-direction orderflow and footprint imbalance near prior VAP,
+  trapped counterparty inventory may fuel continuation.
+source_quality: Research-supported microstructure hypothesis; ES data uses completed-bar
+  Sierra aggregate orderflow and footprint proxies, not print-sequence truth.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  author: Carol L. Osler
+  year: 2000
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  why_relevant: Tests whether support/resistance levels predict intraday trend interruptions
+    at public levels.
+- title: Technical Analysis and Liquidity Provision
+  author: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  link: https://doi.org/10.2139/ssrn.315660
+  why_relevant: Links technical levels to limit-order-book liquidity and depth placement.
+- title: The Price Impact of Order Book Events
+  author: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  link: https://arxiv.org/abs/1011.6402
+  why_relevant: Motivates using orderflow imbalance as a completed-bar pressure confirmation.
+data_availability:
+  primary_cache: data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny.parquet
+  availability: Completed RTH 1-minute ES bars with Sierra aggregate flow, footprint
+    imbalance fields, frozen prior true VAP, and completed overnight high/low fields.
+  caveat: Large-print and footprint fields are Sierra-derived aggregate proxies; no
+    print-level sequencing is claimed.
+variant_expansion_rationale: 'Five variants cover the obvious prior-session and opening-range
+  AOIs, but the same edge has three clearly better additional mechanics: one-sided
+  overnight-high acceptance, one-sided overnight-low acceptance, and a combined market-AOI
+  priority variant. These are predeclared before PnL testing because overnight extremes
+  are completed before RTH and economically distinct from PDH/PDL and ORH/ORL while
+  still expressing the same acceptance-retest edge.'
+parameter_space:
+  entry.params.max_profile_distance_ticks:
+  - 4
+  - 8
+  - 16
+  entry.params.min_orderflow_imbalance:
+  - 0.01
+  - 0.02
+  - 0.05
+  sl.params.stop_offset_ticks:
+  - 2
+  - 4
+  - 6
+  tp.params.target_r_multiple:
+  - 1.25
+  - 2.0
+  - 3.0
+  total_combinations_per_variant: 81
+  tunable_count_contract: 2 entry parameters, 1 stop parameter, 1 take-profit parameter.
+variants:
+- variant_id: prior_high_vap_acceptance_long_1500
+  entry_module: aoi_vap_acceptance_retest
+  stop_loss_module: opening_range_retest_boundary
+  take_profit_module: cost_adjusted_fixed_r
+  rationale: Long-only acceptance above prior RTH high after VAP confluence and post-breakout
+    retest hold.
+  timeframe_rationale: 1-minute completed-bar signals are required because footprint,
+    VAP, and orderflow fields are available only after bar close.
+- variant_id: prior_low_vap_acceptance_short_1500
+  entry_module: aoi_vap_acceptance_retest
+  stop_loss_module: opening_range_retest_boundary
+  take_profit_module: cost_adjusted_fixed_r
+  rationale: Short-only acceptance below prior RTH low after VAP confluence and post-breakout
+    retest hold.
+  timeframe_rationale: 1-minute completed-bar signals are required because footprint,
+    VAP, and orderflow fields are available only after bar close.
+- variant_id: prior_extreme_vap_acceptance_two_sided_1500
+  entry_module: aoi_vap_acceptance_retest
+  stop_loss_module: opening_range_retest_boundary
+  take_profit_module: cost_adjusted_fixed_r
+  rationale: Two-sided prior-session extreme acceptance with symmetric PDH/PDL retest
+    mechanics.
+  timeframe_rationale: 1-minute completed-bar signals are required because footprint,
+    VAP, and orderflow fields are available only after bar close.
+- variant_id: opening_range_vap_acceptance_morning_1130
+  entry_module: aoi_vap_acceptance_retest
+  stop_loss_module: opening_range_retest_boundary
+  take_profit_module: cost_adjusted_fixed_r
+  rationale: Morning-only acceptance through ORH/ORL after the opening range is complete
+    and retested.
+  timeframe_rationale: 1-minute completed-bar signals are required because footprint,
+    VAP, and orderflow fields are available only after bar close.
+- variant_id: opening_range_vap_acceptance_day_1500
+  entry_module: aoi_vap_acceptance_retest
+  stop_loss_module: opening_range_retest_boundary
+  take_profit_module: cost_adjusted_fixed_r
+  rationale: Full-day ORH/ORL acceptance retest variant with stronger footprint threshold
+    to test later-session holds.
+  timeframe_rationale: 1-minute completed-bar signals are required because footprint,
+    VAP, and orderflow fields are available only after bar close.
+- variant_id: overnight_high_vap_acceptance_long_1500
+  entry_module: aoi_vap_acceptance_retest
+  stop_loss_module: opening_range_retest_boundary
+  take_profit_module: cost_adjusted_fixed_r
+  rationale: Long-only acceptance above completed overnight high when the high aligns
+    with frozen prior VAP.
+  timeframe_rationale: 1-minute completed-bar signals are required because footprint,
+    VAP, and orderflow fields are available only after bar close.
+- variant_id: overnight_low_vap_acceptance_short_1500
+  entry_module: aoi_vap_acceptance_retest
+  stop_loss_module: opening_range_retest_boundary
+  take_profit_module: cost_adjusted_fixed_r
+  rationale: Short-only acceptance below completed overnight low when the low aligns
+    with frozen prior VAP.
+  timeframe_rationale: 1-minute completed-bar signals are required because footprint,
+    VAP, and orderflow fields are available only after bar close.
+- variant_id: combined_market_aoi_vap_acceptance_1530
+  entry_module: aoi_vap_acceptance_retest
+  stop_loss_module: opening_range_retest_boundary
+  take_profit_module: cost_adjusted_fixed_r
+  rationale: Combined PDH/PDL, overnight high/low, and ORH/ORL acceptance retest mechanics
+    under one trade-per-day cap.
+  timeframe_rationale: 1-minute completed-bar signals are required because footprint,
+    VAP, and orderflow fields are available only after bar close.
+testing_plan:
+  front_door: python3 -m research.preflight
+  runner: PYTHONPATH=src python3 -m propstack.run_campaign_stages --config <variant_config>
+    --fast-runtime-defaults
+  pass_language: Candidate strategy only; no tradeable claim without manual due diligence
+    and incubation.

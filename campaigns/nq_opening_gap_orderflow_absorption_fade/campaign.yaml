@@ -1,0 +1,86 @@
+campaign_id: nq_opening_gap_orderflow_absorption_fade
+title: NQ opening gap absorption fade with aggregate orderflow
+decision: FAIL
+created_at: '2026-06-22'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: opening_gap_orderflow_absorption_fade
+hypothesis: NQ RTH opening gaps from the prior RTH close may partially or fully fill
+  intraday when completed post-open aggregate orderflow is counter to the gap direction.
+sources:
+- title: Overnight-Intraday Reversal Everywhere
+  authors: Chun Liu; Yang Liu; Tianyu Wang; Guofu Zhou; Yingzi Zhu
+  year: 2016
+  venue: SSRN working paper
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2730304
+  relevance: Motivates testing overnight-to-intraday reversal and gap-fade behavior.
+- title: Intraday Patterns in the Cross-Section of Stock Returns
+  authors: Steven L. Heston; Robert A. Korajczyk; Ronnie Sadka
+  year: 2010
+  venue: Journal of Finance / working paper
+  link: https://arxiv.org/abs/1005.3535
+  relevance: Supports intraday reversal and trading-flow timing as plausible mechanisms.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont; Arseniy Kukanov; Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates aggregate orderflow imbalance as a pressure proxy; this campaign
+    uses completed Sierra trade-side flow, not quote-depth OFI.
+rationale: This is the opposite economic edge from accepted-gap continuation. The
+  price-action state is a known prior-close-to-RTH-open gap, and the orderflow condition
+  requires completed post-open flow against the gap direction. Targets are partial
+  or full gap fill fractions toward the known prior RTH close.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- previous RTH close derived from completed prior sessions
+- completed source-window signed_volume, volume, large10_signed_volume, large10_volume,
+  large20_signed_volume, and large20_volume
+lookahead_risks:
+- Prior RTH close is known only after the previous RTH session completes.
+- Current RTH open is known at the open, but no signal is emitted until the configured
+  source window closes.
+- Counter-gap orderflow uses only completed bars ending at or before the signal timestamp.
+- Gap-fill targets are fractions of the known prior close from the next-bar entry
+  price; no future high, low, VWAP, profile, or orderflow is used.
+failure_modes:
+- Counter-gap flow can be temporary liquidity provision before trend continuation.
+- Small partial-fill targets may be cost-sensitive after NQ slippage and commissions.
+- Fade performance may concentrate in volatility regimes or macro-event days.
+rescue_policy:
+  allowed: false
+  reason: No post-result rescue is authorized for this NQ campaign; all mechanics
+    and parameter spaces are frozen before staged testing.
+pre_pnl_density_audit:
+  decision: PASS
+  method: Raw NQ RTH cache count audit using prior-session close, current RTH open,
+    completed source-window counter-gap aggregate flow only. No PnL, stop, target,
+    WFA, monkey, Monte Carlo, prop simulation, or holdout result was inspected.
+  source_cache: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  date_range: 2011-01-05 to 2026-06-12
+  note: Declared broad and strict entry corners are generally near or above 50 signals/year
+    for gap thresholds 20-60 ticks.
+variants:
+- early_signed_gap_absorption_fade_1000
+- morning_signed_gap_absorption_fade_1030
+- late_morning_large10_gap_absorption_fade_1100
+- late_morning_large20_gap_absorption_fade_1100
+- midday_signed_gap_absorption_fade_1200
+result_summary:
+  decision: FAIL
+  report_path: backtest-campaigns/nq_opening_gap_orderflow_absorption_fade/campaign_test_summary.json
+  runs: 5
+  passed_variants: 0
+  terminal_stage_counts:
+    limited_core_grid_test: 5
+  failure_reason: All five NQ opening-gap absorption fade variants failed limited_core_grid_test;
+    no monkey, WFA, Monte Carlo, simulated incubation, or acceptance stages were reached.
+  best_core_profitable_rate: 0.345679012345679
+  best_core_variant: late_morning_large10_gap_absorption_fade_1100
+  notes:
+  - Best profitable-combo rate was late_morning_large10_gap_absorption_fade_1100 at
+    28/81 = 0.3457, below the 0.70 gate.
+  - Gap-fill-fraction targets caused some target-already-reached entry rejections
+    but the dominant failure was weak core profitability and benchmark stability.
+  - No rescue was authorized or applied.

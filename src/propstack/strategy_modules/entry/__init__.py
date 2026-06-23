@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from propstack.strategy_modules.entry.aqr_bab_factor_state import AqrBabFactorStateEntry
+from propstack.strategy_modules.entry.aoi_vap_acceptance_retest import AoiVapAcceptanceRetestEntry
 from propstack.strategy_modules.entry.bankruptcy_distress_reversion import BankruptcyDistressReversionEntry
 from propstack.strategy_modules.entry.amihud_illiquidity_state import AmihudIlliquidityStateEntry
 from propstack.strategy_modules.entry.bls_macro_release_day_drift import BlsMacroReleaseDayDriftEntry
@@ -34,12 +35,17 @@ from propstack.strategy_modules.entry.ema_pullback_orderflow_continuation import
     EmaPullbackOrderflowContinuationEntry,
 )
 from propstack.strategy_modules.entry.es_nq_lead_lag import EsNqLeadLagEntry
+from propstack.strategy_modules.entry.nq_es_lead_lag import NqEsLeadLagEntry
 from propstack.strategy_modules.entry.es_mes_aligned_flow_continuation import EsMesAlignedFlowContinuationEntry
 from propstack.strategy_modules.entry.es_mes_lead_lag import EsMesLeadLagEntry
 from propstack.strategy_modules.entry.es_nq_relative_value_reversion import EsNqRelativeValueReversionEntry
 from propstack.strategy_modules.entry.es_nq_relative_value_orderflow_absorption_reversion import (
     EsNqRelativeValueOrderflowAbsorptionReversionEntry,
 )
+from propstack.strategy_modules.entry.nq_es_relative_value_orderflow_absorption_reversion import (
+    NqEsRelativeValueOrderflowAbsorptionReversionEntry,
+)
+from propstack.strategy_modules.entry.nq_tech_relative_strength import NqTechRelativeStrengthEntry
 from propstack.strategy_modules.entry.es_nq_semivariance_filtered_relative_value_absorption import (
     EsNqSemivarianceFilteredRelativeValueAbsorptionEntry,
 )
@@ -57,6 +63,9 @@ from propstack.strategy_modules.entry.impulse_pause_orderflow_continuation impor
 )
 from propstack.strategy_modules.entry.import_export_price_pressure import ImportExportPricePressureEntry
 from propstack.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry
+from propstack.strategy_modules.entry.volatility_filtered_intraday_momentum_priority import (
+    VolatilityFilteredIntradayMomentumPriorityEntry,
+)
 from propstack.strategy_modules.entry.intraday_periodicity_orderflow_confirmation import (
     IntradayPeriodicityOrderflowConfirmationEntry,
 )
@@ -68,15 +77,27 @@ from propstack.strategy_modules.entry.intraday_invariance_dislocation_reversion 
 from propstack.strategy_modules.entry.key_reversal_orderflow_reversal import (
     KeyReversalOrderflowReversalEntry,
 )
+from propstack.strategy_modules.entry.large_record_aoi_reaction import LargeRecordAoiReactionEntry
+from propstack.strategy_modules.entry.large_record_delayed_aoi_confirmation import (
+    LargeRecordDelayedAoiConfirmationEntry,
+)
 from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
 from propstack.strategy_modules.entry.leveraged_etf_rebalance_pressure import LeveragedEtfRebalancePressureEntry
 from propstack.strategy_modules.entry.liquidity_risk_capacity_priority import LiquidityRiskCapacityPriorityEntry
+from propstack.strategy_modules.entry.low_toxicity_aoi_false_breakout import (
+    LowToxicityAoiFalseBreakoutEntry,
+)
 from propstack.strategy_modules.entry.market_plumbing_priority import MarketPlumbingPriorityEntry
 from propstack.strategy_modules.entry.market_structure_filtered_entry import MarketStructureFilteredEntry
 from propstack.strategy_modules.entry.market_structure_pivot_continuation import (
     MarketStructurePivotContinuationEntry,
 )
 from propstack.strategy_modules.entry.mes_participation_crowding import MesParticipationCrowdingEntry
+from propstack.strategy_modules.entry.mes_crowding_aoi_trap import MesCrowdingAoiTrapEntry
+from propstack.strategy_modules.entry.mes_trend_aoi_pullback import MesTrendAoiPullbackEntry
+from propstack.strategy_modules.entry.vol_filtered_mes_trend_aoi_pullback import (
+    VolFilteredMesTrendAoiPullbackEntry,
+)
 from propstack.strategy_modules.entry.mes_footprint_liquidity_sweep_reversion import (
     MesFootprintLiquiditySweepReversionEntry,
 )
@@ -143,6 +164,22 @@ from propstack.strategy_modules.entry.trend_orderflow_pdh_pdl_sweep_reclaim impo
 )
 from propstack.strategy_modules.entry.positive_delta_dislocation import PositiveDeltaDislocationEntry
 from propstack.strategy_modules.entry.preholiday_effect import PreholidayEffectEntry
+from propstack.strategy_modules.entry.profile_aoi_footprint_trap import ProfileAoiFootprintTrapEntry
+from propstack.strategy_modules.entry.nq_nonconfirming_vap_aoi_trap import (
+    NqNonconfirmingVapAoiTrapEntry,
+)
+from propstack.strategy_modules.entry.nq_confirming_vap_aoi_breakout import (
+    NqConfirmingVapAoiBreakoutEntry,
+)
+from propstack.strategy_modules.entry.true_vap_aoi_breakout_continuation import (
+    TrueVapAoiBreakoutContinuationEntry,
+)
+from propstack.strategy_modules.entry.true_vap_value_area_orderflow_acceptance import (
+    TrueVapValueAreaOrderflowAcceptanceEntry,
+)
+from propstack.strategy_modules.entry.video_aoi_orderflow_playbook import (
+    VideoAoiOrderflowPlaybookEntry,
+)
 from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSessionIbsReversionEntry
 from propstack.strategy_modules.entry.prior_session_benchmark_orderflow_reaction import (
     PriorSessionBenchmarkOrderflowReactionEntry,
@@ -250,6 +287,7 @@ from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPull
 
 ENTRY_MODULES = {
     AqrBabFactorStateEntry.name: AqrBabFactorStateEntry,
+    AoiVapAcceptanceRetestEntry.name: AoiVapAcceptanceRetestEntry,
     BankruptcyDistressReversionEntry.name: BankruptcyDistressReversionEntry,
     AmihudIlliquidityStateEntry.name: AmihudIlliquidityStateEntry,
     BlsMacroReleaseDayDriftEntry.name: BlsMacroReleaseDayDriftEntry,
@@ -277,8 +315,11 @@ ENTRY_MODULES = {
     EsMesAlignedFlowContinuationEntry.name: EsMesAlignedFlowContinuationEntry,
     EsMesLeadLagEntry.name: EsMesLeadLagEntry,
     EsNqLeadLagEntry.name: EsNqLeadLagEntry,
+    NqEsLeadLagEntry.name: NqEsLeadLagEntry,
     EsNqRelativeValueReversionEntry.name: EsNqRelativeValueReversionEntry,
     EsNqRelativeValueOrderflowAbsorptionReversionEntry.name: EsNqRelativeValueOrderflowAbsorptionReversionEntry,
+    NqEsRelativeValueOrderflowAbsorptionReversionEntry.name: NqEsRelativeValueOrderflowAbsorptionReversionEntry,
+    NqTechRelativeStrengthEntry.name: NqTechRelativeStrengthEntry,
     EsNqSemivarianceFilteredRelativeValueAbsorptionEntry.name: EsNqSemivarianceFilteredRelativeValueAbsorptionEntry,
     EsTermStructureLeadLagEntry.name: EsTermStructureLeadLagEntry,
     FinraMarginLeverageEntry.name: FinraMarginLeverageEntry,
@@ -290,17 +331,24 @@ ENTRY_MODULES = {
     ImportExportPricePressureEntry.name: ImportExportPricePressureEntry,
     IntradayCapitulationMREntry.name: IntradayCapitulationMREntry,
     IntradayMomentumPriorityEntry.name: IntradayMomentumPriorityEntry,
+    VolatilityFilteredIntradayMomentumPriorityEntry.name: VolatilityFilteredIntradayMomentumPriorityEntry,
     IntradayPeriodicityOrderflowConfirmationEntry.name: IntradayPeriodicityOrderflowConfirmationEntry,
     IntradayRangeOrderflowBreakoutEntry.name: IntradayRangeOrderflowBreakoutEntry,
     IntradayInvarianceDislocationReversionEntry.name: IntradayInvarianceDislocationReversionEntry,
     IntradayPeriodicityPersistenceEntry.name: IntradayPeriodicityPersistenceEntry,
     KeyReversalOrderflowReversalEntry.name: KeyReversalOrderflowReversalEntry,
+    LargeRecordAoiReactionEntry.name: LargeRecordAoiReactionEntry,
+    LargeRecordDelayedAoiConfirmationEntry.name: LargeRecordDelayedAoiConfirmationEntry,
     LateDayIntradayMomentumEntry.name: LateDayIntradayMomentumEntry,
     LeveragedEtfRebalancePressureEntry.name: LeveragedEtfRebalancePressureEntry,
     LiquidityRiskCapacityPriorityEntry.name: LiquidityRiskCapacityPriorityEntry,
+    LowToxicityAoiFalseBreakoutEntry.name: LowToxicityAoiFalseBreakoutEntry,
     MarketPlumbingPriorityEntry.name: MarketPlumbingPriorityEntry,
     MarketStructureFilteredEntry.name: MarketStructureFilteredEntry,
     MarketStructurePivotContinuationEntry.name: MarketStructurePivotContinuationEntry,
+    MesCrowdingAoiTrapEntry.name: MesCrowdingAoiTrapEntry,
+    MesTrendAoiPullbackEntry.name: MesTrendAoiPullbackEntry,
+    VolFilteredMesTrendAoiPullbackEntry.name: VolFilteredMesTrendAoiPullbackEntry,
     MesParticipationCrowdingEntry.name: MesParticipationCrowdingEntry,
     MesFootprintLiquiditySweepReversionEntry.name: MesFootprintLiquiditySweepReversionEntry,
     TrendFilteredMesParticipationCrowdingEntry.name: TrendFilteredMesParticipationCrowdingEntry,
@@ -339,6 +387,12 @@ ENTRY_MODULES = {
     TrendOrderflowPdhPdlSweepReclaimEntry.name: TrendOrderflowPdhPdlSweepReclaimEntry,
     PositiveDeltaDislocationEntry.name: PositiveDeltaDislocationEntry,
     PreholidayEffectEntry.name: PreholidayEffectEntry,
+    ProfileAoiFootprintTrapEntry.name: ProfileAoiFootprintTrapEntry,
+    NqNonconfirmingVapAoiTrapEntry.name: NqNonconfirmingVapAoiTrapEntry,
+    NqConfirmingVapAoiBreakoutEntry.name: NqConfirmingVapAoiBreakoutEntry,
+    TrueVapAoiBreakoutContinuationEntry.name: TrueVapAoiBreakoutContinuationEntry,
+    TrueVapValueAreaOrderflowAcceptanceEntry.name: TrueVapValueAreaOrderflowAcceptanceEntry,
+    VideoAoiOrderflowPlaybookEntry.name: VideoAoiOrderflowPlaybookEntry,
     PriorSessionBenchmarkOrderflowReactionEntry.name: PriorSessionBenchmarkOrderflowReactionEntry,
     PriorSessionIbsReversionEntry.name: PriorSessionIbsReversionEntry,
     PriorLvnOrderflowRejectionEntry.name: PriorLvnOrderflowRejectionEntry,
@@ -411,6 +465,7 @@ def build_entry_module(config: dict):
 __all__ = [
     "Signal",
     "AqrBabFactorStateEntry",
+    "AoiVapAcceptanceRetestEntry",
     "AmihudIlliquidityStateEntry",
     "BankruptcyDistressReversionEntry",
     "BlsMacroReleaseDayDriftEntry",
@@ -435,8 +490,11 @@ __all__ = [
     "EpuPolicyUncertaintyEntry",
     "EsMesLeadLagEntry",
     "EsNqLeadLagEntry",
+    "NqEsLeadLagEntry",
     "EsNqRelativeValueReversionEntry",
     "EsNqRelativeValueOrderflowAbsorptionReversionEntry",
+    "NqEsRelativeValueOrderflowAbsorptionReversionEntry",
+    "NqTechRelativeStrengthEntry",
     "EsNqSemivarianceFilteredRelativeValueAbsorptionEntry",
     "EsTermStructureLeadLagEntry",
     "FootprintAbsorptionInitiationEntry",
@@ -447,13 +505,20 @@ __all__ = [
     "ImportExportPricePressureEntry",
     "IntradayCapitulationMREntry",
     "IntradayMomentumPriorityEntry",
+    "VolatilityFilteredIntradayMomentumPriorityEntry",
     "IntradayPeriodicityOrderflowConfirmationEntry",
     "IntradayRangeOrderflowBreakoutEntry",
     "KeyReversalOrderflowReversalEntry",
+    "LargeRecordAoiReactionEntry",
+    "LargeRecordDelayedAoiConfirmationEntry",
     "LateDayIntradayMomentumEntry",
     "LeveragedEtfRebalancePressureEntry",
     "LiquidityRiskCapacityPriorityEntry",
+    "LowToxicityAoiFalseBreakoutEntry",
     "MarketPlumbingPriorityEntry",
+    "MesCrowdingAoiTrapEntry",
+    "MesTrendAoiPullbackEntry",
+    "VolFilteredMesTrendAoiPullbackEntry",
     "MesParticipationCrowdingEntry",
     "MesFootprintLiquiditySweepReversionEntry",
     "TrendFilteredMesParticipationCrowdingEntry",
@@ -486,6 +551,12 @@ __all__ = [
     "TrendOrderflowPdhPdlSweepReclaimEntry",
     "PositiveDeltaDislocationEntry",
     "PreholidayEffectEntry",
+    "ProfileAoiFootprintTrapEntry",
+    "NqNonconfirmingVapAoiTrapEntry",
+    "NqConfirmingVapAoiBreakoutEntry",
+    "TrueVapAoiBreakoutContinuationEntry",
+    "TrueVapValueAreaOrderflowAcceptanceEntry",
+    "VideoAoiOrderflowPlaybookEntry",
     "PriorSessionBenchmarkOrderflowReactionEntry",
     "PriorSessionIbsReversionEntry",
     "PriorLvnOrderflowRejectionEntry",
