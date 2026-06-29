@@ -1,0 +1,137 @@
+campaign_id: es_opening_vap_large200_acceptance
+title: ES Opening VAP Large-200 Acceptance
+decision: FAIL
+official_variant_count: 5
+tested_at: '2026-06-29T14:26:00+08:00'
+created_at: '2026-06-24'
+instrument: ES
+timeframe: 1m
+edge_family: opening_vap_large_record_acceptance
+hypothesis: Completed opening-session VAP nodes can mark auction areas of interest; if ES accepts beyond those nodes while
+  the completed bar also contains a same-side Sierra large-200 record proxy and footprint imbalance, continuation may have
+  positive expectancy after ES costs.
+variant_expansion_rationale: The official staged campaign is bounded to five predeclared variants. Value-area, POC, and LVN
+  acceptance remain distinct opening-auction mechanics, but the 60-minute LVN acceptance expression is archived before official
+  testing because it had the lowest strict pre-PnL signal density among the six dense acceptance candidates. Sparse trap/reclaim
+  large-record variants were already excluded before testing.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the premise that visible support and resistance reference levels can influence intraday order placement
+    and price behavior.
+- title: Do Investors Place Orders to Exploit Technical Analysis?
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2004.00665.x
+  link: https://doi.org/10.1111/j.1540-6261.2004.00665.x
+  relevance: Links visible technical levels to liquidity provision and order placement around reference prices.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a price-impact state variable, while this campaign uses completed-bar Sierra
+    proxies rather than full LOB OFI.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates POC, value-area, and low-volume-node auction context as visible intraday reference areas for ES.
+practitioner_prompt_source:
+  title: 74% Win Rate Trader Shares His EXACT OrderFlow Strategy ($2M+ Payouts)
+  source_type: marketing/practitioner video summary supplied by user
+  role_in_campaign: 'Used only to define the discretionary playbook elements to mechanize: AOIs, volume profile, big trades,
+    delta/imbalance, and acceptance through auction nodes. Not treated as verified performance evidence.'
+data_needs:
+- ES Sierra 1-minute RTH footprint cache with completed-bar signed volume and footprint imbalance fields.
+- Completed opening30 and opening60 VAP POC/VAH/VAL/LVN levels built only after their respective opening windows complete.
+- Sierra large-200 record proxy merged at bar timestamp; this is an aggregate proxy, not MBO print sequencing.
+data_quality_caveats:
+- Large-200 record fields are Sierra SCID aggregate proxy fields and are not vendor-equivalent trade print sequencing.
+- Footprint imbalance fields are completed-bar research proxies and do not represent queue state or discretionary tape reading.
+- Any passing result remains a candidate strategy requiring manual chart review, source review, and paper/live incubation.
+lookahead_risks:
+- Opening30 VAP levels are null before 10:00 ET and opening60 VAP levels are null before 10:30 ET in the generated cache.
+- Signals use only completed signal-bar orderflow/profile/large-record fields and enter no earlier than the next one-minute
+  open.
+- No final session volume profile, final VWAP, post-entry orderflow, future high/low, or future large-record event is used.
+duplicate_edge_check:
+  active_rejected_edges_checked:
+  - es_opening_vap_absorption_reaction
+  - es_large200_delayed_aoi_confirmation
+  - es_large200_record_aoi_profile_reaction
+  - es_true_vap_aoi_breakout_continuation
+  - es_video_aoi_lvn_orderflow_playbook
+  conclusion: Eligible as a distinct campaign because prior large-200 campaigns used prior/session AOIs or delayed reactions,
+    and the failed opening VAP campaign did not require a same-side 200-lot record proxy. This campaign tests current-session
+    completed opening VAP acceptance only.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_opening_vap_large200_acceptance_density_audit_20260624.csv
+  trap_density_artifact: research_artifacts/es_opening_vap_large200_reaction_density_audit_20260624.md
+  data_source: data/cache/orderflow/es_sierra_footprint_opening_vap_large200_1m_20120103_20260609_rth_ny.parquet
+  decision: approve_five_acceptance_variants_only_before_official_pnl
+  rejected_before_pnl: Large-record value-trap, POC-reclaim, and LVN-trap variants produced fewer than 9 signal sessions/year
+    and were excluded before staged testing.
+  approved_density: All six value/POC/LVN acceptance variants exceeded 130 signal sessions/year at the strict min_probe_ticks=1
+    and min_orderflow_imbalance=0.03 corner.
+  official_variant_selection: The five official variants exclude ovap60_large_lvn_accept_1500 because its strict density was
+    the lowest among the six approved acceptance candidates; this exclusion is based on pre-PnL density only.
+  archived_non_promotional_variant:
+    variant_id: ovap60_large_lvn_accept_1500
+    source_archive_path: campaigns/es_opening_vap_large200_acceptance/archive_excluded_variants/ovap60_large_lvn_accept_1500/config.yaml
+    generated_artifacts_path: backtest-campaigns/es_opening_vap_large200_acceptance/ovap60_large_lvn_accept_1500
+    note: Historical interrupted/error artifacts are retained for audit only and are not part of the official five-variant test.
+variants:
+- ovap30_large_value_accept_1500
+- ovap30_large_poc_accept_1500
+- ovap30_large_lvn_accept_1500
+- ovap60_large_value_accept_1500
+- ovap60_large_poc_accept_1500
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - min_probe_ticks
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+rescue_policy:
+  allowed: false
+  scope: no_post_result_rescue_without_explicit_later_user_approval
+  max_rescues_per_failed_variant: 0
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - large-200 acceptance thesis
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+test_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  tested_at: '2026-06-29T14:26:00+08:00'
+  official_variants_tested: 5
+  official_total_combinations: 270
+  profitable_combinations: 0
+  benchmark_passing_combinations: 0
+  apex_rule_violating_iterations: 0
+  campaign_summary: backtest-campaigns/es_opening_vap_large200_acceptance/campaign_test_summary.json
+  campaign_results: backtest-campaigns/es_opening_vap_large200_acceptance/campaign_results.csv
+  methodology_audit: backtest-campaigns/es_opening_vap_large200_acceptance/methodology_audit.md
+  candidate_strategy_report: null
+  failure_reason: >-
+    All five official opening VAP large-200 acceptance variants failed limited_core_grid_test
+    with 0/54 profitable combinations per variant. No variant reached monkey, WFA, WFA OOS
+    Monte Carlo, simulated incubation, or acceptance OOS, so no candidate strategy report
+    was created.
+  local_search_next_step: >-
+    Do not relabel local near-misses or start external data work without explicit approval.
+    The next ranked path is a separate data-gated decision: longer ES/MES trades history
+    first, then a bounded ES TBBO pilot.

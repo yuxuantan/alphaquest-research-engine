@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.data.clean import clean_data
+from propstack.data.clean import clean_data, detect_missing_bars
 from propstack.data.features import build_features
 from propstack.data.pipeline import prepare_data
 from propstack.data.timeframe import aggregate_timeframe
@@ -156,6 +156,49 @@ def test_aggregate_timeframe_preserves_orderflow_sum_columns():
     assert row["trades"] == 15
     assert row["large20_signed_volume"] == 2
     assert row["large20_volume"] == 7
+
+
+def test_native_higher_timeframe_cache_passes_through_feature_columns():
+    timestamps = pd.date_range("2024-01-03 09:30:00", periods=2, freq="3min", tz="America/New_York")
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "symbol": ["ES"] * 2,
+            "session_date": [timestamps[0].date()] * 2,
+            "session_label": ["RTH"] * 2,
+            "is_rth": [True] * 2,
+            "open": [100.0, 101.0],
+            "high": [101.0, 102.0],
+            "low": [99.0, 100.0],
+            "close": [100.5, 101.5],
+            "volume": [100, 120],
+            "timeframe_minutes": [3, 3],
+            "footprint_absorption_long": [1.0, 0.0],
+            "footprint_max_sell_imbalance_volume": [55.0, 0.0],
+        }
+    )
+
+    out = aggregate_timeframe(df, {"rth_start": "09:30:00"}, "3m")
+
+    assert len(out) == 2
+    assert "footprint_absorption_long" in out.columns
+    assert out.loc[0, "footprint_max_sell_imbalance_volume"] == 55.0
+
+
+def test_detect_missing_bars_respects_native_timeframe_minutes():
+    timestamps = pd.date_range("2024-01-03 09:30:00", periods=3, freq="3min", tz="America/New_York")
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "session_date": [timestamps[0].date()] * 3,
+            "session_label": ["RTH"] * 3,
+            "timeframe_minutes": [3, 3, 3],
+        }
+    )
+
+    missing = detect_missing_bars(df)
+
+    assert missing.empty
 
 
 def test_prepare_data_emits_status_updates():

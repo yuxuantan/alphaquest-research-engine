@@ -39,6 +39,7 @@ from propstack.strategy_modules.entry.daily_reversal_orderflow_confirmation impo
     DailyReversalOrderflowConfirmationEntry,
 )
 from propstack.strategy_modules.entry.dollar_risk_appetite import DollarRiskAppetiteEntry
+from propstack.strategy_modules.entry.emv_macro_news_state import EmvMacroNewsStateEntry
 from propstack.strategy_modules.entry.epu_policy_uncertainty import EpuPolicyUncertaintyEntry
 from propstack.strategy_modules.entry.ema_pullback_orderflow_continuation import (
     EmaPullbackOrderflowContinuationEntry,
@@ -149,6 +150,12 @@ from propstack.strategy_modules.entry.opening_range_retest_orderflow import Open
 from propstack.strategy_modules.entry.opening_range_trend_orderflow_breakout import (
     OpeningRangeTrendOrderflowBreakoutEntry,
 )
+from propstack.strategy_modules.entry.opening_vap_absorption_reaction import (
+    OpeningVapAbsorptionReactionEntry,
+)
+from propstack.strategy_modules.entry.opening_vap_large_record_reaction import (
+    OpeningVapLargeRecordReactionEntry,
+)
 from propstack.strategy_modules.entry.opening_gap_orderflow_fade import OpeningGapOrderflowFadeEntry
 from propstack.strategy_modules.entry.opening_gap_orderflow_continuation import (
     OpeningGapOrderflowContinuationEntry,
@@ -177,6 +184,9 @@ from propstack.strategy_modules.entry.pdh_pdl_trend_orderflow_breakout_continuat
     PdhPdlTrendOrderflowBreakoutContinuationEntry,
 )
 from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
+from propstack.strategy_modules.entry.pdh_pdl_vap_absorption_sweep import (
+    PdhPdlVapAbsorptionSweepEntry,
+)
 from propstack.strategy_modules.entry.trend_orderflow_pdh_pdl_sweep_reclaim import (
     TrendOrderflowPdhPdlSweepReclaimEntry,
 )
@@ -197,6 +207,9 @@ from propstack.strategy_modules.entry.true_vap_value_area_orderflow_acceptance i
 )
 from propstack.strategy_modules.entry.video_aoi_orderflow_playbook import (
     VideoAoiOrderflowPlaybookEntry,
+)
+from propstack.strategy_modules.entry.video_exact_orderflow_playbook import (
+    VideoExactOrderflowPlaybookEntry,
 )
 from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSessionIbsReversionEntry
 from propstack.strategy_modules.entry.prior_session_benchmark_orderflow_reaction import (
@@ -335,6 +348,7 @@ ENTRY_MODULES = {
     DailyReversalOrderflowConfirmationEntry.name: DailyReversalOrderflowConfirmationEntry,
     DollarRiskAppetiteEntry.name: DollarRiskAppetiteEntry,
     EmaPullbackOrderflowContinuationEntry.name: EmaPullbackOrderflowContinuationEntry,
+    EmvMacroNewsStateEntry.name: EmvMacroNewsStateEntry,
     EpuPolicyUncertaintyEntry.name: EpuPolicyUncertaintyEntry,
     EsMesAlignedFlowContinuationEntry.name: EsMesAlignedFlowContinuationEntry,
     EsMesLeadLagEntry.name: EsMesLeadLagEntry,
@@ -400,6 +414,8 @@ ENTRY_MODULES = {
     OpeningRangeNqOrderflowBreakoutEntry.name: OpeningRangeNqOrderflowBreakoutEntry,
     OpeningRangeRetestOrderflowEntry.name: OpeningRangeRetestOrderflowEntry,
     OpeningRangeTrendOrderflowBreakoutEntry.name: OpeningRangeTrendOrderflowBreakoutEntry,
+    OpeningVapAbsorptionReactionEntry.name: OpeningVapAbsorptionReactionEntry,
+    OpeningVapLargeRecordReactionEntry.name: OpeningVapLargeRecordReactionEntry,
     OrderflowRegimeEntry.name: OrderflowRegimeEntry,
     OrderflowRecentPocketComboEntry.name: OrderflowRecentPocketComboEntry,
     OvernightReturnLateDayMomentumEntry.name: OvernightReturnLateDayMomentumEntry,
@@ -411,6 +427,7 @@ ENTRY_MODULES = {
     PdhPdlOrderflowBreakoutContinuationEntry.name: PdhPdlOrderflowBreakoutContinuationEntry,
     PdhPdlTrendOrderflowBreakoutContinuationEntry.name: PdhPdlTrendOrderflowBreakoutContinuationEntry,
     PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
+    PdhPdlVapAbsorptionSweepEntry.name: PdhPdlVapAbsorptionSweepEntry,
     TrendOrderflowPdhPdlSweepReclaimEntry.name: TrendOrderflowPdhPdlSweepReclaimEntry,
     PositiveDeltaDislocationEntry.name: PositiveDeltaDislocationEntry,
     PreholidayEffectEntry.name: PreholidayEffectEntry,
@@ -420,6 +437,7 @@ ENTRY_MODULES = {
     TrueVapAoiBreakoutContinuationEntry.name: TrueVapAoiBreakoutContinuationEntry,
     TrueVapValueAreaOrderflowAcceptanceEntry.name: TrueVapValueAreaOrderflowAcceptanceEntry,
     VideoAoiOrderflowPlaybookEntry.name: VideoAoiOrderflowPlaybookEntry,
+    VideoExactOrderflowPlaybookEntry.name: VideoExactOrderflowPlaybookEntry,
     PriorSessionBenchmarkOrderflowReactionEntry.name: PriorSessionBenchmarkOrderflowReactionEntry,
     PriorSessionIbsReversionEntry.name: PriorSessionIbsReversionEntry,
     PriorLvnOrderflowRejectionEntry.name: PriorLvnOrderflowRejectionEntry,
@@ -518,6 +536,7 @@ __all__ = [
     "DailyReversalOrderflowConfirmationEntry",
     "DollarRiskAppetiteEntry",
     "EmaPullbackOrderflowContinuationEntry",
+    "EmvMacroNewsStateEntry",
     "EpuPolicyUncertaintyEntry",
     "EsMesLeadLagEntry",
     "EsNqLeadLagEntry",
@@ -582,6 +601,7 @@ __all__ = [
     "PdhPdlOrderflowBreakoutContinuationEntry",
     "PdhPdlTrendOrderflowBreakoutContinuationEntry",
     "PdhPdlSweepReclaimEntry",
+    "PdhPdlVapAbsorptionSweepEntry",
     "TrendOrderflowPdhPdlSweepReclaimEntry",
     "PositiveDeltaDislocationEntry",
     "PreholidayEffectEntry",
@@ -591,6 +611,7 @@ __all__ = [
     "TrueVapAoiBreakoutContinuationEntry",
     "TrueVapValueAreaOrderflowAcceptanceEntry",
     "VideoAoiOrderflowPlaybookEntry",
+    "VideoExactOrderflowPlaybookEntry",
     "PriorSessionBenchmarkOrderflowReactionEntry",
     "PriorSessionIbsReversionEntry",
     "PriorLvnOrderflowRejectionEntry",
@@ -632,6 +653,8 @@ __all__ = [
     "TrendAlignedOrderflowContinuationEntry",
     "OpeningRangeTrendOrderflowBreakoutEntry",
     "OpeningRangeNqOrderflowBreakoutEntry",
+    "OpeningVapAbsorptionReactionEntry",
+    "OpeningVapLargeRecordReactionEntry",
     "TreasuryAuctionPressureEntry",
     "TreasuryRateOrderflowStateEntry",
     "TreasuryRateStateEntry",

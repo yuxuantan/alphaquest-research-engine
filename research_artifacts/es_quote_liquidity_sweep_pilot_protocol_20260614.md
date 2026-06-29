@@ -64,10 +64,13 @@ PYTHONPATH=src python3 -m propstack.download_databento_rth_trades \
   --schema tbbo \
   --symbols ES.FUT \
   --stype-in parent \
+  --stype-out instrument_id \
+  --timezone America/New_York \
+  --filter-dataset-condition \
   --estimate-cost sample \
   --sample-days 20 \
   --dry-run \
-  --manifest research_artifacts/databento_es_tbbo_20250609_20260609_final_dry_run_manifest.json
+  --manifest research_artifacts/databento_es_tbbo_20250609_20260609_dry_run_manifest_20260629.json
 ```
 
 Paid download command, only after explicit approval for this exact pull:
@@ -80,8 +83,11 @@ PYTHONPATH=src python3 -m propstack.download_databento_rth_trades \
   --schema tbbo \
   --symbols ES.FUT \
   --stype-in parent \
+  --stype-out instrument_id \
+  --timezone America/New_York \
+  --filter-dataset-condition \
   --estimate-cost exact \
-  --max-cost 25 \
+  --max-cost 10 \
   --paid-data-approved \
   --manifest data/raw/ES/databento-es-tbbo-20250609-20260609/download_manifest.json
 ```
@@ -164,6 +170,27 @@ check and explicit approval.
 - Interpretation: use `tbbo` first because it is far smaller than `mbp-1` for
   this pilot. Treat the sampled cost as a metadata estimate, not spend approval;
   rerun a final cost check immediately before any download.
+
+2026-06-29 no-download dry-run refresh:
+
+- Manifest:
+  `research_artifacts/databento_es_tbbo_20250609_20260609_dry_run_manifest_20260629.json`.
+- Scope: `GLBX.MDP3`, `ES.FUT`, RTH windows, `2025-06-09` through
+  `2026-06-09`, `schema=tbbo`, `stype_in=parent`,
+  `stype_out=instrument_id`.
+- Availability: `262` candidate RTH sessions built, `262` kept after the
+  dataset-condition filter.
+- Plan: `262` missing or new sessions; no local raw TBBO files were present.
+- Cost sample: `20` sessions, estimated one-year RTH cost `$5.95`.
+- Download result: dry run only; manifest `results` is empty and no paid market
+  data was downloaded.
+- Readiness check passed with `11` tests:
+
+```bash
+PYTHONPATH=src python3 -m pytest -q \
+  tests/test_quote_liquidity_sweep_reversion.py \
+  tests/test_databento_rth_downloader.py
+```
 
 Recommended first data pull if approved:
 

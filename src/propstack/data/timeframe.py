@@ -42,6 +42,8 @@ def aggregate_timeframe(df: pd.DataFrame, config: dict, timeframe) -> pd.DataFra
     minutes = parse_timeframe_minutes(timeframe)
     if minutes == 1 or df.empty:
         return df.sort_values("timestamp").reset_index(drop=True).copy()
+    if _is_native_timeframe(df, minutes):
+        return df.sort_values("timestamp").reset_index(drop=True).copy()
 
     required = {"timestamp", "open", "high", "low", "close", "volume", "session_date", "session_label"}
     missing = required - set(df.columns)
@@ -77,6 +79,8 @@ def aggregate_timeframe(df: pd.DataFrame, config: dict, timeframe) -> pd.DataFra
     for column in out.columns:
         if re.fullmatch(r"large\d+_(?:signed_)?volume", str(column)):
             agg[column] = (column, "sum")
+        elif str(column).startswith("intrabar_"):
+            agg[column] = (column, "max")
 
     aggregated = out.groupby(group_cols, sort=True, dropna=False).agg(**agg).reset_index()
     aggregated = aggregated.rename(columns={"_timeframe_timestamp": "timestamp"})
@@ -114,6 +118,13 @@ def aggregate_timeframe(df: pd.DataFrame, config: dict, timeframe) -> pd.DataFra
     cols = [col for col in ordered if col in aggregated.columns]
     cols.extend([col for col in aggregated.columns if col not in cols])
     return aggregated[cols].sort_values("timestamp").reset_index(drop=True)
+
+
+def _is_native_timeframe(df: pd.DataFrame, minutes: int) -> bool:
+    if "timeframe_minutes" not in df.columns:
+        return False
+    values = pd.to_numeric(df["timeframe_minutes"], errors="coerce").dropna().unique()
+    return len(values) == 1 and float(values[0]) == float(minutes)
 
 
 def _timeframe_buckets(df: pd.DataFrame, config: dict, minutes: int) -> pd.Series:

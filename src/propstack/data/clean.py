@@ -23,10 +23,11 @@ def validate_ohlc(df: pd.DataFrame) -> pd.Series:
 
 def detect_missing_bars(df: pd.DataFrame) -> pd.DataFrame:
     rows = []
+    freq = _expected_bar_frequency(df)
     for (session_date, label), group in df.groupby(["session_date", "session_label"]):
         if label == "closed" or len(group) < 2:
             continue
-        expected = pd.date_range(group["timestamp"].min(), group["timestamp"].max(), freq="1min")
+        expected = pd.date_range(group["timestamp"].min(), group["timestamp"].max(), freq=freq)
         missing = expected.difference(pd.DatetimeIndex(group["timestamp"]))
         if len(missing):
             rows.append(
@@ -39,6 +40,14 @@ def detect_missing_bars(df: pd.DataFrame) -> pd.DataFrame:
                 }
             )
     return pd.DataFrame(rows)
+
+
+def _expected_bar_frequency(df: pd.DataFrame) -> str:
+    if "timeframe_minutes" in df.columns:
+        values = pd.to_numeric(df["timeframe_minutes"], errors="coerce").dropna().unique()
+        if len(values) == 1 and float(values[0]).is_integer() and values[0] > 0:
+            return f"{int(values[0])}min"
+    return "1min"
 
 
 def apply_continuous_contract(df: pd.DataFrame, config: dict) -> pd.DataFrame:

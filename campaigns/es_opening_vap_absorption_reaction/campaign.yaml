@@ -1,0 +1,137 @@
+campaign_id: es_opening_vap_absorption_reaction
+title: ES Opening VAP Absorption Reaction
+decision: FAIL
+created_at: '2026-06-24'
+instrument: ES
+timeframe: 1m
+edge_family: opening_vap_orderflow_absorption_reaction
+hypothesis: Completed opening-session VAP levels define auction areas of interest; when ES reaches those levels and completed-bar
+  orderflow shows absorption, trapped traders, or same-direction acceptance, next-bar entries may have positive expectancy
+  after realistic ES costs.
+variant_expansion_rationale: 'Eight variants are justified before PnL because the referenced orderflow/AOI playbook has materially
+  distinct mechanics that cannot be represented by a single parameter grid: 30-minute and 60-minute opening value-edge traps,
+  30-minute and 60-minute opening POC reclaims, 30-minute and 60-minute LVN trapped-trader reactions, and 30-minute and 60-minute
+  value-area acceptance continuations. Variants 6-8 are not extra parameter searches; they are predeclared auction-location
+  mechanics inside the same completed-opening-VAP plus orderflow-confirmation edge.'
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the premise that visible support and resistance reference levels can affect intraday order placement
+    and price behavior.
+- title: Do Investors Place Orders to Exploit Technical Analysis?
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2004.00665.x
+  link: https://doi.org/10.1111/j.1540-6261.2004.00665.x
+  relevance: Links visible technical levels to liquidity provision and order placement around reference prices.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates same-direction and adverse orderflow pressure as a microstructure state variable, while this campaign
+    uses completed-bar Sierra proxies rather than full LOB OFI.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates POC, value-area, and low-volume-node auction context as visible intraday reference areas for ES.
+practitioner_prompt_source:
+  title: 74% Win Rate Trader Shares His EXACT OrderFlow Strategy ($2M+ Payouts)
+  source_type: marketing/practitioner video summary supplied by user
+  role_in_campaign: 'Used only to define the discretionary playbook elements to mechanize: AOIs, volume profile, absorption,
+    delta failure, trapped traders, and separate range/trend behavior. Not treated as verified performance evidence.'
+data_needs:
+- ES Sierra 1-minute RTH footprint cache with completed-bar signed volume and footprint imbalance/absorption fields.
+- Opening30 and opening60 VAP POC/VAH/VAL/LVN levels built from raw Sierra trade price-volume rows only during completed 09:30-10:00
+  and 09:30-10:30 RTH windows.
+- Opening VAP fields are unavailable before each opening window completes; entries occur on the next one-minute bar after
+  signal bar close.
+data_quality_caveats:
+- Sierra signed-volume and footprint fields are completed-bar research proxies, not exchange MBO sequencing, queue state,
+  or true discretionary tape reading.
+- The cache does not contain true vendor large-trade prints above 200 lots; footprint imbalance volume is used as a bar-level
+  absorption proxy instead.
+- Any passing result remains a candidate strategy requiring manual chart review, source review, and paper/live incubation.
+lookahead_risks:
+- Opening30 VAP levels are null before 10:00 ET and opening60 VAP levels are null before 10:30 ET in the generated cache.
+- Signals use the completed signal bar only, with entry no earlier than the next one-minute open.
+- No final session volume profile, final daily range, post-entry orderflow, future high/low, or final VWAP is used.
+duplicate_edge_check:
+  active_rejected_edges_checked:
+  - es_true_vap_market_aoi_footprint_trap_reversion
+  - es_true_vap_aoi_breakout_continuation
+  - es_true_vap_value_area_orderflow_acceptance
+  - es_nq_nonconfirming_vap_aoi_trap
+  - es_low_toxicity_aoi_false_breakout
+  conclusion: Eligible as a distinct campaign because prior VAP campaigns use completed prior-session profiles or cross-index
+    confirmation/nonconfirmation, while this edge uses current-session opening-window VAP levels that become available only
+    after the opening auction window completes.
+pre_pnl_density_audit:
+  artifact: research_artifacts/es_opening_vap_absorption_reaction_density_audit_20260624.md
+  detail_csv: research_artifacts/es_opening_vap_absorption_reaction_density_audit_20260624.csv
+  data_source: data/cache/orderflow/es_sierra_footprint_opening_vap_1m_20110103_20260609_rth_ny.parquet
+  decision: approve_for_testing_before_pnl
+  strict_corner: min_probe_ticks=1, min_orderflow_imbalance=0.03, min_footprint_imbalance_volume=20 across the approved 0/1
+    tick and 0.0/0.01/0.03 orderflow grid; every variant exceeded 50 signal sessions per year.
+variants:
+- ovap30_value_trap_1500
+- ovap60_value_trap_1500
+- ovap30_poc_reclaim_1500
+- ovap60_poc_reclaim_1500
+- ovap30_lvn_trap_1500
+- ovap60_lvn_trap_1500
+- ovap30_value_acceptance_1500
+- ovap60_value_acceptance_1500
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - min_probe_ticks
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+rescue_policy:
+  allowed: true
+  scope: per_failed_variant_only_if_explicitly_invoked
+  max_rescues_per_failed_variant: 1
+  forbidden_changes:
+  - entry module
+  - stop-loss module
+  - take-profit module
+  - opening VAP plus orderflow absorption/acceptance thesis
+  - data source or data window
+  - costs, fill assumptions, session definitions, prop rules, or validation gates
+decision_updated_at: '2026-06-24T10:24:19'
+terminal_stage: limited_core_grid_test
+failure_reason: 'All eight predeclared opening VAP absorption/reaction variants failed limited_core_grid_test. Across 432
+  core combinations, only 4 were profitable and 0 passed benchmarks; no branch reached monkey, WFA, Monte Carlo, simulated
+  incubation, acceptance OOS, or candidate reporting. Best top row was ovap60_poc_reclaim_1500: net 302.5, PF 1.0438564697354114,
+  MAR 0.09474234839420437, failure max_consecutive_losses;max_best_day_concentration.'
+result_summary_path: backtest-campaigns/es_opening_vap_absorption_reaction/campaign_test_summary.json
+test_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run1
+  tested_at: '2026-06-24T10:24:19'
+  campaign_summary: backtest-campaigns/es_opening_vap_absorption_reaction/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_opening_vap_absorption_reaction/methodology_audit.md
+  variants_tested: 8
+  variants_passed: 0
+  rescue_attempts_used: 0
+  total_core_combinations: 432
+  profitable_core_iterations: 4
+  benchmark_passing_core_iterations: 0
+  failure_reason: 'All eight predeclared opening VAP absorption/reaction variants failed limited_core_grid_test. Across 432
+    core combinations, only 4 were profitable and 0 passed benchmarks; no branch reached monkey, WFA, Monte Carlo, simulated
+    incubation, acceptance OOS, or candidate reporting. Best top row was ovap60_poc_reclaim_1500: net 302.5, PF 1.0438564697354114,
+    MAR 0.09474234839420437, failure max_consecutive_losses;max_best_day_concentration.'
+  best_variant: ovap60_poc_reclaim_1500
+  best_variant_note: Top row net 302.5, PF 1.0438564697354114, MAR 0.09474234839420437, failure max_consecutive_losses;max_best_day_concentration.

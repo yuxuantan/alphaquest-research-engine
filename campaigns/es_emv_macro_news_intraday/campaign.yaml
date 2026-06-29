@@ -1,0 +1,129 @@
+campaign_id: es_emv_macro_news_intraday
+title: ES EMV Macro-News Intraday
+decision: FAIL
+created_at: '2026-06-29'
+symbol: ES
+dataset_id: es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged monthly newspaper-based equity-market-volatility macro-news states
+  may identify same-day ES RTH risk-off pressure or compensating equity risk-premium
+  states after the cash open.
+rationale: This campaign tests a free, source-supported news-volatility state from
+  FRED/Baker-Bloom-Davis. It is distinct from Sierra orderflow, TBBO, scheduled BLS/FOMC
+  events, daily EPU, OFR financial stress, VIX/VVIX level states, realized-volatility,
+  and prior-level price-action campaigns.
+sources:
+- title: Policy News and Stock Market Volatility
+  authors: Scott R. Baker, Nicholas Bloom, Steven J. Davis, and Kyle Kost
+  year: 2019
+  venue: NBER Working Paper 25720 / later journal version
+  link: https://www.nber.org/papers/w25720
+  relevance: Introduces newspaper-based Equity Market Volatility trackers and documents
+    their relationship with VIX and realized S&P 500 volatility.
+- title: 'Equity Market Volatility Tracker: Macroeconomic News And Outlook'
+  authors: Scott R. Baker, Nicholas Bloom, and Steven J. Davis via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/EMVMACRONEWS
+  relevance: Official FRED-hosted monthly EMV macro-news series used as the primary
+    lagged feature.
+- title: Equity Market Volatility Tracker monthly data
+  authors: Economic Policy Uncertainty project
+  year: 2026
+  venue: PolicyUncertainty.com
+  link: https://www.policyuncertainty.com/EMV_monthly.html
+  relevance: Primary project page describing the EMV tracker family and category-specific
+    monthly trackers.
+data_needs:
+- timezone-aware ES RTH 1-minute OHLCV bars in America/New_York
+- FRED monthly EMV macro-news category series
+- derived session feature file using only observations available after month-end plus
+  21 calendar days
+- same-day flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- EMV is a monthly newspaper-count index, not intraday market microstructure data.
+- The exact public release timestamp is not modeled; a conservative 21-calendar-day
+  post-month-end lag is used.
+- Sierra data is aggregated bar-level data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+lookahead_risks:
+- Using same-month or not-yet-published EMV observations would leak information; forbidden.
+- Signals use only a completed ES bar at the configured timestamp and lagged monthly
+  EMV state.
+- Rolling ranks are computed from the monthly feature history before session merge,
+  then merged by availability_date.
+- No final session high/low, final VWAP, future returns, or post-entry EMV values
+  are used.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_reviewed: true
+  related_failed_edges_checked:
+  - es_epu_policy_uncertainty_intraday
+  - es_ofr_financial_stress_intraday
+  - es_cboe_vix_level_state_intraday
+  - es_cboe_vix_term_structure_intraday
+  - es_vvix_tail_risk_intraday
+  - es_realized_vol_of_vol_state
+  - es_volatility_managed_intraday_premium
+  - es_bls_macro_release_day_drift
+  - es_fomc_pre_announcement_drift
+  conclusion: Proceed as a bounded new-source campaign. The feature source is monthly
+    newspaper-based EMV macro-news state, not daily EPU, OFR stress, option-implied
+    volatility level/term structure, scheduled event drift, realized volatility, or
+    Sierra orderflow.
+feature_construction:
+  builder: tools/build_es_emv_macro_news_features.py
+  fred_sources:
+  - EMVMACRONEWS
+  - EMVMACROBUS
+  - EMVMACROLABORMKT
+  - EMVMACROINTEREST
+  cache_dir: data/external/fred_emv_macro_news
+  output: data/external/es_emv_macro_news_features_20110103_20260609.csv
+  rows: 3817
+  valid_rank_rows: 3817
+  lookahead_control: monthly EMV observation eligible after observation month-end
+    plus 21 calendar days
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+parameter_space:
+  emv_rank_min:
+  - 0.6
+  - 0.65
+  - 0.7
+  emv_change_rank_min:
+  - 0.6
+  - 0.65
+  - 0.7
+  stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 27
+variants:
+- high_macro_news_short_1030
+- high_macro_news_rebound_long_1130
+- rising_macro_news_short_1000
+- high_interest_news_short_1200
+- high_labor_news_short_1330
+rescue_policy:
+  allowed_by_default: false
+  note: No post-result rescue is allowed without explicit user approval.
+outcome:
+  completed_at: '2026-06-29T15:22:00+08:00'
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  summary: 'All five official variants failed limited_core_grid_test: 7/135 profitable
+    combinations, 1 benchmark-passing combinations, and 0 Apex-rule-violating combinations;
+    no downstream WFA/Monte Carlo/incubation/acceptance evidence.'
+  aggregate_report: backtest-campaigns/es_emv_macro_news_intraday/campaign_test_summary.json
+  results_csv: backtest-campaigns/es_emv_macro_news_intraday/campaign_results.csv
+  candidate_strategy_report_created: false

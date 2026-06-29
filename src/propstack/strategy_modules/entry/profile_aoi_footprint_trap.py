@@ -38,33 +38,44 @@ class ProfileAoiFootprintTrapEntry:
         self.profile_source = str(params.get("profile_source", "computed_prior_ohlcv")).lower()
         self.cached_profile_prefix = str(params.get("cached_profile_prefix", "prior_vap"))
         self.min_prior_profile_bars = int(params.get("min_prior_profile_bars", 200))
+        self.min_developing_profile_bars = int(
+            params.get("min_developing_profile_bars", self.min_prior_profile_bars)
+        )
         self.max_profile_distance_ticks = int(params.get("max_profile_distance_ticks", 12))
         self.min_probe_ticks = float(params.get("min_probe_ticks", 1))
         self.confirmation_ticks = float(params.get("confirmation_ticks", 0))
         self.min_absorption_volume = float(params.get("min_absorption_volume", 20))
         self.min_adverse_delta_imbalance = float(params.get("min_adverse_delta_imbalance", 0.0))
         self.max_trades_per_day = int(params.get("max_trades_per_day", 1))
+        self.max_signals_per_session = int(params.get("max_signals_per_session", 1))
         self.allow_long = bool(params.get("allow_long", True))
         self.allow_short = bool(params.get("allow_short", True))
         self.current_session = None
         self.current_session_bars: list[pd.Series] = []
+        self.current_session_volume_by_tick: dict[int, float] = {}
+        self.current_session_profile_bar_count = 0
+        self.current_session_profile_last_timestamp: pd.Timestamp | None = None
         self.prior_profile: dict | None = None
         self.signaled_sessions: set = set()
+        self.signals_by_session: dict = {}
         self._validate()
 
     def on_bar_close(self, bar: pd.Series, trades_today: int = 0) -> Signal | None:
         self._roll_session(bar)
         if not bool(bar.get("is_rth", False)):
             return None
+        if self.profile_source == "developing_session_ohlcv":
+            self._add_bar_to_developing_profile(bar)
         session_date = bar.get("session_date")
         signal = None
         if (
             self._profile_available(bar)
-            and session_date not in self.signaled_sessions
+            and self.signals_by_session.get(session_date, 0) < self.max_signals_per_session
             and trades_today < self.max_trades_per_day
         ):
             signal = self._signal_from_completed_bar(bar)
             if signal is not None:
+                self.signals_by_session[session_date] = self.signals_by_session.get(session_date, 0) + 1
                 self.signaled_sessions.add(session_date)
         self.current_session_bars.append(bar.copy())
         return signal
@@ -79,6 +90,9 @@ class ProfileAoiFootprintTrapEntry:
         self.prior_profile = self._build_profile(self.current_session, self.current_session_bars)
         self.current_session = session_date
         self.current_session_bars = []
+        self.current_session_volume_by_tick = {}
+        self.current_session_profile_bar_count = 0
+        self.current_session_profile_last_timestamp = None
 
     def _signal_from_completed_bar(self, bar: pd.Series) -> Signal | None:
         timestamp = pd.Timestamp(bar["timestamp"])
@@ -177,7 +191,8 @@ class ProfileAoiFootprintTrapEntry:
         return candidates
 
     def _opening_range(self) -> dict | None:
-        if len(self.current_session_bars) < self.opening_range_minutes:
+        expected_bars = int(math.ceil(self.opening_range_minutes / self.bar_interval_minutes))
+        if len(self.current_session_bars) < expected_bars:
             return None
         first = self.current_session_bars[0]
         session_start = pd.Timestamp(first["timestamp"])
@@ -187,7 +202,7 @@ class ProfileAoiFootprintTrapEntry:
             for bar in self.current_session_bars
             if pd.Timestamp(bar["timestamp"]) < opening_end
         ]
-        if len(opening_bars) < self.opening_range_minutes:
+        if len(opening_bars) < expected_bars:
             return None
         return {
             "high": max(float(bar["high"]) for bar in opening_bars),
@@ -197,12 +212,10 @@ class ProfileAoiFootprintTrapEntry:
         }
 
     def _profile_available(self, bar: pd.Series) -> bool:
-        if self.profile_source == "cached_prior_vap":
-            return self._profile_from_cached_columns(bar) is not None
-        return self.prior_profile is not None
+        return self._active_profile(bar) is not None
 
     def _nearest_profile_level(self, aoi_level: float, bar: pd.Series | None = None) -> dict | None:
-        profile = self._profile_from_cached_columns(bar) if self.profile_source == "cached_prior_vap" else self.prior_profile
+        profile = self._active_profile(bar)
         profile = profile or {}
         levels = profile.get("levels") or []
         if not levels:
@@ -216,10 +229,45 @@ class ProfileAoiFootprintTrapEntry:
             "profile_level_type": best["type"],
             "profile_level_price": float(best["price"]),
             "profile_distance_ticks": distance / self.tick_size,
+            "profile_source": self.profile_source,
+            "profile_session": profile.get("session_date"),
+            "profile_total_volume": profile.get("total_volume"),
+            "profile_bars": profile.get("bar_count"),
             "prior_profile_session": profile.get("session_date"),
             "prior_profile_total_volume": profile.get("total_volume"),
             "prior_profile_bars": profile.get("bar_count"),
         }
+
+    def _active_profile(self, bar: pd.Series | None = None) -> dict | None:
+        if self.profile_source in {"cached_prior_vap", "cached_developing_vap", "cached_vap"}:
+            return self._profile_from_cached_columns(bar)
+        if self.profile_source == "developing_session_ohlcv":
+            if bar is None:
+                return self._profile_from_volume_by_tick(
+                    self.current_session,
+                    self.current_session_volume_by_tick,
+                    self.current_session_profile_bar_count,
+                    self.min_developing_profile_bars,
+                )
+            timestamp = _bar_timestamp(bar)
+            if timestamp is not None and timestamp == self.current_session_profile_last_timestamp:
+                return self._profile_from_volume_by_tick(
+                    bar.get("session_date"),
+                    self.current_session_volume_by_tick,
+                    self.current_session_profile_bar_count,
+                    self.min_developing_profile_bars,
+                )
+            volume_by_tick = dict(self.current_session_volume_by_tick)
+            bar_count = self.current_session_profile_bar_count
+            if self._accumulate_profile_bar(volume_by_tick, bar):
+                bar_count += 1
+            return self._profile_from_volume_by_tick(
+                bar.get("session_date"),
+                volume_by_tick,
+                bar_count,
+                self.min_developing_profile_bars,
+            )
+        return self.prior_profile
 
     def _profile_from_cached_columns(self, bar: pd.Series | None) -> dict | None:
         if bar is None:
@@ -229,6 +277,7 @@ class ProfileAoiFootprintTrapEntry:
             ("poc", f"{prefix}_poc"),
             ("vah", f"{prefix}_vah"),
             ("val", f"{prefix}_val"),
+            ("lvn", f"{prefix}_lvn_near_close"),
             ("lvn_near_high", f"{prefix}_lvn_near_high"),
             ("lvn_near_low", f"{prefix}_lvn_near_low"),
         ]
@@ -253,7 +302,9 @@ class ProfileAoiFootprintTrapEntry:
             "val": _finite_float(bar.get(f"{prefix}_val")),
             "lvn_count": _finite_float(bar.get(f"{prefix}_lvn_count")),
             "total_volume": _finite_float(bar.get(f"{prefix}_total_volume")),
-            "bar_count": _finite_float(bar.get(f"{prefix}_price_levels")),
+            "bar_count": _finite_float(bar.get(f"{prefix}_bars"))
+            or _finite_float(bar.get(f"{prefix}_price_levels")),
+            "price_levels": _finite_float(bar.get(f"{prefix}_price_levels")),
         }
 
     def _long_trap_confirms(
@@ -370,31 +421,58 @@ class ProfileAoiFootprintTrapEntry:
             report_fields=fields,
         )
 
-    def _build_profile(self, session_date, bars: list[pd.Series]) -> dict | None:
-        if len(bars) < self.min_prior_profile_bars:
+    def _build_profile(
+        self,
+        session_date,
+        bars: list[pd.Series],
+        min_bars: int | None = None,
+    ) -> dict | None:
+        min_bars = self.min_prior_profile_bars if min_bars is None else int(min_bars)
+        if len(bars) < min_bars:
             return None
         volume_by_tick: dict[int, float] = {}
         bar_count = 0
         for bar in bars:
-            if not bool(bar.get("is_rth", True)):
-                continue
-            volume = _finite_float(bar.get("volume"))
-            low = _finite_float(bar.get("low"))
-            high = _finite_float(bar.get("high"))
-            if volume is None or volume <= 0 or low is None or high is None:
-                continue
-            low_tick = math.floor(low / self.tick_size)
-            high_tick = math.ceil(high / self.tick_size)
-            if high_tick < low_tick:
-                continue
-            ticks = list(range(low_tick, high_tick + 1))
-            if not ticks:
-                continue
-            per_tick = volume / len(ticks)
-            for tick in ticks:
-                volume_by_tick[tick] = volume_by_tick.get(tick, 0.0) + per_tick
-            bar_count += 1
-        if bar_count < self.min_prior_profile_bars or not volume_by_tick:
+            if self._accumulate_profile_bar(volume_by_tick, bar):
+                bar_count += 1
+        return self._profile_from_volume_by_tick(session_date, volume_by_tick, bar_count, min_bars)
+
+    def _add_bar_to_developing_profile(self, bar: pd.Series) -> None:
+        timestamp = _bar_timestamp(bar)
+        if timestamp is not None and timestamp == self.current_session_profile_last_timestamp:
+            return
+        if self._accumulate_profile_bar(self.current_session_volume_by_tick, bar):
+            self.current_session_profile_bar_count += 1
+            self.current_session_profile_last_timestamp = timestamp
+
+    def _accumulate_profile_bar(self, volume_by_tick: dict[int, float], bar: pd.Series) -> bool:
+        if not bool(bar.get("is_rth", True)):
+            return False
+        volume = _finite_float(bar.get("volume"))
+        low = _finite_float(bar.get("low"))
+        high = _finite_float(bar.get("high"))
+        if volume is None or volume <= 0 or low is None or high is None:
+            return False
+        low_tick = math.floor(low / self.tick_size)
+        high_tick = math.ceil(high / self.tick_size)
+        if high_tick < low_tick:
+            return False
+        ticks = list(range(low_tick, high_tick + 1))
+        if not ticks:
+            return False
+        per_tick = volume / len(ticks)
+        for tick in ticks:
+            volume_by_tick[tick] = volume_by_tick.get(tick, 0.0) + per_tick
+        return True
+
+    def _profile_from_volume_by_tick(
+        self,
+        session_date,
+        volume_by_tick: dict[int, float],
+        bar_count: int,
+        min_bars: int,
+    ) -> dict | None:
+        if bar_count < min_bars or not volume_by_tick:
             return None
 
         ticks = sorted(volume_by_tick)
@@ -469,10 +547,21 @@ class ProfileAoiFootprintTrapEntry:
             raise ValueError("entry.params.value_area_fraction must be in (0, 1].")
         if not 0 < self.lvn_quantile < 1:
             raise ValueError("entry.params.lvn_quantile must be in (0, 1).")
-        if self.profile_source not in {"computed_prior_ohlcv", "cached_prior_vap"}:
-            raise ValueError("entry.params.profile_source must be computed_prior_ohlcv or cached_prior_vap.")
+        if self.profile_source not in {
+            "computed_prior_ohlcv",
+            "cached_prior_vap",
+            "cached_developing_vap",
+            "cached_vap",
+            "developing_session_ohlcv",
+        }:
+            raise ValueError(
+                "entry.params.profile_source must be computed_prior_ohlcv, cached_prior_vap, "
+                "cached_developing_vap, cached_vap, or developing_session_ohlcv."
+            )
         if self.min_prior_profile_bars < 1:
             raise ValueError("entry.params.min_prior_profile_bars must be positive.")
+        if self.min_developing_profile_bars < 1:
+            raise ValueError("entry.params.min_developing_profile_bars must be positive.")
         if self.max_profile_distance_ticks < 0:
             raise ValueError("entry.params.max_profile_distance_ticks must be non-negative.")
         if self.min_probe_ticks < 0 or self.confirmation_ticks < 0:
@@ -483,6 +572,8 @@ class ProfileAoiFootprintTrapEntry:
             raise ValueError("entry.params.min_adverse_delta_imbalance must be non-negative.")
         if self.max_trades_per_day < 1:
             raise ValueError("entry.params.max_trades_per_day must be at least one.")
+        if self.max_signals_per_session < 1:
+            raise ValueError("entry.params.max_signals_per_session must be at least one.")
 
 
 def _quantile(values: list[float], fraction: float) -> float:
@@ -491,6 +582,13 @@ def _quantile(values: list[float], fraction: float) -> float:
         return float("nan")
     index = int(math.floor((len(ordered) - 1) * fraction))
     return ordered[max(0, min(index, len(ordered) - 1))]
+
+
+def _bar_timestamp(bar: pd.Series) -> pd.Timestamp | None:
+    value = bar.get("timestamp")
+    if value is None or pd.isna(value):
+        return None
+    return pd.Timestamp(value)
 
 
 def _finite_float(value) -> float | None:

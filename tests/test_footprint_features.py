@@ -2,6 +2,7 @@ import pandas as pd
 
 from propstack.data.features import build_features
 from propstack.data.footprint import add_footprint_imbalance_features, price_volume_from_prints
+from tools.build_sierra_footprint_feature_cache import aggregate_base_bars, _floor_local_timestamp_to_rth_bar
 
 
 def test_footprint_features_detect_sell_absorption_below_close():
@@ -39,6 +40,61 @@ def test_footprint_features_detect_sell_absorption_below_close():
     assert out.iloc[0]["footprint_sell_imbalance_below_close"] == 1.0
     assert out.iloc[0]["footprint_absorption_long"] == 1.0
     assert out.iloc[0]["footprint_absorption_short"] == 0.0
+
+
+def test_footprint_builder_uses_rth_anchored_three_minute_buckets():
+    timestamps = pd.DatetimeIndex(
+        [
+            pd.Timestamp("2024-01-03 09:30:00", tz="America/New_York"),
+            pd.Timestamp("2024-01-03 09:32:59", tz="America/New_York"),
+            pd.Timestamp("2024-01-03 09:33:00", tz="America/New_York"),
+        ]
+    )
+
+    buckets = _floor_local_timestamp_to_rth_bar(timestamps, 3)
+
+    assert list(buckets) == [
+        pd.Timestamp("2024-01-03 09:30:00", tz="America/New_York"),
+        pd.Timestamp("2024-01-03 09:30:00", tz="America/New_York"),
+        pd.Timestamp("2024-01-03 09:33:00", tz="America/New_York"),
+    ]
+
+
+def test_footprint_builder_aggregates_base_bars_to_native_three_minute_cache_rows():
+    timestamps = pd.date_range("2024-01-03 09:30:00", periods=3, freq="1min")
+    base = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "symbol": ["ES"] * 3,
+            "contract_symbol": ["ESH24"] * 3,
+            "open": [100.0, 100.5, 101.0],
+            "high": [100.75, 101.25, 101.5],
+            "low": [99.75, 100.25, 100.75],
+            "close": [100.5, 101.0, 101.25],
+            "volume": [10, 20, 30],
+            "signed_volume": [1, -2, 3],
+            "buy_volume": [6, 9, 17],
+            "sell_volume": [5, 11, 14],
+            "large10_signed_volume": [0, 1, 0],
+            "large20_signed_volume": [0, 0, 1],
+            "large10_volume": [0, 2, 0],
+            "large20_volume": [0, 0, 3],
+            "trades": [1, 2, 3],
+        }
+    )
+
+    out = aggregate_base_bars(base, bar_minutes=3)
+    row = out.iloc[0]
+
+    assert len(out) == 1
+    assert row["timestamp"] == pd.Timestamp("2024-01-03 09:30:00")
+    assert row["open"] == 100.0
+    assert row["high"] == 101.5
+    assert row["low"] == 99.75
+    assert row["close"] == 101.25
+    assert row["volume"] == 60
+    assert row["timeframe_minutes"] == 3
+    assert row["source_bar_count"] == 3
 
 
 def test_footprint_features_detect_buy_absorption_above_close():

@@ -12,6 +12,7 @@ import pyarrow.parquet as pq
 from propstack.data.footprint import FOOTPRINT_FEATURE_COLUMNS, add_footprint_imbalance_features
 from tools.build_sierra_trade_orderflow_cache import (
     PRINT_COLUMNS,
+    RTH_START_MINUTE,
     active_periods,
     datetime_to_scid_us,
     is_bar_like_contract,
@@ -29,6 +30,8 @@ def main() -> None:
         base = base[base["timestamp"] <= pd.Timestamp(args.end_date) + pd.Timedelta(days=1)].copy()
     if base.empty:
         raise SystemExit("Base cache selection is empty.")
+    if args.bar_minutes > 1:
+        base = aggregate_base_bars(base, bar_minutes=args.bar_minutes)
 
     files = {path.stem.replace("-CME", ""): path for path in args.raw_dir.glob("*.parquet")}
     periods = active_periods(args.roll_calendar, files, args.root_symbol)
@@ -51,6 +54,7 @@ def main() -> None:
             end=period["end"],
             tick_size=args.tick_size,
             batch_size=args.batch_size,
+            bar_minutes=args.bar_minutes,
         )
         if price_volume.empty:
             period_reports.append({"symbol": symbol, "status": "empty_price_volume"})
@@ -111,6 +115,7 @@ def main() -> None:
         "first_timestamp": str(out["timestamp"].min()),
         "last_timestamp": str(out["timestamp"].max()),
         "tick_size": args.tick_size,
+        "bar_minutes": args.bar_minutes,
         "imbalance_ratio": args.imbalance_ratio,
         "min_level_volume": args.min_level_volume,
         "duplicate_timestamps": int(out.duplicated("timestamp").sum()),
@@ -145,10 +150,46 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--start-date")
     parser.add_argument("--end-date")
     parser.add_argument("--tick-size", type=float, default=0.25)
+    parser.add_argument("--bar-minutes", type=int, default=1)
     parser.add_argument("--imbalance-ratio", type=float, default=3.0)
     parser.add_argument("--min-level-volume", type=float, default=10.0)
     parser.add_argument("--batch-size", type=int, default=1_000_000)
     return parser.parse_args()
+
+
+def aggregate_base_bars(base: pd.DataFrame, *, bar_minutes: int) -> pd.DataFrame:
+    if bar_minutes <= 0:
+        raise ValueError("--bar-minutes must be positive.")
+    if bar_minutes == 1:
+        return base.sort_values("timestamp").reset_index(drop=True).copy()
+
+    out = base.sort_values("timestamp").reset_index(drop=True).copy()
+    timestamps = pd.to_datetime(out["timestamp"])
+    minute_of_day = timestamps.dt.hour * 60 + timestamps.dt.minute
+    bucket_minutes = ((minute_of_day - RTH_START_MINUTE) // bar_minutes) * bar_minutes + RTH_START_MINUTE
+    out["_bar_timestamp"] = timestamps.dt.normalize() + pd.to_timedelta(bucket_minutes, unit="m")
+
+    group_cols = ["_bar_timestamp", "symbol", "contract_symbol"]
+    agg = {
+        "open": ("open", "first"),
+        "high": ("high", "max"),
+        "low": ("low", "min"),
+        "close": ("close", "last"),
+        "volume": ("volume", "sum"),
+        "signed_volume": ("signed_volume", "sum"),
+        "buy_volume": ("buy_volume", "sum"),
+        "sell_volume": ("sell_volume", "sum"),
+        "large10_signed_volume": ("large10_signed_volume", "sum"),
+        "large20_signed_volume": ("large20_signed_volume", "sum"),
+        "large10_volume": ("large10_volume", "sum"),
+        "large20_volume": ("large20_volume", "sum"),
+        "trades": ("trades", "sum"),
+        "source_bar_count": ("timestamp", "count"),
+    }
+    aggregated = out.groupby(group_cols, sort=True, dropna=False).agg(**agg).reset_index()
+    aggregated = aggregated.rename(columns={"_bar_timestamp": "timestamp"})
+    aggregated["timeframe_minutes"] = int(bar_minutes)
+    return aggregated.sort_values("timestamp").reset_index(drop=True)
 
 
 def aggregate_footprint_price_volume_period(
@@ -158,6 +199,7 @@ def aggregate_footprint_price_volume_period(
     end: datetime,
     tick_size: float,
     batch_size: int,
+    bar_minutes: int = 1,
 ) -> pd.DataFrame:
     start_us = datetime_to_scid_us(start)
     end_us = datetime_to_scid_us(end) + 1
@@ -169,6 +211,7 @@ def aggregate_footprint_price_volume_period(
             start_us=start_us,
             end_us=end_us,
             tick_size=tick_size,
+            bar_minutes=bar_minutes,
         )
         if not part.empty:
             parts.append(part)
@@ -176,17 +219,26 @@ def aggregate_footprint_price_volume_period(
         return pd.DataFrame(columns=["timestamp", "price", "volume", "bid_volume", "ask_volume"])
     combined = pd.concat(parts, ignore_index=True)
     combined = (
-        combined.groupby(["minute_us", "price"], sort=True, observed=True)
+        combined.groupby(["bar_us", "price"], sort=True, observed=True)
         .agg(volume=("volume", "sum"), bid_volume=("bid_volume", "sum"), ask_volume=("ask_volume", "sum"))
         .reset_index()
     )
     combined["timestamp"] = pd.to_datetime(
-        [pd.Timestamp("1899-12-30") + pd.Timedelta(microseconds=int(value)) for value in combined["minute_us"]]
+        [pd.Timestamp("1899-12-30") + pd.Timedelta(microseconds=int(value)) for value in combined["bar_us"]]
     )
     return combined[["timestamp", "price", "volume", "bid_volume", "ask_volume"]]
 
 
-def aggregate_footprint_price_volume_batch(batch, *, start_us: int, end_us: int, tick_size: float) -> pd.DataFrame:
+def aggregate_footprint_price_volume_batch(
+    batch,
+    *,
+    start_us: int,
+    end_us: int,
+    tick_size: float,
+    bar_minutes: int = 1,
+) -> pd.DataFrame:
+    if bar_minutes <= 0:
+        raise ValueError("--bar-minutes must be positive.")
     ts = batch.column(batch.schema.get_field_index("scid_datetime_us")).to_numpy(zero_copy_only=False).astype(
         np.int64, copy=False
     )
@@ -214,10 +266,10 @@ def aggregate_footprint_price_volume_batch(batch, *, start_us: int, end_us: int,
     bid = bid[rth_mask]
     ask = ask[rth_mask]
     price = np.round(price / tick_size) * tick_size
-    minute_us = new_york_datetime_to_scid_us(local_timestamp.floor("min"))
+    bar_us = new_york_datetime_to_scid_us(_floor_local_timestamp_to_rth_bar(local_timestamp, bar_minutes))
     frame = pd.DataFrame(
         {
-            "minute_us": minute_us,
+            "bar_us": bar_us,
             "price": price,
             "volume": volume,
             "bid_volume": bid,
@@ -225,10 +277,19 @@ def aggregate_footprint_price_volume_batch(batch, *, start_us: int, end_us: int,
         }
     )
     return (
-        frame.groupby(["minute_us", "price"], sort=True, observed=True)
+        frame.groupby(["bar_us", "price"], sort=True, observed=True)
         .agg(volume=("volume", "sum"), bid_volume=("bid_volume", "sum"), ask_volume=("ask_volume", "sum"))
         .reset_index()
     )
+
+
+def _floor_local_timestamp_to_rth_bar(local_timestamp: pd.DatetimeIndex, bar_minutes: int) -> pd.DatetimeIndex:
+    floored = local_timestamp.floor("min")
+    if bar_minutes == 1:
+        return floored
+    minute_of_day = floored.hour * 60 + floored.minute
+    bucket_minutes = ((minute_of_day - RTH_START_MINUTE) // bar_minutes) * bar_minutes + RTH_START_MINUTE
+    return floored.normalize() + pd.to_timedelta(bucket_minutes, unit="m")
 
 
 def _filter_periods(periods: list[dict], start: pd.Timestamp, end: pd.Timestamp) -> list[dict]:

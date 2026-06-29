@@ -49,6 +49,8 @@ data_needs:
 - Prior-session approximate POC, VAH, VAL, and LVNs built inside the entry module from completed
   prior RTH bars only.
 - Opening range high/low available only after the first 30 completed RTH one-minute bars.
+- User-requested corrected 3-minute branch uses a generated Sierra developing VAP cache built
+  from current-session price-level bid/ask volume through each completed native 3-minute bar.
 data_quality_caveats:
 - The supplied video discusses large trades above 200 ES lots, but the validated full-history
   local cache has no vendor-equivalent >200-lot print field. That branch is data-gated and
@@ -57,6 +59,9 @@ data_quality_caveats:
   not tested in this campaign.
 - Prior profile levels are approximated by distributing each completed 1-minute bar volume
   uniformly across its high-low tick range; this is not true volume-at-price.
+- Corrected run4 replaces the OHLCV profile approximation for the 3-minute trend branch with
+  Sierra SCID-derived developing volume-at-price fields. This is materially better for LVN
+  identification, but it is still not MBO/queue reconstruction or full DOM sequencing.
 - Sierra footprint imbalance and absorption fields are completed-bar research fields, not
   full queue reconstruction.
 lookahead_risks:
@@ -64,6 +69,8 @@ lookahead_risks:
   after the previous RTH session is complete.
 - Opening-range levels are unavailable until the first 30 RTH bars have closed.
 - Signals use only the completed signal bar; entry is no earlier than the next 1-minute open.
+- Corrected run4 developing VAP fields are blank until 10 completed 3-minute RTH bars exist,
+  then each row uses only current-session price-level volume through that completed bar.
 - No final current-session VWAP, final profile, final daily range, future high/low, future
   footprint, or future orderflow is used.
 pre_pnl_density_audit:
@@ -106,3 +113,214 @@ test_result:
   failure_reason: All five predeclared variants failed limited_core_grid_test; no variant
     reached WFA, Monte Carlo, simulated incubation, or acceptance OOS.
   rescue_attempts_used: 0
+user_requested_3m_run2:
+  decision: SUPERSEDED_FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run2
+  tested_at: '2026-06-24'
+  source_video: https://www.youtube.com/watch?v=hvyf6frvCcA
+  config_root: campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_3m_trend_model_run2
+  native_3m_cache: data/cache/orderflow/es_sierra_footprint_imbalance_3m_20101214_20260610_full_rth_ny.parquet
+  native_3m_cache_validation: data/cache/orderflow/es_sierra_footprint_imbalance_3m_20101214_20260610_full_rth_ny.validation.json
+  campaign_summary: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/methodology_audit.md
+  variants_tested: 5
+  variants_passed: 0
+  total_combinations: 405
+  profitable_combinations: 21
+  benchmark_passing_combinations: 0
+  apex_rule_violating_iterations: 0
+  failure_reason: The user-requested native 3-minute trend-model branch failed limited_core_grid_test;
+    no 3-minute variant reached monkey, WFA, Monte Carlo, simulated incubation, or acceptance OOS.
+  superseded_by: user_requested_3m_sierra_developing_vap_run4
+  supersession_reason: Run2 used native 3-minute footprint absorption but interpreted the LVN
+    from the earlier prior/frozen profile path. The user clarified that the AOI should be the
+    same-day developing profile.
+  caveats:
+  - The run uses native 3-minute Sierra price-level footprint absorption rebuilt from raw local Sierra
+    prints, not a vendor-equivalent >200-lot large-print field.
+  - Prior profile levels remain OHLCV-distributed approximations, not true full-session VAP.
+  - The delta-shift variant had a narrow profitable subset but 0 benchmark-passing combinations,
+    so it is rejected rather than promoted.
+user_requested_3m_run3:
+  decision: SUPERSEDED_INCOMPLETE
+  terminal_stage: limited_core_grid_test
+  run_id: run3
+  tested_at: '2026-06-24'
+  config_root: campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_3m_developing_profile_run3
+  superseded_by: user_requested_3m_sierra_developing_vap_run4
+  supersession_reason: Run3 corrected the profile timing to current-session developing profile
+    but still used the OHLCV-distributed profile approximation. It was interrupted after the user
+    correctly pointed out that Sierra price-level/tick data is the more accurate LVN source.
+  completed_variants_before_supersession: 4
+user_requested_3m_sierra_developing_vap_run4:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run4
+  tested_at: '2026-06-24'
+  source_video: https://www.youtube.com/watch?v=hvyf6frvCcA
+  config_root: campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_3m_sierra_developing_vap_run4
+  sierra_developing_vap_cache: data/cache/orderflow/es_sierra_footprint_developing_vap_3m_20101214_20260610_full_rth_ny.parquet
+  sierra_developing_vap_cache_validation: data/cache/orderflow/es_sierra_footprint_developing_vap_3m_20101214_20260610_full_rth_ny.validation.json
+  campaign_summary: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/methodology_audit.md
+  variants_tested: 5
+  variants_passed: 0
+  total_combinations: 405
+  profitable_combinations: 0
+  benchmark_passing_combinations: 0
+  apex_rule_violating_iterations: 0
+  superseded_by: user_exact_video_run5
+  supersession_reason: Run4 corrected LVN measurement to current-session Sierra developing
+    VAP, but did not yet implement the transcript's explicit four-criterion AOI gate with
+    overnight levels and ES 200-lot big-trade aggregate proxy.
+  failure_reason: The corrected native 3-minute Sierra developing VAP branch failed limited_core_grid_test;
+    all five variants had 0 profitable combinations and 0 benchmark-passing combinations, so no variant
+    reached monkey, WFA, Monte Carlo, simulated incubation, or acceptance OOS.
+  mechanics_summary:
+  - LVNs are derived from current-session Sierra price-level bid/ask volume aggregated through
+    the completed signal bar, using the lower 20% volume quantile and the LVN nearest the signal close.
+  - Trend state requires the completed bar to be beyond the 30 elapsed-minute opening range and
+    beyond developing VAH/VAL in the trade direction.
+  - Price reaches the AOI when the completed pullback bar's low/high is within the configured
+    profile-distance band around that Sierra developing LVN, followed by completed-bar absorption
+    and next-3-minute-open entry.
+user_exact_video_run5:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  run_id: run5
+  tested_at: '2026-06-24'
+  source_video: https://www.youtube.com/watch?v=hvyf6frvCcA
+  config_root: campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_exact_video_run5
+  exact_video_proxy_cache: data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet
+  exact_video_proxy_cache_validation: data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.validation.json
+  campaign_summary: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/methodology_audit.md
+  variants_tested: 5
+  variants_passed: 0
+  configured_full_subset:
+    start_date: '2012-01-03'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  resolved_limited_core_subset:
+    start_date: '2012-02-22'
+    end_date: '2013-07-31'
+    session_labels:
+    - RTH
+  total_combinations: 405
+  profitable_combinations: 0
+  benchmark_passing_combinations: 0
+  apex_rule_violating_iterations: 0
+  failure_reason: All five exact-video proxy variants failed limited_core_grid_test on the
+    repo's seeded shortlist slice; no variant reached monkey, WFA, Monte Carlo, simulated
+    incubation, or acceptance OOS.
+  mechanics_summary:
+  - >-
+    AOI requires at least two of the video's four criteria: market-generated levels, current-session
+    developing volume profile/LVN, ES large-200 aggregate activity, and delta activity.
+  - >-
+    Market-generated levels include prior RTH high/low, overnight high/low, and only data-present
+    ORB fields. Exact 30-second ORB is unavailable and is not approximated.
+  - >-
+    Volume profile/LVNs use current-session Sierra price-level VAP through the completed 3-minute
+    signal bar, never the final session profile.
+  - >-
+    Model 1 range variants trade false breaks at developing VAH/VAL with absorption/trapped-flow
+    confirmation and structural targets at midpoint or the opposite value edge.
+  - >-
+    Model 2 trend variants wait for acceptance above/below developing value, pullback into an LVN,
+    absorption/trapped-flow confirmation, and trend-direction delta shift, then target prior structural
+    highs/lows when valid.
+  - >-
+    Entry is next 3-minute open after the completed signal bar. Stops sit beyond the signal-bar
+    wick/AOI invalidation using `sweep_extreme`. Targets use `signal_price` with fixed-R fallback.
+  data_gates:
+  - >-
+    Historical cache has no exact 30-second ORB columns, so that confluence remains disabled.
+  - >-
+    Live tape speed, DOM queue behavior, and MBO bubble sequencing are unavailable in the cache.
+  - >-
+    Partial trims, discretionary add-ons, and dynamic trailing remainder are not represented by
+    the single-target staged backtest engine.
+user_exact_video_quality_run6:
+  decision: FAIL
+  terminal_stage: limited_monkey_test
+  run_id: run6
+  tested_at: '2026-06-24'
+  source_video: https://www.youtube.com/watch?v=hvyf6frvCcA
+  config_root: campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_exact_video_quality_run6
+  campaign_summary: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/campaign_test_summary.json
+  methodology_audit: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/methodology_audit.md
+  variants_tested: 5
+  variants_passed: 0
+  core_passing_variants: 1
+  limited_monkey_failed_variants: 1
+  configured_full_subset:
+    start_date: '2012-01-03'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  resolved_limited_core_subset:
+    start_date: '2012-02-22'
+    end_date: '2013-07-31'
+    session_labels:
+    - RTH
+  total_combinations: 270
+  profitable_combinations: 46
+  benchmark_passing_combinations: 0
+  apex_rule_violating_iterations: 0
+  failure_reason: >-
+    One run6 quality-filter variant passed limited_core_grid_test, but it failed limited_monkey_test.
+    The other four run6 variants failed limited_core_grid_test. No run6 variant reached WFA,
+    Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.
+  mechanics_summary:
+  - >-
+    Run6 is a result-informed quality-filter branch after run5 failed, not an exact-video proxy.
+  - >-
+    It keeps the video AOI/LVN/orderflow edge family but raises AOI confluence thresholds,
+    optionally requires stronger directional delta in trend variants, and adds minimum structural
+    target distance through `tp.params.min_signal_target_r_multiple`.
+  - >-
+    The only improvement was short-side-specific: the short trend LVN quality variant had 40/54
+    profitable core combinations and top core net 1150.0, but failed monkey robustness.
+  - >-
+    The range variants remained too sparse or non-benchmark-passing after quality filters; the
+    long trend and two-sided trend variants failed limited core.
+  run6_variant_results:
+  - variant_id: video_model2_trend_lvn_short_high_confluence_minrr_3m_1500
+    terminal_stage: limited_monkey_test
+    profitable_combinations: 40
+    total_combinations: 54
+    top_net_profit: 1150.0
+    top_profit_factor: 1.227048
+    top_mar: 0.459811
+    failure_reason: core passed, then monkey drawdown-beat was 0.553875 below the 0.9 gate.
+  - variant_id: video_model2_trend_lvn_two_sided_high_confluence_minrr_3m_1500
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 54
+    top_net_profit: -520.0
+    top_profit_factor: 0.893715
+    top_mar: -0.130458
+  - variant_id: video_model2_trend_lvn_long_high_confluence_minrr_3m_1500
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 54
+    top_net_profit: -920.0
+    top_profit_factor: 0.677193
+    top_mar: -0.366403
+  - variant_id: video_model1_range_opposite_edge_quality_minrr_3m_1500
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 0
+    total_combinations: 54
+    top_net_profit: -50.0
+    top_profit_factor: 0.975309
+    top_mar: -0.033630
+  - variant_id: video_model1_range_midpoint_quality_minrr_3m_1500
+    terminal_stage: limited_core_grid_test
+    profitable_combinations: 6
+    total_combinations: 54
+    top_net_profit: 162.5
+    top_profit_factor: 1.084088
+    top_mar: 0.127971

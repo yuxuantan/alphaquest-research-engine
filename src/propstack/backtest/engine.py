@@ -144,6 +144,139 @@ class BacktestEngine:
         trade_id = 1
         progress = progress_bar(len(df), "bars", enabled=self.show_progress)
 
+        def open_position_from_signal(sig, bar, reference_price, entry_timestamp):
+            nonlocal trade_id
+
+            direction = sig.direction
+            ep = entry_price(float(reference_price), direction, tick_size, slippage_ticks)
+            stop = strategy.stop_price(sig, direction, tick_size, entry_price=ep)
+            if stop is None:
+                diagnostics["rejects"]["missing_stop"] += 1
+                return None
+            target = strategy.target_price(ep, stop, direction, signal=sig)
+            if _target_already_reached(direction, ep, target, sig):
+                diagnostics["rejects"]["target_already_reached"] += 1
+                return None
+            risk_points = abs(ep - stop)
+            sizing = size_position(self.core_config, risk_points, tick_size, tick_value, net_liq=net_liq)
+            if sizing.contracts < 1:
+                diagnostics["rejects"]["position_sizing"] += 1
+                return None
+            opened = {
+                "trade_id": trade_id,
+                "strategy_name": strategy.name,
+                "session_date": bar["session_date"],
+                "direction": direction,
+                "level_type": sig.level_type,
+            }
+            if sig.report_fields:
+                opened.update(sig.report_fields)
+            else:
+                opened.update(
+                    {
+                        "swept_level": sig.swept_level,
+                        "sweep_timestamp": sig.sweep_timestamp,
+                        "sweep_high": sig.sweep_high,
+                        "sweep_low": sig.sweep_low,
+                        "reclaim_timestamp": sig.reclaim_timestamp,
+                    }
+                )
+            opened.update(
+                {
+                    "entry_timestamp": entry_timestamp,
+                    "entry_price": ep,
+                    "stop_price": stop,
+                    "target_price": target,
+                    "risk_points": risk_points,
+                    "signal_flatten_time": _format_time(_signal_metadata_time(sig, "flatten_time", flatten_time)),
+                    "contracts": sizing.contracts,
+                    "max_favorable_excursion": 0.0,
+                    "max_adverse_excursion": 0.0,
+                }
+            )
+            opened.update(sizing.report_fields())
+            risk.record_entry(bar["session_date"])
+            diagnostics["entries_opened"] += 1
+            trade_id += 1
+            return opened
+
+        def maybe_close_position(opened, bar, index, detail_start_timestamp=None):
+            nonlocal net_liq
+
+            direction = opened["direction"]
+            if direction == "long":
+                mfe = max(0.0, float(bar["high"]) - opened["entry_price"])
+                mae = max(0.0, opened["entry_price"] - float(bar["low"]))
+            else:
+                mfe = max(0.0, opened["entry_price"] - float(bar["low"]))
+                mae = max(0.0, float(bar["high"]) - opened["entry_price"])
+            opened["max_favorable_excursion"] = max(opened["max_favorable_excursion"], mfe)
+            opened["max_adverse_excursion"] = max(opened["max_adverse_excursion"], mae)
+
+            bar_close_timestamp = bar_close_timestamps[index]
+            next_bar_close_timestamp = next_bar_close_timestamps[index]
+            event_window = None
+            reason, raw_exit, exit_timestamp = self._resolve_stop_target_exit(
+                bar,
+                direction,
+                opened["stop_price"],
+                opened["target_price"],
+                bar_close_timestamp,
+                detail_df,
+                diagnostics,
+                start_timestamp=detail_start_timestamp,
+                suppress_first_detail_target=detail_start_timestamp is not None,
+            )
+            position_flatten_time = parse_time(opened.get("signal_flatten_time", flatten_time))
+            if reason is None and bar_close_timestamp.time() >= position_flatten_time:
+                reason, raw_exit = "eod_flatten", float(bar["close"])
+                exit_timestamp = bar_close_timestamp
+            if reason is None:
+                event_window = self._event_window_to_flatten_before(
+                    bar_close_timestamp,
+                    next_bar_close_timestamp,
+                )
+                if event_window is not None:
+                    reason, raw_exit = event_window.exit_reason, float(bar["close"])
+                    exit_timestamp = bar_close_timestamp
+            if reason is None and self._apex_should_force_flatten(
+                bar_close_timestamp,
+                next_bar_close_timestamp,
+            ):
+                reason, raw_exit = "forced_apex_flatten", float(bar["close"])
+                exit_timestamp = bar_close_timestamp
+            if reason is None:
+                return opened, False
+
+            xp = exit_price(float(raw_exit), direction, tick_size, slippage_ticks)
+            point_pnl = xp - opened["entry_price"] if direction == "long" else opened["entry_price"] - xp
+            contracts = int(opened["contracts"])
+            gross = point_pnl / tick_size * tick_value * contracts
+            total_commission = commission * contracts * 2
+            slippage_cost = slippage_ticks * tick_value * contracts * 2
+            net = gross - total_commission
+            r_mult = point_pnl / opened["risk_points"] if opened["risk_points"] else 0.0
+            trade = {
+                **opened,
+                "exit_timestamp": exit_timestamp,
+                "exit_price": xp,
+                "exit_reason": reason,
+                "gross_pnl": gross,
+                "net_pnl": net,
+                "r_multiple": r_mult,
+                "commission": total_commission,
+                "slippage_cost": slippage_cost,
+            }
+            trade.update(self._apex_trade_fields(trade))
+            trades.append(trade)
+            diagnostics["exits"][reason] = diagnostics["exits"].get(reason, 0) + 1
+            self._record_trade_apex_diagnostics(trade, diagnostics)
+            if event_window is not None and reason == event_window.exit_reason:
+                self._record_event_flatten(diagnostics, event_window)
+            risk.record_exit(opened["session_date"], net)
+            net_liq += net
+            return None, True
+
         for i, bar in df.iterrows():
             progress.update(i + 1)
             if pending_signal is not None and position is None and not self._apex_entry_allowed(bar["timestamp"]):
@@ -157,134 +290,14 @@ class BacktestEngine:
 
             if pending_signal is not None and position is None and risk.allow_new_trade(bar["session_date"]):
                 sig = pending_signal
-                direction = sig.direction
-                ep = entry_price(float(bar["open"]), direction, tick_size, slippage_ticks)
-                stop = strategy.stop_price(sig, direction, tick_size, entry_price=ep)
-                if stop is None:
-                    diagnostics["rejects"]["missing_stop"] += 1
-                    pending_signal = None
-                    continue
-                target = strategy.target_price(ep, stop, direction, signal=sig)
-                if _target_already_reached(direction, ep, target, sig):
-                    diagnostics["rejects"]["target_already_reached"] += 1
-                    pending_signal = None
-                    continue
-                risk_points = abs(ep - stop)
-                sizing = size_position(self.core_config, risk_points, tick_size, tick_value, net_liq=net_liq)
-                if sizing.contracts < 1:
-                    diagnostics["rejects"]["position_sizing"] += 1
-                    pending_signal = None
-                    continue
-                position = {
-                    "trade_id": trade_id,
-                    "strategy_name": strategy.name,
-                    "session_date": bar["session_date"],
-                    "direction": direction,
-                    "level_type": sig.level_type,
-                }
-                if sig.report_fields:
-                    position.update(sig.report_fields)
-                else:
-                    position.update(
-                        {
-                            "swept_level": sig.swept_level,
-                            "sweep_timestamp": sig.sweep_timestamp,
-                            "sweep_high": sig.sweep_high,
-                            "sweep_low": sig.sweep_low,
-                            "reclaim_timestamp": sig.reclaim_timestamp,
-                        }
-                    )
-                position.update(
-                    {
-                        "entry_timestamp": bar["timestamp"],
-                        "entry_price": ep,
-                        "stop_price": stop,
-                        "target_price": target,
-                        "risk_points": risk_points,
-                        "signal_flatten_time": _format_time(_signal_metadata_time(sig, "flatten_time", flatten_time)),
-                        "contracts": sizing.contracts,
-                        "max_favorable_excursion": 0.0,
-                        "max_adverse_excursion": 0.0,
-                    }
-                )
-                position.update(sizing.report_fields())
-                risk.record_entry(bar["session_date"])
-                diagnostics["entries_opened"] += 1
-                trade_id += 1
+                position = open_position_from_signal(sig, bar, bar["open"], bar["timestamp"])
             elif pending_signal is not None and position is None:
                 diagnostics["rejects"]["daily_risk_lockout"] += 1
             pending_signal = None
 
             if position is not None:
-                direction = position["direction"]
-                if direction == "long":
-                    mfe = max(0.0, float(bar["high"]) - position["entry_price"])
-                    mae = max(0.0, position["entry_price"] - float(bar["low"]))
-                else:
-                    mfe = max(0.0, position["entry_price"] - float(bar["low"]))
-                    mae = max(0.0, float(bar["high"]) - position["entry_price"])
-                position["max_favorable_excursion"] = max(position["max_favorable_excursion"], mfe)
-                position["max_adverse_excursion"] = max(position["max_adverse_excursion"], mae)
-
-                bar_close_timestamp = bar_close_timestamps[i]
-                next_bar_close_timestamp = next_bar_close_timestamps[i]
-                event_window = None
-                reason, raw_exit, exit_timestamp = self._resolve_stop_target_exit(
-                    bar,
-                    direction,
-                    position["stop_price"],
-                    position["target_price"],
-                    bar_close_timestamp,
-                    detail_df,
-                    diagnostics,
-                )
-                position_flatten_time = parse_time(position.get("signal_flatten_time", flatten_time))
-                if reason is None and bar_close_timestamp.time() >= position_flatten_time:
-                    reason, raw_exit = "eod_flatten", float(bar["close"])
-                    exit_timestamp = bar_close_timestamp
-                if reason is None:
-                    event_window = self._event_window_to_flatten_before(
-                        bar_close_timestamp,
-                        next_bar_close_timestamp,
-                    )
-                    if event_window is not None:
-                        reason, raw_exit = event_window.exit_reason, float(bar["close"])
-                        exit_timestamp = bar_close_timestamp
-                if reason is None and self._apex_should_force_flatten(
-                    bar_close_timestamp,
-                    next_bar_close_timestamp,
-                ):
-                    reason, raw_exit = "forced_apex_flatten", float(bar["close"])
-                    exit_timestamp = bar_close_timestamp
-                if reason is not None:
-                    xp = exit_price(float(raw_exit), direction, tick_size, slippage_ticks)
-                    point_pnl = xp - position["entry_price"] if direction == "long" else position["entry_price"] - xp
-                    contracts = int(position["contracts"])
-                    gross = point_pnl / tick_size * tick_value * contracts
-                    total_commission = commission * contracts * 2
-                    slippage_cost = slippage_ticks * tick_value * contracts * 2
-                    net = gross - total_commission
-                    r_mult = point_pnl / position["risk_points"] if position["risk_points"] else 0.0
-                    trade = {
-                        **position,
-                        "exit_timestamp": exit_timestamp,
-                        "exit_price": xp,
-                        "exit_reason": reason,
-                        "gross_pnl": gross,
-                        "net_pnl": net,
-                        "r_multiple": r_mult,
-                        "commission": total_commission,
-                        "slippage_cost": slippage_cost,
-                    }
-                    trade.update(self._apex_trade_fields(trade))
-                    trades.append(trade)
-                    diagnostics["exits"][reason] = diagnostics["exits"].get(reason, 0) + 1
-                    self._record_trade_apex_diagnostics(trade, diagnostics)
-                    if event_window is not None and reason == event_window.exit_reason:
-                        self._record_event_flatten(diagnostics, event_window)
-                    risk.record_exit(position["session_date"], net)
-                    net_liq += net
-                    position = None
+                position, closed = maybe_close_position(position, bar, i)
+                if closed:
                     continue
 
             if position is None and risk.allow_new_trade(bar["session_date"]):
@@ -292,20 +305,51 @@ class BacktestEngine:
                 signal = strategy.on_bar_close(bar, risk.trades_today(bar["session_date"]))
                 if signal is not None:
                     diagnostics["signals_generated"] += 1
-                    next_entry_timestamp = next_entry_timestamps[i]
-                    if (
-                        next_entry_timestamp is not None
-                        and self._apex_entry_allowed(next_entry_timestamp)
-                        and self._event_entry_allowed(next_entry_timestamp)
-                    ):
-                        pending_signal = signal
-                    else:
-                        if next_entry_timestamp is None or not self._apex_entry_allowed(next_entry_timestamp):
+                    entry_mode = _signal_entry_mode(signal)
+                    if entry_mode == "intrabar":
+                        entry_timestamp = _signal_metadata_timestamp(signal, "intended_entry_timestamp")
+                        reference_price = _signal_metadata_float(signal, "entry_reference_price")
+                        if entry_timestamp is None:
+                            entry_timestamp = _signal_metadata_timestamp(signal, "intrabar_entry_timestamp")
+                        if reference_price is None:
+                            reference_price = _signal_metadata_float(signal, "intrabar_entry_price")
+                        if entry_timestamp is None:
+                            entry_timestamp = bar_close_timestamp
+                        if reference_price is None:
+                            diagnostics["rejects"]["missing_intrabar_entry_price"] += 1
+                        elif self._apex_entry_allowed(entry_timestamp) and self._event_entry_allowed(entry_timestamp):
+                            diagnostics["intrabar_entries_requested"] += 1
+                            position = open_position_from_signal(signal, bar, reference_price, entry_timestamp)
+                            if position is not None:
+                                position, closed = maybe_close_position(
+                                    position,
+                                    bar,
+                                    i,
+                                    detail_start_timestamp=entry_timestamp,
+                                )
+                                if closed:
+                                    continue
+                        elif not self._apex_entry_allowed(entry_timestamp):
                             diagnostics["rejects"]["apex_latest_entry_time"] += 1
-                            self._record_apex_pending_cancel(diagnostics, bar_close_timestamp)
-                        elif not self._event_entry_allowed(next_entry_timestamp):
+                            self._record_apex_pending_cancel(diagnostics, entry_timestamp)
+                        else:
                             diagnostics["rejects"]["event_no_trade_window"] += 1
-                            self._record_event_pending_cancel(diagnostics, next_entry_timestamp)
+                            self._record_event_pending_cancel(diagnostics, entry_timestamp)
+                    else:
+                        next_entry_timestamp = next_entry_timestamps[i]
+                        if (
+                            next_entry_timestamp is not None
+                            and self._apex_entry_allowed(next_entry_timestamp)
+                            and self._event_entry_allowed(next_entry_timestamp)
+                        ):
+                            pending_signal = signal
+                        else:
+                            if next_entry_timestamp is None or not self._apex_entry_allowed(next_entry_timestamp):
+                                diagnostics["rejects"]["apex_latest_entry_time"] += 1
+                                self._record_apex_pending_cancel(diagnostics, bar_close_timestamp)
+                            elif not self._event_entry_allowed(next_entry_timestamp):
+                                diagnostics["rejects"]["event_no_trade_window"] += 1
+                                self._record_event_pending_cancel(diagnostics, next_entry_timestamp)
 
         if pending_signal is not None and self.apex_rules.enabled:
             last_timestamp = timestamps[-1] if timestamps else pd.Timestamp.now(tz=self.apex_timezone)
@@ -354,6 +398,7 @@ class BacktestEngine:
             "trades_closed": 0,
             "rejects": {
                 "missing_stop": 0,
+                "missing_intrabar_entry_price": 0,
                 "target_already_reached": 0,
                 "position_sizing": 0,
                 "daily_risk_lockout": 0,
@@ -361,9 +406,11 @@ class BacktestEngine:
                 "event_no_trade_window": 0,
             },
             "exits": {},
+            "intrabar_entries_requested": 0,
             "stop_target_conflicts": 0,
             "detail_conflicts_resolved": 0,
             "detail_conflicts_unresolved": 0,
+            "intrabar_first_detail_targets_suppressed": 0,
             "apex": self._apex_diagnostics(),
             "event_filters": self._event_filter_diagnostics(),
         }
@@ -397,6 +444,33 @@ class BacktestEngine:
             "es_term_structure_lead_lag": {"is_rth"},
             "fomc_pre_announcement_drift": {"is_rth"},
             "pdh_pdl_sweep_reclaim": {"is_rth", "prev_rth_low", "prev_rth_high"},
+            "pdh_pdl_vap_absorption_sweep": {
+                "is_rth",
+                "prev_rth_low",
+                "prev_rth_high",
+                "intrabar_short_release_price",
+                "intrabar_short_release_offset_seconds",
+                "intrabar_short_delta",
+                "intrabar_short_session_open",
+                "intrabar_short_session_high",
+                "intrabar_short_session_low",
+                "intrabar_short_session_range_pct",
+                "intrabar_short_vap_poc",
+                "intrabar_short_vap_vah",
+                "intrabar_short_vap_val",
+                "intrabar_short_vap_no_lvn_between_value_area",
+                "intrabar_long_release_price",
+                "intrabar_long_release_offset_seconds",
+                "intrabar_long_delta",
+                "intrabar_long_session_open",
+                "intrabar_long_session_high",
+                "intrabar_long_session_low",
+                "intrabar_long_session_range_pct",
+                "intrabar_long_vap_poc",
+                "intrabar_long_vap_vah",
+                "intrabar_long_vap_val",
+                "intrabar_long_vap_no_lvn_between_value_area",
+            },
             "trend_orderflow_pdh_pdl_sweep_reclaim": {
                 "is_rth",
                 "prev_rth_low",
@@ -1043,18 +1117,52 @@ class BacktestEngine:
         bar_close_timestamp: pd.Timestamp,
         detail_data: pd.DataFrame | None,
         diagnostics: dict,
+        start_timestamp: pd.Timestamp | None = None,
+        suppress_first_detail_target: bool = False,
     ) -> tuple[str | None, float | None, pd.Timestamp]:
         exit_timestamp = bar["timestamp"]
+        start = pd.Timestamp(start_timestamp) if start_timestamp is not None else pd.Timestamp(bar["timestamp"])
+        bar_start = pd.Timestamp(bar["timestamp"])
         stop_hit, target_hit = _stop_target_hits(bar, direction, stop_price, target_price)
+        if start > bar_start:
+            if stop_hit and target_hit:
+                diagnostics["stop_target_conflicts"] += 1
+            if detail_data is not None and not detail_data.empty:
+                detail_exit = _resolve_detail_stop_target(
+                    detail_data,
+                    start,
+                    bar_close_timestamp,
+                    direction,
+                    stop_price,
+                    target_price,
+                    suppress_first_detail_target=suppress_first_detail_target,
+                    diagnostics=diagnostics,
+                )
+                if detail_exit is not None:
+                    if stop_hit and target_hit:
+                        diagnostics["detail_conflicts_resolved"] += 1
+                    return detail_exit
+                if stop_hit and target_hit:
+                    diagnostics["detail_conflicts_unresolved"] += 1
+                return None, None, exit_timestamp
+            if stop_hit:
+                if stop_hit and target_hit:
+                    diagnostics["detail_conflicts_unresolved"] += 1
+                return "stop", stop_price, start
+            if target_hit:
+                diagnostics["intrabar_first_detail_targets_suppressed"] += 1
+            return None, None, exit_timestamp
         if stop_hit and target_hit:
             diagnostics["stop_target_conflicts"] += 1
             detail_exit = _resolve_detail_stop_target(
                 detail_data,
-                pd.Timestamp(bar["timestamp"]),
+                start,
                 bar_close_timestamp,
                 direction,
                 stop_price,
                 target_price,
+                suppress_first_detail_target=suppress_first_detail_target,
+                diagnostics=diagnostics,
             )
             if detail_exit is not None:
                 diagnostics["detail_conflicts_resolved"] += 1
@@ -1323,6 +1431,27 @@ def _signal_metadata_time(signal, key: str, default):
     return parse_time(default if value is None else value)
 
 
+def _signal_metadata_timestamp(signal, key: str) -> pd.Timestamp | None:
+    try:
+        value = signal.metadata.get(key)
+    except AttributeError:
+        return None
+    if value is None or pd.isna(value):
+        return None
+    try:
+        return pd.Timestamp(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _signal_entry_mode(signal) -> str:
+    try:
+        value = signal.metadata.get("entry_mode")
+    except AttributeError:
+        value = None
+    return str(value or "next_bar_open").strip().lower()
+
+
 def _stop_target_hits(
     bar: pd.Series,
     direction: str,
@@ -1341,12 +1470,28 @@ def _resolve_detail_stop_target(
     direction: str,
     stop_price: float,
     target_price: float,
+    *,
+    suppress_first_detail_target: bool = False,
+    diagnostics: dict | None = None,
 ) -> tuple[str, float, pd.Timestamp] | None:
     if detail_data is None or detail_data.empty:
         return None
-    mask = (detail_data["timestamp"] >= start) & (detail_data["timestamp"] < end)
+    first_detail_start = start.floor("min") if suppress_first_detail_target else start
+    mask = (detail_data["timestamp"] >= first_detail_start) & (detail_data["timestamp"] < end)
     for _, detail_bar in detail_data.loc[mask].iterrows():
+        detail_timestamp = pd.Timestamp(detail_bar["timestamp"])
+        if (
+            suppress_first_detail_target
+            and detail_timestamp <= start < detail_timestamp + pd.Timedelta(minutes=1)
+        ):
+            stop_hit, target_hit = _stop_target_hits(detail_bar, direction, stop_price, target_price)
+            if stop_hit:
+                return "stop", stop_price, detail_timestamp
+            if target_hit:
+                if diagnostics is not None:
+                    diagnostics["intrabar_first_detail_targets_suppressed"] += 1
+                continue
         reason, raw_exit = stop_target_hit(detail_bar, direction, stop_price, target_price)
         if reason is not None:
-            return reason, raw_exit, detail_bar["timestamp"]
+            return reason, raw_exit, detail_timestamp
     return None

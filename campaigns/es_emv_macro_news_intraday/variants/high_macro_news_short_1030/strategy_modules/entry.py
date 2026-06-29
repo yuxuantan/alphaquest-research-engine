@@ -1,0 +1,1 @@
+from propstack.strategy_modules.entry.emv_macro_news_state import EmvMacroNewsStateEntry

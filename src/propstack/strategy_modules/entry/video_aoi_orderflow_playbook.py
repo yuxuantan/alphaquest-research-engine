@@ -26,6 +26,7 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
     def __init__(self, params: dict):
         super().__init__(params)
         self.min_trend_move_ticks = float(params.get("min_trend_move_ticks", 20))
+        self.min_directional_delta_imbalance = float(params.get("min_directional_delta_imbalance", 0.0))
         self.require_market_aoi_confluence = bool(params.get("require_market_aoi_confluence", True))
         self._validate_playbook_params()
 
@@ -43,11 +44,11 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
         if None in {high, low, open_price, close} or volume is None or volume <= 0:
             return None
 
-        profile = self.prior_profile or {}
+        profile = self._active_profile(bar) or {}
         if not profile:
             return None
 
-        for direction, model, level_type, level in self._candidate_setups(bar, close):
+        for direction, model, level_type, level in self._candidate_setups(bar, close, profile):
             if direction == "long" and not self.allow_long:
                 continue
             if direction == "short" and not self.allow_short:
@@ -73,38 +74,48 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
                     model,
                     level_type,
                     level,
+                    profile,
                     market_match,
                     bar,
                     signal_timestamp,
                 )
         return None
 
-    def _candidate_setups(self, bar: pd.Series, close: float) -> list[tuple[str, str, str, float]]:
-        profile = self.prior_profile or {}
+    def _candidate_setups(
+        self,
+        bar: pd.Series,
+        close: float,
+        profile: dict,
+    ) -> list[tuple[str, str, str, float]]:
         candidates: list[tuple[str, str, str, float]] = []
         mode = self.setup_mode
+        profile_label = (
+            "developing"
+            if self.profile_source in {"developing_session_ohlcv", "cached_developing_vap"}
+            or self.cached_profile_prefix.startswith("developing")
+            else "prior"
+        )
         if mode in {"range_val_seller_trap_long", "range_value_edge_two_sided_reentry"}:
             val = _finite_float(profile.get("val"))
             if val is not None:
-                candidates.append(("long", "range", "prior_value_area_low", val))
+                candidates.append(("long", "range", f"{profile_label}_value_area_low", val))
         if mode in {"range_vah_buyer_trap_short", "range_value_edge_two_sided_reentry"}:
             vah = _finite_float(profile.get("vah"))
             if vah is not None:
-                candidates.append(("short", "range", "prior_value_area_high", vah))
+                candidates.append(("short", "range", f"{profile_label}_value_area_high", vah))
         if mode in {"trend_lvn_seller_trap_long", "trend_lvn_two_sided_continuation"}:
-            if self._trend_state_confirms(bar, "long", close):
-                lvn = self._nearest_lvn(close)
+            if self._trend_state_confirms(bar, "long", close, profile):
+                lvn = self._nearest_lvn(profile, close)
                 if lvn is not None:
-                    candidates.append(("long", "trend", "prior_low_volume_node", lvn["profile_level_price"]))
+                    candidates.append(("long", "trend", f"{profile_label}_low_volume_node", lvn["profile_level_price"]))
         if mode in {"trend_lvn_buyer_trap_short", "trend_lvn_two_sided_continuation"}:
-            if self._trend_state_confirms(bar, "short", close):
-                lvn = self._nearest_lvn(close)
+            if self._trend_state_confirms(bar, "short", close, profile):
+                lvn = self._nearest_lvn(profile, close)
                 if lvn is not None:
-                    candidates.append(("short", "trend", "prior_low_volume_node", lvn["profile_level_price"]))
+                    candidates.append(("short", "trend", f"{profile_label}_low_volume_node", lvn["profile_level_price"]))
         return candidates
 
-    def _nearest_lvn(self, reference_price: float) -> dict | None:
-        profile = self.prior_profile or {}
+    def _nearest_lvn(self, profile: dict, reference_price: float) -> dict | None:
         lvns = [item for item in profile.get("levels", []) if item.get("type") == "lvn"]
         if not lvns:
             return None
@@ -117,6 +128,10 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
             "profile_level_type": "lvn",
             "profile_level_price": float(best["price"]),
             "profile_distance_ticks": distance / self.tick_size,
+            "profile_source": self.profile_source,
+            "profile_session": profile.get("session_date"),
+            "profile_total_volume": profile.get("total_volume"),
+            "profile_bars": profile.get("bar_count"),
             "prior_profile_session": profile.get("session_date"),
             "prior_profile_total_volume": profile.get("total_volume"),
             "prior_profile_bars": profile.get("bar_count"),
@@ -151,9 +166,14 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
             "market_aoi_distance_ticks": distance / self.tick_size,
         }
 
-    def _trend_state_confirms(self, bar: pd.Series, direction: str, close: float) -> bool:
+    def _trend_state_confirms(
+        self,
+        bar: pd.Series,
+        direction: str,
+        close: float,
+        profile: dict,
+    ) -> bool:
         opening = self._opening_range()
-        profile = self.prior_profile or {}
         if opening is None or not self.current_session_bars:
             return False
         session_open = _finite_float(self.current_session_bars[0].get("open"))
@@ -194,6 +214,7 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
             and absorption_price is not None
             and absorption_price < close
             and self._adverse_delta_imbalance(bar, "long")
+            and self._directional_delta_imbalance(bar, "long")
             and low <= level + self.max_profile_distance_ticks * self.tick_size
             and close >= level + confirm
             and close > open_price
@@ -217,10 +238,25 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
             and absorption_price is not None
             and absorption_price > close
             and self._adverse_delta_imbalance(bar, "short")
+            and self._directional_delta_imbalance(bar, "short")
             and high >= level - self.max_profile_distance_ticks * self.tick_size
             and close <= level - confirm
             and close < open_price
         )
+
+    def _directional_delta_imbalance(self, bar: pd.Series, direction: str) -> bool:
+        if self.min_directional_delta_imbalance <= 0:
+            return True
+        signed = _finite_float(bar.get("signed_volume"))
+        volume = _finite_float(bar.get("volume"))
+        if signed is None or volume is None or volume <= 0:
+            return False
+        imbalance = signed / volume
+        if not math.isfinite(imbalance):
+            return False
+        if direction == "long":
+            return imbalance >= self.min_directional_delta_imbalance
+        return imbalance <= -self.min_directional_delta_imbalance
 
     def _playbook_signal(
         self,
@@ -228,11 +264,11 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
         model: str,
         level_type: str,
         level: float,
+        profile: dict,
         market_match: dict | None,
         bar: pd.Series,
         signal_timestamp: pd.Timestamp,
     ) -> Signal:
-        profile = self.prior_profile or {}
         signed = _finite_float(bar.get("signed_volume")) or 0.0
         volume = _finite_float(bar.get("volume")) or 0.0
         delta_imbalance = signed / volume if volume > 0 else 0.0
@@ -253,6 +289,10 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
             "profile_level_type": level_type,
             "profile_level_price": float(level),
             "profile_distance_from_poc_ticks": profile_distance if math.isfinite(profile_distance) else 0.0,
+            "profile_source": self.profile_source,
+            "profile_session": profile.get("session_date"),
+            "profile_total_volume": profile.get("total_volume"),
+            "profile_bars": profile.get("bar_count"),
             "prior_profile_session": profile.get("session_date"),
             "prior_profile_total_volume": profile.get("total_volume"),
             "prior_profile_bars": profile.get("bar_count"),
@@ -261,6 +301,7 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
             "max_profile_distance_ticks": self.max_profile_distance_ticks,
             "min_absorption_volume": self.min_absorption_volume,
             "min_adverse_delta_imbalance": self.min_adverse_delta_imbalance,
+            "min_directional_delta_imbalance": self.min_directional_delta_imbalance,
             "min_trend_move_ticks": self.min_trend_move_ticks,
             "footprint_absorption_volume": _finite_float(bar.get(volume_col)) or 0.0,
             "footprint_absorption_price": _finite_float(bar.get(price_col)) or 0.0,
@@ -288,3 +329,5 @@ class VideoAoiOrderflowPlaybookEntry(ProfileAoiFootprintTrapEntry):
     def _validate_playbook_params(self) -> None:
         if self.min_trend_move_ticks < 0:
             raise ValueError("entry.params.min_trend_move_ticks must be non-negative.")
+        if self.min_directional_delta_imbalance < 0:
+            raise ValueError("entry.params.min_directional_delta_imbalance must be non-negative.")

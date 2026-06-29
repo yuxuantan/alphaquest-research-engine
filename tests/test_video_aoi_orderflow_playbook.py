@@ -25,9 +25,9 @@ def _bar(
     buy_absorption_volume: float = 0.0,
     sell_absorption_price: float = 99.75,
     buy_absorption_price: float = 100.75,
+    **extra,
 ) -> pd.Series:
-    return pd.Series(
-        {
+    values = {
             "timestamp": pd.Timestamp(timestamp),
             "session_date": pd.Timestamp(session_date),
             "session_label": "RTH",
@@ -47,10 +47,15 @@ def _bar(
             "footprint_highest_sell_imbalance_price": sell_absorption_price,
             "footprint_lowest_buy_imbalance_price": buy_absorption_price,
         }
-    )
+    values.update(extra)
+    return pd.Series(values)
 
 
-def _install_profile_state(entry: VideoAoiOrderflowPlaybookEntry, opening_bars: int = 0) -> None:
+def _install_profile_state(
+    entry: VideoAoiOrderflowPlaybookEntry,
+    opening_bars: int = 0,
+    interval_minutes: int = 1,
+) -> None:
     entry.current_session = pd.Timestamp("2024-01-03")
     entry.prior_profile = {
         "session_date": pd.Timestamp("2024-01-02"),
@@ -69,7 +74,7 @@ def _install_profile_state(entry: VideoAoiOrderflowPlaybookEntry, opening_bars: 
     }
     entry.current_session_bars = [
         _bar(
-            f"2024-01-03 09:{30 + minute:02d}:00",
+            str(pd.Timestamp("2024-01-03 09:30:00") + pd.Timedelta(minutes=minute * interval_minutes)),
             open_=100.0,
             high=101.0,
             low=99.0,
@@ -176,6 +181,197 @@ def test_trend_lvn_seller_trap_waits_for_completed_opening_range():
     assert signal.direction == "long"
     assert signal.report_fields["video_model"] == "trend"
     assert signal.report_fields["profile_level_type"] == "prior_low_volume_node"
+
+
+def test_trend_lvn_opening_range_uses_minutes_on_three_minute_bars():
+    entry = VideoAoiOrderflowPlaybookEntry(
+        {
+            "setup_mode": "trend_lvn_seller_trap_long",
+            "start_time": "09:30:00",
+            "end_time": "16:00:00",
+            "bar_interval_minutes": 3,
+            "opening_range_minutes": 30,
+            "max_profile_distance_ticks": 4,
+            "min_absorption_volume": 20,
+            "min_trend_move_ticks": 4,
+            "require_market_aoi_confluence": False,
+        }
+    )
+    _install_profile_state(entry, opening_bars=10, interval_minutes=3)
+
+    signal = entry.on_bar_close(
+        _bar(
+            "2024-01-03 10:00:00",
+            open_=102.75,
+            high=103.5,
+            low=102.75,
+            close=103.25,
+            signed_volume=-150.0,
+            sell_absorption_price=102.75,
+        )
+    )
+
+    assert signal is not None
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 10:03:00")
+
+
+def test_trend_lvn_can_use_developing_session_profile_on_three_minute_bars():
+    entry = VideoAoiOrderflowPlaybookEntry(
+        {
+            "setup_mode": "trend_lvn_seller_trap_long",
+            "profile_source": "developing_session_ohlcv",
+            "start_time": "09:30:00",
+            "end_time": "16:00:00",
+            "bar_interval_minutes": 3,
+            "opening_range_minutes": 30,
+            "min_prior_profile_bars": 120,
+            "min_developing_profile_bars": 11,
+            "max_profile_distance_ticks": 8,
+            "min_absorption_volume": 20,
+            "min_trend_move_ticks": 4,
+            "require_market_aoi_confluence": False,
+        }
+    )
+
+    for index in range(10):
+        opening_bar = _bar(
+            str(pd.Timestamp("2024-01-03 09:30:00") + pd.Timedelta(minutes=index * 3)),
+            open_=100.0,
+            high=101.0,
+            low=99.0,
+            close=100.5,
+            signed_volume=0.0,
+            absorption_long=0.0,
+            sell_absorption_volume=0.0,
+        )
+        assert entry.on_bar_close(opening_bar) is None
+
+    assert entry.prior_profile is None
+
+    signal = entry.on_bar_close(
+        _bar(
+            "2024-01-03 10:00:00",
+            open_=102.75,
+            high=103.5,
+            low=102.75,
+            close=103.25,
+            signed_volume=-150.0,
+            sell_absorption_price=102.75,
+        )
+    )
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 10:03:00")
+    assert signal.report_fields["profile_source"] == "developing_session_ohlcv"
+    assert signal.report_fields["profile_level_type"] == "developing_low_volume_node"
+    assert signal.report_fields["profile_bars"] == 11
+    assert signal.report_fields["profile_session"] == pd.Timestamp("2024-01-03")
+
+
+def test_trend_lvn_can_use_cached_sierra_developing_vap_on_three_minute_bars():
+    entry = VideoAoiOrderflowPlaybookEntry(
+        {
+            "setup_mode": "trend_lvn_seller_trap_long",
+            "profile_source": "cached_developing_vap",
+            "cached_profile_prefix": "developing_vap",
+            "start_time": "09:30:00",
+            "end_time": "16:00:00",
+            "bar_interval_minutes": 3,
+            "opening_range_minutes": 30,
+            "max_profile_distance_ticks": 4,
+            "min_absorption_volume": 20,
+            "min_trend_move_ticks": 4,
+            "require_market_aoi_confluence": False,
+        }
+    )
+    entry.current_session = pd.Timestamp("2024-01-03")
+    entry.current_session_bars = [
+        _bar(
+            str(pd.Timestamp("2024-01-03 09:30:00") + pd.Timedelta(minutes=index * 3)),
+            open_=100.0,
+            high=101.0,
+            low=99.0,
+            close=100.5,
+            signed_volume=0.0,
+        )
+        for index in range(10)
+    ]
+
+    signal = entry.on_bar_close(
+        _bar(
+            "2024-01-03 10:00:00",
+            open_=102.75,
+            high=103.5,
+            low=102.75,
+            close=103.25,
+            signed_volume=-150.0,
+            sell_absorption_price=102.75,
+            developing_vap_session_yyyymmdd=20240103,
+            developing_vap_poc=101.0,
+            developing_vap_vah=102.0,
+            developing_vap_val=100.0,
+            developing_vap_lvn_near_close=103.0,
+            developing_vap_lvn_near_high=103.0,
+            developing_vap_lvn_near_low=99.0,
+            developing_vap_lvn_count=6,
+            developing_vap_total_volume=125000,
+            developing_vap_price_levels=40,
+            developing_vap_bars=11,
+        )
+    )
+
+    assert signal is not None
+    assert signal.direction == "long"
+    assert signal.report_fields["profile_source"] == "cached_developing_vap"
+    assert signal.report_fields["profile_level_type"] == "developing_low_volume_node"
+    assert signal.report_fields["profile_session"] == 20240103
+    assert signal.report_fields["profile_bars"] == 11
+
+
+def test_trend_lvn_seller_trap_can_require_directional_delta_shift():
+    params = {
+        "setup_mode": "trend_lvn_seller_trap_long",
+        "start_time": "09:30:00",
+        "end_time": "16:00:00",
+        "opening_range_minutes": 30,
+        "max_profile_distance_ticks": 4,
+        "min_absorption_volume": 20,
+        "min_trend_move_ticks": 4,
+        "min_directional_delta_imbalance": 0.05,
+        "require_market_aoi_confluence": False,
+    }
+    rejected = VideoAoiOrderflowPlaybookEntry(params)
+    _install_profile_state(rejected, opening_bars=30)
+
+    assert rejected.on_bar_close(
+        _bar(
+            "2024-01-03 10:05:00",
+            open_=102.75,
+            high=103.5,
+            low=102.75,
+            close=103.25,
+            signed_volume=-150.0,
+            sell_absorption_price=102.75,
+        )
+    ) is None
+
+    accepted = VideoAoiOrderflowPlaybookEntry(params)
+    _install_profile_state(accepted, opening_bars=30)
+    signal = accepted.on_bar_close(
+        _bar(
+            "2024-01-03 10:05:00",
+            open_=102.75,
+            high=103.5,
+            low=102.75,
+            close=103.25,
+            signed_volume=80.0,
+            sell_absorption_price=102.75,
+        )
+    )
+
+    assert signal is not None
+    assert signal.report_fields["min_directional_delta_imbalance"] == 0.05
 
 
 def test_trend_lvn_buyer_trap_can_emit_short_continuation():

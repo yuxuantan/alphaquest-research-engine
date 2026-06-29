@@ -1,0 +1,260 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+strategy_name: video_aoi_orderflow_playbook
+symbol: ES
+dataset_id: es_sierra_footprint_developing_vap_3m_20101214_20260610_full_rth_ny
+timeframe: 3m
+data:
+  dataset_id: es_sierra_footprint_developing_vap_3m_20101214_20260610_full_rth_ny
+  source_timeframe: 3m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_sierra_footprint_developing_vap_3m_20101214_20260610_full_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  source_quality_label: Sierra SCID-derived developing current-session volume-at-price levels on native 3-minute
+    bars; each row uses only completed price-level bid/ask volume through that bar.
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.max_profile_distance_ticks:
+    - 32
+    - 64
+    - 96
+    entry.params.min_absorption_volume:
+    - 20
+    - 50
+    - 100
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 1.25
+    - 2.0
+    - 3.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.max_profile_distance_ticks:
+    - 32
+    - 64
+    - 96
+    entry.params.min_absorption_volume:
+    - 20
+    - 50
+    - 100
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 1.25
+    - 2.0
+    - 3.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+variant_id: trend_lvn_two_sided_base_sierra_developing_vap_3m_1500
+test_run_id: run4
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  academic_source: Chart Fanatics / Trader Yush video; Osler (2000); Kavajecz and Odders-White (2004); Cont, Kukanov,
+    and Stoikov (2014); CME market profile educational material
+  edge_thesis: On the requested 3-minute chart, accepted price beyond the opening range may continue when a pullback
+    to a same-day Sierra-derived developing LVN traps countertrend flow.
+  mechanic: Trade long or short continuation after a completed 3-minute pullback bar reaches the current-session
+    developing Sierra VAP LVN nearest the signal close and native 3-minute footprint absorption shows failed countertrend
+    pressure.
+  timeframe_rationale: The user requested the Trader Yush trend-following order-flow model on a 3-minute chart.
+    This run uses native 3-minute Sierra footprint absorption plus a generated developing VAP cache built from raw
+    Sierra price-level bid/ask volume. The developing volume profile is updated only from completed current RTH
+    3-minute price-volume rows through the signal bar; entry remains next 3-minute bar open.
+  mechanics_review:
+    mechanic_expresses_edge: 'The variant converts the video trend playbook into deterministic rules: the LVN AOI
+      comes from the current RTH developing Sierra volume-at-price profile, accepted trend state is defined only
+      after the opening range is complete, and the completed 3-minute signal bar must show footprint absorption/trapped
+      flow before next-bar entry.'
+    entry_logic_rationale: Developing VAP levels are built from raw Sierra price-level bid/ask volume grouped to
+      native 3-minute bars. For a June 24 setup, the LVN is derived from June 24 RTH price-volume rows available
+      through the completed signal bar; no future bars, final session profile, prior-session LVN, or OHLCV volume
+      distribution is used.
+    stop_loss_rationale: The sweep-extreme stop places risk beyond the completed trap or pullback bar with a tunable
+      tick offset. This is the mechanical invalidation point for trapped counterparty flow and avoids optimized
+      dollar stops.
+    target_exit_rationale: The cost-adjusted fixed-R target keeps reward/risk explicit after commissions and slippage.
+      It does not use final VWAP, final profile, future session range, or discretionary target selection.
+    profitability_rationale: If the video trend model is robust to the requested 3-minute execution clock, LVN pullbacks
+      with completed 3-minute absorption should reject quickly enough to pay ES costs across neighbouring stop/target/profile-distance
+      settings.
+    known_failure_modes: The video evidence is practitioner/marketing context, not audited performance. Sierra SCID
+      price-level volume is materially better than OHLCV-distributed profile levels, but it is still not MBO/queue
+      data and not full DOM/order-book sequencing. Any apparent edge can fail limited core, monkey, WFA, Monte Carlo,
+      incubation, or acceptance gates.
+    pre_test_decision: approve_for_testing
+    user_requested_3m_sierra_developing_vap_run: User challenged the OHLCV approximation and requested the more
+      accurate Sierra tick/price-level data path on 2026-06-24.
+  source_video: https://www.youtube.com/watch?v=hvyf6frvCcA
+  profile_anchor_correction: User clarified on 2026-06-24 that the LVN must come from the June 24/current-session
+    developing volume profile. This run uses Sierra price-level bid/ask volume, superseding run2 prior-profile mechanics
+    and run3 OHLCV-distributed developing-profile mechanics.
+  supersedes_test_run_ids:
+  - run2
+  - run3
+strategy:
+  entry:
+    module: video_aoi_orderflow_playbook
+    params:
+      setup_mode: trend_lvn_two_sided_continuation
+      start_time: '10:00:00'
+      end_time: '15:00:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 3
+      tick_size: 0.25
+      opening_range_minutes: 30
+      value_area_fraction: 0.7
+      lvn_quantile: 0.2
+      min_prior_profile_bars: 120
+      max_profile_distance_ticks: 96
+      min_probe_ticks: 1
+      confirmation_ticks: 0
+      min_absorption_volume: 20
+      min_adverse_delta_imbalance: 0.0
+      min_trend_move_ticks: 8
+      require_market_aoi_confluence: false
+      max_trades_per_day: 1
+      allow_long: true
+      allow_short: true
+      min_directional_delta_imbalance: 0.0
+      profile_source: cached_developing_vap
+      min_developing_profile_bars: 10
+      cached_profile_prefix: developing_vap
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 2
+  tp:
+    module: cost_adjusted_fixed_r
+    params:
+      target_r_multiple: 2.0
+      tick_size: 0.25
+      tick_value: 12.5
+      commission_per_contract: 2.5
+      slippage_ticks: 1
+      round_to_tick: true
+  flatten_time: '15:55:00'

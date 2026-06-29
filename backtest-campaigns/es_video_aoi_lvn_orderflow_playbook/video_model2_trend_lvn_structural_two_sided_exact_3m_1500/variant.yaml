@@ -1,0 +1,25 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: video_model2_trend_lvn_structural_two_sided_exact_3m_1500
+strategy_name: video_exact_orderflow_playbook
+mechanic:
+  entry_module: video_exact_orderflow_playbook
+  take_profit_module: signal_price
+  stop_loss_module: sweep_extreme
+  flatten_time: '15:55:00'
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: scaffold

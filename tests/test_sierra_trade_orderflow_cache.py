@@ -145,7 +145,7 @@ def test_aggregate_footprint_price_volume_batch_groups_new_york_minute_and_tick_
     )
 
     assert len(out) == 2
-    assert _timestamp_from_minute_us(out.iloc[0]["minute_us"]) == pd.Timestamp("2025-06-09 09:30")
+    assert _timestamp_from_minute_us(out.iloc[0]["bar_us"]) == pd.Timestamp("2025-06-09 09:30")
     assert out.iloc[0]["price"] == 6000.0
     assert out.iloc[0]["volume"] == 5
     assert out.iloc[0]["bid_volume"] == 2

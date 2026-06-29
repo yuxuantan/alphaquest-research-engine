@@ -1,0 +1,107 @@
+campaign_id: es_pdh_pdl_vap_absorption_sweep
+title: ES PDH/PDL Developing VAP Absorption Sweep
+decision: FAIL
+created_at: '2026-06-26'
+instrument: ES
+timeframe: 3m
+edge_family: intraday_range_sweep_developing_vap_absorption
+hypothesis: Prior-day RTH high/low sweeps near the current-session developing value edge
+  can fail when aggressive flow is absorbed and price trades back through the absorbed
+  four-tick zone. The expected edge is snapback toward range balance after failed breakout
+  participation.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports prior highs/lows as public reference levels where order placement can cluster.
+- title: Do Investors Place Orders to Exploit Technical Analysis?
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/j.1540-6261.2004.00665.x
+  relevance: Links visible technical levels to liquidity and order-placement behavior.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates signed order-flow pressure as a short-horizon microstructure variable.
+- title: CME Market Profile educational material
+  authors: CME Group
+  year: n.d.
+  venue: Exchange practitioner research
+  link: https://www.cmegroup.com/education.html
+  relevance: Motivates value area, POC, and low-volume-node auction context.
+data_needs:
+- Raw Sierra SCID-derived ES trade records with microsecond timestamps, price, volume,
+  bid volume, and ask volume.
+- A 1-minute ES RTH source cache in America/New_York so 3-minute structure can still use
+  lower-timeframe stop/target conflict resolution.
+- Previous RTH high/low computed only from the completed prior 09:30-16:00 America/New_York session.
+- Developing session volume-at-price through the intrabar release timestamp only, not the final session profile.
+lookahead_risks:
+- Current-session range, developing VAH/VAL/POC, LVN checks, and absorption release price
+  must be computed at the release timestamp inside the current 3-minute bar.
+- Entry is modeled at the intrabar release timestamp and release price, not at completed-bar close.
+- The first 1-minute detail bar containing the intrabar entry suppresses target-only fills but
+  still allows stop fills, which is intentionally pessimistic without sub-second replay fills.
+- No final current-session high/low, final profile, final daily range, future footprint,
+  or post-release orderflow is used.
+data_quality_caveats:
+- The builder uses Sierra SCID-derived records and bid/ask volume, not MBO queue position
+  or full DOM reconstruction.
+- The absorption rule is deterministic four-tick aggregate signed volume, not a vendor
+  discretionary absorption marker.
+- The committed config points to the available 2026 YTD LVN10 cache through 2026-06-09.
+  A true full-calendar-2026 test is not possible until later 2026 sessions exist locally.
+variants:
+- intrabar_pdh_pdl_vap_absorption_3m_exact
+variant_scope_note: This is a user-specified exact mechanics implementation. It intentionally
+  has one variant rather than five invented variants, because adding variants after seeing
+  smoke-result sparsity would weaken the research record.
+test_result:
+  decision: FAIL
+  terminal_stage: ytd_2026_lvn10_tp15_core_backtest
+  tested_at: '2026-06-26'
+  smoke_cache: data/cache/orderflow/es_pdh_pdl_vap_absorption_sweep_1m_source_3m_features_20260601_20260609_rth_ny.parquet
+  smoke_period: '2026-06-01 through 2026-06-09'
+  smoke_result: 0 trades generated
+  ytd_2026_cache: data/cache/orderflow/es_pdh_pdl_vap_absorption_sweep_1m_source_3m_features_20260102_20260609_rth_ny.parquet
+  ytd_2026_cache_validation: data/cache/orderflow/es_pdh_pdl_vap_absorption_sweep_1m_source_3m_features_20260102_20260609_rth_ny.validation.json
+  ytd_2026_core_metrics: backtest-campaigns/es_pdh_pdl_vap_absorption_sweep/intrabar_pdh_pdl_vap_absorption_3m_exact/ES/ytd_2026_run1/core/metrics.json
+  ytd_2026_trade_log: backtest-campaigns/es_pdh_pdl_vap_absorption_sweep/intrabar_pdh_pdl_vap_absorption_3m_exact/ES/ytd_2026_run1/core/trade_log.csv
+  ytd_2026_result:
+    period: '2026-01-02 through 2026-06-09'
+    trades: 4
+    net_profit: -932.5
+    profit_factor: 0.363481228668942
+    expectancy_r: -0.526206690880604
+    trades_per_year: 10.076900029886914
+    win_rate: 0.25
+    max_drawdown: 1465.0
+    apex_rule_violations: 0
+  user_lvn10_tp15_rerun:
+    cache: data/cache/orderflow/es_pdh_pdl_vap_absorption_sweep_lvn10_1m_source_3m_features_20260102_20260609_rth_ny.parquet
+    cache_validation: data/cache/orderflow/es_pdh_pdl_vap_absorption_sweep_lvn10_1m_source_3m_features_20260102_20260609_rth_ny.validation.json
+    run_id: ytd_2026_lvn10_tp15_run1
+    mechanics_change: LVN defined as volume less than or equal to 10 percent of POC;
+      target changed to 1.5R; either PDH or PDL sweep can qualify either direction,
+      while VAH only permits short and VAL only permits long.
+    period: '2026-01-02 through 2026-06-09'
+    trades: 33
+    trades_per_year: 77.77996050124229
+    net_profit: 147.5
+    profit_factor: 1.0170372509384926
+    expectancy_r: -0.0521583699307101
+    mar: 0.05812074997395544
+    win_rate: 0.42424242424242425
+    max_drawdown: 6152.5
+    apex_rule_violations: 0
+    result: FAIL
+  failure_reason: >-
+    The LVN10/1.5R/sweep-any rerun improved trade count but still failed
+    core quality: profit factor is below 1.2, expectancy R is negative, MAR is far below
+    0.4, max drawdown is large relative to net profit, and no downstream validation is justified.
