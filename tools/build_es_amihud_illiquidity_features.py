@@ -8,15 +8,19 @@ import pandas as pd
 
 DEFAULT_INPUT = "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet"
 DEFAULT_OUTPUT = "data/external/es_amihud_illiquidity_features_20110103_20260609.csv"
-POINT_VALUE = 50.0
+DEFAULT_POINT_VALUE = 50.0
 
 
-def build_features(input_path: str | Path, output_path: str | Path) -> pd.DataFrame:
+def build_features(
+    input_path: str | Path,
+    output_path: str | Path,
+    point_value: float = DEFAULT_POINT_VALUE,
+) -> pd.DataFrame:
     bars = pd.read_parquet(input_path, columns=["timestamp", "open", "high", "low", "close", "volume"])
     bars = bars.sort_values("timestamp", kind="mergesort").reset_index(drop=True)
     timestamps = pd.to_datetime(bars["timestamp"])
     bars["session_date"] = timestamps.dt.date.astype(str)
-    bars["notional_volume"] = bars["close"].astype(float) * bars["volume"].astype(float) * POINT_VALUE
+    bars["notional_volume"] = bars["close"].astype(float) * bars["volume"].astype(float) * float(point_value)
 
     daily_rows: list[dict] = []
     for session_date, group in bars.groupby("session_date", sort=True):
@@ -104,8 +108,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", default=DEFAULT_INPUT)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
+    parser.add_argument("--point-value", type=float, default=DEFAULT_POINT_VALUE)
     args = parser.parse_args()
-    features = build_features(args.input, args.output)
+    features = build_features(args.input, args.output, point_value=args.point_value)
     valid = features.dropna(subset=["illiq1_rank_252", "illiq5_rank_252", "illiq20_rank_252"])
     print(f"wrote {args.output}")
     print(f"rows={len(features)} valid_rank_rows={len(valid)}")

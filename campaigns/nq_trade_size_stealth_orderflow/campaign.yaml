@@ -1,0 +1,143 @@
+campaign_id: nq_trade_size_stealth_orderflow
+title: NQ Trade-Size Segmented Stealth Orderflow
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+source_es_campaign: es_trade_size_stealth_orderflow
+hypothesis: Completed NQ large/medium trade-size signed flow may contain more information than residual
+  smaller-flow pressure when the two segments disagree. Following the larger-trade segment after the signal
+  bar closes may capture short-horizon information transfer before the same-session flatten time.
+rationale: This campaign tests trade-size segmented information content, not total signed-flow persistence,
+  VPIN toxicity, MES crowding, realized semivariance, price-only reversal, or NQ/ES lead-lag. Each variant
+  compares completed large10 or large20 signed-volume imbalance with residual smaller-flow imbalance using
+  only rolling windows available at the signal close.
+sources:
+- title: 'Stealth Trading and Volatility: Which Trades Move Prices?'
+  authors: Michael J. Barclay and Jerold B. Warner
+  year: 1993
+  venue: Journal of Financial Economics
+  doi: 10.1016/0304-405X(93)90029-B
+  link: https://ideas.repec.org/a/eee/jfinec/v34y1993i3p281-305.html
+  relevance: Documents different price-impact content by trade-size buckets, motivating a large/medium-flow
+    versus residual-small-flow disagreement test.
+- title: Price, Trade Size, and Information in Securities Markets
+  authors: David Easley and Maureen O'Hara
+  year: 1987
+  venue: Journal of Financial Economics
+  doi: 10.1016/0304-405X(87)90029-8
+  link: https://ideas.repec.org/a/eee/jfinec/v19y1987i1p69-90.html
+  relevance: Models trade size as part of adverse-selection information, supporting an explicit completed-bar
+    trade-size segmentation test.
+- title: 'Stealth-Trading: Which Traders'' Trades Move Stock Prices?'
+  authors: Sugato Chakravarty
+  year: 2001
+  venue: Journal of Financial Economics
+  doi: 10.1016/S0304-405X(01)00063-0
+  link: https://ideas.repec.org/a/eee/jfinec/v61y2001i2p289-307.html
+  relevance: Finds medium-size trades can be disproportionately associated with price movement, consistent
+    with institutional order splitting.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.validation.json
+- Sierra completed-bar aggregate signed_volume, volume, large10/large20 signed volume, large10/large20
+  volume, and trade counts.
+- Trade-orderflow rolling features generated from completed 1-minute bars only.
+data_quality_caveats:
+- Sierra signed volume is an aggregate bid/ask-volume proxy, not a vendor-grade aggressor-label audit
+  trail.
+- Large10 and large20 buckets are completed-bar aggregate fields and are not parent-order reconstruction.
+- The edge is invalid for intra-minute fill sequencing or queue-position claims without tick-level audit
+  data.
+lookahead_risks:
+- Rolling total, large-trade, and residual imbalances use only completed 1-minute bars ending at the signal
+  bar close.
+- A signal at HH:MM uses the bar that closed at HH:MM and enters only at the next 1-minute bar open under
+  the engine.
+- No final current-session VWAP, daily range, future orderflow, future volume profile, or future session
+  totals are used.
+- All variants flatten in the same RTH session before the configured prop-firm cutoff.
+failure_modes:
+- NQ large-trade buckets may not map cleanly to informed institutional splitting.
+- Large-versus-residual disagreement may mark liquidity-taking exhaustion rather than continuation.
+- Results may be side- or time-slot-specific, which would fail parameter stability and WFA gates.
+- Pessimistic same-bar stop/target handling may erase any short-horizon edge.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_vpin_toxicity_continuation
+  - nq_vix_pressure_orderflow_confirmation
+  - nq_mes_micro_flow_divergence_reversion
+  - nq_mes_flow_price_extension_reversion
+  - nq_intraday_capitulation_mean_reversion
+  - nq_semivariance_orderflow_confirmation
+  - nq_variance_ratio_orderflow_regime
+  - nq_es_cross_index_lead_lag
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_opening_drive_inventory_orderflow
+  conclusion: Eligible as distinct because this edge requires completed-bar trade-size segmented disagreement
+    between large/medium flow and residual smaller flow. Existing failed NQ orderflow campaigns use total
+    signed flow, toxicity, MES crowding, price-extension, volatility states, or cross-index confirmation
+    rather than large-vs-residual trade-size information content.
+pre_pnl_density:
+  status: PASS
+  artifact: research_artifacts/nq_trade_size_stealth_orderflow_density_audit_20260630.md
+  csv: research_artifacts/nq_trade_size_stealth_orderflow_density_audit_20260630.csv
+  method: Signal-count only on completed NQ 1-minute rolling orderflow windows. No NQ PnL inspected before
+    authoring.
+  weakest_corner_signals_per_year: 58.621558
+  weakest_corner_latest_252_signals: 70
+parameter_space:
+  entry.params.min_large_imbalance:
+  - 0.015
+  - 0.02
+  - 0.025
+  entry.params.min_disagreement:
+  - 0.03
+  - 0.04
+  - 0.05
+  sl.params.stop_pct:
+  - 0.0025
+  - 0.004
+  - 0.006
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  total_combinations_per_variant: 81
+variants:
+- large20_not_aligned_long_1000
+- large20_loose_short_1030
+- large10_loose_long_1130
+- large10_loose_short_1230
+- large20_opposite_two_sided_1400
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search. If all variants fail, do not change mechanics,
+    filters, stops, targets, time windows, or grids without explicit user authorization.
+testing_plan:
+  methodology: current staged research pipeline through acceptance_oos_test if earlier gates pass
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+status: completed_failed
+completed_at: '2026-06-30T11:33:00+08:00'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_trade_size_stealth_orderflow/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_trade_size_stealth_orderflow/campaign_results.csv
+  methodology_audit: campaigns/nq_trade_size_stealth_orderflow/methodology_audit.md
+  density_audit: research_artifacts/nq_trade_size_stealth_orderflow_density_audit_20260630.md
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate was large20_not_aligned_long_1000
+    at 45/81 (0.5555555555555556), below the 0.70 gate. Across all official variants, 98/405 combinations
+    were profitable, 16 benchmark-pass rows, and 0 Apex-rule-violating iterations. No variant reached
+    limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate
+    reporting.
+  best_variant_by_profitable_rate: large20_not_aligned_long_1000
+  best_profitable_rate: 0.5555555555555556
+  aggregate_profitable_iterations: 98/405

@@ -1,0 +1,102 @@
+campaign_id: nq_midday_range_orderflow_breakout
+title: NQ Midday Range Breakout With Aggregate Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: NQ may expand after a completed low-liquidity midday range when the first completed post-range breakout is confirmed by aligned aggregate trade-side orderflow.
+rationale: This is an NQ transfer of the ES midday range orderflow breakout family. It is distinct from NQ range-compression breakout because the reference level is the current-session completed lunch/late-lunch range, not a prior-session narrow-range state. It is distinct from NQ opening-range/orderflow breakouts because no entry can use the opening range as the boundary.
+sources:
+- title: 'A Theory of Intraday Patterns: Volume and Price Variability'
+  authors: Anat R. Admati and Paul Pfleiderer
+  year: 1988
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/1.1.3
+  link: https://academic.oup.com/rfs/article-abstract/1/1/3/1601212
+  relevance: Supports predictable intraday liquidity/participation timing as a source of range and expansion behavior.
+- title: A transaction data study of weekly and intradaily patterns in stock returns
+  authors: Lawrence Harris
+  year: 1986
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v16y1986i1p99-117.html
+  relevance: Documents intraday return patterns using transaction data, motivating explicit lunch-session segmentation.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a price-pressure proxy; this campaign uses completed Sierra aggregate trade-side flow, not quote-level OFI.
+data_needs:
+- NQ Sierra RTH one-minute OHLCV and aggregate orderflow bars
+- 5-minute strategy bars aggregated from completed one-minute bars
+- same-day forced flatten and pessimistic same-bar conflict handling
+lookahead_risks:
+- Midday range high/low are unavailable until the configured lunch window is complete.
+- Breakout and orderflow confirmation use only the completed confirmation bar.
+- Signals generated at bar close must be filled no earlier than next bar open.
+- No final session high/low, final VWAP, future range, or post-entry orderflow is used.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_range_compression_breakout
+  - nq_pivot_filtered_opening_range_orderflow_breakout
+  - nq_self_lead_opening_range_breakout
+  - nq_prior_session_level_breakout_continuation
+  - nq_vwap_pullback_continuation
+  - nq_signed_orderflow_persistence
+  conclusion: Eligible as a separate NQ edge because the tradable boundary is the completed current-session midday/lunch range, not prior-session compression, opening range, prior-session levels, VWAP pullback, or standalone signed-flow persistence.
+pre_pnl_scaling:
+  method: Signal-count only probe using completed NQ 5-minute bars; no PnL inspected.
+  selected_max_range_points:
+  - 80
+  - 100
+  - 120
+  reason: ES point caps were too sparse in the latest NQ window; [80,100,120] preserved broad density for signed, large10, and large20 variants.
+parameter_space:
+  entry.params.min_orderflow_imbalance: '[0.0,0.03,0.06] for signed variants; [0.0,0.05,0.10] for large10/large20 variants'
+  entry.params.max_range_points:
+  - 80
+  - 100
+  - 120
+  sl.params.stop_offset_ticks:
+  - 8
+  - 12
+  - 16
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.5
+  combinations_per_variant: 54
+variants:
+- lunch_1130_1300_signed_breakout_1430
+- lunch_1130_1300_large10_breakout_1430
+- lunch_1130_1300_large20_breakout_1430
+- late_lunch_1200_1330_signed_breakout_1500
+- late_lunch_1200_1330_large10_breakout_1500
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees density or staged results.
+status: completed_failed
+completed_at: '2026-06-30T14:56:50+08:00'
+density_audit:
+  decision: PASS
+  artifact_md: research_artifacts/nq_midday_range_orderflow_breakout_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_midday_range_orderflow_breakout_density_audit_20260630.csv
+  declared_entry_rows: 45
+  density_pass_rows: 45
+  density_fail_rows: 0
+testing_outcome:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  variants_tested: 5
+  total_core_combinations: 270
+  profitable_combinations: 0
+  benchmark_pass_combinations: 0
+  apex_rule_violating_iterations: 0
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  summary_path: backtest-campaigns/nq_midday_range_orderflow_breakout/campaign_test_summary.json
+  failure_reason: All five predeclared NQ midday range orderflow breakout variants failed limited_core_grid_test. Across 270 official core combinations, 0 were profitable, 0 passed benchmark gates, and 0 had Apex rule violations. The least-negative top row was lunch_1130_1300_signed_breakout_1430 with top net -370.00, PF 0.9754, and 261 trades, so no variant reached monkey, WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

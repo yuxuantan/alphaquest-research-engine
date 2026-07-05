@@ -1,0 +1,127 @@
+campaign_id: nq_opening_drive_mes_crowding_reversal
+title: NQ opening-drive failed-extension reversal with MES participation crowding
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+edge_family: opening_drive_mes_crowding_reversal
+hypothesis: After a directional NQ opening drive, a later completed bar that extends beyond the frozen opening-drive extreme
+  but closes back inside it may mark failed initiative activity. If that failed extension occurs while MES participation is
+  high versus prior same-clock history, the micro-contract crowd may be pressing into the exhaustion point and NQ may reverse
+  intraday.
+rationale: This is an NQ execution-leg port of the ES opening-drive/MES-crowding failed-extension campaign. It is distinct
+  from existing NQ opening-drive inventory/orderflow work because MES smaller-contract participation supplies the crowding
+  evidence, and distinct from existing NQ MES-crowding campaigns because the price trigger is a frozen opening-drive failed
+  extension rather than a fixed-time move, trend pullback, volatility veto, or native orderflow confirmation window.
+sources:
+- title: Assessing the profitability of intraday opening range breakout strategies
+  authors: Ulf Holmberg, Carl Lonnback, Christian Lundstrom
+  year: 2013
+  venue: Finance Research Letters
+  link: https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html
+  doi: 10.1016/j.frl.2012.09.001
+  relevance: Supports treating opening range/opening drive levels as public intraday references; this campaign tests failed
+    continuation beyond that reference.
+- title: Market Intraday Momentum
+  authors: Lei Gao, Yufeng Han, Sophia Zhengzi Li, Guofu Zhou
+  year: 2018
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v129y2018i2p394-414.html
+  doi: 10.1016/j.jfineco.2018.05.009
+  relevance: Documents that early intraday market information can condition later intraday returns; this campaign tests a
+    reversal version after failed continuation.
+- title: Resolving a Paradox - Retail Trades Positively Predict Returns but Are Not Profitable
+  authors: Brad M. Barber, Ching-Chi Lin, and Terrance Odean
+  year: 2024
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.cambridge.org/core/journals/journal-of-financial-and-quantitative-analysis/article/resolving-a-paradox-retail-trades-positively-predict-returns-but-are-not-profitable/6AAA9078F50C2597F44D73FA6A8E3F0D
+  relevance: Motivates using smaller-trader participation as a crowding proxy while requiring robust validation.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Documents retail futures participation and Micro E-mini usage, supporting MES participation as a smaller-contract
+    proxy.
+- title: Micro E-mini futures and options
+  authors: CME Group
+  year: 2026
+  venue: CME product documentation
+  link: https://www.cmegroup.com/markets/equities/micro-emini-equity.html
+  relevance: Documents the Micro E-mini relationship used for notional-equivalent MES participation.
+data_needs:
+- data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv
+- local Sierra NQ and MES completed 1-minute RTH OHLCV/trade-count cache
+- MES notional-equivalent share and trade-count share ranked against prior same-clock observations only
+lookahead_risks:
+- Opening-drive high, low, close, and direction are frozen only after the configured opening-drive window completes.
+- MES participation rank is computed from current completed bars and prior same-clock history; it does not use future sessions.
+- The failed-extension signal is generated only after the signal bar closes and is filled no earlier than the next bar open.
+- No final session high, low, VWAP, volume profile, post-entry MES participation, or future return is used.
+failure_modes:
+- Opening-drive failed extensions may be random noise and too small after NQ costs and slippage.
+- MES participation may reflect legitimate informed hedging or news response rather than uninformed crowding.
+- A failed extension can become a trend pause and then resume, causing sweep-extreme stops to be hit.
+- The edge may be concentrated in high-volatility days, violating profit-concentration and WFA stability requirements.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_opening_drive_inventory_orderflow
+  - nq_mes_participation_crowding_reversion
+  - nq_mes_crowding_trend_pullback_reversion
+  - nq_mes_crowding_vol_filtered_trend_pullback_reversion
+  - nq_mes_crowding_native_orderflow_confirmation
+  - nq_opening_gap_orderflow_absorption_fade
+  - nq_opening_gap_orderflow_continuation
+  conclusion: Eligible as a bounded composite. Existing NQ opening-drive inventory/orderflow variants did not use MES participation
+    crowding at the failed extension; existing MES-crowding campaigns did not require a frozen opening-drive extreme and failed
+    continuation back inside that extreme.
+pre_pnl_density:
+  status: passed_screen_before_pnl
+  artifact: research_artifacts/nq_opening_drive_mes_crowding_reversal_density_audit_20260630.md
+  detail_csv: research_artifacts/nq_opening_drive_mes_crowding_reversal_density_audit_20260630.csv
+  decision: APPROVE_FOR_STAGED_PNL
+  summary: All five variants sustained at least 50 entry-condition signals per year across every predeclared entry-parameter
+    corner in both full-history and limited-core reference windows. No PnL was inspected during this screen.
+source_es_campaign: es_opening_drive_mes_crowding_reversal
+variants:
+- od15_notional_failed_extension_reversal_1130
+- od15_trade_failed_extension_reversal_1130
+- od30_notional_failed_extension_reversal_1300
+- od30_trade_failed_extension_reversal_1300
+- od60_notional_failed_extension_reversal_1530
+parameter_space:
+  entry.params.share_rank_min:
+  - 0.45
+  - 0.55
+  - 0.65
+  entry.params.min_opening_drive_ticks:
+  - 2
+  - 4
+  - 6
+  sl.params.stop_offset_ticks:
+  - 1
+  - 2
+  - 4
+  tp.params.target_r_multiple:
+  - 1.0
+  combinations_per_variant: 27
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; after OOS, allow only rejection or promotion.
+testing_plan:
+  methodology: current staged research pipeline after pre-PnL density screen
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+status: completed_failed
+completed_at: '2026-06-30T13:03:16+08:00'
+terminal_stage: limited_core_or_limited_monkey_test
+failure_reason: No official variant survived the staged sequence. The 15-minute notional and 15-minute trade-share variants
+  passed limited core but failed limited monkey robustness; the 30-minute notional, 30-minute trade-share, and 60-minute notional
+  variants failed limited core with zero profitable iterations.

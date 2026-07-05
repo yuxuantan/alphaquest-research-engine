@@ -94,6 +94,50 @@ def test_vix_term_gate_rejects_wrong_direction_even_if_orderflow_matches(tmp_pat
     assert signal is None
 
 
+def test_vix_term_availability_market_is_reported(tmp_path):
+    features = _feature_file(tmp_path, "2024-01-03", term_rank=0.18)
+    entry = VixTermStructureOrderflowPullbackEntry(
+        {
+            "feature_csv": str(features),
+            "availability_market": "NQ",
+            "term_setup_mode": "contango_long",
+            "term_rank_threshold": 0.35,
+            "setup_mode": "trend_reclaim",
+            "start_time": "09:30:00",
+            "end_time": "10:00:00",
+            "required_trend_closes": 2,
+            "min_drive_points": 0.0,
+            "pullback_tolerance_ticks": 0,
+            "reclaim_buffer_ticks": 0,
+            "reclaim_window_bars": 2,
+            "flow_mode": "signed_volume",
+            "min_orderflow_imbalance": 0.20,
+            "tick_size": 0.25,
+            "bar_interval_minutes": 1,
+            "allow_long": True,
+            "allow_short": False,
+        }
+    )
+
+    assert entry.on_bar_close(_bar("2024-01-03 09:30:00", close=100.6, vwap=100.0)) is None
+    assert entry.on_bar_close(_bar("2024-01-03 09:31:00", close=100.7, vwap=100.0)) is None
+    signal = entry.on_bar_close(
+        _bar(
+            "2024-01-03 09:32:00",
+            close=100.7,
+            low=99.9,
+            vwap=100.0,
+            signed_volume=300,
+            volume=1000,
+        )
+    )
+
+    assert signal is not None
+    assert signal.report_fields["availability_rule"] == (
+        "latest Cboe VIX term-structure close strictly before NQ session_date"
+    )
+
+
 def test_vix_term_front_stress_short_requires_upper_rank_and_short_flow(tmp_path):
     features = _feature_file(tmp_path, "2024-01-03", term_rank=0.5, short_rank=0.82)
     entry = VixTermStructureOrderflowPullbackEntry(

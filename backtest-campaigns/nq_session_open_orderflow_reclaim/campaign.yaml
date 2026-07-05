@@ -1,0 +1,134 @@
+campaign_id: nq_session_open_orderflow_reclaim
+title: NQ Session Open Orderflow Reclaim
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: session_open_orderflow_reclaim
+source_es_campaign: es_session_open_orderflow_reclaim
+hypothesis: The current NQ RTH open is a visible auction-clearing anchor. After a
+  completed excursion away from that open, a completed reclaim or rejection back through
+  the open with aligned aggregate orderflow may identify trapped short-horizon inventory.
+rationale: This is a current-session open-anchor price-action/orderflow edge. The
+  reference level is the current RTH open itself, not the prior close gap, opening
+  range, opening-drive state, overnight high/low, VWAP, prior-session level, session
+  extreme, or round number.
+research_sources:
+- title: Support and Resistance Levels in the Foreign Exchange Market
+  author: Carol L. Osler
+  year: 2000
+  link_or_doi: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  expected_mechanism: Widely watched price levels can condition short-horizon reactions;
+    this campaign treats the RTH open as a known auction-anchor level.
+- title: The Price Impact of Order Book Events
+  author: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  link_or_doi: https://doi.org/10.1093/jjfinec/nbt003
+  expected_mechanism: Order-flow imbalance can proxy short-horizon pressure; this
+    campaign uses completed Sierra aggregate trade-side flow.
+- title: Intraday Patterns in the Cross-Section of Stock Returns
+  author: Steven L. Heston, Robert A. Korajczyk, and Ronnie Sadka
+  year: 2010
+  link_or_doi: https://doi.org/10.1111/j.1540-6261.2010.01573.x
+  expected_mechanism: Intraday timing and trading-flow effects motivate testing a
+    session-time anchor with completed flow confirmation.
+instrument_scaling:
+  method: pre-PnL ES/NQ current-session max open-excursion tick scaling
+  es_median_open_excursion_ticks: 75.0
+  nq_median_open_excursion_ticks: 258.0
+  ratio: 3.44
+  source_es_grid_ticks:
+  - 6
+  - 8
+  - 12
+  nq_grid_ticks: &id001
+  - 20
+  - 28
+  - 40
+  note: Rounded to practical integer tick thresholds before NQ density or PnL inspection.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- NQ 1-minute RTH OHLCV bars with signed, large10, and large20 aggregate flow fields
+- current RTH open from the first regular-session bar, known before any later reclaim/rejection
+  signal
+lookahead_risks:
+- The RTH open is fixed from the first RTH bar and is not a final-session statistic.
+- The away-from-open excursion must be recorded on a prior completed bar before a
+  signal can fire.
+- The reclaim/rejection and orderflow confirmation use only the completed signal bar.
+- Entries occur no earlier than the next 1-minute bar open; no future VWAP, high/low,
+  range, or profile is used.
+failure_modes:
+- The NQ RTH open may be too noisy as an anchor after costs.
+- NQ may trend through the open rather than trap inventory around it.
+- Aggregate flow may lag price or fail to capture hidden liquidity.
+- Any apparent effect may concentrate in high-volatility sessions or fail WFA/monkey
+  robustness.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_opening_gap_orderflow_absorption_fade
+  - nq_opening_gap_orderflow_continuation
+  - nq_opening_drive_inventory_orderflow
+  - nq_opening_range_failed_breakout_orderflow
+  - nq_pivot_filtered_opening_range_orderflow_breakout
+  - nq_prior_session_level_breakout_continuation
+  - nq_round_number_barrier_reaction
+  - nq_session_extreme_delta_divergence
+  - nq_vwap_pullback_continuation
+  conclusion: Eligible as a distinct current-session open-anchor campaign. Nearby
+    NQ failures used prior-close gaps, first-window opening-drive state, completed
+    opening ranges, prior-session levels, round numbers, session extremes, or VWAP
+    rather than a prior excursion and reclaim/rejection through the current RTH open
+    itself.
+variants:
+- afternoon_large20_down_open_reclaim_long
+- afternoon_large20_up_open_reject_short
+- midday_large10_two_sided_open_reclaim
+- morning_down_open_reclaim_long
+- morning_up_open_reject_short
+parameter_space:
+  total_combinations_per_variant: 27
+  entry_tunables:
+  - min_open_extension_ticks
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_pct
+  target_tunables:
+  - target_r_multiple fixed at 1.0
+  parameters:
+    entry.params.min_open_extension_ticks: *id001
+    entry.params.min_orderflow_imbalance:
+    - 0.2
+    - 0.3
+    - 0.4
+    sl.params.stop_pct:
+    - 0.001
+    - 0.0015
+    - 0.0025
+    tp.params.target_r_multiple:
+    - 1.0
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required: true
+  unit_tests:
+  - tests/test_session_open_orderflow_reclaim.py
+  - tests/test_nq_session_open_orderflow_reclaim.py
+status: completed_failed_density
+density_audit:
+  decision: FAIL
+  artifact_md: research_artifacts/nq_session_open_orderflow_reclaim_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_session_open_orderflow_reclaim_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_session_open_orderflow_reclaim_density_summary_20260630.csv
+  declared_entry_rows: 45
+  density_pass_rows: 36
+  density_fail_rows: 9
+  min_full_signals_per_year: 86.78
+  min_limited_core_signals_per_year: 39.5
+  min_latest252_signals: 112

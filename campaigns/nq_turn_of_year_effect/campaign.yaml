@@ -1,0 +1,120 @@
+campaign_id: nq_turn_of_year_effect
+title: NQ Turn Of Year Effect
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+source_es_campaign: es_turn_of_year_effect
+duplicate_edge_review:
+  status: no_exact_active_nq_duplicate_found
+  distinct_from:
+  - 'nq_turn_of_month_seasonality: month-end/early-month calendar windows'
+  - 'nq_halloween_seasonal_premium: November-April versus May-October half-year seasonality'
+  - 'nq_calendar_weekday_bias: weekday-state calendar bias'
+hypothesis: NQ may earn abnormal positive intraday returns around the turn of the
+  year, especially during the Santa-rally window of the last five regular December
+  sessions and first two regular January sessions.
+expected_mechanism: Turn-of-year effects in index futures may reflect seasonal risk
+  bearing, tax-loss and rebalancing flows, holiday-adjacent liquidity, or institutional
+  year-end behavior known before the session.
+why_it_may_apply_to_nq: NQ is a large U.S. equity-index futures market and can inherit
+  broad equity-index seasonal risk premia, but Nasdaq composition and intraday-only
+  no-overnight exposure are stricter than most published anomaly tests.
+sources:
+- title: 'The Disappearing January/Turn of the Year Effect: Evidence From Stock Index
+    Futures and Cash Markets'
+  authors: Andrew C. Szakmary and Dean B. Kiefer
+  year: 2004
+  link: https://doi.org/10.1002/fut.20103
+  relevance: Directly studies turn-of-year effects in stock-index futures and cash
+    markets.
+- title: Are Seasonal Anomalies Real? A Ninety-Year Perspective
+  authors: Josef Lakonishok and Seymour Smidt
+  year: 1988
+  link: https://doi.org/10.1093/rfs/1.4.403
+  relevance: Long-sample seasonal anomaly evidence including turn-of-year behavior.
+- title: 'High Stock Returns before Holidays: Existence and Evidence on Possible Causes'
+  authors: Robert A. Ariel
+  year: 1990
+  link: https://doi.org/10.1111/j.1540-6261.1990.tb03731.x
+  relevance: Holiday-adjacent return evidence motivates a strict Christmas/New-Year
+    window check.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nyse_turn_of_year_sessions_20110103_20260612.csv
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  turn_of_year_rule: last five regular December sessions and first two regular January
+    sessions; early-close sessions excluded
+lookahead_risks:
+- Changing turn-of-year membership after results is forbidden.
+- Using future January returns, future holiday-window return, future volume, or future
+  session high/low to decide entry is forbidden.
+- Adding post-result filters or exclusions is forbidden.
+- Holding overnight through the turn-of-year window is forbidden.
+failure_modes:
+- The published effect may have disappeared or migrated to overnight/close-to-close
+  horizons.
+- The NQ expression may be too sparse to satisfy 50 trades/year WFA and incubation
+  gates.
+- Profit may be concentrated in one December/January episode.
+- Costs and pessimistic same-bar fill ordering may erase any intraday residual edge.
+parameter_space:
+  source: ported before NQ PnL inspection from the official five-variant ES turn-of-year
+    campaign
+  combination_counts:
+    santa_window_open_long_1000: 9
+    santa_window_midday_long_1200: 9
+    december_window_long_1500: 6
+    january_first2_open_long_1000: 9
+    santa_momentum_confirmed_midday_long_1200: 27
+variants:
+- santa_window_open_long_1000
+- santa_window_midday_long_1200
+- december_window_long_1500
+- january_first2_open_long_1000
+- santa_momentum_confirmed_midday_long_1200
+rescue_policy:
+  rescue_scope: not_authorized_for_nq_run
+  max_rescue_attempts_per_failed_variant: 0
+  allowed_changes: []
+  forbidden_changes:
+  - core strategy mechanic
+  - turn-of-year calendar rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  - parameter grid after NQ results
+status: completed_failed
+completed_at: '2026-06-30T13:23:07+08:00'
+terminal_stage: pre_pnl_density_screen
+failure_reason: 'Rejected before staged NQ PnL: all five declared turn-of-year variants
+  failed the 50 signals/year density standard across full history, limited-core reference,
+  and latest-252-session checks. Best full-history density was 6.799867 signals/year,
+  best limited-core density was 4.533245 signals/year, and best latest-252 count was
+  7. Faithfully widening the last-five-December/first-two-January rule enough to pass
+  would change the edge into a broader calendar strategy. No NQ PnL was inspected.'
+pre_pnl_density_audit:
+  artifact: research_artifacts/nq_turn_of_year_effect_density_audit_20260630.md
+  csv: research_artifacts/nq_turn_of_year_effect_density_audit_20260630.csv
+  decision: FAIL
+outcome:
+  decision: FAIL
+  terminal_stage: pre_pnl_density_screen
+  summary_path: backtest-campaigns/nq_turn_of_year_effect/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_turn_of_year_effect/campaign_results.csv
+  methodology_audit: campaigns/nq_turn_of_year_effect/methodology_audit.md
+  density_fail_rows: 7
+  density_rows: 7

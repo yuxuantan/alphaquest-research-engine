@@ -1,0 +1,123 @@
+campaign_id: nq_consumer_sentiment_state_intraday
+title: NQ Consumer Sentiment State Intraday
+status: completed
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged University of Michigan consumer sentiment, used as a public
+  investor-optimism proxy, may identify intraday NQ risk-premium or over-optimism
+  states after the cash open.
+rationale: This is a weak-prior NQ symbol-transfer from the failed ES consumer-sentiment
+  family. It is distinct from CFNAI activity, EPU policy uncertainty, OFR financial
+  stress, volatility/tail-risk, scheduled event drift, and orderflow campaigns because
+  it uses 45-calendar-day-lagged household consumer sentiment.
+research_sources:
+- title: 'Consumer Confidence and Asset Prices: Some Empirical Evidence'
+  author: Michael Lemmon and Evgenia Portniaguina
+  year: 2006
+  link_or_doi: 10.1093/rfs/hhj038
+  expected_mechanism: Consumer confidence can proxy investor optimism and relate
+    to stock-return premia.
+- title: Consumer Confidence and Stock Returns
+  author: Meir Statman, Kenneth L. Fisher, and Deniz Anginer
+  year: 2004
+  link_or_doi: https://www.pm-research.com/content/iijpormgmt/30/1/115
+  expected_mechanism: High consumer confidence is followed by lower stock returns,
+    motivating upper-tail short and lower-tail long variants.
+- title: 'University of Michigan: Consumer Sentiment (UMCSENT)'
+  author: University of Michigan via FRED, Federal Reserve Bank of St. Louis
+  year: 2026
+  link_or_doi: https://fred.stlouisfed.org/series/UMCSENT
+  expected_mechanism: Public monthly consumer-sentiment series used for the lagged
+    NQ session features.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/fred_umcsent_consumer_sentiment_1952_2026.csv
+- data/external/nq_consumer_sentiment_features_20110103_20260612.csv
+feature_construction:
+  builder: tools/build_es_consumer_sentiment_features.py
+  output: data/external/nq_consumer_sentiment_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3813
+  availability_lag_days: 45
+  lookahead_control: Each NQ session uses only the latest UMCSENT observation on
+    or before session_date minus 45 calendar days.
+duplicate_edge_review:
+  active_scope_only: true
+  reviewed_on: '2026-06-30'
+  existing_nq_campaign_id: none
+  es_source_campaign: es_consumer_sentiment_state_intraday
+  es_source_decision: FAIL
+  not_duplicate_of:
+  - nq_chicagofed_cfnai_activity_pullback
+  - nq_epu_policy_uncertainty_intraday
+  - nq_ofr_financial_stress_intraday
+  - nq_fomc_pre_announcement_drift
+  - nq_cboe_skew_tail_risk_intraday
+  - nq_variance_risk_premium_intraday
+  conclusion: This campaign uses lagged household consumer sentiment. It is not
+    Chicago Fed activity, policy uncertainty, financial stress, scheduled FOMC event
+    drift, option-implied tail risk, or variance risk premium.
+parameter_space:
+  combinations_per_variant: 27
+  entry_parameters:
+    low_sentiment_long_1000:
+      entry.params.sentiment_rank_max: [0.45, 0.40, 0.35]
+    high_sentiment_short_1030:
+      entry.params.sentiment_rank_min: [0.55, 0.60, 0.65]
+    rising_sentiment_long_1130:
+      entry.params.sentiment_change_rank_min: [0.55, 0.60, 0.65]
+    falling_sentiment_short_1200:
+      entry.params.sentiment_change_rank_max: [0.45, 0.40, 0.35]
+    low_sentiment_ma_long_1330:
+      entry.params.sentiment_ma_rank_max: [0.45, 0.40, 0.35]
+  stop_parameters:
+    sl.params.stop_pct: [0.0015, 0.0025, 0.004]
+  take_profit_parameters:
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
+variants:
+- low_sentiment_long_1000
+- high_sentiment_short_1030
+- rising_sentiment_long_1130
+- falling_sentiment_short_1200
+- low_sentiment_ma_long_1330
+density_audit:
+  artifact: research_artifacts/nq_consumer_sentiment_state_intraday_density_audit_20260630.md
+  conclusion: Every declared threshold corner clears the 50 signals/year pre-PnL
+    density gate on the NQ RTH cache.
+rescue_policy:
+  rescue_scope: none_for_initial_campaign
+  max_rescue_attempts_without_user_approval: 0
+  forbidden_changes:
+  - core strategy mechanic
+  - UMCSENT availability lag rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-30'
+  aggregate_report: backtest-campaigns/nq_consumer_sentiment_state_intraday/campaign_test_summary.json
+  official_runs: 5
+  limited_core_failed_runs: 5
+  limited_monkey_failed_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate
+    was falling_sentiment_short_1200 at 3/27 (0.1111111111111111), below the 0.70
+    gate. Across all official variants, 3/135 combinations were profitable, 1 benchmark-pass
+    row, and 0 Apex-rule-violating iterations. No variant reached limited monkey,
+    WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or acceptance OOS.
+  best_variant_by_core_profitable_rate: falling_sentiment_short_1200
+  best_core_profitable_rate: 0.1111111111111111

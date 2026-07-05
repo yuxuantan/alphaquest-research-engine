@@ -1,0 +1,3 @@
+# financial_industrial_ema_pullback_large10_long_1500
+
+NQ port of `es_sector_rotation_orderflow_pullback/financial_industrial_ema_pullback_large10_long_1500`. No NQ PnL was inspected before authoring.

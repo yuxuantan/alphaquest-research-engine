@@ -1,0 +1,1 @@
+from propstack.strategy_modules.entry.turnaround_tuesday_reversal import TurnaroundTuesdayReversalEntry

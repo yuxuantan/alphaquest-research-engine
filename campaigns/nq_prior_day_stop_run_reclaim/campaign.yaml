@@ -1,0 +1,195 @@
+campaign_id: nq_prior_day_stop_run_reclaim
+title: NQ Prior-Day Stop-Run Reclaim
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: prior_day_stop_run_reclaim
+hypothesis: NQ may mean-revert after a completed 5-minute bar sweeps the prior RTH high or low and then closes back
+  inside that level, because the sweep can trigger clustered stop orders while the reclaim/rejection indicates failed
+  continuation and liquidity absorption.
+rationale: This is an NQ execution-leg port of the ES prior-day stop-run reclaim edge. It differs from the existing
+  NQ prior-session breakout campaigns because it rejects continuation and requires a close back inside the prior
+  RTH level. It differs from the NQ overnight-inventory sweep campaign because the reference levels are previous
+  RTH high/low, not pre-RTH ETH extremes.
+sources:
+- title: Currency Orders and Exchange Rate Dynamics
+  authors: Carol L. Osler
+  year: 2003
+  venue: Journal of Finance
+  link: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  relevance: Documents clustered stop-loss and take-profit orders around technical support/resistance levels and
+    links order clustering to reversals or momentum once levels are crossed.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Finds that support and resistance levels can coincide with limit-order-book depth, supporting prior
+    high/low levels as public liquidity boundaries.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  venue: Journal of International Money and Finance
+  link: https://ideas.repec.org/a/eee/jimfin/v24y2005i2p219-241.html
+  relevance: Shows clustered stop-loss orders can produce rapid price moves around known levels, motivating a strict
+    failed-sweep versus true-breakout distinction.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- timezone-aware NQ RTH 1-minute OHLCV/orderflow bars in America/New_York
+- deterministic 5-minute aggregation from completed 1-minute bars
+- previous RTH high and low available only after that RTH session is complete
+- fresh-level flags so a prior high/low is only traded once per session side
+- exchange session labels and no-overnight prop-rule flatten checks
+lookahead_risks:
+- Prior RTH high/low are from the fully completed previous RTH session only.
+- Sweep and reclaim conditions use only the completed 5-minute signal bar.
+- Entry is next-bar open or later because the entry signal uses bar close.
+- No future high/low, final VWAP, final session return, future volume profile, or future session state is used.
+- All variants flatten the same day before the configured prop cutoff.
+failure_modes:
+- A sweep through the prior RTH high/low may be informed breakout continuation, not failed liquidity taking.
+- NQ may respond differently from ES around prior RTH levels, especially during high-volatility technology-sector
+  sessions.
+- Bar-level reclaims may overstate fills during fast stop-run moves even with pessimistic same-bar stop/target assumptions.
+- Apparent profits may concentrate in a small number of crisis or event days.
+- The edge may be side-specific or window-specific; narrow isolated parameter success must be rejected or flagged.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_prior_session_level_breakout_continuation
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_overnight_inventory_sweep_reversion
+  - nq_prior_session_ibs_reversion
+  - nq_opening_gap_orderflow_continuation
+  - nq_opening_gap_orderflow_absorption_fade
+  - nq_intraday_capitulation_mean_reversion
+  - nq_20_80_price_ending_barrier
+  conclusion: Eligible as a distinct NQ test. Existing NQ prior-session campaigns tested breakout continuation or
+    signed-flow-confirmed acceptance outside prior RTH levels; this campaign tests failed sweeps that close back
+    inside the prior RTH high/low. Existing overnight-inventory sweep work uses ETH overnight extremes rather than
+    previous RTH high/low. Chart Fanatics price-ending variants use modulo-100 levels, not prior session levels.
+pre_pnl_density:
+  status: failed_before_pnl
+  artifact: research_artifacts/nq_prior_day_stop_run_reclaim_density_audit_20260630.md
+  detail_csv: research_artifacts/nq_prior_day_stop_run_reclaim_density_audit_20260630.csv
+  note: Signal counts must clear the pre-PnL density screen before staged PnL validation is run.
+  completed_at: '2026-06-30T12:45:00+08:00'
+  variant_summary:
+  - variant_id: full_session_two_sided_reclaim
+    entry_combos: 9
+    combos_passing_all_windows: 6
+    density_gate_pass: false
+    min_full_signals_per_year: 43.420928
+    max_full_signals_per_year: 88.031471
+    min_limited_core_signals_per_year: 48.90566
+    max_limited_core_signals_per_year: 99.169811
+    weakest_window: full_history
+    weakest_signals_per_year: 43.420928
+    weakest_entry_params:
+      reclaim_window_bars: 1
+      min_volume_ratio: 1.25
+  - variant_id: morning_prior_low_reclaim_long
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    density_gate_pass: false
+    min_full_signals_per_year: 16.522423
+    max_full_signals_per_year: 29.542093
+    min_limited_core_signals_per_year: 17.660377
+    max_limited_core_signals_per_year: 34.641509
+    weakest_window: full_history
+    weakest_signals_per_year: 16.522423
+    weakest_entry_params:
+      reclaim_window_bars: 1
+      min_volume_ratio: 1.25
+  - variant_id: morning_prior_high_reject_short
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    density_gate_pass: false
+    min_full_signals_per_year: 14.341463
+    max_full_signals_per_year: 31.326515
+    min_limited_core_signals_per_year: 14.264151
+    max_limited_core_signals_per_year: 29.207547
+    weakest_window: limited_core
+    weakest_signals_per_year: 14.264151
+    weakest_entry_params:
+      reclaim_window_bars: 1
+      min_volume_ratio: 1.25
+  - variant_id: midday_two_sided_reclaim
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    density_gate_pass: false
+    min_full_signals_per_year: 4.494099
+    max_full_signals_per_year: 13.746656
+    min_limited_core_signals_per_year: 6.113208
+    max_limited_core_signals_per_year: 19.698113
+    weakest_window: full_history
+    weakest_signals_per_year: 4.494099
+    weakest_entry_params:
+      reclaim_window_bars: 1
+      min_volume_ratio: 1.25
+  - variant_id: afternoon_two_sided_reclaim
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    density_gate_pass: false
+    min_full_signals_per_year: 8.52557
+    max_full_signals_per_year: 13.614477
+    min_limited_core_signals_per_year: 10.867925
+    max_limited_core_signals_per_year: 15.622642
+    weakest_window: full_history
+    weakest_signals_per_year: 8.52557
+    weakest_entry_params:
+      reclaim_window_bars: 1
+      min_volume_ratio: 1.25
+source_es_campaign: es_prior_day_stop_run_reclaim
+variants:
+- full_session_two_sided_reclaim
+- morning_prior_low_reclaim_long
+- morning_prior_high_reject_short
+- midday_two_sided_reclaim
+- afternoon_two_sided_reclaim
+parameter_space:
+  entry.params.reclaim_window_bars:
+  - 1
+  - 3
+  - 5
+  entry.params.min_volume_ratio:
+  - 0.0
+  - 0.75
+  - 1.25
+  sl.params.stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.5
+  combinations_per_variant: 54
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; after OOS, allow only rejection or promotion.
+testing_plan:
+  methodology: current staged research pipeline after pre-PnL density screen
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+status: completed_failed
+completed_at: '2026-06-30T12:45:00+08:00'
+terminal_stage: pre_pnl_density_screen
+failure_summary: 'Pre-PnL density screen failed: all five NQ prior-day stop-run reclaim variants had at least one
+  entry-grid corner below 50 signals/year across full-history and limited-core reference windows. Only the full-session
+  variant had any passing corners (6/9); the other four variants had 0/9 passing corners. No staged PnL, monkey,
+  WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting was run.'
+result_summary_path: backtest-campaigns/nq_prior_day_stop_run_reclaim/campaign_test_summary.json
+testing_outcome:
+  decision: FAIL
+  terminal_stage: pre_pnl_density_screen
+  staged_pnl_started: false
+  campaign_summary_path: backtest-campaigns/nq_prior_day_stop_run_reclaim/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_prior_day_stop_run_reclaim/campaign_results.csv
+  candidate_strategy_report_created: false

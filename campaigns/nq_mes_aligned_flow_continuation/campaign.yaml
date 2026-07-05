@@ -1,0 +1,112 @@
+campaign_id: nq_mes_aligned_flow_continuation
+title: NQ/MES aligned-flow intraday continuation
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny
+timeframe: 1m
+edge_family: nq_mes_cross_contract_confirmation_continuation
+hypothesis: NQ may have a higher probability of same-session continuation when completed NQ price movement and completed MES
+  aggregate orderflow point in the same direction. MES is not traded and is not used as a fade signal; it is a cross-contract
+  participation confirmation for the traded NQ move.
+rationale: This is a direct NQ/MES transfer of the ES/MES aligned-flow continuation family before any NQ PnL inspection. It
+  is distinct from NQ/MES divergence reversion and MES participation-crowding reversion because it trades with same-direction
+  NQ price and MES flow rather than fading disagreement or high MES participation.
+sources:
+- title: One Security, Many Markets
+  authors: Joel Hasbrouck
+  year: 1995
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1995.tb04054.x
+  link: https://doi.org/10.1111/j.1540-6261.1995.tb04054.x
+  relevance: Motivates linked-market price discovery and cross-market confirmation tests.
+- title: Retail Traders in Futures Markets
+  authors: CFTC Office of the Chief Economist
+  year: 2024
+  venue: CFTC staff research report
+  link: https://www.cftc.gov/sites/default/files/2024-11/Retail_Traders_Futures_V2_new_ada.pdf
+  relevance: Motivates Micro E-mini activity as a different participation lens from classic index futures.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports orderflow imbalance as a short-horizon pressure proxy; this campaign uses completed Sierra aggregate
+    trade-side bars.
+data_needs:
+- data/cache/orderflow/nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny.csv
+- completed NQ and MES one-minute RTH bars aligned by timestamp in America/New_York
+- rolling completed-bar NQ return ticks and MES signed/large-trade imbalance windows
+lookahead_risks:
+- NQ return and MES imbalance windows include only completed bars ending at the signal bar close.
+- Signal timestamps are completed-bar close times; the engine enters no earlier than next bar open.
+- No final session high/low, final VWAP, final volume profile, or future MES/NQ data is used.
+- The latest holdout remains locked until downstream stages, if any are reached.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_mes_micro_flow_divergence_reversion
+  - nq_mes_participation_crowding_reversion
+  - nq_mes_crowding_native_orderflow_confirmation
+  - nq_mes_flow_price_extension_reversion
+  - nq_trend_filtered_mes_participation_crowding
+  - nq_signed_orderflow_persistence
+  - es_mes_aligned_flow_continuation
+  conclusion: Eligible as a separate NQ edge because existing NQ/MES active campaigns fade disagreement, price extension,
+    or high MES participation. This campaign requires NQ price direction plus MES orderflow direction to agree before trading
+    NQ continuation.
+variants:
+- morning15_mes_signed_1030
+- late_morning30_mes_signed_1130
+- midday30_mes_large10_1230
+- afternoon60_mes_signed_1400
+- late_day60_mes_large20_1500
+parameter_space:
+  entry_parameters:
+    entry.params.min_primary_return_ticks: 3 values per variant, copied from ES source thresholds
+    entry.params.min_mes_flow_imbalance: 3 values per variant, copied from ES source thresholds
+  stop_parameters:
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+  per_variant_combinations: 54
+  total_campaign_combinations: 270
+  entry_parameter_cap: 2
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+source_es_campaign: es_mes_aligned_flow_continuation
+source_es_decision: FAIL
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue authorized; after NQ testing begins, allow only rejection or promotion to candidate/manual-review status.
+testing_outcome:
+  tested_at: '2026-06-30T18:05:00'
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  total_variants: 5
+  total_combinations_tested: 270
+  total_profitable_combinations: 0
+  total_benchmark_pass_combinations: 0
+  total_apex_rule_violating_iterations: 0
+  best_row:
+    variant_id: late_morning30_mes_signed_1130
+    net_profit: -757.5
+    profit_factor: 0.8711734693877551
+    total_trades: 80
+    failure_reason: min_total_net_profit
+  summary: All five predeclared NQ/MES aligned-flow continuation variants failed limited_core_grid_test. Across 270 official
+    combinations, 0 were profitable, 0 passed benchmark gates, and 0 had Apex rule violations. No branch reached monkey,
+    WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.
+result_artifacts:
+  campaign_test_summary: backtest-campaigns/nq_mes_aligned_flow_continuation/campaign_test_summary.json
+  campaign_results: backtest-campaigns/nq_mes_aligned_flow_continuation/campaign_results.csv
+  methodology_audit: backtest-campaigns/nq_mes_aligned_flow_continuation/methodology_audit.md
+  artifact_manifest: backtest-campaigns/nq_mes_aligned_flow_continuation/artifact_manifest.csv
+status: completed_failed

@@ -1,0 +1,116 @@
+campaign_id: nq_finra_margin_leverage
+title: NQ FINRA Margin Leverage State
+status: completed
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Public monthly FINRA customer margin balances may proxy speculative
+  leverage and funding-liquidity pressure. Rapid margin-debt expansion or deterioration
+  in debit/free-credit balance may indicate crowded equity exposure vulnerable to
+  same-day NQ downside pressure; sharp deleveraging may mark post-pressure rebound
+  capacity.
+rationale: This is a weak-prior NQ symbol-transfer from the failed ES FINRA margin
+  leverage family. It is not treated as independent alpha. The NQ test is allowed
+  because no active NQ FINRA margin-leverage campaign exists, the edge is distinct
+  from active volatility/sentiment/orderflow campaigns, and the data can be tested
+  locally with a conservative 35-calendar-day observation lag.
+sources:
+- title: Margin Statistics
+  authors: Financial Industry Regulatory Authority
+  year: 2026
+  venue: FINRA
+  link: https://www.finra.org/rules-guidance/key-topics/margin-accounts/margin-statistics
+  relevance: Official free monthly customer margin balance data used to build the
+    campaign features.
+- title: Market Liquidity and Funding Liquidity
+  authors: Markus K. Brunnermeier and Lasse Heje Pedersen
+  year: 2009
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/hhn098
+  relevance: Supports the funding-liquidity spiral mechanism linking leverage and
+    forced trading pressure.
+- title: Liquidity and Leverage
+  authors: Tobias Adrian and Hyun Song Shin
+  year: 2010
+  venue: Journal of Financial Intermediation
+  doi: 10.1016/j.jfi.2008.12.002
+  relevance: Supports procyclical leverage as a risk-state mechanism.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_finra_margin_leverage_features_20110103_20260612.csv
+feature_construction:
+  builder: tools/build_es_finra_margin_features.py
+  output: data/external/nq_finra_margin_leverage_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3296
+  availability_lag_days: 35
+  first_all_official_rank_date: '2014-03-07'
+  lookahead_control: Each session uses the latest FINRA monthly margin observation
+    at least 35 calendar days old. The staged data subset starts on the first session
+    where all official 120-month rank features are non-null, before any PnL inspection.
+duplicate_edge_review:
+  active_scope_only: true
+  reviewed_on: '2026-06-30'
+  existing_nq_campaign_id: none
+  es_source_campaign: es_finra_margin_leverage
+  es_source_decision: FAIL
+  not_duplicate_of:
+  - nq_cboe_put_call_sentiment_intraday
+  - nq_ofr_financial_stress_intraday
+  - nq_nyfed_rrp_liquidity_state
+  - nq_default_spread_orderflow_risk_premium
+  - nq_vvix_tail_risk_intraday
+  conclusion: This campaign uses public customer-margin leverage/free-credit balance
+    state, not implied-volatility sentiment, put/call ratios, OFR stress, RRP liquidity,
+    credit spreads, or orderflow confirmation.
+parameter_space:
+  combinations_per_variant: 27
+  stop_parameters:
+    sl.params.stop_pct: [0.0015, 0.0025, 0.004]
+  take_profit_parameters:
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
+variants:
+- rapid_margin_1m_expansion_short_1030
+- rapid_margin_3m_expansion_short_1130
+- persistent_margin_12m_expansion_short_1200
+- debit_credit_ratio_expansion_short_1330
+- margin_deleveraging_rebound_long_1430
+density_audit:
+  artifact: research_artifacts/nq_finra_margin_leverage_density_audit_20260630.md
+  conclusion: All five variant shapes have pre-PnL signal density above 50 signals/year
+    after the predeclared 2014-03-07 feature-availability start.
+rescue_policy:
+  rescue_scope: none_for_initial_campaign
+  max_rescue_attempts_without_user_approval: 0
+  forbidden_changes:
+  - core strategy mechanic
+  - feature construction shift rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-30'
+  aggregate_report: backtest-campaigns/nq_finra_margin_leverage/campaign_test_summary.json
+  official_runs: 5
+  limited_core_failed_runs: 4
+  limited_monkey_failed_runs: 1
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: Four variants failed limited_core_grid_test. rapid_margin_3m_expansion_short_1130
+    passed limited core with 22/27 profitable combinations (0.8148148148148148)
+    but failed limited_monkey_test on max-drawdown robustness, 0.883375 versus
+    the 0.90 gate, while net-profit beat rate was 0.92225. No variant reached
+    WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or acceptance OOS.
+  best_variant_by_stage_depth: rapid_margin_3m_expansion_short_1130
+  best_core_profitable_rate: 0.8148148148148148
+  monkey_net_profit_beat_rate: 0.92225
+  monkey_max_drawdown_beat_rate: 0.883375

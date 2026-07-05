@@ -1,0 +1,147 @@
+campaign_id: nq_term_structure_lead_lag_feedback
+title: NQ Front-vs-Next Contract Term-Structure Lead-Lag Feedback
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+market: CME E-mini Nasdaq-100 futures
+dataset_id: nq_term_structure_lead_lag_1m_20100607_20260529_full_rth_ny
+timeframe: 1m
+edge_family: futures_term_structure_lead_lag_spread_feedback
+source_campaign_id: es_term_structure_lead_lag_feedback
+hypothesis: Near roll, the front NQ contract and next quarterly NQ contract may temporarily
+  diverge over completed intraday windows. A sufficiently large front-vs-next return
+  gap could predict short-term reversion in the tradable front contract.
+rationale: This is an ES-derived transfer of the already-tested front-vs-deferred
+  term-structure lead-lag edge. It is distinct from NQ/ES cross-index lead-lag, opening-range,
+  liquidity, AOI, prior-level, and volume-profile campaigns because it uses same-underlying
+  NQ maturity-basis dislocation rather than another index or a price level.
+research_sources:
+- title: 'High-frequency lead-lag relationships in the Chinese stock index futures
+    market: tick-by-tick dynamics of calendar spreads'
+  author: Guanlin Li, Xiyan Chen, and Yingzheng Liu
+  year: 2025
+  link_or_doi: https://arxiv.org/abs/2501.03171
+  expected_mechanism: Near-month and longer-dated stock-index futures can show maturity-based
+    lead-lag and spread-feedback effects.
+- title: A GCN-LSTM Approach for ES-mini and VX Futures Forecasting
+  author: Nikolas Michael, Mihai Cucuringu, and Sam Howison
+  year: 2024
+  link_or_doi: https://arxiv.org/abs/2408.05659
+  expected_mechanism: Equity-index futures across expirations can have connected return,
+    volatility, and volume structures that support term-structure signal propagation.
+- title: High Frequency Lead/Lag Relationships - Empirical Facts
+  author: Nicolas Huth and Frederic Abergel
+  year: 2014
+  link_or_doi: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+  expected_mechanism: High-frequency lead-lag asymmetry is a documented market-microstructure
+    effect, but naive market-order strategies can fail after costs.
+source_quality_note: Academic sources support the existence of futures lead-lag and
+  term-structure feedback effects, but they do not establish that this specific NQ
+  front-vs-next implementation is tradable after costs. The NQ transfer therefore
+  fails closed on pre-PnL density.
+data_needs:
+- data/cache/databento/nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll.parquet
+- data/cache/databento/GLBX-20260601-RTF938NJSN/*.ohlcv-1m.parquet
+- data/reference/NQ/roll_calendars/motivewave_rithmic_roll_calendar.csv
+- data/cache/orderflow/nq_term_structure_lead_lag_1m_20100607_20260529_full_rth_ny.parquet
+derived_feature_cache:
+  builder: tools/build_nq_term_structure_lead_lag_cache.py
+  output: data/cache/orderflow/nq_term_structure_lead_lag_1m_20100607_20260529_full_rth_ny.parquet
+  validation: data/cache/orderflow/nq_term_structure_lead_lag_1m_20100607_20260529_full_rth_ny.validation.json
+  rows: 63960
+  sessions: 164
+  first_timestamp: '2010-06-10 09:30:00'
+  last_timestamp: '2026-03-16 15:59:00'
+  validation_checks:
+    deferred_contracts: 40
+    duplicate_timestamps: 0
+    front_contracts: 40
+    invalid_ohlc_rows: 0
+    missing_session_segments: 0
+lookahead_risks:
+- Front contract selection must use the explicit roll calendar, not same-day volume
+  after the session is known.
+- Deferred contract selection must use the next explicit roll-calendar contract, not
+  the most active deferred contract chosen with future information.
+- Rolling features must use only completed current-or-prior bars at the signal timestamp.
+- No final session high, low, VWAP, volume profile, future roll information, or post-entry
+  path is used by the signal.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_es_cross_index_lead_lag
+  - nq_es_relative_value_orderflow_absorption_reversion
+  - nq_quarterly_expiration_pressure
+  - nq_prior_session_benchmark_orderflow_reaction
+  - nq_opening_range_failed_breakout_orderflow
+  - nq_chartfanatics_liquidity_inversion_fvg
+  conclusion: Allowed to reach pre-PnL density screening because same-underlying NQ
+    front-vs-next contract spread feedback is not the same economic edge as cross-index
+    lead-lag, expiration-date pressure, prior-level reactions, opening-range failures,
+    or FVG/liquidity campaigns.
+variants:
+- front_premium_reversion_short_1000
+- front_discount_reversion_long_1000
+- late_morning_two_sided_spread_feedback_1130
+- afternoon_confirmed_spread_feedback_1400
+- late_day_two_sided_spread_feedback_1530
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - min_front_return_bps
+  - min_spread_gap_bps
+  stop_tunables:
+  - stop_pct
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.min_front_return_bps:
+    - 4.0
+    - 6.0
+    - 8.0
+    entry.params.min_spread_gap_bps:
+    - 0.5
+    - 1.0
+    - 1.5
+    sl.params.stop_pct:
+    - 0.001
+    - 0.0015
+    - 0.0025
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required_if_density_passed: true
+status: completed_failed_density
+pre_pnl_density_audit:
+  status: FAIL
+  artifact: research_artifacts/nq_term_structure_lead_lag_feedback_density_audit_20260630.md
+  csv: research_artifacts/nq_term_structure_lead_lag_feedback_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_term_structure_lead_lag_feedback_density_summary_20260630.csv
+  density_rule: At least one declared entry-grid row must meet min_total_signals=80,
+    min_full_signals_per_year=10, and min_limited_signals_per_year=10 before staged
+    PnL.
+  completed_at: '2026-06-30'
+  declared_entry_rows: 45
+  density_pass_rows: 0
+  density_fail_rows: 45
+  decision: Reject before staged PnL; do not change mechanics without explicit user
+    rescue authorization.
+result_summary:
+  verdict: FAIL
+  campaign_test_summary: backtest-campaigns/nq_term_structure_lead_lag_feedback/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_term_structure_lead_lag_feedback/campaign_results.csv
+  methodology_audit: campaigns/nq_term_structure_lead_lag_feedback/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    pre_pnl_density_screen: 5
+  failure_reason: 'Pre-PnL density screen failed: 45/45 declared entry rows failed
+    the density gate. Best row had 47 total signals, 2.9814 signals/year, and 5 limited-window
+    signals. No staged PnL, monkey, WFA, Monte Carlo, simulated incubation, acceptance
+    OOS, or candidate reporting was run.'

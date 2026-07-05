@@ -25,6 +25,12 @@ class EsTermStructureLeadLagEntry:
         self.max_trades_per_day = int(params.get("max_trades_per_day", 1))
         self.allow_long = bool(params.get("allow_long", True))
         self.allow_short = bool(params.get("allow_short", True))
+        self.academic_source_key = str(
+            params.get("academic_source_key", "futures_term_structure_lead_lag_spread_feedback")
+        )
+        self.leader_symbol = str(params.get("leader_symbol", "ES_front_or_calendar_spread"))
+        self.traded_symbol = str(params.get("traded_symbol", "ES_front"))
+        self.level_prefix = str(params.get("level_prefix", "es_term_structure"))
         self.state_by_day: dict = {}
 
     def on_bar_close(self, bar: pd.Series, trades_today: int = 0) -> Signal | None:
@@ -64,10 +70,10 @@ class EsTermStructureLeadLagEntry:
 
         current_close = float(bar["close"])
         report_fields = {
-            "academic_source_key": "futures_term_structure_lead_lag_spread_feedback",
+            "academic_source_key": self.academic_source_key,
             "setup_mode": self.setup_mode,
-            "leader_symbol": "ES_front_or_calendar_spread",
-            "traded_symbol": "ES_front",
+            "leader_symbol": self.leader_symbol,
+            "traded_symbol": self.traded_symbol,
             "lookback_minutes": self.lookback_minutes,
             "front_return_bps": front_return,
             "deferred_return_bps": deferred_return,
@@ -95,7 +101,7 @@ class EsTermStructureLeadLagEntry:
         state["signaled"] = True
         return Signal(
             direction=direction,
-            level_type=f"es_term_structure_{self.setup_mode}_{self.lookback_minutes}m",
+            level_type=f"{self.level_prefix}_{self.setup_mode}_{self.lookback_minutes}m",
             swept_level=current_close,
             sweep_timestamp=timestamp,
             sweep_high=float(bar["high"]),

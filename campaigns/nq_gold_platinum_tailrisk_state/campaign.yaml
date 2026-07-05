@@ -1,0 +1,89 @@
+campaign_id: nq_gold_platinum_tailrisk_state
+title: NQ Gold Platinum Tail-Risk State
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: gold_platinum_tailrisk_expected_return
+hypothesis: Strict-prior gold/platinum ratio states may proxy for tail-risk or disaster-risk premia that affect same-day NQ
+  risk appetite.
+rationale: Huang and Kilic find the gold/platinum ratio reveals variation in risk and predicts expected stock returns. This
+  campaign tests a constrained intraday NQ expression with completed-bar entries and same-day flattening.
+research_sources:
+- title: Gold, platinum, and expected stock returns
+  author: Darien Huang and Mete Kilic
+  year: 2019
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2018.11.004
+  expected_mechanism: The gold/platinum ratio proxies for an economic risk state and predicts expected stock returns.
+- title: Gold, Platinum, and Expected Stock Returns
+  author: Darien Huang and Mete Kilic
+  year: 2018
+  link_or_doi: https://ssrn.com/abstract=2820252
+  expected_mechanism: SSRN working-paper version documents tail-risk and disaster-risk interpretation of the ratio.
+- title: Yahoo Finance futures daily chart data for GC=F and PL=F
+  author: Yahoo Finance / futures exchange data
+  year: 2026
+  link_or_doi: https://finance.yahoo.com/quote/GC=F/
+  expected_mechanism: Daily gold and platinum futures closes provide the observable strict-prior ratio.
+data_needs:
+- NQ Sierra RTH 1-minute cache aggregated to completed five-minute bars
+- Daily GC=F and PL=F futures closes
+- Derived strict-prior gold/platinum feature CSV data/external/nq_gold_platinum_ratio_features_20110103_20260612.csv
+duplicate_edge_check:
+  checked_edges:
+  - nq_vix_term_structure_orderflow_pullback
+  - nq_move_treasury_volatility_state
+  - nq_oil_price_shock_spillover
+  - nq_dollar_risk_appetite_intraday
+  - nq_variance_risk_premium_intraday
+  - nq_cboe_skew_tail_risk_intraday
+  conclusion: Eligible for density testing as a distinct precious-metals tail-risk state, not an equity-volatility, Treasury-volatility,
+    oil, dollar, or variance-risk-premium edge.
+lookahead_risks:
+- Gold and platinum observations are as-of joined with allow_exact_matches=false, so each NQ session uses only futures closes
+  strictly before session_date.
+- Entries emit only after completed five-minute RTH bars.
+- No same-day metal close, future NQ high/low, final VWAP, or post-entry path is used.
+failure_modes:
+- The published effect is lower-frequency, so intraday NQ may not express it.
+- Futures continuation noise can distort the ratio.
+- The ratio may be stale or already captured by broader risk-premium variables.
+variants:
+- high_gp_risk_premium_long_1000
+- high_gp_risk_premium_long_1430
+- low_gp_complacency_short_1000
+- gp_rising_morning_weakness_short_1130
+- gp_falling_morning_strength_long_1130
+parameter_space:
+  entry_parameters:
+  - entry.params.ratio_rank_threshold
+  - entry.params.change_rank_threshold
+  stop_parameters:
+  - sl.params.stop_pct
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant: 36
+  entry_parameter_cap: 2
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after density or staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required_if_density_passes: true
+pre_pnl_density_audit:
+  decision: FAIL
+  artifact: research_artifacts/nq_gold_platinum_tailrisk_state_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_gold_platinum_tailrisk_state_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_gold_platinum_tailrisk_state_density_summary_20260701.csv
+  result: 30/45 entry rows passed; 2/5 variants passed all declared density rows; no staged PnL run.
+staged_validation:
+  status: not_run
+  decision: FAIL
+  terminal_stage: pre_pnl_density_screen
+  report_path: backtest-campaigns/nq_gold_platinum_tailrisk_state/campaign_test_summary.json
+  failure_reason: Pre-PnL density failed; no staged PnL, monkey, WFA, Monte Carlo, simulated incubation, acceptance OOS, or
+    candidate report was run.

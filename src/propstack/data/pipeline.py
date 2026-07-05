@@ -7,6 +7,7 @@ import pandas as pd
 from propstack.data.clean import clean_data
 from propstack.data.features import build_features
 from propstack.data.quality import save_pipeline_outputs
+from propstack.data.scid_execution import load_scid_record_execution_data
 from propstack.data.subset import apply_data_subset, load_bounds_with_warmup, subset_from_data_config
 from propstack.data.timeframe import aggregate_timeframe, canonical_timeframe, parse_timeframe_minutes
 from propstack.utils.reports import market_timezone
@@ -41,6 +42,7 @@ def prepare_data(
     features = build_features(strategy_bars, data_config, status_callback=status_callback)
     _emit(status_callback, f"Built feature columns for {len(features):,} bars.")
     execution_data = source_cleaned
+    custom_execution_config = data_config.get("execution_data")
     if subset_config:
         _emit(status_callback, "Applying final data subset after warmup feature build...")
         cleaned = apply_data_subset(source_cleaned, subset_config)
@@ -62,6 +64,8 @@ def prepare_data(
             **quality_report,
             "strategy_rows": int(len(features)),
         }
+    if custom_execution_config and include_execution_data:
+        execution_data = _load_custom_execution_data(custom_execution_config, subset_config or load_bounds)
     quality_report = {
         **quality_report,
         "timeframe": timeframe,
@@ -75,6 +79,13 @@ def prepare_data(
     if include_execution_data:
         return features, quality_report, execution_data
     return features, quality_report
+
+
+def _load_custom_execution_data(execution_config: dict, bounds: dict | None) -> pd.DataFrame:
+    source = str(execution_config.get("source", "")).lower()
+    if source in {"sierra_scid_records", "scid_records", "sierra_scid"}:
+        return load_scid_record_execution_data(execution_config, date_bounds=bounds)
+    raise ValueError(f"Unsupported data.execution_data.source: {execution_config.get('source')!r}")
 
 
 def _filter_missing_bars(missing, subset_config: dict | None):

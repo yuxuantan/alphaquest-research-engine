@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.max_daily_return_lottery_reversal import MaxDailyReturnLotteryReversalEntry
+
+__all__ = ["MaxDailyReturnLotteryReversalEntry"]

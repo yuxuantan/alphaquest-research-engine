@@ -1,0 +1,110 @@
+campaign_id: nq_corporate_profitability_state
+title: NQ Corporate Profitability State
+status: completed_failed_limited_core
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Strictly lagged BEA/FRED corporate-profit growth and profit-margin state may proxy aggregate cash-flow strength, business-cycle profitability, and equity risk appetite that influence same-day NQ RTH drift.
+rationale: The campaign uses quarterly CPROFIT, CPATAX, and GDP observations with a conservative 120-calendar-day lag. It is distinct from Fama-French factor rotation, AQR BAB, productivity/unit-labor-cost, corporate-equity-supply, SLOOS loan demand, H.8 bank-credit quantity, credit-spread, credit-ETF, and orderflow campaigns because the primary driver is aggregate corporate profitability and profit share, not cross-sectional style returns, leverage factors, labor-cost pressure, issuance, bank credit, credit prices, or intraday flow.
+sources:
+- title: A Five-Factor Asset Pricing Model
+  authors: Eugene F. Fama and Kenneth R. French
+  year: 2015
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2014.10.010
+  relevance: Motivates profitability as an equity-return state variable, though this futures campaign must independently pass NQ staged validation.
+- title: The Other Side of Value - The Gross Profitability Premium
+  authors: Robert Novy-Marx
+  year: 2013
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2013.01.003
+  relevance: Supports profitability as an economically meaningful return-related characteristic.
+- title: National Income and Product Accounts - Corporate Profits and GDP
+  authors: U.S. Bureau of Economic Analysis via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/CPROFIT
+  relevance: Official reproducible source path for aggregate corporate profits, after-tax profits, and GDP series used by the feature builder.
+behavioural_or_microstructure_rationale: Stronger aggregate profitability can improve cash-flow expectations and risk appetite for equity-index futures. Nasdaq duration and growth exposure may respond to profit-growth and profit-margin regimes, but any usable edge must survive costs, neighboring thresholds, monkey robustness, WFA, Monte Carlo, prop-rule simulation, and acceptance OOS.
+expected_failure_modes:
+- Quarterly profits may be too stale or fully incorporated before RTH.
+- Profit margins may be secular and reduce to always-on equity beta rather than timing.
+- Profit growth can peak late-cycle and coincide with future tightening rather than immediate NQ upside.
+- The five long-only expressions may fail monkey or WFA robustness if they only capture broad drift.
+data_needs:
+- timezone-aware NQ RTH 1-minute bars in America/New_York
+- FRED/BEA quarterly CPROFIT/CPATAX/GDP data cached under data/external/fred_corporate_profitability_state
+- 120-calendar-day as-of join from NQ sessions to quarterly BEA/FRED observations
+lookahead_risks:
+- A session dated D may only use the latest quarterly profit/GDP observation on or before D minus 120 calendar days.
+- Rolling ranks are computed on completed quarterly observations before the NQ as-of join.
+- Signals use completed one-minute bars and enter next bar open or later.
+- No future NQ bar, final session range, final VWAP, final volume profile, or post-entry market state is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_fama_french_style_factor_rotation
+  - nq_productivity_unit_labor_cost_state
+  - nq_corporate_equity_supply_state
+  - nq_sloos_bank_lending_survey_state
+  - nq_bank_credit_supply_state
+  - nq_credit_etf_orderflow_risk_appetite
+  conclusion: Eligible before PnL as a distinct aggregate corporate-profitability/profit-margin edge; no prior corporate-profit, profit-margin, CPATAX, CPROFIT, or BEA profitability campaign was found in the ledger or campaign tree.
+variants:
+- high_corporate_profit_yoy_growth_long_1000
+- high_after_tax_profit_yoy_growth_long_1030
+- high_after_tax_profit_margin_long_1130
+- high_corporate_profit_margin_long_1200
+- high_corporate_profit_qoq_growth_long_1330
+parameter_space:
+  per_variant_combinations: 27
+  entry_parameters_per_variant: 1
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+  entry_params:
+    rank_min:
+    - 0.5
+    - 0.55
+    - 0.6
+  stop_params:
+    stop_pct:
+    - 0.003
+    - 0.004
+    - 0.005
+  take_profit_params:
+    target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+pre_pnl_density:
+  decision: PASS
+  entry_rows: 45
+  rows_passing_density: 45
+  artifact: research_artifacts/nq_corporate_profitability_state_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_corporate_profitability_state_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_corporate_profitability_state_density_summary_20260701.csv
+  p_n_l_inspected: false
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  methodology_audit: campaigns/nq_corporate_profitability_state/methodology_audit.md
+  feature_csv: data/external/nq_corporate_profitability_state_features_20110103_20260612.csv
+  density_audit: research_artifacts/nq_corporate_profitability_state_density_audit_20260701.md
+  test_summary: backtest-campaigns/nq_corporate_profitability_state/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_corporate_profitability_state/campaign_results.csv
+  monte_carlo_summary: backtest-campaigns/nq_corporate_profitability_state/monte_carlo_summary.json
+  wfa_stitched_oos_trade_logs_manifest: backtest-campaigns/nq_corporate_profitability_state/wfa_stitched_oos_trade_logs_manifest.csv
+staged_validation:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  valid_test_run_id: run1
+  runs:
+    high_corporate_profit_yoy_growth_long_1000: backtest-campaigns/nq_corporate_profitability_state/high_corporate_profit_yoy_growth_long_1000/NQ/run1
+    high_after_tax_profit_yoy_growth_long_1030: backtest-campaigns/nq_corporate_profitability_state/high_after_tax_profit_yoy_growth_long_1030/NQ/run1
+    high_after_tax_profit_margin_long_1130: backtest-campaigns/nq_corporate_profitability_state/high_after_tax_profit_margin_long_1130/NQ/run1
+    high_corporate_profit_margin_long_1200: backtest-campaigns/nq_corporate_profitability_state/high_corporate_profit_margin_long_1200/NQ/run1
+    high_corporate_profit_qoq_growth_long_1330: backtest-campaigns/nq_corporate_profitability_state/high_corporate_profit_qoq_growth_long_1330/NQ/run1
+  failure_reason: All five variants failed limited_core_grid_test. high_corporate_profit_yoy_growth_long_1000 had only 5/27 profitable combinations and 2/27 benchmark-passing combinations; high_corporate_profit_qoq_growth_long_1330 had only 2/27 profitable combinations and 0/27 benchmark-passing combinations; the other three variants had 0/27 profitable combinations. No branch reached limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

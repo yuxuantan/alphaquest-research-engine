@@ -1,0 +1,126 @@
+campaign_id: nq_key_reversal_orderflow_reversal
+title: NQ Prior-Bar Key Reversal With Aggregate Orderflow Confirmation
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: key_reversal_orderflow_reversal
+source_es_campaign: es_key_reversal_orderflow_reversal
+hypothesis: One-bar failed NQ micro-breakouts may contain short-horizon reversal information when price
+  sweeps the immediately prior completed bar extreme, closes back through the prior close, and completed
+  aggregate orderflow confirms reversal direction.
+rationale: This is a local prior-bar failed-breakout reversion edge. The swept level is only the immediately
+  prior completed 1-minute bar, not a session extreme, rolling range, VWAP, prior-day level, opening range,
+  volume shock, or morning-extension reversal.
+research_sources:
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical
+    Implementation'
+  author: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  link_or_doi: https://doi.org/10.1111/0022-1082.00265
+  expected_mechanism: Mechanically defined price patterns can be tested statistically rather than visually.
+- title: The Predictive Power of Price Patterns
+  author: Gunduz Caginalp and Henry Laurent
+  year: 1998
+  link_or_doi: https://ideas.repec.org/a/taf/apmtfi/v5y1998i3-4p181-205.html
+  expected_mechanism: Reversal-oriented price patterns may have predictive content but must survive modern
+    costs and robustness gates.
+- title: The Price Impact of Order Book Events
+  author: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  link_or_doi: https://doi.org/10.1093/jjfinec/nbt003
+  expected_mechanism: Order-flow imbalance is a short-horizon pressure proxy; this campaign uses completed
+    Sierra aggregate trade-side flow.
+instrument_scaling:
+  method: pre-PnL ES/NQ completed 1-minute range scaling
+  es_median_1m_range_ticks: 5.0
+  nq_median_1m_range_ticks: 15.0
+  ratio: 3.0
+  source_es_grid_ticks:
+  - 1
+  - 2
+  nq_grid_ticks:
+  - 3
+  - 6
+  note: Rounded to integer ticks before NQ density or PnL inspection.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- completed NQ 1-minute RTH OHLCV/orderflow bars
+- rolling volume ratio from prior completed bars
+- completed-bar signed, large10, and large20 aggregate fields
+lookahead_risks:
+- Prior-bar high, low, and close are known before the signal bar begins.
+- Signal-bar range, close, close-location, volume ratio, and orderflow are available only after the bar
+  completes.
+- Signals are filled no earlier than the next 1-minute bar open.
+- No future session high/low, final VWAP, future profile, or post-entry orderflow is used.
+failure_modes:
+- Prior-bar sweeps may be random NQ microstructure noise.
+- Aggregate orderflow can confirm too late after the local reversal.
+- Scaled 3/6 tick sweep thresholds may still be too sparse or too permissive on NQ.
+- The edge may be too small for NQ costs and pessimistic fill ordering.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_session_extreme_delta_divergence
+  - nq_rolling_stat_envelope_orderflow_reversion
+  - nq_volume_shock_liquidity_reversal
+  - nq_orderflow_absorption_exhaustion_reversal
+  - nq_morning_trend_lunch_reversal_orderflow
+  - nq_vwap_deviation_orderflow_reversion
+  conclusion: Eligible as a distinct prior-bar micro-break reversal campaign because the only level is
+    the immediately prior completed 1-minute bar; no session extreme, rolling multi-bar range, VWAP deviation,
+    volume shock, generic absorption, or morning extension is used.
+variants:
+- afternoon_large20_two_sided_key_reversal_1530
+- late_morning_large10_down_sweep_reclaim_long_1230
+- late_morning_large10_up_sweep_reject_short_1230
+- midday_signed_two_sided_key_reversal_1400
+- morning_signed_two_sided_key_reversal_1130
+parameter_space:
+  total_combinations_per_variant: 18
+  entry_tunables:
+  - min_sweep_ticks
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple fixed at 1.0
+  parameters:
+    entry.params.min_sweep_ticks:
+    - 3
+    - 6
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 3
+    tp.params.target_r_multiple:
+    - 1.0
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required: true
+  unit_tests:
+  - tests/test_key_reversal_orderflow_reversal.py
+  - tests/test_nq_key_reversal_orderflow_reversal.py
+status: completed_failed_density
+density_audit:
+  decision: FAIL
+  artifact_md: research_artifacts/nq_key_reversal_orderflow_reversal_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_key_reversal_orderflow_reversal_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_key_reversal_orderflow_reversal_density_summary_20260630.csv
+  declared_entry_rows: 30
+  density_pass_rows: 16
+  density_fail_rows: 14
+  min_full_signals_per_year: 93.32
+  min_limited_core_signals_per_year: 18.78
+  min_latest252_signals: 163

@@ -11,6 +11,7 @@ from propstack.strategy_modules.entry.opening_range_orderflow_breakout import Op
 from propstack.strategy_modules.entry.prior_value_area_orderflow_acceptance import (
     PriorValueAreaOrderflowAcceptanceEntry,
 )
+from propstack.strategy_modules.entry.price_ending_barrier import PriceEndingBarrierEntry
 from propstack.strategy_modules.entry.spx_0dte_expiration_pressure import Spx0dteExpirationPressureEntry
 from propstack.strategy_modules.entry.vwap_pullback_continuation import VwapPullbackContinuationEntry
 from propstack.utils.time import parse_time
@@ -19,6 +20,7 @@ from propstack.utils.time import parse_time
 _SUPPORTED_BASE_MODULES = {
     MesParticipationCrowdingEntry.name: MesParticipationCrowdingEntry,
     OpeningRangeOrderflowBreakoutEntry.name: OpeningRangeOrderflowBreakoutEntry,
+    PriceEndingBarrierEntry.name: PriceEndingBarrierEntry,
     PriorValueAreaOrderflowAcceptanceEntry.name: PriorValueAreaOrderflowAcceptanceEntry,
     Spx0dteExpirationPressureEntry.name: Spx0dteExpirationPressureEntry,
     VwapPullbackContinuationEntry.name: VwapPullbackContinuationEntry,

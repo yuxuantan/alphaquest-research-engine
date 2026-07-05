@@ -1,0 +1,141 @@
+campaign_id: nq_productivity_unit_labor_cost_state
+title: NQ Productivity Unit Labor Cost State
+status: completed_failed_limited_core
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Strictly lagged productivity and unit-labor-cost states may proxy growth quality, margin pressure,
+  and inflation-sensitive discount-rate risk that affects same-day NQ RTH drift.
+rationale: The campaign uses BLS/FRED quarterly productivity, unit-labor-cost, and real-hourly-compensation
+  indexes with a conservative 180-calendar-day lag. It is distinct from realized CPI/PCE inflation, jobless
+  claims, manufacturing orders, industrial production, consumer sentiment, Treasury-rate, and RRP-liquidity
+  campaigns because it tests productivity-adjusted wage-cost pressure rather than price-level inflation,
+  labor slack, production/orders, sentiment, rates, or funding liquidity.
+sources:
+- title: Anticipated Productivity and the Labor Market
+  authors: Ryan Chahrour; Sanjay K. Chugh; Tristan Potter
+  year: 2023
+  venue: Quantitative Economics
+  link: https://onlinelibrary.wiley.com/doi/abs/10.3982/QE2029
+  doi: 10.3982/QE2029
+  relevance: Connects anticipated productivity shocks with labor-market dynamics and macroeconomic activity,
+    motivating productivity state as an equity-risk input.
+- title: 'Nonfarm Business Sector: Labor Productivity (Output per Hour) for All Workers'
+  authors: U.S. Bureau of Labor Statistics via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/OPHNFB
+  relevance: Primary quarterly productivity index used in the feature cache.
+- title: 'Nonfarm Business Sector: Unit Labor Cost'
+  authors: U.S. Bureau of Labor Statistics via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/ULCNFB
+  relevance: Primary quarterly unit-labor-cost index used to measure wage-cost pressure relative to productivity.
+- title: Productivity and Costs
+  authors: U.S. Bureau of Labor Statistics
+  year: 2026
+  venue: BLS Labor Productivity and Costs program
+  link: https://www.bls.gov/lpc/
+  relevance: Defines the labor productivity and cost measures underlying the FRED series.
+behavioural_or_microstructure_rationale: If productivity improves faster than labor costs, NQ growth-equity
+  margins and discount-rate sensitivity may improve. If productivity is weak or unit labor costs are elevated,
+  margin pressure and inflation-policy risk may dominate. Any real edge must survive next-bar execution,
+  NQ costs, pessimistic same-bar ordering, and the full staged robustness flow.
+expected_failure_modes:
+- Quarterly productivity data may be too stale after a 180-day lag for intraday futures trading.
+- NQ may price these macro states before RTH through overnight futures and rates.
+- The signal may duplicate broad inflation or business-cycle state despite different source fields.
+- Effects may be regime-specific and fail neighboring parameter or monkey robustness.
+data_needs:
+- timezone-aware NQ RTH 1-minute bars in America/New_York
+- FRED OPHNFB/ULCNFB/COMPRNFB quarterly data cached under data/external/fred_productivity_unit_labor_cost
+- 180-calendar-day as-of join from NQ sessions to quarterly macro observations
+lookahead_risks:
+- A session dated D may only use the latest quarterly observation on or before D minus 180 calendar days.
+- Rolling ranks are computed on completed quarterly observations before the NQ as-of join.
+- Signals use completed one-minute bars and enter next bar open or later.
+- No future NQ bar, final session range, final VWAP, final volume profile, or post-entry market state
+  is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_inflation_pressure_state
+  - nq_jobless_claims_state
+  - nq_industrial_production_state
+  - nq_manufacturing_orders_state
+  - nq_retail_inventory_demand
+  - nq_housing_construction_state
+  - nq_consumer_sentiment_state_intraday
+  - nq_chicagofed_cfnai_activity_pullback
+  - nq_treasury_rate_shock_intraday
+  - nq_nyfed_rrp_liquidity_state
+  conclusion: Eligible before PnL as a distinct productivity-adjusted labor-cost state edge; no prior
+    NQ productivity or unit-labor-cost campaign was found in the ledger.
+variants:
+- productivity_minus_ulc_4q_pressure_short_1000
+- productivity_1q_weakness_short_1030
+- unit_labor_cost_4q_pressure_short_1130
+- unit_labor_cost_1q_relief_long_1200
+- productivity_minus_ulc_4q_margin_long_1330
+parameter_space:
+  per_variant_combinations: 27
+  entry_parameters_per_variant: 1
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+  entry_params:
+    rank_min:
+    - 0.55
+    - 0.6
+    - 0.65
+    rank_max:
+    - 0.45
+    - 0.4
+    - 0.35
+  stop_params:
+    stop_pct:
+    - 0.003
+    - 0.004
+    - 0.005
+  take_profit_params:
+    target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+density_audit:
+  initial_rejected_artifact: research_artifacts/nq_productivity_unit_labor_cost_density_audit_20260701.csv
+  final_artifact: research_artifacts/nq_productivity_unit_labor_cost_density_audit_20260701.md
+  conclusion: Initial productivity 4Q strength/weakness variants failed density before PnL; final pre-PnL
+    repaired set passed 45/45 density rows without PnL inspection.
+pre_pnl_density:
+  decision: PASS
+  entry_rows: 45
+  rows_passing_density: 45
+  artifact: research_artifacts/nq_productivity_unit_labor_cost_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_productivity_unit_labor_cost_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_productivity_unit_labor_cost_density_summary_20260701.csv
+  p_n_l_inspected: false
+staged_validation:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  valid_test_run_id: run1
+  runs:
+    productivity_minus_ulc_4q_pressure_short_1000: backtest-campaigns/nq_productivity_unit_labor_cost_state/productivity_minus_ulc_4q_pressure_short_1000/NQ/run1
+    productivity_1q_weakness_short_1030: backtest-campaigns/nq_productivity_unit_labor_cost_state/productivity_1q_weakness_short_1030/NQ/run1
+    unit_labor_cost_4q_pressure_short_1130: backtest-campaigns/nq_productivity_unit_labor_cost_state/unit_labor_cost_4q_pressure_short_1130/NQ/run1
+    unit_labor_cost_1q_relief_long_1200: backtest-campaigns/nq_productivity_unit_labor_cost_state/unit_labor_cost_1q_relief_long_1200/NQ/run1
+    productivity_minus_ulc_4q_margin_long_1330: backtest-campaigns/nq_productivity_unit_labor_cost_state/productivity_minus_ulc_4q_margin_long_1330/NQ/run1
+  failure_reason: All five variants failed limited_core_grid_test with 0/27 profitable combinations each.
+    No branch reached limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance
+    OOS, or candidate reporting.
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  methodology_audit: campaigns/nq_productivity_unit_labor_cost_state/methodology_audit.md
+  feature_csv: data/external/nq_productivity_unit_labor_cost_features_20110103_20260612.csv
+  density_audit: research_artifacts/nq_productivity_unit_labor_cost_density_audit_20260701.md
+  test_summary: backtest-campaigns/nq_productivity_unit_labor_cost_state/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_productivity_unit_labor_cost_state/campaign_results.csv

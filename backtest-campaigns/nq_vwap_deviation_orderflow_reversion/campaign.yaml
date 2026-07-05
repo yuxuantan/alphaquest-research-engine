@@ -1,0 +1,112 @@
+campaign_id: nq_vwap_deviation_orderflow_reversion
+title: NQ VWAP Deviation Orderflow Reversion
+decision: PENDING
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: vwap_deviation_orderflow_reversion
+source_es_campaign: es_vwap_deviation_orderflow_reversion
+hypothesis: NQ may mean-revert intraday after price stretches far from completed session VWAP when the
+  completed signal bar shows counter-direction aggregate orderflow and closes away from the extreme.
+rationale: This is a bounded VWAP-extension reversion edge. It fades price away from completed session
+  VWAP with completed counterflow confirmation; it is not VWAP pullback continuation, rolling statistical-envelope
+  reversion, low-toxicity extension fade, daily Bollinger state, volume shock, or generic absorption/exhaustion.
+research_sources:
+- title: 'Improving VWAP Strategies: A Dynamical Volume Approach'
+  author: Jedrzej Bialkowski, Serge Darolles, and Gaelle Le Fol
+  year: 2008
+  link_or_doi: https://ideas.repec.org/p/eve/wpaper/06-08.html
+  expected_mechanism: VWAP is an institutional execution benchmark and intraday value reference.
+- title: Liquidity and Market Structure
+  author: Sanford J. Grossman and Merton H. Miller
+  year: 1988
+  link_or_doi: https://doi.org/10.1111/j.1540-6261.1988.tb04594.x
+  expected_mechanism: Liquidity suppliers may earn compensation when temporary immediacy demand pushes
+    price away from value.
+- title: The Price Impact of Order Book Events
+  author: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  link_or_doi: https://doi.org/10.1093/jjfinec/nbt003
+  expected_mechanism: Order-flow imbalance is a short-horizon pressure proxy; this campaign uses completed
+    aggregate trade-side flow.
+instrument_scaling:
+  method: pre-PnL ES/NQ completed RTH daily range scaling
+  es_median_rth_range_points: 24.5
+  nq_median_rth_range_points: 83.75
+  ratio: 3.42
+  source_es_grid_ticks:
+  - 8
+  - 12
+  - 16
+  nq_grid_ticks: &id001
+  - 28
+  - 40
+  - 56
+  note: Rounded to whole-point increments before NQ density or PnL inspection.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- completed NQ 5-minute bars with session VWAP computed through the signal bar
+- completed-bar signed_volume and large10/large20 aggregate fields
+- same-day forced flatten from config
+lookahead_risks:
+- Session VWAP uses only completed bars through the signal bar.
+- Counterflow and close-location filters use only the completed signal bar.
+- Signals generated from bar close are filled no earlier than next bar open.
+- No final session VWAP, future range, future orderflow, or post-entry bar is used.
+failure_modes:
+- VWAP deviations may reflect real information and continue rather than revert.
+- Counterflow can be early absorption that fails before price turns.
+- NQ VWAP reversion may be too small to overcome costs and pessimistic fill ordering.
+- Large-trade buckets may not identify liquidity provision reliably.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_vwap_pullback_continuation
+  - nq_rolling_stat_envelope_orderflow_reversion
+  - nq_low_toxicity_orderflow_extension_fade
+  - nq_chartfanatics_daily_bollinger_environment
+  - nq_volume_shock_liquidity_reversal
+  - nq_orderflow_absorption_exhaustion_reversal
+  conclusion: Eligible as a distinct VWAP-extension reversion campaign. The primary trigger is completed
+    session-VWAP distance plus completed counterflow, not VWAP-side continuation, rolling close-envelope
+    distance, low-toxicity same-clock fade, daily Bollinger state, volume shock, or generic absorption.
+variants:
+- afternoon_signed_counterflow_1530
+- midday_large20_counterflow_1400
+- midday_signed_counterflow_1400
+- morning_large10_counterflow_1200
+- morning_signed_counterflow_1200
+parameter_space:
+  total_combinations_per_variant: 27
+  entry_tunables:
+  - min_vwap_deviation_ticks
+  - min_counterflow_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple fixed at 1.0
+  parameters:
+    entry.params.min_vwap_deviation_ticks: *id001
+    entry.params.min_counterflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 1.0
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required: true
+  unit_tests:
+  - tests/test_vwap_deviation_orderflow_reversion.py
+  - tests/test_nq_vwap_deviation_orderflow_reversion.py
+status: authored_pending_preflight

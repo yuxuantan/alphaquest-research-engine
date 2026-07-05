@@ -1,0 +1,102 @@
+campaign_id: nq_opening_range_failed_breakout_orderflow
+title: NQ Opening-Range Failed Breakout Reclaim With Aggregate Orderflow
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Completed NQ opening-range false breakouts that reclaim the same range boundary with opposite
+  aggregate orderflow may identify trapped breakout participation and rotate back through the opening
+  auction range.
+rationale: This is an NQ transfer of the ES opening-range failed-breakout orderflow family. It is distinct
+  from NQ opening-range continuation breakouts, pivot-filtered opening breakouts, prior-day stop-run reclaim,
+  prior-session breakout confirmation, and liquidity-inversion/FVG work because price must first close
+  outside the completed opening range and then reclaim that same boundary with opposite completed aggregate
+  flow.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Documents intraday support/resistance behavior, mapped here to completed opening-range boundaries.
+- title: Assessing the profitability of intraday opening range breakout strategies
+  authors: Ulf Holmberg, Carl Lonnback, Christian Lundstrom
+  year: 2013
+  venue: Finance Research Letters
+  doi: 10.1016/j.frl.2012.09.001
+  link: https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html
+  relevance: Supports opening-range rules as a systematic intraday futures framework; this campaign tests
+    failed breakouts rather than continuation.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates completed aggregate orderflow imbalance as a short-horizon pressure confirmation
+    proxy.
+data_needs:
+- NQ RTH one-minute OHLCV/orderflow bars aggregated to 5-minute strategy bars
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, large20_volume
+- same-day flatten and no-overnight prop-rule checks
+lookahead_risks:
+- Opening-range high and low are unavailable until the configured opening window is complete.
+- The failed breakout is recognized only after a completed close outside the opening range.
+- The reclaim and orderflow confirmation use only the completed reclaim bar or predeclared completed-bar
+  lookback.
+- Signals generated from bar close are filled no earlier than the next bar open by the engine.
+- Final session high/low, final VWAP, volume profile, and post-entry orderflow are not used.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_pivot_filtered_opening_range_orderflow_breakout
+  - nq_self_lead_opening_range_breakout
+  - nq_prior_day_stop_run_reclaim
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_orderflow_absorption_exhaustion_reversal
+  - nq_chartfanatics_liquidity_inversion_fvg
+  conclusion: Eligible as distinct because the primary trigger is an opening-range false breakout and
+    reclaim of the same range boundary with opposite completed aggregate flow, not opening-range continuation,
+    prior-day or prior-session level reclaim, standalone absorption, or FVG/liquidity inversion.
+parameter_space:
+  entry_parameters:
+    entry.params.max_reclaim_bars: 2 or 3 values by variant
+    entry.params.min_reclaim_orderflow_imbalance: 2 or 3 values by variant
+  stop_parameters:
+    sl.params.stop_offset_ticks:
+    - 0
+    - 2
+    - 4
+  target_parameters: {}
+  combinations_per_variant_range: 12 to 27
+variants:
+- or15_signed_failed_reclaim_1030
+- or30_signed_failed_reclaim_1100
+- or15_large10_failed_reclaim_1030
+- or30_large20_failed_reclaim_1130
+- or60_signed_failed_reclaim_1200
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees density or staged results.
+status: completed_failed
+completed_at: '2026-06-30T15:05:00+08:00'
+pre_pnl_density_audit:
+  decision: FAIL
+  artifact_md: research_artifacts/nq_opening_range_failed_breakout_orderflow_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_opening_range_failed_breakout_orderflow_density_audit_20260630.csv
+  declared_entry_rows: 29
+  density_pass_rows: 27
+  density_fail_rows: 2
+testing_outcome:
+  decision: FAIL
+  terminal_stage: pre_pnl_density_screen
+  staged_pnl_run: false
+  summary_path: backtest-campaigns/nq_opening_range_failed_breakout_orderflow/campaign_test_summary.json
+  failure_reason: 'Rejected before staged NQ PnL: 2/29 declared entry-grid rows
+    failed the pre-PnL density gate. The sparse rows were in or60_signed_failed_reclaim_1200
+    at min_reclaim_orderflow_imbalance=0.10 with max_reclaim_bars 3 and 4; latest-252-session
+    signal counts were 24 and 25, and the 3-bar row also fell below 50 signals/year
+    over full history. Dropping the strict 0.10 imbalance tier or the OR60 variant
+    after this screen would be post-result narrowing of the declared five-variant
+    edge. No NQ PnL was inspected.'

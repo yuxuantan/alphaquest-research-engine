@@ -1,0 +1,295 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+strategy_name: video_exact_orderflow_playbook_scid_intrabar
+symbol: ES
+dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny
+timeframe: 3m
+data:
+  dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny
+  source_timeframe: 3m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  source_quality_label: Joined Sierra native 3-minute developing VAP, overnight AOI levels, footprint absorption,
+    and ES large-200 record proxy fields, with separate Sierra SCID-record execution replay for the POC intrabar
+    entry evaluator. SCID records are not full DOM/MBO sequencing and do not contain exact 30-second ORB columns.
+  execution_data:
+    source: sierra_scid_records
+    raw_dir: data/raw/ES/sierra-es-trades
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    root_symbol: ES
+    timezone: America/New_York
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    batch_size: 1000000
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset:
+    start_date: '2026-05-01'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2012-01-03'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.aoi_reach_tolerance_ticks:
+    - 2
+    - 4
+    - 8
+    entry.params.min_absorption_volume:
+    - 20
+    - 50
+    - 100
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.fallback_target_r_multiple:
+    - 2.0
+    - 3.0
+    - 4.0
+monkey:
+  data_subset:
+    start_date: '2012-01-03'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset:
+    start_date: '2012-01-03'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.aoi_reach_tolerance_ticks:
+    - 2
+    - 4
+    - 8
+    entry.params.min_absorption_volume:
+    - 20
+    - 50
+    - 100
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.fallback_target_r_multiple:
+    - 2.0
+    - 3.0
+    - 4.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+test_run_id: run11_poc
+variant_id: video_model1_range_midpoint_scid_intrabar_poc_3m_1500
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 2
+  source_video: https://www.youtube.com/watch?v=hvyf6frvCcA
+  academic_source: Chart Fanatics / Trader Yush video; Osler (2000); Kavajecz and Odders-White (2004); Cont, Kukanov,
+    and Stoikov (2014); CME market profile educational material
+  edge_thesis: Model 1 range trades fade false breaks at developing value-area edges when at least two video AOI
+    criteria align and aggressive flow is absorbed.
+  mechanic: POC SCID-record replay for short VAH buyer traps and long VAL seller traps. The evaluator uses the prior
+    completed 3-minute developing profile context, then scans Sierra SCID records inside the current 3-minute bar for
+    the first probe-and-reclaim tick with accumulated large-record or delta confluence.
+  timeframe_rationale: The video states Yush uses 3-minute ES structure. This POC keeps 3-minute profile/AOI context
+    but uses Sierra SCID-record replay for intrabar entry timing inside the 3-minute signal bar.
+  mechanics_review:
+    mechanic_expresses_edge: 'This run5 branch implements the transcript mechanics more tightly than run4: Model
+      1 is value-area-edge false break in balance; Model 2 is trend pullback into same-session developing LVN; every
+      signal requires at least two AOI criteria from market levels, developing VAP, ES large-200 records, and delta
+      activity.'
+    entry_logic_rationale: AOI levels use the prior completed 3-minute cached developing profile context. The POC
+      then replays Sierra SCID records inside the current 3-minute bar and enters on the first no-lookahead tick that
+      satisfies the probe, reclaim, accumulated flow-confluence, and SCID-record absorption-proxy checks.
+    stop_loss_rationale: The stop is beyond the signal bar wick with a tunable tick offset, matching the video examples
+      that risk beyond the wick/AOI invalidation rather than using a final-session or future-derived level.
+    target_exit_rationale: 'The simulator cannot model partial exits and dynamic trailing. The implemented target
+      is the video structural target that can be represented with one target order: Model 1 uses midpoint or opposite
+      value edge; Model 2 uses the prior session structural high/low if valid, otherwise the explicit fallback R
+      target.'
+    profitability_rationale: The strategy should only work if same-session auction structure plus visible large
+      records or delta identify trapped traders whose exit flow continues the move after the pullback or false break.
+    known_failure_modes: The video is discretionary and uses live tape/DOM speed that is unavailable in the cache.
+      This POC uses Sierra SCID records, not exchange MBO sequencing, and the intrabar absorption test is a SCID-record
+      bid/ask-volume proxy rather than the original completed-bar footprint imbalance calculation. 30-second ORB is
+      data-gated rather than approximated. No partial exits or dynamic trailing are simulated.
+    pre_test_decision: approve_for_testing
+  video_transcript_mechanics:
+    aoi_rule: At least two of market-generated levels, volume profile, big trades, and delta activity must align
+      before waiting for price to return.
+    market_levels: PDH/PDL RTH, overnight high/low from 21:00-09:29 ET, and 30-second ORB high/low. This cache includes
+      PDH/PDL and overnight high/low; exact 30-second ORB is unavailable and not approximated.
+    volume_profile: Current RTH developing volume profile, including value area and LVN/low-volume pockets.
+    model1_range: In balance/chop, wait for price at value-area edge, false break/look above-or-below and fail,
+      absorption/trapped aggressive traders, then target midpoint or opposite value edge.
+    model2_trend: In trend, wait for pullback into low-volume pocket/LVN, look for absorption/trapped traders and
+      delta/large-record confirmation, then target highs/lows and trail remainder when discretionary trading allows.
+    unsupported_in_engine:
+    - live tape speed
+    - DOM queue behavior
+    - partial trim
+    - dynamic trailing stop
+    - average-up add-on entries
+  supersedes_test_run_ids:
+  - run5
+  supersession_reason: This is not a performance rescue of run5. It is a bounded implementation POC for SCID-record
+    intrabar entry timing requested by the user after reviewing completed-bar entry mechanics.
+strategy:
+  entry:
+    module: video_exact_orderflow_playbook_scid_intrabar
+    params:
+      start_time: '10:00:00'
+      end_time: '15:00:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 3
+      tick_size: 0.25
+      opening_range_minutes: 1
+      value_area_fraction: 0.7
+      lvn_quantile: 0.2
+      min_prior_profile_bars: 120
+      max_profile_distance_ticks: 64
+      market_aoi_max_distance_ticks: 16
+      aoi_reach_tolerance_ticks: 4
+      min_probe_ticks: 1
+      confirmation_ticks: 0
+      min_absorption_volume: 50
+      min_aoi_confluences: 2
+      min_large200_record_volume: 200
+      min_delta_activity_imbalance: 0.03
+      min_directional_delta_imbalance: 0.0
+      min_structure_bars: 10
+      min_trend_move_ticks: 8
+      allow_opening_range_proxy: false
+      max_trades_per_day: 1
+      profile_source: cached_developing_vap
+      min_developing_profile_bars: 10
+      cached_profile_prefix: developing_vap
+      setup_mode: model1_range_value_edge_two_sided
+      target_reference: value_midpoint
+      allow_long: true
+      allow_short: true
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 2
+  tp:
+    module: signal_price
+    params:
+      metadata_key: signal_target_price
+      fallback_target_r_multiple: 3.0
+      tick_size: 0.25
+      round_to_tick: true
+  flatten_time: '15:55:00'

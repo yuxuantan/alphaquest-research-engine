@@ -1,0 +1,113 @@
+campaign_id: nq_chartfanatics_smt_po3_midpoint_reversion
+title: NQ Chart Fanatics SMT PO3 Midpoint Reversion
+decision: FAIL
+status: completed_failed_density
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_es_smt_po3_1m_20110103_20260609_full_rth_ny
+timeframe: 1m
+edge_family: nq_chartfanatics_smt_po3_midpoint_reversion
+hypothesis: When NQ manipulates a prior-session high or low but ES does not confirm the same-side sweep, NQ may revert toward
+  the prior-session 50% midpoint.
+rationale: Chart Fanatics describes SMT+PO3 as manipulation of a key range, SMT divergence between NQ and ES, and delivery
+  back toward the 50% level. This campaign makes the RTH-only version objective using prior RTH range, NQ/ES non-confirmation,
+  close-back-inside confirmation, and a signal-emitted midpoint target.
+research_sources:
+- title: SMT Divergence+PO3
+  author: Trader Kane / Chart Fanatics
+  year: 2026
+  link_or_doi: https://www.chartfanatics.com/strategies/smt-divergence-po3
+  expected_mechanism: Practitioner playbook targets quick returns to the 50% level after manipulation, PO3 structure, and
+    SMT divergence between NQ and ES.
+- title: High Frequency Lead/Lag Relationships - Empirical Facts
+  author: Nicolas Huth and Frederic Abergel
+  year: 2014
+  link_or_doi: https://ideas.repec.org/p/hal/wpaper/hal-00645685.html
+  expected_mechanism: Supports related-instrument non-synchronous price discovery, used here only to motivate testing NQ/ES
+    non-confirmation.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  author: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  link_or_doi: https://doi.org/10.1111/0022-1082.00265
+  expected_mechanism: Supports deterministic pattern extraction from discretionary technical concepts.
+source_quality_note: The PO3/SMT rule is practitioner-originated. This test is an RTH-only approximation using prior-session
+  range, not full daily/4H/1H discretionary PO3 context.
+data_needs:
+- generated local NQ-primary/ES-secondary aligned one-minute RTH cache
+- prior NQ and ES RTH high/low known only after session rollover
+- NQ next-bar execution with structural sweep stop and signal midpoint target
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_es_cross_index_lead_lag
+  - nq_es_relative_value_orderflow_absorption_reversion
+  - nq_prior_day_stop_run_reclaim
+  - nq_chartfanatics_liquidity_inversion_fvg
+  conclusion: Eligible as a distinct Chart Fanatics-derived campaign because it tests NQ/ES SMT non-confirmation plus prior-range
+    50% reversion. Existing cross-index lead-lag follows ES returns; relative-value campaigns fade dispersion with orderflow;
+    prior stop-run campaigns do not require ES non-confirmation or midpoint targeting.
+chart_fanatics_review:
+  selected_after: Liquidity Inversion FVG campaign failed pre-PnL density.
+  selected_reason: SMT+PO3 is currently visible on Chart Fanatics and is not represented as a tested local NQ/ES midpoint-reversion
+    campaign.
+lookahead_risks:
+- Prior-session NQ/ES highs, lows, and NQ midpoint become available only after the previous RTH close.
+- SMT non-confirmation is evaluated only through the completed signal bar.
+- Entry occurs no earlier than the next one-minute bar open after NQ closes back inside the range.
+- No future session high/low, future midpoint, final VWAP, future ES move, or post-entry path is used.
+failure_modes:
+- The RTH-only approximation may not capture true daily/4H/1H PO3 context.
+- ES non-confirmation may be too common or too weak after costs.
+- The 50% midpoint target may be too close relative to structural sweep risk.
+- Payoff may concentrate in isolated volatility regimes or one side.
+variants:
+- prior_high_smt_short_1000_1130
+- prior_low_smt_long_1000_1130
+- prior_two_sided_smt_1000_1130
+- prior_high_smt_short_1030_1200
+- prior_low_smt_long_1030_1200
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - sweep_buffer_ticks
+  - reclaim_buffer_ticks
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - min_signal_target_r_multiple
+  parameters:
+    entry.params.sweep_buffer_ticks:
+    - 0
+    - 2
+    - 4
+    entry.params.reclaim_buffer_ticks:
+    - 0
+    - 2
+    - 4
+    sl.params.stop_offset_ticks:
+    - 2
+    - 6
+    - 10
+    tp.params.min_signal_target_r_multiple:
+    - 1.0
+    - 1.5
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+test_results:
+  completed_at: '2026-06-30T13:58:40+08:00'
+  terminal_stage: pre_pnl_density_screen
+  verdict: FAIL
+  density_audit_md: research_artifacts/nq_chartfanatics_smt_po3_midpoint_reversion_density_audit_20260630.md
+  density_audit_csv: research_artifacts/nq_chartfanatics_smt_po3_midpoint_reversion_density_audit_20260630.csv
+  campaign_test_summary: backtest-campaigns/nq_chartfanatics_smt_po3_midpoint_reversion/campaign_test_summary.json
+  declared_entry_rows: 45
+  density_pass_rows: 0
+  density_fail_rows: 45
+  summary: Rejected before staged NQ PnL because all 45 declared entry-grid rows failed at least one 50 signals/year density gate.
+    The one-sided prior-high and prior-low SMT variants were sparse across full-history, limited-core, and latest-252 windows;
+    the two-sided 10:00-11:30 variant cleared full-history and latest-252 counts but still failed the limited-core minimum at
+    38.24 signals/year. No NQ PnL was inspected.

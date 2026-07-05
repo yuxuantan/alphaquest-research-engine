@@ -1,0 +1,147 @@
+campaign_id: nq_taiwan_semiconductor_spillover
+title: NQ Taiwan Semiconductor Spillover
+status: completed_failed_limited_core
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Same-date Taiwan cash-market and local TSMC state may proxy semiconductor supply-chain information
+  available before the U.S. RTH open and may spill into NQ intraday risk appetite.
+rationale: Taiwan cash trading closes before the configured NQ RTH decision times. The campaign uses only
+  the latest TAIEX and 2330.TW close available on or before the NQ session date, rolling ranks computed
+  on completed Taiwan observations, completed NQ bars, next-bar execution, and same-day flattening.
+sources:
+- title: U.S. Exposure to the Taiwanese Semiconductor Industry
+  authors: Lin Jones; Sarah Krulikowski; Nathan Lotze; Samantha Schreiber
+  year: 2023
+  venue: U.S. International Trade Commission Economics Working Paper Series
+  link: https://www.usitc.gov/publications/332/working_papers/us_exposure_to_the_taiwanese_semiconductor_industry_11-21-2023_508.pdf
+  relevance: Motivates Taiwan semiconductor supply-chain state as economically relevant to U.S. technology
+    equities and downstream manufacturers.
+- title: Examining Volatility Spillover Effect from the United States Stock Market to the Taiwan Stock
+    Exchange
+  authors: Jo Hui Chen; Dolgion Gankhuyag
+  year: 2022
+  venue: Review of Integrative Business and Economics Research
+  link: https://buscompress.com/uploads/3/4/9/8/34980536/riber_11-4_04_m21-501_50-58.pdf
+  relevance: Documents U.S.-Taiwan equity-market volatility spillover relationships and time-shifted market
+    information transmission.
+- title: Taiwan Stock Exchange Capitalization Weighted Stock Index
+  authors: Taiwan Index Plus Corporation
+  year: 2026
+  venue: Taiwan Index Plus
+  link: https://taiwanindex.com.tw/en/indexes/t00
+  relevance: Defines TAIEX as the primary capitalization-weighted benchmark for Taiwan listed common shares.
+- title: TWSE Market and Index Information
+  authors: Taiwan Stock Exchange Corporation
+  year: 2026
+  venue: Taiwan Stock Exchange
+  link: https://www.twse.com.tw/en/
+  relevance: Confirms TWSE market/index context and supports same-date Taiwan cash-market availability
+    before NQ RTH.
+behavioural_or_microstructure_rationale: If Taiwan semiconductor supply-chain information is incorporated
+  gradually across global technology equities, TAIEX and local TSMC strength may support NQ continuation,
+  local TSMC relative weakness may indicate chip-supply stress, and high TAIEX volatility may transfer
+  risk-off pressure into NQ RTH.
+expected_failure_modes:
+- Taiwan cash information may be fully absorbed by U.S. overnight index futures before RTH.
+- The observed relation may be U.S.-to-Taiwan rather than Taiwan-to-U.S. despite time-zone availability.
+- Local TSMC moves may be too idiosyncratic or already represented by failed U.S. semiconductor ETF leadership
+  tests.
+- Signals may cluster in crisis or AI-boom regimes and fail monkey or walk-forward robustness.
+- Taiwan holiday gaps may reduce signal freshness; entries reject observations older than three calendar
+  days.
+data_needs:
+- timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+- Yahoo Finance daily adjusted closes for ^TWII and 2330.TW cached deterministically under data/external
+- same-date as-of join from NQ session date to latest Taiwan observation with maximum three-calendar-day
+  lag
+data_quality_caveats:
+- The Sierra cache is aggregated 1-minute bar data, not tick-path data.
+- Same-bar stop/target conflicts must use pessimistic OHLC ordering.
+- Yahoo daily adjusted close data are public vendor data rather than exchange-licensed raw TWSE files.
+- Taiwan holidays use the latest prior Taiwan observation only if no older than three calendar days.
+lookahead_risks:
+- Taiwan cash close is complete before the configured NQ RTH decision times.
+- Rolling ranks are computed on completed Taiwan daily observations before the NQ as-of join.
+- Signals use completed NQ bars and enter no earlier than the next bar open.
+- No future NQ bar, final U.S. session range, final VWAP, final volume profile, or post-entry market state
+  is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_nikkei225_close_spillover
+  - nq_semiconductor_leadership_risk_sentiment
+  - nq_china_tech_risk_sentiment
+  - nq_europe_equity_close_spillover
+  - nq_nasdaq_equal_weight_concentration
+  - nq_small_cap_relative_rotation
+  - nq_btc_crypto_risk_sentiment
+  - nq_copper_growth_risk_sentiment
+  - chartfanatics_remaining_strategy_source_gate_after_nq_infectious_emv
+  conclusion: Eligible as a distinct edge before PnL because the primary state is same-date Taiwan cash-market
+    and local TSMC information, not Japan broad equity close, prior-day U.S. semiconductor ETF leadership,
+    China technology ETF sentiment, Europe close, or ChartFanatics discretionary orderflow/AOI mechanics.
+variants:
+- twii_1d_strength_long_1000
+- twii_1d_weakness_short_1000
+- tsmc_1d_relative_strength_long_1030
+- tsmc_3d_relative_weakness_short_1030
+- taiwan_1d_volatility_short_1130
+parameter_space:
+  per_variant_combinations: 27
+  entry_parameters_per_variant: 1
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+  entry_params:
+    rank_min:
+    - 0.55
+    - 0.6
+    - 0.65
+    rank_max:
+    - 0.45
+    - 0.4
+    - 0.35
+  stop_params:
+    stop_pct:
+    - 0.003
+    - 0.005
+    - 0.007
+  take_profit_params:
+    target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+pre_pnl_density:
+  decision: PASS
+  entry_rows: 45
+  rows_passing_density: 45
+  artifact: research_artifacts/nq_taiwan_semiconductor_spillover_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_taiwan_semiconductor_spillover_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_taiwan_semiconductor_spillover_density_summary_20260701.csv
+  p_n_l_inspected: false
+staged_validation:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  valid_test_run_id: run1
+  runs:
+    twii_1d_strength_long_1000: backtest-campaigns/nq_taiwan_semiconductor_spillover/twii_1d_strength_long_1000/NQ/run1
+    twii_1d_weakness_short_1000: backtest-campaigns/nq_taiwan_semiconductor_spillover/twii_1d_weakness_short_1000/NQ/run1
+    tsmc_1d_relative_strength_long_1030: backtest-campaigns/nq_taiwan_semiconductor_spillover/tsmc_1d_relative_strength_long_1030/NQ/run1
+    tsmc_3d_relative_weakness_short_1030: backtest-campaigns/nq_taiwan_semiconductor_spillover/tsmc_3d_relative_weakness_short_1030/NQ/run1
+    taiwan_1d_volatility_short_1130: backtest-campaigns/nq_taiwan_semiconductor_spillover/taiwan_1d_volatility_short_1130/NQ/run1
+  failure_reason: All five variants failed limited_core_grid_test. Four variants had zero profitable combinations;
+    the best breadth was twii_1d_strength_long_1000 with profitable-combination rate 0.5185185185185185
+    (14/27), below the required 0.70 gate, and only 7/27 benchmark-passing combinations. No branch reached
+    limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate
+    reporting.
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  methodology_audit: campaigns/nq_taiwan_semiconductor_spillover/methodology_audit.md
+  feature_csv: data/external/nq_taiwan_semiconductor_spillover_features_20110103_20260612.csv
+  density_audit: research_artifacts/nq_taiwan_semiconductor_spillover_density_audit_20260701.md
+  test_summary: backtest-campaigns/nq_taiwan_semiconductor_spillover/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_taiwan_semiconductor_spillover/campaign_results.csv

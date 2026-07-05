@@ -1,0 +1,125 @@
+campaign_id: nq_naaim_exposure_sentiment
+title: NQ NAAIM Active-Manager Exposure Sentiment
+status: completed
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Public NAAIM Exposure Index observations proxy active equity risk-manager
+  positioning. High exposure may indicate crowded optimism and weaker subsequent NQ
+  intraday returns, while low or falling exposure may indicate under-positioning or
+  fear that can support contrarian NQ rebounds.
+rationale: This is a weak-prior NQ symbol-transfer from the failed ES NAAIM family.
+  It is distinct from consumer sentiment, Cboe option sentiment, FINRA margin leverage,
+  AQR BAB, dollar risk appetite, and volatility/tail-risk campaigns because it uses
+  weekly active-manager equity exposure with a conservative two-business-day availability
+  lag.
+research_sources:
+- title: Investor Sentiment and the Cross-Section of Stock Returns
+  author: Malcolm Baker and Jeffrey Wurgler
+  year: 2006
+  link_or_doi: https://doi.org/10.1111/j.1540-6261.2006.00885.x
+  expected_mechanism: Sentiment proxies can forecast subsequent equity returns, motivating
+    a public exposure-sentiment test.
+- title: Investor Sentiment and Asset Valuation
+  author: Gregory W. Brown and Michael T. Cliff
+  year: 2005
+  link_or_doi: https://econpapers.repec.org/RePEc:ucp:jnlbus:v:78:y:2005:i:2:p:405-440
+  expected_mechanism: Survey-based sentiment can be associated with valuation errors
+    and weaker later returns, supporting contrarian variants.
+- title: NAAIM Exposure Index
+  author: National Association of Active Investment Managers
+  year: 2026
+  link_or_doi: https://naaim.org/programs/naaim-exposure-index/
+  expected_mechanism: Weekly active-manager exposure survey values used as a public
+    positioning proxy.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/naaim_exposure_index_20260610.xlsx
+- data/external/nq_naaim_exposure_features_20110103_20260612.csv
+feature_construction:
+  builder: tools/build_es_naaim_exposure_features.py
+  output: data/external/nq_naaim_exposure_features_20110103_20260612.csv
+  rows: 806
+  first_signal_session: '2011-01-03'
+  last_signal_session: '2026-06-12'
+  annualized_signal_rate: 52.206331
+  availability_lag_business_days: 2
+  lookahead_control: Each NQ signal session is the first RTH session at least two
+    business days after the NAAIM observation date.
+duplicate_edge_review:
+  active_scope_only: true
+  reviewed_on: '2026-06-30'
+  existing_nq_campaign_id: none
+  es_source_campaign: es_naaim_exposure_sentiment
+  es_source_decision: FAIL
+  not_duplicate_of:
+  - nq_consumer_sentiment_state_intraday
+  - nq_cboe_put_call_sentiment_intraday
+  - nq_finra_margin_leverage
+  - nq_aqr_bab_factor_state
+  - nq_dollar_risk_appetite_intraday
+  - nq_vvix_tail_risk_intraday
+  - nq_ofr_financial_stress_intraday
+  conclusion: This campaign uses weekly active-manager equity-exposure positioning
+    from NAAIM. It is not monthly household sentiment, option put/call sentiment,
+    broker margin leverage, factor leverage, broad-dollar risk appetite, volatility/tail
+    risk, or financial stress.
+parameter_space:
+  combinations_per_variant: 9
+  entry_parameters: fixed per variant
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+variants:
+- level_median_contrarian_1000
+- level_rank_contrarian_1030
+- weekly_change_contrarian_1130
+- zscore_sign_contrarian_1200
+- ma_distance_contrarian_1400
+density_audit:
+  artifact: research_artifacts/nq_naaim_exposure_sentiment_density_audit_20260630.md
+  conclusion: All five fixed-entry variants clear the 50 signals/year pre-PnL density
+    gate, narrowly at the weekly cadence.
+rescue_policy:
+  rescue_scope: none_for_initial_campaign
+  max_rescue_attempts_without_user_approval: 0
+  forbidden_changes:
+  - core strategy mechanic
+  - NAAIM two-business-day availability rule
+  - setup mode
+  - direction logic
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-30'
+  aggregate_report: backtest-campaigns/nq_naaim_exposure_sentiment/campaign_test_summary.json
+  official_runs: 5
+  limited_core_failed_runs: 5
+  limited_monkey_failed_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate
+    was level_median_contrarian_1000 at 0/9 (0.0), below the 0.70 gate. Across all
+    official variants, 0/45 combinations were profitable, 0 benchmark-pass rows, and
+    0 Apex-rule-violating iterations. No variant reached limited monkey, WFA, WFA
+    OOS monkey, Monte Carlo, simulated incubation, or acceptance OOS.
+  best_variant_by_core_profitable_rate: level_median_contrarian_1000
+  best_core_profitable_rate: 0.0

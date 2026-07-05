@@ -1,0 +1,90 @@
+campaign_id: nq_vix_expiration_pressure
+title: NQ VIX Expiration Settlement Pressure
+decision: TEST
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Monthly VIX futures/options settlement can create transitory SPX option demand, volatility-hedging pressure,
+  and post-settlement unwind that may spill into intraday NQ returns through broad equity-index hedging and Nasdaq
+  beta exposure.
+rationale: This is a pre-PnL NQ transfer of the ES VIX expiration-pressure family. It is distinct from tested NQ
+  monthly OPEX, quarterly expiration, SPX 0DTE, VIX level/state, and VIX term-structure campaigns because the signal
+  is the deterministic VIX derivatives settlement calendar, not equity-option third-Friday expiration, daily SPXW
+  expiration, lagged VIX state, or VIX futures basis.
+sources:
+- title: Manipulation in the VIX?
+  authors: John M. Griffin and Amin Shams
+  year: 2018
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/hhx085
+  link: https://doi.org/10.1093/rfs/hhx085
+  relevance: Documents abnormal SPX option trading and price pressure around VIX settlement; this campaign tests
+    only deterministic settlement-calendar spillover, not SOQ values or option volume.
+- title: Cboe Volatility Index Options Product Specifications
+  authors: Cboe
+  year: 2026
+  venue: Cboe
+  link: https://www.cboe.com/tradable_products/vix/vix_options/specifications/
+  relevance: Defines VIX option expiration and settlement mechanics as public calendar events tied to SPX option
+    settlement.
+- title: 'The VIX Futures Basis: Evidence and Trading Strategies'
+  authors: Carol Alexander and Dimitris Korovilas
+  year: 2012
+  venue: SSRN
+  doi: 10.2139/ssrn.2048545
+  link: https://doi.org/10.2139/ssrn.2048545
+  relevance: Provides context that VIX futures markets are linked to equity-index volatility risk premia and hedging
+    flows.
+data_needs:
+- timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+- deterministic VIX standard expiration signal calendar with previous, settlement, and next regular sessions
+data_quality_caveats:
+- The VIX expiration calendar is deterministic and public but low frequency.
+- The strategy does not observe actual VIX option/futures positioning, SPX option opening imbalance, or settlement
+  SOQ.
+- NQ is an indirect recipient of VIX settlement pressure; spillover may be weak or unstable.
+lookahead_risks:
+- Signal dates use only the predeclared VIX settlement calendar and do not use future NQ prices, VIX levels, SOQ
+  values, option volume, final VWAP, or same-day highs/lows.
+- A signal at HH:MM uses the completed one-minute bar ending at HH:MM and enters at the next bar open.
+- Flatten and no-overnight checks are config-driven and remain earlier than the prop cutoff.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_monthly_opex_pressure
+  - nq_spx_0dte_expiration_pressure
+  - nq_spx_0dte_trend_aligned_pressure
+  - nq_cboe_vix_level_state_intraday
+  - nq_cboe_vix_term_structure_intraday
+  - nq_cboe_vxn_vix_dispersion_intraday
+  - nq_vix_pressure_orderflow_confirmation
+  conclusion: Eligible as a separate NQ edge because it tests VIX derivatives settlement-date pressure, not monthly
+    equity OPEX, SPX 0DTE, lagged VIX state, VIX term structure, VXN/VIX dispersion, or intraday VIX-pressure confirmation.
+variants:
+- prior_session_late_hedge_unwind_long_1500
+- vix_settlement_open_pressure_short_1000
+- vix_settlement_midday_reversal_long_1200
+- vix_settlement_late_reversal_long_1500
+- post_vix_settlement_next_session_long_1000
+parameter_space:
+  per_variant_combinations: 9
+  entry_parameters: none; event date, signal type, direction, and signal time are fixed per variant
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+source_es_campaign: es_vix_expiration_pressure
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue authorized; reject or promote only after staged results.
+result_summary:
+  decision: PENDING
+  report: backtest-campaigns/nq_vix_expiration_pressure/campaign_test_summary.json
+  candidate_strategy_report_created: false

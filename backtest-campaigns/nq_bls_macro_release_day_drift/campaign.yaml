@@ -1,0 +1,93 @@
+campaign_id: nq_bls_macro_release_day_drift
+title: NQ BLS Macro Release-Day Drift
+decision: TEST
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Known high-impact BLS 08:30 ET macro release dates may carry positive NQ RTH drift after uncertainty
+  resolution and delayed public-information incorporation, without using released values or surprises.
+rationale: This is a pre-PnL NQ transfer of the ES BLS macro-release drift family. It is distinct from tested NQ
+  FOMC drift, EMV macro-news state, import/export price-pressure, Chicago Fed CFNAI, consumer sentiment, and generic
+  calendar seasonality because the signal is only the known 08:30 ET CPI and Employment Situation release-date calendar
+  plus completed RTH confirmation filters, not release values, lagged macro states, or FOMC timing.
+sources:
+- title: 'Price Drift Before U.S. Macroeconomic News: Private Information about Public Announcements?'
+  authors: Alexander Kurov, Alessio Sancetta, Georg Strasser, Marketa Halova Wolfe
+  year: 2019
+  doi: 10.1017/S0022109018000625
+  link: https://doi.org/10.1017/S0022109018000625
+  relevance: Documents price drift around market-moving U.S. macro news; this campaign tests a strict post-release
+    RTH version without announcement surprises.
+- title: Real-Time Price Discovery in Global Stock, Bond and Foreign Exchange Markets
+  authors: Torben G. Andersen, Tim Bollerslev, Francis X. Diebold, Clara Vega
+  year: 2007
+  doi: 10.1016/j.jinteco.2007.02.004
+  link: https://doi.org/10.1016/j.jinteco.2007.02.004
+  relevance: Shows macroeconomic news creates high-frequency price discovery in stock-index futures and related
+    markets.
+- title: ALFRED Release Dates for Employment Situation and Consumer Price Index
+  authors: Federal Reserve Bank of St. Louis / U.S. Bureau of Labor Statistics
+  year: 2026
+  link: https://alfred.stlouisfed.org/release/downloaddates
+  relevance: Provides historical release dates known before RTH; release values and surprises are intentionally
+    unused.
+data_needs:
+- timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+- deterministic CPI and Employment Situation release-date calendar
+data_quality_caveats:
+- The calendar is deterministic but release-day samples are still event-driven and can concentrate by regime.
+- No released values, revisions, survey surprises, or 08:30 tick reaction are used.
+- NQ may react differently than ES because discount-rate sensitivity can dominate broad risk appetite.
+lookahead_risks:
+- Signals use only predeclared release dates and completed RTH bars after the 08:30 release.
+- Momentum and low-range filters use completed session state up to the signal bar only.
+- No final VWAP, daily high/low, final day return, release surprise, or revision is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_fomc_pre_announcement_drift
+  - nq_emv_macro_news_intraday
+  - nq_import_export_price_pressure
+  - nq_chicagofed_cfnai_activity_pullback
+  - nq_consumer_sentiment_state_intraday
+  - nq_preholiday_effect
+  conclusion: Eligible as a separate NQ edge because it tests the known BLS release-date calendar itself, not FOMC
+    timing, lagged macro-state features, or generic seasonality.
+variants:
+- employment_release_open_long_1000
+- cpi_release_open_long_1000
+- combined_bls_release_open_long_1000
+- combined_bls_release_momentum_long_1130
+- combined_bls_release_low_range_long_1200
+parameter_space:
+  per_variant_combinations:
+    unconditional: 9
+    momentum_or_low_range: 27
+  entry_parameters:
+    entry.params.min_session_return_bps:
+    - 0
+    - 10
+    - 20
+    entry.params.max_session_range_bps:
+    - 20
+    - 35
+    - 50
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+source_es_campaign: es_bls_macro_release_day_drift
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue authorized; reject or promote only after staged results.
+result_summary:
+  decision: PENDING
+  report: backtest-campaigns/nq_bls_macro_release_day_drift/campaign_test_summary.json
+  candidate_strategy_report_created: false

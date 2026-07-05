@@ -1,0 +1,335 @@
+campaign_id: nq_session_extreme_delta_divergence
+variant_id: midday_two_sided_delta_divergence
+test_run_id: run1
+strategy_name: session_extreme_delta_divergence
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Cont, Kukanov, and Stoikov (2014); Kavajecz and Odders-White (2004);
+    Campbell, Grossman, and Wang (1993)
+  edge_thesis: Fresh NQ RTH highs or lows that are not confirmed by cumulative aggregate
+    signed-volume progress may represent exhausted liquidity-taking pressure or absorption
+    at the new extreme, making same-session mean reversion plausible after costs.
+  mechanic: From 11:00 through 14:00 ET, fade either fresh current-session high or
+    fresh current-session low when the completed-bar extreme is not confirmed by cumulative
+    signed-volume progress from the prior completed extreme. Flatten by 15:55 ET unless
+    the stop or target is hit.
+  timeframe_rationale: Midday one-minute bars provide frequent current-session extreme
+    tests after the opening range is established without using final session highs
+    or lows.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-30'
+  mechanics_review:
+    mechanic_expresses_edge: The variant starts with a fresh current-session NQ price
+      extreme. The aggregate-orderflow condition asks whether cumulative signed-volume
+      progress from the prior completed extreme confirms that extension. A weak progress
+      ratio means price stretched without proportional aggressive flow, which is the
+      intended exhaustion expression.
+    entry_logic_rationale: From 11:00 through 14:00 ET, fade either fresh current-session
+      high or fresh current-session low when the completed-bar extreme is not confirmed
+      by cumulative signed-volume progress from the prior completed extreme. The entry
+      uses only completed bars, and execution is no earlier than the next one-minute
+      bar boundary.
+    stop_loss_rationale: A percent-from-entry stop is observable at entry and does
+      not depend on future highs/lows. It tests whether the non-confirmed extreme
+      can reverse before adverse continuation overwhelms the setup.
+    target_exit_rationale: A fixed-R target keeps exits independent of future session
+      levels and lets the grid test modest mean-reversion payoffs without changing
+      the entry edge.
+    profitability_rationale: If fresh NQ extremes without cumulative signed-volume
+      confirmation mark failed liquidity-taking attempts, the next bars should revert
+      often enough that fixed 1R exits overcome NQ commission, one-tick slippage,
+      and pessimistic same-bar stop/target handling. The pre-PnL density audit must
+      pass before any PnL is inspected.
+    known_failure_modes: The apparent divergence may be hidden continuation, signed-volume
+      may be too noisy, NQ directional days may run through the fade, or costs and
+      pessimistic fills may dominate. The ES source family failed, so the NQ transfer
+      is treated skeptically.
+    pre_test_decision: approve_for_testing
+  source_es_config_path: campaigns/es_session_extreme_delta_divergence/variants/midday_two_sided_delta_divergence/config.yaml
+  pre_pnl_port_note: This NQ transfer uses the ES declared mechanics and entry grid
+    before any NQ PnL inspection; no NQ rescue attempt is authorized.
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: session_extreme_delta_divergence
+    params:
+      setup_mode: midday_two_sided_delta_divergence
+      direction_mode: two_sided
+      start_time: '11:00:00'
+      end_time: '14:00:00'
+      bar_interval_minutes: 1
+      tick_size: 0.25
+      min_bars_since_open: 60
+      min_extreme_break_ticks: 1
+      close_reclaim_tolerance_ticks: 8
+      max_delta_progress_ratio: 0.05
+      flow_mode: signed
+      max_trades_per_day: 1
+      flatten_time: '15:55:00'
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0015
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.min_extreme_break_ticks:
+    - 1
+    - 2
+    entry.params.max_delta_progress_ratio:
+    - 0.05
+    - 0.1
+    sl.params.stop_pct:
+    - 0.001
+    - 0.0015
+    - 0.0025
+    tp.params.target_r_multiple:
+    - 1.0
+monkey:
+  data_subset: *id001
+  runs: 8000
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.min_extreme_break_ticks:
+    - 1
+    - 2
+    entry.params.max_delta_progress_ratio:
+    - 0.05
+    - 0.1
+    sl.params.stop_pct:
+    - 0.001
+    - 0.0015
+    - 0.0025
+    tp.params.target_r_multiple:
+    - 1.0
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    runs: 8000
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.mean_net_pnl
+      exclusive_min: 0.0
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

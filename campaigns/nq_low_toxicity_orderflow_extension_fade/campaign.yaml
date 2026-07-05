@@ -1,0 +1,119 @@
+campaign_id: nq_low_toxicity_orderflow_extension_fade
+title: NQ Low-Toxicity Orderflow Extension Fade
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+source_es_campaign: es_low_toxicity_orderflow_extension_fade
+hypothesis: When NQ makes a short-horizon price extension but same-clock absolute
+  aggregate orderflow imbalance is unusually low, the move may be weakly informed
+  or liquidity-driven rather than pressure-driven; fixed-slot fades may capture reversion.
+rationale: This campaign tests low-toxicity orderflow state, not raw signed-flow momentum.
+  It ranks completed-bar absolute signed-volume imbalance against prior same-clock
+  sessions, requires a completed price extension in the direction being faded, then
+  enters on the next bar in predeclared non-overlapping time slots.
+sources:
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon pressure state; this
+    campaign uses low aggregate imbalance as the weak-pressure condition.
+- title: Flow Toxicity and Liquidity in a High-frequency World
+  authors: David Easley, Marcos M. Lopez de Prado, and Maureen O'Hara
+  year: 2012
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/hhs053
+  link: https://academic.oup.com/rfs/article/25/5/1457/1586220
+  relevance: Supports the idea that toxicity/orderflow composition changes liquidity
+    provision and short-horizon price behavior.
+- title: Why Do Security Prices Change? A Transaction-Level Analysis of NYSE Stocks
+  authors: Ananth Madhavan, Matthew Richardson, and Mark Roomans
+  year: 1997
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/10.4.1035
+  link: https://academic.oup.com/rfs/article-abstract/10/4/1035/1589322
+  relevance: Links transaction flow, liquidity, and price changes, motivating a pressure-state
+    interpretation rather than a pure chart pattern.
+data_needs:
+- timezone-aware NQ RTH one-minute Sierra OHLCV/orderflow cache in America/New_York
+- five-minute completed-bar aggregation
+- rolling 15/30/60-minute aggregate signed-volume imbalance and return features
+- same-clock rank features computed only from prior sessions
+- same-day stop, target, forced-flatten, and no-overnight enforcement
+duplicate_edge_review:
+  status: no_exact_active_nq_duplicate_found
+  distinct_from:
+  - 'nq_vpin_toxicity_continuation: high-toxicity/VPIN continuation state, not low-imbalance
+    extension fade'
+  - 'nq_orderflow_absorption_exhaustion_reversal: high effort-vs-result absorption/exhaustion
+    fade, not low same-clock imbalance after price extension'
+  - 'nq_intraday_periodicity_orderflow_confirmation: periodicity/orderflow confirmation
+    family, not same-clock low-toxicity extension fade'
+  - 'nq_trade_size_stealth_orderflow: trade-size disagreement state, not low absolute
+    imbalance extension fade'
+lookahead_risks:
+- Same-clock ranks must use only prior sessions at the same clock time.
+- Signals use completed five-minute bars and enter at the next bar open or later.
+- No future bar, final session range, final VWAP, or post-entry orderflow is used.
+data_quality_caveats:
+- Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor
+  truth.
+- Same-bar stop/target conflicts must use pessimistic OHLC fill ordering.
+- The edge is invalid if same-clock ranks are accidentally computed using the current
+  or future session.
+failure_modes:
+- Low imbalance may identify quiet continuation rather than reversion.
+- Fixed slots may be intraday-seasonality artifacts.
+- Trade count can be high but edge may disappear after costs.
+- Results may concentrate in one volatility regime or one side.
+- The ES source campaign failed limited-core robustness even after one parameter-space
+  rescue.
+parameter_space:
+  source: ported before NQ PnL inspection from ES parameter_space_rescue_1 grids
+  combinations_per_variant: 81
+  entry_tunables:
+  - entry.params.rank_threshold
+  - entry.params.min_return_ticks
+  stop_tunable: sl.params.stop_pct
+  target_exit_tunable: tp.params.target_r_multiple
+variants:
+- three_slot_down_extension_fade_long
+- three_slot_up_extension_fade_short
+- two_slot_late_balanced_extension_fade
+- two_slot_midday_balanced_extension_fade
+- two_slot_morning_balanced_extension_fade
+rescue_policy:
+  rescue_scope: not_authorized_for_nq_run
+  max_rescue_attempts_per_failed_variant: 0
+  allowed_changes: []
+  forbidden_changes:
+  - entry module
+  - slot definitions
+  - low-toxicity extension-fade mechanic
+  - stop-loss module
+  - take-profit module
+  - feature construction
+  - post-result filters
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+  - parameter grid after NQ results
+pre_pnl_density_audit:
+  date: '2026-06-30'
+  artifact: research_artifacts/nq_low_toxicity_orderflow_extension_fade_density_audit_20260630.md
+  csv: research_artifacts/nq_low_toxicity_orderflow_extension_fade_density_audit_20260630.csv
+  declared_entry_rows: 45
+  density_pass_rows: 43
+  density_fail_rows: 2
+  failure_reason: Two declared entry rows failed the limited-core 50 signals/year
+    density gate; no NQ PnL was inspected.
+final_decision:
+  verdict: FAIL
+  terminal_stage: pre_pnl_density_screen
+  summary_artifact: backtest-campaigns/nq_low_toxicity_orderflow_extension_fade/campaign_test_summary.json
+  no_pnl_inspected: true

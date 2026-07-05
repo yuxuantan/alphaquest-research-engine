@@ -1,0 +1,186 @@
+campaign_id: nq_semiconductor_leadership_risk_sentiment
+variant_id: soxx_3d_nonleadership_short_1330
+test_run_id: run1
+strategy_name: nq_semiconductor_leadership
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Moskowitz and Grinblatt (1999); Hong, Torous, and Valkanov
+    (2007); Nasdaq PHLX Semiconductor Sector Index overview; local Yahoo SMH/SOXX/QQQ
+    daily cache
+  edge_thesis: Lagged semiconductor ETF leadership versus QQQ may proxy a Nasdaq-specific
+    industry information or risk-appetite state that spills into same-day NQ intraday
+    drift.
+  mechanic: At 13:30:00 ET, short NQ when the lagged SOXX-minus-QQQ 3-day relative
+    return rank is in the lower tail; entry is next bar open.
+  timeframe_rationale: A 1-minute completed-bar signal preserves deterministic next-bar
+    execution while the ETF state is already from prior daily observations.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-07-01'
+  mechanics_review:
+    mechanic_expresses_edge: The variant expresses sustained semiconductor non-leadership
+      through lagged three-day SOXX relative weakness versus QQQ and fixed intraday
+      NQ short exposure.
+    entry_logic_rationale: The ETF state uses only SMH, SOXX, and QQQ daily observations
+      on or before session date minus one business day; the signal uses the completed
+      configured 1-minute NQ bar.
+    stop_loss_rationale: The percent-from-entry stop is declared before NQ PnL testing,
+      rounded to the NQ tick, and varied only through the predeclared stop_pct grid.
+    target_exit_rationale: The fixed-R target is declared before NQ PnL testing and
+      kept at or above 1.5R in the grid.
+    profitability_rationale: A real semiconductor non-leadership spillover should
+      survive neighboring rank, stop, and target settings after costs and robustness
+      tests.
+    known_failure_modes: This may duplicate broad failed tech-nonleadership edges,
+      be coincident with NQ rather than leading, or collapse outside semiconductor-cycle
+      regimes.
+    pre_test_decision: approve_for_testing
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: nq_semiconductor_leadership
+    params:
+      feature_csv: data/external/nq_semiconductor_leadership_features_20110103_20260612.csv
+      setup_mode: soxx_3d_nonleadership_short
+      bar_interval_minutes: 1
+      entry_time: '13:30:00'
+      flatten_time: '15:55:00'
+      max_trades_per_day: 1
+      rank_min: 0.6
+      rank_max: 0.4
+      stop_pct: 0.006
+      target_r_multiple: 2.0
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.006
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 2.0
+  flatten_time: '15:55:00'
+core:
+  data_subset: &data_subset
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *data_subset
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &grid_parameters
+    entry.params.rank_max:
+    - 0.35
+    - 0.4
+    - 0.45
+    sl.params.stop_pct:
+    - 0.004
+    - 0.006
+    - 0.008
+    tp.params.target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+monkey:
+  data_subset: *data_subset
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *data_subset
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *grid_parameters
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10

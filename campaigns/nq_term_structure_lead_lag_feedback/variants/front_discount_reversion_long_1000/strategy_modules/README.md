@@ -1,0 +1,1 @@
+This variant uses the shared `propstack.strategy_modules.entry.es_term_structure_lead_lag.EsTermStructureLeadLagEntry` module with NQ report-label parameters. Stop and target modules are `percent_from_entry` and `fixed_r`.

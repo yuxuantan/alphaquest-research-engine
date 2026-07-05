@@ -1,0 +1,169 @@
+campaign_name: nq_realized_vol_of_vol_state
+campaign_id: nq_realized_vol_of_vol_state
+instrument: NQ
+status: completed
+decision: FAIL
+created_at: '2026-06-30'
+reason_for_decision: Active NQ duplicate review found no authored NQ realized volatility-of-volatility
+  state campaign. This is a symbol-transfer test from the failed ES realized
+  volatility-of-volatility family; it is not treated as independent alpha or
+  promoted evidence without passing the full NQ staged workflow.
+edge_hypothesis: Lagged realized volatility-of-volatility, computed from instability
+  in intraday realized volatility and realized quarticity proxies, may condition
+  next-session NQ intraday risk compensation or unresolved stress.
+why_it_may_apply_to_nq_futures: NQ is a liquid U.S. equity-index futures contract
+  with concentrated growth and technology exposure. If volatility uncertainty is
+  priced broadly across equity-index risk, a lagged realized volatility-instability
+  state may affect NQ intraday risk compensation. This hypothesis is weak because
+  the corresponding ES family failed staged validation, so the NQ test is fail-closed.
+research_sources:
+- title: Econometric Analysis of Realized Volatility and Its Use in Estimating Stochastic
+    Volatility Models
+  author: Ole E. Barndorff-Nielsen and Neil Shephard
+  year: 2002
+  link_or_doi: https://doi.org/10.1111/1467-9868.00336
+  expected_mechanism: Provides the realized-volatility measurement framework and high-frequency
+    return aggregation used to construct lagged volatility-state variables.
+- title: How Aggregate Volatility-of-Volatility Affects Stock Returns
+  author: Fabian Hollstein and Marcel Prokopczuk
+  year: 2018
+  link_or_doi: https://doi.org/10.1093/rapstu/rax019
+  expected_mechanism: Documents that aggregate volatility-of-volatility affects stock
+    returns, motivating a futures-specific test of lagged volatility-instability states.
+- title: Volatility-of-Volatility Risk
+  author: Darien Huang, Christian Schlag, Ivan Shaliastovich, and Julian Thimme
+  year: 2018
+  link_or_doi: https://doi.org/10.2139/ssrn.2497759
+  expected_mechanism: Shows volatility-of-volatility is a priced risk factor in index
+    and volatility option returns, motivating a conservative NQ intraday proxy test.
+behavioural_or_microstructure_rationale: The campaign treats prior completed RTH volatility
+  instability as an ex-ante state. High volatility-of-volatility can represent uncertainty
+  compensation or unresolved stress; low volatility-of-volatility can represent stable
+  risk-taking conditions. The five variants test those interpretations without changing
+  the feature definition after seeing NQ results.
+expected_failure_modes:
+- The ES source family failed staged validation, so the NQ transfer may simply reproduce
+  a weak or nonexistent equity-index futures edge.
+- Volatility-of-volatility evidence may apply to option returns or longer horizons
+  rather than same-day NQ futures direction.
+- The local realized proxy may mostly capture ordinary realized variance already rejected
+  by active volatility campaigns.
+- Premium and stress interpretations may cancel across regimes.
+- Performance may concentrate in crisis years, a narrow threshold, or one side of the
+  market.
+- Pessimistic same-bar ordering, one-tick-worse slippage, missed trades, WFA selection,
+  or prop-rule checks may erase the edge.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_realized_vol_of_vol_features_20110103_20260612.csv
+feature_construction:
+  builder: tools/build_es_realized_vol_of_vol_features.py
+  output: data/external/nq_realized_vol_of_vol_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3734
+  date_range: 2011-01-03..2026-06-12
+  lookahead_control: Every tradable volatility-of-volatility feature is shifted one
+    completed RTH session; a signal date can only use information available after
+    the prior RTH close.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+execution_assumptions:
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  same_bar_stop_target_ordering: pessimistic unless lower-timeframe detail is available
+forbidden_forms_of_lookahead:
+- Use of current-session realized volatility-of-volatility, high, low, close, or post-entry
+  returns in the signal state.
+- Use of future sessions in rolling ranks.
+- Changing volatility-of-volatility definitions, thresholds, entry times, or direction
+  after seeing NQ test results.
+- Holding overnight to approximate a volatility-risk horizon outside the configured
+  methodology.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  reviewed_on: '2026-06-30'
+  nq_campaign_count_checked: 58
+  existing_nq_campaign_id: none
+  es_source_campaign: es_realized_vol_of_vol_state
+  es_source_decision: FAIL
+  not_duplicate_of:
+  - nq_volatility_managed_intraday_premium
+  - nq_realized_semivariance_asymmetry
+  - nq_realized_jump_variation_premium
+  - nq_vvix_tail_risk_intraday
+  - nq_vix_pressure_orderflow_confirmation
+  - nq_cboe_vix_level_state_intraday
+  - nq_cboe_vix_term_structure_intraday
+  conclusion: This NQ campaign uses lagged realized volatility instability and quarticity-ratio
+    states. It is not simple lagged realized variance timing, good-vs-bad volatility,
+    jump variation, implied or VVIX volatility state, or orderflow-confirmed VIX
+    pressure. It is a symbol-transfer of an ES edge family and is therefore logged
+    explicitly rather than presented as a new independent economic edge.
+parameter_space:
+  entry_parameters:
+    entry.params.vov_rank_threshold:
+    - 0.25
+    - 0.35
+    - 0.45
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  combinations_per_variant: 27
+variants:
+- high_1d_vov_premium_long_1000
+- high_1d_vov_stress_short_1030
+- low_1d_vov_calm_long_1130
+- high_5d_vov_premium_long_1200
+- two_sided_20d_vov_state_1330
+density_audit:
+  artifact: research_artifacts/nq_realized_vol_of_vol_state_density_audit_20260630.md
+  conclusion: All five variant shapes have pre-PnL signal density above 50 signals/year
+    across the declared threshold grid on the NQ RTH cache.
+rescue_policy:
+  rescue_scope: none_for_initial_campaign
+  max_rescue_attempts_without_user_approval: 0
+  forbidden_changes:
+  - core strategy mechanic
+  - feature construction shift rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-30'
+  aggregate_report: backtest-campaigns/nq_realized_vol_of_vol_state/campaign_test_summary.json
+  official_runs: 5
+  limited_core_failed_runs: 5
+  monkey_reached_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate
+    was high_1d_vov_premium_long_1000 at 4/27 (0.14814814814814814), below the 0.70
+    gate. Across all official variants, 5/135 combinations were profitable, 3 benchmark-pass
+    rows, and 0 Apex-rule-violating iterations. No variant reached limited monkey,
+    WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or acceptance OOS.
+  best_variant_by_profitable_rate: high_1d_vov_premium_long_1000
+  best_profitable_rate: 0.14814814814814814
+  total_profitable_combinations: 5
+  total_official_combinations: 135

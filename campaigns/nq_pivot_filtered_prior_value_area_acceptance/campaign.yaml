@@ -1,0 +1,176 @@
+campaign_id: nq_pivot_filtered_prior_value_area_acceptance
+title: NQ prior value-area acceptance filtered by completed pivot market structure
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: nq_pivot_filtered_prior_value_area_acceptance
+hypothesis: NQ prior-session value-area acceptance should be more robust when same-direction completed aggregate orderflow
+  confirms the break and carried completed 5/15-minute swing-pivot market structure agrees with the acceptance direction.
+rationale: This is a bounded composite campaign. The primary edge is prior-session value-area acceptance; the fixed secondary
+  condition is completed swing-pivot direction. It is not a duplicate of direct NQ value-area acceptance because the base
+  signal must pass a fixed carried-pivot filter, and it is not a duplicate of NQ pivot/MES campaigns because no MES participation
+  or crowding proxy is used.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports objective support/resistance-style intraday levels as testable prior-session benchmarks.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure proxy; this campaign uses completed Sierra aggregate
+    signed volume, not quote-depth OFI.
+- title: CME FX Market Profile Tool
+  authors: CME Group
+  year: 2026
+  venue: Exchange market profile documentation
+  link: https://www.cmegroup.com/trading/fx/cme-fx-market-profile-tool.html
+  relevance: Exchange documentation supports profile-style historical activity analysis; this campaign adapts the idea to
+    completed NQ RTH OHLCV.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  link: https://doi.org/10.1111/0022-1082.00265
+  relevance: Supports deterministic local-extrema pattern definitions; the pivot filter uses only completed swing pivots.
+- title: Time Series Momentum
+  authors: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2011.11.003
+  relevance: Provides futures-market support for trend persistence; this campaign only uses it to motivate fixed pivot-structure
+    agreement.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- 5-minute NQ bars generated deterministically from completed 1-minute RTH Sierra bars
+- prior-session approximate VAH/VAL/POC computed only after the previous RTH session is complete
+- completed 5/15-minute pivot-state construction from local NQ OHLC bars
+- signed, large10, and large20 aggregate flow fields on completed signal bars
+lookahead_risks:
+- Prior VAH, VAL, and POC are frozen from the previous completed RTH session only.
+- Orderflow confirmation uses only the completed signal bar.
+- Pivot structure confirms swing highs/lows only after right-side confirmation bars are complete.
+- Signals generated from completed bars are filled no earlier than the next bar open by the engine.
+- No current-session final high/low, final VWAP, final volume profile, future orderflow, or post-entry bars are used.
+failure_modes:
+- The prior value area is an OHLCV approximation rather than true volume-at-price.
+- Breaks beyond prior value can be stop probes rather than acceptance.
+- The pivot filter can lag fast NQ reversals or select overextended continuation.
+- Aggregate signed flow can mark exhaustion rather than informed participation.
+- One-tick worse slippage can erase a short-horizon continuation effect.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_prior_value_area_orderflow_acceptance
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_pivot_filtered_mes_participation_crowding_reversion
+  - nq_pivot_mes_orderflow_confirmation
+  - nq_vwap_pullback_continuation
+  conclusion: Eligible as a bounded composite campaign. Existing NQ prior value-area acceptance did not require completed
+    pivot direction; existing NQ pivot campaigns used MES participation/crowding or native orderflow confirmation rather than
+    prior value-area acceptance. The pivot filter is fixed and non-tunable before NQ PnL.
+source_es_campaign: campaigns/es_pivot_filtered_prior_value_area_acceptance
+source_nq_direct_campaign: campaigns/nq_prior_value_area_orderflow_acceptance
+variants:
+- afternoon_large20_two_sided_pivot_acceptance
+- late_morning_large10_two_sided_pivot_acceptance
+- midday_signed_two_sided_pivot_acceptance
+- morning_signed_two_sided_pivot_acceptance_1230
+- morning_signed_vah_pivot_acceptance_long
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - breakout_buffer_ticks
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_pct
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.base_params.breakout_buffer_ticks:
+    - 0
+    - 1
+    - 2
+    entry.params.base_params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_pct:
+    - 0.002
+    - 0.003
+    - 0.0045
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+pre_pnl_density_audit:
+  status: PASS
+  artifact: research_artifacts/nq_pivot_filtered_prior_value_area_acceptance_density_audit_20260630.md
+  csv: research_artifacts/nq_pivot_filtered_prior_value_area_acceptance_density_audit_20260630.csv
+  density_rule: Each declared variant must have at least one predeclared entry-grid corner above 50 signals/year on full configured
+    NQ history and the canonical limited-core shortlist window before staged PnL.
+  summary_csv: research_artifacts/nq_pivot_filtered_prior_value_area_acceptance_density_summary_20260630.csv
+  completed_at: '2026-06-30'
+  decision: Proceed to preflight and staged testing without changing mechanics or parameter space.
+  variant_density_summary:
+  - variant_id: afternoon_large20_two_sided_pivot_acceptance
+    entry_combinations: 9
+    combos_passing_all_windows: 9
+    min_full_signals_per_year: 109.918292
+    min_limited_core_signals_per_year: 106.396092
+    min_latest252_signals_per_year: 102.230299
+    density_gate_pass: true
+  - variant_id: late_morning_large10_two_sided_pivot_acceptance
+    entry_combinations: 9
+    combos_passing_all_windows: 9
+    min_full_signals_per_year: 128.184031
+    min_limited_core_signals_per_year: 120.019982
+    min_latest252_signals_per_year: 118.110734
+    density_gate_pass: true
+  - variant_id: midday_signed_two_sided_pivot_acceptance
+    entry_combinations: 9
+    combos_passing_all_windows: 9
+    min_full_signals_per_year: 121.44773
+    min_limited_core_signals_per_year: 121.966252
+    min_latest252_signals_per_year: 116.125679
+    density_gate_pass: true
+  - variant_id: morning_signed_two_sided_pivot_acceptance_1230
+    entry_combinations: 9
+    combos_passing_all_windows: 9
+    min_full_signals_per_year: 106.938775
+    min_limited_core_signals_per_year: 103.801066
+    min_latest252_signals_per_year: 93.297554
+    density_gate_pass: true
+  - variant_id: morning_signed_vah_pivot_acceptance_long
+    entry_combinations: 9
+    combos_passing_all_windows: 9
+    min_full_signals_per_year: 66.456198
+    min_limited_core_signals_per_year: 57.739343
+    min_latest252_signals_per_year: 57.566576
+    density_gate_pass: true
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized for this search turn.
+testing_plan:
+  methodology: current staged research pipeline
+  fixed_core_trade_log_required: true
+status: completed_failed
+result_summary:
+  verdict: FAIL
+  completed_at: '2026-06-30T11:55:30+08:00'
+  campaign_test_summary: backtest-campaigns/nq_pivot_filtered_prior_value_area_acceptance/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_pivot_filtered_prior_value_area_acceptance/campaign_results.csv
+  methodology_audit: campaigns/nq_pivot_filtered_prior_value_area_acceptance/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    limited_core_grid_test: 5
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate was midday_signed_two_sided_pivot_acceptance
+    at 34/54 (0.6296296296296297), below the 0.70 gate. Across all official variants, 89/270 combinations were profitable,
+    39 benchmark-pass rows, and 0 Apex-rule-violating iterations. No variant reached limited monkey, WFA, WFA OOS monkey,
+    Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

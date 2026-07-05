@@ -1,0 +1,103 @@
+campaign_id: nq_rth_intraday_risk_premium
+title: NQ RTH Intraday Risk Premium
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: NQ may earn a positive regular-trading-hours intraday premium after completed early-session bars, with risk controlled by explicit same-day stops, targets, and flattening.
+rationale: This is a direct NQ transfer of the ES RTH intraday risk-premium family. It is distinct from NQ weekday calendar bias because all weekdays are long and the tested edge is unconditional RTH equity-index carry, not day-of-week seasonality. It is also distinct from volatility-managed, macro-conditioned, overnight, late-day, and orderflow-confirmed risk-premium families.
+sources:
+- title: Intraday Patterns in the Cross-section of Stock Returns
+  authors: Steven L. Heston, Robert A. Korajczyk, and Ronnie Sadka
+  year: 2010
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2010.01573.x
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2010.01573.x
+  relevance: Documents persistent intraday return structure and motivates fixed clock-time testing without future information.
+- title: 'A Tug of War: Overnight Versus Intraday Expected Returns'
+  authors: Dong Lou, Christopher Polk, and Spyros Skouras
+  year: 2019
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2019.03.011
+  link: https://ideas.repec.org/a/eee/jfinec/v134y2019i1p192-213.html
+  relevance: Shows that overnight and intraday expected-return components can differ persistently, requiring direct intraday testing.
+- title: 'Intraday Time Series Momentum: International Evidence'
+  authors: Andrew Urquhart and coauthors
+  year: 2020
+  venue: International intraday momentum research
+  link: https://centaur.reading.ac.uk/95566/1/Accepted-Version.pdf
+  relevance: Supports that intraday timing effects can be economically meaningful but must survive out-of-sample validation.
+data_needs:
+- NQ Sierra RTH one-minute OHLCV cache in America/New_York
+- deterministic 5-minute aggregation from completed one-minute bars
+- same-day stop, target, and config-driven forced-flatten checks
+lookahead_risks:
+- The fixed signal time is known before the session, but the signal may emit only after the configured 5-minute bar has closed.
+- Entry must occur at the next bar open or later after the signal bar close.
+- No future session high, low, VWAP, final RTH return, or future orderflow is used.
+- Positions must flatten at 15:55 ET and never carry overnight.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_calendar_weekday_bias
+  - nq_volatility_managed_intraday_premium
+  - nq_overnight_return_late_day_momentum
+  - nq_gao_last_half_hour_orderflow_confirmation
+  - nq_leveraged_etf_rebalance_pressure
+  - nq_default_spread_orderflow_risk_premium
+  - nq_epu_policy_uncertainty_intraday
+  conclusion: Eligible as a separate NQ edge because it tests unconditional all-weekday RTH long exposure from fixed completed bars, not weekday selection, volatility management, macro conditioning, overnight-to-late-day momentum, ETF rebalance pressure, or orderflow confirmation.
+parameter_space:
+  entry_parameters: none
+  stop_parameters: none
+  take_profit_parameters: none
+  combinations_per_variant: 1
+  fixed_entry_params:
+    setup_mode: rth_intraday_risk_premium
+    weekday_directions:
+      '0': long
+      '1': long
+      '2': long
+      '3': long
+      '4': long
+    signal_times:
+      open_0935_long: 09:35:00
+      first_hour_1000_long: '10:00:00'
+      midmorning_1030_long: '10:30:00'
+      late_morning_1100_long: '11:00:00'
+      early_afternoon_1300_long: '13:00:00'
+  fixed_stop_pct: 0.005
+  fixed_target_r_multiple: 3.0
+variants:
+- open_0935_long
+- first_hour_1000_long
+- midmorning_1030_long
+- late_morning_1100_long
+- early_afternoon_1300_long
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this direct NQ transfer sees density or staged results.
+status: completed_failed
+completed_at: '2026-06-30T14:47:53+08:00'
+density_audit:
+  decision: PASS
+  artifact_md: research_artifacts/nq_rth_intraday_risk_premium_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_rth_intraday_risk_premium_density_audit_20260630.csv
+  declared_entry_rows: 5
+  density_pass_rows: 5
+  density_fail_rows: 0
+testing_outcome:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  variants_tested: 5
+  total_core_combinations: 5
+  profitable_combinations: 0
+  benchmark_pass_combinations: 0
+  apex_rule_violating_iterations: 0
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  summary_path: backtest-campaigns/nq_rth_intraday_risk_premium/campaign_test_summary.json
+  failure_reason: All five predeclared NQ RTH intraday risk-premium variants failed limited_core_grid_test. Across 5 fixed core combinations, 0 were profitable, 0 passed benchmark gates, and 0 had Apex rule violations. The least-negative fixed row was late_morning_1100_long with top net -510.00, PF 0.9884, and 371 trades, so no variant reached monkey, WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

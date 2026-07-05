@@ -1,0 +1,133 @@
+campaign_id: nq_chartfanatics_liquidity_inversion_fvg
+title: NQ Chart Fanatics Liquidity Inversion FVG
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: nq_chartfanatics_liquidity_inversion_fvg
+hypothesis: After NQ attacks a known RTH liquidity reference, a completed fair-value-gap inversion may identify trapped continuation
+  flow and a short-horizon reversal opportunity.
+rationale: 'Chart Fanatics describes Dhesi''s Liquidity Inversion Model as a reaction sequence: identify liquidity, wait for
+  a sweep or tap, require fair-value-gap inversion, then use lower-timeframe confirmation. This campaign makes an RTH-only
+  version objective using prior/session high-low liquidity, completed three-bar FVGs, and next-bar execution after the inversion
+  close.'
+research_sources:
+- title: Liquidity Inversion Model
+  author: Dhesi / Chart Fanatics
+  year: 2026
+  link_or_doi: https://www.chartfanatics.com/strategies/liquidity-inversion-model
+  expected_mechanism: Practitioner playbook states that ES/NQ liquidity sweeps followed by FVG inversion can confirm a shift
+    in delivery and create day-trade entries.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  author: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  link_or_doi: https://doi.org/10.1111/0022-1082.00265
+  expected_mechanism: Supports deterministic transformation of discretionary chart patterns into testable algorithms.
+- title: Currency Orders and Exchange-Rate Dynamics
+  author: Carol L. Osler
+  year: 2003
+  link_or_doi: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  expected_mechanism: Documents clustered stop and limit orders around visible price levels; used as external support for
+    liquidity-pool behavior, not as direct NQ evidence.
+source_quality_note: The FVG/inversion rule is practitioner-originated and the local test lacks monthly, four-hour, ETH, order-block,
+  and discretionary PD-array context. It must fail closed if density or robustness is weak.
+data_needs:
+- NQ RTH one-minute Sierra OHLCV/orderflow cache aggregated to five-minute bars
+- completed prior-session high/low carried only after session rollover
+- current-session high/low references measured before the current bar updates them
+- three-bar fair-value-gap zones detected only after the third bar closes
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_20_80_price_ending_barrier
+  - nq_chartfanatics_measured_move_pullback
+  - nq_chartfanatics_daily_bollinger_environment
+  - nq_prior_day_stop_run_reclaim
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_orderflow_absorption_exhaustion_reversal
+  - nq_pivot_filtered_prior_value_area_acceptance
+  - es_video_aoi_lvn_orderflow_playbook
+  conclusion: Eligible as a distinct Chart Fanatics-derived campaign because the tested edge requires a liquidity sweep followed
+    by completed three-bar FVG inversion. Existing campaigns test price endings, measured moves, Bollinger state, prior-level
+    stop runs, value-area/profile/orderflow AOIs, or absorption, not FVG inversion as the confirmation event.
+chart_fanatics_review:
+  selected_after: 80/20 Nasdaq, measured-move, and daily-Bollinger Chart Fanatics NQ campaigns were already closed by density
+    screens.
+  selected_reason: Liquidity Inversion Model is currently visible on Chart Fanatics, built for ES/NQ, and was not present
+    as a local tested FVG-inversion campaign.
+  local_approximation_caveat: This campaign tests only an RTH five-minute OHLC approximation; it does not claim to reproduce
+    monthly/daily/four-hour/one-minute discretionary execution.
+lookahead_risks:
+- Prior-session high/low is unavailable until the previous RTH session has completed.
+- Current-session high/low references use the pre-bar extreme, not the current bar after update.
+- A fair-value gap is known only after the third bar of the three-bar pattern closes.
+- The inversion signal enters no earlier than the next bar open after the completed close through the gap.
+- No final session high/low, final VWAP, volume profile, future gap, or post-entry price path is used.
+failure_modes:
+- The discretionary ICT-style model may not survive an RTH-only OHLC approximation.
+- Five-minute bars may be too coarse relative to the one-minute lower-timeframe confirmation described by the source.
+- Prior/session highs and lows may duplicate generic stop-run behavior once the FVG condition is formalized.
+- FVG inversions may appear often but have no edge after slippage and pessimistic stop/target ordering.
+- Performance may concentrate in high-volatility regimes or one side only.
+variants:
+- prior_high_buy_side_fvg_inversion_short_1000
+- prior_low_sell_side_fvg_inversion_long_1000
+- session_high_buy_side_fvg_inversion_short_1000
+- session_low_sell_side_fvg_inversion_long_1000
+- prior_session_two_sided_fvg_inversion_1000
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - min_gap_ticks
+  - max_inversion_bars
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.min_gap_ticks:
+    - 1
+    - 2
+    - 4
+    entry.params.max_inversion_bars:
+    - 2
+    - 3
+    - 6
+    sl.params.stop_offset_ticks:
+    - 1
+    - 4
+    - 8
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+status: completed_failed_density
+pre_pnl_density_audit:
+  status: FAIL
+  artifact: research_artifacts/nq_chartfanatics_liquidity_inversion_fvg_density_audit_20260630.md
+  csv: research_artifacts/nq_chartfanatics_liquidity_inversion_fvg_density_audit_20260630.csv
+  density_rule: Each declared entry-grid corner must exceed 50 signals/year on full
+    history, limited-core shortlist window, and latest 252 sessions before staged PnL.
+  completed_at: '2026-06-30'
+  declared_entry_rows: 45
+  density_pass_rows: 36
+  density_fail_rows: 9
+  decision: Reject before staged PnL; do not change mechanics without explicit user
+    rescue authorization.
+result_summary:
+  verdict: FAIL
+  campaign_test_summary: backtest-campaigns/nq_chartfanatics_liquidity_inversion_fvg/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_chartfanatics_liquidity_inversion_fvg/campaign_results.csv
+  methodology_audit: campaigns/nq_chartfanatics_liquidity_inversion_fvg/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    pre_pnl_density_screen: 5
+  failure_reason: 'Pre-PnL density screen failed: 9/45 declared entry-grid rows failed
+    at least one density gate. No staged PnL, monkey, WFA, Monte Carlo, simulated
+    incubation, acceptance OOS, or candidate reporting was run.'

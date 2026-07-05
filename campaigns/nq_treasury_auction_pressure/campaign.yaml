@@ -1,0 +1,177 @@
+campaign_id: nq_treasury_auction_pressure
+title: NQ Treasury Auction Pressure
+decision: FAIL
+created_at: '2026-07-02'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Anticipated nominal Treasury Note/Bond auction supply can create temporary risk-capacity and
+  discount-rate pressure that spills into NQ intraday returns on auction days, with possible post-auction
+  recovery after inventory is absorbed.
+rationale: This is a direct, frozen NQ transfer of the ES Treasury auction-pressure campaign before NQ
+  auction PnL inspection. The edge variable is the preannounced Treasury coupon-auction calendar, not
+  lagged yield levels, yield shocks, auction outcomes, NQ orderflow, options expiration, or ChartFanatics
+  AOI/orderflow mechanics.
+sources:
+- title: Anticipated and Repeated Shocks in Liquid Markets
+  authors: Dong Lou, Hongjun Yan, and Jinfan Zhang
+  year: 2013
+  venue: Review of Financial Studies 26(8), 1891-1912
+  doi: 10.1093/rfs/hht035
+  link: https://academic.oup.com/rfs/article-abstract/26/8/1891/1589893
+  relevance: Documents Treasury auction price pressure and reversal around anticipated repeated Treasury
+    supply events, linked to dealer risk-bearing capacity and slow-moving capital.
+- title: Treasury Securities Auctions Data
+  authors: U.S. Department of the Treasury, FiscalData
+  year: 2026
+  venue: FiscalData official dataset
+  link: https://fiscaldata.treasury.gov/datasets/treasury-securities-auctions-data/
+  relevance: Free official source for announced and auctioned marketable Treasury securities used to build
+    the no-lookahead auction calendar.
+- title: Announcements, Data and Results
+  authors: U.S. TreasuryDirect
+  year: 2026
+  venue: TreasuryDirect
+  link: https://www.treasurydirect.gov/auctions/announcements-data-results/
+  relevance: Documents that Treasury auction schedules are released ahead of time at quarterly refunding
+    and in auction announcements, supporting prior-known event-date treatment.
+- title: Intraday Price Pressure and Order Flow Around U.S. Treasury Auctions
+  authors: Michael J. Fleming and coauthors
+  year: 2026
+  venue: Federal Reserve Bank of New York Staff Report
+  link: https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr1188.pdf
+  relevance: Related high-frequency Treasury-auction evidence. Used only as mechanism support; no Treasury
+    tick data or auction outcome variables are used.
+data_needs:
+- timezone-aware local NQ RTH 1-minute OHLCV/orderflow bars in America/New_York
+- free official FiscalData Treasury auction rows with announcement dates before auction dates
+- nominal Note/Bond auction calendar joined to NQ RTH sessions
+- next-bar-open entry after completed signal bar
+- same-day forced flatten and no-overnight prop-rule checks
+data_quality_caveats:
+- The Treasury auction calendar is event-date data, not Treasury tick/order-book data.
+- Bond-only auction dates are too sparse for standalone variants under the 50 trades/year rule, so no
+  bond-only variant is tested.
+- The local Sierra cache is completed-bar OHLCV/orderflow, not tick-path proof for intra-minute stop/target
+  ordering.
+- This is a cross-asset spillover proxy; the auction edge may exist in Treasuries without translating
+  to directional NQ returns.
+lookahead_risks:
+- Auction rows are included only when announcement date is before auction date.
+- Signals cannot use auction outcome fields such as high yield, tails, total accepted, bid-to-cover, or
+  dealer award data.
+- Signals use only ex-ante calendar membership and the completed configured NQ bar time.
+- No final session high/low, final VWAP, future returns, or post-entry Treasury outcome is used.
+failure_modes:
+- Treasury auction pressure may be fully contained in Treasury securities and rates rather than NQ.
+- NQ direction can depend on inflation/growth regime, making a fixed long/short auction-day expression
+  unstable.
+- Auction-day effects may be concentrated in refunding weeks, crisis regimes, or a few macro-event days.
+- Calendar-only entries may be too blunt without using disallowed outcome or order-flow information.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_treasury_rate_shock_intraday
+  - nq_treasury_rate_orderflow_confirmation
+  - nq_real_yield_breakeven_state
+  - nq_treasury_term_premium
+  - nq_fiscal_deficit_treasury_supply
+  - nq_market_plumbing_liquidity_capacity
+  - nq_vix_expiration_pressure
+  - nq_spx_0dte_expiration_pressure
+  - nq_monthly_opex_pressure
+  - nq_quarterly_expiration_pressure
+  - nq_fomc_pre_announcement_drift
+  conclusion: Eligible as a distinct NQ transfer before NQ auction PnL inspection. This campaign uses
+    preannounced nominal Treasury auction dates as the edge, distinct from lagged Treasury yield states/orderflow
+    confirmation, fiscal-deficit/Treasury-supply macro state, market-plumbing liquidity, macro-release
+    drift, and option-expiration calendars.
+  prior_density_screen_reconciliation:
+    artifact: research_artifacts/nq_treasury_auction_pressure_density_rejection_20260630.md
+    finding: Earlier pre-PnL rejection treated ES staged counts of roughly 100-121 trades as full-history
+      counts.
+    current_density_recheck: NQ calendar has 1322 all-coupon sessions from 2011-01-11 to 2026-06-09, about
+      85.80/year; note_only has 1034 sessions, about 67.11/year.
+    scope: Supersedes the earlier density-only rejection; does not change the completed campaign verdict,
+      which is FAIL after WFA rejection.
+feature_construction:
+  builder: tools/build_es_treasury_auction_calendar.py with NQ bars-input/output arguments
+  free_source_cache: data/external/treasury_auctions_query_20110101_20260609.csv
+  output: data/external/nq_treasury_coupon_auction_sessions_20110103_20260612.csv
+  lookahead_control: calendar includes only Note/Bond rows whose announcement date is earlier than auction
+    date; signal modules cannot read outcome fields
+  event_density_audit: research_artifacts/nq_treasury_auction_pressure_event_density_20260702.md
+session_assumptions:
+  timezone: America/New_York
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  start_date: '2011-01-03'
+  end_date: '2026-06-12'
+parameter_space:
+  entry_parameters: 'fixed per variant: auction_scope, signal_time, direction'
+  stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 9
+variants:
+- all_coupon_pre_auction_short_1130
+- all_coupon_post_auction_short_1305
+- all_coupon_late_reversal_long_1430
+- note_only_post_auction_short_1305
+- all_coupon_late_pressure_short_1500
+rescue_policy:
+  allowed: false
+  max_rescue_attempts_without_user_approval: 0
+  reason: This is a frozen NQ transfer. After NQ testing begins, allow only rejection or candidate/manual-review
+    promotion unless the user explicitly authorizes a rescue.
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change auction scope, direction, signal time, timeframe, data window, or core economic edge
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  - use auction outcome fields or same-day Treasury-yield information
+status: completed_failed
+completed_at: '2026-07-02T00:43:39+08:00'
+testing_outcome:
+  decision: FAIL
+  terminal_stage: walk_forward_analysis
+  variants_tested: 5
+  variants_failed_limited_core: 4
+  variants_reached_monkey: 1
+  variants_reached_wfa: 1
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  best_variant: note_only_post_auction_short_1305
+  best_core_profitable_rate: 0.8888888888888888
+  best_core_benchmark_pass_combinations: 8
+  best_core_top_net_profit: 3590.0
+  best_core_top_profit_factor: 1.4891008174386922
+  best_monkey_net_beat_rate: 0.93825
+  best_monkey_drawdown_beat_rate: 0.9945
+  wfa_failed_early_exit: true
+  wfa_stitched_profit_factor: 0.9392951721328173
+  wfa_stitched_mar: -0.14930931550666002
+  wfa_stitched_net_profit: -1490.0
+  failure_reason: 'Four variants failed limited_core_grid_test. note_only_post_auction_short_1305 passed
+    limited_core_grid_test (8/9 profitable and 8/9 benchmark-passing combinations) and limited_monkey_test
+    (net beat rate 0.93825; max-drawdown beat rate 0.9945), then failed walk_forward_analysis: early_exit=True,
+    stitched OOS profit_factor=0.9392951721328173, MAR=-0.14930931550666002, net_profit=-1490.0, trades_per_year=68.58247313416537.
+    No branch reached WFA OOS monkey, WFA OOS Monte Carlo, simulated incubation, acceptance OOS, or candidate
+    reporting.'
+result_artifacts:
+  campaign_test_summary: backtest-campaigns/nq_treasury_auction_pressure/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_treasury_auction_pressure/campaign_results.csv
+  methodology_audit: backtest-campaigns/nq_treasury_auction_pressure/methodology_audit.md
+  artifact_manifest: backtest-campaigns/nq_treasury_auction_pressure/artifact_manifest.csv
+  event_density_audit: research_artifacts/nq_treasury_auction_pressure_event_density_20260702.md
+  wfa_stitched_oos_trade_logs_manifest: backtest-campaigns/nq_treasury_auction_pressure/wfa_stitched_oos_trade_logs_manifest.csv
+  monte_carlo_summary: backtest-campaigns/nq_treasury_auction_pressure/monte_carlo_summary.json

@@ -1,0 +1,126 @@
+campaign_id: nq_ai_gpr_geopolitical_risk_state
+title: NQ AI-GPR Geopolitical Risk State
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: ai_gpr_geopolitical_risk_state
+hypothesis: Strict-lag daily geopolitical-risk states may identify risk-off pressure or post-shock risk-premium rebound behavior in the growth-heavy Nasdaq-100 futures contract.
+rationale: This campaign tests geopolitical-risk news intensity from the AI-GPR index, not economic policy uncertainty, EMV macro-news, OFR financial stress, VIX/VVIX volatility state, oil-price returns, credit stress, sector breadth, or NQ own-price momentum.
+research_sources:
+- title: Measuring Geopolitical Risk
+  authors: Dario Caldara and Matteo Iacoviello
+  year: 2022
+  venue: American Economic Review
+  link_or_doi: https://doi.org/10.1257/aer.20191823
+  expected_mechanism: Documents a news-based geopolitical-risk index and finds that higher geopolitical risk is associated with adverse macro and market outcomes.
+- title: The AI-GPR Index
+  authors: Matteo Iacoviello and Jonathan Tong
+  year: 2026
+  venue: Federal Reserve Board working paper and public data page
+  link_or_doi: https://www.matteoiacoviello.com/ai_gpr.html
+  expected_mechanism: Provides daily AI-GPR, threats, and acts series constructed from newspaper article scoring, enabling a lagged daily geopolitical-risk state.
+- title: Geopolitical Risk Index
+  authors: Economic Policy Uncertainty project hosting Caldara-Iacoviello data
+  year: 2026
+  venue: policyuncertainty.com
+  link_or_doi: https://www.policyuncertainty.com/gpr.html
+  expected_mechanism: Documents the original GPR methodology and threat/act decomposition that motivates the variant split.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV/orderflow cache in America/New_York.
+- Public AI-GPR daily CSV cached under data/external/ai_gpr.
+- Derived strict-lag feature CSV data/external/nq_ai_gpr_features_20110103_20260612.csv.
+duplicate_edge_check:
+  checked_edges:
+  - nq_epu_policy_uncertainty_intraday
+  - nq_emv_macro_news_intraday
+  - nq_ofr_financial_stress_intraday
+  - nq_cboe_vvix_tail_risk_intraday
+  - nq_cboe_vix_level_state_intraday
+  - nq_oil_price_shock_spillover
+  - nq_default_spread_orderflow_risk_premium
+  - nq_fama_french_style_factor_rotation
+  caveat: research_artifacts/es_other_campaigns_continuation_audit_20260629.md grouped news/GPR into rejected duplicate or data-gated ES source families. This NQ campaign proceeds only because the AI-GPR page provides a concrete daily public CSV and the edge is geopolitical-risk intensity, not macro-news or policy uncertainty.
+  conclusion: Eligible for an NQ source test as a distinct geopolitical-risk news state with strict lag and explicit publication-cadence caveat.
+lookahead_risks:
+- A session dated D can only use the latest AI-GPR daily observation on or before D minus 30 calendar days.
+- Rolling ranks are computed in the AI-GPR table before the session-level as-of join.
+- Signals use a completed NQ RTH bar and enter no earlier than the next bar open.
+- No same-day GPR row, final NQ session high/low, final VWAP, future GPR value, or post-entry path is used.
+- Historical AI-GPR real-time publication cadence is not proven by the data page; any pass requires manual review of real-time availability before promotion.
+failure_modes:
+- Geopolitical risk may be absorbed before the NQ RTH session or may matter only across multi-day horizons.
+- AI-GPR is a historical news index; its historical real-time release cadence may be unsuitable for live-like intraday testing.
+- Effects may overlap crisis regimes, volatility states, EPU, or oil shocks and fail monkey or WFA robustness.
+feature_construction:
+  builder: tools/build_nq_ai_gpr_features.py
+  output: data/external/nq_ai_gpr_features_20110103_20260612.csv
+  source_cache: data/external/ai_gpr/ai_gpr_data_daily.csv
+  source_url: https://www.matteoiacoviello.com/ai_gpr_files/ai_gpr_data_daily.csv
+  availability_lag_calendar_days: 30
+pre_pnl_density_audit:
+  decision: PASS
+  artifact: research_artifacts/nq_ai_gpr_geopolitical_risk_state_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_ai_gpr_geopolitical_risk_state_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_ai_gpr_geopolitical_risk_state_density_summary_20260701.csv
+  result: 15/15 declared entry rows passed; 5/5 variants passed before any PnL was inspected.
+parameter_space:
+  entry_parameters:
+  - entry.params.gpr_rank_threshold
+  stop_parameters:
+  - sl.params.stop_pct
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant:
+    high_ai_gpr_short_1000: 27
+    high_ai_gpr_rebound_long_1330: 27
+    rising_ai_gpr_short_1030: 27
+    high_threats_gpr_short_1130: 27
+    high_acts_gpr_rebound_long_1200: 27
+  entry_parameter_cap: 1
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+variants:
+- high_ai_gpr_short_1000
+- high_ai_gpr_rebound_long_1330
+- rising_ai_gpr_short_1030
+- high_threats_gpr_short_1130
+- high_acts_gpr_rebound_long_1200
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  preflight_required: true
+  staged_validation_required: true
+staged_validation:
+  decision: FAIL
+  terminal_summary:
+    high_ai_gpr_short_1000:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.25925925925925924
+      core_benchmark_passing: 0
+      failure_reason: limited_core_grid_test failed breadth and had zero benchmark-passing cells.
+    high_ai_gpr_rebound_long_1330:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.0
+      core_benchmark_passing: 0
+      failure_reason: limited_core_grid_test failed breadth and economics.
+    rising_ai_gpr_short_1030:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.2962962962962963
+      core_benchmark_passing: 1
+      failure_reason: limited_core_grid_test failed breadth below 0.70.
+    high_threats_gpr_short_1130:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.0
+      core_benchmark_passing: 0
+      failure_reason: limited_core_grid_test failed breadth and economics.
+    high_acts_gpr_rebound_long_1200:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.2222222222222222
+      core_benchmark_passing: 1
+      failure_reason: limited_core_grid_test failed breadth below 0.70.
+  aggregate_failure_reason: All five variants failed limited_core_grid_test. The best profitable-combination rate was 0.2962962962962963 versus the 0.70 gate. No branch reached limited monkey, WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.
+status: completed_failed

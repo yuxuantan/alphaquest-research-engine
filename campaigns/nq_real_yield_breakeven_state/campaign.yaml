@@ -1,0 +1,136 @@
+campaign_id: nq_real_yield_breakeven_state
+title: NQ Real-Yield and Breakeven State
+decision: FAIL
+created_at: '2026-06-30'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: real_yield_breakeven_discount_rate_state
+hypothesis: >
+  Growth-heavy NQ futures may show same-day intraday drift after large lagged
+  real-yield or inflation-breakeven moves because real discount rates and
+  inflation compensation change equity duration, risk appetite, and valuation
+  pressure before the RTH session begins.
+rationale: >
+  This campaign tests a distinct decomposition of the already-failed nominal
+  Treasury-rate family. Nominal 10-year and curve shocks were tested directly
+  in `nq_treasury_rate_shock_intraday` and as an orderflow-confirmed composite
+  in `nq_treasury_rate_orderflow_confirmation`; this campaign instead separates
+  the TIPS real-rate component (`DFII10`) from inflation compensation (`T10YIE`).
+  The real-yield variants expect rising real rates to pressure NQ and falling
+  real rates to support NQ. The breakeven variants test whether rising
+  inflation compensation behaves as reflation/risk-appetite support and whether
+  falling breakevens behave as disinflation/growth-scare pressure.
+sources:
+- title: What Explains the Stock Market's Reaction to Federal Reserve Policy?
+  authors: Ben S. Bernanke and Kenneth N. Kuttner
+  year: 2005
+  venue: Journal of Finance
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2005.00760.x
+  doi: 10.1111/j.1540-6261.2005.00760.x
+  relevance: Supports the link between monetary-policy/rate shocks and equity prices.
+- title: Inflation Illusion and Stock Prices
+  authors: John Y. Campbell and Tuomo Vuolteenaho
+  year: 2004
+  venue: American Economic Review
+  link: https://www.aeaweb.org/articles?id=10.1257/0002828041301533
+  doi: 10.1257/0002828041301533
+  relevance: Motivates treating inflation compensation as a separate equity-valuation state.
+- title: Asset Returns and Inflation
+  authors: Eugene F. Fama and G. William Schwert
+  year: 1977
+  venue: Journal of Financial Economics
+  link: https://econpapers.repec.org/RePEc:eee:jfinec:v:5:y:1977:i:2:p:115-146
+  doi: 10.1016/0304-405X(77)90014-9
+  relevance: Provides long-run evidence that inflation-related states can matter for asset returns.
+- title: FRED Market Yield on U.S. Treasury Securities at 10-Year Constant Maturity, Inflation-Indexed
+  authors: Federal Reserve Bank of St. Louis
+  year: 2026
+  link: https://fred.stlouisfed.org/series/DFII10
+  relevance: Free public real-yield series used for lagged real-yield state features.
+- title: FRED 10-Year Breakeven Inflation Rate
+  authors: Federal Reserve Bank of St. Louis
+  year: 2026
+  link: https://fred.stlouisfed.org/series/T10YIE
+  relevance: Free public inflation-compensation series used for lagged breakeven state features.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/fred_real_yield_dfii10_2003_2026.csv
+- data/external/fred_real_yield_t10yie_2003_2026.csv
+- data/external/fred_real_yield_dgs10_2003_2026.csv
+- data/external/nq_real_yield_breakeven_features_20110103_20260612.csv
+feature_build:
+  builder: tools/build_nq_real_yield_breakeven_features.py
+  output: data/external/nq_real_yield_breakeven_features_20110103_20260612.csv
+  availability_rule: latest FRED real-yield/breakeven observation strictly before NQ session_date
+lookahead_risks:
+- Each NQ session uses only FRED observations with observation_date strictly before the futures session date.
+- Signals are emitted only after the configured completed 1-minute bar closes, and fills occur no earlier than next bar open.
+- No same-session or future real-yield, breakeven, high, low, VWAP, profile, or post-entry orderflow value is read.
+- All variants flatten intraday before the configured prop-rule cutoff and forbid overnight exposure.
+duplicate_edge_check:
+  existing_results_checked:
+  - nq_treasury_rate_shock_intraday
+  - nq_treasury_rate_orderflow_confirmation
+  - nq_dollar_risk_appetite_intraday
+  - nq_vix_pressure_orderflow_confirmation
+  - nq_variance_risk_premium_intraday
+  - research_artifacts/es_real_yield_breakeven_orderflow_density_screen_20260620.csv
+  conclusion: >
+    Eligible as a distinct NQ edge before PnL inspection. Prior NQ Treasury
+    campaigns used nominal 2-year/10-year/curve states, and the earlier ES
+    real-yield/breakeven orderflow expression was rejected before campaign
+    authoring by density. This campaign tests a pure lagged NQ TIPS real-yield
+    and breakeven state, not a nominal-yield, VIX, dollar, variance-risk, or
+    orderflow-confirmed rate-transfer duplicate.
+variants:
+- real_yield_1d_up_short_1000
+- real_yield_1d_down_long_1000
+- real_yield_5d_up_short_1130
+- breakeven_1d_up_long_1000
+- breakeven_5d_down_short_1130
+parameter_space:
+  combinations_per_variant: 12
+  entry_parameters:
+  - entry.params.state_rank_threshold
+  stop_parameters:
+  - sl.params.stop_pct
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+rescue_policy:
+  allowed: false
+  reason: >
+    Real-yield/breakeven direction, rank columns, fixed entry times, stop grid,
+    and target grid are frozen before NQ PnL inspection. If this campaign fails,
+    do not rescue it without explicit user authorization.
+pre_pnl_density_audit:
+  status: PASS
+  artifact: research_artifacts/nq_real_yield_breakeven_state_density_audit_20260630.md
+  csv: research_artifacts/nq_real_yield_breakeven_state_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_real_yield_breakeven_state_density_summary_20260630.csv
+  result: 15/15 declared density rows passed
+testing_plan:
+  methodology: current staged research pipeline through acceptance_oos_test if eligible
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+test_results:
+  tested_at: '2026-07-01T00:18:00+08:00'
+  summary_json: backtest-campaigns/nq_real_yield_breakeven_state/campaign_test_summary.json
+  summary_md: backtest-campaigns/nq_real_yield_breakeven_state/campaign_test_summary.md
+  results_csv: backtest-campaigns/nq_real_yield_breakeven_state/campaign_results.csv
+  terminal_stage: limited_monkey_test
+  variants_tested: 5
+  variants_passing_full_pipeline: 0
+  variants_failing_limited_core_grid_test: 4
+  variants_failing_limited_monkey_test: 1
+  wfa_reached: false
+  acceptance_oos_reached: false
+  candidate_strategy_report_written: false
+  failure_reason: >
+    No variant passed the staged pipeline. Four variants failed limited_core_grid_test.
+    `breakeven_1d_up_long_1000` passed limited_core_grid_test but failed limited_monkey_test
+    because core net-profit and max-drawdown beat rates were below the required 0.90 threshold.
+status: completed_failed

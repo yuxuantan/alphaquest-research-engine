@@ -1,0 +1,95 @@
+campaign_id: nq_prior_session_ibs_reversion
+title: NQ Prior-Session IBS Reversion
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+source_es_campaign: es_prior_session_ibs_reversion
+hypothesis: When the prior NQ RTH close is near the prior RTH low, the next RTH session may mean-revert
+  upward; when the prior close is near the prior RTH high, the next RTH session may mean-revert downward.
+rationale: This campaign tests prior-session close location within the completed prior RTH high-low range.
+  It is distinct from raw daily return reversal, overnight gap reversal, prior-session breakout, and value-area/orderflow
+  campaigns because the state variable is prior-session Internal Bar Strength, not the sign or size of
+  the prior return.
+sources:
+- title: 'The IBS Effect: Mean Reversion in Equity ETFs'
+  authors: Alexander Pagonidis
+  year: 2014
+  link: https://www.naaim.org/wp-content/uploads/2014/04/00V_Alexander_Pagonidis_The-IBS-Effect-Mean-Reversion-in-Equity-ETFs-1.pdf
+  relevance: Motivates prior-day close location inside the daily range as a short-horizon equity-index
+    mean-reversion signal.
+- title: Internal Bar Strength as a Predictor in Equity ETFs
+  authors: Thomas A. S. Ronnback
+  year: 2023
+  link: https://arxiv.org/abs/2306.12434
+  relevance: Documents predictive information in daily IBS across equity ETF-style instruments and motivates
+    strict out-of-sample validation.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.validation.json
+- completed prior RTH high, low, and close produced by the repository feature pipeline
+lookahead_risks:
+- Prior RTH high/low/close are only used in the next RTH session after the prior session is complete.
+- The signal uses the completed signal bar and enters no earlier than the next bar open.
+- No current-session final high, low, close, VWAP, daily range, or future volume profile is used.
+- All variants flatten in the same RTH session before the configured prop cutoff.
+failure_modes:
+- The ETF-documented IBS effect may not transfer to NQ futures after costs and pessimistic fills.
+- The effect may require overnight exposure, which this campaign forbids.
+- Low-IBS long and high-IBS short sides may be asymmetric, sparse, or regime-specific.
+- Stops and fixed-R exits may truncate slow mean reversion before the 15:55 ET flatten.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_daily_short_term_reversal
+  - nq_overnight_intraday_reversal
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_prior_session_level_breakout_continuation
+  - nq_prior_value_area_orderflow_acceptance
+  - nq_turn_of_month_seasonality
+  conclusion: Eligible as distinct because this campaign uses prior-session IBS, the close location inside
+    the prior high-low range, rather than prior return magnitude, overnight gap direction, prior level
+    breakout, or value-area/orderflow context.
+pre_pnl_density:
+  status: PASS_WITH_GRID_PRUNING
+  artifact: research_artifacts/nq_prior_session_ibs_reversion_density_audit_20260630.md
+  csv: research_artifacts/nq_prior_session_ibs_reversion_density_audit_20260630.csv
+  method: Signal-count only on completed prior-session NQ RTH high/low/close. No NQ PnL inspected before
+    grid pruning.
+  note: Sparse low-IBS corners and high-IBS 0.90 corners were removed before PnL. This retains source-supported
+    0.30 low IBS and 0.70/0.80 high IBS thresholds with NQ dollar-equivalent prior-range filters.
+parameter_space:
+  low_side_variants: fixed entry.params.low_ibs_threshold=0.3 and min_prior_range_points=25; sl=3 x tp=3
+    => 9 combos
+  high_side_variants: entry.params.high_ibs_threshold=[0.7,0.8] x min_prior_range_points=[25,50] x sl=3
+    x tp=3 => 36 combos
+  two_sided_variant: entry.params.low_ibs_threshold=3 x high_ibs_threshold=3 x sl=3 x tp=3 with fixed
+    min_prior_range_points=25 => 81 combos
+variants:
+- open_low_ibs_long
+- open_high_ibs_short
+- open_two_sided_ibs_reversion
+- delayed_low_ibs_long_range_filtered
+- delayed_high_ibs_short_range_filtered
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in current NQ search. If variants fail, do not change mechanics, thresholds,
+    stops, targets, time windows, or filters without explicit user authorization.
+status: completed_failed
+completed_at: '2026-06-30T11:45:00+08:00'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_prior_session_ibs_reversion/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_prior_session_ibs_reversion/campaign_results.csv
+  methodology_audit: campaigns/nq_prior_session_ibs_reversion/methodology_audit.md
+  density_audit: research_artifacts/nq_prior_session_ibs_reversion_density_audit_20260630.md
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate was delayed_low_ibs_long_range_filtered
+    at 6/9 (0.6666666666666666), below the 0.70 gate. Across all official variants, 56/171 combinations
+    were profitable, 17 benchmark-pass rows, and 0 Apex-rule-violating iterations. No variant reached
+    limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate
+    reporting.
+  best_variant_by_profitable_rate: delayed_low_ibs_long_range_filtered
+  best_profitable_rate: 0.6666666666666666
+  aggregate_profitable_iterations: 56/171

@@ -1,0 +1,74 @@
+campaign_id: nq_turnaround_tuesday_reversal
+title: NQ Turnaround Tuesday Reversal
+status: failed_pre_pnl_density
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: NQ may show a Tuesday-only reversal after Monday or prior-session pressure,
+  combining the documented weekday/weekend anomaly with short-horizon liquidity-provision
+  reversal.
+rationale: This campaign is distinct from the prior NQ day-of-week test because it
+  requires completed prior-session return pressure, and distinct from raw daily short-term
+  reversal because trades are allowed only on Tuesday after a Monday prior session.
+sources:
+- title: Stock Returns and the Weekend Effect
+  authors: Kenneth R. French
+  year: 1980
+  venue: Journal of Financial Economics
+  doi: 10.1016/0304-405X(80)90021-5
+  link: https://ideas.repec.org/a/eee/jfinec/v8y1980i1p55-69.html
+  relevance: Documents the weekend/Monday effect motivating Tuesday-specific reversal
+    after Monday pressure.
+- title: Calendar Anomalies in Stock Index Futures
+  authors: Oscar Carchano; Angel Pardo
+  year: 2011
+  venue: SSRN working paper
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1958587
+  relevance: Tests calendar effects directly in stock-index futures, motivating a
+    fail-closed futures implementation.
+- title: Fads, Martingales, and Market Efficiency
+  authors: Bruce N. Lehmann
+  year: 1990
+  venue: Quarterly Journal of Economics
+  doi: 10.2307/2937816
+  link: https://ideas.repec.org/a/oup/qjecon/v105y1990i1p1-28..html
+  relevance: Documents short-horizon reversals, motivating the prior-return component.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_day_of_week_seasonality
+  - nq_daily_short_term_reversal
+  - nq_daily_reversal_orderflow_confirmation
+  - nq_prior_session_ibs_reversion
+  conclusion: Allowed to reach pre-PnL density only as a conditional Tuesday reversal;
+    rejected before staged PnL because declared grids were too sparse.
+variants:
+- tuesday_prior_loss_long_1000
+- tuesday_prior_loss_long_1130
+- tuesday_two_day_loss_long_1030
+- tuesday_prior_gain_short_1000
+- tuesday_vol_norm_loss_long_1200
+parameter_space:
+  per_variant_combinations: 27
+  entry_parameters_per_variant: 1
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+pre_pnl_density:
+  decision: FAIL
+  artifact: research_artifacts/nq_turnaround_tuesday_reversal_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_turnaround_tuesday_reversal_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_turnaround_tuesday_reversal_density_summary_20260701.csv
+  p_n_l_inspected: false
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; sparse density cannot be fixed by dropping failed
+    rows after inspection.

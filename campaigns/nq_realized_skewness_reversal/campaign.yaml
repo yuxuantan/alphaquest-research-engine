@@ -1,0 +1,161 @@
+campaign_name: nq_realized_skewness_reversal
+campaign_id: nq_realized_skewness_reversal
+instrument: NQ
+status: completed
+decision: FAIL
+created_at: '2026-06-30'
+reason_for_decision: Active NQ duplicate review found no authored NQ lagged realized-skewness
+  reversal campaign. This is a symbol-transfer test from the failed ES realized-skewness
+  family; it is not treated as independent alpha or supporting evidence unless it
+  passes the full NQ staged workflow.
+edge_hypothesis: NQ may mean-revert or require compensation after low realized skewness
+  states and may underperform after high realized skewness states, because investors
+  prefer positively skewed payoff distributions and realized third moments can proxy
+  short-horizon lottery/crash asymmetry.
+why_it_may_apply_to_nq_futures: NQ is a liquid futures expression of U.S. growth and
+  technology equity-index risk. If realized skewness captures payoff-shape preference
+  or crash-asymmetry compensation, the effect could plausibly appear in NQ. This is
+  weak prior evidence because the ES source family failed staged validation.
+research_sources:
+- title: Does Realized Skewness Predict the Cross-Section of Equity Returns?
+  author: Diego Amaya, Peter Christoffersen, Kris Jacobs, and Aurelio Vasquez
+  year: 2015
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2015.02.009
+  expected_mechanism: Intraday realized skewness is negatively related to next-period
+    returns; low realized skewness earns higher subsequent return than high realized
+    skewness in equity portfolios.
+- title: Skewness and Index Futures Return
+  author: Eric Jondeau, Xuewu Wang, Zhipeng Yan, and Qunzi Zhang
+  year: 2020
+  link_or_doi: https://doi.org/10.1002/fut.22112
+  expected_mechanism: Skewness information can forecast S&P 500 index futures returns
+    out of sample, motivating a strict NQ futures transfer test.
+- title: Expected Idiosyncratic Skewness
+  author: Brian H. Boyer, Todd Mitton, and Keith Vorkink
+  year: 2010
+  link_or_doi: https://doi.org/10.1093/rfs/hhp041
+  expected_mechanism: Preference for positive skewness can make high-skewness assets
+    have lower expected returns.
+behavioural_or_microstructure_rationale: The campaign treats lagged realized skewness
+  as an ex-ante state variable. Negative realized skewness may reflect recent downside
+  asymmetry and higher compensation for long NQ exposure. Positive realized skewness
+  may reflect lottery-like upside asymmetry that is overpaid and vulnerable to reversal.
+expected_failure_modes:
+- The equity cross-sectional effect may not transfer to a single NQ time-series rule.
+- The ES realized-skewness family failed, so the symbol transfer may reproduce a weak
+  or nonexistent edge.
+- The signal may mostly be a hidden volatility or trend proxy already rejected by
+  active volatility campaigns.
+- Intraday one-contract entries may not capture a weekly/monthly skewness premium
+  after commissions and slippage.
+- Performance may concentrate in crisis years, isolated months, or a narrow threshold.
+- The effect may fail monkey stress, WFA selection, or one-tick-worse slippage.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_lagged_realized_skewness_features_20110103_20260612.csv
+feature_construction:
+  builder: tools/build_es_lagged_realized_skewness_features.py
+  output: data/external/nq_lagged_realized_skewness_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3749
+  date_range: 2011-01-03..2026-06-12
+  lookahead_control: Every tradable skewness feature is shifted one completed RTH
+    session; a signal date can only use information available after the prior RTH
+    close.
+session_assumptions:
+  timezone: America/New_York
+  rth_start: '09:30:00'
+  rth_end: '15:59:00'
+  no_overnight_positions: true
+  latest_variant_flatten: '15:55:00'
+execution_assumptions:
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  same_bar_stop_target_ordering: pessimistic unless lower-timeframe detail is available
+forbidden_forms_of_lookahead:
+- Use of current-session realized skewness, high, low, close, or post-entry returns
+  in the signal state.
+- Use of future sessions in rolling ranks.
+- Changing skewness definitions, thresholds, entry times, or direction after seeing
+  NQ test results.
+- Holding overnight to approximate the weekly/monthly horizon in the source papers.
+duplicate_edge_review:
+  active_scope_only: true
+  archived_tests_ignored: true
+  reviewed_on: '2026-06-30'
+  existing_nq_campaign_id: none
+  es_source_campaign: es_realized_skewness_reversal
+  es_source_decision: FAIL
+  not_duplicate_of:
+  - nq_realized_vol_of_vol_state
+  - nq_realized_jump_variation_premium
+  - nq_realized_semivariance_asymmetry
+  - nq_volatility_managed_intraday_premium
+  - nq_vvix_tail_risk_intraday
+  conclusion: This NQ campaign uses lagged third-moment realized-skewness ranks. It
+    is not realized volatility-of-volatility, jump variation, good-vs-bad semivariance,
+    simple realized volatility timing, or implied vol-of-vol/tail-risk state.
+parameter_space:
+  entry_parameters:
+    entry.params.skew_rank_threshold:
+    - 0.25
+    - 0.35
+    - 0.45
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  combinations_per_variant: 27
+variants:
+- low_1d_skew_open_long_1000
+- high_1d_skew_open_short_1000
+- low_3d_skew_midmorning_long_1030
+- high_3d_skew_midday_short_1200
+- two_sided_5d_skew_extreme_1330
+density_audit:
+  artifact: research_artifacts/nq_realized_skewness_reversal_density_audit_20260630.md
+  conclusion: All five variant shapes have pre-PnL signal density above 50 signals/year
+    across the declared threshold grid on the NQ RTH cache.
+rescue_policy:
+  rescue_scope: none_for_initial_campaign
+  max_rescue_attempts_without_user_approval: 0
+  forbidden_changes:
+  - core strategy mechanic
+  - feature construction shift rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-30'
+  aggregate_report: backtest-campaigns/nq_realized_skewness_reversal/campaign_test_summary.json
+  official_runs: 5
+  limited_core_failed_runs: 5
+  monkey_reached_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate
+    was low_3d_skew_midmorning_long_1030 at 10/27 (0.37037037037037035), below the
+    0.70 gate. Across all official variants, 20/135 combinations were profitable,
+    3 benchmark-pass rows, and 0 Apex-rule-violating iterations. No variant reached
+    limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or acceptance
+    OOS.
+  best_variant_by_profitable_rate: low_3d_skew_midmorning_long_1030
+  best_profitable_rate: 0.37037037037037035
+  total_profitable_combinations: 20
+  total_official_combinations: 135

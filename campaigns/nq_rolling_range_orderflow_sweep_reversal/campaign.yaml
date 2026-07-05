@@ -1,0 +1,124 @@
+campaign_id: nq_rolling_range_orderflow_sweep_reversal
+title: NQ rolling intraday range sweep-reclaim with aggregate orderflow absorption
+decision: FAIL
+created_at: '2026-06-30'
+completed_at: '2026-06-30'
+status: failed_pre_pnl_density
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: rolling_range_orderflow_sweep_reversal
+hypothesis: NQ intraday sweeps beyond a recently established rolling high or low may reverse when the
+  completed bar reclaims the boundary while aggregate orderflow shows aggressive pressure into the failed
+  sweep.
+rationale: This is the NQ transfer of the ES rolling-range sweep-reclaim edge before NQ PnL inspection.
+  The reference boundary is a rolling current-session high/low built only from prior completed bars, so
+  it is distinct from prior-day stop-runs, opening-range failed breakouts, fixed round-number barriers,
+  and prior-bar key reversals.
+sources:
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Supports the idea that technical support/resistance areas can coincide with liquidity supply.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  venue: Journal of International Money and Finance
+  link: https://www.newyorkfed.org/research/staff_reports/sr150.html
+  relevance: Documents clustered stop-loss orders around technical levels, motivating explicit sweep-versus-reclaim
+    tests.
+- title: Trading Volume and Serial Correlation in Stock Returns
+  authors: John Y. Campbell, Sanford J. Grossman, and Jiang Wang
+  year: 1993
+  venue: Quarterly Journal of Economics
+  link: https://campbell.scholars.harvard.edu/publications/trading-volume-and-serial-correlation-stock-returns
+  relevance: Supports reversal after liquidity-driven pressure and inventory-risk episodes.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports orderflow imbalance as a short-horizon pressure proxy; this campaign uses completed
+    Sierra aggregate trade-side flow.
+data_needs:
+- NQ Sierra completed 1-minute RTH OHLCV/orderflow cache in America/New_York
+- 5-minute bars generated from the local 1-minute source
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, and
+  large20_volume
+- rolling high/low computed from prior completed current-session bars only
+lookahead_risks:
+- Rolling highs/lows are computed from prior completed bars only and do not include the signal bar.
+- The sweep, reclaim, and orderflow absorption conditions use only the completed signal bar.
+- Signals generated from bar close are filled no earlier than the next bar open by the engine.
+- No final session high/low, final VWAP, future orderflow, future volume profile, or future range information
+  is used.
+- All variants flatten before the configured prop cutoff and disallow overnight exposure.
+failure_modes:
+- A reclaimed sweep may be only a pause before trend continuation.
+- Aggregate signed-volume buckets may misclassify pressure compared with quote-level order-flow imbalance.
+- Sweep reversals may be too sensitive to slippage and same-bar stop/target ordering.
+- Profits may concentrate in volatile crisis sessions or one side of the market.
+- Rolling levels may be too local and noisy if lookback windows are too short.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_prior_day_stop_run_reclaim
+  - nq_opening_range_failed_breakout_orderflow
+  - nq_chartfanatics_liquidity_inversion_fvg
+  - nq_key_reversal_orderflow_reversal
+  - nq_session_extreme_delta_divergence
+  - nq_round_number_orderflow_barrier
+  - nq_midday_range_orderflow_breakout
+  conclusion: Eligible for the NQ ES-transfer search because it uses current-session rolling range extremes
+    from prior completed bars, not prior-day levels, opening-range boundaries, fixed handles, one-bar
+    reversal patterns, session extremes, or FVG/inversion logic.
+variants:
+- morning_signed_12bar_sweep_reclaim_1130
+- morning_large10_12bar_sweep_reclaim_1130
+- midday_signed_24bar_sweep_reclaim_1400
+- afternoon_signed_24bar_sweep_reclaim_1500
+- all_day_large20_36bar_sweep_reclaim_1500
+parameter_space:
+  entry_parameters:
+  - entry.params.lookback_bars
+  - entry.params.min_absorption_imbalance
+  stop_parameters:
+  - sl.params.stop_offset_ticks
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant:
+    morning_signed_12bar_sweep_reclaim_1130: 54
+    morning_large10_12bar_sweep_reclaim_1130: 54
+    midday_signed_24bar_sweep_reclaim_1400: 54
+    afternoon_signed_24bar_sweep_reclaim_1500: 54
+    all_day_large20_36bar_sweep_reclaim_1500: 54
+  entry_parameter_cap: 2
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+source_es_campaign: es_rolling_range_orderflow_sweep_reversal
+pre_pnl_density:
+  status: failed
+  decision: FAIL
+  artifact: research_artifacts/nq_rolling_range_orderflow_sweep_reversal_density_audit_20260630.md
+  csv: research_artifacts/nq_rolling_range_orderflow_sweep_reversal_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_rolling_range_orderflow_sweep_reversal_density_summary_20260630.csv
+  entry_rows: 45
+  passing_rows: 41
+  passing_variants: 3
+  failed_variants:
+  - all_day_large20_36bar_sweep_reclaim_1500
+  - morning_signed_12bar_sweep_reclaim_1130
+  failure_reason: The declared five-variant family failed before NQ PnL because only
+    3 of 5 variants passed every density row; dropping sparse rows or variants after
+    seeing the screen would be post-result narrowing.
+staged_pnl_started: false
+result_summary: No limited core, monkey, WFA, Monte Carlo, simulated incubation,
+  acceptance OOS, holdout PnL, or candidate report was run. The campaign is rejected
+  as a full declared five-variant family by pre-PnL density.
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized in the current search; after NQ testing starts, allow only rejection
+    or promotion to candidate/manual-review status.

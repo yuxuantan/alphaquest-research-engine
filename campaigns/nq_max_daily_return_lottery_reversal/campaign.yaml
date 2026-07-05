@@ -1,0 +1,94 @@
+campaign_id: nq_max_daily_return_lottery_reversal
+title: NQ MAX Daily-Return Lottery Reversal
+status: completed_failed_limited_core
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: >
+  The largest single completed daily return over a recent lookback may act as a lottery-like salience
+  proxy. If NQ inherits any index-level version of the MAX effect, high prior MAX states should
+  underperform intraday while low-MAX states may retain a modest risk-premium/carry expression.
+expected_mechanism: >
+  The MAX state is computed from completed prior NQ RTH daily returns only. High-MAX states test
+  post-spike overreaction or lottery-demand reversal; low-MAX states test the opposite quiet-premium side.
+sources:
+  - title: "Maxing Out: Stocks as Lotteries and the Cross-Section of Expected Returns"
+    authors: Turan G. Bali, Nusret Cakici, and Robert F. Whitelaw
+    year: 2011
+    journal: Journal of Financial Economics
+    doi: 10.1016/j.jfineco.2010.08.014
+    link: https://econpapers.repec.org/RePEc:eee:jfinec:v:99:y:2011:i:2:p:427-446
+    working_paper_pdf: https://pages.stern.nyu.edu/~rwhitela/papers/max%20jfe11.pdf
+  - title: "Maxing Out: Stocks as Lotteries and the Cross-Section of Expected Returns"
+    authors: Turan G. Bali, Nusret Cakici, and Robert F. Whitelaw
+    year: 2010
+    link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1262416
+data_needs:
+  - NQ RTH 1-minute OHLCV/orderflow cache for execution bars.
+  - Derived strict-prior NQ daily-return MAX feature CSV.
+feature_artifact: data/external/nq_max_daily_return_features_20110103_20260612.csv
+lookahead_risks:
+  - Current-session daily return is excluded from all tradable MAX features.
+  - Rank features are calculated on shifted prior-session MAX series.
+  - Entries occur only after a completed 1-minute bar at the configured decision clock.
+  - No future daily high, low, close, VWAP, volume profile, or final session statistic is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+    - nq_realized_skewness_reversal
+    - nq_realized_jump_variation_premium
+    - nq_realized_vol_of_vol_state
+    - nq_daily_short_term_reversal
+    - nq_daily_time_series_momentum
+    - nq_52week_anchor_momentum
+    - nq_intraday_capitulation_mean_reversion
+  conclusion: >
+    Eligible as a distinct edge before PnL because the state variable is the maximum single completed
+    prior daily return (or average of the five largest prior daily returns), not a realized moment,
+    jump-variation premium, total trailing return, prior-session reversal, volatility state, or 52-week anchor.
+variants:
+  - high_5d_max_fade_short_1000
+  - high_20d_max_fade_short_1130
+  - high_63d_max_fade_short_1200
+  - low_5d_max_carry_long_1030
+  - high_avg_top5_20d_fade_short_1430
+parameter_space:
+  per_variant_combinations: 27
+  entry_parameters_per_variant: 1
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+  entry_params:
+    max_rank_threshold: [0.35, 0.45, 0.5]
+  stop_params:
+    stop_pct: [0.0015, 0.0025, 0.004]
+  take_profit_params:
+    target_r_multiple: [1.0, 1.5, 2.0]
+pre_pnl_density:
+  decision: PASS
+  entry_rows: 45
+  rows_passing_density: 45
+  artifact: research_artifacts/nq_max_daily_return_lottery_reversal_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_max_daily_return_lottery_reversal_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_max_daily_return_lottery_reversal_density_summary_20260701.csv
+  p_n_l_inspected: false
+staged_validation:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  runs:
+    high_5d_max_fade_short_1000: backtest-campaigns/nq_max_daily_return_lottery_reversal/high_5d_max_fade_short_1000/NQ/run1
+    high_20d_max_fade_short_1130: backtest-campaigns/nq_max_daily_return_lottery_reversal/high_20d_max_fade_short_1130/NQ/run1
+    high_63d_max_fade_short_1200: backtest-campaigns/nq_max_daily_return_lottery_reversal/high_63d_max_fade_short_1200/NQ/run1
+    low_5d_max_carry_long_1030: backtest-campaigns/nq_max_daily_return_lottery_reversal/low_5d_max_carry_long_1030/NQ/run1
+    high_avg_top5_20d_fade_short_1430: backtest-campaigns/nq_max_daily_return_lottery_reversal/high_avg_top5_20d_fade_short_1430/NQ/run1
+  failure_reason: >
+    All five variants failed limited_core_grid_test. Profitable-iteration rates ranged from
+    0.0 to 0.48148148148148145, below the required 0.70 stability threshold. Two variants had
+    isolated benchmark-passing cells, but no variant passed the staged gate or reached downstream tests.
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  methodology_audit: campaigns/nq_max_daily_return_lottery_reversal/methodology_audit.md
+  test_summary: backtest-campaigns/nq_max_daily_return_lottery_reversal/campaign_test_summary.json

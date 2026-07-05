@@ -18,6 +18,17 @@ class ModularStrategy:
     def on_bar_close(self, bar: pd.Series, trades_today: int = 0) -> Signal | None:
         return self.entry.on_bar_close(bar, trades_today=trades_today)
 
+    def on_bar_intrabar(
+        self,
+        bar: pd.Series,
+        detail_rows: pd.DataFrame,
+        trades_today: int = 0,
+    ) -> Signal | None:
+        handler = getattr(self.entry, "on_bar_intrabar", None)
+        if handler is None:
+            return None
+        return handler(bar, detail_rows, trades_today=trades_today)
+
     def stop_price(
         self,
         signal: Signal,

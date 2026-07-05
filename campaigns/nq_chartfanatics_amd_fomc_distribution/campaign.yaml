@@ -1,0 +1,173 @@
+campaign_id: nq_chartfanatics_amd_fomc_distribution
+title: NQ ChartFanatics AMD FOMC Distribution
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+market: CME E-mini Nasdaq-100 futures
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: chartfanatics_amd_fomc_distribution
+hypothesis: On scheduled FOMC decision days, NQ may form a pre-release accumulation range, sweep liquidity around
+  the 14:00 ET decision, and then distribute directionally after completed displacement confirms trapped wrong-side
+  flow.
+rationale: ChartFanatics describes the AMD Model as Accumulation, Manipulation, and Distribution around major news
+  events such as FOMC, CPI, and NFP. This campaign tests only scheduled FOMC sessions because the local NQ FOMC
+  event-date coverage is complete, while the existing NQ BLS release calendar audit failed closed on missing holiday/session
+  bars. The strategy uses event dates only, never statement text, decision outcome, surprise, or future price path.
+research_sources:
+- title: AMD Model
+  author: Tanja Trades / ChartFanatics
+  year: 2026
+  link_or_doi: https://www.chartfanatics.com/strategies/amd-model
+  expected_mechanism: Practitioner playbook states that high-probability AMD setups appear around major news after
+    liquidity is swept and displacement confirms the distribution phase.
+- title: The Pre-FOMC Announcement Drift
+  author: David O. Lucca and Emanuel Moench
+  year: 2015
+  link_or_doi: https://doi.org/10.1111/jofi.12196
+  expected_mechanism: Supports scheduled FOMC meetings as recurring equity-index risk events; this campaign does
+    not reuse the fixed-time long drift mechanic.
+- title: Real-Time Price Discovery in Stock, Bond and Foreign Exchange Markets
+  author: Torben G. Andersen, Tim Bollerslev, Francis X. Diebold, and Clara Vega
+  year: 2007
+  link_or_doi: https://doi.org/10.1016/j.jinteco.2006.10.004
+  expected_mechanism: Documents high-frequency price discovery around macro announcements, motivating a completed-bar
+    post-event displacement test.
+source_quality_note: The AMD rule is practitioner-originated. Academic sources support FOMC as a real scheduled
+  macro event and technical-rule objectification, not this exact NQ AMD implementation. The campaign must fail closed
+  on density or staged robustness weakness.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/fomc_scheduled_decision_dates_20110101_20260609.csv
+- completed one-minute NQ RTH bars only
+lookahead_risks:
+- FOMC event dates are public scheduled dates; no decision, statement, surprise, minutes, or press conference content
+  is used.
+- The accumulation range is frozen before any sweep/displacement signal is evaluated.
+- Signals use completed bars and enter no earlier than the next bar open.
+- No final session high/low, future VWAP, future range, or post-entry orderflow is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_fomc_pre_announcement_drift
+  - nq_bls_macro_release_day_drift
+  - nq_opening_range_failed_breakout_orderflow
+  - nq_opening_range_retest_orderflow
+  - nq_chartfanatics_liquidity_inversion_fvg
+  - nq_chartfanatics_smt_po3_midpoint_reversion
+  conclusion: Eligible as a distinct bounded composite because it requires a scheduled FOMC event day plus a pre-release
+    accumulation range, liquidity sweep, and completed displacement. Existing FOMC/BLS campaigns are fixed-time
+    drift tests; opening-range and liquidity-sweep campaigns are not event-gated by scheduled FOMC sessions.
+variants:
+- fomc_1330_1400_sellside_bullish_edge_1500
+- fomc_1330_1400_buyside_bearish_edge_1500
+- fomc_1330_1400_two_sided_midpoint_1500
+- fomc_1300_1400_two_sided_midpoint_1530
+- fomc_1345_1400_two_sided_edge_1500
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - min_sweep_ticks
+  - min_displacement_ticks
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.min_sweep_ticks:
+    - 1
+    - 2
+    - 4
+    entry.params.min_displacement_ticks:
+    - 0
+    - 2
+    - 4
+    sl.params.stop_offset_ticks:
+    - 4
+    - 8
+    - 12
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required_if_density_passed: true
+status: completed_failed_density
+pre_pnl_density_audit:
+  status: FAIL
+  artifact: research_artifacts/nq_chartfanatics_amd_fomc_distribution_density_audit_20260701.md
+  csv: research_artifacts/nq_chartfanatics_amd_fomc_distribution_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_chartfanatics_amd_fomc_distribution_density_summary_20260701.csv
+  density_rule: Every declared entry-grid row must reach at least 5 FOMC event signals/year using the full NQ RTH
+    history as the annualization denominator.
+  completed_at: '2026-07-01'
+  declared_entry_rows: 45
+  density_pass_rows: 5
+  density_fail_rows: 40
+  decision: Reject before staged PnL; do not drop sparse variants or loosen thresholds without explicit user rescue
+    authorization.
+  variant_density_summary:
+  - variant_id: fomc_1300_1400_two_sided_midpoint_1530
+    declared_entry_rows: 9
+    passing_entry_rows: 0
+    min_signals_per_year: 4.428009441384736
+    min_limited_core_signals_per_year: 2.037735849056604
+    min_latest_365d_signals: 4
+    max_signals: 74
+    variant_density_gate_pass: false
+    verdict: FAIL
+  - variant_id: fomc_1330_1400_buyside_bearish_edge_1500
+    declared_entry_rows: 9
+    passing_entry_rows: 0
+    min_signals_per_year: 2.974036191974823
+    min_limited_core_signals_per_year: 2.7169811320754715
+    min_latest_365d_signals: 5
+    max_signals: 49
+    variant_density_gate_pass: false
+    verdict: FAIL
+  - variant_id: fomc_1330_1400_sellside_bullish_edge_1500
+    declared_entry_rows: 9
+    passing_entry_rows: 0
+    min_signals_per_year: 3.502753737214791
+    min_limited_core_signals_per_year: 1.3584905660377358
+    min_latest_365d_signals: 4
+    max_signals: 65
+    variant_density_gate_pass: false
+    verdict: FAIL
+  - variant_id: fomc_1330_1400_two_sided_midpoint_1500
+    declared_entry_rows: 9
+    passing_entry_rows: 5
+    min_signals_per_year: 4.692368214004721
+    min_limited_core_signals_per_year: 3.3962264150943393
+    min_latest_365d_signals: 5
+    max_signals: 80
+    variant_density_gate_pass: false
+    verdict: FAIL
+  - variant_id: fomc_1345_1400_two_sided_edge_1500
+    declared_entry_rows: 9
+    passing_entry_rows: 0
+    min_signals_per_year: 4.163650668764752
+    min_limited_core_signals_per_year: 3.3962264150943393
+    min_latest_365d_signals: 6
+    max_signals: 72
+    variant_density_gate_pass: false
+    verdict: FAIL
+completed_at: '2026-07-01'
+result_summary:
+  verdict: FAIL
+  campaign_test_summary: backtest-campaigns/nq_chartfanatics_amd_fomc_distribution/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_chartfanatics_amd_fomc_distribution/campaign_results.csv
+  methodology_audit: campaigns/nq_chartfanatics_amd_fomc_distribution/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    pre_pnl_density_screen: 5
+  failure_reason: 'Pre-PnL density screen failed after corrected full-history annualization: only 5/45 declared
+    FOMC AMD entry-grid rows passed the sparse-event threshold of at least 5 signals/year, and 0/5 variants passed
+    all declared rows. No staged PnL, monkey, WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate
+    reporting was run.'
+  candidate_strategy_report_created: false

@@ -1,0 +1,100 @@
+campaign_id: nq_variance_ratio_orderflow_regime
+title: NQ variance-ratio serial-dependence regime with aggregate orderflow confirmation
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Rolling completed-bar variance ratio may identify whether short-horizon NQ price action is
+  in a persistent or anti-persistent state; aggregate orderflow confirmation may improve selection by
+  requiring pressure to align with the serial-dependence state.
+rationale: This is a bounded price-action/orderflow edge. High variance-ratio states express trend persistence
+  and trade with the completed return plus aligned aggregate flow. Low variance-ratio states express choppy
+  overreaction and fade completed moves that show aggressive flow but fail to close at the extreme.
+sources:
+- title: 'Stock Market Prices Do Not Follow Random Walks: Evidence from a Simple Specification Test'
+  authors: Andrew W. Lo and A. Craig MacKinlay
+  year: 1988
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/1.1.41
+  link: https://doi.org/10.1093/rfs/1.1.41
+  relevance: Introduces variance-ratio tests as a direct measurement of serial dependence in returns.
+- title: Stock Market Overreaction
+  authors: Werner F. M. De Bondt and Richard Thaler
+  year: 1985
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1985.tb05004.x
+  link: https://doi.org/10.1111/j.1540-6261.1985.tb05004.x
+  relevance: Motivates low-variance-ratio reversal tests as overreaction/mean-reversion expressions.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://doi.org/10.1093/jjfinec/nbt003
+  relevance: Supports using completed aggregate orderflow imbalance as price-pressure confirmation.
+data_needs:
+- Local Sierra NQ completed 1-minute RTH OHLCV and aggregate trade-orderflow cache.
+- 5-minute bars resampled from completed 1-minute bars by the existing runner.
+- Completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, and
+  large20_volume.
+- No LOB, quote, TBBO, paid, or future-derived data.
+lookahead_risks:
+- The variance-ratio window includes the signal bar only after that bar has closed; entry is next bar
+  open through the engine.
+- Orderflow confirmation uses only completed signal-window aggregate volume and signed volume.
+- No final session high/low, final VWAP, final volume profile, future returns, or post-entry orderflow
+  is used.
+- WFA parameter selection must use in-sample windows only; no frozen validation tuning is allowed.
+duplicate_edge_check:
+  active_scope_only: true
+  existing_nq_campaign_id: none_exact
+  active_rejected_edges_checked:
+  - nq_variance_risk_premium_intraday
+  - nq_realized_vol_of_vol_state
+  - nq_realized_semivariance_asymmetry
+  - nq_vpin_toxicity_continuation
+  - nq_intraday_invariance_dislocation_reversion
+  - nq_intraday_periodicity_orderflow_confirmation
+  - nq_range_compression_breakout
+  conclusion: Eligible as a distinct NQ campaign because the primary gate is rolling completed-bar variance-ratio
+    serial dependence, not implied-realized VRP, realized volatility state, VPIN toxicity, transaction-clock
+    dislocation, periodicity, or range compression.
+parameter_space:
+  entry_parameters: entry.params.vr_threshold and entry.params.min_orderflow_imbalance
+  stop_loss_parameter: sl.params.stop_pct
+  take_profit_parameter: tp.params.target_r_multiple
+  combinations_per_variant: 81
+variants:
+- morning_high_vr_signed_continuation_1130
+- midday_high_vr_large10_continuation_1400
+- afternoon_high_vr_signed_continuation_1530
+- morning_low_vr_signed_reversion_1130
+- midday_low_vr_large10_reversion_1430
+pre_pnl_density_audit:
+  initial_artifact: research_artifacts/nq_variance_ratio_orderflow_regime_density_audit_20260630.md
+  initial_decision: FAIL before staged PnL because 7/45 declared entry-grid rows failed density.
+  reformulation_scope: Changed only entry.params.min_orderflow_imbalance grids for three sparse variants
+    before any NQ PnL inspection.
+  final_artifact: research_artifacts/nq_variance_ratio_orderflow_regime_final_density_audit_20260630.md
+  final_detail_csv: research_artifacts/nq_variance_ratio_orderflow_regime_final_density_audit_20260630.csv
+  final_decision: 'PASS before staged PnL: all 45 entry-grid combinations cleared full-history and latest-252-session
+    density checks.'
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized by the current user request; after OOS or failed staged results only
+    rejection or a separately authorized single rescue is allowed.
+status: completed
+completed_at: '2026-06-30'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_variance_ratio_orderflow_regime/campaign_test_summary.json
+  terminal_stage: limited_core_grid_test
+  original_runs: 5
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_report_created: false
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate was morning_high_vr_signed_continuation_1130
+    at 26/81 (0.32098765432098764), below the 0.70 gate. Across all official variants, 46/405 combinations
+    were profitable, 9 benchmark-pass rows, and 0 Apex-rule-violating iterations. No variant reached limited
+    monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or acceptance OOS.

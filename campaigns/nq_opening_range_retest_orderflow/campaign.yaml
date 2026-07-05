@@ -1,0 +1,121 @@
+campaign_id: nq_opening_range_retest_orderflow
+title: NQ opening-range break-and-retest with aggregate orderflow
+decision: FAIL
+created_at: '2026-06-30'
+completed_at: '2026-06-30'
+status: failed_pre_pnl_density
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: opening_range_retest_orderflow
+hypothesis: NQ opening-range boundaries may become intraday support/resistance after a completed breakout.
+  A later retest that holds the broken boundary with completed aggregate orderflow confirmation may identify
+  accepted S/R flips rather than weak probes.
+rationale: This is the NQ transfer of the ES opening-range retest edge before NQ PnL inspection. It differs
+  from immediate OR breakout continuation because it waits for a later retest, and it differs from failed-breakout
+  reclaim because price must hold outside the opening range rather than reclaim inside it.
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports public support/resistance reference levels as intraday liquidity focal points.
+- title: Assessing the profitability of intraday opening range breakout strategies
+  authors: Ulf Holmberg, Carl Lonnback, Christian Lundstrom
+  year: 2013
+  venue: Finance Research Letters
+  link: https://ideas.repec.org/a/eee/finlet/v10y2013i1p27-33.html
+  doi: 10.1016/j.frl.2012.09.001
+  relevance: Uses opening-range breakout rules as a systematic intraday futures framework.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure proxy; this campaign uses
+    completed Sierra aggregate trade-side flow.
+data_needs:
+- NQ Sierra completed 1-minute RTH OHLCV/orderflow cache in America/New_York
+- 5-minute bars generated from the local 1-minute source
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, and
+  large20_volume
+- opening-range high/low known only after the configured opening window is complete
+lookahead_risks:
+- Opening-range high and low are unavailable until the configured opening window is complete.
+- Breakout recognition uses only a completed close outside the opening range.
+- Retest and orderflow confirmation use only completed retest bars and predeclared completed-bar flow
+  lookback.
+- Signals generated from bar close are filled no earlier than the next bar open by the engine.
+- Final session high/low, final VWAP, volume profile, and post-entry orderflow are not used.
+failure_modes:
+- Retests may be chop around opening-range boundaries rather than true S/R flips.
+- Aggregate signed-flow buckets may be too noisy compared with quote-level order-flow imbalance.
+- Boundary stops can be hit before continuation after realistic slippage and commissions.
+- The effect may be dominated by a small number of high-volatility trend days.
+- NQ opening behavior may differ from the ES template despite the same mechanics.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_self_lead_opening_range_breakout
+  - nq_pivot_filtered_opening_range_orderflow_breakout
+  - nq_opening_range_failed_breakout_orderflow
+  - nq_prior_session_level_breakout_continuation
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_archive_range_compression_retest
+  - chartfanatics_remaining_strategy_source_gate_after_round_number
+  conclusion: Eligible for the NQ ES-transfer search because this campaign requires same-day opening-range
+    breakout first, then a later retest that holds the broken OR boundary outside the range with completed
+    orderflow confirmation. It is not immediate OR breakout continuation, not failed-breakout reclaim
+    back inside the range, not prior-session high/low breakout continuation, and not a ChartFanatics-sourced
+    duplicate launch.
+variants:
+- or15_signed_absorption_retest_1030
+- or15_signed_aligned_retest_1030
+- or30_signed_absorption_retest_1100
+- or30_large10_absorption_retest_1130
+- or60_large20_aligned_retest_1230
+parameter_space:
+  entry_parameters:
+  - entry.params.max_retest_bars
+  - entry.params.min_orderflow_imbalance
+  stop_parameters:
+  - sl.params.stop_offset_ticks
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant:
+    or15_signed_absorption_retest_1030: 81
+    or15_signed_aligned_retest_1030: 81
+    or30_signed_absorption_retest_1100: 81
+    or30_large10_absorption_retest_1130: 81
+    or60_large20_aligned_retest_1230: 81
+  entry_parameter_cap: 2
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+source_es_campaign: es_opening_range_retest_orderflow
+pre_pnl_density:
+  status: failed
+  decision: FAIL
+  artifact: research_artifacts/nq_opening_range_retest_orderflow_density_audit_20260630.md
+  csv: research_artifacts/nq_opening_range_retest_orderflow_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_opening_range_retest_orderflow_density_summary_20260630.csv
+  entry_rows: 45
+  passing_rows: 16
+  passing_variants: 1
+  failed_variants:
+  - or15_signed_absorption_retest_1030
+  - or15_signed_aligned_retest_1030
+  - or30_signed_absorption_retest_1100
+  - or60_large20_aligned_retest_1230
+  failure_reason: The declared five-variant family failed before NQ PnL because only
+    16 of 45 entry-grid rows and 1 of 5 variants passed all density windows; dropping
+    sparse variants after seeing the screen would be post-result narrowing.
+staged_pnl_started: false
+result_summary: No limited core, monkey, WFA, Monte Carlo, simulated incubation,
+  acceptance OOS, holdout PnL, or candidate report was run. The campaign is rejected
+  as a full declared five-variant family by pre-PnL density.
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized in the current search; after NQ testing starts, allow only rejection
+    or promotion to candidate/manual-review status.

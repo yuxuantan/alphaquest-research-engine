@@ -20,6 +20,9 @@ class EsMesAlignedFlowContinuationEntry:
     def __init__(self, params: dict):
         self.params = params
         self.setup_mode = str(params.get("setup_mode", "es_mes_aligned_flow_continuation"))
+        self.primary_prefix = str(params.get("primary_prefix", "es")).lower()
+        if self.primary_prefix not in {"es", "nq"}:
+            raise ValueError("entry.params.primary_prefix must be one of ['es', 'nq'].")
         self.signal_time = parse_time(params.get("signal_time", "10:30:00"))
         self.bar_interval_minutes = float(params.get("bar_interval_minutes", 1))
         if self.bar_interval_minutes <= 0:
@@ -30,7 +33,7 @@ class EsMesAlignedFlowContinuationEntry:
         if self.return_window_minutes <= 0 or self.flow_window_minutes <= 0:
             raise ValueError("entry.params return and flow windows must be positive.")
 
-        self.min_es_return_ticks = float(params.get("min_es_return_ticks", 4.0))
+        self.min_es_return_ticks = float(params.get("min_primary_return_ticks", params.get("min_es_return_ticks", 4.0)))
         self.min_mes_flow_imbalance = float(params.get("min_mes_flow_imbalance", 0.02))
         if self.min_es_return_ticks < 0:
             raise ValueError("entry.params.min_es_return_ticks must be non-negative.")
@@ -80,7 +83,7 @@ class EsMesAlignedFlowContinuationEntry:
         direction = "long" if long_ok else "short"
         report_fields = {
             "setup_mode": self.setup_mode,
-            "feature_method": "completed_bar_es_trend_mes_aligned_flow",
+            "feature_method": f"completed_bar_{self.primary_prefix}_trend_mes_aligned_flow",
             "signal_bar_timestamp": timestamp,
             "signal_close_timestamp": close_timestamp,
             "intended_entry_timestamp": close_timestamp,
@@ -88,9 +91,12 @@ class EsMesAlignedFlowContinuationEntry:
             "direction": direction,
             "return_window_minutes": self.return_window_minutes,
             "flow_window_minutes": self.flow_window_minutes,
+            "primary_prefix": self.primary_prefix,
             "mes_flow_mode": self.mes_flow_mode,
+            "min_primary_return_ticks": self.min_es_return_ticks,
             "min_es_return_ticks": self.min_es_return_ticks,
             "min_mes_flow_imbalance": self.min_mes_flow_imbalance,
+            "primary_return_ticks": es_return,
             "es_return_ticks": es_return,
             "mes_flow_imbalance": mes_imbalance,
             "signal_close": signal_close,
@@ -112,7 +118,7 @@ class EsMesAlignedFlowContinuationEntry:
 
     @property
     def _return_column(self) -> str:
-        return f"es_trade_orderflow_return_ticks_{self.return_window_minutes}"
+        return f"{self.primary_prefix}_trade_orderflow_return_ticks_{self.return_window_minutes}"
 
     @property
     def _flow_column(self) -> str:

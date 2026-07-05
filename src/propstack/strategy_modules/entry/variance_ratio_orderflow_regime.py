@@ -266,15 +266,23 @@ class VarianceRatioOrderflowRegimeEntry:
 def _variance_ratio(closes: list[float], lookback_bars: int, horizon_bars: int) -> float | None:
     if len(closes) < lookback_bars + horizon_bars + 1:
         return None
-    values = pd.Series(closes, dtype="float64")
-    one_returns = values.diff().iloc[-lookback_bars:]
-    horizon_returns = values.diff(horizon_bars).iloc[-lookback_bars:]
-    var_one = float(one_returns.var(ddof=1))
-    var_horizon = float(horizon_returns.var(ddof=1))
+    values = [float(value) for value in closes]
+    start = len(values) - lookback_bars
+    one_returns = [values[i] - values[i - 1] for i in range(start, len(values))]
+    horizon_returns = [values[i] - values[i - horizon_bars] for i in range(start, len(values))]
+    var_one = _sample_variance(one_returns)
+    var_horizon = _sample_variance(horizon_returns)
     if not math.isfinite(var_one) or not math.isfinite(var_horizon) or var_one <= 0:
         return None
     ratio = var_horizon / (horizon_bars * var_one)
     return ratio if math.isfinite(ratio) else None
+
+
+def _sample_variance(values: list[float]) -> float:
+    if len(values) < 2:
+        return float("nan")
+    mean = sum(values) / len(values)
+    return sum((value - mean) ** 2 for value in values) / (len(values) - 1)
 
 
 def _finite_float(value) -> float | None:

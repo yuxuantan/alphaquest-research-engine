@@ -1,0 +1,109 @@
+campaign_id: nq_quarterly_expiration_pressure
+title: NQ Quarterly Expiration Pressure
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Quarterly index futures/options expiration and CME equity-index roll dates may create intraday
+  NQ price pressure or reversal effects from hedging, program trading, settlement, and roll activity.
+rationale: This is a direct NQ transfer of the already-tested ES quarterly-expiration pressure family
+  before any NQ PnL inspection. It is distinct from NQ monthly OPEX, VIX expiration, SPX 0DTE, pre-holiday,
+  turn-of-month, and turn-of-year campaigns because the signal date is the deterministic quarterly equity-index
+  expiration or CME equity-index roll date, not monthly equity-option OPEX outside quarterly months, VIX
+  settlement, daily SPXW expiration, or generic calendar seasonality.
+sources:
+- title: Program trading and expiration day effects
+  authors: Hans R. Stoll and Robert E. Whaley
+  year: 1987
+  venue: Financial Analysts Journal 43(2), 16-28
+  relevance: Documents index futures/options expiration-day effects associated with program trading and
+    settlement pressure.
+- title: 'Program trading and individual stock returns: Ingredients of the triple-witching brew'
+  authors: Hans R. Stoll and Robert E. Whaley
+  year: 1990
+  venue: Journal of Business 63, S165-S192
+  relevance: Provides mechanism evidence that derivative expiration can affect stock and index returns
+    through program-trading and expiration mechanics.
+- title: Equity Index Roll Dates
+  authors: CME Group
+  year: 2026
+  link: https://www.cmegroup.com/trading/equity-index/rolldates.html
+  relevance: Defines the equity-index roll date as the Monday prior to the third Friday of the expiration
+    month, a public ex-ante calendar input.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV cache in America/New_York
+- deterministic third-Friday quarterly expiration calendar for March, June, September, and December
+- same-session forced flatten and next-bar-open execution
+data_quality_caveats:
+- The edge is intrinsically sparse with roughly four quarterly event sets per year.
+- The campaign does not observe actual option positioning, index basket imbalance, settlement imbalance,
+  or roll volume.
+- NQ may have weaker or different expiration pressure than ES because Nasdaq index composition and hedging
+  flows differ.
+lookahead_risks:
+- Signal dates use only the predeclared third-Friday quarterly expiration rule and CME roll-date convention.
+- Signals use the completed one-minute bar ending at the configured signal time and enter at the next
+  bar open.
+- No same-day high/low, final VWAP, settlement price, realized volume spike, or post-signal return is
+  used to decide entry.
+- Flatten and no-overnight checks are config-driven and remain before the prop-firm cutoff.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_monthly_opex_pressure
+  - nq_vix_expiration_pressure
+  - nq_spx_0dte_expiration_pressure
+  - nq_spx_0dte_trend_aligned_pressure
+  - nq_preholiday_effect
+  - nq_turn_of_month_seasonality
+  - nq_turn_of_year_effect
+  - nq_fomc_pre_announcement_drift
+  - es_quarterly_expiration_pressure
+  conclusion: Eligible as a separate NQ campaign because no active NQ quarterly expiration-pressure campaign
+    exists; ES quarterly expiration is prior cross-instrument evidence, not an NQ test. The edge is still
+    rejected if NQ data quality or staged results fail.
+variants:
+- monday_prior_roll_week_long_1000
+- thursday_prior_positioning_short_1330
+- expiration_friday_open_short_1000
+- expiration_friday_midday_long_1200
+- monday_after_expiration_reversal_long_1000
+parameter_space:
+  per_variant_combinations: 9
+  entry_parameters: none; setup mode, signal time, day offset, and direction are fixed per variant before
+    testing
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  entry_parameter_cap: 0
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+  total_campaign_combinations: 45
+source_es_campaign: es_quarterly_expiration_pressure
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue authorized; after NQ testing begins, allow only rejection or promotion to candidate/manual-review
+    status.
+status: failed_pre_pnl_event_data_quality
+result:
+  terminal_stage: pre_pnl_event_data_quality_screen
+  completed_at: '2026-06-30'
+  event_density_audit: research_artifacts/nq_quarterly_expiration_pressure_event_density_audit_20260630.md
+  declared_variants: 5
+  data_quality_pass_variants: 2
+  data_quality_fail_variants: 3
+  staged_pnl_run: false
+  candidate_strategy_report_created: false
+  conclusion: 'Rejected before staged NQ PnL: 3/5 variants missed at least one expected deterministic
+    signal/entry bar in the local NQ RTH cache. The expiration-Friday variants were complete, but monday_prior_roll_week_long_1000
+    missed 9 event dates and monday_after_expiration_reversal_long_1000 missed 4 event dates; thursday_prior_positioning_short_1330
+    missed the Juneteenth 2025 non-RTH date. Dropping the sparse/missing variants after this audit would
+    narrow the predeclared five-variant edge. No NQ PnL was inspected.'

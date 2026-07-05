@@ -20,6 +20,15 @@ def test_build_es_term_structure_features_use_completed_aligned_windows():
     assert out.loc[1, "front_minus_deferred_return_bps_2"] == pytest.approx(50.0)
 
 
+def test_build_term_structure_features_can_label_non_es_root_symbol():
+    front = _bars("NQH24", [100.0, 100.0], [100.0, 101.0])
+    deferred = _bars("NQM24", [100.0, 100.0], [100.0, 100.5])
+
+    out = build_es_term_structure_lead_lag_frame(front, deferred, windows=[2], root_symbol="NQ")
+
+    assert out["symbol"].unique().tolist() == ["NQ"]
+
+
 def test_term_structure_entry_emits_short_after_front_premium_dislocation():
     entry = EsTermStructureLeadLagEntry(
         {
@@ -38,6 +47,29 @@ def test_term_structure_entry_emits_short_after_front_premium_dislocation():
     assert signal.direction == "short"
     assert signal.reclaim_timestamp == pd.Timestamp("2024-01-03 10:00")
     assert signal.report_fields["front_minus_deferred_return_bps"] == 7.0
+
+
+def test_term_structure_entry_can_report_non_es_symbols():
+    entry = EsTermStructureLeadLagEntry(
+        {
+            "setup_mode": "front_premium_reversion_short",
+            "entry_time": "10:00:00",
+            "bar_interval_minutes": 1,
+            "lookback_minutes": 30,
+            "min_front_return_bps": 8,
+            "min_spread_gap_bps": 3,
+            "leader_symbol": "NQ_front_or_calendar_spread",
+            "traded_symbol": "NQ_front",
+            "level_prefix": "nq_term_structure",
+        }
+    )
+
+    signal = entry.on_bar_close(_term_structure_bar("2024-01-03 09:59", front_return=12.0, deferred_return=5.0))
+
+    assert signal is not None
+    assert signal.report_fields["leader_symbol"] == "NQ_front_or_calendar_spread"
+    assert signal.report_fields["traded_symbol"] == "NQ_front"
+    assert signal.level_type == "nq_term_structure_front_premium_reversion_short_30m"
 
 
 def test_term_structure_entry_emits_long_after_front_discount_dislocation():

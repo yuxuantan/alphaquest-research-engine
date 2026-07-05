@@ -97,7 +97,7 @@ class ChicagoFedCfnaiActivityStateEntry:
                 "feature_session_date": session_date.isoformat(),
                 "cfnai_observation_date": row.get("obs_date"),
                 "cfnai_eligible_date": row.get("eligible_date"),
-                "availability_rule": "latest CFNAI observation whose conservative eligible date is on or before the ES session date",
+                "availability_rule": "latest CFNAI observation whose conservative eligible date is on or before the futures session date",
                 "signal_timestamp": signal_timestamp,
                 "intended_entry_timestamp": signal_timestamp,
                 "cfnai_driver_column": self.driver_column,

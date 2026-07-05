@@ -1,0 +1,150 @@
+campaign_id: nq_impulse_pause_orderflow_continuation
+title: NQ impulse-pause breakout continuation with aggregate orderflow confirmation
+decision: FAIL
+created_at: '2026-06-30'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: impulse_pause_orderflow_continuation
+hypothesis: After a completed directional impulse, a shallow completed pause can show
+  that price is absorbing profit-taking without fully retracing. If NQ then closes
+  beyond the pause boundary with same-direction aggregate orderflow, the move may
+  continue because liquidity-taking pressure or order splitting has not finished.
+sources:
+- title: The Dynamic Volume-Return Relation of Individual Stocks
+  authors: Guillermo Llorente, Roni Michaely, Gideon Saar, Jiang Wang
+  year: 2002
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v15y2002i4p1005-1047.html
+  relevance: Supports the distinction between volume-backed continuation and liquidity-driven
+    reversal. This campaign requires price continuation structure plus completed
+    aggregate orderflow confirmation.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon price-pressure variable.
+    The implementation uses Sierra completed-bar signed-volume proxies, not quote-level
+    OFI.
+- title: How Markets Slowly Digest Changes in Supply and Demand
+  authors: Jean-Philippe Bouchaud, J. Doyne Farmer, Fabrizio Lillo
+  year: 2009
+  venue: Handbook of Financial Markets
+  link: https://arxiv.org/abs/0809.0822
+  relevance: Reviews persistent orderflow and gradual price adjustment, motivating
+    continuation after an impulse-pause-breakout sequence rather than immediate mean
+    reversion.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical
+    Inference, and Empirical Implementation'
+  authors: Andrew W. Lo, Harry Mamaysky, Jiang Wang
+  year: 2000
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00265
+  relevance: Supports testing objectively defined price patterns rather than discretionary
+    chart labels. The campaign defines impulse, pause, and breakout using completed
+    OHLC bars only.
+rationale: This is a price-action-first campaign. A trade requires a completed multi-bar
+  impulse, a completed shallow pause, and a completed close beyond the pause boundary;
+  aggregate signed or large-trade flow confirms only the breakout bar. It differs
+  from single wide-range continuation, VWAP/EMA pullback continuation, prior-level
+  breakout, opening-range breakout, and raw signed-flow persistence.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- 5-minute NQ bars aggregated from local completed 1-minute RTH Sierra cache
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  large20_volume
+data_quality_caveats:
+- Sierra signed-volume fields are completed-bar aggregate bid/ask-volume proxies,
+  not quote-level OFI or print-sequenced LOB data.
+- The signal uses completed OHLC and completed orderflow only; entry is next bar
+  open or later.
+- Same-bar stop/target conflicts rely on available detail data and pessimistic OHLC
+  fallback when sequencing is unresolved.
+lookahead_risks:
+- Impulse and pause windows use only bars that closed before the breakout signal
+  bar.
+- The breakout and orderflow confirmation use the signal bar close, so entry must
+  be next bar open or later.
+- No future high, low, VWAP, volume profile, final daily range, or post-entry orderflow
+  is used.
+failure_modes:
+- Impulse-pause-breakout may still identify exhaustion rather than continuation.
+- Aggregate orderflow can confirm after most of the move has already occurred.
+- Directional behavior may be regime-specific or dominated by a few macro-volatility
+  years.
+- Large-trade buckets may be sparse and may not reliably represent informed participation.
+- One-tick worse slippage or entry delay can erase a narrow edge.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_wide_range_orderflow_continuation
+  - nq_morning_orderflow_momentum_continuation
+  - nq_midday_range_orderflow_breakout
+  - nq_vwap_pullback_continuation
+  - nq_session_extreme_delta_divergence
+  - nq_variance_ratio_orderflow_regime
+  - nq_opening_range_failed_breakout_orderflow
+  conclusion: Eligible as a distinct NQ campaign only if implemented as impulse
+    plus pause plus breakout. The core mechanic is not a single expansion bar, not
+    a first-hour momentum state, not a frozen midday range breakout, not a dynamic-average
+    pullback, not a session-extreme divergence, and not a sweep/reclaim reversal.
+pre_pnl_density_audit:
+  status: passed
+  artifact: research_artifacts/nq_impulse_pause_orderflow_continuation_density_audit_20260630.md
+  csv: research_artifacts/nq_impulse_pause_orderflow_continuation_density_audit_20260630.csv
+  result: PASS. All 45 declared entry rows cleared the full-history, limited-core
+    proxy, and latest-window density gates before any NQ PnL was inspected. Minimum
+    full-history density was 142.43 signals/year, minimum limited-core density was
+    129.33 signals/year, and minimum latest-window count was 142.
+parameter_space:
+  entry.params.min_impulse_ticks:
+  - 6
+  - 10
+  - 14
+  entry.params.min_orderflow_imbalance:
+  - 0.0
+  - 0.02
+  - 0.04
+  sl.params.stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 81
+variants:
+- morning_signed_two_sided_impulse_pause_breakout_1130
+- late_morning_large10_two_sided_impulse_pause_breakout_1230
+- midday_signed_two_sided_impulse_pause_breakout_1400
+- afternoon_large10_two_sided_impulse_pause_breakout_1530
+- full_session_signed_two_sided_impulse_pause_breakout_1530
+rescue_policy:
+  allowed: false
+  reason: This is a fresh NQ transfer; no rescue is authorized after density or staged
+    results are observed.
+status: completed_failed
+result_summary:
+  decision: FAIL
+  stage: walk_forward_analysis
+  report: backtest-campaigns/nq_impulse_pause_orderflow_continuation/campaign_test_summary.json
+  density_audit: research_artifacts/nq_impulse_pause_orderflow_continuation_density_audit_20260630.md
+  variants_tested: 5
+  total_core_combinations: 405
+  profitable_combinations: 183
+  benchmark_pass_combinations: 69
+  apex_rule_violating_iterations: 0
+  monkey_reached: 1
+  wfa_reached: 1
+  monte_carlo_reached: 0
+  best_variant_by_top_net: late_morning_large10_two_sided_impulse_pause_breakout_1230
+  best_top_net_profit: 6550.0
+  best_top_profit_factor: 1.2889918376351202
+  failure_reason: Four variants failed limited_core_grid_test. The late-morning
+    large10 variant passed limited core and monkey, then failed walk_forward_analysis
+    with stitched OOS PF 1.0911 below 1.2, MAR 0.2492 below 0.4, and only 5/10
+    profitable OOS windows. No variant reached WFA OOS monkey, Monte Carlo, simulated
+    incubation, acceptance OOS, or candidate reporting.

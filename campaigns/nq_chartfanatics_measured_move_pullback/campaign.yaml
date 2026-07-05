@@ -1,0 +1,154 @@
+campaign_id: nq_chartfanatics_measured_move_pullback
+title: NQ Chart Fanatics measured-move pullback continuation
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: nq_chartfanatics_measured_move_pullback
+hypothesis: NQ trend-pullback structures may continue by approximately the measured pullback distance after a completed
+  breakout in the trend direction.
+rationale: Chart Fanatics describes the Measured Move Trend Strategy as repeated pullback structures inside a trend,
+  with the pullback distance projected forward. This campaign converts that idea into completed swing-pivot structures,
+  breakout confirmation, sweep-extreme stops, and signal-price measured targets.
+research_sources:
+- title: Measured Move Trend Strategy
+  author: Marci Silfrain / Chart Fanatics
+  year: 2026
+  link_or_doi: https://www.chartfanatics.com/strategies/measured-move-trend-strategy
+  expected_mechanism: Practitioner playbook states that trend pullback structures can be measured and projected
+    for continuation targets.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  author: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  link_or_doi: https://doi.org/10.1111/0022-1082.00265
+  expected_mechanism: Supports deterministic local-extrema pattern definitions; this campaign uses completed pivots
+    rather than discretionary trendline drawings.
+- title: Time Series Momentum
+  author: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse Heje Pedersen
+  year: 2012
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2011.11.003
+  expected_mechanism: Provides futures-market evidence for trend persistence, which is the economic rationale behind
+    continuation after a measured pullback.
+source_quality_note: The Little RZY/measured-move rule is practitioner-originated. Academic sources support only
+  objective pattern extraction and futures trend persistence, so the campaign must fail closed if robustness is
+  weak.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  checked_edges:
+  - es_market_structure_pivot_trend_bias
+  - es_pivot_filtered_vwap_pullback_continuation
+  - nq_range_compression_breakout
+  - nq_daily_time_series_momentum
+  - nq_intraday_momentum_priority
+  conclusion: Eligible as a distinct Chart Fanatics-derived NQ campaign because the entry requires a completed measured
+    pullback trigger break and emits a projected measured target. It is not a plain fixed-time pivot-bias campaign,
+    VWAP pullback, range compression breakout, or daily momentum state.
+chart_fanatics_review:
+  selected_after: 80/20 Nasdaq density failure
+  selected_reason: Measured Move Trend Strategy was the next clean non-duplicate futures idea with objective OHLC
+    implementation potential.
+lookahead_risks:
+- Pivots are usable only after right-side confirmation bars complete.
+- The breakout signal uses only the completed 5-minute bar and enters no earlier than the next bar open.
+- The measured target and sweep stop are computed from completed structure available at signal time.
+- No final session high/low, final VWAP, future profile, or post-entry price path is used to define entry, stop,
+  or target.
+failure_modes:
+- Discretionary trendlines may not translate to completed-pivot rules.
+- Measured targets can be too close after slippage or too ambitious in choppy sessions.
+- Completed pivots may lag and enter after continuation is exhausted.
+- The signal can overlap with generic trend following and fail after costs.
+variants:
+- morning_5_15_long_measured_breakout
+- morning_5_15_short_measured_breakdown
+- late_morning_5_15_two_sided_measured_continuation
+- midday_5_15_two_sided_measured_continuation
+- late_morning_15_30_two_sided_measured_continuation
+parameter_space:
+  total_combinations_per_variant: 27
+  entry_tunables:
+  - breakout_buffer_ticks
+  - min_measured_move_ticks
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables: []
+  parameters:
+    entry.params.breakout_buffer_ticks:
+    - 0
+    - 1
+    - 2
+    entry.params.min_measured_move_ticks:
+    - 16.0
+    - 32.0
+    - 64.0
+    sl.params.stop_offset_ticks:
+    - 1
+    - 4
+    - 8
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+status: completed_failed_density
+pre_pnl_density_audit:
+  status: FAIL
+  artifact: research_artifacts/nq_chartfanatics_measured_move_pullback_density_audit_20260630.md
+  csv: research_artifacts/nq_chartfanatics_measured_move_pullback_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_chartfanatics_measured_move_pullback_density_summary_20260630.csv
+  density_rule: Each declared entry-grid corner must exceed 50 signals/year on full history, limited-core shortlist
+    window, and latest 252 sessions before staged PnL.
+  completed_at: '2026-06-30T12:17:35+08:00'
+  decision: Reject before staged PnL; do not change mechanics without explicit user rescue authorization.
+  variant_density_summary:
+  - variant_id: late_morning_15_30_two_sided_measured_continuation
+    entry_combos: 9
+    combos_passing_all_windows: 6
+    min_full_signals_per_year: 89.77056912241079
+    min_limited_core_signals_per_year: 41.50378832247286
+    min_latest252_signals_per_year: 126.95124503823273
+    density_gate_pass: false
+  - variant_id: late_morning_5_15_two_sided_measured_continuation
+    entry_combos: 9
+    combos_passing_all_windows: 6
+    min_full_signals_per_year: 95.21120967528417
+    min_limited_core_signals_per_year: 27.885357779161453
+    min_latest252_signals_per_year: 147.77918367731777
+    density_gate_pass: false
+  - variant_id: midday_5_15_two_sided_measured_continuation
+    entry_combos: 9
+    combos_passing_all_windows: 6
+    min_full_signals_per_year: 97.8667604213295
+    min_limited_core_signals_per_year: 19.454900776159153
+    min_latest252_signals_per_year: 182.49241474245954
+    density_gate_pass: false
+  - variant_id: morning_5_15_long_measured_breakout
+    entry_combos: 9
+    combos_passing_all_windows: 3
+    min_full_signals_per_year: 47.15221812490264
+    min_limited_core_signals_per_year: 14.915423928388684
+    min_latest252_signals_per_year: 78.35272154703426
+    density_gate_pass: false
+  - variant_id: morning_5_15_short_measured_breakdown
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 35.75278077602508
+    min_limited_core_signals_per_year: 8.4304570030023
+    min_latest252_signals_per_year: 49.59033009305966
+    density_gate_pass: false
+result_summary:
+  verdict: FAIL
+  completed_at: '2026-06-30T12:17:35+08:00'
+  campaign_test_summary: backtest-campaigns/nq_chartfanatics_measured_move_pullback/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_chartfanatics_measured_move_pullback/campaign_results.csv
+  methodology_audit: campaigns/nq_chartfanatics_measured_move_pullback/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    pre_pnl_density_screen: 5
+  failure_reason: 'Pre-PnL density screen failed: every Chart Fanatics measured-move variant had at least one entry-grid
+    corner below 50 signals/year in the limited-core window (worst 8.43/year; best variant minimum 41.50/year).
+    Only 21/45 entry-grid corners passed all required windows. No staged PnL, monkey, WFA, Monte Carlo, simulated
+    incubation, acceptance OOS, or candidate reporting was run.'

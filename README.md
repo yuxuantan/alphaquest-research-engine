@@ -26,6 +26,64 @@ python3 -m pip install -e ".[dev]"
 python3 -m pytest
 ```
 
+For the visual validation dashboard, install the optional dashboard extras:
+
+```bash
+python3 -m pip install -e ".[dev,dashboard]"
+```
+
+## Visual Validation Dashboard
+
+Generate trade-level validation artifacts from a core backtest:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_core \
+  --config campaigns/<campaign_id>/variants/<variant_id>/config.yaml \
+  --export-validation \
+  --validation-window-bars-before 10 \
+  --validation-window-bars-after 20 \
+  --validation-max-trades 100
+```
+
+By default, `run_core` writes dashboard artifacts under the generated run root:
+
+```text
+backtest-campaigns/<campaign_id>/<variant_id>/<symbol>/<run_id>/validation_runs/core/
+```
+
+Launch the dashboard from the repo root:
+
+```bash
+PYTHONPATH=src streamlit run apps/validation_dashboard.py
+```
+
+The dashboard loads `trades.parquet`, `condition_snapshots.parquet`,
+`bar_windows.parquet`, `exit_audits.parquet`, and `metadata.json` immediately.
+It only reads `tick_windows.parquet` after you select a trade and enable the tick
+window in the UI.
+
+The Orderflow tab uses the exported selected-trade bar and tick windows. Its
+filter explanation table shows raw strategy/export fields from
+`condition_snapshots.parquet`; the footprint heatmap only aggregates exported
+tick rows by bar timestamp and price level for visual inspection. Display-only
+fields such as bar `delta_pct`, max bid/ask volume at price, and imbalance
+markers are derived from those exported rows and should not be treated as new
+strategy rules.
+
+The Exit Path tab audits TP/SL sequencing from the selected trade's exported
+tick window when one exists. It shows the engine exit reason, the first TP/SL
+touch found in the exported path, MFE/MAE, same-bar ambiguity status, and warning
+flags for mismatches such as engine-target versus tick-stop-first. When no
+ordered tick path is present, the tab keeps the engine audit fields visible and
+warns that tick sequencing could not be independently verified.
+
+Use the sidebar `Review Queue` page for systematic manual validation. It can
+sample random, first, last, best-R, worst-R, forced-flatten, same-bar ambiguous,
+mismatch-warning, and high-impact edge-case trades. Review annotations are saved
+next to the validation artifacts in `manual_review.parquet` with trade ID,
+status, notes, timestamp, and dashboard version, so notes persist after
+restarting Streamlit.
+
 ## Project Layout
 
 ```text

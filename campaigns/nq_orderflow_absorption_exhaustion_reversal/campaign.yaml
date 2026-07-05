@@ -1,0 +1,113 @@
+campaign_id: nq_orderflow_absorption_exhaustion_reversal
+title: NQ Orderflow Absorption Exhaustion Reversal
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: orderflow_absorption_exhaustion_reversal
+hypothesis: Extreme same-clock NQ signed-flow rank with high effort-vs-result but weak completed-window price displacement
+  may identify absorption or exhausted aggressive flow; fading that flow may capture same-day reversal after costs.
+rationale: This is an NQ execution-leg port of the ES orderflow absorption/exhaustion campaign. It is distinct from NQ orderflow
+  momentum because it fades flow rather than following it, distinct from NQ capitulation because it is two-sided and same-clock
+  orderflow-rank driven rather than long-only sell-flush snapback, and distinct from VPIN toxicity because it uses rolling
+  signed-flow effort versus realized displacement at a fixed slot rather than prior toxicity state.
+sources:
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow imbalance as a price-pressure proxy and the importance of realized price response to order-flow
+    events.
+- title: Trading Volume and Serial Correlation in Stock Returns
+  authors: John Y. Campbell, Sanford J. Grossman, and Jiang Wang
+  year: 1993
+  venue: Quarterly Journal of Economics
+  link: https://campbell.scholars.harvard.edu/publications/trading-volume-and-serial-correlation-stock-returns
+  relevance: Models how liquidity-trader pressure and market-maker inventory risk can create reversal after high-volume pressure.
+- title: How Markets Slowly Digest Changes in Supply and Demand
+  authors: Jean-Philippe Bouchaud, J. Doyne Farmer, and Fabrizio Lillo
+  year: 2009
+  venue: Handbook of Financial Markets
+  link: https://arxiv.org/abs/0809.0822
+  relevance: Reviews persistent order flow and market impact, supporting explicit tests of when flow pressure is absorbed
+    rather than followed.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- completed NQ RTH 1-minute OHLCV/orderflow bars with signed_volume and volume
+- rolling trade_orderflow imbalance, return, and effort-vs-result features from completed bars
+- same-clock prior ranks computed only from prior sessions at the same clock time
+lookahead_risks:
+- Rolling orderflow and return windows use only completed 1-minute bars ending at the signal timestamp.
+- Same-clock ranks use prior observations at that clock time only; the current observation is ranked against prior history.
+- Signals use bar close and the engine enters at the next bar open or later.
+- No final session VWAP, final daily range, future orderflow, or future volume profile is used.
+failure_modes:
+- Extreme orderflow with weak displacement may be hidden continuation rather than exhaustion.
+- NQ signed-volume aggregation may be too noisy to represent true aggressor-side pressure.
+- The ES source failed before WFA, so NQ must fail closed unless robustness is broad.
+- Fade variants can be highly sensitive to slippage and same-bar stop/target ordering.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_morning_orderflow_momentum_continuation
+  - nq_intraday_capitulation_mean_reversion
+  - nq_vpin_toxicity_continuation
+  - nq_mes_micro_flow_divergence_reversion
+  - nq_opening_drive_inventory_orderflow
+  - nq_prior_session_ibs_reversion
+  - nq_prior_session_level_breakout_continuation
+  - nq_intraday_invariance_dislocation_reversion
+  conclusion: Eligible as a bounded NQ port. It fades extreme same-clock signed-flow effort with weak completed price displacement;
+    existing NQ campaigns either follow morning orderflow, use long-only capitulation/VWAP context, use VPIN toxicity state,
+    use MES divergence, opening-drive inventory, prior-session levels, or invariance dislocation rather than same-clock absorption/exhaustion.
+pre_pnl_density:
+  status: failed_screen_before_pnl
+  artifact: research_artifacts/nq_orderflow_absorption_exhaustion_reversal_density_audit_20260630.md
+  detail_csv: research_artifacts/nq_orderflow_absorption_exhaustion_reversal_density_audit_20260630.csv
+  decision: FAIL
+source_es_campaign: es_orderflow_absorption_exhaustion_reversal
+variants:
+- early_5m_absorption_fade_1000
+- late_morning_15m_absorption_fade_1130
+- midday_30m_absorption_fade_1230
+- afternoon_60m_absorption_fade_1400
+- late_30m_absorption_fade_1500
+parameter_space:
+  entry.params.pressure_rank_threshold:
+  - 0.8
+  - 0.85
+  - 0.9
+  entry.params.max_abs_return_ticks:
+  - 1
+  - 2
+  - 4
+  sl.params.stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.5
+  combinations_per_variant: 54
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; after staged failure, allow only rejection or promotion unless
+    the user explicitly authorizes one rescue.
+testing_plan:
+  methodology: current staged research pipeline after pre-PnL density screen
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+status: completed_failed
+completed_at: '2026-06-30T13:08:22+08:00'
+terminal_stage: pre_pnl_density_screen
+failure_reason: 'Pre-PnL density screen failed: all five NQ orderflow absorption/exhaustion variants were far below 50 entry-condition
+  signals/year across full-history and limited-core reference windows. No staged PnL, monkey, WFA, Monte Carlo, simulated
+  incubation, acceptance OOS, or candidate reporting was run.'

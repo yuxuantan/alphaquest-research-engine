@@ -1,0 +1,125 @@
+campaign_id: nq_cboe_skew_tail_risk_intraday
+title: NQ Cboe SKEW Tail Risk Intraday
+status: completed
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Cboe SKEW states, measuring SPX option-implied downside-tail
+  asymmetry, may identify NQ intraday risk-off or risk-on pressure after the cash
+  open.
+rationale: This is a weak-prior NQ symbol-transfer from the failed ES Cboe SKEW
+  family. It is distinct from realized NQ skewness, VVIX/VIX volatility-of-volatility,
+  VIX level or term-structure state, variance-risk-premium, and put/call sentiment
+  campaigns because it uses option-implied downside-tail skewness rather than volatility
+  level, vol-of-vol, realized return shape, or option volume.
+research_sources:
+- title: 'Risk-Neutral Skewness: Evidence from Stock Options'
+  author: Patrick Dennis and Stewart Mayhew
+  year: 2002
+  link_or_doi: https://ideas.repec.org/a/cup/jfinqa/v37y2002i03p471-493_00.html
+  expected_mechanism: Option-implied risk-neutral skewness from Cboe options connects
+    negative skewness and market risk pricing.
+- title: 'The Cboe SKEW Index: Extracting What Has Been Left'
+  author: Liuren Wu and related Cboe SKEW literature
+  year: 2020
+  link_or_doi: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3121027
+  expected_mechanism: Studies Cboe SKEW as SPX option-implied skewness and separates
+    downside-tail information from other skew components.
+- title: Cboe SKEW Index Dashboard and Historical Data
+  author: Cboe Global Markets
+  year: 2026
+  link_or_doi: https://www.cboe.com/us/indices/dashboard/skew/
+  expected_mechanism: Official Cboe daily SKEW history provides the option-implied
+    downside-tail state input.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/cboe_skew_history.csv
+- data/external/nq_cboe_skew_tail_risk_features_20110103_20260612.csv
+feature_construction:
+  builder: tools/build_es_cboe_skew_tail_risk_features.py
+  output: data/external/nq_cboe_skew_tail_risk_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3752
+  lookahead_control: The feature cache merges only the latest Cboe SKEW close strictly
+    before the NQ session date. Same-session Cboe closes are unavailable to intraday
+    signals and are not used.
+duplicate_edge_review:
+  active_scope_only: true
+  reviewed_on: '2026-06-30'
+  existing_nq_campaign_id: none
+  es_source_campaign: es_cboe_skew_tail_risk_intraday
+  es_source_decision: FAIL
+  not_duplicate_of:
+  - nq_realized_skewness_reversal
+  - nq_vvix_tail_risk_intraday
+  - nq_cboe_vix_level_state_intraday
+  - nq_cboe_vix_term_structure_intraday
+  - nq_variance_risk_premium_intraday
+  - nq_cboe_put_call_sentiment_intraday
+  conclusion: This campaign uses lagged Cboe SKEW option-implied downside-tail skewness.
+    It is not realized NQ return skewness, VVIX/VIX volatility-of-volatility, VIX
+    level, VIX term structure, VIX-implied-minus-realized variance premium, or option-volume
+    put/call sentiment.
+parameter_space:
+  combinations_per_variant: 27
+  entry_parameters:
+    high_skew_short_1000:
+      entry.params.skew_rank_min: [0.55, 0.60, 0.65]
+    low_skew_long_1030:
+      entry.params.skew_rank_max: [0.45, 0.40, 0.35]
+    rising_skew_short_1130:
+      entry.params.skew_change_rank_min: [0.55, 0.60, 0.65]
+    falling_skew_long_1200:
+      entry.params.skew_change_rank_max: [0.45, 0.40, 0.35]
+    persistent_high_skew_short_1330:
+      entry.params.skew_mean_rank_min: [0.55, 0.60, 0.65]
+  stop_parameters:
+    sl.params.stop_pct: [0.0015, 0.0025, 0.004]
+  take_profit_parameters:
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
+variants:
+- high_skew_short_1000
+- low_skew_long_1030
+- rising_skew_short_1130
+- falling_skew_long_1200
+- persistent_high_skew_short_1330
+density_audit:
+  artifact: research_artifacts/nq_cboe_skew_tail_risk_intraday_density_audit_20260630.md
+  conclusion: Every declared threshold corner clears the 50 signals/year pre-PnL
+    density gate on the NQ RTH cache.
+rescue_policy:
+  rescue_scope: none_for_initial_campaign
+  max_rescue_attempts_without_user_approval: 0
+  forbidden_changes:
+  - core strategy mechanic
+  - Cboe availability lag rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-30'
+  aggregate_report: backtest-campaigns/nq_cboe_skew_tail_risk_intraday/campaign_test_summary.json
+  official_runs: 5
+  limited_core_failed_runs: 5
+  limited_monkey_failed_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate
+    was high_skew_short_1000 at 0/27 (0.0), below the 0.70 gate. Across all official
+    variants, 0/135 combinations were profitable, 1 benchmark-pass row, and 0 Apex-rule-violating
+    iterations. No variant reached limited monkey, WFA, WFA OOS monkey, Monte Carlo,
+    simulated incubation, or acceptance OOS.
+  best_variant_by_core_profitable_rate: high_skew_short_1000
+  best_core_profitable_rate: 0.0

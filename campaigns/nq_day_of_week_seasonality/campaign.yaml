@@ -1,0 +1,123 @@
+campaign_id: nq_day_of_week_seasonality
+title: NQ Day-of-Week Seasonality
+status: completed_failed_limited_core
+created_at: "2026-07-01"
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: >
+  NQ may retain a day-of-week calendar anomaly during regular trading hours:
+  Monday weakness after weekend information processing and Friday strength
+  before the weekend. The campaign tests that calendar effect intraday with
+  no overnight exposure, next-bar execution, and fixed prop-style flattening.
+rationale: >
+  Day-of-week effects are known before the session opens and do not require
+  future price, volume, VWAP, range, or profile information. This campaign is
+  distinct from unconditional RTH risk-premium, preholiday, turn-of-month,
+  turn-of-year, and expiration campaigns because it conditions direction on
+  weekday and tests weekly calendar timing.
+sources:
+  - title: Calendar Anomalies in Stock Index Futures
+    authors: Oscar Carchano; Angel Pardo
+    year: 2011
+    venue: SSRN working paper
+    link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1958587
+    relevance: >
+      Tests cyclical calendar effects, including day-of-week effects, directly in S&P 500 and other stock-index futures.
+  - title: Stock Returns and the Weekend Effect
+    authors: Kenneth R. French
+    year: 1980
+    venue: Journal of Financial Economics
+    link: https://ideas.repec.org/a/eee/jfinec/v8y1980i1p55-69.html
+    doi: "10.1016/0304-405X(80)90021-5"
+    relevance: >
+      Documents the weekend/Monday return anomaly in U.S. equity returns, motivating Monday-specific NQ tests.
+  - title: Day of the Week Effects and Asset Returns
+    authors: Michael R. Gibbons; Patrick Hess
+    year: 1981
+    venue: The Journal of Business
+    link: https://ideas.repec.org/a/ucp/jnlbus/v54y1981i4p579-96.html
+    doi: "10.1086/296147"
+    relevance: >
+      Broadens day-of-week evidence across asset returns, motivating a fail-closed futures implementation.
+behavioural_or_microstructure_rationale: >
+  Weekend information arrival, investor risk reduction before and after the
+  weekend, settlement/rebalance timing, and institutional flow scheduling can
+  create systematic weekday return differences. NQ is the liquid futures venue
+  for Nasdaq-100 exposure, so any effect must survive futures costs, slippage,
+  next-bar execution, pessimistic same-bar ordering, and RTH-only flattening.
+expected_failure_modes:
+  - The historical weekday effect may have decayed after publication and after futures market maturation.
+  - NQ futures may arbitrage away cash-equity weekday effects.
+  - Any apparent edge may be concentrated in crisis Mondays or a few large Fridays.
+  - Single-weekday variants may fail WFA trade-density requirements after holidays.
+  - Monkey stress may show that random weekday-like timing performs as well as the proposed rule.
+data_needs:
+  - timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+  - deterministic 5-minute aggregation from completed 1-minute bars
+  - exchange session labels and no-overnight prop-rule flatten checks
+data_quality_caveats:
+  - The Sierra cache is an aggregated bar-level source; it is not tick-path data.
+  - Same-bar stop/target conflicts must use the pessimistic OHLC assumption.
+  - Weekday is based on the RTH session timestamp in America/New_York.
+lookahead_risks:
+  - Weekday is known before the session and does not use future market data.
+  - A signal at HH:MM uses only the completed bar ending at HH:MM and can only enter at the next bar open.
+  - No future daily close, session high/low, final VWAP, final range, or final volume is used.
+  - All variants flatten before the configured prop cutoff and do not allow overnight exposure.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+    - nq_rth_intraday_risk_premium
+    - nq_preholiday_effect
+    - nq_turn_of_month_seasonality
+    - nq_turn_of_year_effect
+    - nq_quarterly_expiration_pressure
+    - nq_vix_expiration_pressure
+    - nq_fomc_pre_announcement_drift
+  conclusion: >
+    Eligible as a distinct NQ edge before PnL because it uses known weekday as the primary state,
+    not monthly/holiday/expiration/event timing, unconditional intraday risk premium, or prior price action.
+variants:
+  - monday_open_weekend_short_0935
+  - monday_late_weekend_short_1100
+  - friday_open_preweekend_long_0935
+  - friday_late_preweekend_long_1300
+  - mon_fri_polarity_pair_1000
+parameter_space:
+  per_variant_combinations: 9
+  entry_parameters_per_variant: 0
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+  stop_params:
+    stop_pct: [0.0025, 0.004, 0.006]
+  take_profit_params:
+    target_r_multiple: [1.0, 1.5, 2.0]
+pre_pnl_density:
+  decision: PASS
+  entry_rows: 15
+  rows_passing_density: 15
+  artifact: research_artifacts/nq_day_of_week_seasonality_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_day_of_week_seasonality_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_day_of_week_seasonality_density_summary_20260701.csv
+  p_n_l_inspected: false
+staged_validation:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  runs:
+    monday_open_weekend_short_0935: backtest-campaigns/nq_day_of_week_seasonality/monday_open_weekend_short_0935/NQ/run1
+    monday_late_weekend_short_1100: backtest-campaigns/nq_day_of_week_seasonality/monday_late_weekend_short_1100/NQ/run1
+    friday_open_preweekend_long_0935: backtest-campaigns/nq_day_of_week_seasonality/friday_open_preweekend_long_0935/NQ/run1
+    friday_late_preweekend_long_1300: backtest-campaigns/nq_day_of_week_seasonality/friday_late_preweekend_long_1300/NQ/run1
+    mon_fri_polarity_pair_1000: backtest-campaigns/nq_day_of_week_seasonality/mon_fri_polarity_pair_1000/NQ/run1
+  failure_reason: >
+    All five variants failed limited_core_grid_test. Profitable-iteration rates ranged from
+    0.0 to 0.4444444444444444, below the required 0.70 stability threshold. No variant
+    reached downstream staged tests.
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  methodology_audit: campaigns/nq_day_of_week_seasonality/methodology_audit.md
+  test_summary: backtest-campaigns/nq_day_of_week_seasonality/campaign_test_summary.json

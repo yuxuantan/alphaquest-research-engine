@@ -1,0 +1,227 @@
+campaign_id: nq_session_open_orderflow_reclaim
+variant_id: morning_down_open_reclaim_long
+test_run_id: run1
+strategy_name: session_open_orderflow_reclaim
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Osler (2000); Heston, Korajczyk, and Sadka (2010); Cont, Kukanov,
+    and Stoikov (2014)
+  edge_thesis: The current RTH open can act as a visible auction-anchor level; reclaim
+    or rejection through that level after a prior completed excursion may identify
+    trapped inventory when confirmed by completed aggregate orderflow.
+  mechanic: After NQ has traded at least the configured distance below the current
+    RTH open on a prior completed bar, buy a completed reclaim of the RTH open when
+    same-bar aggregate signed flow is positive enough.
+  timeframe_rationale: The morning window captures the first post-open attempt to
+    reject an excursion away from the initial auction price while leaving enough time
+    for a same-morning exit. The module uses one-minute completed bars so the prior
+    excursion and the reclaim/rejection bar are sequenced without intrabar assumptions.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-18'
+  mechanics_review:
+    mechanic_expresses_edge: This variant expresses the session-open auction-anchor
+      edge because it cannot trade until NQ has already made a completed excursion
+      away from the current RTH open and then closes back through that exact open
+      with aligned aggregate orderflow. The open is known at the start of the RTH
+      session and is not a future-derived level.
+    entry_logic_rationale: The entry waits from 09:45:00 to 12:00:00 ET and requires
+      the excursion to exist on a prior completed one-minute bar before the signal
+      bar. That sequencing avoids same-bar path assumptions and makes the reclaim/rejection
+      a visible failed excursion through the session-open anchor.
+    stop_loss_rationale: The percent-from-entry stop is simple and independent of
+      post-entry information. It rejects the setup if the open-anchor reclaim/rejection
+      cannot withstand ordinary NQ adverse movement after costs and one tick of configured
+      slippage.
+    target_exit_rationale: A fixed-R target keeps the reward rule predeclared across
+      all parameter combinations. Same-day flattening prevents overnight exposure
+      and tests whether the completed-bar orderflow confirmation creates enough short-horizon
+      follow-through.
+    profitability_rationale: The setup should be profitable only if reclaiming or
+      rejecting the RTH open after a prior excursion reveals trapped short-horizon
+      inventory and the large10 imbalance identifies participation in the reclaim/rejection.
+      Pre-PnL density for the declared entry grid was 74.7 to 153.4 benchmark-window
+      signals/year and 118.4 to 168.4 full-history signals/year before any PnL was
+      inspected.
+    known_failure_modes: The RTH open may be too noisy as a reference level, orderflow
+      confirmation may lag the move, stronger trends may cut through the open without
+      reversal, and profitability may concentrate in a few volatility regimes or event
+      days.
+    pre_test_decision: approve_for_testing
+  source_es_campaign: es_session_open_orderflow_reclaim
+  nq_port_note: NQ port declared before NQ density or PnL. The min_open_extension_ticks
+    entry grid is scaled from ES [6, 8, 12] by the pre-PnL NQ/ES median current-session
+    open-excursion ratio 258/75 = 3.44 to [20, 28, 40].
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: session_open_orderflow_reclaim
+    params:
+      setup_mode: morning_down_open_reclaim_long
+      direction: long
+      flow_mode: large10
+      signal_start: 09:45:00
+      signal_end: '12:00:00'
+      flatten_time: '12:30:00'
+      bar_interval_minutes: 1
+      tick_size: 0.25
+      min_open_extension_ticks: 28
+      reclaim_buffer_ticks: 0
+      min_orderflow_imbalance: 0.3
+      max_trades_per_day: 1
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0015
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: '12:30:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '12:30:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.min_open_extension_ticks:
+    - 20
+    - 28
+    - 40
+    entry.params.min_orderflow_imbalance:
+    - 0.2
+    - 0.3
+    - 0.4
+    sl.params.stop_pct:
+    - 0.001
+    - 0.0015
+    - 0.0025
+    tp.params.target_r_multiple:
+    - 1.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

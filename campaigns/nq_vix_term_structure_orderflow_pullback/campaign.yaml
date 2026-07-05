@@ -1,0 +1,204 @@
+campaign_id: nq_vix_term_structure_orderflow_pullback
+title: NQ VIX Term-Structure State With VWAP/Orderflow Pullback Confirmation
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Cboe VIX term-structure states may identify risk-on or risk-off NQ sessions, but
+  entries should require same-session NQ price-action acceptance around VWAP and completed aggregate
+  orderflow confirmation before taking intraday exposure.
+rationale: 'ChartFanatics includes VIX as a futures-strategy theme, and the existing ES composite VIX
+  term-structure pullback campaign had not been tested on NQ. This campaign ports that composite edge
+  to NQ without using the failed ES rescue branches: the prior-close VIX term structure supplies only
+  the risk regime, while NQ must independently show a current-session VWAP pullback/rejection and aligned
+  aggregate orderflow on a completed bar before next-bar entry.'
+sources:
+- title: VIX Futures Trading Strategy
+  authors: ChartFanatics
+  year: 2026
+  venue: Practitioner strategy page
+  link: https://www.chartfanatics.com/strategies/the-vix-futures-strategy
+  relevance: Practitioner source that prompted checking whether VIX-regime ideas still had an untested
+    ES/NQ expression. It is not treated as standalone evidence of edge quality.
+- title: The Implied Volatility Term Structure of Stock Index Options
+  authors: Scott Mixon
+  year: 2007
+  venue: Journal of Empirical Finance, 14(3), 333-354
+  link: https://ideas.repec.org/a/eee/empfin/v14y2007i3p333-354.html
+  relevance: Documents information content in stock-index option implied-volatility term structure across
+    maturities.
+- title: Risk Premia and the VIX Term Structure
+  authors: Travis L. Johnson
+  year: 2017
+  venue: Journal of Financial and Quantitative Analysis
+  link: https://www.travislakejohnson.com/pdfs/Johnson%20VIXTS%202017%20%28JFQA%29.pdf
+  relevance: Shows VIX term-structure slope summarizes variance-risk-premium information; this campaign
+    uses it only as a lagged regime state.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates order-flow imbalance as a short-horizon pressure proxy. This campaign uses completed
+    Sierra aggregate signed-volume buckets, not full-depth LOB OFI.
+- title: VIX Term Structure and Historical Volatility Index Data
+  authors: Cboe Global Markets
+  year: 2026
+  venue: Official Cboe volatility-index data
+  link: https://www.cboe.com/tradable-products/vix/term-structure/
+  relevance: Official source and definitions for VIX maturity-term-structure indices used by the local
+    lagged feature file.
+data_needs:
+- timezone-aware NQ RTH 1-minute OHLCV and aggregate signed-volume bars in America/New_York
+- official free Cboe VIX9D, VIX, VIX3M, and VIX6M daily historical values already cached locally
+- derived NQ VIX term-structure session feature file using only Cboe observations strictly before the
+  NQ session date
+- completed session VWAP from current-session bars only, aggregate signed/large10/large20 flow, next-bar
+  execution, costs, slippage, tick size, point value, pessimistic fills, and forced flatten from config
+data_quality_caveats:
+- VIX maturity indices are daily closing SPX option-implied values, not intraday option snapshots.
+- Same-day Cboe closes are unavailable to intraday NQ signals and are not used.
+- Sierra orderflow is aggregate bid/ask-volume proxy data, not quote-level queue or TBBO data.
+- VWAP is computed from completed current-session bars only and is not final-session VWAP.
+lookahead_risks:
+- Using the Cboe close from the same NQ session date would leak unavailable data and is forbidden.
+- The VIX term-state feature file uses latest Cboe volatility-index close strictly before NQ session_date.
+- The NQ entry requires a completed VWAP pullback/reclaim or rejection bar and completed aggregate orderflow
+  before next-bar execution.
+- No final session high/low, final VWAP, future orderflow, future VIX values, future returns, or overnight
+  exposure is used.
+failure_modes:
+- The VIX term-structure regime may already be priced into NQ by the RTH open.
+- VWAP pullbacks can be crowded and cost-sensitive after one-tick slippage and commissions.
+- Aggregate orderflow confirmation may arrive after most of the continuation has already occurred.
+- The composite filters may still be unstable even though the pre-PnL density gate passed.
+- Risk-off term states can mean either continuing sell pressure or rebound risk premium, so direction
+  may be unstable.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  checked_existing_nq_campaigns:
+  - nq_cboe_vix_term_structure_intraday
+  - nq_vix_pressure_orderflow_confirmation
+  - nq_cboe_vix_level_state_intraday
+  - nq_cboe_vxn_vix_dispersion_intraday
+  - nq_vvix_tail_risk_intraday
+  - nq_prior_session_flip_retest_orderflow
+  - nq_opening_range_retest_orderflow
+  conclusion: Eligible as an NQ transfer of a distinct ES composite. It is not a duplicate timed VIX-term
+    campaign because the VIX state only gates trades; every entry still requires current-session NQ VWAP
+    pullback/rejection and aggregate orderflow confirmation. It is not a duplicate VIX pressure campaign
+    because it uses maturity-term-structure ratios, not VIX level pressure, and it is not a plain VWAP/orderflow
+    campaign because prior-close VIX term state determines allowed sessions and direction.
+variants:
+- contango_morning_signed_vwap_reclaim_long_1300
+- contango_large10_vwap_reclaim_long_1500
+- curve_flattening_signed_vwap_reject_short_1500
+- front_stress_large10_vwap_reject_short_1500
+- backwardation_surge_signed_vwap_reject_short_1500
+parameter_space:
+  total_combinations_per_variant: 81
+  entry_tunables:
+  - term_rank_threshold
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.term_rank_threshold: variant-specific 3-point lower-half or upper-half rank grid
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.03
+    - 0.06
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+rescue_policy:
+  allowed_without_user_authorization: false
+  reason: No rescue is authorized for this new NQ campaign. After staged results, allow only rejection
+    or explicit user-approved rescue.
+pre_pnl_density_audit:
+  status: PASS
+  generated_at: '2026-07-01'
+  artifact: research_artifacts/nq_vix_term_structure_orderflow_pullback_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_vix_term_structure_orderflow_pullback_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_vix_term_structure_orderflow_pullback_density_summary_20260701.csv
+  density_rule: At least one predeclared entry-grid point per variant must reach 50 signals/year on both
+    full data and the canonical limited-core shortlist window before PnL testing starts.
+  window_summary:
+    full_configured_subset:
+      start_date: '2011-01-03'
+      end_date: '2026-06-12'
+      session_labels:
+      - RTH
+    limited_core_resolved_subset:
+      start_date: '2011-02-22'
+      end_date: '2012-09-07'
+      session_labels:
+      - RTH
+  variant_density_summary:
+  - variant_id: backwardation_surge_signed_vwap_reject_short_1500
+    best_full_signals: 1130
+    best_full_trades_per_year: 74.68135326514555
+    best_limited_core_signals: 108
+    best_limited_core_trades_per_year: 73.35849056603773
+    density_gate_pass: true
+  - variant_id: contango_large10_vwap_reclaim_long_1500
+    best_full_signals: 1119
+    best_full_trades_per_year: 73.9543666404406
+    best_limited_core_signals: 117
+    best_limited_core_trades_per_year: 79.47169811320754
+    density_gate_pass: true
+  - variant_id: contango_morning_signed_vwap_reclaim_long_1300
+    best_full_signals: 1121
+    best_full_trades_per_year: 74.08654602675058
+    best_limited_core_signals: 106
+    best_limited_core_trades_per_year: 72.0
+    density_gate_pass: true
+  - variant_id: curve_flattening_signed_vwap_reject_short_1500
+    best_full_signals: 1073
+    best_full_trades_per_year: 70.91424075531077
+    best_limited_core_signals: 83
+    best_limited_core_trades_per_year: 56.37735849056603
+    density_gate_pass: true
+  - variant_id: front_stress_large10_vwap_reject_short_1500
+    best_full_signals: 995
+    best_full_trades_per_year: 65.75924468922108
+    best_limited_core_signals: 83
+    best_limited_core_trades_per_year: 56.37735849056603
+    density_gate_pass: true
+testing_plan:
+  next_step: Closed after staged validation failure. Do not rescue without explicit user authorization.
+  no_pnl_seen_before_freeze: true
+result_summary:
+  status: completed
+  decision: FAIL
+  generated_at: '2026-07-01'
+  terminal_stage: limited_core_grid_test
+  variants_tested: 5
+  variants_failed_limited_core: 5
+  variants_reached_limited_monkey: 0
+  variants_reached_wfa: 0
+  variants_reached_monte_carlo: 0
+  variants_reached_acceptance_oos: 0
+  failure_reason: All five variants failed limited_core_grid_test. No branch reached limited monkey, WFA,
+    WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.
+  best_variant_by_top_net: backwardation_surge_signed_vwap_reject_short_1500
+  best_top_net_profit: 195.0
+  best_top_profit_factor: 1.065990291262136
+  best_top_trades_per_year: 72.90942295478523
+  aggregate_artifacts:
+    campaign_summary_json: backtest-campaigns/nq_vix_term_structure_orderflow_pullback/campaign_test_summary.json
+    campaign_results_csv: backtest-campaigns/nq_vix_term_structure_orderflow_pullback/campaign_results.csv
+    trade_logs_manifest_csv: backtest-campaigns/nq_vix_term_structure_orderflow_pullback/trade_logs_manifest.csv
+    equity_curves_manifest_csv: backtest-campaigns/nq_vix_term_structure_orderflow_pullback/equity_curves_manifest.csv
+    wfa_table_csv: backtest-campaigns/nq_vix_term_structure_orderflow_pullback/wfa_table.csv
+    monte_carlo_summary_json: backtest-campaigns/nq_vix_term_structure_orderflow_pullback/monte_carlo_summary.json

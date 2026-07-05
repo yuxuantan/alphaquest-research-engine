@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.chicagofed_cfnai_activity_state import ChicagoFedCfnaiActivityStateEntry
+
+ENTRY_MODULE = ChicagoFedCfnaiActivityStateEntry

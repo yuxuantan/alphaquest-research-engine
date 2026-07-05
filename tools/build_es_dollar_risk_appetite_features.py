@@ -33,7 +33,7 @@ def build_features(
     dollar = _add_dollar_features(dollar)
 
     # Treat the dollar-index observation as available only after a conservative
-    # business-day lag; the ES session never uses same-date FRED/H.10 data.
+    # business-day lag; the futures session never uses same-date FRED/H.10 data.
     sessions["availability_cutoff"] = sessions["session_date_ts"] - BDay(availability_lag_business_days)
     merged = pd.merge_asof(
         sessions.sort_values("availability_cutoff"),

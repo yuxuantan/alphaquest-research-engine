@@ -1,0 +1,144 @@
+campaign_id: nq_rolling_stat_envelope_orderflow_reversion
+title: NQ Rolling Statistical Envelope Orderflow Reversion
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: mixed_1m_5m
+edge_family: rolling_stat_envelope_orderflow_reversion
+hypothesis: >
+  Completed intraday NQ closes outside a rolling price envelope may mean-revert when same-bar aggregate orderflow is
+  pressing into the extreme, because temporary immediacy demand is being supplied rather than repriced as durable
+  information.
+sources:
+- title: Trading Volume and Serial Correlation in Stock Returns
+  authors: John Y. Campbell, Sanford J. Grossman, and Jiang Wang
+  year: 1993
+  venue: Quarterly Journal of Economics
+  link: https://campbell.scholars.harvard.edu/publications/trading-volume-and-serial-correlation-stock-returns
+  relevance: Models how liquidity trading and market-maker inventory risk can produce short-horizon reversal after
+    volume pressure.
+- title: Liquidity and Market Structure
+  authors: Sanford J. Grossman and Merton H. Miller
+  year: 1988
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1988.tb04594.x
+  link: https://doi.org/10.1111/j.1540-6261.1988.tb04594.x
+  relevance: Provides the liquidity-supplier mechanism for temporary price pressure and inventory-risk compensation.
+- title: Rethinking reversals
+  authors: Timothy C. Johnson
+  year: 2016
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2016.01.026
+  link: https://ideas.repec.org/a/eee/jfinec/v120y2016i2p211-228.html
+  relevance: Supports a disciplined test of short-horizon reversal rather than assuming intraday extension is
+    continuation.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates orderflow imbalance as a short-horizon pressure proxy. This campaign uses completed Sierra
+    aggregate signed volume, not quote-level OFI.
+rationale: >
+  This is an NQ transfer of the ES rolling statistical-envelope orderflow-reversion campaign. The primary edge is an
+  intraday rolling mean/std close envelope computed from prior completed bars, with same-side aggregate orderflow
+  pressure into the extension. It is not a daily Bollinger environment classifier, VWAP deviation, prior/session level
+  reaction, rolling high/low sweep-reclaim, same-clock flow rank, low-toxicity extension fade, volume shock, or pure
+  orderflow impulse reversal.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- timezone-aware NQ RTH OHLCV and aggregate signed-volume bars in America/New_York
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume, and large20_volume
+lookahead_risks:
+- Rolling mean/std envelope is computed from prior completed closes only and excludes the signal bar from the envelope
+  statistics.
+- Same-bar orderflow is used only after the signal bar has closed, so entry must occur no earlier than next-bar open.
+- The signal-bar high/low stop uses an already-completed bar extreme, not future price action.
+- No final session high/low, final VWAP, final volume profile, future orderflow, or future returns are used.
+failure_modes:
+- A close outside the rolling envelope may be informed continuation rather than temporary liquidity demand.
+- Aggregate signed flow may not reliably separate liquidity demand from informed pressure.
+- Stops just beyond the signal bar can be too tight during volatility expansion.
+- The effect may be dominated by one side, one time of day, or high-volatility regimes.
+- Short fixed-R reversion targets may not overcome NQ costs and one-tick slippage.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_chartfanatics_daily_bollinger_environment
+  - nq_low_toxicity_orderflow_extension_fade
+  - nq_vwap_pullback_continuation
+  - nq_volume_shock_liquidity_reversal
+  - nq_orderflow_impulse_reversal
+  - nq_orderflow_absorption_exhaustion_reversal
+  conclusion: >
+    Eligible as a distinct NQ campaign. The trigger is an intraday rolling mean/std close envelope built from prior
+    completed bars plus same-bar orderflow pressure, not prior daily Bollinger state, low-toxicity state, VWAP distance,
+    high-volume shock, same-clock flow-rank impulse, or weak-displacement absorption.
+variants:
+- morning_5m_signed_6bar_reversion_1130
+- late_morning_5m_large10_12bar_reversion_1230
+- midday_5m_signed_18bar_reversion_1400
+- afternoon_5m_large20_24bar_reversion_1500
+- all_day_1m_signed_30bar_reversion_1530
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - entry.params.band_z
+  - entry.params.min_orderflow_imbalance
+  stop_tunables:
+  - sl.params.stop_offset_ticks
+  target_tunables:
+  - tp.params.target_r_multiple
+  parameters:
+    entry.params.band_z: three predeclared values per variant
+    entry.params.min_orderflow_imbalance: three predeclared values per variant
+    sl.params.stop_offset_ticks: [1, 2, 4]
+    tp.params.target_r_multiple: [1.0, 1.25]
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees density or staged results.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required: true
+status: completed_failed
+completed_at: '2026-06-30T16:45:00+08:00'
+pre_pnl_density_audit:
+  decision: PASS
+  artifact_md: research_artifacts/nq_rolling_stat_envelope_orderflow_reversion_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_rolling_stat_envelope_orderflow_reversion_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_rolling_stat_envelope_orderflow_reversion_density_summary_20260630.csv
+  declared_entry_rows: 45
+  density_pass_rows: 45
+  density_fail_rows: 0
+  min_full_signals_per_year: 234.54
+  min_limited_core_signals_per_year: 236.15
+  min_latest252_signals: 233
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_rolling_stat_envelope_orderflow_reversion/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_rolling_stat_envelope_orderflow_reversion/campaign_results.csv
+  methodology_audit: campaigns/nq_rolling_stat_envelope_orderflow_reversion/methodology_audit.md
+  variants_tested: 5
+  variants_passing_all_tests: 0
+  terminal_stage: limited_core_grid_test
+  terminal_failure_summary:
+    limited_core_grid_test: 5
+    limited_monkey_test: 0
+    walk_forward_analysis: 0
+    wfa_oos_monkey_test: 0
+    wfa_oos_monte_carlo: 0
+    simulated_incubation_core: 0
+    acceptance_oos_test: 0
+  best_variant_by_top_net:
+    variant_id: all_day_1m_signed_30bar_reversion_1530
+    top_net_profit: -4125.0
+    top_profit_factor: 0.5439469320066335
+    profitable_combo_rate: 0.0
+  failure_reason: >
+    All five NQ rolling statistical-envelope orderflow-reversion variants failed limited_core_grid_test with 0 profitable
+    combinations and 0 benchmark-passing combinations per variant. No branch reached monkey, WFA, Monte Carlo, simulated
+    incubation, acceptance OOS, or candidate reporting.

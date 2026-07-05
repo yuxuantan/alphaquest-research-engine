@@ -1,0 +1,231 @@
+campaign_id: nq_turn_of_year_effect
+variant_id: january_first2_open_long_1000
+test_run_id: run1
+strategy_name: turn_of_year_effect
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Szakmary and Kiefer (2004); Lakonishok and Smidt (1988); Ariel
+    (1990)
+  edge_thesis: NQ may earn abnormal positive intraday returns around the turn of the
+    year, especially during the Santa-rally window of the last five regular December
+    sessions and first two regular January sessions.
+  mechanic: At 10:00 ET during only the first two regular January sessions, buy NQ
+    on the next bar boundary and flatten same day.
+  timeframe_rationale: One-minute bars preserve completed-bar signal timing and next-bar/open-boundary
+    execution on sparse turn-of-year calendar sessions while avoiding overnight exposure.
+  pre_pnl_port_note: This NQ port was authored before any NQ turn-of-year PnL inspection
+    and preserves the official ES source mechanics and grids.
+  source_es_config_path: campaigns/es_turn_of_year_effect/variants/january_first2_open_long_1000/config.yaml
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-30'
+  mechanics_review:
+    mechanic_expresses_edge: The variant expresses the turn-of-year futures seasonality
+      as an ex-ante calendar state using the last five regular December sessions and
+      first two regular January sessions. It never uses future January returns, future
+      session high/low, future volume profile, or post-entry outcomes.
+    entry_logic_rationale: The entry condition is evaluated after a completed one-minute
+      RTH NQ bar at the predeclared clock time. Calendar membership is known before
+      the session, and intended execution is next-bar/open-boundary with no same-bar
+      hindsight.
+    stop_loss_rationale: The stop is a predeclared percent-from-entry distance rounded
+      to the NQ tick. It is evaluated by the staged engine with pessimistic OHLC ordering
+      when stop and target are both touched inside the same bar.
+    target_exit_rationale: The target is a fixed-R multiple tied to the initial stop
+      distance, with a mandatory 15:55 ET flatten. The variant does not hold overnight
+      even though the original anomaly is often measured across daily or multi-day
+      windows.
+    profitability_rationale: If the seasonal equity-index futures risk premium remains
+      intraday-tradable in NQ, the long-only entries should show positive expectancy
+      across multiple turn-of-year windows after costs and should not depend on one
+      isolated year.
+    known_failure_modes: The effect may be mostly overnight or close-to-close, may
+      have disappeared after publication, may be too sparse for WFA or prop-rule evidence,
+      or may be dominated by one crisis/rebound year and fail concentration or monkey
+      tests.
+    pre_test_decision: approve_for_testing
+  pre_pnl_density:
+    status: failed_screen_before_pnl
+    decision: FAIL
+    artifact: research_artifacts/nq_turn_of_year_effect_density_audit_20260630.md
+    detail_csv: research_artifacts/nq_turn_of_year_effect_density_audit_20260630.csv
+    summary: Failed 50 signals/year full-history, limited-core, and latest-252-session
+      density checks before any NQ PnL inspection.
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  exchange_timezone: America/New_York
+  feature_set: none
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  rth_end: '15:59:00'
+  rth_start: 09:30:00
+  source: parquet
+  source_timeframe: 1m
+  symbol: NQ
+  timezone: America/New_York
+  warmup_days: 0
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: turn_of_year_effect
+    params:
+      setup_mode: january_window_long
+      event_calendar_csv: data/external/nyse_turn_of_year_sessions_20110103_20260612.csv
+      entry_time: '10:00:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 1
+      max_trades_per_day: 1
+      stop_pct: 0.002
+      target_r_multiple: 1.5
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.002
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.002
+    - 0.0025
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+decision: FAIL
+status: completed_failed
+source_es_campaign: es_turn_of_year_effect
+completed_at: '2026-06-30T13:23:07+08:00'
+terminal_stage: pre_pnl_density_screen
+failure_reason: 'Rejected before staged NQ PnL: all five declared turn-of-year variants
+  failed the 50 signals/year density standard across full history, limited-core reference,
+  and latest-252-session checks. Best full-history density was 6.799867 signals/year,
+  best limited-core density was 4.533245 signals/year, and best latest-252 count was
+  7. Faithfully widening the last-five-December/first-two-January rule enough to pass
+  would change the edge into a broader calendar strategy. No NQ PnL was inspected.'
+pre_pnl_density_audit:
+  artifact: research_artifacts/nq_turn_of_year_effect_density_audit_20260630.md
+  csv: research_artifacts/nq_turn_of_year_effect_density_audit_20260630.csv
+  decision: FAIL

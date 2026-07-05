@@ -1,0 +1,193 @@
+campaign_id: nq_fama_french_style_factor_rotation
+strategy_name: fama_french_style_factor_state
+variant_id: cma_63d_conservative_short_1200
+test_run_id: run1
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+data:
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  source_timeframe: 1m
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  warmup_days: 0
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset: &full_subset
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+monkey:
+  data_subset: *full_subset
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+core_grid:
+  data_subset: *full_subset
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &grid_params
+    entry.params.factor_rank_threshold:
+    - 0.25
+    - 0.30
+    - 0.35
+    sl.params.stop_pct:
+    - 0.003
+    - 0.004
+    - 0.005
+    tp.params.target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+wfa:
+  data_subset: *full_subset
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *grid_params
+research_metadata:
+  academic_source: Fama and French (2015); Kenneth French Data Library daily five factors
+  edge_thesis: Lagged conservative-minus-aggressive investment factor strength may mark defensive capital-allocation rotation that pressures high-duration Nasdaq-100 growth exposure.
+  mechanic: At 12:00 ET, short NQ when the 45-calendar-day-lagged 63-day CMA rank is in the upper tail; flatten by 15:55 ET unless stop or target is hit.
+  timeframe_rationale: One-minute bars provide deterministic completed-bar timing and next-bar-open execution while the Fama-French factor state is daily and conservatively lagged.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-07-01'
+  mechanics_review:
+    mechanic_expresses_edge: The variant expresses the investment-factor thesis by shorting NQ only when conservative-minus-aggressive investment strength is high, testing whether defensive style rotation weighs on Nasdaq futures.
+    entry_logic_rationale: The CMA rank is computed from observations available at least 45 calendar days before the futures session, and the 12:00 ET signal uses only the completed 11:59 ET NQ bar before any possible fill.
+    stop_loss_rationale: The percent stop is declared before any PnL inspection, rounded to the NQ tick by the engine, and evaluated under the existing pessimistic same-bar stop-target ordering.
+    target_exit_rationale: The fixed-R target and 15:55 ET flatten are declared before testing and do not depend on final VWAP, final session range, future factor values, or discretionary exits.
+    profitability_rationale: If conservative investment factor leadership marks a defensive equity allocation state, short NQ should show positive expectancy without relying on a single narrow threshold or crisis date range.
+    known_failure_modes: CMA may not map to intraday futures, may be stale after the availability lag, or may represent a slow allocation effect that cannot survive one-session NQ execution costs.
+    pre_test_decision: approve_for_testing
+strategy:
+  entry:
+    module: fama_french_style_factor_state
+    params:
+      setup_mode: cma_conservative_short
+      feature_csv: data/external/nq_fama_french_style_features_20110103_20260612.csv
+      factor_name: CMA
+      value_column: cma_63d
+      rank_column: cma_63d_rank_252
+      factor_rank_threshold: 0.30
+      entry_time: '12:00:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 1
+      max_trades_per_day: 1
+      stop_pct: 0.004
+      target_r_multiple: 2.0
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.004
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 2.0
+  flatten_time: '15:55:00'
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after staged results without explicit user approval.

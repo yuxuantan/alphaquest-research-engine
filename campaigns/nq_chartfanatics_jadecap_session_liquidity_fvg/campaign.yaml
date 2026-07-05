@@ -1,0 +1,98 @@
+campaign_id: nq_chartfanatics_jadecap_session_liquidity_fvg
+title: NQ ChartFanatics JadeCap Session Liquidity FVG Reversal
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: pre_rth_session_liquidity_sweep_fvg_reversal
+hypothesis: NQ New York RTH may reverse after sweeping pre-known Asian or London session liquidity when completed five-minute
+  structure confirms failed continuation or FVG rejection.
+rationale: 'Chart Fanatics/JadeCap describes intraday NQ liquidity grabs around Asian-session and prior levels followed by
+  FVG rejection as a short-horizon reversal setup. This campaign makes the locally testable subset objective: Asian/London
+  highs and lows are frozen before RTH, then completed RTH bars must sweep the level and confirm either failed sweep or FVG
+  retest rejection before next-bar entry.'
+research_sources:
+- title: Intraday Liquidity & Volatility Model
+  author: JadeCap / Chart Fanatics
+  year: 2026
+  link_or_doi: https://www.chartfanatics.com/strategies/intraday-liquidity-volatility-model
+  expected_mechanism: Practitioner playbook uses NQ session-liquidity sweeps, failed continuation, and FVG rejection to trade
+    back toward opposing liquidity during New York.
+- title: Currency Orders and Exchange-Rate Dynamics
+  author: Carol L. Osler
+  year: 2003
+  link_or_doi: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  expected_mechanism: Supports clustered orders around visible highs/lows; used as general support for session liquidity levels.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  author: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  link_or_doi: https://doi.org/10.1111/0022-1082.00265
+  expected_mechanism: Supports converting discretionary technical patterns into deterministic tests.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV/orderflow cache aggregated to completed five-minute bars
+- NQ Databento ETH/RTH one-minute cache for pre-RTH Asian and London high/low levels
+- Derived session-level CSV data/external/nq_asia_london_session_levels_20110103_20260529.csv
+duplicate_edge_check:
+  active_scope_only: false
+  checked_edges:
+  - nq_chartfanatics_liquidity_inversion_fvg
+  - nq_overnight_range_compression_orderflow_breakout
+  - nq_overnight_intraday_reversal
+  - nq_rolling_range_orderflow_sweep_reversal
+  - nq_prior_day_stop_run_reclaim
+  - nq_prior_session_flip_retest_orderflow
+  conclusion: Eligible for a density screen as a distinct ChartFanatics-derived NQ edge because the traded levels are pre-RTH
+    Asian/London session highs/lows, not RTH prior/session highs, rolling intraday ranges, overnight range compression breakouts,
+    prior-session flip retests, or fixed overnight-return effects.
+lookahead_risks:
+- Asian and London levels are calculated from bars ending no later than 09:29 ET before the RTH signal window.
+- Sweep, failed reclaim, FVG creation, and FVG retest rejection use completed five-minute RTH bars only.
+- Signals enter no earlier than the next bar open; no final session high/low, future FVG, final VWAP, or post-entry path is
+  used.
+failure_modes:
+- The ChartFanatics source is discretionary and uses context not present in the local cache, including depth/Bookmap-style
+  confirmation.
+- Asian/London ETH levels from Databento are combined with Sierra RTH execution bars, so source mismatch can weaken levels.
+- The FVG approximation may be too sparse or too noisy on five-minute RTH bars.
+- Session-liquidity raids may already be arbitraged out or dominated by a few volatility regimes after costs.
+variants:
+- asia_high_failed_sweep_short_1130
+- asia_low_failed_sweep_long_1130
+- asia_high_fvg_reject_short_1200
+- asia_low_fvg_reject_long_1200
+- london_two_sided_fvg_reject_1200
+parameter_space:
+  entry_parameters:
+  - entry.params.sweep_buffer_ticks
+  - entry.params.reclaim_close_buffer_ticks or entry.params.min_gap_ticks
+  stop_parameters:
+  - sl.params.stop_offset_ticks
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant: 54
+  entry_parameter_cap: 2
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after density or staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required_if_density_passes: true
+pre_pnl_density_audit:
+  decision: PASS
+  artifact: research_artifacts/nq_chartfanatics_jadecap_session_liquidity_fvg_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_chartfanatics_jadecap_session_liquidity_fvg_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_chartfanatics_jadecap_session_liquidity_fvg_density_summary_20260701.csv
+  result: 45/45 declared entry rows passed; 5/5 variants passed density before staged PnL.
+staged_validation:
+  status: completed
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  variants_tested: 5
+  variants_failed_limited_core: 5
+  report_path: backtest-campaigns/nq_chartfanatics_jadecap_session_liquidity_fvg/campaign_test_summary.json
+  failure_reason: All five variants failed limited_core_grid_test; no branch reached limited monkey, WFA, Monte Carlo,
+    simulated incubation, acceptance OOS, or candidate reporting.

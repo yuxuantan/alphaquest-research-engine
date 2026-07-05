@@ -1,0 +1,117 @@
+campaign_id: nq_trade_fragmentation_liquidity_reversion
+title: NQ Trade Fragmentation Liquidity Reversion
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Intraday periods with unusually high trade count but unusually low average
+  trade size may identify fragmented algorithmic/liquidity-provision activity in NQ.
+  After a completed short-window price move, that fragmented activity can mark transitory
+  price pressure that mean reverts after next-bar execution.
+rationale: This is an NQ transfer of the ES trade-fragmentation campaign, not a large-trade
+  or signed-flow campaign. It uses completed NQ trade count and average trade size
+  ranks as the edge state, then fades a completed 15, 30, or 60 minute move. The ES
+  source family failed, so NQ results are treated skeptically and require the full
+  staged workflow.
+sources:
+- title: Does Algorithmic Trading Improve Liquidity?
+  authors: Terrence Hendershott, Charles M. Jones, and Albert J. Menkveld
+  year: 2011
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2010.01624.x
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2010.01624.x
+  relevance: Motivates trade count and smaller average trade size as bar-level proxies
+    for algorithmic/liquidity activity.
+- title: Low-Latency Trading
+  authors: Joel Hasbrouck and Gideon Saar
+  year: 2013
+  venue: Journal of Financial Markets
+  doi: 10.1016/j.finmar.2013.05.003
+  link: https://ideas.repec.org/a/eee/finmar/v16y2013i4p646-679.html
+  relevance: Supports high-activity microstructure behavior as a distinct observable
+    state.
+- title: High-Frequency Trading and Price Discovery
+  authors: Jonathan Brogaard, Terrence Hendershott, and Ryan Riordan
+  year: 2014
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/hht045
+  link: https://academic.oup.com/rfs/article-abstract/27/8/2267/1582754
+  relevance: Motivates testing whether fragmented activity after short-window price
+    movement is continuation or transitory reversion.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- Sierra aggregate bar-level volume and trade-count fields
+- completed rolling trade_orderflow_trades_N and trade_orderflow_avg_trade_size_N
+  features
+- prior same-clock ranks computed without current-day future data
+lookahead_risks:
+- Rolling trade count, average trade size, and return use only completed bars ending
+  at the signal bar close.
+- Same-clock ranks are computed against prior same-clock observations only, excluding
+  the current value from the ranking history.
+- A signal at HH:MM uses the bar that closed at HH:MM and can enter only at the next
+  bar open.
+- No final current-session VWAP, final daily range, future orderflow, future volume
+  profile, or future session totals are used.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_trade_size_stealth_orderflow
+  - nq_intraday_invariance_dislocation_reversion
+  - nq_orderflow_absorption_exhaustion_reversal
+  - nq_vpin_toxicity_continuation
+  - nq_low_toxicity_orderflow_extension_fade
+  - nq_session_extreme_delta_divergence
+  conclusion: Eligible as distinct from existing NQ families because it uses high
+    trade-count rank plus low average-trade-size rank as a fragmented liquidity-state
+    proxy, not large-trade participation, signed-flow persistence, price-per-transaction
+    invariance, VPIN toxicity, or current-session extreme divergence.
+parameter_space:
+  entry_parameters:
+    entry.params.trade_count_rank_threshold:
+    - 0.55
+    - 0.6
+    - 0.65
+    entry.params.avg_trade_size_rank_threshold:
+    - 0.5
+    - 0.55
+    - 0.6
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.002
+    - 0.003
+    - 0.004
+  target_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.25
+  combinations_per_variant: 54
+variants:
+- morning_15m_fragmented_up_fade_short
+- morning_15m_fragmented_down_fade_long
+- midday_30m_fragmented_up_fade_short
+- midday_30m_fragmented_down_fade_long
+- day_60m_fragmented_two_sided_fade
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees density or staged results.
+status: completed_failed
+completed_at: '2026-06-30T14:41:00+08:00'
+pre_pnl_density_audit:
+  decision: FAIL
+  artifact_md: research_artifacts/nq_trade_fragmentation_liquidity_reversion_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_trade_fragmentation_liquidity_reversion_density_audit_20260630.csv
+  declared_entry_rows: 45
+  density_pass_rows: 43
+  density_fail_rows: 2
+testing_outcome:
+  decision: FAIL
+  terminal_stage: pre_pnl_density_screen
+  staged_pnl_run: false
+  summary_path: backtest-campaigns/nq_trade_fragmentation_liquidity_reversion/campaign_test_summary.json
+  failure_reason: 'Rejected before staged NQ PnL: 2/45 declared entry-grid rows failed
+    the 50 signals/year limited-core density gate. The sparse rows were in midday_30m_fragmented_up_fade_short
+    at trade_count_rank_threshold=0.65 with avg_trade_size_rank_threshold 0.50 and
+    0.55. Dropping those strict short-side rows after this screen would be post-result
+    narrowing of the declared five-variant edge. No NQ PnL was inspected.'

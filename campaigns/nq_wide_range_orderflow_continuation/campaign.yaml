@@ -1,0 +1,151 @@
+campaign_id: nq_wide_range_orderflow_continuation
+title: NQ wide-range bar continuation with aggregate orderflow confirmation
+decision: FAIL
+created_at: '2026-06-30'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: wide_range_orderflow_continuation
+hypothesis: 'Completed NQ RTH bars with unusually wide range, a directional body,
+  and a close near the bar extreme may represent short-horizon information or liquidity-taking
+  pressure. If completed aggregate signed orderflow confirms the same direction, NQ
+  may continue over the same session after next-bar execution and realistic costs.
+
+  '
+sources:
+- title: The Dynamic Volume-Return Relation of Individual Stocks
+  authors: Guillermo Llorente, Roni Michaely, Gideon Saar, Jiang Wang
+  year: 2002
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v15y2002i4p1005-1047.html
+  relevance: 'Distinguishes volume-return continuation from reversal depending on
+    whether trading reflects information rather than liquidity demand. This campaign
+    tests directional high-range NQ bars with participation evidence.
+
+    '
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  doi: 10.1093/jjfinec/nbt003
+  relevance: 'Supports orderflow imbalance as a short-horizon price-pressure proxy.
+    The implementation uses completed Sierra aggregate trade-side flow, not quote-level
+    OFI.
+
+    '
+- title: How Markets Slowly Digest Changes in Supply and Demand
+  authors: Jean-Philippe Bouchaud, J. Doyne Farmer, Fabrizio Lillo
+  year: 2009
+  venue: Handbook of Financial Markets
+  link: https://arxiv.org/abs/0809.0822
+  relevance: 'Reviews persistent orderflow and gradual price adjustment. This motivates
+    testing continuation after completed range expansion and aligned flow.
+
+    '
+rationale: 'This is a price-action-first aggregate-orderflow campaign. A trade cannot
+  occur from signed flow alone: the completed signal bar must first show range expansion,
+  a directional body, and a close near the high for longs or near the low for shorts.
+  Orderflow then acts as participation confirmation on the same completed bar. It
+  is distinct from active signed-orderflow persistence because rolling flow and return
+  agreement alone is insufficient; it is distinct from volume-shock liquidity reversal
+  because it follows directional expansion instead of fading it; and it is not a level,
+  VWAP, opening-range, prior-level, or round-number campaign.
+
+  '
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- 5-minute NQ strategy bars aggregated from local completed 1-minute RTH bars
+- rolling volume ratio computed from prior completed 5-minute bars
+- completed-bar signed_volume, volume, large10_signed_volume, large10_volume, large20_signed_volume,
+  and large20_volume
+data_quality_caveats:
+- Sierra signed volume is completed-bar aggregate bid/ask-volume flow, not full quote-level
+  OFI.
+- The bar close, range, body, close-location, volume ratio, and orderflow are available
+  only after the signal bar completes.
+- Same-bar stop/target conflicts use 1-minute detail when available and pessimistic
+  OHLC fallback otherwise.
+lookahead_risks:
+- Signals use only the completed signal bar and prior rolling-volume history.
+- Entry must occur no earlier than the next bar open because the signal uses the bar
+  close.
+- No future session high, low, VWAP, volume profile, final daily range, future orderflow,
+  or post-entry return is used.
+- Each variant allows at most one trade per day and flattens before the configured
+  cutoff.
+failure_modes:
+- Wide-range NQ bars may be exhaustion rather than information continuation.
+- Aggregate orderflow may confirm too late after the move has already completed.
+- The effect may depend on high-volatility regimes or a few directional macro sessions.
+- Large10/large20 trade-size buckets may not reliably proxy informed participation.
+- One-tick worse slippage, entry delay, or pessimistic same-bar fill ordering may
+  erase the apparent edge.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_morning_orderflow_momentum_continuation
+  - nq_midday_range_orderflow_breakout
+  - nq_vwap_pullback_continuation
+  - nq_session_extreme_delta_divergence
+  - nq_volume_shock_liquidity_reversal
+  - nq_variance_ratio_orderflow_regime
+  - nq_opening_range_failed_breakout_orderflow
+  conclusion: 'Eligible as a distinct NQ campaign. The mechanic is completed-bar
+    range expansion with close-location and same-bar aggregate-flow confirmation.
+    Existing active NQ failures tested first-hour/orderflow momentum, frozen midday
+    range breakouts, VWAP pullbacks, session-extreme delta divergence, high-volume
+    shock reversals, variance-ratio continuation, or failed opening-range breakouts.
+
+    '
+pre_pnl_density_audit:
+  artifact: research_artifacts/nq_wide_range_orderflow_continuation_density_audit_20260630.md
+  result: PASS. All 45 declared entry rows cleared the full-history, limited-core
+    proxy, and latest-window density gates before any NQ PnL was inspected. Minimum
+    full-history density was 140.62 signals/year, minimum limited-core density was
+    134.29 signals/year, and minimum latest-window count was 118.
+parameter_space:
+  entry.params.min_range_ticks:
+  - 4
+  - 8
+  - 12
+  entry.params.min_orderflow_imbalance:
+  - 0.0
+  - 0.02
+  - 0.04
+  sl.params.stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.5
+  combinations_per_variant: 54
+variants:
+- morning_signed_range_expansion_long
+- morning_signed_range_expansion_short
+- midday_large10_range_expansion_twosided
+- afternoon_large20_range_expansion_long
+- afternoon_large20_range_expansion_short
+rescue_policy:
+  allowed: false
+  reason: This is a fresh NQ transfer; no rescue is authorized after density or staged
+    results are observed.
+status: completed_failed
+result_summary:
+  decision: FAIL
+  stage: limited_core_grid_test
+  report: backtest-campaigns/nq_wide_range_orderflow_continuation/campaign_test_summary.json
+  density_audit: research_artifacts/nq_wide_range_orderflow_continuation_density_audit_20260630.md
+  variants_tested: 5
+  total_core_combinations: 270
+  profitable_combinations: 38
+  benchmark_pass_combinations: 25
+  apex_rule_violating_iterations: 0
+  best_variant_by_top_net: morning_signed_range_expansion_long
+  best_top_net_profit: 5825.0
+  best_top_profit_factor: 1.188541835248422
+  failure_reason: All five variants failed limited_core_grid_test. The best top
+    row was a narrow morning-long core row, but the variant reached only 29/54 profitable
+    combinations and the campaign never reached monkey, WFA, Monte Carlo, simulated
+    incubation, acceptance OOS, or candidate reporting.

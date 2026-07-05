@@ -1,0 +1,84 @@
+campaign_id: nq_preholiday_effect
+title: NQ Pre-Holiday Effect
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: NQ futures may earn abnormal positive intraday returns on the last regular
+  RTH session before full NYSE holidays, reflecting documented pre-holiday futures/equity-index
+  return premia and lower holiday-adjacent risk bearing.
+rationale: This is a direct NQ transfer of the ES pre-holiday effect family before
+  any NQ PnL inspection. It is distinct from NQ weekday, turn-of-month, turn-of-year,
+  Halloween, FOMC, OPEX, and volatility-managed seasonal families because the signal
+  date is the deterministic final regular RTH session before a full NYSE holiday.
+sources:
+- title: Holiday Trading in Futures Markets
+  authors: Frank J. Fabozzi, Christopher K. Ma, and James E. Briley
+  year: 1994
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1994.tb04432.x
+  relevance: Documents pre-holiday return effects in futures markets.
+- title: 'High Stock Returns before Holidays: Existence and Evidence on Possible Causes'
+  authors: Robert A. Ariel
+  year: 1990
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.1990.tb03731.x
+  relevance: Documents unusually high U.S. stock returns on trading days before holidays.
+- title: Are Seasonal Anomalies Real? A Ninety-Year Perspective
+  authors: Josef Lakonishok and Seymour Smidt
+  year: 1988
+  venue: Review of Financial Studies
+  doi: 10.1093/rfs/1.4.403
+  relevance: Provides long-sample evidence on calendar seasonal anomalies including
+    holidays.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV cache in America/New_York
+- deterministic NYSE full-holiday preholiday signal-date CSV
+- same-session forced flatten and next-bar-open execution
+lookahead_risks:
+- Holiday membership is fixed by deterministic calendar rules before testing.
+- Momentum and range filters use only completed RTH bars up to the configured signal
+  time.
+- No future holiday-week return, future high/low, future volume, settlement, or overnight
+  exposure is used.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_calendar_weekday_bias
+  - nq_turn_of_month_seasonality
+  - nq_turn_of_year_effect
+  - nq_halloween_seasonal_premium
+  - nq_fomc_pre_announcement_drift
+  - nq_monthly_opex_pressure
+  - nq_volatility_managed_intraday_premium
+  conclusion: Eligible as a separate NQ edge because it conditions on deterministic
+    full-NYSE-holiday pre-sessions, not weekday, monthly, year-end, Halloween, FOMC,
+    OPEX, or volatility-scaling states.
+parameter_space:
+  unconditional_variants: sl.params.stop_pct x tp.params.target_r_multiple; 6 or 9
+    combos depending on source variant
+  filtered_variants: one entry filter parameter x sl.params.stop_pct x tp.params.target_r_multiple;
+    27 combos each
+  entry_parameter_cap: Maximum one entry parameter in filtered variants; none in unconditional
+    variants
+  stop_parameter_cap: One stop-loss parameter
+  take_profit_parameter_cap: One target parameter
+variants:
+- preholiday_open_long_1000
+- preholiday_midday_long_1200
+- preholiday_late_long_1500
+- preholiday_low_range_midday_long_1200
+- preholiday_momentum_confirmed_midday_long_1200
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees density or staged results.
+status: failed_pre_pnl_density
+result:
+  terminal_stage: pre_pnl_density_screen
+  completed_at: '2026-06-30'
+  density_audit: research_artifacts/nq_preholiday_effect_density_audit_20260630.md
+  declared_entry_rows: 9
+  density_pass_rows: 3
+  density_fail_rows: 6
+  conclusion: Rejected before staged NQ PnL because the low-range and momentum-confirmed declared filter rows are too sparse across full-history, limited-core proxy, and latest-window density gates.

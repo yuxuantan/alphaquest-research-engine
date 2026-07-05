@@ -1,0 +1,117 @@
+campaign_id: nq_overnight_range_compression_orderflow_breakout
+title: NQ Overnight Range Compression Orderflow Breakout
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: overnight_range_compression_breakout_with_aggregate_orderflow
+hypothesis: A completed narrow NQ ETH overnight range can leave unresolved inventory around the overnight high/low. When RTH
+  price closes beyond that pre-known boundary with same-direction aggregate orderflow, the breakout may continue intraday.
+rationale: This is a direct NQ transfer of the ES overnight range compression orderflow breakout family before any NQ PnL
+  inspection. It is distinct from NQ prior-session NR4/NR7 compression, opening-gap continuation/fade, and overnight sweep-reclaim
+  reversion because the state is the completed ETH overnight range rank and the breakout boundary is the overnight high/low.
+sources:
+- title: A Simple Opening Range Breakout Trading Strategy on S&P 500 Index Futures
+  authors: Ulf Holmberg, Carl Lonnback, and Carl Lundstrom
+  year: 2012
+  venue: Finance Research Letters
+  doi: 10.1016/j.frl.2012.03.006
+  relevance: Provides futures evidence that range breakouts can have state-dependent positive returns; this campaign uses
+    overnight range compression rather than the opening range.
+- title: Support for Resistance; Technical Analysis and Intraday Exchange Rates
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports the idea that pre-identified support/resistance levels can influence intraday price behavior; overnight
+    high/low are fixed before the RTH decision window.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates completed aggregate orderflow imbalance as a short-horizon pressure proxy; this campaign uses Sierra
+    trade-side aggregates, not quote-level OFI.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_overnight_range_features_20110103_20260529.csv
+- NQ Databento ETH/RTH one-minute cache used only to build overnight high/low/range features before RTH opens
+lookahead_risks:
+- The overnight range feature is computed from ETH bars ending no later than 09:29 ET and is fixed before RTH signal evaluation.
+- The range rank uses the completed overnight range available at the RTH open, not final RTH range or future volatility.
+- RTH breakout and orderflow confirmation use only completed 5-minute bars; the engine enters no earlier than next bar open.
+- Stop placement uses completed signal-bar extremes, not future highs/lows.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: false
+  active_rejected_edges_checked:
+  - nq_range_compression_breakout
+  - nq_archive_range_compression_retest
+  - nq_opening_gap_orderflow_continuation
+  - nq_opening_gap_orderflow_absorption_fade
+  - nq_overnight_inventory_sweep_reversion
+  - nq_overnight_intraday_reversal
+  - nq_overnight_return_late_day_momentum
+  - nq_midday_range_orderflow_breakout
+  - es_overnight_range_compression_orderflow_breakout
+  conclusion: Eligible as a separate NQ edge because it conditions on pre-RTH ETH overnight compression and trades completed
+    breakouts of the overnight high/low with same-direction orderflow. It does not use prior-RTH NR compression, opening-gap
+    acceptance/fade, overnight level sweep-reclaim, or current-session lunch/opening ranges.
+variants:
+- morning_signed_two_sided_breakout_1030
+- morning_large10_two_sided_breakout_1100
+- late_morning_large10_two_sided_breakout_1130
+- midday_signed_two_sided_breakout_1300
+- afternoon_large20_two_sided_breakout_1500
+parameter_space:
+  entry_parameters:
+    entry.params.max_overnight_range_rank:
+    - 0.4
+    - 0.5
+    - 0.6
+    entry.params.min_orderflow_imbalance: 3 values per variant, copied from ES source family and mode-specific thresholds
+  stop_parameters:
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.25
+    - 1.5
+  per_variant_combinations: 81
+  total_campaign_combinations: 405
+  entry_parameter_cap: 2
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+source_es_campaign: es_overnight_range_compression_orderflow_breakout
+source_es_decision: FAIL
+nq_feature_builder: tools/build_nq_overnight_range_features.py
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees density or staged results.
+status: completed_failed
+completed_at: '2026-06-30T18:19:04'
+terminal_stage: limited_core_grid_test
+final_result:
+  density_gate: PASS
+  staged_decision: FAIL
+  campaign_test_summary: backtest-campaigns/nq_overnight_range_compression_orderflow_breakout/campaign_test_summary.json
+  campaign_results: backtest-campaigns/nq_overnight_range_compression_orderflow_breakout/campaign_results.csv
+  methodology_audit: backtest-campaigns/nq_overnight_range_compression_orderflow_breakout/methodology_audit.md
+  density_audit: research_artifacts/nq_overnight_range_compression_orderflow_breakout_density_audit_20260630.md
+  total_combinations_tested: 405
+  total_profitable_combinations: 21
+  total_benchmark_pass_combinations: 0
+  best_variant_profitable_rate: 0.14814814814814814
+  best_row:
+    variant_id: late_morning_large10_two_sided_breakout_1130
+    net_profit: 387.5
+    profit_factor: 1.068888888888889
+    total_trades: 125
+    failure_reason: max_best_day_concentration
+  rejection_reason: All five variants failed limited_core_grid_test. The best profitable iteration rate was 0.148148,
+    below the 0.70 core gate; 0 of 405 combinations passed benchmark gates.

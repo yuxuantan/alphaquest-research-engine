@@ -1,0 +1,7 @@
+# session_high_buy_side_fvg_inversion_short_1000
+
+Campaign: nq_chartfanatics_liquidity_inversion_fvg
+
+Mechanic: After the current RTH session high known before the signal bar is swept, wait for a completed bullish FVG and enter short only after that FVG is inverted.
+
+This is an RTH-only completed-bar approximation of the Chart Fanatics Liquidity Inversion Model; it does not use ETH, monthly, four-hour, or discretionary PD-array context.

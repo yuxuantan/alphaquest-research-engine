@@ -1,0 +1,210 @@
+campaign_id: nq_volume_shock_liquidity_reversal
+variant_id: morning_up_shock_reversal_short
+test_run_id: run1
+strategy_name: volume_conditioned_liquidity_reversal
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Campbell, Grossman, and Wang (1993); Llorente, Michaely, Saar,
+    and Wang (2002)
+  edge_thesis: Morning high-volume buy shocks may overshoot when liquidity demand
+    is temporary, creating short-side reversal pressure.
+  mechanic: From 09:35 through 11:30 ET, enter short after a completed high-volume
+    up shock; flatten at 15:55 ET unless stop or target is hit.
+  timeframe_rationale: 5-minute bars preserve completed-bar signal timing and next-bar-open
+    execution.
+  pre_pnl_port_note: This NQ port uses the ES declared volume-shock mechanics and
+    parameter grid before any NQ PnL inspection; no NQ rescue is authorized.
+  source_es_config_path: campaigns/es_volume_shock_liquidity_reversal/variants/morning_up_shock_reversal_short/config.yaml
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-30'
+  mechanics_review:
+    mechanic_expresses_edge: The variant starts from a completed high-volume 5-minute
+      NQ shock bar and fades the shock direction, directly expressing the liquidity-demand
+      reversal thesis.
+    entry_logic_rationale: Signal evaluation uses completed 5-minute bars from 09:35:00
+      through 11:30:00; the volume ratio is built from prior completed bars and entry
+      is no earlier than the next bar.
+    stop_loss_rationale: The percent-from-entry stop is predeclared, rounded to the
+      NQ tick, and independent of future highs/lows.
+    target_exit_rationale: The fixed-R target is predeclared and unresolved positions
+      flatten by the configured same-session cutoff.
+    profitability_rationale: The setup can only pass if high-volume NQ shock bars
+      are more often temporary liquidity events than information events after realistic
+      costs and pessimistic fills.
+    known_failure_modes: High-volume shocks can be information-driven continuation,
+      apparent edge can concentrate in rare regimes, and costs can dominate short-horizon
+      fades.
+    pre_test_decision: approve_for_testing
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: volume_conditioned_liquidity_reversal
+    params:
+      setup_mode: high_volume_up_reversal
+      start_time: 09:35:00
+      end_time: '11:30:00'
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      min_move_ticks: 10
+      min_volume_ratio: 1.75
+      max_trades_per_day: 1
+      allow_long: false
+      allow_short: true
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0025
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.min_move_ticks:
+    - 6
+    - 10
+    - 14
+    entry.params.min_volume_ratio:
+    - 1.25
+    - 1.75
+    - 2.25
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

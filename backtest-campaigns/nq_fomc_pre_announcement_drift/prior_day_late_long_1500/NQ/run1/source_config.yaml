@@ -1,0 +1,205 @@
+campaign_id: nq_fomc_pre_announcement_drift
+variant_id: prior_day_late_long_1500
+test_run_id: run1
+strategy_name: fomc_pre_announcement_drift
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+research_metadata:
+  academic_source: Lucca and Moench (2015); Federal Reserve scheduled FOMC calendars
+  edge_thesis: Scheduled FOMC decisions may carry a positive NQ pre-announcement drift
+    that is tradable intraday before the statement window.
+  mechanic: At 15:00 ET on the calendar day before a known scheduled FOMC decision,
+    enter long NQ and flatten by 15:55 ET; no overnight exposure.
+  timeframe_rationale: 1-minute bars preserve completed-bar event timing and next-bar-open
+    NQ execution while allowing deterministic pre-noon flattening on decision days.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-30'
+  pre_pnl_density:
+    artifact: research_artifacts/nq_fomc_pre_announcement_drift_density_audit_20260630.md
+    density_basis: calendar day before scheduled FOMC decision at 15:00
+    selected_grid_min_signals: 119
+    selected_grid_min_signals_per_year: 7.707883
+    p_n_l_inspected: false
+  mechanics_review:
+    mechanic_expresses_edge: At 15:00 ET on the calendar day before a known scheduled
+      FOMC decision, enter long NQ and flatten by 15:55 ET; no overnight exposure.
+    entry_logic_rationale: The signal uses the official scheduled FOMC calendar and
+      completed same-session bars only; it does not use the policy decision, statement
+      text, surprise data, or post-announcement movement.
+    stop_loss_rationale: A percent-from-entry stop is used because the anomaly is
+      scheduled-event drift rather than a discrete intraday technical level.
+    target_exit_rationale: A fixed-R target plus strict flattening prevents overnight
+      exposure and avoids holding decision-day variants through the statement window.
+    profitability_rationale: The variant can only work if pre-announcement NQ drift
+      before the configured flatten time is large and stable enough to overcome commission,
+      one tick of slippage, and pessimistic same-bar ordering.
+    known_failure_modes: The ES source family failed; this NQ transfer can fail if
+      the published drift decayed, if the intraday/no-overnight expression misses
+      the effect, or if sparse event samples are dominated by a few crisis meetings.
+    pre_test_decision: approve_for_testing
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  exchange_timezone: America/New_York
+  feature_set: none
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  rth_end: '15:59:00'
+  rth_start: 09:30:00
+  source: parquet
+  source_timeframe: 1m
+  symbol: NQ
+  timezone: America/New_York
+  warmup_days: 0
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: fomc_pre_announcement_drift
+    params:
+      setup_mode: prior_day_unconditional_long
+      event_calendar_csv: data/external/fomc_scheduled_decision_dates_20110101_20260609.csv
+      entry_time: '15:00:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 1
+      event_day_offset: -1
+      max_trades_per_day: 1
+      min_session_return_bps: -1000000
+      max_session_range_bps: 1000000
+      stop_pct: 0.0025
+      target_r_multiple: 1.5
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0025
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 5
+  preferred_min_total_trades: 80
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 5
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

@@ -1,0 +1,123 @@
+campaign_id: nq_prior_value_area_orderflow_rejection
+title: NQ Prior Value-Area Orderflow Rejection
+decision: FAIL
+created_at: '2026-06-30'
+completed_at: '2026-06-30'
+status: failed_pre_pnl_density
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: prior_value_area_orderflow_rejection
+hypothesis: Prior-session accepted-value boundaries in NQ, approximated from completed RTH OHLCV, can
+  act as objective support/resistance. A completed probe outside prior VAH/VAL that closes back inside
+  prior value with counter-direction aggregate orderflow may indicate failed acceptance and a return-to-value
+  reversal after next-bar execution.
+rationale: 'This is the NQ transfer of the ES prior value-area rejection edge before NQ PnL inspection.
+  It is the failed-acceptance/rejection mirror of prior value-area acceptance continuation: price must
+  probe beyond a frozen prior-session value boundary, close back inside value, and show counterflow on
+  the completed signal bar.'
+sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  venue: Federal Reserve Bank of New York Economic Policy Review
+  link: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  relevance: Supports objective intraday support/resistance levels as public reference points.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Links technical levels to liquidity provision around public reference prices.
+- title: CME FX Market Profile Tool
+  authors: CME Group
+  year: 2026
+  venue: Exchange market profile/liquidity analytics documentation
+  link: https://www.cmegroup.com/trading/fx/cme-fx-market-profile-tool.html
+  relevance: Exchange documentation supporting historical market-profile style analysis of volume and
+    activity intervals.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates completed aggregate orderflow imbalance as a short-horizon pressure proxy.
+data_needs:
+- NQ Sierra completed 1-minute RTH OHLCV/orderflow cache in America/New_York
+- 5-minute bars generated from the local 1-minute source
+- prior-session approximate VAH, VAL, and POC computed only after the previous RTH session is complete
+- signed, large-10, and large-20 aggregate flow columns for completed signal bars
+lookahead_risks:
+- Prior VAH, VAL, and POC are computed only from the previous completed RTH session and frozen before
+  current-session entries.
+- The probe, close-back-inside rejection, and orderflow confirmation use only the completed 5-minute signal
+  bar.
+- Signals generated from a completed bar close are filled no earlier than the next bar open by the engine.
+- No current-session final high/low, final VWAP, final volume profile, future orderflow, or post-entry
+  bars are used.
+failure_modes:
+- Prior value-area rejection may be too noisy when approximated from OHLCV bars rather than true volume-at-price.
+- A close back inside value can precede a second breakout rather than a real reversal.
+- Aggregate counterflow may identify late capitulation after the reversal already happened.
+- The effect may concentrate in one side, a volatility regime, or a small number of trend days.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_prior_value_area_orderflow_acceptance
+  - nq_prior_poc_orderflow_magnet
+  - nq_pivot_filtered_prior_value_area_acceptance
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_prior_day_stop_run_reclaim
+  - nq_session_extreme_delta_divergence
+  - nq_vwap_deviation_orderflow_reversion
+  - chartfanatics_remaining_strategy_source_gate_after_round_number
+  conclusion: 'Eligible for the NQ goal as an ES-derived transfer because this campaign tests failed acceptance
+    at frozen prior value-area boundaries: probe beyond VAH/VAL, close back inside value, and counterflow
+    on the completed signal bar. It is not the acceptance-continuation, POC magnet, prior high/low breakout,
+    stop-run, session-extreme, or VWAP-deviation edge. It is not launched as a new ChartFanatics profile
+    campaign.'
+variants:
+- morning_signed_vah_rejection_short
+- morning_signed_val_rejection_long
+- late_morning_signed_two_sided_rejection
+- midday_large10_two_sided_rejection
+- afternoon_large20_two_sided_rejection
+parameter_space:
+  entry_parameters:
+  - entry.params.rejection_buffer_ticks
+  - entry.params.min_orderflow_imbalance
+  stop_parameters:
+  - sl.params.stop_offset_ticks
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant:
+    morning_signed_vah_rejection_short: 18
+    other_variants: 27
+  entry_parameter_cap: 2
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+source_es_campaign: es_prior_value_area_orderflow_rejection
+pre_pnl_density:
+  status: failed
+  decision: FAIL
+  artifact: research_artifacts/nq_prior_value_area_orderflow_rejection_density_audit_20260630.md
+  csv: research_artifacts/nq_prior_value_area_orderflow_rejection_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_prior_value_area_orderflow_rejection_density_summary_20260630.csv
+  entry_rows: 42
+  passing_rows: 33
+  passing_variants: 4
+  failed_variants:
+  - afternoon_large20_two_sided_rejection
+  failure_reason: The declared five-variant family failed before NQ PnL because
+    afternoon_large20_two_sided_rejection had 0 of 9 entry-grid rows pass all
+    density windows; dropping that variant after seeing the screen would be
+    post-result narrowing.
+staged_pnl_started: false
+result_summary: No limited core, monkey, WFA, Monte Carlo, simulated incubation,
+  acceptance OOS, holdout PnL, or candidate report was run. The campaign is
+  rejected as a full declared five-variant family by pre-PnL density.
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized in the current search; after NQ testing starts, allow only rejection
+    or promotion to candidate/manual-review status.

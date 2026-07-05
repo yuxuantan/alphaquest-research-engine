@@ -74,7 +74,7 @@ class CboeSkewTailRiskEntry:
             "feature_csv": self.feature_csv,
             "feature_session_date": session_date.isoformat(),
             "cboe_observation_date": row.get("observation_date"),
-            "availability_rule": "latest Cboe SKEW close strictly before ES session_date",
+            "availability_rule": "latest Cboe SKEW close strictly before futures session_date",
             "signal_timestamp": signal_timestamp,
             "intended_entry_timestamp": signal_timestamp,
             "skew_driver_column": driver_column,

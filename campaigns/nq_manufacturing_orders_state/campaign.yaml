@@ -1,0 +1,127 @@
+campaign_id: nq_manufacturing_orders_state
+title: NQ Manufacturing Orders State
+status: completed_failed
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Conservatively lagged manufacturing new-orders states may proxy forward production commitments, capital-spending demand, and cyclical growth pressure that affect same-day NQ intraday drift after the cash open.
+rationale: This campaign tests a manufacturing new-orders state edge using FRED/Census AMTMNO, DGORDER, NEWORDER, and AMXTNO observations at least 45 calendar days old. It is distinct from industrial production, retail inventory demand, BLS release-day drift, CFNAI, EMV, EPU, and orderflow campaigns because it uses forward orders and production-commitment data, not realized output, consumer retail/inventory data, scheduled event drift, composite activity, uncertainty, or intraday flow.
+research_sources:
+- title: New Indexes of Coincident and Leading Economic Indicators
+  author: James H. Stock and Mark W. Watson
+  year: 1989
+  link_or_doi: https://www.nber.org/books-and-chapters/nber-macroeconomics-annual-1989-volume-4/new-indexes-coincident-and-leading-economic-indicators
+  expected_mechanism: Leading and coincident economic indicators motivate tests of forward-looking manufacturing orders as cyclical state variables.
+- title: Manufacturers' Shipments, Inventories, and Orders (M3) Survey
+  author: U.S. Census Bureau
+  year: 2026
+  link_or_doi: https://www.census.gov/manufacturing/m3
+  expected_mechanism: The M3 survey measures current industrial activity and provides an indication of future business trends through shipments, inventories, and orders.
+- title: 'Manufacturers'' New Orders: Total Manufacturing and related M3 series'
+  author: U.S. Census Bureau via FRED, Federal Reserve Bank of St. Louis
+  year: 2026
+  link_or_doi: https://fred.stlouisfed.org/series/AMTMNO
+  expected_mechanism: Public monthly manufacturing-order series are used for strictly lagged NQ session state features.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/fred_manufacturing_orders_state/fred_amtmno_monthly.csv
+- data/external/fred_manufacturing_orders_state/fred_dgorder_monthly.csv
+- data/external/fred_manufacturing_orders_state/fred_neworder_monthly.csv
+- data/external/fred_manufacturing_orders_state/fred_amxtno_monthly.csv
+- data/external/nq_manufacturing_orders_state_features_20110103_20260612.csv
+feature_construction:
+  builder: tools/build_nq_manufacturing_orders_state_features.py
+  output: data/external/nq_manufacturing_orders_state_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3813
+  availability_lag_days: 45
+  lookahead_control: Each NQ session uses only the latest monthly AMTMNO/DGORDER/NEWORDER/AMXTNO observation on or before session_date minus 45 calendar days.
+duplicate_edge_review:
+  active_scope_only: true
+  reviewed_on: '2026-07-01'
+  existing_nq_campaign_id: none
+  not_duplicate_of:
+  - nq_industrial_production_state
+  - nq_retail_inventory_demand
+  - nq_bls_macro_release_day_drift
+  - nq_chicagofed_cfnai_activity_pullback
+  - nq_consumer_sentiment_state_intraday
+  - nq_emv_macro_news_intraday
+  - nq_epu_policy_uncertainty_intraday
+  - nq_orderflow_absorption_exhaustion_reversal
+  conclusion: Eligible as a bounded manufacturing-orders state edge; it does not reuse industrial output, retail demand/inventory balance, scheduled macro-release drift, composite activity, sentiment, uncertainty, or intraday orderflow mechanics.
+parameter_space:
+  combinations_per_variant: 27
+  entry_parameters:
+    total_orders_3m_strength_long_1000:
+      entry.params.rank_min:
+      - 0.55
+      - 0.6
+      - 0.65
+    total_orders_3m_weakness_short_1030:
+      entry.params.rank_max:
+      - 0.4
+      - 0.45
+      - 0.5
+    core_capgoods_3m_strength_long_1130:
+      entry.params.rank_min:
+      - 0.55
+      - 0.6
+      - 0.65
+    durables_1m_weakness_short_1200:
+      entry.params.rank_max:
+      - 0.35
+      - 0.4
+      - 0.45
+    ex_transport_3m_strength_long_1330:
+      entry.params.rank_min:
+      - 0.55
+      - 0.6
+      - 0.65
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+variants:
+- total_orders_3m_strength_long_1000
+- total_orders_3m_weakness_short_1030
+- core_capgoods_3m_strength_long_1130
+- durables_1m_weakness_short_1200
+- ex_transport_3m_strength_long_1330
+density_audit:
+  initial_rejected_artifact: research_artifacts/nq_manufacturing_orders_state_initial_density_rejected_20260701.md
+  final_artifact: research_artifacts/nq_manufacturing_orders_state_density_audit_20260701.md
+  conclusion: Final pre-PnL grid passed 45/45 density rows after density-only reform; no PnL was inspected before the reform.
+rescue_policy:
+  rescue_scope: none_for_initial_campaign
+  max_rescue_attempts_without_user_approval: 0
+  forbidden_changes:
+  - core strategy mechanic
+  - FRED availability lag rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+completed_at: '2026-07-01T05:45:51+08:00'
+test_result:
+  decision: FAIL
+  status: completed_failed
+  summary_artifact: backtest-campaigns/nq_manufacturing_orders_state/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_manufacturing_orders_state/campaign_results.csv
+  candidate_strategy_report_created: false
+  conclusion: All five variants failed limited_core_grid_test; 4 variants had profitable top cells, but no variant met the 0.70 profitable-iteration stability threshold. No branch reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

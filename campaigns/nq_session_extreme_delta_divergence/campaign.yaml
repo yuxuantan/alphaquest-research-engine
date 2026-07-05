@@ -1,0 +1,136 @@
+campaign_id: nq_session_extreme_delta_divergence
+title: NQ Session-Extreme Cumulative-Delta Divergence
+decision: FAIL
+created_at: '2026-06-30'
+instrument: NQ
+market_timezone: America/New_York
+edge_family: session_extreme_delta_divergence
+hypothesis: Fresh NQ RTH highs or lows that are not confirmed by cumulative aggregate
+  signed-volume progress may represent exhausted liquidity-taking pressure or absorption
+  at the new extreme, making same-session mean reversion plausible after costs.
+sources:
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Supports order-flow imbalance as a short-horizon pressure proxy. This
+    NQ transfer uses completed Sierra aggregate signed-volume as the available bar-level
+    proxy, not full depth OFI.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz, Elizabeth R. Odders-White
+  year: 2004
+  venue: Review of Financial Studies
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=315660
+  relevance: Supports the idea that technical price levels can coincide with liquidity
+    provision. This campaign tests fresh intraday extremes rather than fixed prior-day,
+    opening-range, or VWAP levels.
+- title: Trading Volume and Serial Correlation in Stock Returns
+  authors: John Y. Campbell, Sanford J. Grossman, Jiang Wang
+  year: 1993
+  venue: Quarterly Journal of Economics
+  link: https://campbell.scholars.harvard.edu/publications/trading-volume-and-serial-correlation-stock-returns
+  relevance: Motivates reversal after liquidity-driven order pressure and inventory-risk
+    episodes.
+rationale: 'This is a skeptical NQ transfer of the already-failed ES session-extreme
+  delta-divergence edge. Price must make a fresh current-session RTH high or low using
+  only prior completed extremes as reference. Aggregate orderflow is only a confirmation
+  veto: it rejects fresh extremes whose cumulative signed-volume progress does not
+  confirm the price extension.'
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- timezone-aware one-minute NQ RTH OHLCV bars in America/New_York
+- completed-bar signed_volume and volume fields from the validated Sierra aggregate-orderflow
+  cache
+- tick size, point value, slippage, commission, and prop-rule flatten settings from
+  config
+lookahead_risks:
+- Current-session extreme references are highs/lows from completed bars before the
+  signal bar; the signal bar is not included when setting the reference level.
+- The signal bar high/low/close and signed volume are used only after the bar is complete,
+  and the engine enters on the next bar open or later.
+- No final session high/low, final VWAP, final volume profile, future orderflow, or
+  future return is used.
+- All variants allow at most one trade per day and flatten before the configured cutoff.
+failure_modes:
+- Weak cumulative signed-volume progress may reflect hidden continuation or passive
+  liquidity transfer rather than reversal.
+- The Sierra signed-volume proxy is aggregate bar-level bid/ask volume, not full order-book
+  OFI.
+- NQ directional days may trend through non-confirmed extremes, especially during
+  macro or high-volatility sessions.
+- Profits may be erased by one-tick slippage, same-bar pessimistic stop/target ordering,
+  or regime drift.
+- The ES source family failed; an NQ pass would require all staged robustness gates,
+  not just a favorable core window.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_prior_day_stop_run_reclaim
+  - nq_orderflow_absorption_exhaustion_reversal
+  - nq_opening_drive_mes_crowding_reversal
+  - nq_vix_pressure_orderflow_confirmation
+  - nq_low_toxicity_orderflow_extension_fade
+  - nq_chartfanatics_liquidity_inversion_fvg
+  - nq_chartfanatics_smt_po3_midpoint_reversion
+  - es_session_extreme_delta_divergence
+  conclusion: Eligible as an NQ transfer but not a new ES edge. It does not anchor
+    to prior-day levels, opening range, VWAP, fixed price endings, FVG inversion,
+    SMT, VIX state, MES relative value, or same-clock low-toxicity rank. The unique
+    mechanic is a current-session fresh extreme plus cumulative signed-volume non-confirmation
+    from the prior completed extreme.
+parameter_space:
+  entry_parameters:
+    entry.params.min_extreme_break_ticks:
+    - 1
+    - 2
+    entry.params.max_delta_progress_ratio:
+    - 0.05
+    - 0.1
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.001
+    - 0.0015
+    - 0.0025
+  target_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+  combinations_per_variant: 12
+variants:
+- morning_high_delta_divergence_short
+- morning_low_delta_divergence_long
+- midday_two_sided_delta_divergence
+- afternoon_high_delta_divergence_short
+- afternoon_low_delta_divergence_long
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees results; after staged
+    or density outcomes only rejection or promotion is allowed.
+status: completed_failed
+completed_at: '2026-06-30T14:29:00+08:00'
+pre_pnl_density_audit:
+  decision: PASS
+  artifact_md: research_artifacts/nq_session_extreme_delta_divergence_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_session_extreme_delta_divergence_density_audit_20260630.csv
+  declared_entry_rows: 20
+  density_pass_rows: 20
+  density_fail_rows: 0
+testing_outcome:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  variants_tested: 5
+  total_core_combinations: 60
+  profitable_combinations: 1
+  benchmark_pass_combinations: 0
+  monkey_reached: 0
+  wfa_reached: 0
+  candidate_strategy_report_created: false
+  summary_path: backtest-campaigns/nq_session_extreme_delta_divergence/campaign_test_summary.json
+  failure_reason: All five predeclared NQ session-extreme delta-divergence variants
+    failed limited_core_grid_test. Across 60 official core combinations, only 1 was
+    profitable, 0 passed benchmark gates, and 0 had Apex rule violations. The only
+    profitable row was afternoon_high_delta_divergence_short with top net 150.0 but
+    it failed max_best_day_concentration, so no variant reached monkey, WFA, Monte
+    Carlo, simulated incubation, acceptance OOS, or candidate reporting.

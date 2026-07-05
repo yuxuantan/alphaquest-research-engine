@@ -1,0 +1,152 @@
+campaign_id: nq_corporate_equity_supply_state
+title: NQ Corporate Equity Supply State
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: corporate_equity_supply_state
+hypothesis: Strict-lag quarterly corporate equity issuance and financing-mix states may identify
+  equity-supply pressure in growth-heavy Nasdaq-100 futures.
+rationale: This campaign tests aggregate corporate financing supply from Federal Reserve Z.1/FRED
+  data, distinct from buyback blackout calendars, investor sentiment, credit spreads, equity
+  breadth, or rates/volatility state campaigns.
+research_sources:
+- title: The Equity Share in New Issues and Aggregate Stock Returns
+  authors: Malcolm Baker and Jeffrey Wurgler
+  year: 2000
+  venue: Journal of Finance 55(5), 2219-2257
+  link_or_doi: https://www.hbs.edu/faculty/Pages/item.aspx?num=9176
+  expected_mechanism: Finds that a higher equity share in new issues predicts lower subsequent
+    aggregate stock returns, motivating a corporate supply-pressure state.
+- title: Corporate Equities; Liability, Transactions
+  authors: Board of Governors of the Federal Reserve System via FRED
+  year: 2026
+  venue: FRED series NCBCEBQ027S
+  link_or_doi: https://fred.stlouisfed.org/series/NCBCEBQ027S
+  expected_mechanism: Quarterly Z.1 net corporate equity transactions proxy aggregate equity
+    supply or repurchase pressure.
+- title: Nonfinancial Corporate Business; Debt Securities and Loans; Liability, Transactions
+  authors: Board of Governors of the Federal Reserve System via FRED
+  year: 2026
+  venue: FRED series BOGZ1FA104104005Q
+  link_or_doi: https://fred.stlouisfed.org/series/BOGZ1FA104104005Q
+  expected_mechanism: Quarterly debt financing transactions allow an equity-versus-debt financing
+    mix proxy.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV/orderflow cache in America/New_York.
+- Public FRED quarterly NCBCEBQ027S, BOGZ1FA104104005Q, and NCBEILQ027S CSVs cached under
+  data/external/fred_corporate_equity_supply.
+- Derived strict-lag feature CSV data/external/nq_corporate_equity_supply_features_20110103_20260612.csv.
+duplicate_edge_check:
+  checked_edges:
+  - pre_campaign_buyback_blackout_orderflow_density
+  - nq_finra_margin_leverage
+  - nq_nasdaq_equal_weight_concentration
+  - nq_credit_etf_orderflow_risk_appetite
+  - nq_default_spread_orderflow_risk_premium
+  - nq_fama_french_style_factor_rotation
+  - nq_naaim_exposure_sentiment
+  caveat: A prior ES scratch screen mentioned corporate equity supply but no authored NQ five-variant
+    campaign or staged NQ ledger row exists. This is not a buyback blackout calendar, credit-spread,
+    margin leverage, or investor-exposure campaign.
+  conclusion: Eligible as a distinct aggregate corporate financing supply edge for NQ source
+    testing.
+lookahead_risks:
+- A session dated D can only use the latest quarterly FRED observation on or before D minus
+  180 calendar days.
+- Quarterly observation dates are treated conservatively because Z.1 release dates lag quarter
+  dates.
+- Rolling ranks are computed in the quarterly feature table before the session-level as-of
+  join.
+- Signals use a completed NQ RTH bar and enter no earlier than the next bar open.
+- No same-quarter release, final NQ session range, final VWAP, or post-entry path is used.
+failure_modes:
+- Corporate financing supply may operate at multi-month horizons rather than same-day NQ intraday
+  horizons.
+- The 180-calendar-day lag may be too stale for intraday prediction.
+- The signal may proxy broad valuation, sentiment, or credit regimes and fail robustness.
+- If the edge only survives one issuance regime or narrow threshold, it must be rejected.
+feature_construction:
+  builder: tools/build_nq_corporate_equity_supply_features.py
+  output: data/external/nq_corporate_equity_supply_features_20110103_20260612.csv
+  source_cache: data/external/fred_corporate_equity_supply/
+  source_urls:
+  - https://fred.stlouisfed.org/graph/fredgraph.csv?id=NCBCEBQ027S
+  - https://fred.stlouisfed.org/graph/fredgraph.csv?id=NCBEILQ027S
+  - https://fred.stlouisfed.org/graph/fredgraph.csv?id=BOGZ1FA104104005Q
+  availability_lag_calendar_days: 180
+pre_pnl_density_audit:
+  decision: PASS
+  artifact: research_artifacts/nq_corporate_equity_supply_state_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_corporate_equity_supply_state_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_corporate_equity_supply_state_density_summary_20260701.csv
+  result: 15/15 declared entry rows passed; 5/5 variants passed before any PnL was inspected.
+parameter_space:
+  entry_parameters:
+  - entry.params.supply_rank_threshold
+  stop_parameters:
+  - sl.params.stop_pct
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant:
+    high_1q_net_equity_short_1000: 27
+    high_4q_net_equity_short_1030: 27
+    rising_4q_net_equity_short_1130: 27
+    high_equity_share_short_1200: 27
+    low_debt_minus_equity_short_1330: 27
+  entry_parameter_cap: 1
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+variants:
+- high_1q_net_equity_short_1000
+- high_4q_net_equity_short_1030
+- rising_4q_net_equity_short_1130
+- high_equity_share_short_1200
+- low_debt_minus_equity_short_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  preflight_required: true
+  staged_validation_required: true
+status: completed_failed
+staged_validation:
+  status: completed
+  decision: FAIL
+  terminal_summary:
+    high_1q_net_equity_short_1000:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.0
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.0 below
+        0.7; benchmark_passing=0/27; top_net=0.0; top_trades=0; top_failure=min_trades_per_year;preferred_min_total_trades'
+    high_4q_net_equity_short_1030:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.0
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.0 below
+        0.7; benchmark_passing=0/27; top_net=0.0; top_trades=0; top_failure=min_trades_per_year;preferred_min_total_trades'
+    rising_4q_net_equity_short_1130:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.0
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.0 below
+        0.7; benchmark_passing=0/27; top_net=0.0; top_trades=0; top_failure=min_trades_per_year;preferred_min_total_trades'
+    high_equity_share_short_1200:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.0
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.0 below
+        0.7; benchmark_passing=0/27; top_net=0.0; top_trades=0; top_failure=min_trades_per_year;preferred_min_total_trades'
+    low_debt_minus_equity_short_1330:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.07407407407407407
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.07407407407407407
+        below 0.7; benchmark_passing=0/27; top_net=47.5; top_trades=22; top_failure=preferred_min_total_trades;max_best_day_concentration'
+  aggregate_failure_reason: All five variants failed limited_core_grid_test. Four variants
+    generated zero trades in the actual fast-runtime limited-core slice; the best profitable-combination
+    rate was 0.07407407407407407, below the 0.70 gate. No branch reached limited monkey, WFA,
+    WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

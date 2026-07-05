@@ -1,0 +1,123 @@
+campaign_id: nq_treasury_rate_orderflow_confirmation
+title: NQ Treasury Rate Orderflow Confirmation
+decision: FAIL
+status: completed_failed
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Lagged U.S. Treasury yield and curve-shape tail moves condition same-day NQ direction only when completed RTH NQ price movement and aggregate signed orderflow confirm the discount-rate repricing direction before next-bar entry.
+rationale: This is a bounded composite edge. The prior Treasury-rate state supplies the exogenous macro/discount-rate pressure using observations strictly before the NQ session. NQ then must confirm direction with completed RTH movement from the session open and cumulative signed or large-trade orderflow. It is distinct from the prior fixed-time Treasury-rate campaign because the macro state alone is not tradable here.
+sources:
+- title: What Explains the Stock Market's Reaction to Federal Reserve Policy?
+  authors: Ben S. Bernanke and Kenneth N. Kuttner
+  year: 2005
+  venue: Journal of Finance
+  doi: 10.1111/j.1540-6261.2005.00760.x
+  link: https://doi.org/10.1111/j.1540-6261.2005.00760.x
+  relevance: Documents equity-market sensitivity to interest-rate and discount-rate news.
+- title: Measuring the Reaction of Monetary Policy to the Stock Market
+  authors: Roberto Rigobon and Brian Sack
+  year: 2003
+  venue: Quarterly Journal of Economics
+  doi: 10.1162/003355303322552810
+  link: https://doi.org/10.1162/003355303322552810
+  relevance: Supports the macro link between interest-rate movements and equity prices.
+- title: Daily Treasury Rates
+  authors: U.S. Department of the Treasury
+  year: 2026
+  venue: Treasury Resource Center
+  link: https://home.treasury.gov/resource-center/data-chart-center/interest-rates
+  relevance: Free official source for the daily 2-year and 10-year Treasury yield observations used in the local feature file.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Supports requiring contemporaneous orderflow imbalance confirmation instead of trading the daily rate state alone.
+data_needs:
+- timezone-aware NQ RTH 1-minute Sierra OHLCV/orderflow cache in America/New_York
+- existing local Treasury yield feature file built from free official daily Treasury rates
+- 5-minute completed-bar NQ aggregation with cumulative orderflow confirmation
+- same-day stop, target, forced-flatten, and no-overnight enforcement
+data_quality_caveats:
+- Treasury yields are daily observations, not intraday tick data.
+- The feature file intentionally excludes same-session Treasury observations, which is conservative if values were published earlier.
+- Sierra signed-volume fields are aggregate bar-level proxies, not print-level aggressor truth.
+- The full-day decision schedule is used to preserve 50/year feasibility and should be manually reviewed if anything passes.
+lookahead_risks:
+- An NQ session dated D may only use Treasury observations strictly before D.
+- Rolling ranks use only Treasury observations through the mapped observation date.
+- Signals use completed NQ bars only; entries must occur at the next bar open or later.
+- No final NQ session high/low, final VWAP, future return, or same-day/future Treasury value is used.
+failure_modes:
+- Lagged daily rate shocks may be fully incorporated before NQ RTH opens.
+- Rate-equity sign can switch across inflation, growth, policy, and crisis regimes.
+- NQ confirmation may enter after the tradable rate repricing move has already occurred.
+- Results may concentrate in 2020 or 2022 rate-volatility regimes.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_treasury_rate_shock_intraday
+  - nq_treasury_auction_pressure
+  - nq_default_spread_orderflow_risk_premium
+  - nq_ofr_financial_stress_intraday
+  - nq_dollar_risk_appetite_intraday
+  - nq_credit_etf_orderflow_risk_appetite
+  - nq_vix_pressure_orderflow_confirmation
+  - nq_signed_orderflow_persistence
+  conclusion: Eligible as a distinct bounded composite before NQ PnL inspection. The existing NQ Treasury-rate campaign traded lagged Treasury state at fixed bars and failed limited core. This campaign keeps the lagged Treasury state but requires same-session completed NQ price movement plus aggregate orderflow confirmation before next-bar entry. It is not a pure orderflow-persistence, credit-spread, OFR-stress, dollar-risk, VIX-pressure, or Treasury-auction event edge.
+feature_construction:
+  builder: tools/build_es_treasury_rate_state_features.py
+  rate_source_cache: data/external/us_treasury_daily_yield_curve_rates_2010_2026.csv
+  output: data/external/nq_treasury_rate_state_features_20110103_20260612.csv
+  availability_rule: latest Treasury observation strictly before NQ session_date
+  pre_pnl_density_audit: research_artifacts/nq_treasury_rate_orderflow_confirmation_density_audit_20260630.md
+  target_reward_risk_floor: 1.0
+variants:
+- teny_1d_signed_rate_confirmation_1530
+- twoy_1d_signed_rate_confirmation_1530
+- teny_5d_signed_rate_confirmation_1530
+- curve_1d_signed_rate_confirmation_1530
+- teny_1d_large10_rate_confirmation_1530
+rescue_policy:
+  allowed: false
+  max_rescue_attempts_without_user_approval: 0
+  reason: This is a new NQ symbol-transfer of the failed ES composite and must be tested frozen. If it fails any gate, reject it unless the user explicitly authorizes a rescue.
+  forbidden_changes:
+  - change entry module
+  - change stop-loss module
+  - change take-profit module
+  - change core economic edge
+  - change timeframe or data window
+  - add or remove filters after seeing results
+  - alter costs, fills, sessions, validation gates, or prop rules
+  - use any target_r_multiple below 1.0
+testing_plan:
+  pre_pnl_density_required: true
+  staged_pipeline: current campaign stages through acceptance_oos_test if earlier gates pass
+  no_pnl_before_density: true
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-30'
+  terminal_stage: pre_pnl_density
+  aggregate_report: backtest-campaigns/nq_treasury_rate_orderflow_confirmation/campaign_test_summary.json
+  density_audit: research_artifacts/nq_treasury_rate_orderflow_confirmation_density_audit_20260630.md
+  density_summary_csv: research_artifacts/nq_treasury_rate_orderflow_confirmation_density_summary_20260630.csv
+  declared_entry_rows: 45
+  passing_entry_rows: 19
+  variants_tested: 5
+  variants_passing_density: 0
+  staged_pnl_run: false
+  failure_reason: >
+    Pre-PnL density failed: 19/45 declared entry rows passed and 0/5 variants
+    passed all declared rows. No staged PnL, monkey, WFA, Monte Carlo,
+    simulated incubation, acceptance OOS, or candidate report was run.

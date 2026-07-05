@@ -3,10 +3,10 @@ campaign_id: es_mes_micro_flow_divergence_reversion
 instrument: ES
 initial_decision: TEST
 reason_for_decision: >
-  Local one-year ES/MES trade-side cache exists, and prior one-year diagnostics
-  showed this edge family is the best local-only independent mean-reversion
-  lead. The campaign remains fail-closed because the local sample may be too
-  short for WFA and acceptance density.
+  Full-history local ES/MES completed-bar cache is now available. Prior one-year
+  diagnostics showed this edge family was a local-only independent
+  mean-reversion lead, but the campaign remains fail-closed because the
+  full-history data refresh did not survive the staged validation gates.
 
 edge_hypothesis: >
   ES may mean-revert when completed MES flow or short-horizon MES price movement
@@ -43,7 +43,7 @@ behavioural_or_microstructure_rationale: >
 
 expected_failure_modes:
   - MES is the informed leading market rather than a liquidity-demand proxy.
-  - One-year local ES/MES history is too short for robust WFA windows.
+  - Full-history local ES/MES evidence is still too sparse, noisy, or regime-dependent for robust WFA windows.
   - Profit depends on one month, one quarter, or a small number of trades.
   - Fixed one-tick slippage understates live execution during fast afternoon moves.
 
@@ -55,8 +55,20 @@ session_assumptions:
   latest_flat_time: "16:59:59"
 
 data_requirements:
-  - data/cache/orderflow/es_mes_flow_divergence_1m_20250610_20260608.csv
-  - data/cache/orderflow/es_mes_price_flow_divergence_1m_20250610_20260608.csv
+  - data/cache/orderflow/es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny.csv
+
+data_scope_status:
+  current_default_configs: >
+    The source variant and first parameter-space rescue configs now reference
+    the full-history paired ES/MES divergence cache from 2019-05-06 through
+    2026-06-09.
+  superseded_short_window_configs:
+    - data/cache/orderflow/es_mes_flow_divergence_1m_20250610_20260608.csv
+    - data/cache/orderflow/es_mes_price_flow_divergence_1m_20250610_20260608.csv
+  historical_artifacts_policy: >
+    Existing generated artifacts under backtest-campaigns remain as-ran
+    evidence. The data-scope update affects source configs for future reruns
+    and does not promote any previously failed variant.
 
 forbidden_forms_of_lookahead:
   - Use of bars after the configured signal timestamp.

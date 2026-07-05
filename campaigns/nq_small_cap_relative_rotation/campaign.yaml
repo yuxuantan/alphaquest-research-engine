@@ -1,0 +1,111 @@
+campaign_id: nq_small_cap_relative_rotation
+title: NQ Small-Cap Relative Rotation
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: small_cap_relative_rotation_state
+hypothesis: Lagged IWM relative performance versus QQQ may proxy small-cap risk appetite or rotation pressure that affects
+  same-day NQ intraday drift.
+rationale: This campaign tests a daily size-rotation state, not the already rejected XLK/SPY technology-relative-strength,
+  sector-rotation, ES/NQ intraday relative-value, or NQ own-momentum families. IWM and QQQ observations are joined with
+  a one-business-day availability lag, and entries occur only after completed NQ RTH bars.
+research_sources:
+- title: When Are Contrarian Profits Due to Stock Market Overreaction?
+  authors: Andrew W. Lo and A. Craig MacKinlay
+  year: 1990
+  venue: Review of Financial Studies
+  link_or_doi: https://ideas.repec.org/a/oup/rfinst/v3y1990i2p175-205.html
+  expected_mechanism: Documents size-related cross-autocorrelation and lead-lag structure across capitalization portfolios.
+- title: The Joint Dynamics of Liquidity, Returns, and Volatility across Small and Large Firms
+  authors: Tarun Chordia, Asani Sarkar, and Avanidhar Subrahmanyam
+  year: 2005
+  venue: Federal Reserve Bank of New York Staff Report 207
+  link_or_doi: https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr207.pdf
+  expected_mechanism: Motivates return, volatility, and liquidity spillovers between small- and large-cap equity portfolios.
+- title: Russell 2000 Index - The original benchmark for US small caps
+  authors: FTSE Russell
+  year: 2024
+  venue: FTSE Russell research
+  link_or_doi: https://www.lseg.com/content/dam/ftse-russell/en_us/documents/research/original-us-small-caps.pdf
+  expected_mechanism: Identifies Russell 2000 as a standard small-cap benchmark, proxied locally through IWM daily data.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV/orderflow cache in America/New_York
+- Yahoo daily adjusted-close and volume histories for IWM and QQQ cached under data/external/yahoo_size_etfs
+- Derived strict-lag feature CSV data/external/nq_small_cap_relative_features_20110103_20260612.csv
+duplicate_edge_check:
+  checked_edges:
+  - nq_tech_relative_strength_intraday
+  - nq_tech_nonleadership_orderflow_confirmation
+  - nq_sector_rotation_risk_appetite
+  - nq_sector_opening_breadth_orderflow_continuation
+  - nq_es_relative_value_orderflow_absorption_reversion
+  - nq_daily_time_series_momentum
+  conclusion: Eligible as a distinct NQ test because it uses IWM versus QQQ size-rotation state, not XLK/SPY technology
+    leadership, broad sector ETF leadership, ES/NQ intraday spread, or NQ own trend.
+lookahead_risks:
+- A session dated D can only use IWM/QQQ observations on or before D minus one business day.
+- Rolling ranks are computed before the session-level as-of join.
+- Signals use a completed NQ bar and enter no earlier than the next bar open.
+- No same-day ETF close, final NQ session high/low, final VWAP, future ETF return, or post-entry path is used.
+failure_modes:
+- IWM/QQQ relative performance may be stale by the NQ RTH session.
+- Small-cap leadership can represent rotation away from Nasdaq rather than risk appetite for NQ.
+- The size-rotation signal may be subsumed by already rejected broad sector or credit-risk states.
+- Yahoo adjusted-close histories require vendor verification before any promotion beyond candidate review.
+feature_construction:
+  builder: tools/build_nq_small_cap_relative_features.py
+  output: data/external/nq_small_cap_relative_features_20110103_20260612.csv
+  raw_cache_dir: data/external/yahoo_size_etfs
+  rows: 3813
+  valid_rank_rows: 3813
+  availability_lag_business_days: 1
+pre_pnl_density_audit:
+  decision: PASS
+  artifact: research_artifacts/nq_small_cap_relative_rotation_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_small_cap_relative_rotation_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_small_cap_relative_rotation_density_summary_20260701.csv
+  result: 21/21 declared entry rows passed; 5/5 variants passed before any PnL was inspected.
+parameter_space:
+  entry_parameters:
+  - entry.params.rank_min or entry.params.rank_max
+  - entry.params.volume_rank_min for attention variant only
+  stop_parameters:
+  - sl.params.stop_pct
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant:
+    iwm_1d_strength_long_1000: 27
+    iwm_5d_strength_long_1030: 27
+    iwm_1d_weakness_short_1000: 27
+    iwm_5d_weakness_short_1130: 27
+    iwm_attention_strength_long_1330: 81
+  entry_parameter_cap: 2
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+variants:
+- iwm_1d_strength_long_1000
+- iwm_5d_strength_long_1030
+- iwm_1d_weakness_short_1000
+- iwm_5d_weakness_short_1130
+- iwm_attention_strength_long_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  preflight_required: true
+  staged_validation_required: true
+staged_validation:
+  status: completed_failed
+  decision: FAIL
+  report_path: backtest-campaigns/nq_small_cap_relative_rotation/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_small_cap_relative_rotation/campaign_results.csv
+  valid_run_id: run2
+  invalid_run_note: run1 roots are preserved only as infrastructure errors from a missing entry-module registry mapping;
+    run2 is the valid staged evidence.
+  terminal_stage: limited_core_grid_test
+  result: All five predeclared variants failed limited_core_grid_test with zero benchmark-passing combinations across
+    189 official grid cells. No variant reached monkey testing, WFA, Monte Carlo, simulated incubation, acceptance OOS,
+    or candidate reporting.

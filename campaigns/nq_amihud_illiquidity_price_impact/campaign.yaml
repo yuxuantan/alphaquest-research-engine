@@ -1,0 +1,131 @@
+campaign_id: nq_amihud_illiquidity_price_impact
+title: NQ Amihud Illiquidity Price Impact
+status: completed
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Lagged Amihud-style illiquidity, computed as absolute NQ RTH return divided
+  by NQ notional volume, may proxy daily price impact. High expected illiquidity can
+  require a liquidity premium, while acute high illiquidity can also mark unresolved
+  stress.
+rationale: This is a weak-prior NQ symbol-transfer from the failed ES Amihud illiquidity
+  family. It is distinct from RRP liquidity capacity, market-plumbing liquidity, orderflow/liquidity
+  sweeps, realized-volatility shape, option-implied tail-risk, and macro-sentiment
+  campaigns because it uses only lagged daily return-per-notional-volume price impact
+  computed from completed NQ RTH bars.
+research_sources:
+- title: 'Illiquidity and Stock Returns: Cross-Section and Time-Series Effects'
+  author: Yakov Amihud
+  year: 2002
+  link_or_doi: https://doi.org/10.1016/S1386-4181(01)00024-6
+  expected_mechanism: Defines ILLIQ as absolute return divided by dollar volume and
+    interprets it as a rough price-impact measure; expected market illiquidity is
+    positively related to expected excess returns.
+- title: Asset Pricing with Liquidity Risk
+  author: Viral V. Acharya and Lasse Heje Pedersen
+  year: 2005
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2004.06.007
+  expected_mechanism: Liquidity-adjusted CAPM motivates expected return compensation
+    for expected illiquidity and covariation with market liquidity.
+- title: Liquidity and Asset Prices
+  author: Yakov Amihud, Haim Mendelson, and Lasse Heje Pedersen
+  year: 2005
+  link_or_doi: https://econpapers.repec.org/RePEc:now:fntfin:0500000003
+  expected_mechanism: Surveys why liquidity and liquidity risk are priced, supporting
+    tests of lagged liquidity-state variables.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_amihud_illiquidity_features_20110103_20260612.csv
+feature_construction:
+  builder: tools/build_es_amihud_illiquidity_features.py --point-value 20.0
+  output: data/external/nq_amihud_illiquidity_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3734
+  lookahead_control: Every tradable Amihud illiquidity feature is shifted one completed
+    RTH session; a signal date can only use information available after the prior
+    NQ RTH close.
+duplicate_edge_review:
+  active_scope_only: true
+  reviewed_on: '2026-06-30'
+  existing_nq_campaign_id: none
+  es_source_campaign: es_amihud_illiquidity_price_impact
+  es_source_decision: FAIL
+  not_duplicate_of:
+  - nq_market_plumbing_liquidity_capacity
+  - nq_nyfed_rrp_liquidity_state
+  - nq_realized_vol_of_vol_state
+  - nq_realized_jump_variation_premium
+  - nq_cboe_skew_tail_risk_intraday
+  - nq_variance_risk_premium_intraday
+  - nq_prior_value_area_orderflow_acceptance
+  - nq_consumer_sentiment_state_intraday
+  conclusion: This campaign uses lagged daily NQ return-per-notional-volume price
+    impact. It is not external liquidity supply, realized-volatility shape, option-implied
+    tail risk, volume-profile orderflow, scheduled-event drift, or household/macro
+    sentiment.
+parameter_space:
+  combinations_per_variant: 27
+  entry_parameters:
+    entry.params.illiq_rank_threshold:
+    - 0.3
+    - 0.35
+    - 0.45
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  pre_pnl_adjustment: The original ES 0.25 threshold corner was widened to 0.30 before
+    any NQ PnL inspection because the NQ 5-day and 20-day high-illiquidity variants
+    were slightly below 50 signals/year at 0.25.
+variants:
+- high_1d_illiq_premium_long_1000
+- high_1d_illiq_stress_short_1030
+- high_5d_illiq_premium_long_1130
+- high_20d_illiq_premium_long_1200
+- two_sided_5d_illiq_state_1330
+density_audit:
+  artifact: research_artifacts/nq_amihud_illiquidity_price_impact_density_audit_20260630.md
+  conclusion: The selected 0.30/0.35/0.45 threshold grid clears the 50 signals/year
+    pre-PnL density gate on the NQ RTH cache.
+rescue_policy:
+  rescue_scope: none_for_initial_campaign
+  max_rescue_attempts_without_user_approval: 0
+  forbidden_changes:
+  - core strategy mechanic
+  - feature construction shift rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-30'
+  aggregate_report: backtest-campaigns/nq_amihud_illiquidity_price_impact/campaign_test_summary.json
+  official_runs: 5
+  limited_core_failed_runs: 5
+  limited_monkey_failed_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate
+    was high_1d_illiq_stress_short_1030 at 11/27 (0.4074074074074074), below the 0.70
+    gate. Across all official variants, 21/135 combinations were profitable, 4 benchmark-pass
+    rows, and 0 Apex-rule-violating iterations. No variant reached limited monkey,
+    WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or acceptance OOS.
+  best_variant_by_core_profitable_rate: high_1d_illiq_stress_short_1030
+  best_core_profitable_rate: 0.4074074074074074

@@ -93,11 +93,11 @@ def test_amihud_feature_builder_shifts_one_completed_session(tmp_path):
                 }
             )
     pd.DataFrame(rows).to_parquet(source)
-    features = build_features(source, output)
+    features = build_features(source, output, point_value=20.0)
     second = features.iloc[1]
     assert pd.isna(features.iloc[0]["prior_amihud_illiq_1d"])
     assert second["prior_amihud_illiq_1d"] > 0
-    assert second["prior_dollar_volume"] > 0
+    assert second["prior_dollar_volume"] == 61_000.0
 
 
 def _bar(timestamp: str, is_rth: bool = True) -> pd.Series:

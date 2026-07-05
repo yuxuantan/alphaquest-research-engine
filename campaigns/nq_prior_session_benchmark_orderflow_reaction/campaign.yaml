@@ -1,0 +1,131 @@
+campaign_id: nq_prior_session_benchmark_orderflow_reaction
+title: NQ Prior-Session Benchmark Open/Close Orderflow Reaction
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: prior_session_benchmark_orderflow_reaction
+source_es_campaign: es_prior_session_benchmark_orderflow_reaction
+hypothesis: NQ may reject completed previous RTH open and close benchmark levels intraday when a completed bar probes through the level, closes back across it, and carries aggregate trade-side counterflow in the rejection direction.
+rationale: This is an ES-to-NQ transfer selected before NQ PnL inspection. It is distinct from NQ prior-session high/low breakout/reclaim, prior-session IBS, prior value-area acceptance, VWAP deviation, round-number barriers, opening-range retests, and standalone signed-flow persistence because the frozen levels are the prior RTH open/close benchmarks and every signal requires a completed probe-and-reclaim/reject bar with counterflow.
+research_sources:
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  author: Carol L. Osler
+  year: 2000
+  link_or_doi: https://www.newyorkfed.org/research/epr/00v06n2/0007osle.html
+  expected_mechanism: Visible support/resistance levels can predict intraday trend interruptions.
+- title: Technical Analysis and Liquidity Provision
+  author: Kenneth A. Kavajecz and Elizabeth R. Odders-White
+  year: 2004
+  link_or_doi: https://ideas.repec.org/a/oup/rfinst/v17y2004i4p1043-1071.html
+  expected_mechanism: Technical levels can align with liquidity provision and depth.
+- title: The Price Impact of Order Book Events
+  author: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  link_or_doi: 10.1093/jjfinec/nbt003
+  expected_mechanism: Order-flow imbalance is a short-horizon pressure proxy; this implementation uses completed Sierra aggregate trade-side flow.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- completed NQ 5-minute RTH OHLCV/orderflow bars from the repo pipeline
+- previous RTH open and close shifted from completed sessions only
+- completed signed_volume, large10, and large20 aggregate orderflow buckets
+lookahead_risks:
+- Previous RTH open/close are known only after the prior RTH session completes.
+- Probe/reclaim/reject and orderflow use only the completed signal bar.
+- Signals are filled no earlier than next bar open by the engine.
+- No current-session final high/low, final VWAP, final volume profile, future orderflow, or future session return is used.
+failure_modes:
+- Prior open/close probes may be true acceptance through the benchmark rather than failed breakouts.
+- Completed-bar counterflow may arrive too late after most of the rejection has occurred.
+- Large-trade bucket evidence may be noisy on NQ.
+- Performance may be side-specific, regime-specific, or too cost-sensitive after one-tick slippage.
+duplicate_edge_check:
+  active_scope_only: false
+  archived_tests_ignored: false
+  checked_edges:
+  - nq_prior_day_stop_run_reclaim
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_prior_session_ibs_reversion
+  - nq_prior_value_area_orderflow_acceptance
+  - nq_pivot_filtered_prior_value_area_acceptance
+  - nq_round_number_barrier_reaction
+  - nq_vwap_deviation_orderflow_reversion
+  - nq_opening_range_failed_breakout_orderflow
+  - nq_signed_orderflow_persistence
+  conclusion: Eligible as a distinct NQ campaign. Existing NQ prior-level campaigns use prior highs/lows, IBS, value-area boundaries, round numbers, VWAP, opening ranges, or generic orderflow. This campaign uses previous RTH open/close as benchmark auction references and requires completed-bar counterflow rejection at those levels.
+variants:
+- prior_close_morning_signed_reclaim_reversion_1130
+- prior_open_morning_signed_reclaim_reversion_1130
+- prior_close_midday_large10_reclaim_reversion_1400
+- prior_open_midday_large10_reclaim_reversion_1400
+- prior_open_close_afternoon_signed_reclaim_reversion_1530
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - min_probe_ticks
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+  grid_source: Copied from the source ES campaign before NQ PnL inspection; one sparse large20 expression was replaced by large10 after pre-PnL density only.
+  parameters:
+    entry.params.min_probe_ticks:
+    - 0
+    - 1
+    - 2
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+pre_pnl_density_audit:
+  status: PASS
+  artifact: research_artifacts/nq_prior_session_benchmark_orderflow_reaction_density_audit_20260630.md
+  csv: research_artifacts/nq_prior_session_benchmark_orderflow_reaction_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_prior_session_benchmark_orderflow_reaction_density_summary_20260630.csv
+  exact_es_transfer_failure_artifact: research_artifacts/nq_prior_session_benchmark_orderflow_reaction_exact_es_transfer_density_audit_20260630.md
+  density_rule: Every declared entry-grid row must exceed 50 signals/year on full history and limited-core proxy window, and at least 50 raw signals in the latest 252 sessions before staged PnL.
+  entry_rows_passing_all_windows: 45/45
+  weakest_full_signals_per_year: 52.40064727788615
+  weakest_limited_signals_per_year: 57.73934280639431
+  weakest_latest_252_signals: 54
+  decision: Approved for preflight and staged validation; no PnL inspected during density screen.
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized unless explicitly granted after failure; this campaign freezes mechanics and grids before NQ PnL.
+testing_plan:
+  methodology: current staged research pipeline
+  preflight_required: true
+  unit_tests:
+  - tests/test_strategy_modules.py::test_prior_session_benchmark_orderflow_reaction_long_reclaim
+  - tests/test_strategy_modules.py::test_prior_session_benchmark_orderflow_reaction_short_rejects_prior_open_with_large20_flow
+  - tests/test_strategy_modules.py::test_prior_session_benchmark_orderflow_reaction_requires_counterflow_and_trade_limit
+status: completed_failed
+completed_at: '2026-06-30T19:17:57'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_prior_session_benchmark_orderflow_reaction/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_prior_session_benchmark_orderflow_reaction/campaign_results.csv
+  methodology_audit: backtest-campaigns/nq_prior_session_benchmark_orderflow_reaction/methodology_audit.md
+  density_audit: research_artifacts/nq_prior_session_benchmark_orderflow_reaction_density_audit_20260630.md
+  exact_es_transfer_density_failure: research_artifacts/nq_prior_session_benchmark_orderflow_reaction_exact_es_transfer_density_audit_20260630.md
+  variants_tested: 5
+  core_failed_variants: 5
+  candidate_report_created: false
+  failure_reason: All five predeclared NQ prior-session benchmark open/close orderflow-reaction variants failed limited_core_grid_test. Across 270 official combinations, 0 were profitable, 0 passed benchmark gates, and 0 had Apex rule violations. Best variant profitable rate was 0.0, below the 0.70 core gate. Best row was `prior_open_close_afternoon_signed_reclaim_reversion_1530` with top net -892.5, PF 0.9012721238938053, 149 trades, and failure `min_total_net_profit`. No branch reached monkey, WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.
+  best_core_variant: prior_open_close_afternoon_signed_reclaim_reversion_1530
+  best_core_top_net_profit: -892.5
+  best_core_top_profit_factor: 0.9012721238938053
+  limited_monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  simulated_incubation_reached: 0
+  acceptance_oos_reached: 0

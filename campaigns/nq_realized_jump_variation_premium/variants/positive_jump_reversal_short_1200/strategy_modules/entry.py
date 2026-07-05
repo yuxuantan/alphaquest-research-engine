@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.realized_jump_variation_premium import RealizedJumpVariationPremiumEntry
+
+__all__ = ["RealizedJumpVariationPremiumEntry"]

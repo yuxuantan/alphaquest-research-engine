@@ -1,0 +1,133 @@
+campaign_id: nq_semiconductor_leadership_risk_sentiment
+title: NQ Semiconductor Leadership Risk Sentiment
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: semiconductor_industry_leadership_risk_sentiment
+hypothesis: Lagged semiconductor ETF leadership versus QQQ may proxy a Nasdaq-specific
+  risk appetite and earnings-growth information channel that spills into same-day
+  NQ intraday drift.
+rationale: This campaign tests a semiconductor-industry leadership channel rather
+  than broad technology-sector leadership. It is high duplicate risk because broad
+  XLK/SPY tech-leadership campaigns already failed; it remains eligible only as a
+  narrower industry-information diffusion test using SMH/SOXX versus QQQ.
+research_sources:
+- title: Do Industries Explain Momentum?
+  authors: Tobias J. Moskowitz and Mark Grinblatt
+  year: 1999
+  venue: The Journal of Finance
+  link_or_doi: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00146
+  expected_mechanism: Documents that industry components of returns can explain
+    much of individual stock momentum, supporting a predeclared industry-leadership
+    state variable.
+- title: Do industries lead stock markets?
+  authors: Harrison Hong, Walter Torous, and Rossen Valkanov
+  year: 2007
+  venue: Journal of Financial Economics
+  link_or_doi: https://ideas.repec.org/a/eee/jfinec/v83y2007i2p367-396.html
+  expected_mechanism: Tests gradual information diffusion from industry returns
+    to market returns, supporting a lagged industry-return lead/lag hypothesis
+    while not guaranteeing intraday futures predictability.
+- title: PHLX Semiconductor Sector Index Overview
+  authors: Nasdaq
+  year: 2026
+  venue: Nasdaq Global Index Watch
+  link_or_doi: https://indexes.nasdaqomx.com/Index/Overview/SOX
+  expected_mechanism: Defines the semiconductor index as companies involved in
+    semiconductor design, distribution, manufacture, and sale, justifying the
+    industry-specific proxy.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV/orderflow cache in America/New_York
+- Yahoo daily adjusted close and volume history for SMH, SOXX, and QQQ cached under data/external/yahoo_semiconductor_leadership
+- Derived lagged feature CSV data/external/nq_semiconductor_leadership_features_20110103_20260612.csv
+duplicate_edge_check:
+  checked_edges:
+  - nq_tech_relative_strength_intraday
+  - nq_tech_nonleadership_orderflow_confirmation
+  - nq_sector_rotation_orderflow_pullback
+  - nq_small_cap_relative_rotation
+  - nq_btc_crypto_risk_sentiment
+  - nq_copper_growth_risk_sentiment
+  conclusion: High duplicate risk but not an exact duplicate. Prior campaigns used
+    broad XLK/SPY technology-sector state or broad sector/orderflow rotation. This
+    campaign uses semiconductor ETF leadership versus QQQ as a narrower Nasdaq
+    subindustry information-diffusion state. If it fails any stage, it should be
+    closed without rescue unless explicitly authorized.
+chartfanatics_gate:
+  refreshed_after_current_campaign: true
+  decision: NEEDS MANUAL REVIEW
+  artifact: research_artifacts/chartfanatics_post_btc_strategy_gate_20260701.md
+  conclusion: No fresh ChartFanatics ES/NQ campaign was eligible without duplicating
+    a failed edge or requiring unavailable intraday VIX/depth/DOM/overnight swing
+    data; this campaign is sourced outside ChartFanatics.
+lookahead_risks:
+- A session dated D can only use SMH, SOXX, and QQQ observations on or before D
+  minus one business day.
+- Rolling ranks are computed before the session-level as-of join.
+- Signals use a completed NQ bar and enter no earlier than the next bar open.
+- No same-day ETF close, final NQ session high/low, final VWAP, future ETF return,
+  or post-entry path is used.
+failure_modes:
+- Semiconductor leadership may be redundant with already failed broad technology
+  leadership and sector-rotation edges.
+- SMH/SOXX relative strength may be coincident with NQ rather than leading it.
+- The edge may be regime-specific to AI-capex/manufacturing cycles or fail after
+  costs and robustness tests.
+- Yahoo adjusted ETF data requires vendor and corporate-action review before any
+  promotion beyond candidate review.
+feature_construction:
+  builder: tools/build_nq_semiconductor_leadership_features.py
+  output: data/external/nq_semiconductor_leadership_features_20110103_20260612.csv
+  raw_cache_dir: data/external/yahoo_semiconductor_leadership
+  rows: 3813
+  valid_rank_rows: 3813
+  availability_lag_business_days: 1
+pre_pnl_density_audit:
+  decision: PASS
+  artifact: research_artifacts/nq_semiconductor_leadership_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_semiconductor_leadership_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_semiconductor_leadership_density_summary_20260701.csv
+  result: 45/45 declared entry rows passed; 5/5 variants passed before any PnL was
+    inspected.
+parameter_space:
+  entry_parameters:
+  - entry.params.rank_min or entry.params.rank_max
+  stop_parameters:
+  - sl.params.stop_pct
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant:
+    smh_1d_leadership_long_1000: 27
+    smh_1d_nonleadership_short_1000: 27
+    smh_3d_leadership_long_1030: 27
+    soxx_3d_leadership_long_1130: 27
+    soxx_3d_nonleadership_short_1330: 27
+  entry_parameter_cap: 1
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+variants:
+- smh_1d_leadership_long_1000
+- smh_1d_nonleadership_short_1000
+- smh_3d_leadership_long_1030
+- soxx_3d_leadership_long_1130
+- soxx_3d_nonleadership_short_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  preflight_required: true
+  staged_validation_required: true
+staged_validation:
+  status: completed_failed
+  decision: FAIL
+  report_path: backtest-campaigns/nq_semiconductor_leadership_risk_sentiment/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_semiconductor_leadership_risk_sentiment/campaign_results.csv
+  valid_run_id: run1
+  terminal_stage: limited_monkey_test
+  result: Four variants failed limited_core_grid_test. The soxx_3d_nonleadership_short_1330
+    variant passed limited core but failed limited_monkey_test because the max-drawdown
+    monkey beat rate was below the 0.90 gate. No branch reached WFA, WFA OOS monkey,
+    Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

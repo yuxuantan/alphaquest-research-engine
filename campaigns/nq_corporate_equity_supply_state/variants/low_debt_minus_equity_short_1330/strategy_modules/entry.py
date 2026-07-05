@@ -1,0 +1,1 @@
+from propstack.strategy_modules.entry.corporate_equity_supply_state import CorporateEquitySupplyStateEntry

@@ -1,0 +1,134 @@
+campaign_id: nq_chartfanatics_london_trident_fvg_continuation
+title: NQ ChartFanatics London Trident FVG Continuation
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+market: CME E-mini Nasdaq-100 futures
+dataset_id: nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll
+timeframe: 30m
+edge_family: chartfanatics_london_trident_fvg_continuation
+hypothesis: >
+  During the London-session transfer window, a 30-minute fair-value gap aligned
+  with stacked intraday EMAs may continue after a small-body "Trident" pullback
+  into the FVG midpoint and a completed confirmation close.
+rationale: >
+  ChartFanatics describes TG Capital's Unique High RR setup as a futures/Nasdaq
+  playbook using a 30-minute FVG between 02:30 and 04:00 ET, stacked 5/9/13-or-15/21
+  EMAs, 200 EMA bias, a doji/trident candle wicking into the FVG 50% level, and
+  a confirmation candle before entry. This campaign converted that into a
+  completed-bar NQ ETH test with no PnL inspection before density screening.
+research_sources:
+- title: Unique High RR
+  author: TG Capital / ChartFanatics
+  year: 2026
+  link_or_doi: https://www.chartfanatics.com/strategies/unique-high-rr
+  expected_mechanism: >
+    Practitioner source states that a London-window 30-minute FVG plus stacked
+    EMAs and trident confirmation can produce high-R continuation trades on
+    Nasdaq/futures.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  author: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  link_or_doi: https://doi.org/10.1111/0022-1082.00265
+  expected_mechanism: >
+    Supports converting visual chart patterns into deterministic rules before
+    empirical testing.
+- title: Time Series Momentum
+  author: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse H. Pedersen
+  year: 2012
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2011.11.003
+  expected_mechanism: >
+    Provides broad futures evidence for trend persistence; this campaign tests
+    whether a London-session FVG pullback expresses a tradable intraday subset.
+source_quality_note: >
+  The primary rule is practitioner-originated. Academic sources support
+  objective technical-pattern testing and generic futures trend persistence, not
+  this exact NQ London FVG setup. The campaign therefore fails closed on density.
+data_needs:
+- data/cache/databento/nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll.parquet
+- 30-minute completed ETH bars resampled from local NQ one-minute OHLCV
+- completed EMA state using only prior/current closed 30-minute bars
+lookahead_risks:
+- FVG is known only after the third 30-minute candle closes.
+- The doji/trident candle and confirmation candle must both close before a signal.
+- EMA state uses only completed 30-minute closes through the confirmation candle.
+- No final session high/low, future London range, final VWAP, future orderflow, or post-entry price path is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_chartfanatics_liquidity_inversion_fvg
+  - nq_ema_pullback_orderflow_continuation
+  - nq_overnight_drift_european_open
+  - nq_overnight_range_compression_orderflow_breakout
+  - nq_chartfanatics_measured_move_pullback
+  conclusion: >
+    Eligible for a pre-PnL density audit because it tests a London-window
+    30-minute trident/FVG continuation pattern on ETH NQ, not RTH liquidity
+    inversion, RTH EMA pullback with orderflow, fixed-time European-open drift,
+    overnight-range breakout, or measured-pivot continuation.
+variants:
+- london_long_trident_ema13_0630
+- london_short_trident_ema13_0630
+- london_two_sided_trident_ema13_0630
+- london_long_trident_ema15_0630
+- london_two_sided_trident_ema15_strict_confirm_0630
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - min_gap_ticks
+  - max_doji_body_ratio
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.min_gap_ticks:
+    - 1
+    - 2
+    - 4
+    entry.params.max_doji_body_ratio:
+    - 0.25
+    - 0.35
+    - 0.45
+    sl.params.stop_offset_ticks:
+    - 0
+    - 4
+    - 8
+    tp.params.target_r_multiple:
+    - 2.0
+    - 3.0
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required_if_density_passed: true
+status: completed_failed_density
+pre_pnl_density_audit:
+  status: FAIL
+  artifact: research_artifacts/nq_chartfanatics_london_trident_fvg_continuation_density_audit_20260630.md
+  csv: research_artifacts/nq_chartfanatics_london_trident_fvg_continuation_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_chartfanatics_london_trident_fvg_continuation_density_summary_20260630.csv
+  density_rule: >
+    Every declared entry-grid row must exceed 50 signals/year on full history
+    and the limited-core proxy window, and must have at least 50 raw signals in
+    the latest 252 sessions before staged PnL.
+  completed_at: '2026-06-30'
+  declared_entry_rows: 45
+  density_pass_rows: 0
+  density_fail_rows: 45
+  decision: Reject before staged PnL; do not change mechanics without explicit user rescue authorization.
+result_summary:
+  verdict: FAIL
+  campaign_test_summary: backtest-campaigns/nq_chartfanatics_london_trident_fvg_continuation/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_chartfanatics_london_trident_fvg_continuation/campaign_results.csv
+  methodology_audit: campaigns/nq_chartfanatics_london_trident_fvg_continuation/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    pre_pnl_density_screen: 5
+  failure_reason: >
+    Pre-PnL density screen failed: 45/45 declared entry-grid rows failed the
+    density gate. The best variant reached only 2.7272 full-history signals/year
+    and at most 1 signal in the latest 252 sessions. No staged PnL, monkey, WFA,
+    Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting was run.

@@ -1,0 +1,210 @@
+campaign_id: nq_prior_day_stop_run_reclaim
+variant_id: morning_prior_high_reject_short
+test_run_id: run1
+strategy_name: prior_day_stop_run_reclaim
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Osler (2003); Kavajecz and Odders-White (2004); Osler (2005)
+  edge_thesis: NQ prior RTH highs can attract clustered buy stops; a completed morning rejection may mark failed
+    upside continuation and temporary liquidity exhaustion.
+  mechanic: From 09:35 through 11:30 ET, enter short only after a completed 5-minute sweep above the prior RTH high
+    closes back below the level.
+  timeframe_rationale: 5-minute bars preserve completed-bar signal timing while avoiding one-minute false positives
+    around prior RTH levels and still allowing next-bar-open execution.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-30'
+  mechanics_review:
+    mechanic_expresses_edge: From 09:35 through 11:30 ET, enter short only after a completed 5-minute sweep above
+      the prior RTH high closes back below the level. The trade can only occur after interaction with the prior
+      completed RTH high or low, so it directly expresses the failed stop-run/reclaim thesis.
+    entry_logic_rationale: Prior RTH high/low and fresh flags are built from completed previous RTH sessions. The
+      sweep/reclaim signal is evaluated only on completed 5-minute bars, and the engine enters no earlier than the
+      next bar open.
+    stop_loss_rationale: The percent-from-entry stop is fixed before testing and rounded to the NQ tick. It rejects
+      the failed-sweep thesis when price moves far enough against the next-bar entry after costs and pessimistic
+      OHLC sequencing.
+    target_exit_rationale: The fixed-R target is declared before testing, never below 1.0R, and tests whether post-reclaim
+      reversion is large enough to survive NQ commission and one-tick slippage. Unresolved trades flatten at 15:55
+      ET.
+    profitability_rationale: If prior RTH high/low stop-run reclaims are a real NQ liquidity effect, results should
+      persist across neighboring reclaim-window, volume-ratio, stop, and target settings through monkey, WFA, Monte
+      Carlo, incubation, and prop-rule simulation.
+    known_failure_modes: Sweeps can be informed breakouts, 5-minute bars can hide adverse tick path, the effect
+      may be side/window specific, and profits may concentrate in a small number of event or crisis sessions.
+    pre_test_decision: approve_for_testing
+  pre_pnl_density:
+    artifact: research_artifacts/nq_prior_day_stop_run_reclaim_density_audit_20260630.md
+    detail_csv: research_artifacts/nq_prior_day_stop_run_reclaim_density_audit_20260630.csv
+    status: failed_before_pnl
+    completed_at: '2026-06-30T12:45:00+08:00'
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: pdh_pdl_sweep_reclaim
+    params:
+      start_time: 09:35:00
+      end_time: '11:30:00'
+      bar_interval_minutes: 5
+      reclaim_window_bars: 3
+      min_volume_ratio: 0.0
+      max_trades_per_day: 1
+      allow_long: false
+      allow_short: true
+  sl:
+    module: percent_from_entry
+    params:
+      stop_pct: 0.0025
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: &id002
+    entry.params.reclaim_window_bars:
+    - 1
+    - 3
+    - 5
+    entry.params.min_volume_ratio:
+    - 0.0
+    - 0.75
+    - 1.25
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: *id002
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs

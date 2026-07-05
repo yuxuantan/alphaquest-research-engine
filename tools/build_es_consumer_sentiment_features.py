@@ -50,7 +50,7 @@ def build_features(
 
     # FRED notes that UMCSENT is delayed by one month at the source.  A
     # 45-calendar-day lag avoids using preliminary/current-month values in an
-    # intraday ES signal and is intentionally conservative.
+    # intraday futures signal and is intentionally conservative.
     merged = pd.merge_asof(
         sessions.sort_values("available_observation_cutoff"),
         sentiment.sort_values("observation_date"),

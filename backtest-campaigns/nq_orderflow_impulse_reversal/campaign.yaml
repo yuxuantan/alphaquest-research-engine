@@ -1,0 +1,143 @@
+campaign_id: nq_orderflow_impulse_reversal
+title: NQ Orderflow-Impulse Reversal
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: orderflow_impulse_reversal
+hypothesis: >
+  Completed NQ bars with an extreme same-clock aggressive signed-flow rank and same-direction price impulse may represent
+  temporary inventory pressure rather than durable information. The campaign fades the completed flow-plus-return impulse
+  at the next bar open and exits on a fixed-R retracement or invalidation beyond the signal-bar extreme.
+sources:
+- title: Rethinking reversals
+  authors: Timothy C. Johnson
+  year: 2016
+  venue: Journal of Financial Economics
+  doi: 10.1016/j.jfineco.2016.01.026
+  link: https://ideas.repec.org/a/eee/jfinec/v120y2016i2p211-228.html
+  relevance: Supports short-horizon market-portfolio reversals and the idea that flow-driven price pressure can create
+    negative autocorrelation rather than immediate continuation.
+- title: Interaction between Returns and Order Flow Imbalances
+  authors: Makoto Takahashi
+  year: 2025
+  venue: arXiv
+  doi: 10.48550/arXiv.2508.06788
+  link: https://arxiv.org/abs/2508.06788
+  relevance: Studies S&P 500 E-mini futures return/order-flow-imbalance dynamics directly and motivates treating return
+    and flow as endogenous intraday variables rather than assuming all flow impulses continue.
+- title: Order imbalance, liquidity, and market returns
+  authors: Tarun Chordia, Richard Roll, and Avanidhar Subrahmanyam
+  year: 2002
+  venue: Journal of Financial Economics
+  link: https://www.cis.upenn.edu/~mkearns/finread/Chordia_buy-sell_orders.pdf
+  relevance: Motivates the inventory/liquidity-provision channel in which order imbalances can be followed by opposing
+    liquidity supply and return correction.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Provides the order-flow-imbalance price-impact foundation. This campaign uses Sierra completed-bar aggregate
+    signed-volume as a proxy, not full depth order-book OFI.
+rationale: >
+  This is an NQ transfer of the ES orderflow-impulse reversal edge and a bounded mirror test of the rejected NQ
+  signed-flow persistence thesis. It is not the same edge renamed: the economic mechanism is liquidity provision and
+  inventory correction after a completed flow-plus-price impulse. The entry requires both extreme same-clock signed-flow
+  rank and same-direction completed return, then trades opposite the impulse. The stop uses the completed signal-bar
+  extreme as the invalidation point and the target is a short fixed-R retracement.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+- completed-bar signed_volume and volume fields sufficient for trade_orderflow_imbalance_N and same-clock ranks
+- tick size, point value, commission, slippage, prop-rule flatten, and same-bar pessimistic fill settings from config
+lookahead_risks:
+- Same-clock ranks are computed from prior same-clock observations and exclude future/current-session observations beyond
+  the signal bar.
+- Rolling return and orderflow windows use only completed 1-minute bars ending at the signal timestamp.
+- Signals generated from a completed bar close are filled no earlier than the next bar open by the engine.
+- The stop uses the already-completed signal-bar high or low, not a future extreme.
+- No final session high, final session low, final VWAP, final volume profile, future orderflow, or post-entry return is used.
+failure_modes:
+- Extreme aggregate orderflow can be informed pressure that continues instead of reversing.
+- Sierra signed-volume is an aggregate bar proxy and may not match true aggressor-side or quote-level OFI.
+- Short retracement targets may be too small after NQ commissions, slippage, and pessimistic same-bar handling.
+- Results may concentrate in a specific time of day, volatility regime, or side.
+- The edge may clear the density screen but fail limited core, monkey stress, WFA, Monte Carlo, or incubation.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_signed_orderflow_persistence
+  - nq_orderflow_absorption_exhaustion_reversal
+  - nq_volume_shock_liquidity_reversal
+  - nq_intraday_capitulation_mean_reversion
+  - nq_wide_range_orderflow_continuation
+  - nq_impulse_pause_orderflow_continuation
+  conclusion: >
+    Eligible as a distinct NQ campaign. Signed-flow persistence follows flow plus price confirmation; this campaign fades
+    it. Absorption/exhaustion fades high effort with weak displacement; this campaign requires strong same-direction
+    displacement. Volume shock and capitulation tests use volume/VWAP/RSI shock bars rather than same-clock signed-flow
+    ranks as the primary edge.
+variants:
+- early_5m_impulse_reversal_1000
+- late_morning_15m_impulse_reversal_1130
+- midday_30m_impulse_reversal_1230
+- afternoon_60m_impulse_reversal_1400
+- late_day_30m_impulse_reversal_1500
+parameter_space:
+  entry_parameters:
+    entry.params.pressure_rank_threshold: three predeclared values per variant
+    entry.params.min_return_ticks: three predeclared values per variant, scaled by impulse window
+  stop_parameters:
+    sl.params.stop_offset_ticks: [1, 2, 4]
+  target_parameters:
+    tp.params.target_r_multiple: [1.0]
+  combinations_per_variant: 27
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees density or staged results.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required: true
+status: completed_failed
+completed_at: '2026-06-30T16:24:00+08:00'
+pre_pnl_density_audit:
+  decision: PASS
+  artifact_md: research_artifacts/nq_orderflow_impulse_reversal_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_orderflow_impulse_reversal_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_orderflow_impulse_reversal_density_summary_20260630.csv
+  declared_entry_rows: 45
+  density_pass_rows: 45
+  density_fail_rows: 0
+  min_full_signals_per_year: 69.82
+  min_limited_core_signals_per_year: 53.20
+  min_latest252_signals: 74
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_orderflow_impulse_reversal/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_orderflow_impulse_reversal/campaign_results.csv
+  methodology_audit: campaigns/nq_orderflow_impulse_reversal/methodology_audit.md
+  variants_tested: 5
+  variants_passing_all_tests: 0
+  terminal_stage: limited_core_grid_test
+  terminal_failure_summary:
+    limited_core_grid_test: 5
+    limited_monkey_test: 0
+    walk_forward_analysis: 0
+    wfa_oos_monkey_test: 0
+    wfa_oos_monte_carlo: 0
+    simulated_incubation_core: 0
+    acceptance_oos_test: 0
+  best_variant_by_top_net:
+    variant_id: late_day_30m_impulse_reversal_1500
+    top_net_profit: -875.0
+    top_profit_factor: 0.6085011185682326
+    profitable_combo_rate: 0.0
+  failure_reason: >
+    All five NQ orderflow-impulse reversal variants failed limited_core_grid_test with 0/27 profitable combinations
+    and 0 benchmark-passing combinations per variant. No branch reached monkey, WFA, Monte Carlo, simulated incubation,
+    acceptance OOS, or candidate reporting.

@@ -1,0 +1,141 @@
+campaign_id: nq_connors_rsi2_mean_reversion
+title: NQ Connors RSI2 Intraday Mean Reversion
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: mixed_5m_15m_30m
+edge_family: connors_rsi2_mean_reversion
+source_es_campaign: es_connors_rsi2_mean_reversion
+hypothesis: Very short-horizon RSI2 extremes on completed intraday NQ bars can identify temporary overextension
+  that mean-reverts before the RTH flatten when filtered by same-session MA or cumulative VWAP context.
+rationale: This is a pre-PnL NQ transfer of the audited ES Connors RSI2 campaign. The edge is an oscillator-extreme
+  mean-reversion hypothesis, not a prior-session IBS, daily return reversal, high-volume capitulation
+  snapback, VWAP-deviation/orderflow, or price-level trap edge. Signals use only completed bars and rely
+  on engine next-bar execution.
+research_sources:
+- title: Short Term Trading Strategies That Work
+  author: Larry Connors and Cesar Alvarez
+  year: 2009
+  link_or_doi: https://www.connorsresearch.com/short-term-trading-strategies-that-work/
+  expected_mechanism: Documents RSI(2)-style short-horizon mean-reversion rules; this campaign tests whether
+    a futures intraday adaptation survives costs and staged robustness.
+- title: Relative Strength Index (RSI)
+  author: StockCharts ChartSchool
+  year: 2024
+  link_or_doi: https://chartschool.stockcharts.com/table-of-contents/technical-indicators-and-overlays/technical-indicators/relative-strength-index-rsi
+  expected_mechanism: Defines RSI as a bounded momentum oscillator; this campaign uses only completed-bar
+    RSI2 values.
+- title: Testing Connors RSI(2) on Futures Contracts
+  author: WH SelfInvest
+  year: 2010
+  link_or_doi: https://www.whselfinvest.com/en-lu/trading-platform/free-trading-strategies/tradingsystem/36-rsi-2-connors
+  expected_mechanism: Practitioner futures tests motivate checking whether RSI2 mean reversion transfers
+    to liquid index futures under explicit execution costs.
+- title: Profits from Technical Trading Rules
+  author: Mark J. Ready
+  year: 2002
+  link_or_doi: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=64168
+  expected_mechanism: Warns that apparent technical-rule profits can vanish under realistic timing and
+    costs; this campaign separates signal-bar close from executable next-bar fills.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- completed NQ RTH OHLCV bars aggregated to 5m, 15m, and 30m by the repo pipeline
+- cumulative session VWAP through completed bars for the VWAP variants
+- same-session forced flatten from config and no overnight exposure
+lookahead_risks:
+- RSI2, moving average, and VWAP are calculated from completed bars only.
+- A signal using bar close is not filled before the next bar open by the engine.
+- VWAP is cumulative through the completed signal bar, not the final session VWAP.
+- No final session high/low, future range, future orderflow, or post-entry bar is used in signal construction.
+failure_modes:
+- RSI2 can stay extreme on NQ trend days and stop out before any reversion.
+- The ES-derived oscillator thresholds may not transfer to NQ volatility after costs.
+- MA and VWAP filters may select crowded visual pullbacks rather than true transient pressure.
+- Any apparent edge may be side-specific, regime-specific, or concentrated in a narrow parameter neighborhood.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_daily_short_term_reversal
+  - nq_prior_session_ibs_reversion
+  - nq_intraday_capitulation_mean_reversion
+  - nq_vwap_deviation_orderflow_reversion
+  - nq_rolling_stat_envelope_orderflow_reversion
+  - nq_chartfanatics_measured_move_pullback
+  - nq_ema_pullback_orderflow_continuation
+  - es_connors_rsi2_mean_reversion
+  conclusion: Eligible as a distinct pre-PnL NQ transfer because it tests same-session completed-bar RSI2
+    extremes with MA/VWAP context, not prior-session IBS, daily return reversal, volume capitulation,
+    VWAP/orderflow dislocation, rolling statistical bands, measured-move pullbacks, or EMA pullback continuation.
+variants:
+- five_min_long_vwap_extreme_1430
+- five_min_short_vwap_extreme_1430
+- fifteen_min_long_uptrend_pullback_1545
+- fifteen_min_short_downtrend_bounce_1545
+- thirty_min_two_sided_trend_reversion_1530
+parameter_space:
+  combinations_by_variant:
+    five_min_long_vwap_extreme_1430: 81
+    five_min_short_vwap_extreme_1430: 81
+    fifteen_min_long_uptrend_pullback_1545: 54
+    fifteen_min_short_downtrend_bounce_1545: 54
+    thirty_min_two_sided_trend_reversion_1530: 81
+  entry_tunables_max: 2
+  stop_tunables_max: 1
+  target_tunables_max: 1
+  stop_grid_source: Copied from source ES Connors campaign before NQ PnL inspection.
+  target_grid_source: Copied from source ES Connors campaign before NQ PnL inspection.
+  pre_pnl_density_prune:
+    initial_rejected_artifact: research_artifacts/nq_connors_rsi2_mean_reversion_initial_density_rejected_20260630.md
+    reason: Strict 15-minute RSI5 long and RSI95 short extremes were too sparse on NQ before any PnL inspection.
+      The final grid drops those broad sparse extremes from the affected 15-minute variants instead of
+      excluding individual dates or special corners.
+    p_n_l_inspected_before_prune: false
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue is authorized unless explicitly granted after failure; this campaign freezes mechanics
+    and grids before NQ PnL.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required: true
+  unit_tests:
+  - tests/test_strategy_modules.py
+  - tests/test_nq_connors_rsi2_mean_reversion.py
+pre_pnl_density_audit:
+  status: PASS
+  initial_rejected_artifact: research_artifacts/nq_connors_rsi2_mean_reversion_initial_density_rejected_20260630.md
+  artifact: research_artifacts/nq_connors_rsi2_mean_reversion_density_audit_20260630.md
+  csv: research_artifacts/nq_connors_rsi2_mean_reversion_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_connors_rsi2_mean_reversion_density_summary_20260630.csv
+  density_rule: Every declared entry-grid row must exceed 50 signals/year on full history and limited-core
+    proxy window, and at least 50 raw signals in the latest 252 sessions before staged PnL.
+  decision: Approved for staged validation after pre-PnL sparse RSI-extreme pruning.
+  entry_rows_passing_all_windows: 39/39
+  limited_core_proxy_window:
+    start_date: '2011-02-22'
+    end_date: '2012-09-07'
+status: completed_failed
+completed_at: '2026-06-30T18:40:27'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_connors_rsi2_mean_reversion/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_connors_rsi2_mean_reversion/campaign_results.csv
+  methodology_audit: backtest-campaigns/nq_connors_rsi2_mean_reversion/methodology_audit.md
+  density_audit: research_artifacts/nq_connors_rsi2_mean_reversion_density_audit_20260630.md
+  variants_tested: 5
+  core_failed_variants: 5
+  monkey_failed_variants: 0
+  wfa_failed_variants: 0
+  candidate_report_created: false
+  failure_reason: All five predeclared NQ Connors RSI2 intraday mean-reversion variants failed limited_core_grid_test.
+    Across 351 official combinations, 14 were profitable, 3 passed benchmark gates, and 0 had Apex rule
+    violations. Best variant profitable rate was 0.074074, below the 0.70 core gate. Best row was `five_min_short_vwap_extreme_1430`
+    with top net 2770.0, PF 1.115996649916248, 169 trades, and failure `max_consecutive_losses`. No branch
+    reached monkey, WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.
+  best_core_variant: five_min_short_vwap_extreme_1430
+  best_core_top_net_profit: 2770.0
+  best_core_top_profit_factor: 1.115996649916248
+  limited_monkey_reached: 0
+  wfa_reached: 0

@@ -1,0 +1,138 @@
+campaign_name: nq_fomc_pre_announcement_drift
+campaign_id: nq_fomc_pre_announcement_drift
+instrument: NQ
+status: completed
+decision: FAIL
+created_at: '2026-06-30'
+reason_for_decision: Active NQ duplicate review found no authored NQ scheduled-FOMC
+  pre-announcement drift campaign. This is a weak-prior NQ symbol-transfer from
+  the failed ES FOMC family, not independent supporting evidence.
+edge_hypothesis: NQ may earn positive intraday returns before scheduled FOMC policy
+  decisions. The anomaly is tested only in windows known before the event date.
+  Decision-day variants flatten before noon ET to avoid historical ambiguity around
+  exact statement release times.
+research_sources:
+- title: The Pre-FOMC Announcement Drift
+  author: David O. Lucca and Emanuel Moench
+  year: 2015
+  link_or_doi: https://doi.org/10.1111/jofi.12196
+  expected_mechanism: Scheduled FOMC decisions are associated with positive equity-index
+    returns in the pre-announcement window.
+- title: The Pre-FOMC Announcement Drift
+  author: David O. Lucca and Emanuel Moench
+  year: 2011
+  link_or_doi: https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr512.pdf
+  expected_mechanism: Staff-report version documents timing, robustness, and possible
+    state dependence of pre-FOMC equity returns.
+- title: Meeting calendars and information
+  author: Board of Governors of the Federal Reserve System
+  year: 2026
+  link_or_doi: https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm
+  expected_mechanism: Official scheduled FOMC meeting dates provide the ex-ante event
+    calendar used for signal dates.
+- title: Historical Materials by Year
+  author: Board of Governors of the Federal Reserve System
+  year: 2026
+  link_or_doi: https://www.federalreserve.gov/monetarypolicy/fomc_historical_year.htm
+  expected_mechanism: Official historical FOMC pages provide 2011-2020 scheduled decision
+    dates.
+behavioural_or_microstructure_rationale: The campaign treats scheduled FOMC decisions
+  as macro risk events with possible pre-announcement equity premium or information-resolution
+  drift. It does not use the policy decision, statement text, surprise, future returns,
+  or post-announcement price movement.
+expected_failure_modes:
+- The documented drift disappeared after publication or is not tradable after NQ
+  futures costs.
+- The intraday-only and no-overnight expression misses most of the original effect.
+- Low event frequency makes WFA and frozen validation underpowered.
+- A small number of crisis-era FOMC meetings dominates performance.
+- Historical FOMC statement times differ; the noon decision-day flatten avoids leakage
+  but may remove useful drift.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/fomc_scheduled_decision_dates_20110101_20260609.csv
+event_calendar:
+  builder: tools/build_fomc_event_calendar.py
+  output: data/external/fomc_scheduled_decision_dates_20110101_20260609.csv
+  rows: 122
+  first_event_date: '2011-01-26'
+  last_event_date: '2026-04-29'
+  exclusions:
+  - unscheduled meetings
+  - cancelled meetings
+  - notation votes
+  - conference calls
+duplicate_edge_review:
+  active_scope_only: true
+  reviewed_on: '2026-06-30'
+  existing_nq_campaign_id: none
+  es_source_campaign: es_fomc_pre_announcement_drift
+  es_source_decision: FAIL
+  not_duplicate_of:
+  - nq_calendar_weekday_bias
+  - nq_halloween_seasonal_premium
+  - nq_monthly_opex_pressure
+  - nq_daily_time_series_momentum
+  - nq_overnight_drift_european_open
+  - nq_opening_gap_orderflow_continuation
+  - nq_chicagofed_cfnai_activity_pullback
+  conclusion: This campaign uses known scheduled FOMC event dates and pre-announcement
+    intraday windows. It is not generic weekday seasonality, monthly/holiday seasonality,
+    daily trend, overnight drift, opening-gap behavior, or lagged macro activity state.
+parameter_space:
+  combinations:
+    decision_day_open_long_1000: 9
+    decision_day_late_morning_long_1130: 9
+    decision_day_momentum_confirmed_long_1130: 27
+    decision_day_low_range_long_1130: 27
+    prior_day_late_long_1500: 9
+  stop_parameters:
+    sl.params.stop_pct: [0.001, 0.0015, 0.0025, 0.004]
+  take_profit_parameters:
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
+  entry_parameters:
+    decision_day_momentum_confirmed_long_1130:
+      entry.params.min_session_return_bps: [-50, -40, -30]
+    decision_day_low_range_long_1130:
+      entry.params.max_session_range_bps: [80, 100, 120]
+variants:
+- decision_day_open_long_1000
+- decision_day_late_morning_long_1130
+- decision_day_momentum_confirmed_long_1130
+- decision_day_low_range_long_1130
+- prior_day_late_long_1500
+density_audit:
+  artifact: research_artifacts/nq_fomc_pre_announcement_drift_density_audit_20260630.md
+  conclusion: All five variant shapes clear the event-specific pre-PnL density gate
+    of at least 5 signals/year on the NQ RTH cache.
+rescue_policy:
+  rescue_scope: none_for_initial_campaign
+  max_rescue_attempts_without_user_approval: 0
+  forbidden_changes:
+  - core strategy mechanic
+  - event calendar inclusion or exclusion rule
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+result_summary:
+  decision: FAIL
+  completed_at: '2026-06-30'
+  aggregate_report: backtest-campaigns/nq_fomc_pre_announcement_drift/campaign_test_summary.json
+  official_runs: 5
+  limited_core_failed_runs: 5
+  limited_monkey_failed_runs: 0
+  wfa_reached_runs: 0
+  monte_carlo_reached_runs: 0
+  frozen_validation_reached_runs: 0
+  failure_reason: All five variants failed limited_core_grid_test. Best profitable-rate
+    was decision_day_low_range_long_1130 at 0/27 (0.0), below the 0.70 gate.
+    Across all official variants, 0/81 combinations were profitable, 0 benchmark-pass
+    rows, and 0 Apex-rule-violating iterations. No variant reached limited monkey,
+    WFA, WFA OOS monkey, Monte Carlo, simulated incubation, or acceptance OOS.
+  best_variant_by_core_profitable_rate: decision_day_low_range_long_1130
+  best_core_profitable_rate: 0.0

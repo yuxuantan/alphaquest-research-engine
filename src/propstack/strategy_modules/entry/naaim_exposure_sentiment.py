@@ -74,7 +74,7 @@ class NaaimExposureSentimentEntry:
             "feature_session_date": session_date.isoformat(),
             "naaim_observation_date": row.get("observation_date"),
             "naaim_availability_date": row.get("availability_date"),
-            "availability_rule": "first ES RTH session at least two business days after NAAIM observation date",
+            "availability_rule": "first futures RTH session at least two business days after NAAIM observation date",
             "signal_timestamp": signal_timestamp,
             "intended_entry_timestamp": signal_timestamp,
             "naaim_driver_column": driver_column,

@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.pdh_pdl_sweep_reclaim import PdhPdlSweepReclaimEntry
+
+ENTRY_MODULE = PdhPdlSweepReclaimEntry

@@ -1,0 +1,106 @@
+campaign_id: nq_volume_shock_liquidity_reversal
+title: NQ Volume-Shock Liquidity Reversal
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: NQ may mean-revert after completed high-volume intraday price shocks when
+  the move reflects liquidity-demand or inventory-risk pressure rather than new information.
+rationale: This is an NQ transfer of the ES volume-shock liquidity-reversal campaign.
+  It tests completed high-volume 5-minute shock-bar reversion, not NQ sell-flush capitulation,
+  signed-flow persistence, prior-session IBS, opening-drive inventory, or large-trade
+  stealth flow.
+sources:
+- title: Trading Volume and Serial Correlation in Stock Returns
+  authors: John Y. Campbell, Sanford J. Grossman, Jiang Wang
+  year: 1993
+  venue: Quarterly Journal of Economics
+  link: https://campbell.scholars.harvard.edu/publications/trading-volume-and-serial-correlation-stock-returns
+  relevance: Models liquidity-trader pressure and inventory-risk reversals after high-volume
+    returns.
+- title: Dynamic Volume-Return Relation of Individual Stocks
+  authors: Guillermo Llorente, Roni Michaely, Gideon Saar, Jiang Wang
+  year: 2002
+  venue: Review of Financial Studies
+  link: https://ideas.repec.org/a/oup/rfinst/v15y2002i4p1005-1047.html
+  relevance: Separates volume-return continuation from reversal depending on information
+    versus risk-sharing/liquidity-driven trading.
+- title: Market Liquidity and Trading Activity
+  authors: Tarun Chordia, Richard Roll, Avanidhar Subrahmanyam
+  year: 2001
+  venue: Journal of Finance
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=237674
+  relevance: Motivates explicit volume conditioning and realistic cost gates.
+data_needs:
+- NQ RTH one-minute OHLCV bars aggregated to completed 5-minute bars
+- rolling volume ratio computed only from prior completed bars
+- config-driven no-overnight forced flatten checks
+lookahead_risks:
+- The shock signal uses only the completed 5-minute bar open, close, high, low, and
+  volume ratio.
+- The rolling volume denominator shifts prior bars and does not include the current
+  bar or future volume.
+- No future high/low, final VWAP, final session return, or future session state is
+  used.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_intraday_capitulation_mean_reversion
+  - nq_signed_orderflow_persistence
+  - nq_trade_size_stealth_orderflow
+  - nq_opening_drive_inventory_orderflow
+  - nq_prior_session_ibs_reversion
+  conclusion: Eligible as distinct because it tests completed high-volume shock-bar
+    liquidity reversal without RSI/VWAP/sell-imbalance capitulation filters, signed-flow
+    direction, large-trade participation, opening-drive state, or prior-session IBS.
+parameter_space:
+  entry_parameters:
+    entry.params.min_move_ticks:
+    - 6
+    - 10
+    - 14
+    entry.params.min_volume_ratio:
+    - 1.25
+    - 1.75
+    - 2.25
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  target_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+  combinations_per_variant: 54
+variants:
+- all_day_symmetric_shock_reversion
+- morning_down_shock_reversal_long
+- morning_up_shock_reversal_short
+- midday_symmetric_shock_reversion
+- afternoon_symmetric_shock_reversion
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees density or staged results.
+status: completed_failed
+completed_at: '2026-06-30T14:45:00+08:00'
+pre_pnl_density_audit:
+  decision: FAIL
+  artifact_md: research_artifacts/nq_volume_shock_liquidity_reversal_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_volume_shock_liquidity_reversal_density_audit_20260630.csv
+  declared_entry_rows: 45
+  density_pass_rows: 42
+  density_fail_rows: 3
+testing_outcome:
+  decision: FAIL
+  terminal_stage: pre_pnl_density_screen
+  staged_pnl_run: false
+  summary_path: backtest-campaigns/nq_volume_shock_liquidity_reversal/campaign_test_summary.json
+  failure_reason: 'Rejected before staged NQ PnL: 3/45 declared entry-grid rows failed
+    the pre-PnL density gate. The sparse rows were in midday_symmetric_shock_reversion
+    at min_volume_ratio=2.25 with min_move_ticks 6, 10, and 14; latest-252-session
+    signal count was only 29 for each sparse row, and the 10/14-tick rows also failed
+    the limited-core 50 signals/year gate. Dropping the strict 2.25 volume-ratio
+    tier or the midday variant after this screen would be post-result narrowing of
+    the declared five-variant edge. No NQ PnL was inspected.'

@@ -1,0 +1,170 @@
+campaign_id: nq_chartfanatics_london_trident_fvg_continuation
+variant_id: london_long_trident_ema13_0630
+test_run_id: run1
+strategy_name: london_trident_fvg_continuation
+symbol: NQ
+dataset_id: nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll
+timeframe: 30m
+pre_pnl_density_screen_only: true
+research_metadata:
+  academic_source: ChartFanatics Unique High RR; Lo, Mamaysky, and Wang (2000); Moskowitz, Ooi, and Pedersen (2012)
+  edge_thesis: Long NQ continuation after a London-session bullish 30-minute FVG, EMA13 stack, midpoint trident pullback, and confirmation close.
+  mechanic: Bullish FVG third candle starts 02:30-04:00 ET; doji wicks into the FVG midpoint; confirmation closes above the doji high; entry would be next 30-minute open.
+  timeframe_rationale: The source specifies 30-minute candles and a London-window setup; NQ ETH bars are required.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-30'
+  mechanics_review:
+    mechanic_expresses_edge: >
+      This variant expresses the ChartFanatics Unique High RR idea as a long-only
+      NQ London-session continuation setup: a completed bullish 30-minute FVG,
+      stacked fast EMAs, 200 EMA trend bias, a completed midpoint trident/doji,
+      and a completed confirmation close.
+    entry_logic_rationale: >
+      The entry waits until the FVG third candle, the doji pullback, and the
+      confirmation candle have all closed. The signal timestamp is the next
+      30-minute boundary, so the module does not enter on the same close that
+      creates the confirmation and does not use any future London range.
+    stop_loss_rationale: >
+      The stop module uses the completed FVG/trident structural extreme plus a
+      predeclared tick offset. This keeps invalidation tied to the source pattern
+      rather than to future highs, lows, daily structure, or optimized dollar risk.
+    target_exit_rationale: >
+      The fixed-R target is a testable substitute for the source's discretionary
+      daily-trend hold. It avoids future-derived daily targets while preserving
+      the high-R continuation thesis through a predeclared reward multiple.
+    profitability_rationale: >
+      The setup would be profitable only if London-window FVG pullbacks in
+      already stacked NQ trends continue often enough to overcome one-tick
+      slippage, commissions, structural stops, and forced ETH flattening.
+    known_failure_modes: >
+      The pattern may be too rare for statistical inference, the source's daily
+      discretionary bias and trade management may not translate to fixed rules,
+      and 30-minute ETH bars may be too coarse for executable NQ fills.
+    pre_test_decision: approve_for_testing
+  source_url: https://www.chartfanatics.com/strategies/unique-high-rr
+data:
+  dataset_id: nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/databento/nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll.parquet
+  validation: data/cache/databento/nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll.validation.json
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: full
+  warmup_days: 30
+  rth_start: '09:30:00'
+  rth_end: '15:59:00'
+  eth_start: '18:00:00'
+  eth_end: '09:29:00'
+core:
+  data_subset: &test_subset
+    start_date: '2011-01-03'
+    end_date: '2026-05-29'
+    session_labels:
+    - ETH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '06:55:00'
+  max_trades_per_day: 1
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '07:00:00'
+  force_flatten_enabled: true
+  force_flatten_time: '06:55:00'
+  latest_entry_time: '06:30:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: false
+strategy:
+  entry:
+    module: london_trident_fvg_continuation
+    params:
+      setup_mode: long
+      fvg_start_time: '02:30:00'
+      fvg_end_time: '04:00:00'
+      start_time: '03:00:00'
+      end_time: '06:30:00'
+      flatten_time: '06:55:00'
+      max_trades_per_day: 1
+      tick_size: 0.25
+      bar_interval_minutes: 30
+      min_gap_ticks: 2
+      max_doji_body_ratio: 0.35
+      mid_ema_period: 13
+      confirmation_buffer_ticks: 0
+      require_200_ema_bias: true
+      require_eth: true
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 4
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 2.0
+  flatten_time: '06:55:00'
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 12
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *test_subset
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parameters: &param_grid
+    entry.params.min_gap_ticks: [1, 2, 4]
+    entry.params.max_doji_body_ratio: [0.25, 0.35, 0.45]
+    sl.params.stop_offset_ticks: [0, 4, 8]
+    tp.params.target_r_multiple: [2.0, 3.0]
+monkey:
+  data_subset: *test_subset
+  runs: 300
+  seed: 101
+  beat_threshold: 0.9
+  constraints:
+    rth_only: false
+wfa:
+  data_subset: *test_subset
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  parameters: *param_grid
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 103
+  path_months: 6

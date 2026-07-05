@@ -1,0 +1,272 @@
+campaign_id: nq_pivot_filtered_opening_range_orderflow_breakout
+variant_id: or15_signed_pivot_flow_breakout_1030
+test_run_id: run1
+strategy_name: pivot_filtered_opening_range_orderflow_breakout
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+research_metadata:
+  academic_source: Holmberg, Lonnback, and Lundstrom (2013); Gao, Han, Li, and Zhou
+    (2018); Cont, Kukanov, and Stoikov (2014); Lo, Mamaysky, and Wang (2000); Moskowitz,
+    Ooi, and Pedersen (2012)
+  edge_thesis: NQ opening-range orderflow breakouts may continue more reliably when
+    the breakout direction agrees with completed multi-timeframe swing-pivot structure.
+  mechanic: 15-minute signed-flow opening-range breakout filtered by completed 5/15-minute
+    pivot direction. The base opening-range breakout must emit first; the pivot filter
+    cannot create trades by itself.
+  timeframe_rationale: Five-minute bars define completed opening-range and breakout
+    states while preserving one-minute detail handling for same-bar stop/target conflicts.
+    Pivot states are aggregated only from completed five-minute NQ bars.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-30'
+  mechanics_review:
+    entry_logic_rationale: The opening range is frozen only after its configured completed
+      window. The base breakout and orderflow confirmation are evaluated on completed
+      five-minute NQ bars, the pivot filter uses confirmed right-side pivots only,
+      and staged execution is next bar or later.
+    stop_loss_rationale: The stop remains the predeclared opening-range-edge stop
+      with a max-stop cap. It rejects the breakout-continuation thesis when price
+      returns through the opposite opening-range edge without using any future pivots
+      or post-entry orderflow.
+    target_exit_rationale: The target is a fixed-R exit with target_r_multiple at
+      or above 1.0R, and unresolved positions flatten at the same-session cutoff.
+      Target distance is not altered after NQ outcomes are known.
+    profitability_rationale: The setup should only work if NQ opening-range breakouts
+      with aligned completed orderflow and confirmed pivot structure represent real
+      inventory continuation rather than isolated stop probes or exhaustion moves.
+    known_failure_modes: The pivot filter can lag, NQ opening breakouts can reverse
+      violently, aggregate flow can be exhaustion rather than information, strict
+      filters can reduce trade density, and the ES source campaign already failed
+      robustness.
+    pre_test_decision: approve_for_testing
+    mechanic_expresses_edge: 15-minute signed-flow opening-range breakout filtered
+      by completed 5/15-minute pivot direction. The base opening-range breakout must
+      emit first; the pivot filter cannot create trades by itself. This expresses
+      the composite edge by requiring opening auction breakout, same-bar aggregate
+      orderflow participation, and same-direction confirmed swing-pivot structure
+      before any entry. The pivot filter cannot create trades by itself.
+  pre_pnl_port_note: This NQ port uses the ES parameter_space_rescue_1 grid before
+    any NQ PnL inspection; no NQ rescue attempt is authorized.
+  source_es_config_path: campaigns/es_pivot_filtered_opening_range_orderflow_breakout/rescue_attempts/parameter_space_rescue_1/or15_signed_pivot_flow_breakout_1030/config.yaml
+  pre_pnl_density:
+    status: variant_density_passed_campaign_failed
+    decision: NEEDS MANUAL REVIEW
+    artifact: research_artifacts/nq_pivot_filtered_opening_range_orderflow_breakout_density_audit_20260630.md
+    detail_csv: research_artifacts/nq_pivot_filtered_opening_range_orderflow_breakout_density_audit_20260630.csv
+    summary: min_full=60.356915; min_limited_core=63.465426; min_latest_252=57
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: market_structure_filtered_entry
+    params:
+      base_module: opening_range_orderflow_breakout
+      base_params:
+        rth_start: 09:30:00
+        opening_range_minutes: 15
+        confirmation_minutes: 5
+        bar_interval_minutes: 5
+        last_entry_time: '10:30:00'
+        max_opening_range_pct_of_open: 0.0065
+        tick_size: 0.25
+        breakout_buffer_ticks: 2
+        min_orderflow_imbalance: 0.06
+        flow_mode: signed_volume
+        min_flow_volume: 0
+        allow_long: true
+        allow_short: true
+        max_trades_per_day: 1
+      rth_start: 09:30:00
+      bar_interval_minutes: 5
+      tick_size: 0.25
+      timeframes_minutes:
+      - 5
+      - 15
+      min_aligned_timeframes: 1
+      pivot_left_bars: 1
+      pivot_right_bars: 1
+      min_pivot_move_ticks: 0
+      carry_pivots_across_sessions: true
+  sl:
+    module: opening_range_edge
+    params:
+      max_stop_points: 24
+      stop_offset_ticks: 0
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: '15:55:00'
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.base_params.breakout_buffer_ticks:
+    - 0
+    - 1
+    - 2
+    entry.params.base_params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.max_stop_points:
+    - 16
+    - 24
+    - 40
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.25
+    - 1.5
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.base_params.breakout_buffer_ticks:
+    - 0
+    - 1
+    - 2
+    entry.params.base_params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.max_stop_points:
+    - 16
+    - 24
+    - 40
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.25
+    - 1.5
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+decision: NEEDS MANUAL REVIEW
+status: density_passed_campaign_failed
+source_es_campaign: es_pivot_filtered_opening_range_orderflow_breakout
+completed_at: '2026-06-30T13:33:30+08:00'
+terminal_stage: pre_pnl_density_screen
+failure_reason: Variant passed density, but official five-variant campaign failed
+  density before PnL because other declared variants were sparse. No NQ PnL was inspected.
+pre_pnl_density_audit:
+  artifact: research_artifacts/nq_pivot_filtered_opening_range_orderflow_breakout_density_audit_20260630.md
+  csv: research_artifacts/nq_pivot_filtered_opening_range_orderflow_breakout_density_audit_20260630.csv
+  decision: FAIL

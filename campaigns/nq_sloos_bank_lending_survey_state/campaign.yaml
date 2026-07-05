@@ -1,0 +1,111 @@
+campaign_id: nq_sloos_bank_lending_survey_state
+title: NQ SLOOS Bank Lending Survey State
+status: completed_failed_limited_core
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Strictly lagged Federal Reserve Senior Loan Officer Opinion Survey commercial-and-industrial loan-demand strength may proxy business credit demand, growth expectations, and risk appetite that influence same-day NQ RTH drift.
+rationale: The campaign uses Federal Reserve/FRED SLOOS C&I loan-demand responses for large and middle-market firms and small firms with a conservative 75-calendar-day observation lag. It is distinct from H.8 bank-credit quantity, consumer-credit, credit-spread, credit-ETF, OFR stress, Treasury-rate, RRP/liquidity, and M2 campaigns because it tests survey-reported borrower demand for business loans, not bank balance-sheet quantities, household borrowing, credit prices, market stress, rates, Fed facility usage, or broad money aggregates.
+sources:
+- title: The Credit Cycle and the Business Cycle - New Findings Using the Loan Officer Opinion Survey
+  authors: Cara S. Lown and Donald P. Morgan
+  year: 2006
+  venue: Journal of Money, Credit and Banking
+  link: https://ideas.repec.org/a/mcb/jmoncb/v38y2006i6p1575-1597.html
+  relevance: Motivates SLOOS lending conditions as business-cycle and credit-cycle state variables, including controls for loan demand.
+- title: Senior Loan Officer Opinion Survey on Bank Lending Practices
+  authors: Board of Governors of the Federal Reserve System
+  year: 2026
+  venue: Federal Reserve Statistical Release
+  link: https://www.federalreserve.gov/data/sloos.htm
+  relevance: Official SLOOS source; the survey covers bank lending standards and the state of business and household loan demand.
+- title: Senior Loan Officer Opinion Survey on Bank Lending Practices
+  authors: Board of Governors of the Federal Reserve System via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED release 191
+  link: https://fred.stlouisfed.org/release?rid=191
+  relevance: FRED release family used by the feature builder for reproducible CSV downloads of DRTSCILM, DRTSCIS, DRSDCILM, DRSDCIS, and DRTSCLCC.
+behavioural_or_microstructure_rationale: Stronger reported C&I loan demand can indicate business expansion appetite and easier growth expectations. For high-duration Nasdaq constituents, a positive business-credit-demand state may align with intraday risk appetite, but any usable edge must survive costs, neighboring thresholds, monkey robustness, WFA, Monte Carlo, prop-rule simulation, and acceptance OOS.
+expected_failure_modes:
+- Quarterly SLOOS data may be too slow or already incorporated before RTH.
+- Loan demand may proxy broad macro beta rather than a tradable same-day futures timing edge.
+- Demand strength can coincide with late-cycle overheating or tighter future policy rather than immediate NQ upside.
+- The five long-only expressions may collapse into a market-beta exposure and fail monkey or WFA robustness.
+data_needs:
+- timezone-aware NQ RTH 1-minute bars in America/New_York
+- FRED/Federal Reserve SLOOS quarterly DRTSCILM/DRTSCIS/DRSDCILM/DRSDCIS/DRTSCLCC data cached under data/external/fred_sloos_bank_lending_survey_state
+- 75-calendar-day as-of join from NQ sessions to quarterly SLOOS observations
+lookahead_risks:
+- A session dated D may only use the latest quarterly SLOOS observation on or before D minus 75 calendar days.
+- Rolling ranks are computed on completed quarterly observations before the NQ as-of join.
+- Signals use completed one-minute bars and enter next bar open or later.
+- No future NQ bar, final session range, final VWAP, final volume profile, or post-entry market state is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_bank_credit_supply_state
+  - nq_consumer_credit_state
+  - nq_default_spread_orderflow_risk_premium
+  - nq_credit_etf_orderflow_risk_appetite
+  - nq_ofr_financial_stress_intraday
+  - nq_m2_monetary_aggregate_state
+  - nq_nyfed_rrp_liquidity_state
+  conclusion: Eligible before PnL as a distinct SLOOS C&I loan-demand survey edge; no prior SLOOS, Senior Loan Officer Survey, loan-demand, or DRTSCILM/DRSDCILM campaign was found in the ledger or campaign tree.
+variants:
+- strong_ci_large_demand_long_1000
+- strong_ci_small_demand_long_1030
+- broad_ci_demand_average_long_1130
+- either_ci_demand_strength_long_1200
+- confirmed_ci_demand_strength_long_1330
+parameter_space:
+  per_variant_combinations: 27
+  entry_parameters_per_variant: 1
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+  entry_params:
+    rank_min:
+    - 0.5
+    - 0.55
+    - 0.6
+  stop_params:
+    stop_pct:
+    - 0.003
+    - 0.004
+    - 0.005
+  take_profit_params:
+    target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+pre_pnl_density:
+  decision: PASS
+  entry_rows: 45
+  rows_passing_density: 45
+  artifact: research_artifacts/nq_sloos_bank_lending_survey_state_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_sloos_bank_lending_survey_state_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_sloos_bank_lending_survey_state_density_summary_20260701.csv
+  p_n_l_inspected: false
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  methodology_audit: campaigns/nq_sloos_bank_lending_survey_state/methodology_audit.md
+  feature_csv: data/external/nq_sloos_bank_lending_survey_state_features_20110103_20260612.csv
+  density_audit: research_artifacts/nq_sloos_bank_lending_survey_state_density_audit_20260701.md
+  test_summary: backtest-campaigns/nq_sloos_bank_lending_survey_state/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_sloos_bank_lending_survey_state/campaign_results.csv
+  monte_carlo_summary: backtest-campaigns/nq_sloos_bank_lending_survey_state/monte_carlo_summary.json
+  wfa_stitched_oos_trade_logs_manifest: backtest-campaigns/nq_sloos_bank_lending_survey_state/wfa_stitched_oos_trade_logs_manifest.csv
+staged_validation:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  valid_test_run_id: run1
+  runs:
+    strong_ci_large_demand_long_1000: backtest-campaigns/nq_sloos_bank_lending_survey_state/strong_ci_large_demand_long_1000/NQ/run1
+    strong_ci_small_demand_long_1030: backtest-campaigns/nq_sloos_bank_lending_survey_state/strong_ci_small_demand_long_1030/NQ/run1
+    broad_ci_demand_average_long_1130: backtest-campaigns/nq_sloos_bank_lending_survey_state/broad_ci_demand_average_long_1130/NQ/run1
+    either_ci_demand_strength_long_1200: backtest-campaigns/nq_sloos_bank_lending_survey_state/either_ci_demand_strength_long_1200/NQ/run1
+    confirmed_ci_demand_strength_long_1330: backtest-campaigns/nq_sloos_bank_lending_survey_state/confirmed_ci_demand_strength_long_1330/NQ/run1
+  failure_reason: All five variants failed limited_core_grid_test with 0/27 profitable combinations and 0/27 benchmark-passing combinations. No branch reached limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

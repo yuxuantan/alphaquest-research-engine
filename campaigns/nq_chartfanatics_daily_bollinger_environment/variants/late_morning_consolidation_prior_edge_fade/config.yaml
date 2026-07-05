@@ -1,0 +1,217 @@
+campaign_id: nq_chartfanatics_daily_bollinger_environment
+strategy_name: daily_bollinger_environment
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+data:
+  dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  symbol: NQ
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: none
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset: &id001
+    start_date: '2011-01-03'
+    end_date: '2026-06-12'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 20.0
+  tick_value: 5.0
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+monkey:
+  data_subset: *id001
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *id001
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters: &id002
+    entry.params.width_rank_threshold:
+    - 0.35
+    - 0.5
+    - 0.65
+    entry.params.min_breakout_ticks:
+    - 0
+    - 2
+    - 4
+    sl.params.stop_offset_ticks:
+    - 1
+    - 4
+    - 8
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+campaign_tests:
+  acceptance_oos_test:
+    train_months: 24
+    test_months: 6
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 5.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+core_grid:
+  data_subset: *id001
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters: *id002
+variant_id: late_morning_consolidation_prior_edge_fade
+test_run_id: run1
+research_metadata:
+  academic_source: Chart Fanatics Futures Trading Strategy; Bollinger (2001); Brock, Lakonishok, and LeBaron (1992)
+  edge_thesis: Daily Bollinger consolidation should make NQ more likely to reject range-edge stop probes rather
+    than trend immediately.
+  mechanic: When completed prior-session daily 20/3 Bollinger width is contracting/narrow, fade completed intraday
+    probes beyond the prior RTH high or low that close back inside.
+  timeframe_rationale: Five-minute bars keep intraday execution on completed bars while the daily Bollinger state
+    is fixed from completed prior RTH sessions.
+  mechanics_review_required: true
+  mechanics_review_version: '2026-06-30'
+  mechanics_review:
+    mechanic_expresses_edge: When completed prior-session daily 20/3 Bollinger width is contracting/narrow, fade
+      completed intraday probes beyond the prior RTH high or low that close back inside.
+    entry_logic_rationale: The entry module computes daily 20/3 Bollinger environment from completed prior RTH sessions
+      only. Intraday confirmation uses completed 5-minute bars and the engine enters no earlier than the next bar
+      open.
+    stop_loss_rationale: The sweep-extreme stop anchors invalidation to the completed signal bar extreme plus a
+      predeclared tick offset. No future swing is used.
+    target_exit_rationale: A fixed-R target keeps the discretionary Chart Fanatics target language auditable under
+      the existing staged framework.
+    profitability_rationale: The edge should work only if daily Bollinger environment state changes the distribution
+      of same-day NQ follow-through or edge reversion enough to overcome NQ costs.
+    known_failure_modes: Daily Bollinger states can be late; intraday confirmation can chase exhausted moves; consolidation
+      fades can fail on trend days; fixed-R exits may not match the source discretionary management.
+    pre_test_decision: approve_for_testing
+  source_url: https://www.chartfanatics.com/strategies/futures-trading-strategy
+  rescue_status: none
+  pre_pnl_density:
+    status: FAIL
+    artifact: research_artifacts/nq_chartfanatics_daily_bollinger_environment_density_audit_20260630.md
+    summary_csv: research_artifacts/nq_chartfanatics_daily_bollinger_environment_density_summary_20260630.csv
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_limited_core_signals_per_year: 25.132075471698112
+strategy:
+  entry:
+    module: daily_bollinger_environment
+    params:
+      setup_mode: consolidation_edge_reversion
+      start_time: 09:35:00
+      end_time: '12:30:00'
+      rth_start: 09:30:00
+      flatten_time: '15:55:00'
+      max_trades_per_day: 1
+      tick_size: 0.25
+      bar_interval_minutes: 5
+      opening_range_minutes: 15
+      bb_length: 20
+      bb_std: 3.0
+      width_rank_lookback: 60
+      width_rank_threshold: 0.5
+      mean_reversion_peak_lookback: 10
+      mean_reversion_trigger_fraction: 0.3
+      min_breakout_ticks: 2
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 4
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'

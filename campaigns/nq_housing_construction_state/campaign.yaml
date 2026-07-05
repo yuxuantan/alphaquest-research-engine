@@ -1,0 +1,149 @@
+campaign_id: nq_housing_construction_state
+title: NQ Housing Construction State
+status: completed_failed
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Conservatively lagged housing construction states may proxy interest-rate-sensitive
+  growth, household-demand, and credit-cycle pressure that affects same-day NQ intraday
+  drift after the cash open.
+rationale: This campaign tests a monthly housing construction state edge using FRED/Census/HUD
+  housing permits and starts observations at least 45 calendar days old. It is distinct
+  from industrial production, manufacturing orders, retail inventory demand, jobless
+  claims, BLS release-day drift, CFNAI, sentiment, uncertainty, and orderflow campaigns
+  because it uses direct housing-sector construction pipeline and realization measures.
+research_sources:
+- title: New Indexes of Coincident and Leading Economic Indicators
+  author: James H. Stock and Mark W. Watson
+  year: 1989
+  link_or_doi: https://www.nber.org/books-and-chapters/nber-macroeconomics-annual-1989-volume-4/new-indexes-coincident-and-leading-economic-indicators
+  expected_mechanism: Leading-indicator research motivates tests of housing permits
+    and starts as cyclical state variables.
+- title: New Residential Construction
+  author: U.S. Census Bureau and U.S. Department of Housing and Urban Development
+  year: 2026
+  link_or_doi: https://www.census.gov/construction/nrc/
+  expected_mechanism: Official monthly housing permits and starts measure rate-sensitive
+    construction pipeline and realized housing activity.
+- title: New Private Housing Units Authorized by Building Permits and Housing Starts
+    series
+  author: U.S. Census Bureau via FRED, Federal Reserve Bank of St. Louis
+  year: 2026
+  link_or_doi: https://fred.stlouisfed.org/series/PERMIT
+  expected_mechanism: Public FRED housing construction series provide the strictly
+    lagged state features used for NQ session ranking.
+data_requirements:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/fred_housing_construction_state/fred_permit_monthly.csv
+- data/external/fred_housing_construction_state/fred_permit1_monthly.csv
+- data/external/fred_housing_construction_state/fred_permit5_monthly.csv
+- data/external/fred_housing_construction_state/fred_houst_monthly.csv
+- data/external/fred_housing_construction_state/fred_houst1f_monthly.csv
+- data/external/fred_housing_construction_state/fred_houst5f_monthly.csv
+- data/external/nq_housing_construction_state_features_20110103_20260612.csv
+feature_construction:
+  builder: tools/build_nq_housing_construction_state_features.py
+  output: data/external/nq_housing_construction_state_features_20110103_20260612.csv
+  rows: 3813
+  valid_rank_rows: 3813
+  availability_lag_days: 45
+  lookahead_control: Each NQ session uses only the latest monthly PERMIT/PERMIT1/PERMIT5/HOUST/HOUST1F/HOUST5F
+    observation on or before session_date minus 45 calendar days.
+duplicate_edge_review:
+  active_scope_only: true
+  reviewed_on: '2026-07-01'
+  existing_nq_campaign_id: none
+  not_duplicate_of:
+  - nq_industrial_production_state
+  - nq_manufacturing_orders_state
+  - nq_retail_inventory_demand
+  - nq_jobless_claims_state
+  - nq_bls_macro_release_day_drift
+  - nq_chicagofed_cfnai_activity_pullback
+  - nq_consumer_sentiment_state_intraday
+  - nq_emv_macro_news_intraday
+  - nq_epu_policy_uncertainty_intraday
+  - nq_orderflow_absorption_exhaustion_reversal
+  conclusion: Eligible as a bounded housing-construction state edge; it does not reuse
+    monthly industrial/manufacturing/retail state, weekly labor-market claims, same-day
+    release drift, CFNAI composite activity, sentiment, uncertainty, or intraday orderflow
+    mechanics.
+parameter_space:
+  combinations_per_variant: 27
+  entry_parameters:
+    permits_3m_strength_long_1000:
+      entry.params.rank_min:
+      - 0.55
+      - 0.6
+      - 0.65
+    starts_3m_weakness_short_1030:
+      entry.params.rank_max:
+      - 0.5
+      - 0.55
+      - 0.6
+    single_family_permits_strength_long_1130:
+      entry.params.rank_min:
+      - 0.45
+      - 0.5
+      - 0.55
+    multifamily_starts_weakness_short_1200:
+      entry.params.rank_max:
+      - 0.4
+      - 0.45
+      - 0.5
+    permit_starts_ratio_high_long_1330:
+      entry.params.rank_min:
+      - 0.55
+      - 0.6
+      - 0.65
+  stop_parameters:
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+  take_profit_parameters:
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+variants:
+- permits_3m_strength_long_1000
+- starts_3m_weakness_short_1030
+- single_family_permits_strength_long_1130
+- multifamily_starts_weakness_short_1200
+- permit_starts_ratio_high_long_1330
+density_audit:
+  initial_rejected_artifact: research_artifacts/nq_housing_construction_state_initial_density_rejected_20260701.md
+  final_artifact: research_artifacts/nq_housing_construction_state_density_audit_20260701.md
+  conclusion: Final pre-PnL grid passed 45/45 density rows after density-only reform;
+    no PnL was inspected before the reform.
+rescue_policy:
+  rescue_scope: none_for_initial_campaign
+  max_rescue_attempts_without_user_approval: 0
+  forbidden_changes:
+  - core strategy mechanic
+  - FRED/Census availability lag rule
+  - setup mode
+  - direction
+  - entry time
+  - entry module
+  - stop-loss module
+  - take-profit or exit module
+  - edge thesis
+  - stage criteria
+  - data window
+  - timeframe
+  - costs or fill assumptions
+completed_at: '2026-07-01T06:11:06+08:00'
+test_result:
+  decision: FAIL
+  status: completed_failed
+  summary_artifact: backtest-campaigns/nq_housing_construction_state/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_housing_construction_state/campaign_results.csv
+  candidate_strategy_report_created: false
+  conclusion: All five variants failed limited_core_grid_test; 2 variants had at least
+    one profitable iteration, but no variant met the 0.70 profitable-iteration stability
+    threshold. No branch reached monkey, WFA, WFA OOS monkey, Monte Carlo, simulated
+    incubation, acceptance OOS, or candidate reporting.

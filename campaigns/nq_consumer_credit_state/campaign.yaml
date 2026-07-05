@@ -1,0 +1,126 @@
+campaign_id: nq_consumer_credit_state
+title: NQ Consumer Credit State
+status: completed_failed_limited_monkey
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Strictly lagged consumer-credit growth and credit-burden states may proxy household leverage, deleveraging pressure, and consumer balance-sheet capacity that influence same-day NQ RTH risk appetite.
+rationale: The campaign uses Federal Reserve/FRED monthly G.19 consumer-credit series and disposable personal income with a conservative 60-calendar-day lag. It is distinct from consumer sentiment, FINRA margin leverage, retail inventory demand, Treasury-rate, inflation, productivity, and corporate-equity-supply campaigns because it tests household consumer-credit balances and credit burden rather than sentiment, investor margin debt, retail inventories, rates, price inflation, labor-cost productivity, or issuer supply.
+sources:
+- title: House Prices, Home Equity-Based Borrowing, and the US Household Leverage Crisis
+  authors: Atif Mian; Amir Sufi
+  year: 2011
+  venue: American Economic Review
+  link: https://www.aeaweb.org/articles?id=10.1257/aer.101.5.2132
+  doi: 10.1257/aer.101.5.2132
+  relevance: Motivates household leverage and balance-sheet stress as macro risk-state variables relevant to equity-risk appetite.
+- title: G.19 Consumer Credit
+  authors: Board of Governors of the Federal Reserve System
+  year: 2026
+  venue: Federal Reserve Statistical Release
+  link: https://www.federalreserve.gov/releases/g19/current/default.htm
+  relevance: Primary official source release for total, revolving, and nonrevolving consumer-credit balances.
+- title: Total Consumer Credit Owned and Securitized (TOTALSL)
+  authors: Board of Governors of the Federal Reserve System via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/TOTALSL
+  relevance: Monthly total consumer-credit balance used for growth and credit-burden state features.
+- title: Revolving Consumer Credit Owned and Securitized (REVOLSL)
+  authors: Board of Governors of the Federal Reserve System via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/REVOLSL
+  relevance: Monthly revolving consumer-credit balance used for stress and relief state features.
+- title: Disposable Personal Income (DSPI)
+  authors: U.S. Bureau of Economic Analysis via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/DSPI
+  relevance: Monthly income denominator for total and revolving consumer-credit burden ratios.
+behavioural_or_microstructure_rationale: If household credit growth contracts or revolving-credit burden falls, NQ may react through consumer-demand, financing-stress, and risk-appetite channels. Any real edge must survive next-bar execution, NQ costs, pessimistic same-bar ordering, neighboring parameters, monkey robustness, WFA, Monte Carlo, prop-rule simulation, and acceptance OOS.
+expected_failure_modes:
+- Monthly consumer-credit data may be too stale after a 60-day lag for intraday futures trading.
+- NQ may price these macro states through broader business-cycle and rates variables before RTH.
+- Consumer-credit levels may trend slowly and duplicate broad leverage or sentiment regimes despite using different source fields.
+- Effects may be regime-specific and fail neighboring parameter or monkey robustness.
+data_needs:
+- timezone-aware NQ RTH 1-minute bars in America/New_York
+- FRED TOTALSL/REVOLSL/NONREVSL/DSPI monthly data cached under data/external/fred_consumer_credit_state
+- 60-calendar-day as-of join from NQ sessions to monthly consumer-credit observations
+lookahead_risks:
+- A session dated D may only use the latest monthly observation on or before D minus 60 calendar days.
+- Rolling ranks are computed on completed monthly observations before the NQ as-of join.
+- Signals use completed one-minute bars and enter next bar open or later.
+- No future NQ bar, final session range, final VWAP, final volume profile, or post-entry market state is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_consumer_sentiment_state_intraday
+  - nq_finra_margin_leverage
+  - nq_credit_etf_orderflow_risk_appetite
+  - nq_retail_inventory_demand
+  - nq_treasury_term_premium_state
+  - nq_productivity_unit_labor_cost_state
+  - nq_corporate_equity_supply_state
+  - nq_inflation_pressure_state
+  conclusion: Eligible before PnL as a distinct household consumer-credit balance and burden state edge; no prior NQ consumer-credit/G.19 campaign was found in the ledger or campaign tree.
+variants:
+- total_credit_3m_contraction_short_1000
+- revolving_credit_3m_relief_long_1030
+- total_credit_to_income_low_long_1130
+- revolving_credit_to_income_low_long_1200
+- revolving_credit_1m_relief_long_1330
+parameter_space:
+  per_variant_combinations: 27
+  entry_parameters_per_variant: 1
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+  entry_params:
+    rank_max:
+    - 0.45
+    - 0.4
+    - 0.35
+  stop_params:
+    stop_pct:
+    - 0.003
+    - 0.004
+    - 0.005
+  take_profit_params:
+    target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+pre_pnl_density:
+  decision: PASS
+  entry_rows: 45
+  rows_passing_density: 45
+  artifact: research_artifacts/nq_consumer_credit_state_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_consumer_credit_state_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_consumer_credit_state_density_summary_20260701.csv
+  p_n_l_inspected: false
+  repair_note: Initial high-debt/high-growth expressions failed density before PnL. The official-five set was repaired using only precomputed consumer-credit ranks before any staged PnL run.
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  methodology_audit: campaigns/nq_consumer_credit_state/methodology_audit.md
+  feature_csv: data/external/nq_consumer_credit_state_features_20110103_20260612.csv
+  density_audit: research_artifacts/nq_consumer_credit_state_density_audit_20260701.md
+  test_summary: backtest-campaigns/nq_consumer_credit_state/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_consumer_credit_state/campaign_results.csv
+  monte_carlo_summary: backtest-campaigns/nq_consumer_credit_state/monte_carlo_summary.json
+  wfa_stitched_oos_trade_logs_manifest: backtest-campaigns/nq_consumer_credit_state/wfa_stitched_oos_trade_logs_manifest.csv
+staged_validation:
+  decision: FAIL
+  terminal_stage: limited_monkey_test
+  valid_test_run_id: run1
+  runs:
+    total_credit_3m_contraction_short_1000: backtest-campaigns/nq_consumer_credit_state/total_credit_3m_contraction_short_1000/NQ/run1
+    revolving_credit_3m_relief_long_1030: backtest-campaigns/nq_consumer_credit_state/revolving_credit_3m_relief_long_1030/NQ/run1
+    total_credit_to_income_low_long_1130: backtest-campaigns/nq_consumer_credit_state/total_credit_to_income_low_long_1130/NQ/run1
+    revolving_credit_to_income_low_long_1200: backtest-campaigns/nq_consumer_credit_state/revolving_credit_to_income_low_long_1200/NQ/run1
+    revolving_credit_1m_relief_long_1330: backtest-campaigns/nq_consumer_credit_state/revolving_credit_1m_relief_long_1330/NQ/run1
+  failure_reason: Four variants failed limited_core_grid_test with 0/27 profitable combinations. total_credit_3m_contraction_short_1000 passed core breadth at 19/27 profitable combinations (13/27 benchmark-passing) but failed limited_monkey_test because core_beats_monkey_max_drawdown_rate=0.88425 was below the 0.90 gate. No branch reached WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

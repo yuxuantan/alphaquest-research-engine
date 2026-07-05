@@ -1,0 +1,111 @@
+campaign_id: nq_round_number_orderflow_barrier
+title: NQ Round-Number Orderflow Barrier
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: NQ futures may react around fixed psychological handles when completed aggregate orderflow separates absorbed
+  failed probes from participated breakouts.
+rationale: This is the NQ port of the ES round-number orderflow composite, not the price-only NQ round-number campaign. Levels
+  are fixed ex ante and every signal requires completed-bar aggregate flow confirmation before next-bar entry.
+sources:
+- title: Price Barriers in the Dow Jones Industrial Average
+  authors: R. Glen Donaldson and Harold Y. Kim
+  year: 1993
+  link: https://ideas.repec.org/a/cup/jfinqa/v28y1993i03p313-330_00.html
+  relevance: Documents support/resistance and continuation behavior around salient index barriers.
+- title: Currency Orders and Exchange-Rate Dynamics
+  authors: Carol L. Osler
+  year: 2003
+  link: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  relevance: Documents order clustering around round-number support and resistance levels.
+- title: Stop-Loss Orders and Price Cascades in Currency Markets
+  authors: Carol L. Osler
+  year: 2005
+  link: https://ideas.repec.org/a/eee/jimfin/v24y2005i2p219-241.html
+  relevance: Supports the continuation mechanism after clustered stops are triggered.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+  relevance: Motivates completed-bar orderflow imbalance as a fragile short-horizon confirmation proxy.
+data_needs:
+- NQ one-minute RTH OHLCV and aggregate orderflow cache in America/New_York
+- Deterministic 5-minute aggregation with signed, large10, and large20 fields summed from completed one-minute bars
+- Next-bar execution, NQ tick size, point value, commission, slippage, and config-driven forced flatten
+lookahead_risks:
+- Round-number barriers are fixed before the session and do not use future session highs/lows, VWAP, profile, or orderflow-derived
+  levels.
+- Orderflow confirmation uses only the completed signal bar.
+- Signals using a bar close can fill only at the next 5-minute bar open or later.
+- All variants flatten before the configured prop-firm cutoff and hold no overnight positions.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_round_number_barrier_reaction
+  - nq_20_80_price_ending_barrier
+  - es_round_number_orderflow_barrier
+  - nq_key_reversal_orderflow_reversal
+  - nq_signed_orderflow_persistence
+  conclusion: Eligible as a distinct NQ composite because the existing NQ round-number campaign is price-only and the ChartFanatics
+    20/80 campaign is a different modulo-100 ending rule. This campaign tests fixed 25/50 handles only when completed aggregate
+    flow confirms absorption or participation.
+pre_pnl_density_audit:
+  decision: PASS_FOR_DECLARED_GRID
+  artifact: research_artifacts/nq_round_number_orderflow_barrier_density_audit_20260630.md
+  detail_csv: research_artifacts/nq_round_number_orderflow_barrier_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_round_number_orderflow_barrier_density_summary_20260630.csv
+  declared_entry_rows: 30
+  density_pass_rows: 30
+  variants_passing_all_declared_rows: 5
+  rejected_before_pnl: 50-point support/rejection and 100-point breakout corners failed density; 50-point midday large10 absorption
+    was excluded to preserve the two-entry-parameter cap.
+parameter_space:
+  support_rejection_variants: buffer_ticks [0,1] x min_orderflow_imbalance [0.01,0.03,0.05] x stop_pct [0.0015,0.0025,0.004]
+    x target_r_multiple [1.0,1.5,2.0] = 54 combos each
+  midday_large10_variant: buffer_ticks [0,1] x min_orderflow_imbalance [0.10,0.20,0.30] x stop_pct [0.0015,0.0025,0.004] x
+    target_r_multiple [1.0,1.5,2.0] = 54 combos
+  breakout_variants: barrier_interval_points [25,50] x min_orderflow_imbalance [0.01,0.03,0.05] x stop_pct [0.0015,0.0025,0.004]
+    x target_r_multiple [1.0,1.5,2.0] = 54 combos each
+  entry_parameter_cap: two entry parameters per variant
+  stop_parameter_cap: one stop parameter
+  take_profit_parameter_cap: one take-profit parameter
+variants:
+- morning_support_sell_absorption_long
+- morning_resistance_buy_absorption_short
+- midday_two_sided_large10_absorption_reclaim
+- round_number_upside_flow_breakout_long
+- round_number_downside_flow_breakout_short
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees staged results; allow only rejection or candidate/manual-review
+    promotion.
+status: completed_failed
+completed_at: '2026-06-30T20:30:00+08:00'
+testing_outcome:
+  verdict: FAIL
+  terminal_stage: limited_core_grid_test
+  variants_tested: 5
+  variants_passed: 0
+  total_core_combinations: 270
+  profitable_combinations: 54
+  profitable_combo_rate: 0.2
+  benchmark_pass_combinations: 37
+  apex_rule_violating_iterations: 0
+  reason: All five predeclared NQ round-number orderflow barrier variants failed limited_core_grid_test. Best variant-level
+    profitable rate was 24/54 = 0.444444, below the required 0.70 threshold. Across 270 official combinations, 54 were profitable,
+    37 passed benchmark rows, and 0 had Apex rule violations. Positive top rows are rejected as unstable neighboring-parameter
+    pockets, not candidate strategies.
+  no_rescue_run: true
+  candidate_strategy_report_created: false
+result_artifacts:
+  campaign_test_summary_json: backtest-campaigns/nq_round_number_orderflow_barrier/campaign_test_summary.json
+  campaign_test_summary_md: backtest-campaigns/nq_round_number_orderflow_barrier/campaign_test_summary.md
+  campaign_results_csv: backtest-campaigns/nq_round_number_orderflow_barrier/campaign_results.csv
+  trade_logs_manifest_csv: backtest-campaigns/nq_round_number_orderflow_barrier/trade_logs_manifest.csv
+  equity_curves_manifest_csv: backtest-campaigns/nq_round_number_orderflow_barrier/equity_curves_manifest.csv
+  wfa_table_csv: backtest-campaigns/nq_round_number_orderflow_barrier/wfa_table.csv
+  wfa_oos_trade_log_csv: backtest-campaigns/nq_round_number_orderflow_barrier/wfa_oos_trade_log.csv
+  monte_carlo_summary_json: backtest-campaigns/nq_round_number_orderflow_barrier/monte_carlo_summary.json

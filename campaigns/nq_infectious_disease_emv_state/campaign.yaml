@@ -1,0 +1,156 @@
+campaign_id: nq_infectious_disease_emv_state
+title: NQ Infectious Disease EMV State
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: infectious_disease_emv_state
+hypothesis: Strict-lag daily infectious-disease equity-market-volatility states may
+  identify NQ risk-off pressure or post-shock risk-premium rebound behavior.
+rationale: This campaign tests infectious-disease-specific equity-market volatility
+  news intensity from the daily Baker-Bloom-Davis-Kost tracker, not the already tested
+  broad EMV macro-news family, AI-GPR geopolitical risk, policy uncertainty, VIX/VVIX
+  volatility state, or NQ own-price momentum.
+research_sources:
+- title: The Unprecedented Stock Market Reaction to COVID-19
+  authors: Scott R. Baker, Nicholas Bloom, Steven J. Davis, Kyle Kost, Marco Sammon,
+    and Tasaneeya Viratyosin
+  year: 2020
+  venue: NBER Working Paper 26945
+  link_or_doi: https://www.nber.org/papers/w26945
+  expected_mechanism: Documents disease-related equity-market volatility news as a
+    distinct uncertainty channel during infectious-disease shocks.
+- title: Daily Infectious Disease Equity Market Volatility Tracker
+  authors: Economic Policy Uncertainty project / Baker, Bloom, Davis, Kost, Sammon,
+    and Viratyosin
+  year: 2026
+  venue: policyuncertainty.com data page
+  link_or_doi: https://www.policyuncertainty.com/infectious_EMV.html
+  expected_mechanism: Provides a daily newspaper-count tracker of infectious-disease
+    equity-market-volatility attention, available from 1985 to present.
+- title: 'Infectious Disease EMV Tracker: Daily, 7-Day'
+  authors: Federal Reserve Bank of St. Louis FRED
+  year: 2026
+  venue: FRED series INFECTDISEMVTRACKD
+  link_or_doi: https://fred.stlouisfed.org/series/INFECTDISEMVTRACKD
+  expected_mechanism: Publishes the daily infectious-disease EMV tracker used to build
+    a strict-lag NQ session feature table.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV/orderflow cache in America/New_York.
+- Public FRED daily INFECTDISEMVTRACKD CSV cached under data/external/fred_infectious_disease_emv.
+- Derived strict-lag feature CSV data/external/nq_infectious_disease_emv_features_20110103_20260612.csv.
+duplicate_edge_check:
+  checked_edges:
+  - nq_emv_macro_news_intraday
+  - nq_ai_gpr_geopolitical_risk_state
+  - nq_epu_policy_uncertainty_intraday
+  - nq_ofr_financial_stress_intraday
+  - nq_cboe_vvix_tail_risk_intraday
+  - nq_cboe_vix_level_state_intraday
+  - nq_fama_french_style_factor_rotation
+  caveat: The existing EMV campaign used broad monthly macro-news EMV categories.
+    This campaign proceeds only because the daily source isolates infectious-disease
+    equity-market-volatility attention and uses different feature construction and
+    availability rules.
+  conclusion: Eligible for an NQ source test as a distinct infectious-disease uncertainty
+    edge with strict lag and explicit publication-cadence caveat.
+lookahead_risks:
+- A session dated D can only use the latest infectious-disease EMV daily observation
+  on or before D minus 7 calendar days.
+- Rolling ranks are computed in the infectious-disease EMV table before the session-level
+  as-of join.
+- Signals use a completed NQ RTH bar and enter no earlier than the next bar open.
+- No same-day EMV row, final NQ session high/low, final VWAP, future EMV value, or
+  post-entry path is used.
+- Historical release cadence still requires manual review if any branch passes the
+  staged tests.
+failure_modes:
+- Disease-related uncertainty may be absorbed before the NQ RTH session or may only
+  matter across overnight/multi-day horizons.
+- The 7-calendar-day lag may be conservative enough to stale the signal.
+- Effects may concentrate in COVID-era crisis windows and fail breadth, monkey, WFA,
+  or concentration gates.
+- If the edge only survives a narrow threshold or one regime, it must be rejected.
+feature_construction:
+  builder: tools/build_nq_infectious_disease_emv_features.py
+  output: data/external/nq_infectious_disease_emv_features_20110103_20260612.csv
+  source_cache: data/external/fred_infectious_disease_emv/INFECTDISEMVTRACKD.csv
+  source_url: https://fred.stlouisfed.org/graph/fredgraph.csv?id=INFECTDISEMVTRACKD
+  availability_lag_calendar_days: 7
+pre_pnl_density_audit:
+  decision: PASS
+  artifact: research_artifacts/nq_infectious_disease_emv_state_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_infectious_disease_emv_state_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_infectious_disease_emv_state_density_summary_20260701.csv
+  result: 15/15 declared entry rows passed; 5/5 variants passed before any PnL was
+    inspected.
+parameter_space:
+  entry_parameters:
+  - entry.params.emv_rank_threshold
+  stop_parameters:
+  - sl.params.stop_pct
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant:
+    high_21d_emv_riskoff_short_1000: 27
+    high_21d_emv_rebound_long_1330: 27
+    rising_5d_emv_short_1030: 27
+    high_7d_emv_short_1130: 27
+    high_1d_emv_rebound_long_1200: 27
+  entry_parameter_cap: 1
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+variants:
+- high_21d_emv_riskoff_short_1000
+- high_21d_emv_rebound_long_1330
+- rising_5d_emv_short_1030
+- high_7d_emv_short_1130
+- high_1d_emv_rebound_long_1200
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  preflight_required: true
+  staged_validation_required: true
+status: completed_failed
+staged_validation:
+  status: completed
+  decision: FAIL
+  terminal_summary:
+    high_21d_emv_riskoff_short_1000:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.0
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.0
+        below 0.7; benchmark_passing=0/27; top_failure=min_total_net_profit;max_consecutive_losses'
+    high_21d_emv_rebound_long_1330:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.0
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.0
+        below 0.7; benchmark_passing=0/27; top_failure=min_total_net_profit'
+    rising_5d_emv_short_1030:
+      terminal_stage: limited_monkey_test
+      core_profitable_rate: 0.7407407407407407
+      core_benchmark_passing: 10
+      failure_reason: 'limited_monkey_test failed: core_beats_monkey_net_profit_rate=0.89
+        below 0.90; core_beats_monkey_max_drawdown_rate=0.769625 below 0.90; monkey_median_net=-2067.5'
+    high_7d_emv_short_1130:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.6296296296296297
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.6296296296296297
+        below 0.7; benchmark_passing=0/27; top_failure=max_consecutive_losses'
+    high_1d_emv_rebound_long_1200:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.0
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.0
+        below 0.7; benchmark_passing=0/27; top_failure=min_total_net_profit'
+  aggregate_failure_reason: Four variants failed limited_core_grid_test. The only
+    branch that passed limited core was rising_5d_emv_short_1030, which failed limited_monkey_test
+    with core_beats_monkey_net_profit_rate=0.89 and core_beats_monkey_max_drawdown_rate=0.769625,
+    both below the 0.90 gate. No branch reached WFA, WFA OOS monkey, Monte Carlo,
+    simulated incubation, acceptance OOS, or candidate reporting.

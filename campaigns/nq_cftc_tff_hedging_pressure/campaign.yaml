@@ -1,0 +1,70 @@
+campaign_id: nq_cftc_tff_hedging_pressure
+title: NQ CFTC TFF Hedging Pressure
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: Shifted CFTC Traders in Financial Futures positioning pressure in S&P 500 futures may proxy slow equity-index hedging demand; NQ intraday returns may compensate traders taking the other side of that risk-transfer state after the weekly report is available.
+rationale: This is an NQ transfer of the ES CFTC/TFF hedging-pressure family. It is distinct from NQ RRP liquidity state, OPEX pressure, 0DTE orderflow confirmation, fixed RTH risk premium, and intraday orderflow persistence because the signal is a weekly shifted CFTC financial-futures positioning feature, not an intraday price/flow or calendar event alone.
+sources:
+- title: Hedging Pressure Effects in Futures Markets
+  authors: Frans A. de Roon, Theo E. Nijman, and Chris Veld
+  year: 2000
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00253
+  link: https://ideas.repec.org/a/bla/jfinan/v55y2000i3p1437-1456.html
+  relevance: Documents futures risk premia related to hedging pressure.
+- title: Traders in Financial Futures - Futures Only Positions
+  authors: U.S. Commodity Futures Trading Commission
+  year: 2026
+  venue: CFTC Commitments of Traders / TFF report
+  link: https://www.cftc.gov/dea/futures/financial_lf.htm
+  relevance: Official source family for the financial-futures positioning data used to construct the shifted local feature.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV cache in America/New_York
+- local shifted CFTC TFF feature file with trade_date availability no earlier than following Monday RTH
+- deterministic 5-minute aggregation and same-day forced flatten checks
+lookahead_risks:
+- CFTC Tuesday positions are traded only from shifted trade_date rows after encoded availability.
+- Signals use only the current completed 5-minute bar and precomputed shifted feature for the session date.
+- No future session return, final VWAP, final volume profile, or future high/low is used.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_nyfed_rrp_liquidity_state
+  - nq_monthly_opex_pressure
+  - nq_spx_0dte_orderflow_confirmation
+  - nq_rth_intraday_risk_premium
+  - nq_signed_orderflow_persistence
+  - nq_default_spread_orderflow_risk_premium
+  conclusion: Eligible as a separate NQ edge because it tests weekly shifted CFTC/TFF positioning pressure, not Fed liquidity state, option-expiration pressure, 0DTE flow, fixed-time long premium, signed-flow persistence, or credit-spread risk premium.
+parameter_space:
+  entry.params.threshold: three ES-corrected SPX TFF threshold levels per variant
+  sl.params.stop_pct:
+  - 0.003
+  - 0.005
+  - 0.007
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 27
+variants:
+- broad_positive_pressure_long_1100
+- high_positive_pressure_long_0935
+- extreme_positive_pressure_long_1330
+- broad_negative_pressure_short_1100
+- extreme_negative_pressure_short_1330
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees density or staged results.
+status: failed_pre_pnl_density
+result:
+  terminal_stage: pre_pnl_density_screen
+  completed_at: '2026-06-30'
+  density_audit: research_artifacts/nq_cftc_tff_hedging_pressure_density_audit_20260630.md
+  declared_entry_rows: 15
+  density_pass_rows: 1
+  density_fail_rows: 14
+  conclusion: Rejected before staged NQ PnL because the declared threshold space is too sparse across full-history, limited-core proxy, and latest-window density gates.

@@ -45,8 +45,8 @@ def build_features(
     rates = _add_rate_features(rates)
 
     # Treasury close/fixing values for session D are not assumed tradable during
-    # that same RTH session.  Each ES session receives the latest Treasury row
-    # whose observation_date is strictly before the ES session date.
+    # that same RTH session. Each futures session receives the latest Treasury
+    # row whose observation_date is strictly before the session date.
     merged = pd.merge_asof(
         sessions.sort_values("session_date_ts"),
         rates.sort_values("observation_date"),

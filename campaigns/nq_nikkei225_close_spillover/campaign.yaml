@@ -1,0 +1,140 @@
+campaign_id: nq_nikkei225_close_spillover
+title: NQ Nikkei 225 Close Spillover
+status: completed_failed_limited_monkey
+created_at: "2026-07-01"
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: >
+  Same-date Nikkei 225 close strength, weakness, or volatility may proxy Asia-session
+  global equity risk transmission before the U.S. cash open and may spill into NQ RTH
+  direction or risk-off pressure.
+rationale: >
+  Tokyo cash trading closes before the NQ RTH decision times. The campaign uses only
+  the latest Nikkei 225 close available on or before the NQ session date, rolling ranks
+  computed on completed Nikkei observations, completed NQ bars, next-bar execution,
+  and same-day flattening. It is distinct from NQ overnight inventory/range, USDJPY
+  safe-haven, U.S. sector leadership, and ChartFanatics orderflow/AOI campaigns.
+sources:
+  - title: International Transmission of Stock Market Movements
+    authors: Cheol S. Eun; Sangdal Shim
+    year: 1989
+    venue: Journal of Financial and Quantitative Analysis
+    link: https://ideas.repec.org/a/cup/jfinqa/v24y1989i02p241-256_01.html
+    doi: "10.2307/2330774"
+    relevance: >
+      Documents international equity-market transmission with multilateral interactions
+      across national stock markets, motivating a fail-closed Nikkei-to-NQ spillover test.
+  - title: Correlations in Price Changes and Volatility Across International Stock Markets
+    authors: Yasushi Hamao; Ronald W. Masulis; Victor Ng
+    year: 1990
+    venue: Review of Financial Studies
+    link: https://academic.oup.com/rfs/article-abstract/3/2/281/1595767
+    doi: "10.1093/rfs/3.2.281"
+    relevance: >
+      Studies short-run interdependence and volatility spillovers among Tokyo, London,
+      and New York using opening and closing index prices.
+  - title: Nikkei Stock Average, Nikkei 225
+    authors: Nikkei Industry Research Institute via FRED
+    year: 2026
+    venue: Federal Reserve Bank of St. Louis FRED
+    link: https://fred.stlouisfed.org/series/NIKKEI225
+    relevance: >
+      Supplies the daily Nikkei 225 close series used to build the deterministic feature cache.
+behavioural_or_microstructure_rationale: >
+  If Asia-session equity information is incorporated gradually across global index futures,
+  strong Nikkei returns may support risk-on NQ continuation, weak Nikkei returns may support
+  risk-off NQ pressure, and large Nikkei absolute moves may indicate global volatility transfer.
+  Any real effect must survive NQ futures costs, slippage, next-bar execution, pessimistic
+  same-bar stop/target ordering, and staged robustness gates.
+expected_failure_modes:
+  - Nikkei-to-U.S. transmission may be dominated by U.S. overnight futures before RTH and leave no RTH edge.
+  - The effect may be unidirectional from U.S. to Tokyo rather than Tokyo to NQ.
+  - Large moves may invert because U.S. traders fade Asia-session stress.
+  - Any apparent edge may be concentrated in crisis years or a few extreme Asian sessions.
+  - Rank thresholds may pass density but fail neighboring-parameter stability or randomized-schedule tests.
+data_needs:
+  - timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+  - FRED NIKKEI225 daily close history
+  - deterministic same-date as-of join from NQ session date to latest Nikkei observation
+data_quality_caveats:
+  - The Sierra cache is aggregated 1-minute bar data, not tick-path data.
+  - Same-bar stop/target conflicts must use pessimistic OHLC ordering.
+  - FRED/Nikkei observations are daily close values; holidays use the latest prior Nikkei observation.
+lookahead_risks:
+  - Tokyo cash close is complete before the configured NQ RTH decision times.
+  - Rolling ranks are computed on completed Nikkei observations before the NQ as-of join.
+  - Signals use completed NQ bars and enter no earlier than the next bar open.
+  - No future NQ bar, final U.S. session range, final VWAP, final volume profile, or post-entry market state is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+    - nq_overnight_drift_european_open
+    - nq_overnight_inventory_sweep_reversion
+    - nq_usdjpy_safe_haven_spillover
+    - nq_tech_relative_strength_intraday
+    - nq_sector_rotation_orderflow_pullback
+    - nq_chartfanatics_london_trident_fvg_continuation
+    - nq_chartfanatics_jadecap_session_liquidity_fvg
+    - es_oil_price_shock_spillover
+    - es_dollar_risk_appetite_intraday
+  conclusion: >
+    Eligible as a distinct edge before PnL because the primary state is an exogenous
+    same-date Asian equity-index close, not NQ overnight price action, FX safe-haven
+    state, U.S. ETF sector leadership, or ChartFanatics AOI/orderflow mechanics.
+variants:
+  - nikkei_1d_strength_long_1000
+  - nikkei_1d_weakness_short_1000
+  - nikkei_5d_strength_long_1030
+  - nikkei_5d_weakness_short_1030
+  - nikkei_1d_volatility_short_1130
+parameter_space:
+  per_variant_combinations: 27
+  entry_parameters_per_variant: 1
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+  entry_params:
+    rank_min: [0.60, 0.65, 0.70]
+    rank_max: [0.40, 0.35, 0.30]
+  stop_params:
+    stop_pct: [0.003, 0.005, 0.007]
+  take_profit_params:
+    target_r_multiple: [1.0, 1.5, 2.0]
+pre_pnl_density:
+  decision: PASS
+  entry_rows: 45
+  rows_passing_density: 45
+  artifact: research_artifacts/nq_nikkei225_spillover_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_nikkei225_spillover_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_nikkei225_spillover_density_summary_20260701.csv
+  p_n_l_inspected: false
+staged_validation:
+  decision: FAIL
+  terminal_stage: limited_monkey_test
+  valid_test_run_id: run2
+  invalid_run_note: >
+    Initial run1 halted before PnL because data.feature_set used a CSV path unsupported by the runner.
+    Source configs were corrected to keep feature_set as none while preserving the same entry module,
+    feature CSV, mechanics, and parameter grids; run2 is the valid staged evidence.
+  runs:
+    nikkei_1d_strength_long_1000: backtest-campaigns/nq_nikkei225_close_spillover/nikkei_1d_strength_long_1000/NQ/run2
+    nikkei_1d_weakness_short_1000: backtest-campaigns/nq_nikkei225_close_spillover/nikkei_1d_weakness_short_1000/NQ/run2
+    nikkei_5d_strength_long_1030: backtest-campaigns/nq_nikkei225_close_spillover/nikkei_5d_strength_long_1030/NQ/run2
+    nikkei_5d_weakness_short_1030: backtest-campaigns/nq_nikkei225_close_spillover/nikkei_5d_weakness_short_1030/NQ/run2
+    nikkei_1d_volatility_short_1130: backtest-campaigns/nq_nikkei225_close_spillover/nikkei_1d_volatility_short_1130/NQ/run2
+  failure_reason: >
+    Three variants failed limited_core_grid_test with profitable-iteration rates below the 0.70 stability
+    threshold. Two five-day variants passed limited core, but both failed limited_monkey_test: the long
+    variant had core-beats-monkey net-profit/max-drawdown rates of 0.81975/0.87175 and the short variant
+    had 0.946125/0.88675, below the required 0.90 on at least one monkey criterion. No branch reached
+    WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  methodology_audit: campaigns/nq_nikkei225_close_spillover/methodology_audit.md
+  feature_csv: data/external/nq_nikkei225_spillover_features_20110103_20260612.csv
+  density_audit: research_artifacts/nq_nikkei225_spillover_density_audit_20260701.md
+  test_summary: backtest-campaigns/nq_nikkei225_close_spillover/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_nikkei225_close_spillover/campaign_results.csv

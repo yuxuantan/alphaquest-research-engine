@@ -29,6 +29,7 @@ class VixTermStructureOrderflowPullbackEntry(VwapOrderflowPullbackContinuationEn
         super().__init__(params)
         self.term_setup_mode = str(params.get("term_setup_mode", "contango_long")).lower()
         self.term_rank_threshold = float(params.get("term_rank_threshold", 0.4))
+        self.availability_market = str(params.get("availability_market", "ES"))
         self.feature_csv = str(
             params.get(
                 "feature_csv",
@@ -79,7 +80,10 @@ class VixTermStructureOrderflowPullbackEntry(VwapOrderflowPullbackContinuationEn
             "feature_csv": self.feature_csv,
             "feature_session_date": session_date.isoformat(),
             "cboe_observation_date": row.get("observation_date"),
-            "availability_rule": "latest Cboe VIX term-structure close strictly before ES session_date",
+            "availability_rule": (
+                "latest Cboe VIX term-structure close strictly before "
+                f"{self.availability_market} session_date"
+            ),
             "vix_close": row.get("vix_close"),
             "vix9d_close": row.get("vix9d_close"),
             "vix3m_close": row.get("vix3m_close"),

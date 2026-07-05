@@ -1,0 +1,128 @@
+campaign_id: nq_labor_market_slack_state
+title: NQ Labor Market Slack State
+status: failed
+created_at: '2026-07-02'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Strictly lagged BLS/FRED labor-market slack and participation-repair state may proxy macro
+  growth risk or risk appetite that affects same-day NQ RTH drift.
+rationale: The campaign uses monthly UNRATE, U6RATE, EMRATIO, and CIVPART observations with a conservative
+  45-calendar-day lag. It is distinct from weekly jobless-claims state, BLS release-day drift, CFNAI,
+  industrial production, inflation/wage pressure, and payroll-growth event timing because it tests slow
+  monthly labor-slack levels and participation repair as state variables, not weekly claims, release-day
+  behavior, composite activity, production, wage inflation, or JOLTS/payroll event surprise.
+sources:
+- title: The Unemployment Rate and Alternative Measures of Labor Underutilization
+  authors: U.S. Bureau of Labor Statistics via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/UNRATE
+  relevance: Official reproducible source path for headline unemployment and U-6 underemployment state
+    variables.
+- title: Employment-Population Ratio and Labor Force Participation Rate
+  authors: U.S. Bureau of Labor Statistics via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/EMRATIO
+  relevance: Official source path for employment-population and participation state variables.
+- title: Macroeconomic News and Bond Yields
+  authors: John H. Boyd, Jian Hu, and Ravi Jagannathan
+  year: 2005
+  venue: Journal of Financial Economics
+  link: https://doi.org/10.1016/j.jfineco.2004.07.006
+  relevance: Supports the idea that labor-market news/state can affect equity-index pricing through growth
+    and discount-rate channels, while this campaign uses lagged state rather than release surprises.
+behavioural_or_microstructure_rationale: Elevated labor slack can mark recession/growth-risk pressure,
+  while improving participation can mark labor-market repair. Nasdaq futures may respond to these macro
+  states through growth expectations, discount-rate expectations, and risk appetite, but any usable edge
+  must survive costs, neighboring thresholds, monkey robustness, WFA, Monte Carlo, prop-rule simulation,
+  and acceptance OOS.
+expected_failure_modes:
+- Monthly labor state may be too stale or already incorporated before RTH.
+- Slack variables may conflict with easier-policy expectations and produce unstable signs.
+- Persistent labor regimes may reduce to broad market beta or recession-period concentration.
+- JOLTS and payroll growth were not used because JOLTS was source-gated elsewhere and payroll-growth rank
+  failed latest-window density.
+data_needs:
+- timezone-aware NQ RTH 1-minute bars in America/New_York
+- FRED/BLS monthly UNRATE/U6RATE/EMRATIO/CIVPART data cached under data/external/fred_labor_market_slack_state
+- 45-calendar-day as-of join from NQ sessions to monthly FRED observations
+lookahead_risks:
+- A session dated D may only use the latest monthly labor observation on or before D minus 45 calendar
+  days.
+- Rolling ranks are computed on completed monthly observations before the NQ as-of join.
+- Signals use completed one-minute bars and enter next bar open or later.
+- No future NQ bar, final session range, final VWAP, final volume profile, or post-entry market state
+  is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_jobless_claims_state
+  - nq_bls_macro_release_day_drift
+  - nq_chicagofed_cfnai_activity_pullback
+  - nq_industrial_production_state
+  - nq_inflation_pressure_state
+  - nq_productivity_unit_labor_cost_state
+  - es_other_campaigns_source_gate
+  conclusion: Eligible before PnL as a distinct lagged monthly labor-slack/participation state edge. It
+    does not use weekly jobless claims, BLS release-day timing, CFNAI composite activity, JOLTS, payroll-growth
+    momentum, or wage/inflation pressure.
+variants:
+- high_unemployment_slack_short_1000
+- high_underemployment_slack_short_1030
+- low_employment_ratio_slack_short_1130
+- low_participation_slack_short_1200
+- rising_participation_repair_long_1330
+parameter_space:
+  per_variant_combinations: 27
+  entry_parameters_per_variant: 1
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+  entry_params:
+    rank_threshold:
+    - 0.5
+    - 0.55
+    - 0.6
+  stop_params:
+    stop_pct:
+    - 0.003
+    - 0.004
+    - 0.005
+  take_profit_params:
+    target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+pre_pnl_density:
+  decision: PASS
+  entry_rows: 45
+  rows_passing_density: 45
+  artifact: research_artifacts/nq_labor_market_slack_state_density_audit_20260702.md
+  detail_csv: research_artifacts/nq_labor_market_slack_state_density_audit_20260702.csv
+  summary_csv: research_artifacts/nq_labor_market_slack_state_density_summary_20260702.csv
+  p_n_l_inspected: false
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  methodology_audit: campaigns/nq_labor_market_slack_state/methodology_audit.md
+  feature_csv: data/external/nq_labor_market_slack_state_features_20110103_20260612.csv
+  density_audit: research_artifacts/nq_labor_market_slack_state_density_audit_20260702.md
+  test_summary: backtest-campaigns/nq_labor_market_slack_state/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_labor_market_slack_state/campaign_results.csv
+  monte_carlo_summary: backtest-campaigns/nq_labor_market_slack_state/monte_carlo_summary.json
+  wfa_stitched_oos_trade_logs_manifest: backtest-campaigns/nq_labor_market_slack_state/wfa_stitched_oos_trade_logs_manifest.csv
+staged_validation:
+  test_run_id: run1
+  status: failed
+  verdict: FAIL
+  summary_path: backtest-campaigns/nq_labor_market_slack_state/campaign_test_summary.json
+  failure_reason: All five predeclared variants failed limited_core_grid_test; no branch reached limited
+    monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.
+  best_variant: low_employment_ratio_slack_short_1130
+  best_variant_profitable_iteration_rate: 0.3333333333333333
+  best_variant_benchmark_passing: 3
+  rescue_attempted: false
+final_verdict: FAIL

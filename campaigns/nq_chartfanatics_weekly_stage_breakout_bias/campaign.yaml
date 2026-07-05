@@ -1,0 +1,103 @@
+campaign_id: nq_chartfanatics_weekly_stage_breakout_bias
+title: NQ ChartFanatics Weekly Stage 2 Breakout Bias
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: weekly_stage2_trend_bias_intraday_continuation
+hypothesis: NQ same-day continuation entries may have a better distribution when the prior completed weekly state
+  is a Stage 2 uptrend defined by 10/20/30/40-week moving-average alignment and weekly structure.
+rationale: 'Chart Fanatics/Ted Zhang describes weekly stage analysis using 10, 20, 30, and 40-week moving averages
+  to identify Stage 2 uptrends, with the daily chart used for entries. This campaign tests the locally auditable
+  futures subset: completed prior-week Stage 2 bias plus completed five-minute NQ RTH continuation/reclaim triggers,
+  flattened intraday.'
+research_sources:
+- title: Stage Analysis Strategy
+  author: Ted Zhang / Chart Fanatics
+  year: 2026
+  link_or_doi: https://www.chartfanatics.com/strategies/stage-analysis-strategy
+  expected_mechanism: Weekly 10/20/30/40 moving-average stage state identifies Stage 2 trend environments; daily/intraday
+    breakouts refine entries.
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  author: William Brock, Josef Lakonishok, and Blake LeBaron
+  year: 1992
+  link_or_doi: https://ideas.repec.org/a/bla/jfinan/v47y1992i5p1731-64.html
+  expected_mechanism: Provides academic support for moving-average and trading-range breakout rules as testable
+    technical predictors.
+- title: Time Series Momentum
+  author: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse H. Pedersen
+  year: 2012
+  link_or_doi: https://ideas.repec.org/a/eee/jfinec/v104y2012i2p228-250.html
+  expected_mechanism: Documents own-return trend persistence across liquid futures, including equity-index futures.
+- title: 'A trend factor: Any economic gains from using information over investment horizons?'
+  author: Yufeng Han, Ke Yang, and Guofu Zhou
+  year: 2016
+  link_or_doi: https://ideas.repec.org/a/eee/jfinec/v122y2016i2p352-375.html
+  expected_mechanism: Supports combining moving-average trend information over multiple horizons.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV/orderflow cache aggregated to completed five-minute bars
+- Completed RTH daily and weekly bars derived from the same NQ cache; no external feature file
+duplicate_edge_check:
+  active_scope_only: false
+  checked_edges:
+  - nq_chartfanatics_measured_move_pullback
+  - nq_ema_pullback_orderflow_continuation
+  - nq_wide_range_orderflow_continuation
+  - nq_market_structure_pivot_trend_bias
+  - nq_chartfanatics_daily_bollinger_environment
+  - nq_opening_range_retest_orderflow
+  conclusion: Eligible for a density screen as a distinct ChartFanatics-derived NQ edge because the gating hypothesis
+    is weekly Stage 2 cycle state from 10/20/30/40-week moving averages, not intraday EMA pullback, measured-move
+    continuation, daily Bollinger state, opening-range retest alone, or multi-timeframe pivot bias alone.
+lookahead_risks:
+- Weekly stage state excludes the current incomplete week and uses only completed prior RTH sessions.
+- Daily prior high/close and consolidation levels use only sessions before the signal date.
+- Intraday triggers use completed five-minute RTH bars, with entries no earlier than the next bar open.
+- Configs force same-day flattening and forbid overnight exposure despite the swing-trading source context.
+failure_modes:
+- The source is a swing/position framework; same-day flattening can remove the payoff horizon.
+- Stage 2 classification may be too persistent and add little information beyond generic trend exposure.
+- Intraday breakout/reclaim variants can overtrade late-stage trends after costs.
+- If the edge only survives a narrow threshold or one regime, it must be rejected.
+variants:
+- stage2_opening_or_breakout_1030
+- stage2_prior_high_reclaim_1130
+- stage2_prior_close_reclaim_1200
+- stage2_weekly_support_reclaim_1430
+- stage2_compression_breakout_1200
+parameter_space:
+  entry_parameters:
+  - entry.params.stage_strength_threshold
+  - entry.params.min_breakout_ticks
+  stop_parameters:
+  - sl.params.stop_offset_ticks
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant: 54
+  entry_parameter_cap: 2
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after density or staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required_if_density_passes: true
+pre_pnl_density_audit:
+  decision: PASS
+  artifact: research_artifacts/nq_chartfanatics_weekly_stage_breakout_bias_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_chartfanatics_weekly_stage_breakout_bias_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_chartfanatics_weekly_stage_breakout_bias_density_summary_20260701.csv
+  result: 45/45 declared entry rows passed; 5/5 variants passed density before staged PnL.
+staged_validation:
+  status: completed
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  variants_tested: 5
+  variants_failed_limited_core: 5
+  report_path: backtest-campaigns/nq_chartfanatics_weekly_stage_breakout_bias/campaign_test_summary.json
+  results_summary_csv: backtest-campaigns/nq_chartfanatics_weekly_stage_breakout_bias/limited_core_results_summary.csv
+  failure_reason: All five weekly Stage 2 variants failed limited_core_grid_test with 0 benchmark-passing combinations;
+    no branch reached limited monkey, WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

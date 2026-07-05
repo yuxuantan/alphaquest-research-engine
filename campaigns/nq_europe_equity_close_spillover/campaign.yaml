@@ -1,0 +1,123 @@
+campaign_id: nq_europe_equity_close_spillover
+title: NQ Europe Equity Close Spillover
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: europe_equity_close_spillover
+hypothesis: Same-day European equity cash-market strength or weakness may spill into
+  late NQ RTH risk appetite after DAX and Euro STOXX 50 have closed.
+rationale: This campaign tests an international European cash-close information channel,
+  distinct from the already rejected NQ European-open overnight drift, Nikkei/Tokyo
+  close spillover, USDJPY safe-haven, oil shock, ES/NQ relative-value, and NQ own-momentum
+  families.
+research_sources:
+- title: Correlations in Price Changes and Volatility across International Stock Markets
+  authors: Yasushi Hamao, Ronald W. Masulis, and Victor Ng
+  year: 1990
+  venue: Review of Financial Studies
+  link_or_doi: https://ideas.repec.org/a/oup/rfinst/v3y1990i2p281-307.html
+  expected_mechanism: Documents short-run interdependence in price changes and volatility
+    across Tokyo, London, and New York market indexes.
+- title: Do Bulls and Bears Move Across Borders? International Transmission of Stock
+    Returns and Volatility as the World Turns
+  authors: Wen-Ling Lin, Robert F. Engle, and Takatoshi Ito
+  year: 1991
+  venue: NBER Working Paper 3911
+  link_or_doi: https://www.nber.org/papers/w3911
+  expected_mechanism: Motivates return and volatility transmission across markets
+    as trading moves through global time zones.
+- title: 'Spillovers and Correlations between US and Major European Stock Markets:
+    The Role of the Euro'
+  authors: Christos S. Savva, Denise R. Osborn, and Len Gill
+  year: 2009
+  venue: Applied Financial Economics
+  link_or_doi: https://ideas.repec.org/p/man/sespap/0541.html
+  expected_mechanism: Directly studies spillovers and correlations between US and
+    major European equity markets.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV/orderflow cache in America/New_York
+- Yahoo daily adjusted close histories for ^GDAXI and ^STOXX50E cached under data/external/yahoo_europe_equity_indices
+- Derived same-day feature CSV data/external/nq_europe_equity_close_spillover_features_20110103_20260612.csv
+duplicate_edge_check:
+  checked_edges:
+  - nq_overnight_drift_european_open
+  - nq_nikkei225_close_spillover
+  - nq_usdjpy_safe_haven_spillover
+  - nq_oil_price_shock_spillover
+  - nq_es_relative_value_orderflow_absorption_reversion
+  - nq_daily_time_series_momentum
+  conclusion: Eligible as a distinct NQ test because it uses same-day European cash
+    equity index closes after a conservative 13:30 ET availability cutoff, not an
+    overnight European-open drift window, Asian close, commodity/FX shock, ES/NQ spread,
+    or NQ-only momentum state.
+lookahead_risks:
+- A session dated D can use DAX and Euro STOXX 50 observation D only after 13:30 ET.
+- Days without a same-day European index observation generate no signal; no prior-day
+  as-of fill is used for same-day variants.
+- Rolling ranks are computed on the European daily series before the session-level
+  same-day join.
+- Signals use a completed NQ bar and enter no earlier than the next bar open.
+- No future NQ high/low, final VWAP, post-entry path, or later European revision is
+  used.
+failure_modes:
+- European cash-close information may already be incorporated into NQ before the signal
+  clock.
+- DAX/STOXX direction may be dominated by local European factors that do not transfer
+  to Nasdaq.
+- Yahoo index histories require vendor verification before any promotion beyond candidate
+  review.
+feature_construction:
+  builder: tools/build_nq_europe_equity_close_spillover_features.py
+  output: data/external/nq_europe_equity_close_spillover_features_20110103_20260612.csv
+  raw_cache_dir: data/external/yahoo_europe_equity_indices
+  rows: 3813
+  valid_rank_rows: 3707
+  availability_time_et: '13:30:00'
+pre_pnl_density_audit:
+  decision: PASS
+  artifact: research_artifacts/nq_europe_equity_close_spillover_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_europe_equity_close_spillover_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_europe_equity_close_spillover_density_summary_20260701.csv
+  result: 45/45 declared entry rows passed; 5/5 variants passed before any PnL was
+    inspected.
+parameter_space:
+  entry_parameters:
+  - entry.params.rank_min or entry.params.rank_max
+  stop_parameters:
+  - sl.params.stop_pct
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant:
+    dax_1d_strength_long_1330: 27
+    stoxx_1d_strength_long_1400: 27
+    dax_1d_weakness_short_1330: 27
+    stoxx_1d_weakness_short_1400: 27
+    europe_broad_weakness_short_1500: 27
+  entry_parameter_cap: 1
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+variants:
+- dax_1d_strength_long_1330
+- stoxx_1d_strength_long_1400
+- dax_1d_weakness_short_1330
+- stoxx_1d_weakness_short_1400
+- europe_broad_weakness_short_1500
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  preflight_required: true
+  staged_validation_required: true
+staged_validation:
+  status: completed_failed
+  decision: FAIL
+  report_path: backtest-campaigns/nq_europe_equity_close_spillover/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_europe_equity_close_spillover/campaign_results.csv
+  valid_run_id: run1
+  terminal_stage: limited_core_grid_test
+  result: All five predeclared variants failed limited_core_grid_test. One STOXX weakness branch had benchmark-passing
+    cells, but profitable iteration rate was below the required 0.70 stability threshold. No variant reached monkey testing,
+    WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

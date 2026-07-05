@@ -1,0 +1,3 @@
+from propstack.strategy_modules.entry.intraday_periodicity_persistence import IntradayPeriodicityPersistenceEntry
+
+ENTRY_MODULE = IntradayPeriodicityPersistenceEntry

@@ -1,0 +1,75 @@
+campaign_id: nq_turn_of_month_seasonality
+title: NQ Turn-of-Month Seasonality
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: NQ may retain a positive equity-index turn-of-month premium during RTH sessions around month-end
+  and the first calendar days of the next month.
+rationale: The edge is a deterministic calendar-seasonality hypothesis, not an intraday fixed-time drift,
+  weekday, or Halloween half-year effect.
+research_sources:
+- title: Calendar Anomalies in Stock Index Futures
+  authors: Oscar Carchano, Angel Pardo
+  year: 2011
+  venue: SSRN working paper
+  link: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=1958587
+  relevance: 'Tests calendar anomalies directly in S&P 500, DAX, and Nikkei stock-index futures. This
+    campaign applies the turn-of-month family to ES futures with explicit costs and prop-style intraday
+    flattening.
+
+    '
+- title: Are Seasonal Anomalies Real? A Ninety-Year Perspective
+  authors: Josef Lakonishok, Seymour Smidt
+  year: 1988
+  venue: Review of Financial Studies
+  link: https://www-2.rotman.utoronto.ca/~kan/3032/pdf/AssetPricingAnomalies/Lakonishok_Smidt_RFS_1988.pdf
+  relevance: 'Documents turn-of-period effects in long-run U.S. equity data, including the turn-of-month
+    interval. This campaign tests whether the related index futures expression survives current futures
+    costs and validation gates.
+
+    '
+- title: A Monthly Effect in Stock Returns
+  authors: Robert A. Ariel
+  year: 1987
+  venue: Journal of Financial Economics
+  link: https://ideas.repec.org/a/eee/jfinec/v18y1987i1p161-174.html
+  relevance: 'Early evidence that equity returns are concentrated in recurring monthly calendar windows.
+    This campaign treats that as a weak prior requiring fail-closed ES futures validation.
+
+    '
+duplicate_edge_check:
+  active_scope_only: true
+  existing_nq_campaign_id: none_exact
+  active_rejected_edges_checked:
+  - nq_calendar_weekday_bias
+  - nq_halloween_seasonal_premium
+  - nq_daily_time_series_momentum
+  - nq_daily_short_term_reversal
+  conclusion: Eligible as a distinct NQ calendar anomaly because it keys off month-end/early-month windows
+    rather than weekdays, November-April seasonality, or prior daily returns.
+variants:
+- classic_turn_window_1000_long
+- early_month_first_days_1000_long
+- month_end_last_days_1000_long
+- opening_turn_window_0935_long
+- late_turn_window_1300_long
+pre_pnl_density_audit:
+  artifact: research_artifacts/nq_turn_of_month_seasonality_density_audit_20260630.md
+  detail_csv: research_artifacts/nq_turn_of_month_seasonality_density_audit_20260630.csv
+  status: failed
+rescue_policy:
+  allowed: false
+  reason: No NQ rescue authorized by the current request.
+status: completed
+completed_at: '2026-06-30'
+result_summary:
+  decision: FAIL
+  terminal_stage: pre_pnl_density_screen
+  report: backtest-campaigns/nq_turn_of_month_seasonality/campaign_test_summary.json
+  candidate_report_created: false
+  failure_reason: 'Rejected before staged NQ PnL: 21/33 declared turn-of-month entry-grid rows failed
+    the 50 signals/year and latest-252-session density checks. Faithful month-end/early-month windows
+    were too sparse; widening enough to pass would dilute the edge into broad monthly-calendar drift.
+    No NQ PnL was inspected.'

@@ -1,0 +1,92 @@
+campaign_id: nq_move_treasury_volatility_state
+title: NQ MOVE Treasury Implied Volatility State
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: treasury_implied_volatility_spillover
+hypothesis: Lagged MOVE Treasury implied-volatility states may identify risk-off or risk-on NQ sessions through a bond-volatility
+  spillover channel distinct from Treasury yield levels and equity VIX.
+rationale: The campaign tests whether prior-day Treasury implied-volatility stress, calm, spikes, or crushes affect same-day
+  NQ intraday drift. MOVE observations are joined strictly before each NQ session date, and entries occur only after completed
+  five-minute RTH bars.
+research_sources:
+- title: Market volatility, monetary policy and the term premium
+  author: BIS Working Papers No. 606
+  year: 2017
+  link_or_doi: https://www.bis.org/publ/work606.pdf
+  expected_mechanism: Uses MOVE as US Treasury implied volatility and motivates bond-volatility as a macro/term-premium risk
+    state.
+- title: A new government bond volatility index predictor for the U.S. equity premium
+  author: Zheyao Pan and Kam Fong Chan
+  year: 2018
+  link_or_doi: https://doi.org/10.1016/j.pacfin.2016.12.007
+  expected_mechanism: Finds government bond volatility innovations can predict the US equity premium, supporting a Treasury-volatility
+    spillover hypothesis.
+- title: ICE BofA MOVE Index historical data via Yahoo Finance chart endpoint
+  author: ICE BofA / Yahoo Finance
+  year: 2026
+  link_or_doi: https://finance.yahoo.com/quote/%5EMOVE/
+  expected_mechanism: Daily MOVE closes provide the prior observable Treasury implied-volatility state.
+data_needs:
+- NQ Sierra RTH 1-minute cache aggregated to completed five-minute bars
+- Daily ICE BofA MOVE Index closes from Yahoo Finance
+- Derived strict-prior MOVE feature CSV data/external/nq_move_treasury_vol_features_20110103_20260612.csv
+duplicate_edge_check:
+  checked_edges:
+  - nq_treasury_rate_shock_intraday
+  - nq_treasury_rate_orderflow_confirmation
+  - nq_real_yield_breakeven_state
+  - nq_cboe_vix_level_state_intraday
+  - nq_vvix_tail_risk_intraday
+  - nq_vix_term_structure_orderflow_pullback
+  conclusion: 'Eligible for density testing as a distinct risk-state edge: it uses Treasury implied volatility, not Treasury
+    yield levels, real yields, breakevens, equity VIX/VVIX, or VIX term structure.'
+lookahead_risks:
+- MOVE observations are as-of joined with allow_exact_matches=false, so each NQ session uses only the latest MOVE close strictly
+  before session_date.
+- Entries are emitted only after completed five-minute RTH bars.
+- No same-day MOVE close, final NQ session high/low, final VWAP, or post-entry path is used.
+failure_modes:
+- MOVE can be stale by the NQ RTH session.
+- Treasury volatility can reflect rate-option hedging rather than equity risk appetite.
+- The effect may already be captured by VIX/rate-level variables or may be too slow for intraday NQ.
+variants:
+- high_move_riskoff_short_1000
+- high_move_riskoff_short_1430
+- low_move_carry_long_1000
+- move_spike_morning_weakness_short_1130
+- move_crush_morning_strength_long_1130
+parameter_space:
+  entry_parameters:
+  - entry.params.rank_threshold
+  - entry.params.change_threshold
+  stop_parameters:
+  - sl.params.stop_pct
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant: 36
+  entry_parameter_cap: 2
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after density or staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required_if_density_passes: true
+pre_pnl_density_audit:
+  decision: FAIL
+  artifact: research_artifacts/nq_move_treasury_volatility_state_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_move_treasury_volatility_state_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_move_treasury_volatility_state_density_summary_20260701.csv
+  result: 43/45 entry rows passed; 3/5 variants passed all declared density rows; no staged PnL run.
+staged_validation:
+  status: not_run
+  decision: FAIL
+  terminal_stage: pre_pnl_density_screen
+  report_path: backtest-campaigns/nq_move_treasury_volatility_state/campaign_test_summary.json
+  failure_reason: Pre-PnL density failed; no staged PnL, monkey, WFA, Monte Carlo, simulated incubation, acceptance OOS, or
+    candidate report was run.

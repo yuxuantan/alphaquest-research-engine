@@ -1,0 +1,161 @@
+campaign_id: nq_chartfanatics_daily_bollinger_environment
+title: NQ Chart Fanatics daily Bollinger environment
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: nq_chartfanatics_daily_bollinger_environment
+hypothesis: Completed prior-session daily 20/3 Bollinger-band environment can identify NQ sessions where intraday
+  execution should favor expansion continuation, consolidation edge reversion, or post-expansion mean reversion.
+rationale: Anthony Crudele describes first classifying the daily futures environment with 20-period, 3-standard-deviation
+  Bollinger Bands, then adapting lower-timeframe execution to expansion, consolidation, or mean-reversion phases.
+  This campaign makes that classification deterministic and uses only completed prior RTH sessions before any same-day
+  intraday entry.
+research_sources:
+- title: Futures Trading Strategy
+  author: Anthony Crudele / Chart Fanatics
+  year: 2026
+  link_or_doi: https://www.chartfanatics.com/strategies/futures-trading-strategy
+  expected_mechanism: Practitioner framework classifies index futures into daily Bollinger consolidation, trend
+    expansion, and mean-reversion states before lower-timeframe execution.
+- title: Bollinger on Bollinger Bands
+  author: John Bollinger
+  year: 2001
+  link_or_doi: book_reference
+  expected_mechanism: Defines Bollinger Bands as adaptive volatility envelopes; this campaign freezes 20-period
+    and 3-standard-deviation settings before testing.
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  author: William Brock, Josef Lakonishok, and Blake LeBaron
+  year: 1992
+  link_or_doi: https://doi.org/10.1111/j.1540-6261.1992.tb04681.x
+  expected_mechanism: Provides academic context for testing simple technical rules against stochastic-return nulls,
+    motivating strict staged robustness gates rather than discretionary examples.
+source_quality_note: The Chart Fanatics/Crudele rule is practitioner-originated and partly discretionary. Academic
+  support is only for objective technical-rule testing, so this campaign must fail closed if density or robustness
+  is weak.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  checked_edges:
+  - nq_range_compression_breakout
+  - nq_volatility_managed_intraday_premium
+  - nq_volatility_filtered_intraday_momentum_priority
+  - nq_daily_time_series_momentum
+  - nq_20_80_price_ending_barrier
+  - nq_chartfanatics_measured_move_pullback
+  conclusion: Eligible as a distinct Chart Fanatics-derived NQ campaign because the primary edge is completed prior-session
+    daily 20/3 Bollinger environment classification, not prior-session range compression, lagged realized-volatility
+    rank, fixed-time daily momentum, terminal price-ending reaction, or measured-pullback projection.
+chart_fanatics_review:
+  selected_after: 80/20 Nasdaq and measured-move campaigns failed density
+  selected_reason: The Crudele futures page is the next futures-specific Chart Fanatics idea that can be implemented
+    with local OHLC data without duplicating liquidity/OTE/orderflow/AOI/profile families.
+lookahead_risks:
+- Daily Bollinger states are computed only from completed prior RTH sessions and are unavailable until after the
+  prior session closes.
+- Opening-range levels are unavailable until the configured 15-minute or 30-minute opening window completes.
+- Intraday trigger bars are completed 5-minute bars and the engine enters no earlier than the next bar open.
+- No current-session final high, low, close, VWAP, volume profile, or future Bollinger state is used.
+failure_modes:
+- A swing/options framework may not translate to one-contract intraday futures execution.
+- Bollinger expansion may arrive after most of the move and fail after slippage.
+- Consolidation edge fades can be adverse selected by true trend days.
+- Mean-reversion trigger approximation may be too crude relative to the discretionary Beacon/Fibonacci overlay.
+- Performance can concentrate in a few volatility regimes or crisis months.
+variants:
+- morning_expansion_long_or15_breakout
+- morning_expansion_short_or15_breakdown
+- late_morning_consolidation_prior_edge_fade
+- morning_upper_band_mean_reversion_short
+- morning_lower_band_mean_reversion_long
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - width_rank_threshold
+  - min_breakout_ticks
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.width_rank_threshold:
+    - 0.35
+    - 0.5
+    - 0.65
+    entry.params.min_breakout_ticks:
+    - 0
+    - 2
+    - 4
+    sl.params.stop_offset_ticks:
+    - 1
+    - 4
+    - 8
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+status: completed_failed_density
+pre_pnl_density_audit:
+  status: FAIL
+  artifact: research_artifacts/nq_chartfanatics_daily_bollinger_environment_density_audit_20260630.md
+  csv: research_artifacts/nq_chartfanatics_daily_bollinger_environment_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_chartfanatics_daily_bollinger_environment_density_summary_20260630.csv
+  density_rule: Each declared entry-grid corner must exceed 50 signals/year on full history, limited-core shortlist
+    window, and latest 252 sessions before staged PnL.
+  completed_at: '2026-06-30T12:30:20+08:00'
+  decision: Reject before staged PnL; do not change mechanics without explicit user rescue authorization.
+  variant_density_summary:
+  - variant_id: late_morning_consolidation_prior_edge_fade
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 28.947285601888275
+    min_limited_core_signals_per_year: 25.132075471698112
+    min_latest252_signals_per_year: 28.0
+    density_gate_pass: false
+  - variant_id: morning_expansion_long_or15_breakout
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 0.0
+    min_limited_core_signals_per_year: 0.0
+    min_latest252_signals_per_year: 0.0
+    density_gate_pass: false
+  - variant_id: morning_expansion_short_or15_breakdown
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 0.7269866247049567
+    min_limited_core_signals_per_year: 2.0377358490566038
+    min_latest252_signals_per_year: 0.0
+    density_gate_pass: false
+  - variant_id: morning_lower_band_mean_reversion_long
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 2.5114083398898503
+    min_limited_core_signals_per_year: 3.3962264150943393
+    min_latest252_signals_per_year: 1.0
+    density_gate_pass: false
+  - variant_id: morning_upper_band_mean_reversion_short
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 0.13217938630999213
+    min_limited_core_signals_per_year: 0.0
+    min_latest252_signals_per_year: 0.0
+    density_gate_pass: false
+result_summary:
+  verdict: FAIL
+  completed_at: '2026-06-30T12:30:20+08:00'
+  campaign_test_summary: backtest-campaigns/nq_chartfanatics_daily_bollinger_environment/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_chartfanatics_daily_bollinger_environment/campaign_results.csv
+  methodology_audit: campaigns/nq_chartfanatics_daily_bollinger_environment/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    pre_pnl_density_screen: 5
+  failure_reason: 'Pre-PnL density screen failed: all five Chart Fanatics daily-Bollinger variants had 0/9 entry-grid
+    corners passing all required windows. The best variant minimum limited-core density was 25.13 signals/year and
+    the worst was 0.00/year, both below the 50/year gate. No staged PnL, monkey, WFA, Monte Carlo, simulated incubation,
+    acceptance OOS, or candidate reporting was run.'

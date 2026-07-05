@@ -1,0 +1,86 @@
+campaign_id: nq_52week_anchor_momentum
+title: NQ 52-Week Anchor Momentum
+status: failed_limited_core_grid_test
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: 'NQ may inherit a futures-index version of 52-week-high anchoring: completed
+  prior 252-session highs act as salient reference points, so near-high continuation
+  may persist intraday after completed-bar confirmation.'
+expected_mechanism: The 252-session high is computed only from completed prior RTH
+  sessions. Intraday triggers test whether fresh completed-bar pressure releases anchoring/friction
+  around that reference without using future daily highs/lows.
+sources:
+- title: The 52-Week High and Momentum Investing
+  authors: Thomas J. George and Chuan-Yang Hwang
+  year: 2004
+  journal: Journal of Finance
+  doi: 10.1111/j.1540-6261.2004.00695.x
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/j.1540-6261.2004.00695.x
+  working_paper_pdf: https://www.bauer.uh.edu/tgeorge/papers/gh4-paper.pdf
+data_needs:
+- NQ RTH 1-minute OHLCV/orderflow cache resampled to completed 5-minute bars.
+- At least 252 completed prior RTH sessions before any signal is eligible.
+lookahead_risks:
+- The current session is excluded from the 252-session anchor calculation.
+- Signals are emitted only after a completed 5-minute bar; entry is next bar open
+  or later in the staged engine.
+- No final session high, low, close, VWAP, volume profile, or future anchor value
+  is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_daily_time_series_momentum
+  - nq_daily_short_term_reversal
+  - nq_chartfanatics_weekly_stage_breakout_bias
+  - nq_market_structure_pivot_trend_bias
+  - nq_prior_session_breakout_orderflow_confirmation
+  - nq_round_number_orderflow_barrier
+  conclusion: Proceed as a distinct edge before PnL because the explanatory state
+    is nearness to the completed prior 252-session high, not a trailing return, weekly
+    stage score, prior-session benchmark, or psychological round number.
+variants:
+- near_high_opening_drive_long_1000
+- near_high_late_morning_persistence_long_1130
+- near_high_anchor_hold_long_1030
+- near_high_pullback_reclaim_long_1200
+- near_high_extension_hold_long_1130
+parameter_space:
+  per_variant_combinations: 81
+  entry_parameters_per_variant: 2
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+pre_pnl_notes:
+- An initial tight breakout/breakdown draft was density-screened before any PnL and
+  rejected as structurally sparse; the frozen staged campaign is long-only near-anchor
+  because that is the source-supported dense expression.
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  density_audit: research_artifacts/nq_52week_anchor_momentum_density_audit_20260701.md
+  test_summary: backtest-campaigns/nq_52week_anchor_momentum/campaign_test_summary.json
+  methodology_audit: campaigns/nq_52week_anchor_momentum/methodology_audit.md
+density_result:
+  decision: PASS
+  entry_rows: 45
+  rows_passing_density: 45
+  artifact: research_artifacts/nq_52week_anchor_momentum_density_audit_20260701.md
+staged_result:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  valid_run_id: run2
+  variants_tested: 5
+  variants_failed_limited_core: 5
+  benchmark_passing_combinations: 0
+  total_combinations_tested: 405
+  failure_reason: All five variants failed limited_core_grid_test with 0 benchmark-passing
+    combinations and profitable-iteration rates below the 0.70 threshold.
+  summary: backtest-campaigns/nq_52week_anchor_momentum/campaign_test_summary.json
+  limited_core_results_summary: backtest-campaigns/nq_52week_anchor_momentum/limited_core_results_summary.csv
+  invalid_config_attempt:
+    run_id: run1
+    reason: Unsupported descriptive data.feature_set label; corrected to feature_set
+      none before valid run2 PnL evidence.

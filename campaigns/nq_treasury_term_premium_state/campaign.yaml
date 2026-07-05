@@ -1,0 +1,147 @@
+campaign_id: nq_treasury_term_premium_state
+title: NQ Treasury Term Premium State
+decision: FAIL
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: treasury_term_premium_state
+hypothesis: Strict-lag Treasury term-premium states may identify discount-rate risk pressure
+  or relief in growth-heavy Nasdaq-100 futures.
+rationale: This campaign tests the model-implied 10-year Treasury term premium, distinct from
+  observed Treasury yield level, rate shock, real-yield, breakeven, MOVE, VIX, credit-spread,
+  or Treasury-auction pressure campaigns.
+research_sources:
+- title: Term Premium on a 10 Year Zero Coupon Bond (THREEFYTP10)
+  authors: Board of Governors of the Federal Reserve System via FRED
+  year: 2026
+  venue: FRED
+  link_or_doi: https://fred.stlouisfed.org/series/THREEFYTP10
+  expected_mechanism: Provides a daily model-implied 10-year Treasury term-premium series,
+    separating duration-risk compensation from observed yield level.
+- title: An Arbitrage-Free Three-Factor Term Structure Model and the Recent Behavior of Long-Term
+    Yields and Distant-Horizon Forward Rates
+  authors: Don H. Kim and Jonathan H. Wright
+  year: 2005
+  venue: Federal Reserve FEDS paper
+  link_or_doi: https://www.federalreserve.gov/pubs/feds/2005/200533/200533abs.html
+  expected_mechanism: Motivates decomposing long-term yields into expected short-rate and
+    term-premium components.
+- title: Treasury Term Premia
+  authors: Federal Reserve Bank of New York
+  year: 2026
+  venue: NY Fed Data and Indicators
+  link_or_doi: https://www.newyorkfed.org/research/data_indicators/term-premia-tabs
+  expected_mechanism: Documents Treasury term-premium estimates as a financial-stability and
+    fixed-income risk-premium data family.
+data_needs:
+- NQ Sierra RTH 1-minute OHLCV/orderflow cache in America/New_York.
+- Public FRED daily THREEFYTP10 CSV cached under data/external/fred_treasury_term_premium.
+- Derived strict-lag feature CSV data/external/nq_treasury_term_premium_features_20110103_20260612.csv.
+duplicate_edge_check:
+  checked_edges:
+  - nq_treasury_rate_shock_intraday
+  - nq_treasury_rate_orderflow_confirmation
+  - nq_real_yield_breakeven_state
+  - nq_move_treasury_volatility_state
+  - nq_default_spread_orderflow_risk_premium
+  - nq_treasury_auction_pressure_density_screen
+  caveat: Existing Treasury/rates campaigns use observed nominal yields, real yields, breakevens,
+    MOVE volatility, auction calendars, or orderflow confirmation. This campaign uses the
+    model-implied term premium component of long rates and applies a separate strict-lag feature
+    construction.
+  conclusion: Eligible as a distinct duration-risk-premium state rather than a yield-level
+    or rate-shock sibling.
+lookahead_risks:
+- A session dated D can only use the latest THREEFYTP10 observation on or before D minus 7
+  calendar days.
+- Rolling ranks are computed in the term-premium table before the session-level as-of join.
+- Signals use a completed NQ RTH bar and enter no earlier than the next bar open.
+- No same-day term-premium row, final NQ session range, final VWAP, or post-entry path is
+  used.
+failure_modes:
+- The term premium may affect NQ mainly over multi-day horizons, not same-day RTH.
+- The 7-calendar-day lag may stale the signal.
+- The state may duplicate broad discount-rate or volatility regimes in practice and fail robustness.
+- If the edge only survives a narrow threshold or one regime, it must be rejected.
+feature_construction:
+  builder: tools/build_nq_treasury_term_premium_features.py
+  output: data/external/nq_treasury_term_premium_features_20110103_20260612.csv
+  source_cache: data/external/fred_treasury_term_premium/THREEFYTP10.csv
+  source_url: https://fred.stlouisfed.org/graph/fredgraph.csv?id=THREEFYTP10
+  availability_lag_calendar_days: 7
+pre_pnl_density_audit:
+  decision: PASS
+  artifact: research_artifacts/nq_treasury_term_premium_state_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_treasury_term_premium_state_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_treasury_term_premium_state_density_summary_20260701.csv
+  result: 15/15 declared entry rows passed; 5/5 variants passed before any PnL was inspected.
+parameter_space:
+  entry_parameters:
+  - entry.params.term_premium_rank_threshold
+  stop_parameters:
+  - sl.params.stop_pct
+  take_profit_parameters:
+  - tp.params.target_r_multiple
+  combinations_per_variant:
+    high_21d_term_premium_short_1000: 27
+    high_21d_term_premium_rebound_long_1330: 27
+    rising_5d_term_premium_short_1030: 27
+    falling_21d_term_premium_rebound_long_1200: 27
+    high_5d_term_premium_short_1130: 27
+  entry_parameter_cap: 1
+  stop_parameter_cap: 1
+  take_profit_parameter_cap: 1
+variants:
+- high_21d_term_premium_short_1000
+- high_21d_term_premium_rebound_long_1330
+- rising_5d_term_premium_short_1030
+- falling_21d_term_premium_rebound_long_1200
+- high_5d_term_premium_short_1130
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after staged results without explicit user approval.
+testing_plan:
+  methodology: current staged research pipeline
+  preflight_required: true
+  staged_validation_required: true
+status: completed_failed
+staged_validation:
+  status: completed
+  decision: FAIL
+  terminal_summary:
+    high_21d_term_premium_short_1000:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.14814814814814814
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.14814814814814814
+        below 0.7; benchmark_passing=0/27; top_failure=preferred_min_total_trades;max_best_day_concentration'
+    high_21d_term_premium_rebound_long_1330:
+      terminal_stage: limited_monkey_test
+      core_profitable_rate: 1.0
+      core_benchmark_passing: 0
+      failure_reason: 'limited_monkey_test failed: core_beats_monkey_net_profit_rate=0.84675
+        below 0.90; core_beats_monkey_max_drawdown_rate=0.866375 below 0.90; monkey_median_net=-280.0'
+    rising_5d_term_premium_short_1030:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.4444444444444444
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.4444444444444444
+        below 0.7; benchmark_passing=0/27; top_failure=max_best_day_concentration'
+    falling_21d_term_premium_rebound_long_1200:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.0
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.0 below
+        0.7; benchmark_passing=0/27; top_failure=min_total_net_profit;max_consecutive_losses'
+    high_5d_term_premium_short_1130:
+      terminal_stage: limited_core_grid_test
+      core_profitable_rate: 0.6666666666666666
+      core_benchmark_passing: 0
+      failure_reason: 'limited_core_grid_test failed: profitable_iteration_rate=0.6666666666666666
+        below 0.7; benchmark_passing=0/27; top_failure=preferred_min_total_trades'
+  aggregate_failure_reason: 4 variants failed limited_core_grid_test. The only branch that
+    passed limited core was high_21d_term_premium_rebound_long_1330, which failed limited_monkey_test
+    with core_beats_monkey_net_profit_rate=0.84675 and core_beats_monkey_max_drawdown_rate=0.866375,
+    both below the 0.90 gate. No branch reached WFA, WFA OOS monkey, Monte Carlo, simulated
+    incubation, acceptance OOS, or candidate reporting.

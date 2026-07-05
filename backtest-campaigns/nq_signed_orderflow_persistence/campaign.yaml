@@ -1,0 +1,123 @@
+campaign_id: nq_signed_orderflow_persistence
+title: NQ signed orderflow persistence
+decision: pending_test
+created_at: "2026-06-30"
+instrument: NQ
+symbol: NQ
+market_timezone: America/New_York
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+edge_family: signed_orderflow_persistence
+hypothesis: >
+  Completed-bar aggressive signed orderflow in NQ can persist over short
+  intraday horizons when price movement confirms the imbalance, because large
+  orders are split over time and liquidity providers demand compensation for
+  adverse-selection risk.
+rationale: >
+  This campaign ports the ES signed-flow persistence edge to native NQ orderflow
+  before looking at NQ PnL. It tests NQ's own aggregate signed volume, not
+  MES/NQ divergence, not SPY or ETF state, and not a fixed time-of-day long
+  premium. Each variant waits for a completed RTH 1-minute bar whose rolling
+  signed-flow imbalance and rolling return agree, then enters on the next bar
+  open with explicit costs and same-day flattening.
+source_es_campaign:
+  campaign_id: es_signed_orderflow_persistence
+  source_result: FAIL
+  source_summary: >
+    The ES source failed limited core-grid robustness across original and rescue
+    variants. That weak prior is recorded here; the NQ transfer is tested only
+    because it is a distinct native-NQ orderflow edge with local data support.
+sources:
+  - title: The Price Impact of Order Book Events
+    authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+    year: 2014
+    venue: Journal of Financial Econometrics
+    doi: 10.1093/jjfinec/nbt003
+    link: https://academic.oup.com/jfec/article-abstract/12/1/47/816163
+    relevance: >
+      Documents short-horizon price impact from order-flow imbalance. This
+      campaign uses a Sierra aggregate trade-side proxy for aggressive flow,
+      not full limit-order-book OFI.
+  - title: Flow Toxicity and Liquidity in a High-frequency World
+    authors: David Easley, Marcos Lopez de Prado, Maureen O'Hara
+    year: 2012
+    venue: Review of Financial Studies
+    doi: 10.1093/rfs/hhs053
+    link: https://academic.oup.com/rfs/article-abstract/25/5/1457/1569929
+    relevance: >
+      Supports the idea that order-flow imbalance can identify adverse-selection
+      pressure. The implementation uses signed-volume imbalance, not VPIN proper.
+  - title: How Markets Slowly Digest Changes in Supply and Demand
+    authors: Jean-Philippe Bouchaud, J. Doyne Farmer, Fabrizio Lillo
+    year: 2009
+    venue: Handbook of Financial Markets
+    link: https://arxiv.org/abs/0809.0822
+    relevance: >
+      Reviews persistent orderflow and gradual incorporation of supply-demand
+      information. The strategy translates this into intraday NQ continuation
+      tests with short forced holds.
+data_needs:
+  - data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  - timezone-aware NQ RTH 1-minute OHLCV bars in America/New_York
+  - completed-bar signed_volume, buy_volume, sell_volume, large10/large20 signed and total volume
+  - deterministic trade_orderflow_features built from completed bars only
+data_quality_caveats:
+  - Sierra signed-volume fields are completed-bar aggregate bid/ask-volume proxies, not quote-level OFI or print-sequenced LOB data.
+  - Reconstructed minute bars cannot prove exact intra-minute stop/target ordering when both prices are touched in one OHLC bar.
+  - The edge is rejected if timestamp coverage, session labeling, feature construction, or flatten handling is ambiguous.
+lookahead_risks:
+  - Rolling imbalance and return columns must use only completed bars ending at the signal timestamp.
+  - A signal at HH:MM uses the bar that closed at HH:MM and can only enter at the HH:MM next-bar open.
+  - No future session totals, future VWAP, final daily ranges, final volume profile values, or post-entry orderflow are used.
+  - Flatten and no-overnight checks are config-driven and must remain earlier than the prop cutoff.
+failure_modes:
+  - Signed-volume classification from Sierra aggregate bars is a proxy and may be weaker than print-level aggressor labels.
+  - Flow imbalance may be autocorrelated but still too weak to beat next-bar execution, commissions, and slippage.
+  - The apparent edge can be dominated by one side, one volatile regime, or one fixed decision time.
+  - Large-trade buckets can be sparse enough to create unstable parameter neighbourhoods.
+  - Late-day variants can be dominated by forced flattening or same-bar stop/target ambiguity.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+    - nq_mes_micro_flow_divergence_reversion
+    - nq_mes_flow_price_extension_reversion
+    - nq_wide_range_orderflow_continuation
+    - nq_impulse_pause_orderflow_continuation
+    - nq_morning_orderflow_momentum_continuation
+    - nq_midday_range_orderflow_breakout
+    - nq_rth_intraday_risk_premium
+    - nq_prior_session_breakout_orderflow_confirmation
+    - nq_spy_turnover_orderflow_attention
+    - nq_credit_etf_orderflow_risk_appetite
+  conclusion: >
+    Approved as a nonduplicate NQ transfer because the tested edge is native
+    NQ signed-flow persistence at fixed completed-bar decision times. Prior NQ
+    campaigns used orderflow as confirmation for MES divergence, price-extension
+    fades, impulse/pause structures, wide-range bars, prior-level breakouts, or
+    external-risk states; they did not test the raw completed-window signed-flow
+    continuation hypothesis as the primary edge.
+parameter_space:
+  entry.params.flow_threshold:
+    - variant_specific_3_values
+  entry.params.min_return_ticks:
+    - variant_specific_3_values
+  sl.params.stop_pct:
+    - 0.0025
+    - 0.004
+    - 0.006
+  tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    - 2.0
+  combinations_per_variant: 81
+variants:
+  - early_5m_signed_flow_continuation_1000
+  - late_morning_15m_signed_flow_continuation_1130
+  - midday_30m_signed_flow_continuation_1230
+  - afternoon_60m_signed_flow_continuation_1400
+  - late_large20_30m_flow_continuation_1500
+rescue_policy:
+  allowed: false
+  reason: This is a fresh NQ transfer. No rescue is authorized after density or staged results are observed.
+status: source_defined_pending_validation

@@ -1,0 +1,126 @@
+campaign_id: nq_overnight_return_late_day_momentum
+title: NQ Overnight Return Late-Day Momentum
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+hypothesis: NQ overnight returns may positively forecast the final half-hour of the RTH session, creating
+  a same-session late-day momentum candidate after completed-bar confirmation.
+rationale: This is an NQ transfer of the ES overnight-return late-day momentum family. It is distinct
+  from NQ overnight intraday reversal, European-open overnight drift, first-window intraday momentum,
+  leveraged ETF rebalance pressure, and prior-session IBS because the predictor is the current RTH open
+  versus the prior RTH close and the trade is opened only near 15:30 ET.
+sources:
+- title: 'Overnight returns of stock indexes: Evidence from ETFs and futures'
+  authors: Qingfu Liu and Yiuman Tse
+  year: 2017
+  venue: International Review of Economics & Finance 48, 440-451
+  doi: 10.1016/j.iref.2017.01.005
+  link: https://ideas.repec.org/a/eee/reveco/v48y2017icp440-451.html
+  relevance: Reports a positive relation between overnight returns and last-half-hour trading-hours returns
+    in US ETF and futures markets.
+- title: 'Intraday Time Series Momentum: International Evidence'
+  authors: A. Urquhart and coauthors
+  year: 2020
+  venue: International intraday momentum research
+  link: https://centaur.reading.ac.uk/95566/1/Accepted-Version.pdf
+  relevance: Provides broader evidence for last-half-hour intraday predictability and motivates separating
+    overnight predictors from first-window ITSM.
+- title: The Overnight Drift
+  authors: Federal Reserve Bank of New York Staff Report
+  year: 2020
+  venue: New York Fed Staff Report 917
+  link: https://www.newyorkfed.org/medialibrary/media/research/staff_reports/sr917.pdf
+  relevance: Provides background on overnight versus intraday return segmentation and mechanisms.
+data_needs:
+- NQ RTH one-minute bars aggregated to completed 5-minute bars
+- previous RTH close available only after the prior RTH session completes
+- current RTH open and completed first/penultimate RTH windows for conditional variants
+- config-driven no-overnight forced flatten checks
+lookahead_risks:
+- Prior RTH close is from the completed prior RTH session only.
+- RTH open, first-window return, and penultimate-window return are known before the 15:30 signal.
+- The signal is generated on the completed 15:25-15:30 ET bar and can enter only at the next bar open.
+- No final session return, future last-half-hour return, final VWAP, or future high/low is used.
+duplicate_edge_check:
+  active_scope_only: true
+  active_rejected_edges_checked:
+  - nq_overnight_intraday_reversal
+  - nq_overnight_drift_european_open
+  - nq_gao_last_half_hour_orderflow_confirmation
+  - nq_morning_orderflow_momentum_continuation
+  - nq_leveraged_etf_rebalance_pressure
+  - nq_prior_session_ibs_reversion
+  - nq_daily_time_series_momentum
+  conclusion: Eligible as distinct because it keys late-day exposure from current RTH open versus prior
+    RTH close, not overnight path reversal near the open, European-open drift, first-window ITSM/orderflow,
+    leveraged ETF rebalance pressure, prior-session IBS, or daily close-to-close momentum.
+parameter_space:
+  base_variants:
+    entry.params.min_overnight_return_ticks:
+    - 0
+    - 4
+    - 8
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    combinations_per_variant: 18
+  conditional_variants:
+    entry.params.min_overnight_return_ticks:
+    - 4
+    - 8
+    - 12
+    entry.params.min_opening_reversal_ticks_or_min_penultimate_return_ticks:
+    - 2
+    - 4
+    - 8
+    sl.params.stop_pct:
+    - 0.0015
+    - 0.0025
+    - 0.004
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+    combinations_per_variant: 54
+variants:
+- two_sided_overnight_sign_continuation_1530
+- positive_overnight_long_1530
+- negative_overnight_short_1530
+- opening_reversal_confirmed_1530
+- penultimate_alignment_1530
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized after this NQ transfer sees density or staged results.
+status: completed_failed
+completed_at: '2026-06-30T14:55:00+08:00'
+density_audit:
+  decision: PASS
+  artifact_md: research_artifacts/nq_overnight_return_late_day_momentum_density_audit_20260630.md
+  artifact_csv: research_artifacts/nq_overnight_return_late_day_momentum_density_audit_20260630.csv
+  declared_entry_rows: 27
+  density_pass_rows: 27
+  density_fail_rows: 0
+testing_outcome:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  variants_tested: 5
+  total_core_combinations: 162
+  profitable_combinations: 0
+  benchmark_pass_combinations: 0
+  apex_rule_violating_iterations: 0
+  monkey_reached: 0
+  wfa_reached: 0
+  monte_carlo_reached: 0
+  candidate_strategy_report_created: false
+  summary_path: backtest-campaigns/nq_overnight_return_late_day_momentum/campaign_test_summary.json
+  failure_reason: 'All five predeclared NQ overnight-return late-day momentum variants
+    failed limited_core_grid_test. Across 162 official core combinations, 0 were
+    profitable, 0 passed benchmark gates, and 0 had Apex rule violations. The least-negative
+    top row was negative_overnight_short_1530 with top net -535.00, PF 0.9335,
+    and 173 trades, so no variant reached monkey, WFA, Monte Carlo, simulated incubation,
+    acceptance OOS, or candidate reporting.'

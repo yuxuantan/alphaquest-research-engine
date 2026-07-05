@@ -1,0 +1,119 @@
+campaign_id: nq_trade_balance_quantity_state
+title: NQ Trade Balance Quantity State
+status: completed_failed_limited_core
+created_at: '2026-07-01'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 1m
+hypothesis: Strictly lagged U.S. balance-of-payments trade balance, export, and import quantity states may proxy external-demand strength, domestic-demand weakness, and external-adjustment pressure that influence same-day NQ RTH risk appetite.
+rationale: The campaign uses monthly FRED/U.S. Census/BEA BOPGSTB, BOPGEXP, and BOPGIMP with a conservative 60-calendar-day lag. It is distinct from the existing import/export price-pressure family because it tests trade quantities and balance-of-payments external-balance state rather than BLS import/export price inflation pressure and orderflow confirmation.
+sources:
+- title: International Financial Adjustment
+  authors: Pierre-Olivier Gourinchas and Helene Rey
+  year: 2005
+  venue: NBER Working Paper 11155
+  link: https://www.nber.org/papers/w11155
+  relevance: Motivates trade-balance and external-imbalance state as related to future returns and net-export adjustment.
+- title: "Trade Balance: Goods and Services, Balance of Payments Basis (BOPGSTB)"
+  authors: U.S. Census Bureau and U.S. Bureau of Economic Analysis via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/BOPGSTB
+  relevance: Monthly U.S. goods/services trade balance used for external-balance features.
+- title: "Exports of Goods, Balance of Payments Basis (BOPGEXP)"
+  authors: U.S. Census Bureau and U.S. Bureau of Economic Analysis via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/BOPGEXP
+  relevance: Monthly export quantity value used for export-growth and export/import ratio features.
+- title: "Imports of Goods, Balance of Payments Basis (BOPGIMP)"
+  authors: U.S. Census Bureau and U.S. Bureau of Economic Analysis via FRED
+  year: 2026
+  venue: Federal Reserve Bank of St. Louis FRED
+  link: https://fred.stlouisfed.org/series/BOPGIMP
+  relevance: Monthly import quantity value used for import-growth and export/import ratio features.
+behavioural_or_microstructure_rationale: Trade-balance improvement can proxy external demand and less adjustment pressure, while weak imports or deteriorating balances may proxy demand weakness or macro imbalance. Any real edge must survive next-bar execution, NQ costs, pessimistic fills, neighboring parameters, monkey robustness, WFA, Monte Carlo, prop-rule simulation, and acceptance OOS.
+expected_failure_modes:
+- Monthly trade data may be too stale after a 60-day lag for intraday futures trading.
+- Trade quantity state may be dominated by currency, commodity, or non-tech sector effects rather than NQ.
+- Effects may be regime-specific and fail neighboring parameter or monkey robustness.
+- Import weakness can be ambiguous, mixing benign deficit improvement with domestic-demand weakness.
+data_needs:
+- timezone-aware NQ RTH 1-minute bars in America/New_York
+- FRED BOPGSTB/BOPGEXP/BOPGIMP monthly data cached under data/external/fred_trade_balance_quantity_state
+- 60-calendar-day as-of join from NQ sessions to monthly BOP observations
+lookahead_risks:
+- A session dated D may only use the latest monthly BOP trade observation on or before D minus 60 calendar days.
+- Rolling ranks are computed on completed monthly observations before the NQ as-of join.
+- Signals use completed one-minute bars and enter next bar open or later.
+- No future NQ bar, final session range, final VWAP, final volume profile, or post-entry market state is used.
+duplicate_edge_check:
+  active_scope_only: true
+  checked_edges:
+  - nq_import_export_price_pressure
+  - es_import_export_price_pressure
+  - nq_dollar_risk_appetite_intraday
+  - nq_manufacturing_orders_state
+  - nq_retail_inventory_demand
+  conclusion: Eligible before PnL as a distinct balance-of-payments trade-quantity state edge; prior import/export campaigns used price-index inflation pressure, not trade balance or export/import quantity state.
+variants:
+- strong_trade_balance_share_long_1000
+- high_export_import_ratio_long_1030
+- export_growth_strength_long_1130
+- weak_import_growth_short_1200
+- deteriorating_balance_short_1330
+parameter_space:
+  per_variant_combinations: 27
+  entry_parameters_per_variant: 1
+  stop_parameters_per_variant: 1
+  take_profit_parameters_per_variant: 1
+  total_variants: 5
+  entry_params:
+    rank_min:
+    - 0.55
+    - 0.6
+    - 0.65
+    rank_max:
+    - 0.45
+    - 0.4
+    - 0.35
+  stop_params:
+    stop_pct:
+    - 0.003
+    - 0.004
+    - 0.005
+  take_profit_params:
+    target_r_multiple:
+    - 1.5
+    - 2.0
+    - 2.5
+pre_pnl_density:
+  decision: PASS
+  entry_rows: 45
+  rows_passing_density: 45
+  artifact: research_artifacts/nq_trade_balance_quantity_state_density_audit_20260701.md
+  detail_csv: research_artifacts/nq_trade_balance_quantity_state_density_audit_20260701.csv
+  summary_csv: research_artifacts/nq_trade_balance_quantity_state_density_summary_20260701.csv
+  p_n_l_inspected: false
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized; after staged testing, reject or promote only.
+artifacts:
+  methodology_audit: campaigns/nq_trade_balance_quantity_state/methodology_audit.md
+  feature_csv: data/external/nq_trade_balance_quantity_state_features_20110103_20260612.csv
+  density_audit: research_artifacts/nq_trade_balance_quantity_state_density_audit_20260701.md
+  test_summary: backtest-campaigns/nq_trade_balance_quantity_state/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_trade_balance_quantity_state/campaign_results.csv
+  monte_carlo_summary: backtest-campaigns/nq_trade_balance_quantity_state/monte_carlo_summary.json
+  wfa_stitched_oos_trade_logs_manifest: backtest-campaigns/nq_trade_balance_quantity_state/wfa_stitched_oos_trade_logs_manifest.csv
+staged_validation:
+  decision: FAIL
+  terminal_stage: limited_core_grid_test
+  valid_test_run_id: run1
+  runs:
+    strong_trade_balance_share_long_1000: backtest-campaigns/nq_trade_balance_quantity_state/strong_trade_balance_share_long_1000/NQ/run1
+    high_export_import_ratio_long_1030: backtest-campaigns/nq_trade_balance_quantity_state/high_export_import_ratio_long_1030/NQ/run1
+    export_growth_strength_long_1130: backtest-campaigns/nq_trade_balance_quantity_state/export_growth_strength_long_1130/NQ/run1
+    weak_import_growth_short_1200: backtest-campaigns/nq_trade_balance_quantity_state/weak_import_growth_short_1200/NQ/run1
+    deteriorating_balance_short_1330: backtest-campaigns/nq_trade_balance_quantity_state/deteriorating_balance_short_1330/NQ/run1
+  failure_reason: All five variants failed limited_core_grid_test. deteriorating_balance_short_1330 had only 1/27 profitable combinations and 0/27 benchmark-passing combinations; the other four variants had 0/27 profitable combinations. No branch reached limited monkey, WFA, WFA OOS monkey, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting.

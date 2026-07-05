@@ -1,0 +1,176 @@
+campaign_id: nq_20_80_price_ending_barrier
+title: NQ 20/80 terminal price-ending reactions filtered by completed pivot market structure
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: nq_20_80_price_ending_barrier
+hypothesis: NQ may show repeatable intraday reactions at price levels whose final two digits are 20 or 80, but only when completed
+  5/15-minute pivot market structure agrees with the reaction direction.
+rationale: Chart Fanatics describes the 80/20 Nasdaq model as an NQ-specific terminal-price reaction playbook using levels
+  ending in 20 and 80 plus clear structure. This campaign makes that idea objective with modulo-100 20/80 levels, completed-bar
+  reactions, and a fixed completed-pivot structure filter.
+research_sources:
+- title: 80/20 Nasdaq Strategy
+  author: Okala / Chart Fanatics
+  year: 2026
+  link_or_doi: https://www.chartfanatics.com/strategies/80-20-nasdaq-strategy
+  expected_mechanism: Practitioner playbook states that NQ reacts around price endings 20 and 80 and requires market structure
+    confirmation before entry.
+- title: Price Barriers in the Dow Jones Industrial Average
+  author: R. Glen Donaldson and Harold Y. Kim
+  year: 1993
+  link_or_doi: https://ideas.repec.org/a/cup/jfinqa/v28y1993i03p313-330_00.html
+  expected_mechanism: Documents support/resistance and break behavior around salient index price barriers; used as external
+    support for price-level clustering, not as direct evidence for NQ 20/80 endings.
+- title: Currency Orders and Exchange-Rate Dynamics
+  author: Carol L. Osler
+  year: 2003
+  link_or_doi: https://www.newyorkfed.org/research/staff_reports/sr125.html
+  expected_mechanism: Documents clustered orders near round-number support and resistance; supports a general stop/take-profit
+    clustering channel.
+- title: 'Foundations of Technical Analysis: Computational Algorithms, Statistical Inference, and Empirical Implementation'
+  author: Andrew W. Lo, Harry Mamaysky, and Jiang Wang
+  year: 2000
+  link_or_doi: https://doi.org/10.1111/0022-1082.00265
+  expected_mechanism: Supports deterministic local-extrema pattern definitions; this campaign uses completed pivot structure
+    as the objective structure filter.
+source_quality_note: The 20/80 rule itself is practitioner-originated. Academic sources only support the broader price-barrier
+  and deterministic-pattern framing, so this campaign must fail closed if robustness is weak.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- 5-minute NQ bars generated deterministically from completed 1-minute RTH Sierra bars
+- fixed modulo-100 terminal price levels ending in 20 or 80, known before each bar
+- completed 5/15-minute pivot-state construction from local NQ OHLC bars
+lookahead_risks:
+- The 20/80 levels are ex-ante fixed from price arithmetic and do not use future highs/lows, VWAP, or volume profile.
+- The signal uses only the completed 5-minute OHLC bar and enters no earlier than the next bar open.
+- Pivot structure confirms swing highs/lows only after right-side confirmation bars are complete.
+- No current-session final high/low, final VWAP, final volume profile, future orderflow, or post-entry bars are used.
+failure_modes:
+- Practitioner 20/80 behavior may not survive objective rules, costs, and long-history testing.
+- The effect may be a dressed-up round-number/handle effect already arbitraged by faster participants.
+- A 5-minute bar may hide tick-path sequencing around fast level probes, so pessimistic same-bar stop/target handling is required.
+- Market-structure confirmation can lag and enter after the level reaction is already exhausted.
+- Profit may concentrate in a few high-volatility sessions or directional regimes.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  checked_edges:
+  - nq_round_number_barrier_reaction
+  - es_round_number_barrier_reaction
+  - es_round_number_orderflow_barrier
+  - nq_prior_session_level_breakout_continuation
+  - nq_pivot_mes_orderflow_confirmation
+  - nq_pivot_filtered_prior_value_area_acceptance
+  conclusion: Eligible as a distinct Chart Fanatics-derived NQ terminal-price campaign. Prior round-number campaigns tested
+    25/50/100-point handles or ES orderflow barriers; this campaign freezes Nasdaq-specific modulo-100 endings 20 and 80 and
+    requires completed 5/15-minute pivot structure confirmation.
+chart_fanatics_review:
+  reviewed_futures_ideas:
+  - 80/20 Nasdaq Strategy
+  - Nasdaq ICT and Order Flow Scalping Strategy
+  - Order Flow Strategy
+  - The Vix Futures Strategy
+  - Volume Profile Strategy
+  - SMT Divergence+PO3
+  - Intraday Liquidity & Volatility Model
+  selected_reason: The 80/20 Nasdaq strategy was the cleanest non-duplicate because other Chart Fanatics ES/NQ ideas overlapped
+    existing value-area, LVN, VIX, SMT, liquidity-sweep, orderflow, and trapped-trader campaigns.
+variants:
+- morning_20_80_support_reclaim_pivot_long
+- morning_20_80_resistance_reject_pivot_short
+- late_morning_20_80_two_sided_reclaim_pivot
+- morning_20_80_upside_breakout_pivot_long
+- morning_20_80_downside_breakout_pivot_short
+parameter_space:
+  total_combinations_per_variant: 54
+  entry_tunables:
+  - buffer_ticks
+  - max_close_distance_ticks
+  stop_tunables:
+  - dollars_per_contract
+  target_tunables:
+  - target_r_multiple
+  parameters:
+    entry.params.base_params.buffer_ticks:
+    - 0
+    - 1
+    - 2
+    entry.params.base_params.max_close_distance_ticks:
+    - 8
+    - 12
+    - 20
+    sl.params.dollars_per_contract:
+    - 200.0
+    - 250.0
+    - 300.0
+    tp.params.target_r_multiple:
+    - 1.0
+    - 1.5
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized for this Chart Fanatics campaign unless the user explicitly grants one after a failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  fixed_core_trade_log_required: true
+status: completed_failed_density
+pre_pnl_density_audit:
+  status: FAIL
+  artifact: research_artifacts/nq_20_80_price_ending_barrier_density_audit_20260630.md
+  csv: research_artifacts/nq_20_80_price_ending_barrier_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_20_80_price_ending_barrier_density_summary_20260630.csv
+  density_rule: Each declared entry-grid corner must exceed 50 signals/year on full history, limited-core shortlist window,
+    and latest 252 sessions before staged PnL.
+  completed_at: '2026-06-30T12:25:00+08:00'
+  decision: Reject before staged PnL; do not change mechanics without explicit user rescue authorization.
+  variant_density_summary:
+  - variant_id: late_morning_20_80_two_sided_reclaim_pivot
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 57.45057345712725
+    min_limited_core_signals_per_year: 28.533854471700092
+    min_latest252_signals_per_year: 88.27078756564619
+    density_gate_pass: false
+  - variant_id: morning_20_80_downside_breakout_pivot_short
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 23.705648123234017
+    min_limited_core_signals_per_year: 14.266927235850046
+    min_latest252_signals_per_year: 25.786971648391024
+    density_gate_pass: false
+  - variant_id: morning_20_80_resistance_reject_pivot_short
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 34.45739016819808
+    min_limited_core_signals_per_year: 16.21241731346596
+    min_latest252_signals_per_year: 34.71323106514176
+    density_gate_pass: false
+  - variant_id: morning_20_80_support_reclaim_pivot_long
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 43.39558536220435
+    min_limited_core_signals_per_year: 24.64287431646826
+    min_latest252_signals_per_year: 56.53297630608801
+    density_gate_pass: false
+  - variant_id: morning_20_80_upside_breakout_pivot_long
+    entry_combos: 9
+    combos_passing_all_windows: 0
+    min_full_signals_per_year: 30.95983552706519
+    min_limited_core_signals_per_year: 16.21241731346596
+    min_latest252_signals_per_year: 48.59852349119846
+    density_gate_pass: false
+result_summary:
+  verdict: FAIL
+  completed_at: '2026-06-30T12:25:00+08:00'
+  campaign_test_summary: backtest-campaigns/nq_20_80_price_ending_barrier/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/nq_20_80_price_ending_barrier/campaign_results.csv
+  methodology_audit: campaigns/nq_20_80_price_ending_barrier/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    pre_pnl_density_screen: 5
+  failure_reason: 'Pre-PnL density screen failed: all five Chart Fanatics 20/80 variants had 0/9 entry-grid corners passing
+    all required windows. Weakest limited-core density was below 50 signals/year for every variant, so no staged PnL, monkey,
+    WFA, Monte Carlo, simulated incubation, acceptance OOS, or candidate reporting was run.'

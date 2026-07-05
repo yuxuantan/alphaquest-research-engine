@@ -1,0 +1,121 @@
+campaign_id: nq_sector_rotation_orderflow_pullback
+title: NQ Sector-Rotation Gated Orderflow Pullback
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: sector_rotation_orderflow_pullback
+hypothesis: Lagged sector ETF leadership may define an NQ risk-appetite state; NQ VWAP/EMA pullback-continuation entries should
+  only have value when the sector-implied direction and completed-bar NQ orderflow confirmation align.
+rationale: This is an NQ port of the ES composite sector-rotation/orderflow-pullback edge. It is distinct from existing NQ
+  sector-rotation risk-appetite because it does not enter from sector state alone, and distinct from NQ sector opening-breadth
+  because it uses one-business-day-lag sector closes rather than same-day ETF opens. It is also distinct from pure NQ VWAP/orderflow
+  pullback because the sector state gates the permitted direction.
+sources:
+- title: Do Industries Explain Momentum?
+  authors: Tobias J. Moskowitz and Mark Grinblatt
+  year: 1999
+  venue: Journal of Finance
+  doi: 10.1111/0022-1082.00146
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/0022-1082.00146
+  relevance: Supports industry/sector leadership as a component of momentum and broad risk appetite.
+- title: Momentum, Business Cycle, and Time-varying Expected Returns
+  authors: Tarun Chordia and Lakshmanan Shivakumar
+  year: 2002
+  venue: Journal of Finance
+  doi: 10.1111/1540-6261.00449
+  link: https://onlinelibrary.wiley.com/doi/abs/10.1111/1540-6261.00449
+  relevance: Motivates treating sector leadership as a time-varying expected-return state.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  venue: Journal of Financial Econometrics
+  doi: 10.1093/jjfinec/nbt003
+  link: https://academic.oup.com/jfec/article/12/1/47/816163
+  relevance: Supports contemporaneous orderflow imbalance as a short-horizon pressure proxy.
+- title: The myth of business cycle sector rotation
+  authors: Alexander Molchanov and Jeffrey Stangl
+  year: 2024
+  venue: International Journal of Finance and Economics
+  doi: 10.1002/ijfe.2882
+  link: https://onlinelibrary.wiley.com/doi/10.1002/ijfe.2882
+  relevance: Cautionary source requiring strict fail-closed robustness for sector-rotation timing.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- data/external/nq_sector_rotation_features_20110103_20260612.csv
+- NQ 5-minute completed-bar aggregation with intraday VWAP features
+- same-day stop, target, forced-flatten, and no-overnight enforcement
+lookahead_risks:
+- Sector features for session D use only ETF observations on or before D minus one business day.
+- NQ signal decisions are made on completed 5-minute bars and must enter at next bar open or later.
+- No future NQ bar, future sector close, final session high/low/range, or final VWAP is allowed.
+failure_modes:
+- Sector leadership may be stale or already priced before NQ RTH.
+- VWAP/EMA pullback continuation may be crowded and reverse after confirmation.
+- Aggregate orderflow can confirm late after most of the move has already occurred.
+- The ES source failed limited core, so NQ must fail closed unless stability is broad.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_sector_rotation_risk_appetite
+  - nq_sector_opening_breadth_orderflow_continuation
+  - nq_vwap_pullback_continuation
+  - nq_morning_orderflow_momentum_continuation
+  - nq_trend_filtered_mes_participation_crowding
+  conclusion: 'Eligible as a bounded composite: lagged sector-rotation state plus live NQ VWAP/EMA pullback and orderflow
+    confirmation. Existing NQ sector campaigns do not combine these mechanics.'
+feature_construction:
+  sector_builder: tools/build_es_sector_rotation_features.py with NQ output already present
+  sector_output: data/external/nq_sector_rotation_features_20110103_20260612.csv
+  orderflow_source: data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+  pre_pnl_density_audit: research_artifacts/nq_sector_rotation_orderflow_pullback_density_audit_20260630.md
+pre_pnl_density:
+  status: failed_screen_before_pnl
+  artifact: research_artifacts/nq_sector_rotation_orderflow_pullback_density_audit_20260630.md
+  detail_csv: research_artifacts/nq_sector_rotation_orderflow_pullback_density_audit_20260630.csv
+  decision: FAIL
+source_es_campaign: es_sector_rotation_orderflow_pullback
+variants:
+- growth_vwap_reclaim_large10_long_1130
+- cyclical_vwap_reclaim_signed_long_1400
+- financial_industrial_ema_pullback_large10_long_1500
+- defensive_vwap_reject_large10_short_1130
+- defensive_ema_pullback_signed_short_1530
+parameter_space:
+  entry.params.rank_threshold:
+  - 0.55
+  - 0.6
+  - 0.65
+  entry.params.min_orderflow_imbalance:
+  - 0.02
+  - 0.04
+  - 0.06
+  sl.params.stop_pct:
+  - 0.0015
+  - 0.0025
+  - 0.004
+  tp.params.target_r_multiple:
+  - 1.0
+  - 1.5
+  - 2.0
+  combinations_per_variant: 81
+rescue_policy:
+  allowed: false
+  reason: No rescue authorized in the current NQ search request; after staged failure, allow only rejection or promotion unless
+    explicitly authorized.
+testing_plan:
+  methodology: current staged research pipeline after pre-PnL density screen
+  fixed_core_trade_log_required: true
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 1
+    tick_size: 0.25
+    point_value: 20.0
+status: completed_failed
+completed_at: '2026-06-30T13:15:44+08:00'
+terminal_stage: pre_pnl_density_screen
+failure_reason: 'Pre-PnL density screen failed: all five NQ sector-rotation/orderflow-pullback variants had at least one entry-grid
+  corner below 50 signals/year across full-history and limited-core reference windows. No staged PnL, monkey, WFA, Monte Carlo,
+  simulated incubation, acceptance OOS, or candidate reporting was run.'

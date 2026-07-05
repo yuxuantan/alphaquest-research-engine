@@ -1,4 +1,5 @@
 import copy
+import json
 
 import pandas as pd
 import pytest
@@ -107,6 +108,57 @@ def test_same_bar_stop_target_conflict_exits_at_stop_without_detail_data():
     assert first["exit_price"] == 99.0
     assert result["diagnostics"]["stop_target_conflicts"] == 1
     assert result["diagnostics"]["detail_conflicts_unresolved"] == 1
+
+
+def test_validation_mode_does_not_change_backtest_results():
+    rows = _features()
+    normal = BacktestEngine(BASE_CFG).run(rows)
+    validation_cfg = copy.deepcopy(BASE_CFG)
+    validation_cfg["core"]["validation_export"] = {
+        "enabled": True,
+        "window_bars_before": 1,
+        "window_bars_after": 1,
+        "max_trades": 1,
+    }
+
+    validated = BacktestEngine(validation_cfg).run(rows)
+
+    pd.testing.assert_frame_equal(normal["trades"], validated["trades"])
+    pd.testing.assert_frame_equal(normal["daily"], validated["daily"])
+    assert normal["metrics"] == validated["metrics"]
+    validation = validated["validation"]
+    assert len(validation["condition_snapshots"]) == len(normal["trades"])
+    assert len(validation["exit_audits"]) == len(normal["trades"])
+    assert set(validation["bar_windows"]["trade_id"].dropna().unique()) == {normal["trades"].iloc[0]["trade_id"]}
+    first_snapshot = validation["condition_snapshots"].iloc[0]
+    assert bool(first_snapshot["final_entry_pass"]) is True
+    assert first_snapshot["entry_execution_time"] == normal["trades"].iloc[0]["entry_timestamp"]
+    assert first_snapshot["decision_bar_time"] <= first_snapshot["entry_execution_time"]
+    trigger_values = json.loads(first_snapshot["entry_trigger_values"])
+    assert trigger_values["direction"] == normal["trades"].iloc[0]["direction"]
+    assert "stop_anchor_calculation" in validation["condition_snapshots"].columns
+    assert "target_calculation" in validation["condition_snapshots"].columns
+
+
+def test_validation_exit_audit_reports_same_bar_ambiguity():
+    cfg = _calendar_apex_cfg(signal_time="09:31:00")
+    cfg["apex_rules"]["enabled"] = False
+    cfg["strategy"]["flatten_time"] = "09:35:00"
+    cfg["strategy"]["tp"] = {"module": "fixed_r", "params": {"target_r_multiple": 1.0}}
+    cfg["strategy"]["sl"] = {"module": "percent_from_entry", "params": {"stop_pct": 0.01}}
+    cfg["core"]["slippage_ticks"] = 0
+    cfg["core"]["validation_export"] = {"enabled": True}
+    rows = _calendar_rows("2024-01-03 09:30", 4)
+    rows.loc[1, ["open", "high", "low", "close"]] = [100.0, 101.50, 98.50, 100.0]
+
+    result = BacktestEngine(cfg).run(rows)
+    audit = result["validation"]["exit_audits"].iloc[0]
+
+    assert audit["exit_reason"] == "stop"
+    assert bool(audit["same_bar_ambiguous"]) is True
+    assert audit["ambiguity_resolution"] == "pessimistic_stop_first"
+    assert audit["first_touch_sl_time"] == rows.loc[1, "timestamp"]
+    assert audit["first_touch_tp_time"] == rows.loc[1, "timestamp"]
 
 
 def test_point_value_derives_tick_value_when_tick_value_absent():

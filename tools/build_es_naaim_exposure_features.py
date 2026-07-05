@@ -21,6 +21,8 @@ def build_features(
     *,
     naaim_input: str | Path = DEFAULT_NAAIM_INPUT,
     availability_lag_business_days: int = 2,
+    start_date: str = "2011-01-03",
+    end_date: str = "2026-06-09",
     rank_window: int = 104,
     rank_min_periods: int = 26,
     ma_window: int = 26,
@@ -32,7 +34,7 @@ def build_features(
         .sort_values("session_date", kind="mergesort")
         .reset_index(drop=True)
     )
-    sessions = sessions[(sessions["session_date"] >= "2011-01-03") & (sessions["session_date"] <= "2026-06-09")]
+    sessions = sessions[(sessions["session_date"] >= start_date) & (sessions["session_date"] <= end_date)]
     naaim = parse_naaim_xlsx(naaim_input)
     out = build_session_features(
         sessions,
@@ -212,17 +214,21 @@ def _rolling_last_percentile(series: pd.Series, window: int, min_periods: int) -
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Build ES session features from the public NAAIM Exposure Index workbook.")
+    parser = argparse.ArgumentParser(description="Build futures session features from the public NAAIM Exposure Index workbook.")
     parser.add_argument("--bars-input", default=DEFAULT_BARS_INPUT)
     parser.add_argument("--naaim-input", default=DEFAULT_NAAIM_INPUT)
     parser.add_argument("--output", default=DEFAULT_OUTPUT)
     parser.add_argument("--availability-lag-business-days", type=int, default=2)
+    parser.add_argument("--start-date", default="2011-01-03")
+    parser.add_argument("--end-date", default="2026-06-09")
     args = parser.parse_args()
     features = build_features(
         args.bars_input,
         args.output,
         naaim_input=args.naaim_input,
         availability_lag_business_days=args.availability_lag_business_days,
+        start_date=args.start_date,
+        end_date=args.end_date,
     )
     print(
         f"Wrote {len(features)} NAAIM signal sessions to {args.output} "

@@ -1,0 +1,144 @@
+campaign_id: nq_ema_pullback_orderflow_continuation
+title: NQ EMA Pullback Continuation With Aggregate Orderflow
+decision: FAIL
+created_at: '2026-06-30'
+symbol: NQ
+dataset_id: nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny
+timeframe: 5m
+edge_family: ema_pullback_orderflow_continuation
+source_es_campaign: es_ema_pullback_orderflow_continuation
+hypothesis: A same-session NQ trend defined by completed intraday EMAs can resume after a controlled pullback
+  to the prior fast EMA when the completed signal bar reclaims/rejects that EMA and completed aggregate
+  orderflow confirms the trend direction.
+rationale: This NQ campaign ports the audited ES EMA-pullback orderflow-continuation mechanics before
+  inspecting NQ PnL. The dynamic level is the prior completed fast EMA, not VWAP, a measured-pivot projection,
+  a prior-session level, or MES-crowding reversion. Entry is at the next 5-minute bar open after a completed
+  pullback/reclaim bar with aligned completed aggregate signed or large-trade flow.
+research_sources:
+- title: Simple Technical Trading Rules and the Stochastic Properties of Stock Returns
+  author: William Brock, Josef Lakonishok, and Blake LeBaron
+  year: 1992
+  link_or_doi: https://doi.org/10.1111/j.1540-6261.1992.tb04681.x
+  expected_mechanism: Moving-average rules can encode persistent price structure, but execution realism
+    must be tested.
+- title: Time Series Momentum
+  author: Tobias J. Moskowitz, Yao Hua Ooi, and Lasse H. Pedersen
+  year: 2012
+  link_or_doi: https://doi.org/10.1016/j.jfineco.2011.11.003
+  expected_mechanism: Liquid futures can exhibit trend persistence; this campaign tests continuation after
+    intraday pullbacks.
+- title: The Price Impact of Order Book Events
+  author: Rama Cont, Arseniy Kukanov, and Sasha Stoikov
+  year: 2014
+  link_or_doi: https://doi.org/10.1093/jjfinec/nbt003
+  expected_mechanism: Order-flow imbalance is a short-horizon pressure proxy; this implementation uses
+    completed Sierra aggregate trade-side flow.
+- title: Profits from Technical Trading Rules
+  author: Mark J. Ready
+  year: 2002
+  link_or_doi: https://papers.ssrn.com/sol3/papers.cfm?abstract_id=64168
+  expected_mechanism: Technical-rule profitability can disappear when executable prices are separated
+    from signals; this campaign uses next-bar fills with costs.
+data_needs:
+- data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet
+- completed NQ 5-minute RTH OHLCV/orderflow bars from the repo pipeline
+- signed_volume, large10_signed_volume, and volume columns available only after each signal bar completes
+- same-session forced flatten from config
+lookahead_risks:
+- EMA trend state uses only prior completed closes before evaluating the signal bar.
+- The signal bar high/low/close/body and orderflow confirmation are known only after the completed signal
+  bar.
+- Signals using bar close are filled no earlier than the next bar open by the engine.
+- No final session high/low, final VWAP, future range, future orderflow, or post-entry bar is used.
+failure_modes:
+- EMA pullbacks can be a crowded visual pattern with poor forward edge after costs.
+- Aggregate signed flow may confirm only after the move has exhausted.
+- The dynamic fast EMA may be a weak support/resistance proxy on NQ.
+- The effect may be side-specific or regime-specific and fail monkey/WFA robustness.
+duplicate_edge_check:
+  active_scope_only: true
+  archived_tests_ignored: true
+  active_rejected_edges_checked:
+  - nq_vwap_pullback_continuation
+  - nq_chartfanatics_measured_move_pullback
+  - nq_trend_filtered_mes_participation_crowding
+  - nq_mes_crowding_trend_pullback_reversion
+  - nq_impulse_pause_orderflow_continuation
+  - nq_morning_orderflow_momentum_continuation
+  conclusion: Eligible as a distinct dynamic-EMA pullback continuation campaign. It is not a VWAP benchmark
+    reclaim, not a completed measured-pivot projection, not MES-crowding reversion, not a three-phase
+    impulse-pause breakout, and not pure fixed-time momentum.
+variants:
+- afternoon_large10_two_sided_ema_pullback_1430
+- late_morning_signed_long_ema_pullback_1200
+- late_morning_signed_short_ema_pullback_1200
+- late_morning_signed_two_sided_ema_pullback_1130
+- lunch_signed_two_sided_ema_pullback_1300
+parameter_space:
+  total_combinations_per_variant: 27
+  entry_tunables:
+  - min_trend_gap_ticks
+  - min_orderflow_imbalance
+  stop_tunables:
+  - stop_offset_ticks
+  target_tunables:
+  - target_r_multiple fixed at 1.0
+  parameters:
+    entry.params.min_trend_gap_ticks:
+    - 1
+    - 2
+    - 4
+    entry.params.min_orderflow_imbalance:
+    - 0.0
+    - 0.02
+    - 0.04
+    sl.params.stop_offset_ticks:
+    - 1
+    - 2
+    - 4
+    tp.params.target_r_multiple:
+    - 1.0
+rescue_policy:
+  allowed: false
+  reason: No rescue is authorized unless explicitly granted after failure.
+testing_plan:
+  methodology: current staged research pipeline
+  pre_pnl_density_required: true
+  preflight_required: true
+  unit_tests:
+  - tests/test_ema_pullback_orderflow_continuation.py
+  - tests/test_nq_ema_pullback_orderflow_continuation.py
+status: completed_failed
+pre_pnl_density_audit:
+  status: PASS
+  artifact: research_artifacts/nq_ema_pullback_orderflow_continuation_density_audit_20260630.md
+  csv: research_artifacts/nq_ema_pullback_orderflow_continuation_density_audit_20260630.csv
+  summary_csv: research_artifacts/nq_ema_pullback_orderflow_continuation_density_summary_20260630.csv
+  density_rule: Every declared entry-grid row must exceed 50 signals/year on full history and limited-core
+    proxy window, and at least 50 raw signals in the latest 252 sessions before staged PnL.
+  decision: Approved for staged validation; no PnL inspected during density screen.
+  entry_rows_passing_all_windows: 45/45
+  limited_core_proxy_window:
+    start_date: '2011-02-22'
+    end_date: '2012-09-07'
+completed_at: '2026-06-30T17:35:00+08:00'
+result_summary:
+  decision: FAIL
+  report: backtest-campaigns/nq_ema_pullback_orderflow_continuation/campaign_test_summary.json
+  results_csv: backtest-campaigns/nq_ema_pullback_orderflow_continuation/campaign_results.csv
+  methodology_audit: campaigns/nq_ema_pullback_orderflow_continuation/methodology_audit.md
+  density_audit: research_artifacts/nq_ema_pullback_orderflow_continuation_density_audit_20260630.md
+  variants_tested: 5
+  core_failed_variants: 4
+  monkey_failed_variants: 0
+  wfa_failed_variants: 1
+  candidate_report_created: false
+  failure_reason: Four NQ EMA pullback variants failed limited_core_grid_test. The short-only late-morning
+    variant passed limited core and limited monkey but failed walk_forward_analysis by early exit before
+    stitched OOS trading, so no branch reached WFA OOS monkey, Monte Carlo, simulated incubation, acceptance
+    OOS, or candidate reporting.
+  best_core_variant: late_morning_signed_short_ema_pullback_1200
+  best_core_top_net_profit: 1045.0
+  best_core_top_profit_factor: 1.1154058531198232
+  limited_monkey_reached: 1
+  wfa_reached: 1

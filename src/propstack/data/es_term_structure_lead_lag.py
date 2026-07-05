@@ -16,8 +16,9 @@ def build_es_term_structure_lead_lag_frame(
     *,
     windows: Iterable[int] = DEFAULT_WINDOWS,
     min_period_fraction: float = 1.0,
+    root_symbol: str = "ES",
 ) -> pd.DataFrame:
-    """Align front ES bars with next-contract bars and add completed-window features.
+    """Align front-contract bars with next-contract bars and add completed-window features.
 
     Front-contract bars remain the tradable market. Deferred-contract values are
     joined only at the same completed timestamp. Rolling features are grouped by
@@ -31,7 +32,7 @@ def build_es_term_structure_lead_lag_frame(
 
     front_ready = _normalise_source(front, "front")
     deferred_ready = _normalise_source(deferred, "deferred")
-    aligned = _align_sources(front_ready, deferred_ready)
+    aligned = _align_sources(front_ready, deferred_ready, root_symbol=root_symbol)
     aligned = _add_completed_term_structure_features(
         aligned,
         windows=windows,
@@ -100,7 +101,7 @@ def _parse_timestamp(values: pd.Series) -> pd.Series:
     return timestamps
 
 
-def _align_sources(front: pd.DataFrame, deferred: pd.DataFrame) -> pd.DataFrame:
+def _align_sources(front: pd.DataFrame, deferred: pd.DataFrame, *, root_symbol: str) -> pd.DataFrame:
     deferred_columns = [
         column
         for column in deferred.columns
@@ -110,7 +111,7 @@ def _align_sources(front: pd.DataFrame, deferred: pd.DataFrame) -> pd.DataFrame:
         columns={column: f"deferred_{column}" for column in deferred_columns}
     )
     out = front.merge(deferred_prefixed, on="timestamp", how="inner", validate="one_to_one")
-    out["symbol"] = "ES"
+    out["symbol"] = root_symbol
     return out.sort_values("timestamp").reset_index(drop=True)
 
 

@@ -37,8 +37,8 @@ def build_features(
     )
 
     # Cboe SKEW is an end-of-day option-implied tail-risk index. Same-date
-    # closes are unavailable to an intraday ES signal, so merge only the latest
-    # Cboe observation strictly before the ES session date.
+    # closes are unavailable to an intraday futures signal, so merge only the latest
+    # Cboe observation strictly before the futures session date.
     merged = pd.merge_asof(
         sessions.sort_values("session_date_ts"),
         skew.sort_values("observation_date"),

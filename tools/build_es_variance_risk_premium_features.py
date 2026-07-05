@@ -49,7 +49,7 @@ def build_features(
     vix = _load_vix(vix_input=vix_input, vix_cache=vix_cache)
     daily = daily.merge(vix, on="session_date", how="left")
 
-    # VIX close and ES realized variance are only tradable from the next RTH session.
+    # VIX close and realized variance are only tradable from the next RTH session.
     daily["prior_close"] = daily["close"].shift(1)
     daily["prior_rth_return"] = daily["rth_return"].shift(1)
     daily["prior_vix_close"] = daily["vix_close"].shift(1)
