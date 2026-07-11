@@ -70,11 +70,13 @@ def save_pipeline_outputs(
     missing_bars: pd.DataFrame,
     output_dir: str | Path,
     timezone: str | None = None,
+    retain_full_frames: bool = False,
 ) -> None:
     out = Path(output_dir)
     out.mkdir(parents=True, exist_ok=True)
-    write_report_csv(cleaned, out / "cleaned_data.csv", timezone, index=False)
-    write_report_csv(features, out / "features_data.csv", timezone, index=False)
+    if retain_full_frames:
+        write_report_csv(cleaned, out / "cleaned_data.csv", timezone, index=False)
+        write_report_csv(features, out / "features_data.csv", timezone, index=False)
     write_report_csv(pd.DataFrame([quality_report]), out / "data_quality_report.csv", timezone, index=False)
     write_report_csv(missing_bars, out / "missing_bars.csv", timezone, index=False)
     write_report_csv(tradingview_comparison_report(features), out / "tradingview_comparison.csv", timezone, index=False)

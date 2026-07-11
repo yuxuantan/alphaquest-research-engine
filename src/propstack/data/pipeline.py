@@ -74,7 +74,16 @@ def prepare_data(
     }
     if output_dir:
         _emit(status_callback, f"Writing validation CSVs to {output_dir}...")
-        save_pipeline_outputs(cleaned, features, quality_report, missing, output_dir, market_timezone(data_config))
+        retention = data_config.get("artifact_retention") or {}
+        save_pipeline_outputs(
+            cleaned,
+            features,
+            quality_report,
+            missing,
+            output_dir,
+            market_timezone(data_config),
+            retain_full_frames=bool(retention.get("full_validation_frames", False)),
+        )
         _emit(status_callback, "Validation CSVs written.")
     if include_execution_data:
         return features, quality_report, execution_data

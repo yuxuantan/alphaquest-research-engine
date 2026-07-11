@@ -23,6 +23,12 @@ from propstack.prop.rules import PropRules
 from propstack.research.core_grid import run_core_grid
 from propstack.research.monkey import run_monkey
 from propstack.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
+from propstack.research.policy import active_research_policy_metadata, load_research_policy
+from propstack.research.schemas import (
+    validate_campaign_config_contract,
+    validate_run_summary_contract,
+    validate_stage_result_contract,
+)
 from propstack.research.wfa import run_wfa
 from propstack.utils.config import (
     CAMPAIGN_CONFIG_FILENAME,
@@ -41,91 +47,23 @@ from propstack.utils.config import (
 from propstack.utils.hashing import file_sha256, object_sha256
 from propstack.utils.params import apply_dotted_params
 from propstack.utils.reports import market_timezone, write_report_csv
+from propstack.version import ENGINE_CONTRACT_VERSION
 
 
-ACCEPTANCE_STAGE = "acceptance_oos_test"
-
-PRE_ACCEPTANCE_STAGE_ORDER = [
-    "limited_core_grid_test",
-    "limited_monkey_test",
-    "walk_forward_analysis",
-    "wfa_oos_monkey_test",
-    "wfa_oos_monte_carlo",
-    "simulated_incubation_core",
-    "simulated_incubation_monkey",
-]
-
-DEFAULT_STAGE_ORDER = [*PRE_ACCEPTANCE_STAGE_ORDER, ACCEPTANCE_STAGE]
+_RESEARCH_POLICY = load_research_policy()
+ACCEPTANCE_STAGE = _RESEARCH_POLICY.acceptance_stage
+PRE_ACCEPTANCE_STAGE_ORDER = list(_RESEARCH_POLICY.pre_acceptance_stage_order)
+DEFAULT_STAGE_ORDER = list(_RESEARCH_POLICY.stage_order)
 
 TRADE_PATH_STRESS_SKIP_REASON = (
     "trade-path stress is globally disabled for campaign stages; "
     "monkey gates use random-entry core-beat rates"
 )
 
-DEFAULT_STAGE_CRITERIA = {
-    "limited_core_grid_test": [
-        {"metric": "summary.total_combinations_tested", "valid_parameter_combination_count": True},
-        {"metric": "summary.percentage_profitable_iterations", "min": 0.70},
-        {"metric": "summary.apex_rule_violating_iterations", "max": 0},
-    ],
-    "limited_monkey_test": [
-        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.90},
-        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.90},
-        {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
-    ],
-    "walk_forward_analysis": [
-        {"metric": "summary.early_exit", "equals": False},
-        {"metric": "stitched_oos_metrics.profit_factor", "min": 1.2},
-        {"metric": "stitched_oos_metrics.mar", "min": 0.4},
-        {"metric": "stitched_oos_metrics.trades_per_year", "min": 50},
-        {"metric": "stitched_oos_metrics.apex_rule_violations", "max": 0},
-    ],
-    "wfa_oos_monkey_test": [
-        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.80},
-        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.80},
-        {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
-    ],
-    "wfa_oos_monte_carlo": [
-        {"metric": "summary.mean_net_pnl", "exclusive_min": 0.0},
-    ],
-    "simulated_incubation_core": [
-        {"metric": "metrics.profit_factor", "min": 1.0},
-        {"metric": "metrics.mar", "min": 1.0},
-        {"metric": "metrics.trades_per_year", "min": 50},
-        {"metric": "metrics.apex_rule_violations", "max": 0},
-    ],
-    "simulated_incubation_monkey": [
-        {"metric": "summary.core_beats_monkey_net_profit_rate", "min": 0.80},
-        {"metric": "summary.core_beats_monkey_max_drawdown_rate", "min": 0.80},
-        {"metric": "summary.core_metrics.apex_rule_violations", "max": 0},
-    ],
-    ACCEPTANCE_STAGE: [
-        {"metric": "metrics.profit_factor", "min": 1.0},
-        {"metric": "metrics.mar", "min": 1.0},
-        {"metric": "metrics.trades_per_year", "min": 50},
-        {"metric": "metrics.apex_rule_violations", "max": 0},
-    ],
-}
-
-DEFAULT_SHORTLIST_DATA_WINDOW = {
-    "mode": "random_fraction",
-    "fraction": 0.10,
-    "avoid_last_fraction": 0.10,
-    "seed": 31,
-    "avoid_ranges": [
-        {
-            "start_date": "2020-02-01",
-            "end_date": "2021-06-30",
-        }
-    ],
-}
-
-DEFAULT_WFA_DATA_WINDOW = {
-    "mode": "first_fraction",
-    "fraction": 0.90,
-}
-
-DEFAULT_MONKEY_RUNS = 8000
+DEFAULT_STAGE_CRITERIA = copy.deepcopy(_RESEARCH_POLICY.stage_criteria)
+DEFAULT_SHORTLIST_DATA_WINDOW = copy.deepcopy(_RESEARCH_POLICY.shortlist_data_window)
+DEFAULT_WFA_DATA_WINDOW = copy.deepcopy(_RESEARCH_POLICY.wfa_data_window)
+DEFAULT_MONKEY_RUNS = _RESEARCH_POLICY.monkey_runs
 MONKEY_STAGE_NAMES = {
     "limited_monkey_test",
     "wfa_oos_monkey_test",
@@ -167,10 +105,13 @@ MECHANICS_REVIEW_MIN_CHARS = 80
 
 def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) -> dict:
     out = copy.deepcopy(cfg)
+    policy_metadata = active_research_policy_metadata()
+    out["research_policy"] = policy_metadata
     out.setdefault("monkey", {})["runs"] = DEFAULT_MONKEY_RUNS
     campaign_tests = copy.deepcopy(out.get("campaign_tests") or {})
     stage_order = DEFAULT_STAGE_ORDER if include_acceptance else PRE_ACCEPTANCE_STAGE_ORDER
     campaign_tests["stage_order"] = list(stage_order)
+    campaign_tests["research_policy"] = policy_metadata
     for stage_name in DEFAULT_STAGE_ORDER:
         stage_cfg = copy.deepcopy(campaign_tests.get(stage_name) or {})
         stage_cfg.pop("enabled", None)
@@ -184,11 +125,11 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
             stage_cfg.pop("data_subset", None)
             stage_cfg["data_window"] = copy.deepcopy(DEFAULT_WFA_DATA_WINDOW)
         if stage_name == "simulated_incubation_core":
-            stage_cfg.setdefault("train_months", 48)
-            stage_cfg.setdefault("test_months", 12)
+            stage_cfg.setdefault("train_months", int(_RESEARCH_POLICY.simulated_incubation.get("train_months", 48)))
+            stage_cfg.setdefault("test_months", int(_RESEARCH_POLICY.simulated_incubation.get("test_months", 12)))
         if stage_name == ACCEPTANCE_STAGE:
-            stage_cfg.setdefault("train_months", 24)
-            stage_cfg.setdefault("test_months", 6)
+            stage_cfg.setdefault("train_months", int(_RESEARCH_POLICY.acceptance_oos.get("train_months", 24)))
+            stage_cfg.setdefault("test_months", int(_RESEARCH_POLICY.acceptance_oos.get("test_months", 6)))
             if not include_acceptance:
                 stage_cfg["enabled"] = False
         campaign_tests[stage_name] = stage_cfg
@@ -263,6 +204,7 @@ def run_campaign_stage_tests(
         cfg = apply_fast_runtime_defaults(cfg)
     root = Path(out_dir) if out_dir else variant_root(cfg, config_path=config_path)
     root = validate_campaign_run_root(root, cfg, config_path=config_path if out_dir is None else None)
+    validate_campaign_config_contract(cfg, context=str(config_path))
     root.mkdir(parents=True, exist_ok=True)
     variant_metadata = ensure_variant_metadata(cfg, root_path=root)
     config_snapshot_path = root / CAMPAIGN_CONFIG_FILENAME
@@ -301,6 +243,7 @@ def run_campaign_stage_tests(
         except Exception as exc:
             result = _error_stage(stage_name, exc)
         results.append(result)
+        validate_stage_result_contract(result, context=f"{stage_name}/stage_result.json")
         write_json(stage_dir / "stage_result.json", result)
         if not result["passed"] and not continue_on_failure:
             halted = True
@@ -320,6 +263,8 @@ def run_campaign_stage_tests(
         "raw_dir": str(data_cfg.get("raw_dir")) if data_cfg.get("raw_dir") else None,
         "campaign_metadata": campaign_metadata_info(cfg, root_path=root),
         "variant_metadata": variant_metadata,
+        "research_policy": cfg.get("research_policy") or active_research_policy_metadata(),
+        "engine_contract_version": ENGINE_CONTRACT_VERSION,
         "config_path": str(config_snapshot_path),
         "effective_config_path": str(config_snapshot_path),
         "source_config_path": str(config_path),
@@ -336,6 +281,7 @@ def run_campaign_stage_tests(
         "halted": halted,
         "stages": results,
     }
+    validate_run_summary_contract(summary)
     source_results_index_path = _update_source_results_index(config_path, cfg, summary)
     summary["source_results_index_path"] = (
         str(source_results_index_path) if source_results_index_path is not None else None
@@ -355,6 +301,8 @@ def run_campaign_stage_tests(
             "raw_dir": summary["raw_dir"],
             "campaign_metadata": summary["campaign_metadata"],
             "variant_metadata": summary["variant_metadata"],
+            "research_policy": summary["research_policy"],
+            "engine_contract_version": summary["engine_contract_version"],
             "config_source": str(config_path),
             "effective_config": str(config_snapshot_path),
             "source_config_snapshot": str(source_config_snapshot_path),
@@ -799,6 +747,7 @@ def _write_fixed_config_core_artifacts(
         title=f"{cfg.get('campaign_id')} / {cfg.get('variant_id')} fixed-config core equity curve",
         csv_name="fixed_config_core_equity_curve.csv",
         html_name="fixed_config_core_equity_curve.html",
+        write_html=_retain_artifact(cfg, "equity_html"),
     )
     summary = {
         "purpose": "fixed_config_mechanics_cross_check",
@@ -953,7 +902,8 @@ def _run_limited_monkey(
     _annotate_stage_data_period(summary, subset, quality)
     _annotate_stage_data_period(stress_summary, subset, quality)
     report_timezone = market_timezone(cfg)
-    write_report_csv(results, stage_dir / "monkey_results.csv", report_timezone, index=False)
+    if bool(monkey_cfg.get("retain_results_csv", _retain_artifact(cfg, "monkey_iteration_results"))):
+        write_report_csv(results, stage_dir / "monkey_results.csv", report_timezone, index=False)
     write_report_csv(stress_results, stage_dir / "trade_path_stress_results.csv", report_timezone, index=False)
     write_json(stage_dir / "monkey_summary.json", summary)
     write_json(stage_dir / "trade_path_stress_summary.json", stress_summary)
@@ -1025,6 +975,7 @@ def _run_wfa_stage(
             initial_balance=initial_balance,
             timezone=report_timezone,
             title=f"{cfg.get('campaign_id')} / {cfg.get('variant_id')} staged WFA OOS equity curve",
+            write_html=_retain_artifact(cfg, "equity_html"),
         )
     )
     write_json(stage_dir / "wfa_summary.json", summary)
@@ -1060,7 +1011,8 @@ def _run_wfa_oos_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context: di
     stress_results, stress_summary = _skipped_trade_path_stress()
     summary["trade_path_stress"] = stress_summary
     report_timezone = market_timezone(cfg)
-    write_report_csv(results, stage_dir / "wfa_oos_monkey_results.csv", report_timezone, index=False)
+    if bool(monkey_cfg.get("retain_results_csv", _retain_artifact(cfg, "monkey_iteration_results"))):
+        write_report_csv(results, stage_dir / "wfa_oos_monkey_results.csv", report_timezone, index=False)
     write_report_csv(stress_results, stage_dir / "wfa_oos_trade_path_stress_results.csv", report_timezone, index=False)
     write_json(stage_dir / "wfa_oos_monkey_summary.json", summary)
     write_json(stage_dir / "wfa_oos_trade_path_stress_summary.json", stress_summary)
@@ -1089,10 +1041,12 @@ def _run_wfa_oos_monte_carlo(cfg: dict, stage_cfg: dict, stage_dir: Path, contex
     summary["prop_rules_used"] = rules_cfg
     report_timezone = market_timezone(cfg)
     write_report_csv(results, stage_dir / "wfa_oos_monte_carlo_results.csv", report_timezone, index=False)
-    if retain_path_trades:
+    write_path_artifacts = bool(mc_cfg.get("write_path_artifacts", _retain_artifact(cfg, "monte_carlo_paths")))
+    if retain_path_trades and write_path_artifacts:
         write_report_csv(path_trades, stage_dir / "wfa_oos_monte_carlo_path_trades.csv", report_timezone, index=False)
-    if retain_path_events:
+    if retain_path_events and write_path_artifacts:
         write_report_csv(path_events, stage_dir / "wfa_oos_monte_carlo_path_events.csv", report_timezone, index=False)
+    summary["path_artifacts_retained"] = write_path_artifacts
     write_json(stage_dir / "wfa_oos_monte_carlo_summary.json", summary)
     return {"summary": summary, "artifacts": _stage_artifacts(stage_dir)}
 
@@ -1242,6 +1196,7 @@ def _run_incubation_core(
         initial_balance=float(test_cfg.get("core", {}).get("initial_balance", 0.0)),
         timezone=report_timezone,
         title=f"{test_cfg.get('campaign_id')} / {test_cfg.get('variant_id')} incubation equity curve",
+        write_html=_retain_artifact(test_cfg, "equity_html"),
     )
     return {
         "summary": incubation_summary,
@@ -1349,6 +1304,7 @@ def _run_acceptance_oos(
         initial_balance=float(test_cfg.get("core", {}).get("initial_balance", 0.0)),
         timezone=report_timezone,
         title=f"{test_cfg.get('campaign_id')} / {test_cfg.get('variant_id')} acceptance OOS equity curve",
+        write_html=_retain_artifact(test_cfg, "equity_html"),
     )
     return {
         "summary": acceptance_summary,
@@ -1387,7 +1343,8 @@ def _run_incubation_monkey(cfg: dict, stage_cfg: dict, stage_dir: Path, context:
     stress_results, stress_summary = _skipped_trade_path_stress()
     summary["trade_path_stress"] = stress_summary
     report_timezone = market_timezone(cfg)
-    write_report_csv(results, stage_dir / "incubation_monkey_results.csv", report_timezone, index=False)
+    if bool(monkey_cfg.get("retain_results_csv", _retain_artifact(cfg, "monkey_iteration_results"))):
+        write_report_csv(results, stage_dir / "incubation_monkey_results.csv", report_timezone, index=False)
     write_report_csv(stress_results, stage_dir / "incubation_trade_path_stress_results.csv", report_timezone, index=False)
     write_json(stage_dir / "incubation_monkey_summary.json", summary)
     write_json(stage_dir / "incubation_trade_path_stress_summary.json", stress_summary)
@@ -1770,6 +1727,11 @@ def _acceptance_result_row(summary: dict) -> dict:
 
 def _format_acceptance_period(window: dict, prefix: str) -> str:
     return f"{window[f'{prefix}_start'].date().isoformat()}->{window[f'{prefix}_end'].date().isoformat()}"
+
+
+def _retain_artifact(cfg: dict, key: str) -> bool:
+    retention = cfg.get("artifact_retention") or {}
+    return bool(retention.get(key, False))
 
 
 def _merged_section(cfg: dict, section: str, stage_cfg: dict) -> dict:

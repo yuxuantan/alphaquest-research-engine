@@ -13,7 +13,9 @@ import pandas as pd
 import yaml
 
 from propstack.data.timeframe import canonical_timeframe, parse_timeframe_minutes
+from propstack.research.policy import active_research_policy_metadata
 from propstack.utils.hashing import file_sha256, object_sha256
+from propstack.version import ENGINE_CONTRACT_VERSION
 
 
 CAMPAIGN_REPORT_ROOT = Path("backtest-campaigns")
@@ -91,6 +93,8 @@ def create_run_dir(
         "config_hash": file_sha256(config_path) if config_path else object_sha256(config or {}),
         "campaign_metadata": campaign_metadata_info(config, root_path=root),
         "variant_metadata": variant_metadata,
+        "research_policy": active_research_policy_metadata(),
+        "engine_contract_version": ENGINE_CONTRACT_VERSION,
         "created_at": datetime.now().isoformat(timespec="seconds"),
         "layout": "campaign_variant_symbol_run",
     }
@@ -294,6 +298,8 @@ def _update_manifest(root: Path, config: dict, config_path: str | Path, input_ha
         "input_data_hash": input_hash,
         "campaign_metadata": campaign_metadata_info(config, root_path=root),
         "variant_metadata": variant_metadata,
+        "research_policy": active_research_policy_metadata(),
+        "engine_contract_version": ENGINE_CONTRACT_VERSION,
         "updated_at": datetime.now().isoformat(timespec="seconds"),
         "layout": "campaign_variant_symbol_run",
     }
@@ -334,6 +340,8 @@ def _update_variant_summary(
             "input_data_hash": input_hash,
             "campaign_metadata": campaign_metadata_info(config, root_path=root),
             "variant_metadata": ensure_variant_metadata(config, root_path=root),
+            "research_policy": active_research_policy_metadata(),
+            "engine_contract_version": ENGINE_CONTRACT_VERSION,
             "updated_at": datetime.now().isoformat(timespec="seconds"),
         }
     )

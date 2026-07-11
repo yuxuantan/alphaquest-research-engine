@@ -70,6 +70,10 @@ def test_next_bar_entry_and_costs():
     assert "08:32:00" in str(first["entry_timestamp"])
     assert first["commission"] == 5.0
     assert first["slippage_cost"] == 25.0
+    assert first["gross_pnl_before_slippage"] - first["slippage_cost"] == pytest.approx(first["gross_pnl"])
+    assert first["gross_pnl"] - first["commission"] == pytest.approx(first["net_pnl"])
+    assert first["total_transaction_cost"] == pytest.approx(first["commission"] + first["slippage_cost"])
+    assert first["cost_accounting_error"] == pytest.approx(0.0)
 
 
 def test_bar_close_signal_enters_next_bar_open():
@@ -108,6 +112,27 @@ def test_same_bar_stop_target_conflict_exits_at_stop_without_detail_data():
     assert first["exit_price"] == 99.0
     assert result["diagnostics"]["stop_target_conflicts"] == 1
     assert result["diagnostics"]["detail_conflicts_unresolved"] == 1
+
+
+def test_carried_position_stop_gap_fills_at_adverse_bar_open():
+    cfg = _calendar_apex_cfg(signal_time="09:31:00")
+    cfg["apex_rules"]["enabled"] = False
+    cfg["strategy"]["flatten_time"] = "09:35:00"
+    cfg["strategy"]["tp"] = {"module": "fixed_r", "params": {"target_r_multiple": 10.0}}
+    cfg["strategy"]["sl"] = {"module": "percent_from_entry", "params": {"stop_pct": 0.01}}
+    cfg["core"]["commission_per_contract"] = 0
+    cfg["core"]["slippage_ticks"] = 0
+    rows = _calendar_rows("2024-01-03 09:30", 5)
+    rows.loc[1, ["open", "high", "low", "close"]] = [100.0, 100.25, 99.5, 100.0]
+    rows.loc[2, ["open", "high", "low", "close"]] = [98.0, 98.5, 97.5, 98.0]
+
+    result = BacktestEngine(cfg).run(rows)
+    trade = result["trades"].iloc[0]
+
+    assert trade["stop_price"] == 99.0
+    assert trade["exit_reference_price_raw"] == 98.0
+    assert trade["exit_price"] == 98.0
+    assert result["diagnostics"]["gap_stop_fills"] == 1
 
 
 def test_scid_record_detail_resolves_one_sided_stop_target_exit_timestamp():
@@ -328,7 +353,7 @@ def test_point_value_derives_tick_value_when_tick_value_absent():
     cfg["core"]["point_value"] = 20.0
     cfg["core"].pop("tick_value")
     rows = _calendar_rows("2024-01-03 09:30", 4)
-    rows.loc[1, "close"] = 101.0
+    rows.loc[1, ["high", "close"]] = [101.0, 101.0]
 
     trades = BacktestEngine(cfg).run(rows)["trades"]
 
@@ -375,6 +400,7 @@ def test_connors_rsi2_vwap_filter_warns_when_vwap_missing():
             "session_date": [pd.Timestamp("2024-01-02").date()] * 8,
         }
     )
+    rows["low"] = rows[["open", "low", "close"]].min(axis=1)
 
     diagnostics = BacktestEngine(cfg).run(rows)["diagnostics"]
 
@@ -995,7 +1021,7 @@ def test_risk_percent_sizing_uses_entry_stop_distance_per_trade():
         )
     for idx in range(5):
         rows[idx].update({"high": 99.0, "low": 96.0, "close": 98.0})
-    rows[9].update({"open": 99.0, "high": 100.0, "low": 98.5, "close": 100.5})
+    rows[9].update({"open": 99.0, "high": 100.5, "low": 98.5, "close": 100.5})
     rows[10].update({"open": 100.0, "high": 102.25, "low": 99.5, "close": 102.0})
 
     cfg = {
@@ -1061,7 +1087,7 @@ def _dynamic_sizing_opening_range_rows(session_date: str) -> list[dict]:
         )
     for idx in range(5):
         rows[idx].update({"high": 99.0, "low": 96.0, "close": 98.0})
-    rows[9].update({"open": 99.0, "high": 100.0, "low": 98.5, "close": 100.5})
+    rows[9].update({"open": 99.0, "high": 100.5, "low": 98.5, "close": 100.5})
     rows[10].update({"open": 100.0, "high": 102.25, "low": 99.5, "close": 102.0})
     return rows
 
@@ -1281,7 +1307,7 @@ def test_higher_timeframe_exit_conflict_uses_one_minute_detail_order():
                 "close": 100.75,
             }
         )
-    detail_rows[1].update({"high": 102.25, "low": 100.75, "close": 102.0})
+    detail_rows[1].update({"high": 102.25, "low": 100.5, "close": 102.0})
     detail_rows[2].update({"high": 101.5, "low": 98.75, "close": 99.0})
 
     cfg = {

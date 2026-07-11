@@ -1,3 +1,7 @@
+methodology_policy:
+  version: "2026-07-11.1"
+  description: "Authoritative fail-closed research policy for staged futures backtests."
+
 research_policy:
   data_scope: local_only
   primary_instrument: ES
@@ -40,33 +44,101 @@ methodology_caps:
   min_parameter_combinations: 8
   max_parameter_combinations: 120
 
+stage_defaults:
+  acceptance_stage: acceptance_oos_test
+  pre_acceptance_stage_order:
+    - limited_core_grid_test
+    - limited_monkey_test
+    - walk_forward_analysis
+    - wfa_oos_monkey_test
+    - wfa_oos_monte_carlo
+    - simulated_incubation_core
+    - simulated_incubation_monkey
+  monkey_runs: 8000
+  shortlist_data_window:
+    mode: random_fraction
+    fraction: 0.10
+    avoid_last_fraction: 0.10
+    seed: 31
+    avoid_ranges:
+      - start_date: "2020-02-01"
+        end_date: "2021-06-30"
+  wfa_data_window:
+    mode: first_fraction
+    fraction: 0.90
+  simulated_incubation:
+    train_months: 48
+    test_months: 12
+  acceptance_oos:
+    train_months: 24
+    test_months: 6
+
 stage_gates:
   limited_core_grid_test:
-    min_total_combinations_tested: 8
-    min_profitable_iteration_rate: 0.70
-    max_apex_rule_violating_iterations: 0
+    criteria:
+      - metric: summary.total_combinations_tested
+        valid_parameter_combination_count: true
+      - metric: summary.percentage_profitable_iterations
+        min: 0.70
+      - metric: summary.apex_rule_violating_iterations
+        max: 0
   limited_monkey_test:
-    min_net_profit_beat_rate: 0.90
-    min_max_drawdown_beat_rate: 0.90
+    criteria:
+      - metric: summary.core_beats_monkey_net_profit_rate
+        min: 0.90
+      - metric: summary.core_beats_monkey_max_drawdown_rate
+        min: 0.90
+      - metric: summary.core_metrics.apex_rule_violations
+        max: 0
   walk_forward_analysis:
-    min_windows: 10
-    min_profit_factor: 1.20
-    min_mar: 0.40
-    min_total_trades: 500
-    max_apex_rule_violations: 0
+    criteria:
+      - metric: summary.early_exit
+        equals: false
+      - metric: stitched_oos_metrics.profit_factor
+        min: 1.20
+      - metric: stitched_oos_metrics.mar
+        min: 0.40
+      - metric: stitched_oos_metrics.trades_per_year
+        min: 50
+      - metric: stitched_oos_metrics.apex_rule_violations
+        max: 0
   wfa_oos_monkey_test:
-    min_net_profit_beat_rate: 0.80
-    min_max_drawdown_beat_rate: 0.80
+    criteria:
+      - metric: summary.core_beats_monkey_net_profit_rate
+        min: 0.80
+      - metric: summary.core_beats_monkey_max_drawdown_rate
+        min: 0.80
+      - metric: summary.core_metrics.apex_rule_violations
+        max: 0
   wfa_oos_monte_carlo:
-    min_probability_profit_before_drawdown_exclusive: 0.50
+    criteria:
+      - metric: summary.mean_net_pnl
+        exclusive_min: 0.0
   simulated_incubation_core:
-    min_profit_factor: 1.00
-    min_mar: 1.00
-    min_total_trades: 75
+    criteria:
+      - metric: metrics.profit_factor
+        min: 1.00
+      - metric: metrics.mar
+        min: 1.00
+      - metric: metrics.trades_per_year
+        min: 50
+      - metric: metrics.apex_rule_violations
+        max: 0
   simulated_incubation_monkey:
-    min_net_profit_beat_rate: 0.80
-    min_max_drawdown_beat_rate: 0.80
+    criteria:
+      - metric: summary.core_beats_monkey_net_profit_rate
+        min: 0.80
+      - metric: summary.core_beats_monkey_max_drawdown_rate
+        min: 0.80
+      - metric: summary.core_metrics.apex_rule_violations
+        max: 0
   acceptance_oos_test:
-    min_profit_factor: 1.00
-    min_mar: 1.00
-    min_total_trades: 25
+    criteria:
+      - metric: metrics.profit_factor
+        min: 1.00
+      - metric: metrics.mar
+        min: 1.00
+      - metric: metrics.trades_per_year
+        min: 50
+      - metric: metrics.apex_rule_violations
+        max: 0

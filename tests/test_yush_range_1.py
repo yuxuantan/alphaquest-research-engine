@@ -382,7 +382,7 @@ def test_yush_range_1_enters_after_absorption_bucket_holds_for_three_seconds():
     assert signal.metadata["entry_mode"] == "intrabar"
     assert signal.metadata["entry_reference_price"] == 101.25
     assert signal.metadata["intended_entry_timestamp"] == pd.Timestamp("2024-01-03 10:00:04", tz=TZ)
-    assert signal.metadata["signal_stop_price"] == 100.0
+    assert signal.metadata["signal_stop_price"] == 99.5
     assert signal.metadata["profile_poc"] == 102.5
     assert signal.metadata["profile_val"] == 101.0
     assert signal.metadata["profile_vah"] == 104.0
@@ -450,7 +450,7 @@ def test_yush_range_5_keeps_bucket_stop_mechanics_with_own_setup_name():
     assert entry.name == "yush_range_5"
     assert signal.metadata["setup_mode"] == "yush_range_5"
     assert signal.level_type.startswith("yush_range_5_")
-    assert signal.metadata["signal_stop_price"] == 100.0
+    assert signal.metadata["signal_stop_price"] == 99.5
     assert signal.metadata["target_points"] is None
 
 
@@ -1166,6 +1166,7 @@ def test_yush_range_27_enters_stop_order_two_ticks_outside_aoi_box():
             stop_offset_ticks=2,
             max_stop_points=5.0,
             bubble_delta_threshold=300,
+            big_trade_threshold=10000,
         )
     )
     entry.on_bar_intrabar(pd.Series(_bar("2024-01-03 09:30:00")), _seed_profile_rows())
@@ -1173,6 +1174,7 @@ def test_yush_range_27_enters_stop_order_two_ticks_outside_aoi_box():
         entry.on_bar_close(pd.Series(_bar(ts, low=100.5)))
     rows = pd.DataFrame(
         [
+            _detail("2024-01-03 10:00:00", 99.50, 250, buy=250, sell=0),
             _detail("2024-01-03 10:00:00", 100.75, 400, buy=0, sell=400),
             _detail("2024-01-03 10:00:01", 101.50, 1, buy=1, sell=0),
         ]
@@ -1194,8 +1196,77 @@ def test_yush_range_27_enters_stop_order_two_ticks_outside_aoi_box():
     assert signal.metadata["dynamic_stop_trigger_price"] == 102.5
     assert signal.metadata["dynamic_stop_price"] == 102.75
     assert signal.metadata["bubble_type"] == "delta_profile"
+    assert signal.metadata["bubble_delta"] == -400
     built = build_entry_module({"module": "yush_range_27", "params": _entry_params()})
     assert isinstance(built, YushRange27Entry)
+
+
+def test_yush_range_27_rejects_when_delta_bubble_fades_before_entry_tick():
+    entry = YushRange27Entry(
+        _entry_params(
+            start_time="09:00:00",
+            end_time="11:00:00",
+            flatten_time="11:00:00",
+            allowed_market_level_types=["PDL", "ORL"],
+            profile_bucket_points=1.0,
+            delta_bucket_points=1.0,
+            range_snapshot_minutes=30.0,
+            max_range_change_pct=10.0,
+            min_failed_breakouts=0,
+            min_reversal_touches=0,
+            max_trades_per_day=3,
+            max_aoi_width_points=3.0,
+            entry_offset_ticks=2,
+            stop_offset_ticks=2,
+            max_stop_points=5.0,
+            bubble_delta_threshold=300,
+            big_trade_threshold=10000,
+        )
+    )
+    entry.on_bar_intrabar(pd.Series(_bar("2024-01-03 09:30:00")), _seed_profile_rows())
+    for ts in ["2024-01-03 09:30:00", "2024-01-03 09:33:00", "2024-01-03 09:36:00", "2024-01-03 09:57:00"]:
+        entry.on_bar_close(pd.Series(_bar(ts, low=100.5)))
+    rows = pd.DataFrame(
+        [
+            _detail("2024-01-03 10:00:00", 100.75, 400, buy=0, sell=400),
+            _detail("2024-01-03 10:00:00.500", 100.75, 125, buy=125, sell=0),
+            _detail("2024-01-03 10:00:01", 101.50, 1, buy=1, sell=0),
+        ]
+    )
+    rows.attrs["detail_granularity"] = "scid_record"
+
+    signal = entry.on_bar_intrabar(pd.Series(_bar("2024-01-03 10:00:00")), rows)
+
+    assert signal is None
+
+
+def test_yush_range_27_can_rearm_when_delta_bubble_returns_before_entry_tick():
+    entry = YushRange27Entry(
+        _entry_params(
+            delta_bucket_points=1.0,
+            bubble_delta_threshold=300,
+        )
+    )
+    candidate = {
+        "box_high": 101.0,
+        "bubble": {
+            "bubble_type": "delta_profile",
+            "bubble_bucket": 100.0,
+            "bubble_delta": -400.0,
+            "bubble_bucket_points": 1.0,
+        },
+    }
+
+    entry.state.delta_by_bucket = {100.0: -275.0}
+    assert entry._entry_tick_delta_bubble("long", candidate) is None
+
+    entry.state.delta_by_bucket = {100.0: -375.0}
+    bubble = entry._entry_tick_delta_bubble("long", candidate)
+
+    assert bubble is not None
+    assert bubble["bubble_type"] == "delta_profile"
+    assert bubble["bubble_delta"] == -375
+    assert bubble["bubble_delta_timing"] == "entry_tick"
 
 
 def test_yush_trend_16_confirms_short_delta_bucket_initiation_with_known_risk_cap():

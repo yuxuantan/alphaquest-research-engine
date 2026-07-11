@@ -128,9 +128,12 @@ class YushRange27Entry(YushRange1Entry):
                 candidates_cache = self._aoi_candidates(profile, levels)
                 candidates_cache_timestamp = profile_cache_timestamp
             candidates = candidates_cache or []
+            current_candidate_keys = {candidate["aoi_key"] for candidate in candidates}
+            for stale_key in set(self._pending_aoi) - current_candidate_keys:
+                self._pending_aoi.pop(stale_key, None)
             for candidate in candidates:
                 key = candidate["aoi_key"]
-                if key in self._traded_aoi_keys or key in self._pending_aoi:
+                if key in self._traded_aoi_keys:
                     continue
                 direction = candidate["direction"]
                 if direction == "long" and not self.allow_long:
@@ -141,6 +144,7 @@ class YushRange27Entry(YushRange1Entry):
                     continue
                 bubble = self._bubble_in_or_past_aoi(direction, candidate)
                 if bubble is None:
+                    self._pending_aoi.pop(key, None)
                     continue
                 self._pending_aoi[key] = {
                     **candidate,
@@ -173,6 +177,11 @@ class YushRange27Entry(YushRange1Entry):
                     continue
                 if not self._entry_triggered(direction, pending, tick_state):
                     continue
+                entry_bubble = self._entry_tick_delta_bubble(direction, pending)
+                if entry_bubble is None:
+                    self._pending_aoi.pop(key, None)
+                    continue
+                pending = {**pending, "bubble": entry_bubble}
                 signal = self._aoi_signal(direction, bar, tick_state, profile, pending, previous_bar)
                 if signal is None:
                     continue
@@ -361,8 +370,6 @@ class YushRange27Entry(YushRange1Entry):
                 continue
             if not self._bucket_in_or_past_aoi(direction, float(bucket), candidate):
                 continue
-            if not self._delta_is_double_surrounding(float(bucket), float(delta)):
-                continue
             return {
                 "bubble_type": "delta_profile",
                 "bubble_bucket": float(bucket),
@@ -370,12 +377,6 @@ class YushRange27Entry(YushRange1Entry):
                 "bubble_bucket_points": self.delta_bucket_points,
             }
         return None
-
-    def _delta_is_double_surrounding(self, bucket: float, delta: float) -> bool:
-        surrounding = []
-        for offset in (-2, -1, 1, 2):
-            surrounding.append(abs(self.state.delta_by_bucket.get(bucket + offset * self.delta_bucket_points, 0.0)))
-        return abs(delta) >= 2.0 * max(surrounding or [0.0], default=0.0)
 
     def _big_trade_bubble_in_or_past_aoi(self, direction: str, candidate: dict) -> dict | None:
         total_volume = 0.0
@@ -392,6 +393,24 @@ class YushRange27Entry(YushRange1Entry):
             "bubble_volume": total_volume,
             "bubble_signed_volume": signed_volume,
             "bubble_agg_ms": self.big_trade_agg_ms,
+        }
+
+    def _entry_tick_delta_bubble(self, direction: str, candidate: dict) -> dict | None:
+        bubble = candidate.get("bubble") or {}
+        bucket = _finite_float(bubble.get("bubble_bucket"))
+        if bucket is None:
+            return None
+        delta = self.state.delta_by_bucket.get(float(bucket))
+        if delta is None or abs(delta) < self.bubble_delta_threshold:
+            return None
+        if not self._bucket_in_or_past_aoi(direction, float(bucket), candidate):
+            return None
+        return {
+            "bubble_type": "delta_profile",
+            "bubble_bucket": float(bucket),
+            "bubble_delta": float(delta),
+            "bubble_bucket_points": self.delta_bucket_points,
+            "bubble_delta_timing": "entry_tick",
         }
 
     def _bucket_in_or_past_aoi(self, direction: str, bucket: float, candidate: dict) -> bool:

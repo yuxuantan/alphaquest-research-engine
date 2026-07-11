@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from propstack.strategy_modules.metadata import StrategyModuleMetadata, metadata_from_module_class
 from propstack.strategy_modules.entry.aqr_bab_factor_state import AqrBabFactorStateEntry
 from propstack.strategy_modules.entry.aoi_vap_acceptance_retest import AoiVapAcceptanceRetestEntry
 from propstack.strategy_modules.entry.bankruptcy_distress_reversion import BankruptcyDistressReversionEntry
@@ -886,6 +887,18 @@ def build_entry_module(config: dict):
         raise ValueError(f"Unknown entry module: {name}") from exc
 
 
+def entry_module_metadata(name: str) -> StrategyModuleMetadata:
+    try:
+        module_cls = ENTRY_MODULES[name]
+    except KeyError as exc:
+        raise ValueError(f"Unknown entry module: {name}") from exc
+    return metadata_from_module_class("entry", module_cls)
+
+
+def all_entry_module_metadata() -> dict[str, StrategyModuleMetadata]:
+    return {name: metadata_from_module_class("entry", module_cls) for name, module_cls in ENTRY_MODULES.items()}
+
+
 __all__ = [
     "Signal",
     "AqrBabFactorStateEntry",
@@ -1202,4 +1215,6 @@ __all__ = [
     "VwapDeviationOrderflowReversionEntry",
     "VwapPullbackContinuationEntry",
     "build_entry_module",
+    "entry_module_metadata",
+    "all_entry_module_metadata",
 ]

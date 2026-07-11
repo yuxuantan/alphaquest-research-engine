@@ -8,6 +8,9 @@ from propstack.utils.time import parse_time
 
 class CalendarSessionBiasEntry:
     name = "calendar_session_bias"
+    required_columns = frozenset({"is_rth"})
+    decision_timing = "bar_close"
+    warmup_bars = 0
 
     def __init__(self, params: dict):
         self.params = params

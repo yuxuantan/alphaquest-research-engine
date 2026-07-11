@@ -9,18 +9,22 @@ from zoneinfo import ZoneInfo
 
 import pandas as pd
 
+from propstack.backtest.contracts import ExecutionAssumptions, validate_market_data_contract
 from propstack.backtest.fills import entry_price, exit_price, stop_target_hit
 from propstack.backtest.metrics import calculate_metrics, daily_results
 from propstack.backtest.risk import DailyRisk
-from propstack.backtest.sizing import size_position, tick_value_from_core
+from propstack.backtest.sizing import size_position
 from propstack.strategy import ModularStrategy
+from propstack.strategy_modules.entry import entry_module_metadata
 from propstack.utils.config import config_timeframe_minutes
+from propstack.utils.hashing import object_sha256
 from propstack.utils.progress import progress_bar
 from propstack.utils.target_rr import require_minimum_target_rr
 from propstack.utils.time import parse_time
 from propstack.validation.exporter import build_bar_window_rows, build_tick_window_rows
 from propstack.validation.exit_path import enrich_exit_audits
 from propstack.validation.schema import CONDITION_SNAPSHOT_COLUMNS, EXIT_AUDIT_COLUMNS, normalize_columns
+from propstack.version import ENGINE_CONTRACT_VERSION
 
 
 @dataclass(frozen=True)
@@ -132,6 +136,7 @@ class BacktestEngine:
         if "strategy_name" not in self.strategy_config and config.get("strategy_name"):
             self.strategy_config["strategy_name"] = config["strategy_name"]
         self.core_config = config.get("core", {})
+        self.execution_assumptions = ExecutionAssumptions.from_core_config(self.core_config)
         self.apex_rules = ApexRules.from_config(config)
         self.apex_timezone = ZoneInfo(self.apex_rules.timezone)
         self.event_filters = EventFilters.from_config(config)
@@ -141,20 +146,33 @@ class BacktestEngine:
         self._apply_timeframe_to_strategy()
 
     def run(self, data: pd.DataFrame, detail_data: pd.DataFrame | None = None) -> dict:
-        df = data.sort_values("timestamp").reset_index(drop=True)
+        data_contract = validate_market_data_contract(
+            data,
+            label="Backtest data",
+            require_session_date=True,
+        )
+        detail_contract = None
+        if detail_data is not None:
+            detail_contract = validate_market_data_contract(
+                detail_data,
+                label="Backtest detail_data",
+                require_session_date=False,
+                allow_duplicate_timestamps=True,
+            )
+        df = data.sort_values("timestamp", kind="mergesort").reset_index(drop=True)
         detail_df = None
         detail_attrs = getattr(detail_data, "attrs", {}) if detail_data is not None else {}
         if detail_data is not None and not detail_data.empty:
-            detail_df = detail_data.sort_values("timestamp").reset_index(drop=True)
+            detail_df = detail_data.sort_values("timestamp", kind="mergesort").reset_index(drop=True)
             detail_df.attrs.update(detail_attrs)
-        diagnostics = self._preflight(df, detail_df)
+        diagnostics = self._preflight(df, detail_df, data_contract, detail_contract)
         strategy = ModularStrategy(self.strategy_config)
         entry_params = self.strategy_config.get("entry", {}).get("params", {})
         risk = DailyRisk({**self.core_config, **self.strategy_config, **entry_params})
-        tick_size = float(self.core_config.get("tick_size", 0.25))
-        tick_value = tick_value_from_core(self.core_config, tick_size)
-        commission = float(self.core_config.get("commission_per_contract", 2.5))
-        slippage_ticks = float(self.core_config.get("slippage_ticks", 1))
+        tick_size = self.execution_assumptions.tick_size
+        tick_value = self.execution_assumptions.tick_value
+        commission = self.execution_assumptions.commission_per_contract
+        slippage_ticks = self.execution_assumptions.slippage_ticks
         flatten_time = parse_time(self.strategy_config.get("flatten_time", self.core_config.get("flatten_time", "14:55:00")))
         bar_interval_minutes = self.timeframe_minutes
         net_liq = float(self.core_config.get("initial_balance", 0.0))
@@ -217,6 +235,7 @@ class BacktestEngine:
             opened.update(
                 {
                     "entry_timestamp": entry_timestamp,
+                    "entry_reference_price_raw": float(reference_price),
                     "entry_price": ep,
                     "stop_price": stop,
                     "target_price": target,
@@ -272,6 +291,7 @@ class BacktestEngine:
             )
             bar_close_timestamp = bar_close_timestamps[index]
             next_bar_close_timestamp = next_bar_close_timestamps[index]
+            opened_this_bar = pd.Timestamp(opened["entry_timestamp"]) >= pd.Timestamp(bar["timestamp"])
             event_window = None
             exit_audit = {} if self.validation_export.enabled else None
             self._maybe_update_dynamic_stop(
@@ -293,6 +313,7 @@ class BacktestEngine:
                 diagnostics,
                 start_timestamp=detail_start_timestamp,
                 suppress_first_detail_target=detail_start_timestamp is not None,
+                allow_open_gap_fill=not opened_this_bar,
                 audit=exit_audit,
             )
             position_flatten_time = parse_time(opened.get("signal_flatten_time", flatten_time))
@@ -338,8 +359,14 @@ class BacktestEngine:
             )
             xp = exit_price(float(raw_exit), direction, tick_size, slippage_ticks)
             point_pnl = xp - opened["entry_price"] if direction == "long" else opened["entry_price"] - xp
+            reference_point_pnl = (
+                float(raw_exit) - opened["entry_reference_price_raw"]
+                if direction == "long"
+                else opened["entry_reference_price_raw"] - float(raw_exit)
+            )
             contracts = int(opened["contracts"])
             gross = point_pnl / tick_size * tick_value * contracts
+            gross_before_slippage = reference_point_pnl / tick_size * tick_value * contracts
             total_commission = commission * contracts * 2
             slippage_cost = slippage_ticks * tick_value * contracts * 2
             net = gross - total_commission
@@ -347,13 +374,17 @@ class BacktestEngine:
             trade = {
                 **opened,
                 "exit_timestamp": exit_timestamp,
+                "exit_reference_price_raw": float(raw_exit),
                 "exit_price": xp,
                 "exit_reason": reason,
+                "gross_pnl_before_slippage": gross_before_slippage,
                 "gross_pnl": gross,
                 "net_pnl": net,
                 "r_multiple": r_mult,
                 "commission": total_commission,
                 "slippage_cost": slippage_cost,
+                "total_transaction_cost": total_commission + slippage_cost,
+                "cost_accounting_error": gross_before_slippage - slippage_cost - gross,
             }
             trade.update(self._apex_trade_fields(trade))
             trades.append(trade)
@@ -555,6 +586,13 @@ class BacktestEngine:
             "daily": daily_results(trades_df),
             "metrics": metrics,
             "diagnostics": diagnostics,
+            "reproducibility": {
+                "engine_contract_version": ENGINE_CONTRACT_VERSION,
+                "config_hash": object_sha256(self.config),
+                "data_contract": data_contract,
+                "detail_data_contract": detail_contract,
+                "execution_assumptions": self.execution_assumptions.as_dict(),
+            },
         }
         if self.validation_export.enabled:
             output["validation"] = self._validation_frames(
@@ -922,7 +960,13 @@ class BacktestEngine:
             return build_tick_window_rows(pd.DataFrame(), trade_id=None)
         return pd.concat(frames, ignore_index=True)
 
-    def _preflight(self, data: pd.DataFrame, detail_data: pd.DataFrame | None) -> dict:
+    def _preflight(
+        self,
+        data: pd.DataFrame,
+        detail_data: pd.DataFrame | None,
+        data_contract: dict[str, Any],
+        detail_contract: dict[str, Any] | None,
+    ) -> dict:
         required = {"timestamp", "session_date", "open", "high", "low", "close"}
         missing = required - set(data.columns)
         if missing:
@@ -934,6 +978,10 @@ class BacktestEngine:
                 "timeframe_minutes": float(self.timeframe_minutes),
                 "warnings": [],
                 "required_columns": sorted(required),
+                "engine_contract_version": ENGINE_CONTRACT_VERSION,
+                "data_contract": data_contract,
+                "detail_data_contract": detail_contract,
+                "execution_assumptions": self.execution_assumptions.as_dict(),
             },
             "signals_generated": 0,
             "entries_opened": 0,
@@ -955,6 +1003,7 @@ class BacktestEngine:
             "detail_conflicts_unresolved": 0,
             "intrabar_first_detail_targets_suppressed": 0,
             "dynamic_stop_updates": 0,
+            "gap_stop_fills": 0,
             "apex": self._apex_diagnostics(),
             "event_filters": self._event_filter_diagnostics(),
         }
@@ -965,6 +1014,16 @@ class BacktestEngine:
 
     def _validate_strategy_feature_columns(self, data: pd.DataFrame, diagnostics: dict) -> None:
         module = str(self.strategy_config.get("entry", {}).get("module", ""))
+        try:
+            metadata_required = set(entry_module_metadata(module).required_columns)
+        except ValueError:
+            metadata_required = set()
+        if metadata_required:
+            missing = metadata_required - set(data.columns)
+            if missing:
+                raise ValueError(
+                    f"Strategy entry module {module!r} requires missing feature column(s): {sorted(missing)}."
+                )
         required_by_module = {
             "amihud_illiquidity_state": {"is_rth"},
             "bls_macro_release_day_drift": {"is_rth"},
@@ -1708,6 +1767,7 @@ class BacktestEngine:
         diagnostics: dict,
         start_timestamp: pd.Timestamp | None = None,
         suppress_first_detail_target: bool = False,
+        allow_open_gap_fill: bool = False,
         audit: dict | None = None,
     ) -> tuple[str | None, float | None, pd.Timestamp]:
         exit_timestamp = bar["timestamp"]
@@ -1739,6 +1799,7 @@ class BacktestEngine:
                     stop_price,
                     target_price,
                     suppress_first_detail_target=suppress_first_detail_target,
+                    allow_open_gap_fill=allow_open_gap_fill,
                     diagnostics=diagnostics,
                 )
                 if detail_exit is not None:
@@ -1773,6 +1834,7 @@ class BacktestEngine:
                 stop_price,
                 target_price,
                 suppress_first_detail_target=suppress_first_detail_target,
+                allow_open_gap_fill=allow_open_gap_fill,
                 diagnostics=diagnostics,
             )
             if detail_exit is not None:
@@ -1800,6 +1862,7 @@ class BacktestEngine:
                 stop_price,
                 target_price,
                 suppress_first_detail_target=suppress_first_detail_target,
+                allow_open_gap_fill=allow_open_gap_fill,
                 diagnostics=diagnostics,
             )
             if detail_exit is not None:
@@ -1811,7 +1874,15 @@ class BacktestEngine:
             diagnostics["detail_conflicts_unresolved"] += 1
             if audit is not None:
                 audit["ambiguity_resolution"] = "pessimistic_stop_first"
-        reason, raw_exit = stop_target_hit(bar, direction, stop_price, target_price)
+        reason, raw_exit = stop_target_hit(
+            bar,
+            direction,
+            stop_price,
+            target_price,
+            allow_open_gap_fill=allow_open_gap_fill,
+        )
+        if reason == "stop" and raw_exit != stop_price:
+            diagnostics["gap_stop_fills"] = diagnostics.get("gap_stop_fills", 0) + 1
         if audit is not None and reason is not None:
             audit["first_touch_exit_decision"] = reason
             if stop_hit and target_hit and not audit.get("ambiguity_resolution"):
@@ -2177,6 +2248,7 @@ def _resolve_detail_stop_target(
     target_price: float,
     *,
     suppress_first_detail_target: bool = False,
+    allow_open_gap_fill: bool = False,
     diagnostics: dict | None = None,
 ) -> tuple[str, float, pd.Timestamp] | None:
     if detail_data is None or detail_data.empty:
@@ -2191,13 +2263,30 @@ def _resolve_detail_stop_target(
         if suppress_first_detail_target and _detail_row_contains_start(detail_timestamp, start, detail_granularity):
             stop_hit, target_hit = _stop_target_hits(detail_bar, direction, stop_price, target_price)
             if stop_hit:
-                return "stop", stop_price, detail_timestamp
+                reason, raw_exit = stop_target_hit(
+                    detail_bar,
+                    direction,
+                    stop_price,
+                    target_price,
+                    allow_open_gap_fill=(allow_open_gap_fill or detail_granularity == "scid_record"),
+                )
+                if diagnostics is not None and raw_exit != stop_price:
+                    diagnostics["gap_stop_fills"] = diagnostics.get("gap_stop_fills", 0) + 1
+                return reason, raw_exit, detail_timestamp
             if target_hit:
                 if diagnostics is not None:
                     diagnostics["intrabar_first_detail_targets_suppressed"] += 1
                 continue
-        reason, raw_exit = stop_target_hit(detail_bar, direction, stop_price, target_price)
+        reason, raw_exit = stop_target_hit(
+            detail_bar,
+            direction,
+            stop_price,
+            target_price,
+            allow_open_gap_fill=(allow_open_gap_fill or detail_timestamp > start),
+        )
         if reason is not None:
+            if diagnostics is not None and reason == "stop" and raw_exit != stop_price:
+                diagnostics["gap_stop_fills"] = diagnostics.get("gap_stop_fills", 0) + 1
             return reason, raw_exit, detail_timestamp
     return None
 

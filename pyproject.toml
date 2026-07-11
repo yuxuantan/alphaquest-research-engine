@@ -1,7 +1,7 @@
 [project]
 name = "prop-stack-automation"
 version = "0.1.0"
-description = "Milestone 7 research skeleton for futures prop-firm backtesting."
+description = "Deterministic staged research and backtesting engine for futures strategies."
 requires-python = ">=3.10"
 dependencies = [
   "pandas>=2.0",
@@ -15,7 +15,10 @@ dependencies = [
 propstack-validation-sample = "propstack.validation.sample_run:main"
 
 [project.optional-dependencies]
-dev = ["pytest>=8.0"]
+dev = [
+  "pytest>=8.0",
+  "ruff>=0.6",
+]
 dashboard = ["streamlit>=1.30", "plotly>=5.18"]
 
 [tool.pytest.ini_options]
@@ -24,3 +27,19 @@ testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 120
+extend-exclude = [
+  "backtest-campaigns",
+  "data",
+  "research_artifacts",
+  "_archived",
+]
+
+[tool.ruff.lint]
+# Existing research tooling is not yet style-clean. Keep the default gate focused
+# on fatal parser/name errors, then ratchet stricter lint families in after the
+# historical baseline is cleaned.
+select = ["E9", "F63", "F7", "F82"]

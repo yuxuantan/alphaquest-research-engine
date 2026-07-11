@@ -62,6 +62,7 @@ def write_equity_report(
     sequence_columns: Iterable[str] | None = None,
     csv_name: str = "equity_curve.csv",
     html_name: str = "equity_curve.html",
+    write_html: bool = True,
 ) -> dict:
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
@@ -76,11 +77,12 @@ def write_equity_report(
     csv_path = out / csv_name
     html_path = out / html_name
     write_report_csv(curve, csv_path, timezone, index=False)
-    html_curve = normalize_report_timestamps(curve, timezone)
-    html_path.write_text(_equity_report_html(html_curve, title), encoding="utf-8")
+    if write_html:
+        html_curve = normalize_report_timestamps(curve, timezone)
+        html_path.write_text(_equity_report_html(html_curve, title), encoding="utf-8")
     return {
         "equity_curve_csv": str(csv_path),
-        "equity_curve_html": str(html_path),
+        "equity_curve_html": str(html_path) if write_html else None,
         "equity_curve_points": int(len(curve)),
     }
 
@@ -95,6 +97,7 @@ def write_equity_report_from_trade_log(
     pnl_column: str = "net_pnl",
     timestamp_column: str | None = "exit_timestamp",
     sequence_columns: Iterable[str] | None = None,
+    write_html: bool = True,
 ) -> dict:
     path = Path(trade_log)
     trades = pd.read_csv(path)
@@ -108,6 +111,7 @@ def write_equity_report_from_trade_log(
         pnl_column=pnl_column,
         timestamp_column=timestamp_column,
         sequence_columns=sequence_columns,
+        write_html=write_html,
     )
 
 

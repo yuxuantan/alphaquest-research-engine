@@ -18,6 +18,9 @@ if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
 from propstack.data.load import load_raw_data  # noqa: E402
+from propstack.strategy_modules.entry import ENTRY_MODULES, entry_module_metadata  # noqa: E402
+from propstack.strategy_modules.sl import SL_MODULES  # noqa: E402
+from propstack.strategy_modules.tp import TP_MODULES  # noqa: E402
 from propstack.utils.target_rr import MIN_TARGET_R_MULTIPLE, target_rr_violations  # noqa: E402
 
 
@@ -185,6 +188,7 @@ def _validate_config(cfg: dict, path: Path, failures: list[str], warnings: list[
         _require_keys(value, ("module", "params"), f"{prefix}: strategy.{section}", failures)
         if not isinstance(value.get("params"), dict):
             failures.append(f"{prefix}: strategy.{section}.params must be a mapping.")
+    _validate_strategy_module_registry(strategy, prefix, failures, warnings)
     if not strategy.get("flatten_time"):
         failures.append(f"{prefix}: strategy.flatten_time is required.")
 
@@ -215,6 +219,33 @@ def _validate_config(cfg: dict, path: Path, failures: list[str], warnings: list[
     _validate_parameter_grid(cfg, path, failures, warnings)
     _validate_minimum_target_rr(cfg, path, failures)
     _validate_mechanics_rationale(cfg, path, failures, warnings)
+
+
+def _validate_strategy_module_registry(
+    strategy: dict,
+    prefix: str,
+    failures: list[str],
+    warnings: list[str],
+) -> None:
+    entry = strategy.get("entry") if isinstance(strategy.get("entry"), dict) else {}
+    tp = strategy.get("tp") if isinstance(strategy.get("tp"), dict) else {}
+    sl = strategy.get("sl") if isinstance(strategy.get("sl"), dict) else {}
+    entry_name = entry.get("module")
+    tp_name = tp.get("module")
+    sl_name = sl.get("module")
+    if entry_name and entry_name not in ENTRY_MODULES:
+        failures.append(f"{prefix}: unknown strategy.entry.module {entry_name!r}.")
+    elif entry_name:
+        metadata = entry_module_metadata(str(entry_name))
+        if metadata.decision_timing not in {"bar_close", "intrabar", "bar_close_or_intrabar"}:
+            failures.append(
+                f"{prefix}: strategy.entry.module {entry_name!r} declares unsupported "
+                f"decision_timing {metadata.decision_timing!r}."
+            )
+    if tp_name and tp_name not in TP_MODULES:
+        failures.append(f"{prefix}: unknown strategy.tp.module {tp_name!r}.")
+    if sl_name and sl_name not in SL_MODULES:
+        failures.append(f"{prefix}: unknown strategy.sl.module {sl_name!r}.")
 
 
 def _validate_mechanics_rationale(cfg: dict, path: Path, failures: list[str], warnings: list[str]) -> None:

@@ -238,10 +238,10 @@ def _pivot_ohlc_rows(timestamps) -> list[dict]:
     return [
         {"open": 100.0, "high": 100.5, "low": 99.0, "close": 100.0},
         {"open": 100.0, "high": 102.0, "low": 100.0, "close": 101.5},
-        {"open": 101.5, "high": 101.0, "low": 99.5, "close": 100.0},
+        {"open": 101.5, "high": 101.5, "low": 99.5, "close": 100.0},
         {"open": 100.0, "high": 101.0, "low": 98.0, "close": 99.0},
         {"open": 99.0, "high": 100.0, "low": 99.0, "close": 99.5},
-        {"open": 99.5, "high": 103.0, "low": 100.0, "close": 102.0},
+        {"open": 99.5, "high": 103.0, "low": 99.5, "close": 102.0},
         {"open": 102.0, "high": 102.0, "low": 99.5, "close": 100.5},
         {"open": 100.5, "high": 101.0, "low": 99.0, "close": 100.0},
         {"open": 100.0, "high": 102.0, "low": 100.0, "close": 101.0},

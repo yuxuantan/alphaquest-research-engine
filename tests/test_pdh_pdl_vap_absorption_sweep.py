@@ -300,14 +300,16 @@ def test_entry_emits_long_for_pdh_sweep_when_release_is_near_val():
 
 def test_engine_opens_intrabar_signal_at_signal_reference_price_not_next_bar_open():
     rows = []
-    for index, timestamp in enumerate(pd.date_range("2024-01-03 09:30:00", periods=7, freq="3min")):
+    for index, timestamp in enumerate(
+        pd.date_range("2024-01-03 09:30:00", periods=7, freq="3min", tz="America/New_York")
+    ):
         row = _feature_bar(str(timestamp), high=100.0 + index, low=99.0, close=100.0, open=100.0)
         rows.append(row.to_dict())
     rows[1].update({"high": 102.0, "low": 100.0})
     rows[2].update({"high": 101.0, "low": 98.0})
     rows[3].update({"high": 103.0, "low": 99.0})
     rows[4].update({"high": 102.0, "low": 100.0})
-    rows[5] = _feature_bar("2024-01-03 09:45:00", high=102.25, low=101.25, close=101.5).to_dict()
+    rows[5] = _feature_bar("2024-01-03 09:45:00-05:00", high=102.25, low=101.25, close=101.5).to_dict()
     rows[6].update({"open": 101.5, "high": 101.75, "low": 100.75, "close": 101.0})
     data = pd.DataFrame(rows)
 
@@ -345,7 +347,7 @@ def test_engine_opens_intrabar_signal_at_signal_reference_price_not_next_bar_ope
 
     assert len(trades) == 1
     trade = trades.iloc[0]
-    assert trade["entry_timestamp"] == pd.Timestamp("2024-01-03 09:46:00")
+    assert trade["entry_timestamp"] == pd.Timestamp("2024-01-03 09:46:00", tz="America/New_York")
     assert trade["entry_price"] == 101.75
     assert trade["stop_price"] == 102.5
     assert trade["target_price"] == 101.0
@@ -354,24 +356,26 @@ def test_engine_opens_intrabar_signal_at_signal_reference_price_not_next_bar_ope
 
 def test_engine_does_not_use_pre_entry_part_of_signal_bar_for_intrabar_exit():
     rows = []
-    for index, timestamp in enumerate(pd.date_range("2024-01-03 09:30:00", periods=7, freq="3min")):
+    for index, timestamp in enumerate(
+        pd.date_range("2024-01-03 09:30:00", periods=7, freq="3min", tz="America/New_York")
+    ):
         row = _feature_bar(str(timestamp), high=100.0 + index, low=99.0, close=100.0, open=100.0)
         rows.append(row.to_dict())
     rows[1].update({"high": 102.0, "low": 100.0})
     rows[2].update({"high": 101.0, "low": 98.0})
     rows[3].update({"high": 103.0, "low": 99.0})
     rows[4].update({"high": 102.0, "low": 100.0})
-    rows[5] = _feature_bar("2024-01-03 09:45:00", high=102.75, low=101.25, close=101.5).to_dict()
+    rows[5] = _feature_bar("2024-01-03 09:45:00-05:00", high=102.75, low=101.25, close=101.5).to_dict()
     rows[6].update({"open": 101.5, "high": 102.0, "low": 101.25, "close": 101.5})
     data = pd.DataFrame(rows)
     detail = pd.DataFrame(
         [
-            {"timestamp": pd.Timestamp("2024-01-03 09:45:00"), "open": 102.25, "high": 102.75, "low": 101.75, "close": 101.75},
-            {"timestamp": pd.Timestamp("2024-01-03 09:46:00"), "open": 101.75, "high": 102.00, "low": 101.25, "close": 101.50},
-            {"timestamp": pd.Timestamp("2024-01-03 09:47:00"), "open": 101.50, "high": 102.00, "low": 101.25, "close": 101.50},
-            {"timestamp": pd.Timestamp("2024-01-03 09:48:00"), "open": 101.50, "high": 102.00, "low": 101.25, "close": 101.50},
-            {"timestamp": pd.Timestamp("2024-01-03 09:49:00"), "open": 101.50, "high": 102.00, "low": 101.25, "close": 101.50},
-            {"timestamp": pd.Timestamp("2024-01-03 09:50:00"), "open": 101.50, "high": 102.00, "low": 101.25, "close": 101.50},
+            {"timestamp": pd.Timestamp("2024-01-03 09:45:00", tz="America/New_York"), "open": 102.25, "high": 102.75, "low": 101.75, "close": 101.75},
+            {"timestamp": pd.Timestamp("2024-01-03 09:46:00", tz="America/New_York"), "open": 101.75, "high": 102.00, "low": 101.25, "close": 101.50},
+            {"timestamp": pd.Timestamp("2024-01-03 09:47:00", tz="America/New_York"), "open": 101.50, "high": 102.00, "low": 101.25, "close": 101.50},
+            {"timestamp": pd.Timestamp("2024-01-03 09:48:00", tz="America/New_York"), "open": 101.50, "high": 102.00, "low": 101.25, "close": 101.50},
+            {"timestamp": pd.Timestamp("2024-01-03 09:49:00", tz="America/New_York"), "open": 101.50, "high": 102.00, "low": 101.25, "close": 101.50},
+            {"timestamp": pd.Timestamp("2024-01-03 09:50:00", tz="America/New_York"), "open": 101.50, "high": 102.00, "low": 101.25, "close": 101.50},
         ]
     )
 
@@ -409,6 +413,6 @@ def test_engine_does_not_use_pre_entry_part_of_signal_bar_for_intrabar_exit():
 
     assert len(trades) == 1
     trade = trades.iloc[0]
-    assert trade["entry_timestamp"] == pd.Timestamp("2024-01-03 09:46:00")
-    assert trade["exit_timestamp"] == pd.Timestamp("2024-01-03 09:51:00")
+    assert trade["entry_timestamp"] == pd.Timestamp("2024-01-03 09:46:00", tz="America/New_York")
+    assert trade["exit_timestamp"] == pd.Timestamp("2024-01-03 09:51:00", tz="America/New_York")
     assert trade["exit_reason"] == "eod_flatten"

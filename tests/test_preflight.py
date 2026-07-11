@@ -263,6 +263,20 @@ def test_preflight_rejects_missing_forced_flatten_config(tmp_path):
     assert any("force_flatten_time" in failure for failure in result["failures"])
 
 
+def test_preflight_rejects_unknown_strategy_module(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    cfg = _config(data)
+    cfg["strategy"]["entry"]["module"] = "not_registered"
+    _write_config(config, cfg)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("unknown strategy.entry.module" in failure for failure in result["failures"])
+
+
 def test_preflight_rejects_methodology_parameter_cap_violations(tmp_path):
     data = tmp_path / "bars.csv"
     config = tmp_path / "config.yaml"

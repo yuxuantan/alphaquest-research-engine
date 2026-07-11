@@ -34,7 +34,10 @@ mechanic:
   bubble_condition:
     delta_profile_threshold: 300
     delta_bucket_points: 1.0
-    delta_must_be_double_surrounding_two_levels: true
+    delta_must_be_double_surrounding_two_levels: false
+    delta_revalidated_at_entry_tick: true
+    stale_pending_aoi_rearms_when_delta_returns: true
+    big_trade_only_entries_allowed: false
     big_trade_threshold: 200
     big_trade_agg_ms: 100
   execution:
@@ -45,30 +48,37 @@ mechanic:
     dynamic_stop_after_value_area_mid: entry_plus_or_minus_1_25_points
     max_trades_per_day: 3
     contracts: 1
-  data_window: 2026-05-01 to 2026-05-29 POC; 2025-03-07 to 2025-04-11 fast-runtime staged
-    core/monkey subset from the 2025-03-01 to 2026-02-28 staged source config
+    slippage_ticks: 0
+  data_window: 2026-05-01 to 2026-05-29 POC; 2025-03-07 to 2025-04-11 fast-runtime
+    staged core/monkey subset from the 2025-03-01 to 2026-02-28 staged source config
   staged_candidate: false
   known_caveats:
   - No durable red USD news calendar is configured for the no-news guardrail.
   - Switch-account-after-trade is not modeled in a single-account historical backtest.
   - Sierra SCID replay is record-level, not exchange MBO sequencing.
 rescue_policy:
-  rescue_scope: user_supplied_fixed_mechanics
-  max_rescue_attempts_per_failed_variant: 0
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
   allowed:
-  - reject_or_promote_after_official_results
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
   forbidden:
-  - tune filters after seeing the POC or staged failure
-  - drop failing checklist conditions post hoc
-  - change data window after seeing the run
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
   - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
 review_status: failed_limited_monkey_test
 last_test:
   test_run_id: run123_12mo_aoi_box_range_checklist_staged
   result_path: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_range_27/ES/run123_12mo_aoi_box_range_checklist_staged/campaign_test_summary.json
   verdict: FAIL
   reason: Fast-runtime staged run passed limited_core_grid_test but failed limited_monkey_test.
-    Core subset had 9 trades, net profit 1305.0, PF 3.1933, win rate 0.5556,
-    max drawdown 402.5, best day concentration 0.6782, and benchmark failure
-    preferred_min_total_trades;max_best_day_concentration. Monkey robustness rejected
-    it because core_beats_monkey_net_profit_rate was 0.775 below the required 0.90.
+    Core subset had 9 trades, net profit 1305.0, PF 3.1933, win rate 0.5556, max drawdown
+    402.5, best day concentration 0.6782, and benchmark failure preferred_min_total_trades;max_best_day_concentration.
+    Monkey robustness rejected it because core_beats_monkey_net_profit_rate was 0.775
+    below the required 0.90.

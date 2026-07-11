@@ -1,6 +1,8 @@
 # Prop Stack Automation
 
-Research skeleton for futures prop-firm strategy testing. The project is organized around **campaigns** and **variants**:
+Deterministic futures research and backtesting engine with fail-closed preflight,
+staged time-series validation, reproducible run manifests, and prop-rule simulation.
+The project is organized around **campaigns** and **variants**:
 
 ```text
 campaign -> strategy idea found online or designed for research
@@ -15,9 +17,13 @@ download/export data
 place raw data under data/raw/
 create or update one campaign
 create one authored config.yaml under campaigns/
-run validation/core/core_grid/monkey/WFA/Monte Carlo
-review variant_test_summary.json and runs_index.csv
+run limited core/monkey, WFA, OOS stress, incubation, and locked acceptance stages
+review campaign_test_summary.json, variant_test_summary.json, and runs_index.csv
 ```
+
+Authored research definitions live under `campaigns/`. Generated evidence lives
+under `backtest-campaigns/`; generated snapshots are provenance and must not be
+edited as source configs.
 
 ## Install
 
@@ -25,6 +31,38 @@ review variant_test_summary.json and runs_index.csv
 python3 -m pip install -e ".[dev]"
 python3 -m pytest
 ```
+
+Run the complete local quality gate and write a durable qualification report:
+
+```bash
+make quality
+make qualify
+```
+
+`make qualify` writes `research_artifacts/engine_qualification.json` and
+`research_artifacts/engine_qualification.md` with the test result, engine and
+policy hashes, contract version, Git state, control evidence, and model-risk
+limitations. This qualifies the software build only. It does not make a
+candidate strategy tradeable.
+
+Audit reproducible generated payloads and superseded error runs without deleting:
+
+```bash
+make cleanup-generated
+```
+
+Apply the reviewed cleanup inventory with:
+
+```bash
+PYTHONPATH=src python3 tools/cleanup_redundant_generated_artifacts.py --apply
+```
+
+Campaign runs now retain compact validation summaries, equity CSVs, and
+stochastic-test summaries by default. Full validation frames, monkey iteration
+tables, Monte Carlo path files, and equity HTML can be retained explicitly with
+`data.artifact_retention.full_validation_frames`,
+`artifact_retention.monkey_iteration_results`,
+`artifact_retention.monte_carlo_paths`, and `artifact_retention.equity_html`.
 
 For the visual validation dashboard, install the optional dashboard extras:
 

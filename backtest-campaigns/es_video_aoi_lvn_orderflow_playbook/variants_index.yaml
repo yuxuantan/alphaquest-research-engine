@@ -866,7 +866,7 @@ variants:
 - variant_id: yush_range_27
   strategy_name: yush_range_27
   path: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_range_27/variant.yaml
-  hash: 2c3317dcc963fdf1e278a243791e7c785fd7e419e38bf5412165d34a122ccaff
+  hash: a786040853ac530b9f67ed593662ccd3925de9a3bda7a02c7ec33753553ff9db
   mechanic:
     entry_module: yush_range_27
     take_profit_module: signal_price
@@ -900,7 +900,10 @@ variants:
     bubble_condition:
       delta_profile_threshold: 300
       delta_bucket_points: 1.0
-      delta_must_be_double_surrounding_two_levels: true
+      delta_must_be_double_surrounding_two_levels: false
+      delta_revalidated_at_entry_tick: true
+      stale_pending_aoi_rearms_when_delta_returns: true
+      big_trade_only_entries_allowed: false
       big_trade_threshold: 200
       big_trade_agg_ms: 100
     execution:
@@ -911,6 +914,7 @@ variants:
       dynamic_stop_after_value_area_mid: entry_plus_or_minus_1_25_points
       max_trades_per_day: 3
       contracts: 1
+      slippage_ticks: 0
     data_window: 2026-05-01 to 2026-05-29 POC; 2025-03-07 to 2025-04-11 fast-runtime
       staged core/monkey subset from the 2025-03-01 to 2026-02-28 staged source config
     staged_candidate: false
@@ -918,7 +922,6 @@ variants:
     - No durable red USD news calendar is configured for the no-news guardrail.
     - Switch-account-after-trade is not modeled in a single-account historical backtest.
     - Sierra SCID replay is record-level, not exchange MBO sequencing.
-  review_status: failed_limited_monkey_test
 - variant_id: yush_range_28
   strategy_name: yush_range_28
   path: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_range_28/variant.yaml
@@ -1105,8 +1108,7 @@ variants:
       apex_rule_violating_iterations: 0
       best_net_profit: 287.5
       best_total_trades: 1
-      rejection_reason: sparse one-trade winners and only 25 percent profitable
-        iterations
+      rejection_reason: sparse one-trade winners and only 25 percent profitable iterations
   review_status: failed_limited_core_grid_test
 - variant_id: yush_range_4
   strategy_name: yush_range_4
