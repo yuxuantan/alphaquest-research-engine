@@ -1,0 +1,166 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_6
+strategy_name: yush_range_6
+symbol: ES
+dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_range_6_pdl
+timeframe: 3m
+data:
+  dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_range_6_pdl
+  source_timeframe: 3m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  source_quality_label: ES native 3-minute Sierra cache for bar context plus Sierra SCID-record replay for intrabar
+    entry execution. SCID records are not exchange MBO sequencing and the developing profile/delta buckets are
+    reconstructed from replayed records in this POC.
+  execution_data:
+    source: sierra_scid_records
+    raw_dir: data/raw/ES/sierra-es-trades
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    root_symbol: ES
+    timezone: America/New_York
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    batch_size: 1000000
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset:
+    start_date: '2026-03-01'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+test_run_id: run20_3mo_pdl_poc
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  source_video: Trader Yush range / absorption mechanics supplied by user, PDL-only diagnostic rescue
+  academic_source: Chart Fanatics / Trader Yush video; Osler (2000); Kavajecz and Odders-White (2004); Cont,
+    Kukanov, and Stoikov (2014); CME market profile educational material
+  edge_thesis: In a balanced ES auction, failed sweeps of public levels near value-area edges should reverse when
+    a 1-point developing delta-profile bucket shows aggressive traders trapped and price holds beyond the bucket
+    for several seconds.
+  mechanic: Result-informed PDL-only diagnostic rescue for yush_range_6. The evaluator keeps a developing 1-point
+    session volume profile
+    from Sierra SCID records, confirms balance via stable 30-minute session range and centered POC, requires at most
+    one low-volume bucket inside value, requires a PDL sweep only, and enters on the first SCID record after the
+    absorption bucket has held for three seconds. This keeps the yush_range_1 bucket stop, fixed 2R target, one-trade
+    daily cap, and March-May 2026 diagnostic window.
+  timeframe_rationale: The strategy uses 3-minute bars for ATR, public-level context, and previous/current sweep
+    windows while entering at SCID-record timestamp granularity inside the developing 3-minute bar.
+  mechanics_review:
+    mechanic_expresses_edge: This POC expresses a narrower range-fade edge by combining a balanced developing profile
+      state, a fresh PDL sweep, proximity to the value-area edge, and a same-bar 1-point delta bucket that identifies
+      trapped aggression before entry.
+    entry_logic_rationale: Entry uses only sequential SCID records seen up to the decision timestamp. It does not
+      wait for the 3-minute bar close; it enters when range state, profile state, level sweep, ATR proximity, and
+      the three-second post-absorption hold are simultaneously true.
+    stop_loss_rationale: >-
+      The stop is read from the signal and placed exactly two ES ticks beyond the absorption bucket edge: below the
+      bottom edge for longs and above the top edge for shorts. This makes invalidation local to the delta-profile
+      level that triggered the trade.
+    target_exit_rationale: The POC uses a single fixed 2R target from the actual simulated entry price and exact
+      bucket stop. This matches the requested take-profit rule and avoids discretionary partials or trailing logic.
+    profitability_rationale: The mechanism should only work if PDL sweeps in a balanced auction attract
+      aggressive traders who become trapped at the value-area edge, causing forced exit flow back toward value after
+      price holds outside the absorption bucket. This run is result-informed by the yush_range_1 3-month diagnostic,
+      where PDL was the only level bucket with positive net PnL; because of that, any positive result remains a
+      manual-review-only rescue and cannot be promoted without broader unseen validation.
+    known_failure_modes: Sierra SCID records are not exchange MBO sequencing, so print ordering, queue behavior,
+      and true footprint-at-price absorption are approximations. The POC uses RTH replay for the 30-minute range
+      state because the selected 3-minute cache is RTH scoped. Three months of result-informed diagnostic data is
+      still not enough for a research pass.
+    pre_test_decision: approve_for_testing
+strategy:
+  entry:
+    module: yush_range_6
+    params:
+      start_time: '10:00:00'
+      end_time: '15:00:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 3
+      tick_size: 0.25
+      profile_bucket_points: 1.0
+      delta_bucket_points: 1.0
+      allowed_market_level_types:
+      - PDL
+      value_area_fraction: 0.7
+      lvn_poc_fraction: 0.2
+      max_lvn_between_value_area: 1
+      range_snapshot_minutes: 30
+      max_range_change_pct: 0.2
+      atr_period: 14
+      atr_multiple: 2.0
+      absorption_delta_threshold: 300
+      absorption_hold_seconds: 3
+      stop_offset_ticks: 2
+      max_trades_per_day: 1
+      min_profile_volume: 1000
+      min_profile_buckets: 3
+      profile_recheck_seconds: 1.0
+      range_recheck_seconds: 1.0
+      allow_long: true
+      allow_short: true
+  sl:
+    module: signal_price
+    params:
+      metadata_key: signal_stop_price
+      round_to_tick: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 2.0
+  flatten_time: '15:55:00'

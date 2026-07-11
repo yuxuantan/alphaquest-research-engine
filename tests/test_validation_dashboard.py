@@ -26,6 +26,8 @@ from propstack.dashboard.validation_app import (
     raw_debug_frame,
     save_manual_review_annotation,
     selected_bar_footprint_detail,
+    validation_check_summary,
+    validation_checks_by_trade,
 )
 from propstack.validation import (
     BarWindowRow,
@@ -274,6 +276,52 @@ def test_dashboard_trade_table_filters_outcomes_and_debug_flags():
     assert len(filtered) == 1
     assert filtered.loc[0, "trade_id"] == 2
     assert bool(filtered.loc[0, "suspicious_debug"]) is True
+
+
+def test_dashboard_trade_table_merges_validation_check_flags():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "entry_time": pd.Timestamp("2024-01-03", tz="America/New_York"), "pnl_ticks": 1},
+            {"trade_id": 2, "entry_time": pd.Timestamp("2024-01-04", tz="America/New_York"), "pnl_ticks": -1},
+        ]
+    )
+    checks = pd.DataFrame(
+        [
+            {
+                "trade_id": 1,
+                "status": "PASS",
+                "category": "price_logic",
+                "check_name": "long_stop_below_entry",
+            },
+            {
+                "trade_id": 2,
+                "status": "ERROR",
+                "category": "time_ordering",
+                "check_name": "exit_not_before_entry",
+            },
+            {
+                "trade_id": 2,
+                "status": "WARNING",
+                "category": "data_quality",
+                "check_name": "tick_window_present",
+            },
+        ]
+    )
+
+    table = prepare_trade_table(trades, validation_checks=checks)
+    summary = validation_check_summary(checks)
+    by_trade = validation_checks_by_trade(checks)
+
+    row = table[table["trade_id"] == 2].iloc[0]
+    assert summary["total_checks"] == 3
+    assert summary["passed_checks"] == 1
+    assert summary["errors"] == 1
+    assert summary["warnings"] == 1
+    assert summary["affected_trade_ids"] == "2"
+    assert row["check_error_count"] == 1
+    assert row["check_warning_count"] == 1
+    assert "ERROR:exit_not_before_entry" in row["check_flags"]
+    assert by_trade[by_trade["trade_id"] == 2].iloc[0]["check_warning_count"] == 1
 
 
 def test_dashboard_checklist_and_raw_debug_handle_missing_fields():

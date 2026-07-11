@@ -1,0 +1,173 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_15
+strategy_name: yush_range_15
+symbol: ES
+dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_range_15_model1_midpoint_202509_202602
+timeframe: 3m
+data:
+  dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_range_15_model1_midpoint_202509_202602
+  source_timeframe: 3m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  source_quality_label: >-
+    ES native 3-minute Sierra cache for bar context plus Sierra SCID-record replay for intrabar
+    entry execution. SCID records are not exchange MBO sequencing and this run freezes the
+    one-month Model 1 range midpoint SCID POC for older-window falsification.
+  execution_data:
+    source: sierra_scid_records
+    raw_dir: data/raw/ES/sierra-es-trades
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    root_symbol: ES
+    timezone: America/New_York
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    batch_size: 1000000
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset:
+    start_date: '2025-09-01'
+    end_date: '2026-02-28'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+test_run_id: run44_6mo_model1_range_midpoint_unseen
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  source_video: Trader Yush Model 1 range value-edge mechanics supplied by user/video transcript
+  academic_source: >-
+    Chart Fanatics / Trader Yush video; Osler (2000); Kavajecz and Odders-White (2004);
+    Cont, Kukanov, and Stoikov (2014); CME market profile educational material.
+  edge_thesis: >-
+    In balanced ES auctions, false breaks at current developing value-area edges may revert to the profile
+    midpoint when at least two AOI criteria align and the SCID-record path confirms probe-and-reclaim behavior.
+  mechanic: >-
+    yush_range_15 freezes the May 2026 SCID-intrabar Model 1 range midpoint POC mechanics under a yush-named
+    wrapper. It uses prior completed 3-minute cached developing VAP context, enters intrabar on the first qualifying
+    SCID record after a VAL/VAH probe-and-reclaim, requires at least two AOI criteria, uses a sweep-extreme stop,
+    and targets the developing value-area midpoint with a 3R fallback if no signal target is present.
+  timeframe_rationale: >-
+    The strategy uses 3-minute bars for profile/AOI context while entering at SCID-record timestamp granularity
+    inside the developing 3-minute signal bar.
+  mechanics_review:
+    mechanic_expresses_edge: >-
+      This is a frozen older-window falsification of the only current positive range-side SCID POC. No parameters
+      were changed from run11; only the module name and data window changed.
+    entry_logic_rationale: >-
+      Entry uses only prior completed 3-minute profile context plus sequential SCID records seen up to the decision
+      timestamp. It requires same-bar probe/reclaim behavior and at least two AOI criteria from volume_profile,
+      market_level, big_trades, and delta_activity.
+    stop_loss_rationale: >-
+      The stop remains beyond the intrabar signal path extreme with a fixed two-tick offset, matching the frozen
+      run11 POC.
+    target_exit_rationale: >-
+      The target is the signal's developing value-area midpoint target; the signal_price TP module falls back to
+      3R only if no signal target is emitted.
+    profitability_rationale: >-
+      The branch should only survive if the May 2026 positive POC was not slice-specific and if midpoint reversion
+      after SCID-record probe/reclaim repeats in older unseen months.
+    known_failure_modes: >-
+      Sierra SCID records are not exchange MBO sequencing, so record order, queue behavior, and original DOM/tape
+      cues are approximations. The one-month POC had no validation export, so this run must fail closed on warning
+      contamination or weak economics.
+    pre_test_decision: approve_for_testing
+strategy:
+  entry:
+    module: yush_range_15
+    params:
+      start_time: '10:00:00'
+      end_time: '15:00:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 3
+      tick_size: 0.25
+      opening_range_minutes: 1
+      value_area_fraction: 0.7
+      lvn_quantile: 0.2
+      min_prior_profile_bars: 120
+      max_profile_distance_ticks: 64
+      market_aoi_max_distance_ticks: 16
+      aoi_reach_tolerance_ticks: 4
+      min_probe_ticks: 1
+      confirmation_ticks: 0
+      min_absorption_volume: 50
+      min_aoi_confluences: 2
+      min_large200_record_volume: 200
+      min_delta_activity_imbalance: 0.03
+      min_directional_delta_imbalance: 0.0
+      min_structure_bars: 10
+      min_trend_move_ticks: 8
+      allow_opening_range_proxy: false
+      max_trades_per_day: 1
+      profile_source: cached_developing_vap
+      min_developing_profile_bars: 10
+      cached_profile_prefix: developing_vap
+      setup_mode: model1_range_value_edge_two_sided
+      target_reference: value_midpoint
+      allow_long: true
+      allow_short: true
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 2
+  tp:
+    module: signal_price
+    params:
+      metadata_key: signal_target_price
+      fallback_target_r_multiple: 3.0
+      tick_size: 0.25
+      round_to_tick: true
+  flatten_time: '15:55:00'

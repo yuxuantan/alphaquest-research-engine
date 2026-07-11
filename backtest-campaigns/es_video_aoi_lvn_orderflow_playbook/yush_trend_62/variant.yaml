@@ -1,0 +1,34 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_62
+strategy_name: yush_trend_62
+mechanic:
+  entry_module: yush_trend_62
+  take_profit_module: signal_price
+  stop_loss_module: sweep_extreme
+  flatten_time: '15:53:00'
+  blocked_window: 12:00:00 to 12:59:59 ET
+  min_directional_delta_imbalance: 0.1
+  max_signal_risk_points: 6.0
+  min_signal_target_r_multiple: 1.5
+  fallback_target_r_multiple: 3.0
+  staged_candidate: true
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: pre-POC robustness check for yush_trend_39 no-lunch structural-target
+    mechanics after older-window y56 failed and later-window y39 diagnostic was positive
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: failed_limited_core_grid_test

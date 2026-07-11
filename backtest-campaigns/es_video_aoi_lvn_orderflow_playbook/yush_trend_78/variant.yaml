@@ -1,0 +1,62 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_78
+strategy_name: yush_trend_78
+mechanic:
+  entry_module: yush_trend_78
+  take_profit_module: fixed_r
+  stop_loss_module: signal_price
+  flatten_time: '15:53:00'
+  setup_mode: outside_public_edge_breakout_retest_continuation
+  market_levels:
+  - PDH
+  - PDL
+  - ONH
+  - ONL
+  - ORH
+  - ORL
+  directional_level_filter:
+    long:
+    - PDH
+    - ONH
+    - ORH
+    short:
+    - PDL
+    - ONL
+    - ORL
+  excluded_levels:
+  - PDC
+  entry_window: 09:35:00 to 11:30:00 America/New_York
+  retest_tolerance_ticks_grid:
+  - 2
+  - 4
+  retest_hold_seconds_grid:
+  - 0.5
+  - 1.0
+  target_r_multiple_grid:
+  - 1.5
+  - 2.0
+  stop_policy: broken_public_edge_plus_or_minus_2_ticks
+  max_signal_risk_points: 4.0
+  confirmation_modes: initiation
+  contracts: 1
+  max_trades_per_day: 3
+  staged_candidate: true
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: breakout-retest continuation branch after immediate public-edge breakout acceptance failed
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: failed_limited_core_grid_test

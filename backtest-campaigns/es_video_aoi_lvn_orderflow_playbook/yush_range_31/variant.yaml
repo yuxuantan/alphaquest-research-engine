@@ -1,0 +1,58 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_31
+strategy_name: yush_range_31
+mechanic:
+  entry_module: yush_range_31
+  take_profit_module: fixed_dollar_per_contract
+  stop_loss_module: fixed_dollar_per_contract
+  flatten_time: '15:53:00'
+  setup_mode: completed_bar_developing_vap_large_record_reaction
+  trade_window: 09:33:00-11:00:00 ET
+  execution_timing: completed 3-minute bar signal, next-bar-open entry
+  range_condition:
+    stable_30_minute_range_change_lt: 0.2
+    poc_middle_third_of_value_area: true
+    max_lvn_count: not_enforced
+    lvn_note: completed-bar cache does not expose exact LVNs between VAH and VAL; total LVN count is recorded only
+  orderflow_condition:
+    min_large200_record_volume: 200
+    min_large200_signed_share_grid:
+    - 0.35
+    - 0.55
+    min_bar_signed_imbalance: 0.03
+  reaction_modes:
+  - developing_value_large_record_trap_two_sided
+  - developing_value_large_record_acceptance_two_sided
+  execution:
+    contracts: 5
+    target_type: fixed_dollar_per_contract
+    target_dollars_per_contract: 75.0
+    stop_type: fixed_dollar_per_contract
+    stop_dollars_per_contract_grid:
+    - 150.0
+    - 200.0
+    max_trades_per_day: 3
+  data_window: 2025-03-01 to 2026-02-28 staged source config; fast-runtime limited core subset
+  staged_candidate: false
+  known_caveats:
+  - Large200 fields are Sierra SCID aggregate proxies, not exchange MBO prints.
+  - Red USD news guardrail is not modeled because no durable intraday red-news calendar exists locally.
+  - The exact between-value-area LVN count from the user checklist is not available in this completed-bar cache.
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 0
+  allowed:
+  - reject_after_official_results
+  forbidden:
+  - tune range stability or orderflow thresholds after seeing zero-signal failure
+  - change to SCID replay under the same variant id
+  - change data window after seeing failure
+  - change stage criteria
+review_status: failed_limited_core_grid_test
+last_test:
+  test_run_id: run136_12mo_developing_vap_large_record_neg_rr_staged
+  result_path: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_range_31/ES/run136_12mo_developing_vap_large_record_neg_rr_staged/campaign_test_summary.json
+  verdict: FAIL
+  reason: Failed limited_core_grid_test. All 8 predeclared combinations generated zero signals and zero trades in
+    the fast-runtime core subset from 2025-03-07 to 2025-04-11. percentage_profitable_iterations=0.0 below required
+    0.70, number_passing_benchmark=0, and apex_rule_violating_iterations=0.

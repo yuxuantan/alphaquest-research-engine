@@ -1,0 +1,56 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_22
+strategy_name: yush_range_22
+mechanic:
+  entry_module: yush_range_22
+  take_profit_module: fixed_dollar_per_contract
+  stop_loss_module: fixed_dollar_per_contract
+  flatten_time: '15:53:00'
+  allowed_market_level_types:
+  - PDL
+  confirmation_modes:
+  - absorption
+  absorption_delta_threshold: 300
+  absorption_hold_seconds: 3
+  max_signal_risk_points_grid: &id003
+  - 3.0
+  - 4.0
+  target_dollars_per_contract_grid: &id001
+  - 75.0
+  - 100.0
+  - 125.0
+  stop_dollars_per_contract_grid: &id002
+  - 150.0
+  - 200.0
+  - 250.0
+  contracts: 5
+  negative_rr_grid: true
+  staged_candidate: true
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: 50k funded-account negative-RR robustness check for the PDL reclaim-failure family after
+    yush_range_21 failed staged core expectancy.
+  prop_consistency_target:
+    account_size: 50000
+    min_winning_days: 5
+    min_winning_day_net_pnl: 250
+    max_best_day_profit_share: 0.5
+    contracts: 5
+    max_entries_per_day: 1
+    verdict_policy: FAIL if net profit is non-positive, fewer than five session days are >= $250 net PnL, best profitable
+      day is more than 50% of total net profit, validation is not clean, daily loss exceeds the configured 50k limit,
+      or any official staged gate fails. Treat any pass as a candidate strategy requiring manual review because
+      this is a negative-RR funded-account branch after prior failures.
+    target_dollars_per_contract_grid: *id001
+    stop_dollars_per_contract_grid: *id002
+    max_signal_risk_points_grid: *id003
+rescue_policy:
+  rescue_scope: new_user_requested_negative_rr_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - predeclared fixed-dollar negative-RR stop/target grid
+  - 50k funded-account sizing and rule simulation
+  forbidden:
+  - claim trade readiness from a backtest
+  - drop losing neighboring parameters after seeing results
+  - change the staged data window after testing
+review_status: failed_limited_core_grid_test

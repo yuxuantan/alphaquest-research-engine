@@ -16,6 +16,9 @@ class VideoExactOrderflowPlaybookScidIntrabarEntry(VideoExactOrderflowPlaybookEn
         "model1_range_value_edge_two_sided",
         "model1_range_value_edge_long",
         "model1_range_value_edge_short",
+        "model2_trend_lvn_two_sided",
+        "model2_trend_lvn_long",
+        "model2_trend_lvn_short",
     }
 
     def __init__(self, params: dict):
@@ -49,7 +52,6 @@ class VideoExactOrderflowPlaybookScidIntrabarEntry(VideoExactOrderflowPlaybookEn
             return None
 
         candidates = self._candidate_setups(bar, profile, _finite_float(context_bar.get("close")) or 0.0)
-        candidates = [candidate for candidate in candidates if candidate[1] == "range"]
         if not candidates:
             return None
 
@@ -69,7 +71,10 @@ class VideoExactOrderflowPlaybookScidIntrabarEntry(VideoExactOrderflowPlaybookEn
                 confluence = self._intrabar_aoi_confluence(bar, profile, direction, model, level, tick_state)
                 if len(confluence["criteria"]) < self.min_aoi_confluences:
                     continue
-                confirms = self._intrabar_range_trap_confirms(direction, level, tick_state)
+                if model == "range":
+                    confirms = self._intrabar_range_trap_confirms(direction, level, tick_state)
+                else:
+                    confirms = self._intrabar_trend_pullback_confirms(direction, level, tick_state)
                 if not confirms:
                     continue
                 signal = self._intrabar_video_signal(
@@ -176,6 +181,42 @@ class VideoExactOrderflowPlaybookScidIntrabarEntry(VideoExactOrderflowPlaybookEn
             and price < state["open"]
         )
 
+    def _intrabar_trend_pullback_confirms(self, direction: str, level: float, state: dict) -> bool:
+        if not self._bar_reaches_aoi(state["high"], state["low"], level):
+            return False
+        confirm = self.confirmation_ticks * self.tick_size
+        price = state["price"]
+        if direction == "long":
+            absorption_price = state["highest_sell_absorption_price"]
+            return (
+                state["max_sell_imbalance_volume"] >= self.min_absorption_volume
+                and absorption_price is not None
+                and absorption_price < price
+                and self._intrabar_directional_delta_imbalance("long", state)
+                and price >= level + confirm
+                and price > state["open"]
+            )
+        absorption_price = state["lowest_buy_absorption_price"]
+        return (
+            state["max_buy_imbalance_volume"] >= self.min_absorption_volume
+            and absorption_price is not None
+            and absorption_price > price
+            and self._intrabar_directional_delta_imbalance("short", state)
+            and price <= level - confirm
+            and price < state["open"]
+        )
+
+    def _intrabar_directional_delta_imbalance(self, direction: str, state: dict) -> bool:
+        if self.min_directional_delta_imbalance <= 0:
+            return True
+        volume = state["volume"]
+        if volume <= 0:
+            return False
+        delta = state["signed_volume"] / volume
+        if direction == "long":
+            return delta >= self.min_directional_delta_imbalance
+        return delta <= -self.min_directional_delta_imbalance
+
     def _intrabar_video_signal(
         self,
         *,
@@ -194,7 +235,7 @@ class VideoExactOrderflowPlaybookScidIntrabarEntry(VideoExactOrderflowPlaybookEn
             "entry_mode": "intrabar",
             "entry_reference_price": float(tick_state["price"]),
             "intrabar_entry_price": float(tick_state["price"]),
-            "video_model": "model1_range_scid_intrabar",
+            "video_model": "model1_range_scid_intrabar" if model == "range" else "model2_trend_scid_intrabar",
             "profile_level_type": level_type,
             "profile_level_price": float(level),
             "profile_source": self.profile_source,
@@ -217,7 +258,10 @@ class VideoExactOrderflowPlaybookScidIntrabarEntry(VideoExactOrderflowPlaybookEn
             "intended_entry_timestamp": tick_timestamp,
             "signal_flatten_time": self.flatten_time.strftime("%H:%M:%S"),
             "intrabar_source": "sierra_scid_record_replay",
-            "intrabar_source_quality_label": "Sierra SCID records; not exchange MBO sequencing.",
+            "intrabar_source_quality_label": (
+                "Sierra SCID record close-only replay; raw high/low are not treated as traded-price extrema; "
+                "not exchange MBO sequencing."
+            ),
             "video_mechanics_not_simulated": "partials_dynamic_trailing_and_tick_built_vap_footprint",
         }
         fields.update(confluence["details"])

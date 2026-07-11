@@ -21,6 +21,7 @@ BAR_WINDOWS_FILENAME = "bar_windows.parquet"
 TICK_WINDOWS_FILENAME = "tick_windows.parquet"
 EXIT_AUDITS_FILENAME = "exit_audits.parquet"
 MANUAL_REVIEW_FILENAME = "manual_review.parquet"
+VALIDATION_CHECKS_FILENAME = "validation_checks.parquet"
 
 
 @dataclass(frozen=True)
@@ -233,12 +234,30 @@ class ManualReviewAnnotation:
         return asdict(self)
 
 
+@dataclass(frozen=True)
+class ValidationCheck:
+    check_id: str
+    check_name: str
+    category: str
+    status: str
+    severity: str
+    description: str
+    trade_id: str | int | None = None
+    expected: str | None = None
+    actual: str | None = None
+    details: str | None = None
+
+    def to_record(self) -> dict[str, Any]:
+        return asdict(self)
+
+
 TRADE_SUMMARY_COLUMNS = [field.name for field in TradeSummary.__dataclass_fields__.values()]
 CONDITION_SNAPSHOT_COLUMNS = [field.name for field in ConditionSnapshot.__dataclass_fields__.values()]
 BAR_WINDOW_COLUMNS = [field.name for field in BarWindowRow.__dataclass_fields__.values()]
 TICK_WINDOW_COLUMNS = [field.name for field in TickWindowRow.__dataclass_fields__.values()]
 EXIT_AUDIT_COLUMNS = [field.name for field in ExitAudit.__dataclass_fields__.values()]
 MANUAL_REVIEW_COLUMNS = [field.name for field in ManualReviewAnnotation.__dataclass_fields__.values()]
+VALIDATION_CHECK_COLUMNS = [field.name for field in ValidationCheck.__dataclass_fields__.values()]
 
 
 def record_to_dict(record: Any) -> dict[str, Any]:

@@ -1,0 +1,80 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_75
+strategy_name: yush_trend_75
+mechanic:
+  entry_module: yush_trend_75
+  take_profit_module: fixed_r
+  stop_loss_module: signal_price
+  flatten_time: '15:53:00'
+  setup_mode: market_level_breakout_acceptance_rescue
+  market_levels:
+  - PDH
+  - PDL
+  - PDC
+  - ONH
+  - ONL
+  - ORH
+  - ORL
+  entry_window: 09:35:00 to 11:30:00 America/New_York
+  opening_range_seconds: 32
+  probe_ticks: 2
+  breakout_hold_ticks: 0
+  breakout_hold_seconds: 1.0
+  max_signal_risk_points: 8.0
+  target_r_multiple: 2.0
+  stop_policy: broken_market_level_plus_or_minus_2_ticks
+  confirmation_modes: initiation
+  contracts: 1
+  max_trades_per_day: 3
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: one-time result-informed rescue of yush_trend_74 best row; reject if any official stage fails
+rescue_policy:
+  rescue_scope: failed_variant
+  rescued_variant_id: yush_trend_74
+  max_rescue_attempts_per_failed_variant: 1
+  result_informed: true
+  selected_from_failed_grid:
+    entry.params.breakout_hold_seconds: 1.0
+    entry.params.max_signal_risk_points: 8.0
+    tp.params.target_r_multiple: 2.0
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module economics
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+stage_result:
+  test_run_id: run128_12mo_market_level_breakout_acceptance_rescue_staged
+  run_dir: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_75/ES/run128_12mo_market_level_breakout_acceptance_rescue_staged
+  source_config: campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_yush_trend_75_market_level_breakout_acceptance_rescue_staged_run128/yush_trend_75/config.yaml
+  campaign_test_summary: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_75/ES/run128_12mo_market_level_breakout_acceptance_rescue_staged/campaign_test_summary.json
+  failed_stage: limited_monkey_test
+  limited_core_grid_test:
+    passed: true
+    total_combinations_tested: 1
+    percentage_profitable_iterations: 1.0
+    apex_rule_violating_iterations: 0
+    selected_core_net_profit: 5770.0
+    selected_core_profit_factor: 1.688133571854502
+    selected_core_win_rate: 0.4788732394366197
+    selected_core_max_drawdown: 2115.0
+    selected_core_best_day_concentration: 0.19454072790294627
+    selected_core_total_trades: 71
+  limited_monkey_test:
+    passed: false
+    core_beats_monkey_net_profit_rate: 0.8575
+    required_core_beats_monkey_net_profit_rate: 0.9
+    core_beats_monkey_max_drawdown_rate: 0.98675
+    required_core_beats_monkey_max_drawdown_rate: 0.9
+    monkey_runs: 8000
+    monkey_profitable_percentage: 0.390375
+    monkey_median_net_profit: -1987.5
+    monkey_p95_net_profit: 10677.624999999998
+review_status: failed_limited_monkey_test

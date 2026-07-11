@@ -1,0 +1,56 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_32
+strategy_name: yush_range_32
+mechanic:
+  entry_module: large_record_delayed_aoi_confirmation
+  take_profit_module: fixed_dollar_per_contract
+  stop_loss_module: fixed_dollar_per_contract
+  flatten_time: '15:53:00'
+  setup_mode: completed_bar_delayed_market_overnight_large_record_trap
+  trade_window: 09:33:00-11:00:00 ET
+  execution_timing: event bar plus one confirmation bar, then next-bar-open entry
+  aoi_families:
+  - market_aoi_delayed_trap
+  - overnight_aoi_delayed_trap
+  orderflow_condition:
+    min_large200_record_volume: 200
+    min_confirm_delta_imbalance_grid:
+    - 0.0
+    - 0.05
+  profile_context:
+    cached_profile_prefix: prior_vap
+    mode: beyond_poc
+  execution:
+    contracts: 5
+    target_type: fixed_dollar_per_contract
+    target_dollars_per_contract: 75.0
+    stop_type: fixed_dollar_per_contract
+    stop_dollars_per_contract_grid:
+    - 150.0
+    - 200.0
+    max_trades_per_day: 3
+  data_window: 2025-03-01 to 2026-02-28 staged source config; fast-runtime limited core subset
+  staged_candidate: false
+  known_caveats:
+  - Large200 fields are Sierra SCID aggregate proxies, not exchange MBO prints.
+  - The existing module limits to one signal per session despite max_trades_per_day allowing up to three.
+  - Red USD news guardrail is not modeled because no durable intraday red-news calendar exists locally.
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 0
+  allowed:
+  - reject_after_official_results
+  forbidden:
+  - promote the sparse one-trade winning rows
+  - tune confirmation imbalance after seeing sparse result
+  - change data window after seeing failure
+  - change stage criteria
+review_status: failed_limited_core_grid_test
+last_test:
+  test_run_id: run139_12mo_delayed_market_overnight_large_record_trap_neg_rr_staged
+  result_path: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_range_32/ES/run139_12mo_delayed_market_overnight_large_record_trap_neg_rr_staged/campaign_test_summary.json
+  verdict: FAIL
+  reason: Failed limited_core_grid_test. 8 combinations were tested; 2 were profitable, so percentage_profitable_iterations=0.25
+    below required 0.70. The only profitable rows each had one trade, net_profit 287.5, best_day_concentration 1.0,
+    and failed preferred_min_total_trades plus max_best_day_concentration. Best multi-trade row had 3 trades and
+    net_profit -262.5. apex_rule_violating_iterations=0.

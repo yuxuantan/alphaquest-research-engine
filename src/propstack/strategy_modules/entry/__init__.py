@@ -316,6 +316,116 @@ from propstack.strategy_modules.entry.video_exact_orderflow_playbook_scid_intrab
 )
 from propstack.strategy_modules.entry.yush_range_1 import YushRange1Entry
 from propstack.strategy_modules.entry.yush_range_2 import YushRange2Entry
+from propstack.strategy_modules.entry.yush_range_3 import YushRange3Entry
+from propstack.strategy_modules.entry.yush_range_4 import YushRange4Entry
+from propstack.strategy_modules.entry.yush_range_5 import YushRange5Entry
+from propstack.strategy_modules.entry.yush_range_6 import YushRange6Entry
+from propstack.strategy_modules.entry.yush_range_7 import YushRange7Entry
+from propstack.strategy_modules.entry.yush_range_8 import YushRange8Entry
+from propstack.strategy_modules.entry.yush_range_9 import YushRange9Entry
+from propstack.strategy_modules.entry.yush_range_10 import YushRange10Entry
+from propstack.strategy_modules.entry.yush_range_11 import YushRange11Entry
+from propstack.strategy_modules.entry.yush_range_12 import YushRange12Entry
+from propstack.strategy_modules.entry.yush_range_13 import YushRange13Entry
+from propstack.strategy_modules.entry.yush_range_14 import YushRange14Entry
+from propstack.strategy_modules.entry.yush_range_15 import YushRange15Entry
+from propstack.strategy_modules.entry.yush_range_16 import YushRange16Entry
+from propstack.strategy_modules.entry.yush_range_17 import YushRange17Entry
+from propstack.strategy_modules.entry.yush_range_18 import YushRange18Entry
+from propstack.strategy_modules.entry.yush_range_19 import YushRange19Entry
+from propstack.strategy_modules.entry.yush_range_20 import YushRange20Entry
+from propstack.strategy_modules.entry.yush_range_21 import YushRange21Entry
+from propstack.strategy_modules.entry.yush_range_22 import YushRange22Entry
+from propstack.strategy_modules.entry.yush_range_23 import YushRange23Entry
+from propstack.strategy_modules.entry.yush_range_24 import YushRange24Entry
+from propstack.strategy_modules.entry.yush_range_25 import YushRange25Entry
+from propstack.strategy_modules.entry.yush_range_26 import YushRange26Entry
+from propstack.strategy_modules.entry.yush_range_27 import YushRange27Entry
+from propstack.strategy_modules.entry.yush_range_28 import YushRange28Entry
+from propstack.strategy_modules.entry.yush_range_29 import YushRange29Entry
+from propstack.strategy_modules.entry.yush_range_30 import YushRange30Entry
+from propstack.strategy_modules.entry.yush_range_31 import YushRange31Entry
+from propstack.strategy_modules.entry.yush_trend_1 import YushTrend1Entry
+from propstack.strategy_modules.entry.yush_trend_2 import YushTrend2Entry
+from propstack.strategy_modules.entry.yush_trend_3 import YushTrend3Entry
+from propstack.strategy_modules.entry.yush_trend_4 import YushTrend4Entry
+from propstack.strategy_modules.entry.yush_trend_5 import YushTrend5Entry
+from propstack.strategy_modules.entry.yush_trend_6 import YushTrend6Entry
+from propstack.strategy_modules.entry.yush_trend_7 import YushTrend7Entry
+from propstack.strategy_modules.entry.yush_trend_8 import YushTrend8Entry
+from propstack.strategy_modules.entry.yush_trend_9 import YushTrend9Entry
+from propstack.strategy_modules.entry.yush_trend_10 import YushTrend10Entry
+from propstack.strategy_modules.entry.yush_trend_11 import YushTrend11Entry
+from propstack.strategy_modules.entry.yush_trend_12 import YushTrend12Entry
+from propstack.strategy_modules.entry.yush_trend_13 import YushTrend13Entry
+from propstack.strategy_modules.entry.yush_trend_14 import YushTrend14Entry
+from propstack.strategy_modules.entry.yush_trend_15 import YushTrend15Entry
+from propstack.strategy_modules.entry.yush_trend_16 import YushTrend16Entry
+from propstack.strategy_modules.entry.yush_trend_17 import YushTrend17Entry
+from propstack.strategy_modules.entry.yush_trend_18 import YushTrend18Entry
+from propstack.strategy_modules.entry.yush_trend_19 import YushTrend19Entry
+from propstack.strategy_modules.entry.yush_trend_20 import YushTrend20Entry
+from propstack.strategy_modules.entry.yush_trend_21 import YushTrend21Entry
+from propstack.strategy_modules.entry.yush_trend_22 import YushTrend22Entry
+from propstack.strategy_modules.entry.yush_trend_23 import YushTrend23Entry
+from propstack.strategy_modules.entry.yush_trend_24 import YushTrend24Entry
+from propstack.strategy_modules.entry.yush_trend_25 import YushTrend25Entry
+from propstack.strategy_modules.entry.yush_trend_26 import YushTrend26Entry
+from propstack.strategy_modules.entry.yush_trend_27 import YushTrend27Entry
+from propstack.strategy_modules.entry.yush_trend_28 import YushTrend28Entry
+from propstack.strategy_modules.entry.yush_trend_29 import YushTrend29Entry
+from propstack.strategy_modules.entry.yush_trend_30 import YushTrend30Entry
+from propstack.strategy_modules.entry.yush_trend_31 import YushTrend31Entry
+from propstack.strategy_modules.entry.yush_trend_32 import YushTrend32Entry
+from propstack.strategy_modules.entry.yush_trend_33 import YushTrend33Entry
+from propstack.strategy_modules.entry.yush_trend_34 import YushTrend34Entry
+from propstack.strategy_modules.entry.yush_trend_35 import YushTrend35Entry
+from propstack.strategy_modules.entry.yush_trend_36 import YushTrend36Entry
+from propstack.strategy_modules.entry.yush_trend_37 import YushTrend37Entry
+from propstack.strategy_modules.entry.yush_trend_38 import YushTrend38Entry
+from propstack.strategy_modules.entry.yush_trend_39 import YushTrend39Entry
+from propstack.strategy_modules.entry.yush_trend_40 import YushTrend40Entry
+from propstack.strategy_modules.entry.yush_trend_41 import YushTrend41Entry
+from propstack.strategy_modules.entry.yush_trend_42 import YushTrend42Entry
+from propstack.strategy_modules.entry.yush_trend_43 import YushTrend43Entry
+from propstack.strategy_modules.entry.yush_trend_44 import YushTrend44Entry
+from propstack.strategy_modules.entry.yush_trend_45 import YushTrend45Entry
+from propstack.strategy_modules.entry.yush_trend_46 import YushTrend46Entry
+from propstack.strategy_modules.entry.yush_trend_47 import YushTrend47Entry
+from propstack.strategy_modules.entry.yush_trend_48 import YushTrend48Entry
+from propstack.strategy_modules.entry.yush_trend_49 import YushTrend49Entry
+from propstack.strategy_modules.entry.yush_trend_50 import YushTrend50Entry
+from propstack.strategy_modules.entry.yush_trend_51 import YushTrend51Entry
+from propstack.strategy_modules.entry.yush_trend_52 import YushTrend52Entry
+from propstack.strategy_modules.entry.yush_trend_53 import YushTrend53Entry
+from propstack.strategy_modules.entry.yush_trend_54 import YushTrend54Entry
+from propstack.strategy_modules.entry.yush_trend_55 import YushTrend55Entry
+from propstack.strategy_modules.entry.yush_trend_56 import YushTrend56Entry
+from propstack.strategy_modules.entry.yush_trend_57 import YushTrend57Entry
+from propstack.strategy_modules.entry.yush_trend_58 import YushTrend58Entry
+from propstack.strategy_modules.entry.yush_trend_59 import YushTrend59Entry
+from propstack.strategy_modules.entry.yush_trend_60 import YushTrend60Entry
+from propstack.strategy_modules.entry.yush_trend_61 import YushTrend61Entry
+from propstack.strategy_modules.entry.yush_trend_62 import YushTrend62Entry
+from propstack.strategy_modules.entry.yush_trend_63 import YushTrend63Entry
+from propstack.strategy_modules.entry.yush_trend_64 import YushTrend64Entry
+from propstack.strategy_modules.entry.yush_trend_65 import YushTrend65Entry
+from propstack.strategy_modules.entry.yush_trend_66 import YushTrend66Entry
+from propstack.strategy_modules.entry.yush_trend_67 import YushTrend67Entry
+from propstack.strategy_modules.entry.yush_trend_68 import YushTrend68Entry
+from propstack.strategy_modules.entry.yush_trend_69 import YushTrend69Entry
+from propstack.strategy_modules.entry.yush_trend_70 import YushTrend70Entry
+from propstack.strategy_modules.entry.yush_trend_71 import YushTrend71Entry
+from propstack.strategy_modules.entry.yush_trend_72 import YushTrend72Entry
+from propstack.strategy_modules.entry.yush_trend_73 import YushTrend73Entry
+from propstack.strategy_modules.entry.yush_trend_74 import YushTrend74Entry
+from propstack.strategy_modules.entry.yush_trend_75 import YushTrend75Entry
+from propstack.strategy_modules.entry.yush_trend_76 import YushTrend76Entry
+from propstack.strategy_modules.entry.yush_trend_77 import YushTrend77Entry
+from propstack.strategy_modules.entry.yush_trend_78 import YushTrend78Entry
+from propstack.strategy_modules.entry.yush_trend_79 import YushTrend79Entry
+from propstack.strategy_modules.entry.yush_trend_81 import YushTrend81Entry
+from propstack.strategy_modules.entry.yush_trend_82 import YushTrend82Entry
 from propstack.strategy_modules.entry.prior_session_ibs_reversion import PriorSessionIbsReversionEntry
 from propstack.strategy_modules.entry.prior_session_benchmark_orderflow_reaction import (
     PriorSessionBenchmarkOrderflowReactionEntry,
@@ -592,6 +702,116 @@ ENTRY_MODULES = {
     VideoExactOrderflowPlaybookScidIntrabarEntry.name: VideoExactOrderflowPlaybookScidIntrabarEntry,
     YushRange1Entry.name: YushRange1Entry,
     YushRange2Entry.name: YushRange2Entry,
+    YushRange3Entry.name: YushRange3Entry,
+    YushRange4Entry.name: YushRange4Entry,
+    YushRange5Entry.name: YushRange5Entry,
+    YushRange6Entry.name: YushRange6Entry,
+    YushRange7Entry.name: YushRange7Entry,
+    YushRange8Entry.name: YushRange8Entry,
+    YushRange9Entry.name: YushRange9Entry,
+    YushRange10Entry.name: YushRange10Entry,
+    YushRange11Entry.name: YushRange11Entry,
+    YushRange12Entry.name: YushRange12Entry,
+    YushRange13Entry.name: YushRange13Entry,
+    YushRange14Entry.name: YushRange14Entry,
+    YushRange15Entry.name: YushRange15Entry,
+    YushRange16Entry.name: YushRange16Entry,
+    YushRange17Entry.name: YushRange17Entry,
+    YushRange18Entry.name: YushRange18Entry,
+    YushRange19Entry.name: YushRange19Entry,
+    YushRange20Entry.name: YushRange20Entry,
+    YushRange21Entry.name: YushRange21Entry,
+    YushRange22Entry.name: YushRange22Entry,
+    YushRange23Entry.name: YushRange23Entry,
+    YushRange24Entry.name: YushRange24Entry,
+    YushRange25Entry.name: YushRange25Entry,
+    YushRange26Entry.name: YushRange26Entry,
+    YushRange27Entry.name: YushRange27Entry,
+    YushRange28Entry.name: YushRange28Entry,
+    YushRange29Entry.name: YushRange29Entry,
+    YushRange30Entry.name: YushRange30Entry,
+    YushRange31Entry.name: YushRange31Entry,
+    YushTrend1Entry.name: YushTrend1Entry,
+    YushTrend2Entry.name: YushTrend2Entry,
+    YushTrend3Entry.name: YushTrend3Entry,
+    YushTrend4Entry.name: YushTrend4Entry,
+    YushTrend5Entry.name: YushTrend5Entry,
+    YushTrend6Entry.name: YushTrend6Entry,
+    YushTrend7Entry.name: YushTrend7Entry,
+    YushTrend8Entry.name: YushTrend8Entry,
+    YushTrend9Entry.name: YushTrend9Entry,
+    YushTrend10Entry.name: YushTrend10Entry,
+    YushTrend11Entry.name: YushTrend11Entry,
+    YushTrend12Entry.name: YushTrend12Entry,
+    YushTrend13Entry.name: YushTrend13Entry,
+    YushTrend14Entry.name: YushTrend14Entry,
+    YushTrend15Entry.name: YushTrend15Entry,
+    YushTrend16Entry.name: YushTrend16Entry,
+    YushTrend17Entry.name: YushTrend17Entry,
+    YushTrend18Entry.name: YushTrend18Entry,
+    YushTrend19Entry.name: YushTrend19Entry,
+    YushTrend20Entry.name: YushTrend20Entry,
+    YushTrend21Entry.name: YushTrend21Entry,
+    YushTrend22Entry.name: YushTrend22Entry,
+    YushTrend23Entry.name: YushTrend23Entry,
+    YushTrend24Entry.name: YushTrend24Entry,
+    YushTrend25Entry.name: YushTrend25Entry,
+    YushTrend26Entry.name: YushTrend26Entry,
+    YushTrend27Entry.name: YushTrend27Entry,
+    YushTrend28Entry.name: YushTrend28Entry,
+    YushTrend29Entry.name: YushTrend29Entry,
+    YushTrend30Entry.name: YushTrend30Entry,
+    YushTrend31Entry.name: YushTrend31Entry,
+    YushTrend32Entry.name: YushTrend32Entry,
+    YushTrend33Entry.name: YushTrend33Entry,
+    YushTrend34Entry.name: YushTrend34Entry,
+    YushTrend35Entry.name: YushTrend35Entry,
+    YushTrend36Entry.name: YushTrend36Entry,
+    YushTrend37Entry.name: YushTrend37Entry,
+    YushTrend38Entry.name: YushTrend38Entry,
+    YushTrend39Entry.name: YushTrend39Entry,
+    YushTrend40Entry.name: YushTrend40Entry,
+    YushTrend41Entry.name: YushTrend41Entry,
+    YushTrend42Entry.name: YushTrend42Entry,
+    YushTrend43Entry.name: YushTrend43Entry,
+    YushTrend44Entry.name: YushTrend44Entry,
+    YushTrend45Entry.name: YushTrend45Entry,
+    YushTrend46Entry.name: YushTrend46Entry,
+    YushTrend47Entry.name: YushTrend47Entry,
+    YushTrend48Entry.name: YushTrend48Entry,
+    YushTrend49Entry.name: YushTrend49Entry,
+    YushTrend50Entry.name: YushTrend50Entry,
+    YushTrend51Entry.name: YushTrend51Entry,
+    YushTrend52Entry.name: YushTrend52Entry,
+    YushTrend53Entry.name: YushTrend53Entry,
+    YushTrend54Entry.name: YushTrend54Entry,
+    YushTrend55Entry.name: YushTrend55Entry,
+    YushTrend56Entry.name: YushTrend56Entry,
+    YushTrend57Entry.name: YushTrend57Entry,
+    YushTrend58Entry.name: YushTrend58Entry,
+    YushTrend59Entry.name: YushTrend59Entry,
+    YushTrend60Entry.name: YushTrend60Entry,
+    YushTrend61Entry.name: YushTrend61Entry,
+    YushTrend62Entry.name: YushTrend62Entry,
+    YushTrend63Entry.name: YushTrend63Entry,
+    YushTrend64Entry.name: YushTrend64Entry,
+    YushTrend65Entry.name: YushTrend65Entry,
+    YushTrend66Entry.name: YushTrend66Entry,
+    YushTrend67Entry.name: YushTrend67Entry,
+    YushTrend68Entry.name: YushTrend68Entry,
+    YushTrend69Entry.name: YushTrend69Entry,
+    YushTrend70Entry.name: YushTrend70Entry,
+    YushTrend71Entry.name: YushTrend71Entry,
+    YushTrend72Entry.name: YushTrend72Entry,
+    YushTrend73Entry.name: YushTrend73Entry,
+    YushTrend74Entry.name: YushTrend74Entry,
+    YushTrend75Entry.name: YushTrend75Entry,
+    YushTrend76Entry.name: YushTrend76Entry,
+    YushTrend77Entry.name: YushTrend77Entry,
+    YushTrend78Entry.name: YushTrend78Entry,
+    YushTrend79Entry.name: YushTrend79Entry,
+    YushTrend81Entry.name: YushTrend81Entry,
+    YushTrend82Entry.name: YushTrend82Entry,
     PriorSessionBenchmarkOrderflowReactionEntry.name: PriorSessionBenchmarkOrderflowReactionEntry,
     PriorSessionIbsReversionEntry.name: PriorSessionIbsReversionEntry,
     PriorLvnOrderflowRejectionEntry.name: PriorLvnOrderflowRejectionEntry,
@@ -808,6 +1028,116 @@ __all__ = [
     "VideoExactOrderflowPlaybookScidIntrabarEntry",
     "YushRange1Entry",
     "YushRange2Entry",
+    "YushRange3Entry",
+    "YushRange4Entry",
+    "YushRange5Entry",
+    "YushRange6Entry",
+    "YushRange7Entry",
+    "YushRange8Entry",
+    "YushRange9Entry",
+    "YushRange10Entry",
+    "YushRange11Entry",
+    "YushRange12Entry",
+    "YushRange13Entry",
+    "YushRange14Entry",
+    "YushRange15Entry",
+    "YushRange16Entry",
+    "YushRange17Entry",
+    "YushRange18Entry",
+    "YushRange19Entry",
+    "YushRange20Entry",
+    "YushRange21Entry",
+    "YushRange22Entry",
+    "YushRange23Entry",
+    "YushRange24Entry",
+    "YushRange25Entry",
+    "YushRange26Entry",
+    "YushRange27Entry",
+    "YushRange28Entry",
+    "YushRange29Entry",
+    "YushRange30Entry",
+    "YushRange31Entry",
+    "YushTrend1Entry",
+    "YushTrend2Entry",
+    "YushTrend3Entry",
+    "YushTrend4Entry",
+    "YushTrend5Entry",
+    "YushTrend6Entry",
+    "YushTrend7Entry",
+    "YushTrend8Entry",
+    "YushTrend9Entry",
+    "YushTrend10Entry",
+    "YushTrend11Entry",
+    "YushTrend12Entry",
+    "YushTrend13Entry",
+    "YushTrend14Entry",
+    "YushTrend15Entry",
+    "YushTrend16Entry",
+    "YushTrend17Entry",
+    "YushTrend18Entry",
+    "YushTrend19Entry",
+    "YushTrend20Entry",
+    "YushTrend21Entry",
+    "YushTrend22Entry",
+    "YushTrend23Entry",
+    "YushTrend24Entry",
+    "YushTrend25Entry",
+    "YushTrend26Entry",
+    "YushTrend27Entry",
+    "YushTrend28Entry",
+    "YushTrend29Entry",
+    "YushTrend30Entry",
+    "YushTrend31Entry",
+    "YushTrend32Entry",
+    "YushTrend33Entry",
+    "YushTrend34Entry",
+    "YushTrend35Entry",
+    "YushTrend36Entry",
+    "YushTrend37Entry",
+    "YushTrend38Entry",
+    "YushTrend39Entry",
+    "YushTrend40Entry",
+    "YushTrend41Entry",
+    "YushTrend42Entry",
+    "YushTrend43Entry",
+    "YushTrend44Entry",
+    "YushTrend45Entry",
+    "YushTrend46Entry",
+    "YushTrend47Entry",
+    "YushTrend48Entry",
+    "YushTrend49Entry",
+    "YushTrend50Entry",
+    "YushTrend51Entry",
+    "YushTrend52Entry",
+    "YushTrend53Entry",
+    "YushTrend54Entry",
+    "YushTrend55Entry",
+    "YushTrend56Entry",
+    "YushTrend57Entry",
+    "YushTrend58Entry",
+    "YushTrend59Entry",
+    "YushTrend60Entry",
+    "YushTrend61Entry",
+    "YushTrend62Entry",
+    "YushTrend63Entry",
+    "YushTrend64Entry",
+    "YushTrend65Entry",
+    "YushTrend66Entry",
+    "YushTrend67Entry",
+    "YushTrend68Entry",
+    "YushTrend69Entry",
+    "YushTrend70Entry",
+    "YushTrend71Entry",
+    "YushTrend72Entry",
+    "YushTrend73Entry",
+    "YushTrend74Entry",
+    "YushTrend75Entry",
+    "YushTrend76Entry",
+    "YushTrend77Entry",
+    "YushTrend78Entry",
+    "YushTrend79Entry",
+    "YushTrend81Entry",
+    "YushTrend82Entry",
     "PriorSessionBenchmarkOrderflowReactionEntry",
     "PriorSessionIbsReversionEntry",
     "PriorLvnOrderflowRejectionEntry",

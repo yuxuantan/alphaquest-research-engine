@@ -16,11 +16,13 @@ from propstack.validation.schema import (
     METADATA_FILENAME,
     TICK_WINDOWS_FILENAME,
     TRADES_FILENAME,
+    VALIDATION_CHECKS_FILENAME,
     BAR_WINDOW_COLUMNS,
     CONDITION_SNAPSHOT_COLUMNS,
     EXIT_AUDIT_COLUMNS,
     TICK_WINDOW_COLUMNS,
     TRADE_SUMMARY_COLUMNS,
+    VALIDATION_CHECK_COLUMNS,
     empty_frame,
     normalize_columns,
 )
@@ -34,6 +36,7 @@ class ValidationRun:
     bar_windows: pd.DataFrame
     tick_windows: pd.DataFrame
     exit_audits: pd.DataFrame
+    validation_checks: pd.DataFrame
 
 
 def read_metadata(path: str | Path) -> dict[str, Any]:
@@ -74,6 +77,7 @@ def load_validation_run(path: str | Path, *, include_tick_windows: bool = True) 
         if include_tick_windows
         else empty_frame(TICK_WINDOW_COLUMNS),
         exit_audits=_read_optional_artifact(run_dir, EXIT_AUDITS_FILENAME, EXIT_AUDIT_COLUMNS),
+        validation_checks=_read_optional_artifact(run_dir, VALIDATION_CHECKS_FILENAME, VALIDATION_CHECK_COLUMNS),
     )
 
 

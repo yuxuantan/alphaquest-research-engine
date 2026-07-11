@@ -75,6 +75,7 @@ def _execution_source_payload(execution_config: dict | None, subset_config: dict
     files = sorted(raw_dir.glob("*.parquet")) if raw_dir.exists() else []
     return {
         "source": source,
+        "price_path_semantics": "scid_record_close_only_v1",
         "raw_dir": str(raw_dir),
         "subset": subset_config or {},
         "root_symbol": execution_config.get("root_symbol", execution_config.get("symbol", "")),

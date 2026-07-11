@@ -25,6 +25,7 @@ from propstack.validation.schema import (
     METADATA_FILENAME,
     TICK_WINDOWS_FILENAME,
     TRADES_FILENAME,
+    VALIDATION_CHECKS_FILENAME,
 )
 
 
@@ -144,6 +145,7 @@ def test_validation_run_round_trips_sample_records(tmp_path):
         BAR_WINDOWS_FILENAME,
         TICK_WINDOWS_FILENAME,
         EXIT_AUDITS_FILENAME,
+        VALIDATION_CHECKS_FILENAME,
     ):
         assert (run_dir / filename).exists()
 
@@ -159,6 +161,9 @@ def test_validation_run_round_trips_sample_records(tmp_path):
     assert loaded.exit_audits.loc[0, "ambiguity_resolution"] == "detail_data"
     assert loaded.exit_audits.loc[0, "entry_price"] == 5200.0
     assert "warning_flags" in loaded.exit_audits.columns
+    assert metadata_record["record_counts"]["validation_checks"] > 0
+    assert not loaded.validation_checks.empty
+    assert "price_logic" in set(loaded.validation_checks["category"])
 
 
 def test_builders_map_existing_trade_log_columns_without_strategy_logic():

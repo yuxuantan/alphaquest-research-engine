@@ -1,0 +1,171 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_11
+strategy_name: yush_trend_11
+symbol: ES
+dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_trend_11_short_1030_riskcap_202409_202502
+timeframe: 3m
+data:
+  dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_trend_11_short_1030_riskcap_202409_202502
+  source_timeframe: 3m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  source_quality_label: >-
+    ES native 3-minute Sierra cache for bar context plus Sierra SCID-record replay for intrabar
+    entry execution. SCID records are not exchange MBO sequencing and the developing profile/delta buckets are
+    reconstructed from replayed records in this POC.
+  execution_data:
+    source: sierra_scid_records
+    raw_dir: data/raw/ES/sierra-es-trades
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    root_symbol: ES
+    timezone: America/New_York
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    batch_size: 1000000
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset:
+    start_date: '2024-09-01'
+    end_date: '2025-02-28'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 100
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+test_run_id: run37_6mo_short_1030_riskcap_unseen
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  source_video: Trader Yush Model 2 trend LVN pullback mechanics supplied by user/video transcript
+  academic_source: >-
+    Chart Fanatics / Trader Yush video; Osler (2000); Kavajecz and Odders-White (2004);
+    Cont, Kukanov, and Stoikov (2014); CME market profile educational material.
+  edge_thesis: >-
+    Short-trend pullbacks into developing LVN pockets may continue lower after failed buy-side countertrend
+    absorption, especially when the risk from the intrabar rejection high is capped before entry.
+  mechanic: >-
+    yush_trend_11 keeps yush_trend_8's normalized short LVN entry, fixed 1R target, and 6-point maximum known
+    signal risk, but restricts entries to 10:30:00-10:59:59 ET. The time filter is result-informed by prior
+    yush_trend_8 half-hour diagnostics and is tested on a separate older window.
+  timeframe_rationale: >-
+    The strategy uses 3-minute bars for trend/LVN context and enters at SCID-record timestamp granularity inside
+    the developing 3-minute bar when the pullback rejection is confirmed.
+  mechanics_review:
+    mechanic_expresses_edge: >-
+      This variant tests whether the risk-capped short LVN reaction is concentrated in the post-opening 10:30 ET
+      continuation window rather than across the full RTH session. The time filter was chosen after prior
+      diagnostics, so it is a falsification check rather than independent discovery.
+    entry_logic_rationale: >-
+      Entry uses only prior completed 3-minute profile/context plus sequential SCID records seen up to the
+      decision timestamp. A signal is rejected unless timestamp is between 10:30:00 and 10:59:59 ET and the known
+      sweep_extreme stop distance is <= 6.0 ES points.
+    stop_loss_rationale: >-
+      The stop remains beyond the intrabar rejection path high with a fixed two-tick offset. The risk cap prevents
+      opening positions whose known stop distance is already too wide.
+    target_exit_rationale: >-
+      The target remains fixed at 1R from actual entry and modeled stop to isolate the post-opening time filter
+      rather than changing trade management.
+    profitability_rationale: >-
+      This should only work if post-opening failed pullbacks at LVNs have cleaner continuation behavior than the
+      full-day population. It should fail quickly if the 10:30 concentration was a narrow historical artifact.
+    known_failure_modes: >-
+      Sierra SCID records are not exchange MBO sequencing, so print ordering, queue behavior, and true
+      footprint-at-price absorption are approximations. The time filter is result-informed and likely sparse.
+    pre_test_decision: approve_for_testing
+strategy:
+  entry:
+    module: yush_trend_11
+    params:
+      start_time: '10:30:00'
+      end_time: '10:59:59'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 3
+      tick_size: 0.25
+      value_area_fraction: 0.7
+      lvn_quantile: 0.2
+      min_prior_profile_bars: 120
+      max_profile_distance_ticks: 64
+      market_aoi_max_distance_ticks: 16
+      aoi_reach_tolerance_ticks: 4
+      min_probe_ticks: 1
+      confirmation_ticks: 0
+      min_absorption_volume: 20
+      min_aoi_confluences: 2
+      min_large200_record_volume: 200
+      min_delta_activity_imbalance: 0.03
+      min_directional_delta_imbalance: 0.0
+      min_structure_bars: 10
+      min_trend_move_ticks: 8
+      max_signal_risk_points: 6.0
+      allow_opening_range_proxy: false
+      profile_source: cached_developing_vap
+      min_developing_profile_bars: 10
+      cached_profile_prefix: developing_vap
+      setup_mode: model2_trend_lvn_short
+      target_reference: structural_or_midpoint
+      stop_offset_ticks: 2
+      max_trades_per_day: 1
+      max_signals_per_session: 1
+      allow_long: false
+      allow_short: true
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 2
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.0
+  flatten_time: '15:55:00'

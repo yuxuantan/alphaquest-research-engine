@@ -1,0 +1,449 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_26
+strategy_name: yush_range_26
+symbol: ES
+dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_range_26_pdl_reclaim_morning_multi_entry_fixed75_neg_rr_prop50k_5c_staged_202503_202602
+timeframe: 3m
+data:
+  dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_range_26_pdl_reclaim_morning_multi_entry_fixed75_neg_rr_prop50k_5c_staged_202503_202602
+  source_timeframe: 3m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  source_quality_label: ES native 3-minute Sierra cache for bar context plus Sierra
+    SCID-record replay for intrabar entry execution. SCID records are not exchange
+    MBO sequencing; delta buckets are reconstructed from close-only replayed records.
+  execution_data:
+    source: sierra_scid_records
+    raw_dir: data/raw/ES/sierra-es-trades
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    root_symbol: ES
+    timezone: America/New_York
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    batch_size: 1000000
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset:
+    start_date: '2025-03-01'
+    end_date: '2026-02-28'
+    session_labels:
+    - RTH
+  initial_balance: 50000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 5
+  daily_loss_limit: 2500
+  daily_profit_stop: 1000000000
+  flatten_time: '15:53:00'
+  max_trades_per_day: 3
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 2500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.5
+  min_positive_month_rate: 0.45
+prop_rules:
+  starting_balance: 50000
+  daily_loss_limit: 2500
+  trailing_drawdown: 2500
+  max_contracts: 5
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 5
+  payout_threshold: 250
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.05
+  account_lifecycle_enabled: true
+  challenge_profit_target_amount: 3000
+  challenge_consistency_limit: 0.5
+  funded_starting_balance: 50000
+  funded_initial_drawdown_floor: 47500
+  funded_payout_min_profit_day: 250
+  funded_payout_required_profit_days: 5
+  funded_payout_profit_fraction: 0.5
+  funded_payout_profit_share: 0.9
+test_run_id: run118_12mo_pdl_reclaim_morning_multi_entry_fixed75_neg_rr_prop50k_5c_pre_poc_staged
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  source_video: Trader Yush range / absorption mechanics supplied by user, PDL reclaim-failure
+    morning multi-entry negative-RR funded-account diagnostic
+  academic_source: Chart Fanatics / Trader Yush video; Osler (2000); Kavajecz and
+    Odders-White (2004); Cont, Kukanov, and Stoikov (2014); CME market profile educational
+    material.
+  edge_thesis: Failed upside retests of the previous RTH low may trap aggressive buyers
+    below prior-day value. This branch tests whether the liquidation impulse can repeat
+    during the same morning session while the account is flat, improving funded-account
+    payout-day distribution without changing the underlying PDL reclaim-failure signal.
+  mechanic: Multi-entry morning negative-RR funded-account branch from yush_range_23.
+    It keeps short-only PDL sweep/reclaim-failure continuation, positive 1-point delta
+    bucket >=300, maintained three-second hold below the bucket, entry within 2 ATR
+    of PDL, known bucket-edge signal-risk grid <=3.0/4.0 ES points, five ES contracts,
+    a fixed $75 per-contract target, and fixed-dollar wider stops. The morning entry
+    cutoff is fixed at 12:00:00 ET. The new test dimension is allowing one, two, or
+    three flat-to-flat signals per session through entry.params.max_trades_per_day.
+  timeframe_rationale: The strategy uses 3-minute bars for ATR and PDL sweep context
+    while entering at SCID-record timestamp granularity inside the developing 3-minute
+    bar.
+  mechanics_review:
+    mechanic_expresses_edge: 'Prior yush_range_23/yush_range_24 rows met the narrow
+      payout-day profile but failed random-entry separation. This branch tests a predeclared
+      same-mechanic extension: whether repeated flat-to-flat PDL reclaim-failure signals
+      in the morning add enough independent payout days or net profit to survive staged
+      controls.'
+    entry_logic_rationale: Entry uses only sequential SCID records seen up to the
+      decision timestamp before 12:00:00 ET. It enters short when PDL has been swept,
+      trapped-buyer positive delta remains above threshold, price has held below the
+      triggering bucket for three seconds, and entry-to-bucket stop distance is within
+      the selected 3.0/4.0 point signal-risk cap. Unlike yush_range_23, it may emit
+      up to the selected daily cap after a prior position has closed.
+    stop_loss_rationale: The tested stop is a fixed-dollar per-contract stop, rounded
+      to ES ticks, deliberately wider than the fixed target. The original bucket-edge
+      signal stop remains logged and capped only as an entry-quality/risk-awareness
+      filter.
+    target_exit_rationale: The target remains fixed at $75 per contract because five
+      ES contracts generate a $287.50 net target day after modeled commission/slippage,
+      clearing the user-requested $250 payout-day threshold while keeping every tested
+      stop wider than the target.
+    profitability_rationale: This can pass only if extra same-morning flat-to-flat
+      signals increase the robust payout-day sample without adding tail losses, concentration,
+      random-entry comparability, WFA decay, Monte Carlo fragility, or 50k funded-account
+      rule failures.
+    known_failure_modes: Sierra SCID records are not exchange MBO sequencing. Reusing
+      the same PDL level multiple times may overcount one market event and can increase
+      daily loss concentration; reject if any staged gate fails, if losses breach
+      50k constraints, if profit is concentrated, or if monkey/WFA/acceptance evidence
+      does not separate from random entries.
+    pre_test_decision: approve_for_testing
+  prop_consistency_target:
+    account_size: 50000
+    min_winning_days: 5
+    min_winning_day_net_pnl: 250
+    max_best_day_profit_share: 0.5
+    contracts: 5
+    max_entries_per_day: 3
+    verdict_policy: FAIL if net profit is non-positive, fewer than five session days
+      are >= $250 net PnL, best profitable day is more than 50% of total net profit,
+      validation is not clean, daily loss exceeds the configured 50k limit, or any
+      official staged gate fails. Treat any pass as a candidate strategy requiring
+      manual review because this is a multi-entry negative-RR funded-account branch
+      after prior monkey failures.
+    target_dollars_per_contract: 75.0
+    stop_dollars_per_contract_grid:
+    - 150.0
+    - 200.0
+    - 250.0
+    max_signal_risk_points_grid:
+    - 3.0
+    - 4.0
+    fixed_entry_end_time: '12:00:00'
+    max_entries_per_day_grid:
+    - 1
+    - 2
+    - 3
+strategy:
+  entry:
+    module: yush_range_26
+    params:
+      start_time: '10:00:00'
+      end_time: '12:00:00'
+      flatten_time: '15:53:00'
+      bar_interval_minutes: 3
+      tick_size: 0.25
+      profile_bucket_points: 1.0
+      delta_bucket_points: 1.0
+      allowed_market_level_types:
+      - PDL
+      confirmation_modes:
+      - absorption
+      range_snapshot_minutes: 30
+      max_range_change_pct: 0.2
+      atr_period: 14
+      atr_multiple: 2.0
+      level_atr_multiple: 2.0
+      absorption_delta_threshold: 300
+      absorption_hold_seconds: 3
+      stop_offset_ticks: 2
+      max_signal_risk_points: 4.0
+      max_trades_per_day: 3
+      min_profile_volume: 1000
+      min_profile_buckets: 3
+      allow_long: false
+      allow_short: true
+      target_reference: morning_multi_entry_fixed75_negative_rr_pdl_reclaim_prop50k_5c
+  sl:
+    module: fixed_dollar_per_contract
+    params:
+      dollars_per_contract: 150.0
+      tick_size: 0.25
+      tick_value: 12.5
+      round_to_tick: true
+  tp:
+    module: fixed_dollar_per_contract
+    params:
+      dollars_per_contract: 75.0
+      tick_size: 0.25
+      tick_value: 12.5
+      round_to_tick: true
+  flatten_time: '15:53:00'
+core_grid:
+  parameters:
+    entry.params.max_signal_risk_points:
+    - 3.0
+    - 4.0
+    tp.params.dollars_per_contract:
+    - 75.0
+    sl.params.dollars_per_contract:
+    - 150.0
+    - 200.0
+    - 250.0
+    entry.params.max_trades_per_day:
+    - 1
+    - 2
+    - 3
+  retain_iteration_reports: true
+  parallel:
+    enabled: true
+    scope: grid
+    workers: 3
+monkey:
+  retain_iteration_reports: false
+  seed: 11
+  runs: 8000
+  parallel:
+    enabled: true
+    scope: runs
+    workers: 3
+wfa:
+  mode: unanchored
+  train_months: 6
+  test_months: 2
+  step_months: 2
+  objective: MAR
+  early_exit_min_train_profit_factor: 1.0
+  parameters:
+    entry.params.max_signal_risk_points:
+    - 3.0
+    - 4.0
+    tp.params.dollars_per_contract:
+    - 75.0
+    sl.params.dollars_per_contract:
+    - 150.0
+    - 200.0
+    - 250.0
+    entry.params.max_trades_per_day:
+    - 1
+    - 2
+    - 3
+  parallel:
+    enabled: true
+    scope: window_grid
+    workers: 3
+monte_carlo:
+  runs: 1000
+  seed: 11
+  position_sizing:
+    mode: reference
+  prop_rules:
+    starting_balance: 50000
+    daily_loss_limit: 2500
+    trailing_drawdown: 2500
+    max_contracts: 5
+    max_best_day_profit_percentage: 0.5
+    min_trading_days: 5
+    payout_threshold: 250
+    profit_target_pct: 0.06
+    drawdown_limit_pct: 0.05
+    account_lifecycle_enabled: true
+    challenge_profit_target_amount: 3000
+    challenge_consistency_limit: 0.5
+    funded_starting_balance: 50000
+    funded_initial_drawdown_floor: 47500
+    funded_payout_min_profit_day: 250
+    funded_payout_required_profit_days: 5
+    funded_payout_profit_fraction: 0.5
+    funded_payout_profit_share: 0.9
+  parallel:
+    enabled: true
+    scope: runs
+    workers: 3
+campaign_tests:
+  walk_forward_analysis:
+    train_months: 6
+    test_months: 2
+    step_months: 2
+    early_exit_min_train_profit_factor: 1.0
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 3
+  simulated_incubation_core:
+    train_months: 6
+    test_months: 2
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+  acceptance_oos_test:
+    train_months: 6
+    test_months: 2
+    parameters:
+      entry.params.max_signal_risk_points:
+      - 3.0
+      - 4.0
+      tp.params.dollars_per_contract:
+      - 75.0
+      sl.params.dollars_per_contract:
+      - 150.0
+      - 200.0
+      - 250.0
+      entry.params.max_trades_per_day:
+      - 1
+      - 2
+      - 3
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.mean_net_pnl
+      exclusive_min: 0.0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3

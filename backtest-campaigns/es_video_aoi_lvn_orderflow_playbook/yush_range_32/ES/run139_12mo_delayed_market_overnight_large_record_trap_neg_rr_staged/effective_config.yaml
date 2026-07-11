@@ -1,0 +1,382 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_32
+strategy_name: yush_range_32
+symbol: ES
+dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_yush_range_32_delayed_market_overnight_large_record_trap_neg_rr_staged_202503_202602
+timeframe: 3m
+data:
+  dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_yush_range_32_delayed_market_overnight_large_record_trap_neg_rr_staged_202503_202602
+  source_timeframe: 3m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  source_quality_label: 'ES native 3-minute Sierra cache with prior/developing VAP,
+    overnight levels, and large200 aggregate features. This run does not replay SCID
+    records for entry; large-trade confluence is a Sierra aggregate proxy, not exchange
+    MBO print truth.
+
+    '
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset:
+    start_date: '2025-03-01'
+    end_date: '2026-02-28'
+    session_labels:
+    - RTH
+  initial_balance: 50000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 5
+  daily_loss_limit: 2500
+  daily_profit_stop: 1000000000
+  flatten_time: '15:53:00'
+  max_trades_per_day: 3
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 2500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.5
+  min_positive_month_rate: 0.45
+prop_rules:
+  starting_balance: 50000
+  daily_loss_limit: 2500
+  trailing_drawdown: 2500
+  max_contracts: 5
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 5
+  payout_threshold: 250
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.05
+  account_lifecycle_enabled: true
+  challenge_profit_target_amount: 3000
+  challenge_consistency_limit: 0.5
+  funded_starting_balance: 50000
+  funded_initial_drawdown_floor: 47500
+  funded_payout_min_profit_day: 250
+  funded_payout_required_profit_days: 5
+  funded_payout_profit_fraction: 0.5
+  funded_payout_profit_share: 0.9
+test_run_id: run139_12mo_delayed_market_overnight_large_record_trap_neg_rr_staged
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  source_video: Trader Yush visible-level sweep and big-trade-bubble checklist, adapted
+    into a completed-bar delayed confirmation branch.
+  academic_source: Chart Fanatics / Trader Yush video; Kavajecz and Odders-White (2004);
+    Cont, Kukanov, and Stoikov (2014); stop-run/market-profile practitioner literature.
+  edge_thesis: 'A large200 print cluster into a visible prior-day or overnight level
+    is not enough by itself; requiring the next completed 3-minute bar to reclaim
+    in the opposite direction may better isolate absorption/trap behavior while avoiding
+    SCID replay sparsity.
+
+    '
+  mechanic: 'Completed-bar delayed trap. Event bar must sweep a prior RTH or overnight
+    level with large200 signed flow against the eventual entry direction and with
+    the level on the correct side of prior VAP POC. The next 3-minute bar must close
+    back through the level in the entry direction, optionally with confirming signed-volume
+    imbalance. Entry is next bar open after that confirmation. Five ES contracts use
+    fixed $75/contract target and wider fixed-dollar stop grid, intentionally negative-RR.
+
+    '
+  timeframe_rationale: Three-minute bars are the native cache timeframe and avoid
+    SCID replay runtime. The delayed confirmation bar prevents entering on the same
+    completed bar that detected the large-record event.
+  mechanics_review:
+    mechanic_expresses_edge: This is a delayed visible-level trap branch, distinct
+      from exact SCID reclaim variants and from completed-bar developing value-area
+      acceptance/compression branches.
+    entry_logic_rationale: Prior RTH levels, overnight levels, prior VAP context,
+      large200 aggregate fields, and the confirming bar are all known before next-bar-open
+      entry.
+    stop_loss_rationale: Fixed-dollar stop is deliberately wider than the $75/contract
+      target to test a high-win-rate prop payout profile.
+    target_exit_rationale: Fixed $75/contract target makes one 5-contract win exceed
+      the $250 funded-payout-day threshold before costs.
+    profitability_rationale: Passing requires staged core stability, random-entry
+      separation, WFA/Monte Carlo survival, no prop-rule violations, at least five
+      $250-plus winning days, and acceptable best-day concentration.
+    known_failure_modes: Large200 fields are Sierra aggregate proxies rather than
+      exchange MBO prints. The module can be sparse because it requires a two-bar
+      event/confirmation sequence. Negative-RR exits can hide large tail losses; reject
+      if random-entry separation, concentration, WFA, Monte Carlo, or prop rules fail.
+    pre_test_decision: approve_for_testing
+  prop_consistency_target:
+    account_size: 50000
+    min_winning_days: 5
+    min_winning_day_net_pnl: 250
+    max_best_day_profit_share: 0.5
+    contracts: 5
+    max_entries_per_day: 3
+    verdict_policy: FAIL if net profit is non-positive, fewer than five session days
+      are >= $250 net PnL, best profitable day is more than 50% of total net profit,
+      validation is not clean, daily loss exceeds the configured 50k limit, or any
+      official staged gate fails. Treat any pass as a candidate strategy requiring
+      manual review.
+strategy:
+  entry:
+    module: large_record_delayed_aoi_confirmation
+    params:
+      setup_mode: market_aoi_delayed_trap
+      profile_context_mode: beyond_poc
+      cached_profile_prefix: prior_vap
+      start_time: 09:33:00
+      end_time: '11:00:00'
+      flatten_time: '15:53:00'
+      bar_interval_minutes: 3
+      tick_size: 0.25
+      opening_range_minutes: 30
+      min_probe_ticks: 1
+      confirmation_ticks: 0
+      min_large200_record_volume: 200
+      min_confirm_delta_imbalance: 0.0
+      max_trades_per_day: 3
+      allow_long: true
+      allow_short: true
+  sl:
+    module: fixed_dollar_per_contract
+    params:
+      dollars_per_contract: 150.0
+      tick_size: 0.25
+      tick_value: 12.5
+      round_to_tick: true
+  tp:
+    module: fixed_dollar_per_contract
+    params:
+      dollars_per_contract: 75.0
+      tick_size: 0.25
+      tick_value: 12.5
+      round_to_tick: true
+  flatten_time: '15:53:00'
+core_grid:
+  parameters:
+    entry.params.setup_mode:
+    - market_aoi_delayed_trap
+    - overnight_aoi_delayed_trap
+    entry.params.min_confirm_delta_imbalance:
+    - 0.0
+    - 0.05
+    sl.params.dollars_per_contract:
+    - 150.0
+    - 200.0
+  retain_iteration_reports: true
+  parallel:
+    enabled: true
+    scope: grid
+    workers: 3
+monkey:
+  retain_iteration_reports: false
+  seed: 11
+  runs: 8000
+  parallel:
+    enabled: true
+    scope: runs
+    workers: 3
+wfa:
+  mode: unanchored
+  train_months: 6
+  test_months: 2
+  step_months: 2
+  objective: MAR
+  early_exit_min_train_profit_factor: 1.0
+  parameters:
+    entry.params.setup_mode:
+    - market_aoi_delayed_trap
+    - overnight_aoi_delayed_trap
+    entry.params.min_confirm_delta_imbalance:
+    - 0.0
+    - 0.05
+    sl.params.dollars_per_contract:
+    - 150.0
+    - 200.0
+  parallel:
+    enabled: true
+    scope: window_grid
+    workers: 3
+monte_carlo:
+  runs: 1000
+  seed: 11
+  position_sizing:
+    mode: reference
+  prop_rules:
+    starting_balance: 50000
+    daily_loss_limit: 2500
+    trailing_drawdown: 2500
+    max_contracts: 5
+    max_best_day_profit_percentage: 0.5
+    min_trading_days: 5
+    payout_threshold: 250
+    account_lifecycle_enabled: true
+    challenge_profit_target_amount: 3000
+    challenge_consistency_limit: 0.5
+    funded_starting_balance: 50000
+    funded_initial_drawdown_floor: 47500
+    funded_payout_min_profit_day: 250
+    funded_payout_required_profit_days: 5
+    funded_payout_profit_fraction: 0.5
+    funded_payout_profit_share: 0.9
+  parallel:
+    enabled: true
+    scope: runs
+    workers: 3
+campaign_tests:
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 3
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.mean_net_pnl
+      exclusive_min: 0.0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  acceptance_oos_test:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 24
+    test_months: 6
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test

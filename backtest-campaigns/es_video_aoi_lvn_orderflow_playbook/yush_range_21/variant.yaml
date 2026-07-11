@@ -1,0 +1,37 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_21
+strategy_name: yush_range_21
+mechanic:
+  entry_module: yush_range_21
+  take_profit_module: fixed_dollar_per_contract
+  stop_loss_module: signal_price
+  flatten_time: '15:53:00'
+  allowed_market_level_types:
+  - PDL
+  confirmation_modes:
+  - absorption
+  absorption_delta_threshold: 300
+  absorption_hold_seconds: 3
+  max_signal_risk_points: 4.0
+  dollars_per_contract: 100.0
+  staged_candidate: true
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: separate 12-month staged check for yush_range_20 PDL reclaim
+    fixed-dollar scalp mechanics
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: failed_limited_core_grid_test

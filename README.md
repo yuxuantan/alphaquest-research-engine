@@ -34,7 +34,19 @@ python3 -m pip install -e ".[dev,dashboard]"
 
 ## Visual Validation Dashboard
 
-Generate trade-level validation artifacts from a core backtest:
+The validation dashboard is a Streamlit/Plotly tool for inspecting whether the
+Python backtest mechanics did what the strategy intended. It reads exported
+artifacts from a completed run and lets you inspect entry triggers, SL/TP
+placement, orderflow values, TP/SL sequencing, automated consistency checks, and
+manual review notes without rerunning the whole backtest.
+
+Install dashboard dependencies:
+
+```bash
+python3 -m pip install -e ".[dev,dashboard]"
+```
+
+Run a core backtest with validation export:
 
 ```bash
 PYTHONPATH=src python3 -m propstack.run_core \
@@ -45,22 +57,71 @@ PYTHONPATH=src python3 -m propstack.run_core \
   --validation-max-trades 100
 ```
 
-By default, `run_core` writes dashboard artifacts under the generated run root:
+Normal backtests without `--export-validation` keep the fast path and do not
+write these extra artifacts. By default, `run_core` writes dashboard artifacts
+under the generated run root:
 
 ```text
 backtest-campaigns/<campaign_id>/<variant_id>/<symbol>/<run_id>/validation_runs/core/
 ```
 
-Launch the dashboard from the repo root:
+The validation run folder contains:
 
-```bash
-PYTHONPATH=src streamlit run apps/validation_dashboard.py
+```text
+metadata.json
+trades.parquet
+condition_snapshots.parquet
+bar_windows.parquet
+tick_windows.parquet
+exit_audits.parquet
+validation_checks.parquet
+manual_review.parquet       # created after you save review notes
 ```
 
-The dashboard loads `trades.parquet`, `condition_snapshots.parquet`,
-`bar_windows.parquet`, `exit_audits.parquet`, and `metadata.json` immediately.
-It only reads `tick_windows.parquet` after you select a trade and enable the tick
-window in the UI.
+Launch the dashboard with one command:
+
+```bash
+make validation-dashboard
+```
+
+Useful launch options:
+
+```bash
+VALIDATION_DASHBOARD_SEARCH_ROOT=backtest-campaigns make validation-dashboard
+VALIDATION_DASHBOARD_PORT=8503 make validation-dashboard
+```
+
+To smoke-test the UI without large Sierra files, generate and open a tiny
+synthetic run:
+
+```bash
+make validation-dashboard-sample
+```
+
+The dashboard sidebar scans `PROPSTACK_VALIDATION_SEARCH_ROOT` or
+`backtest-campaigns` by default. Select a discovered validation run, or paste the
+path to a specific `validation_runs/<stage>/` folder. The selected trade remains
+sticky while moving through tabs and queue pages.
+
+Tabs:
+
+- `Overview`: entry, stop, target, exit, R, and exported calculation details.
+- `Price chart`: bar window with entry, stop, target, exit, levels, and event
+  markers.
+- `Conditions`: condition checklist and raw exported JSON fields.
+- `Orderflow`: bar-level orderflow, filter explanation, and optional footprint
+  heatmap. Tick/footprint rows are loaded only after you enable the selected
+  trade footprint window.
+- `Exit path`: TP/SL first-touch audit from the exported selected-trade tick
+  window when available.
+- `Checks`: automated consistency checks from `validation_checks.parquet`.
+- `Manual review`: saves reviewer status and notes to `manual_review.parquet`.
+
+Use the sidebar `Review Queue` page for systematic manual validation. It can
+sample random, first, last, best-R, worst-R, forced-flatten, same-bar ambiguous,
+mismatch-warning, and high-impact edge-case trades. Review annotations are saved
+next to the validation artifacts with trade ID, status, notes, timestamp, and
+dashboard version, so notes persist after restarting Streamlit.
 
 The Orderflow tab uses the exported selected-trade bar and tick windows. Its
 filter explanation table shows raw strategy/export fields from
@@ -77,12 +138,25 @@ flags for mismatches such as engine-target versus tick-stop-first. When no
 ordered tick path is present, the tab keeps the engine audit fields visible and
 warns that tick sequencing could not be independently verified.
 
-Use the sidebar `Review Queue` page for systematic manual validation. It can
-sample random, first, last, best-R, worst-R, forced-flatten, same-bar ambiguous,
-mismatch-warning, and high-impact edge-case trades. Review annotations are saved
-next to the validation artifacts in `manual_review.parquet` with trade ID,
-status, notes, timestamp, and dashboard version, so notes persist after
-restarting Streamlit.
+Each validation export also writes `validation_checks.parquet`, an automated
+consistency report over trade identity, timestamp ordering, price logic, filter
+flags, exit audit agreement, and data quality. The dashboard `Checks` tab shows
+run-level pass/warning/error totals and the selected trade's check rows before
+manual review.
+
+Known limitations:
+
+- The Python backtest engine remains the source of truth; the dashboard is an
+  inspection layer and does not change results.
+- `tick_windows.parquet` is an exported selected-trade window, not a full raw
+  Sierra dataset loader. If the run was exported without tick/detail rows,
+  first-hit sequencing can only use the engine audit and bar window.
+- Sierra signed volume is an aggregate bid/ask-volume proxy, not vendor-grade
+  MBO aggressor labeling.
+- Older validation runs may not include newer artifacts such as
+  `validation_checks.parquet`; regenerate the run with `--export-validation`.
+- Automated checks are consistency checks, not proof that a candidate strategy
+  is tradeable.
 
 ## Project Layout
 
@@ -278,6 +352,13 @@ ordering, trade-sequence assumptions, or large-print features unless a separate
 source-quality audit proves that specific archive supports that use. If a
 strategy needs those mechanics, mark the data basis `NEEDS MANUAL REVIEW` or
 use an independently verified tick/depth source.
+
+For configs that explicitly use `data.execution_data.source: sierra_scid_records`,
+the execution loader uses conservative close-only replay: each SCID record's
+`close` is the only traded-price proxy, and the execution `open/high/low/close`
+fields are all set to that close. The raw SCID OHLC values remain available in
+`raw_scid_*` columns for audit, but raw SCID high/low are not used for sweeps,
+TP/SL first touches, or intra-record price path decisions.
 
 The 2026-06-16 ES Databento-vs-Sierra audit is the current data-source
 checkpoint for this rule:

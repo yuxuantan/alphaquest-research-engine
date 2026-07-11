@@ -23,6 +23,31 @@ SCID_RECORD_COLUMNS = [
     "ask_volume",
 ]
 
+SCID_RECORD_PRICE_PATH_SEMANTICS = "scid_record_close_only_v1"
+
+_SCID_EXECUTION_COLUMNS = [
+    "timestamp",
+    "symbol",
+    "contract_symbol",
+    "open",
+    "high",
+    "low",
+    "close",
+    "volume",
+    "signed_volume",
+    "buy_volume",
+    "sell_volume",
+    "trades",
+    "num_trades",
+    "scid_datetime_us",
+    "execution_granularity",
+    "price_path_semantics",
+    "raw_scid_open",
+    "raw_scid_high",
+    "raw_scid_low",
+    "raw_scid_close",
+]
+
 
 def load_scid_record_execution_data(
     config: dict,
@@ -33,7 +58,10 @@ def load_scid_record_execution_data(
 
     The local Sierra Parquet files are SCID records, not MBO events. They are
     useful for deterministic record replay when the strategy explicitly accepts
-    this source-quality limitation.
+    this source-quality limitation. For execution-path decisions, the loader
+    treats the record close as the only traded-price proxy and exposes
+    open/high/low equal to close. Raw SCID OHLC fields are retained separately
+    for audit, but are not used as traded-price extrema.
     """
 
     raw_dir = Path(config.get("raw_dir", "data/raw/ES/sierra-es-trades"))
@@ -72,29 +100,15 @@ def load_scid_record_execution_data(
             parts.append(part)
 
     if not parts:
-        out = pd.DataFrame(
-            columns=[
-                "timestamp",
-                "symbol",
-                "contract_symbol",
-                "open",
-                "high",
-                "low",
-                "close",
-                "volume",
-                "signed_volume",
-                "buy_volume",
-                "sell_volume",
-                "trades",
-                "num_trades",
-                "scid_datetime_us",
-                "execution_granularity",
-            ]
-        )
+        out = pd.DataFrame(columns=_SCID_EXECUTION_COLUMNS)
     else:
         out = pd.concat(parts, ignore_index=True).sort_values("timestamp", kind="mergesort").reset_index(drop=True)
     out.attrs["detail_granularity"] = "scid_record"
-    out.attrs["source_quality_label"] = "Sierra SCID record replay; not exchange MBO sequencing."
+    out.attrs["price_path_semantics"] = SCID_RECORD_PRICE_PATH_SEMANTICS
+    out.attrs["source_quality_label"] = (
+        "Sierra SCID record close-only replay; raw SCID high/low retained for audit, "
+        "not used as traded-price extrema; not exchange MBO sequencing."
+    )
     return out
 
 
@@ -143,9 +157,9 @@ def _records_from_batch(
     ts = batch.column(batch.schema.get_field_index("scid_datetime_us")).to_numpy(zero_copy_only=False).astype(
         np.int64, copy=False
     )
-    open_ = batch.column(batch.schema.get_field_index("open")).to_numpy(zero_copy_only=False)
-    high = batch.column(batch.schema.get_field_index("high")).to_numpy(zero_copy_only=False)
-    low = batch.column(batch.schema.get_field_index("low")).to_numpy(zero_copy_only=False)
+    raw_open = batch.column(batch.schema.get_field_index("open")).to_numpy(zero_copy_only=False)
+    raw_high = batch.column(batch.schema.get_field_index("high")).to_numpy(zero_copy_only=False)
+    raw_low = batch.column(batch.schema.get_field_index("low")).to_numpy(zero_copy_only=False)
     close = batch.column(batch.schema.get_field_index("close")).to_numpy(zero_copy_only=False)
     volume = batch.column(batch.schema.get_field_index("volume")).to_numpy(zero_copy_only=False)
     bid = batch.column(batch.schema.get_field_index("bid_volume")).to_numpy(zero_copy_only=False)
@@ -161,13 +175,13 @@ def _records_from_batch(
         & (volume > 0)
     )
     if not mask.any():
-        return pd.DataFrame()
+        return pd.DataFrame(columns=_SCID_EXECUTION_COLUMNS)
 
     ts = ts[mask]
+    raw_open = np.where(np.isfinite(raw_open[mask]), raw_open[mask], np.nan).astype(np.float64, copy=False)
+    raw_high = np.where(np.isfinite(raw_high[mask]), raw_high[mask], np.nan).astype(np.float64, copy=False)
+    raw_low = np.where(np.isfinite(raw_low[mask]), raw_low[mask], np.nan).astype(np.float64, copy=False)
     close = close[mask].astype(np.float64, copy=False)
-    open_ = np.where(np.isfinite(open_[mask]), open_[mask], close).astype(np.float64, copy=False)
-    high = np.where(np.isfinite(high[mask]), high[mask], close).astype(np.float64, copy=False)
-    low = np.where(np.isfinite(low[mask]), low[mask], close).astype(np.float64, copy=False)
     volume = volume[mask].astype(np.int64, copy=False)
     bid = bid[mask].astype(np.int64, copy=False)
     ask = ask[mask].astype(np.int64, copy=False)
@@ -176,9 +190,9 @@ def _records_from_batch(
 
     order = np.argsort(ts, kind="stable")
     ts = ts[order]
-    open_ = open_[order]
-    high = high[order]
-    low = low[order]
+    raw_open = raw_open[order]
+    raw_high = raw_high[order]
+    raw_low = raw_low[order]
     close = close[order]
     volume = volume[order]
     bid = bid[order]
@@ -190,30 +204,30 @@ def _records_from_batch(
     minute_of_day = timestamps.dt.hour * 60 + timestamps.dt.minute
     rth_mask = (minute_of_day >= rth_start_minute) & (minute_of_day < rth_end_minute)
     if not bool(rth_mask.any()):
-        return pd.DataFrame()
+        return pd.DataFrame(columns=_SCID_EXECUTION_COLUMNS)
     ts = ts[rth_mask.to_numpy()]
     timestamps = timestamps[rth_mask].reset_index(drop=True)
     close = close[rth_mask.to_numpy()]
-    open_ = open_[rth_mask.to_numpy()]
-    high = high[rth_mask.to_numpy()]
-    low = low[rth_mask.to_numpy()]
+    raw_open = raw_open[rth_mask.to_numpy()]
+    raw_high = raw_high[rth_mask.to_numpy()]
+    raw_low = raw_low[rth_mask.to_numpy()]
     volume = volume[rth_mask.to_numpy()]
     bid = bid[rth_mask.to_numpy()]
     ask = ask[rth_mask.to_numpy()]
     trades = trades[rth_mask.to_numpy()]
     signed = signed[rth_mask.to_numpy()]
-    open_ = np.where(np.isfinite(open_) & (open_ > 0), open_, close)
-    high = np.where(np.isfinite(high) & (high > 0), high, close)
-    low = np.where(np.isfinite(low) & (low > 0), low, close)
+    traded_open = close.copy()
+    traded_high = close.copy()
+    traded_low = close.copy()
 
     return pd.DataFrame(
         {
             "timestamp": timestamps,
             "symbol": root_symbol,
             "contract_symbol": contract_symbol,
-            "open": open_,
-            "high": high,
-            "low": low,
+            "open": traded_open,
+            "high": traded_high,
+            "low": traded_low,
             "close": close,
             "volume": volume,
             "signed_volume": signed,
@@ -223,6 +237,11 @@ def _records_from_batch(
             "num_trades": trades,
             "scid_datetime_us": ts,
             "execution_granularity": "scid_record",
+            "price_path_semantics": SCID_RECORD_PRICE_PATH_SEMANTICS,
+            "raw_scid_open": raw_open,
+            "raw_scid_high": raw_high,
+            "raw_scid_low": raw_low,
+            "raw_scid_close": close,
         }
     )
 

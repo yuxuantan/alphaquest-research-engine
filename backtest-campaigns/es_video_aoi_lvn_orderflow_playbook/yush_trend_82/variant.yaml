@@ -1,0 +1,57 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_82
+strategy_name: yush_trend_82
+mechanic:
+  entry_module: yush_trend_82
+  take_profit_module: fixed_dollar_per_contract
+  stop_loss_module: fixed_dollar_per_contract
+  flatten_time: '15:53:00'
+  setup_mode: completed_bar_developing_vap_compression_large_record_acceptance
+  trade_window: 09:33:00-11:00:00 ET
+  execution_timing: completed 3-minute bar signal, next-bar-open entry
+  compression_condition:
+    value_area_width_rank_grid:
+    - 0.25
+    - 0.50
+    compression_lookback_bars: 30
+    min_compression_history: 12
+    rank_source: prior same-session completed bars only
+  orderflow_condition:
+    min_large200_record_volume: 200
+    min_large200_signed_share_grid:
+    - 0.35
+    - 0.55
+    min_bar_signed_imbalance: 0.03
+  execution:
+    contracts: 5
+    target_type: fixed_dollar_per_contract
+    target_dollars_per_contract: 75.0
+    stop_type: fixed_dollar_per_contract
+    stop_dollars_per_contract_grid:
+    - 150.0
+    - 200.0
+    max_trades_per_day: 3
+  data_window: 2025-03-01 to 2026-02-28 staged source config; fast-runtime limited core subset
+  staged_candidate: false
+  known_caveats:
+  - Large200 fields are Sierra SCID aggregate proxies, not exchange MBO prints.
+  - Completed-bar entry may be late after fast acceptance bars.
+  - Red USD news guardrail is not modeled because no durable intraday red-news calendar exists locally.
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 0
+  allowed:
+  - reject_after_official_results
+  forbidden:
+  - loosen compression rank after seeing zero-signal failure
+  - tune target or stop dollars after seeing failure
+  - change data window after seeing failure
+  - change stage criteria
+review_status: failed_limited_core_grid_test
+last_test:
+  test_run_id: run138_12mo_developing_vap_compression_large_record_acceptance_neg_rr_staged
+  result_path: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_82/ES/run138_12mo_developing_vap_compression_large_record_acceptance_neg_rr_staged/campaign_test_summary.json
+  verdict: FAIL
+  reason: Failed limited_core_grid_test. All 8 predeclared combinations generated zero signals and zero trades in
+    the fast-runtime core subset from 2025-03-07 to 2025-04-11. percentage_profitable_iterations=0.0 below required
+    0.70, number_passing_benchmark=0, and apex_rule_violating_iterations=0.

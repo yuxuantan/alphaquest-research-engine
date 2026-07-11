@@ -1,0 +1,78 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_76
+strategy_name: yush_trend_76
+mechanic:
+  entry_module: yush_trend_76
+  take_profit_module: opening_range_extension
+  stop_loss_module: opening_range_retest_boundary
+  flatten_time: '15:53:00'
+  setup_mode: opening_range_breakout_acceptance
+  market_levels:
+  - ORH
+  - ORL
+  entry_window: 09:35:00 to 11:30:00 America/New_York
+  opening_range_seconds_grid:
+  - 32
+  - 120
+  breakout_hold_seconds_grid:
+  - 0.5
+  - 1.0
+  probe_ticks: 2
+  breakout_hold_ticks: 0
+  max_signal_risk_points: 8.0
+  stop_policy: broken_opening_range_boundary_plus_or_minus_2_ticks
+  max_stop_points: 8.0
+  target_policy: opening_range_extension
+  extension_fraction_grid:
+  - 1.0
+  - 2.0
+  confirmation_modes: initiation
+  contracts: 1
+  max_trades_per_day: 3
+  staged_candidate: true
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: OR-only breakout acceptance branch after broad market-level breakout/reclaim branches failed monkey
+stage_result:
+  test_run_id: run130_12mo_opening_range_breakout_acceptance_staged
+  run_dir: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_76/ES/run130_12mo_opening_range_breakout_acceptance_staged
+  source_config: campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_yush_trend_76_opening_range_breakout_acceptance_staged_run130/yush_trend_76/config.yaml
+  campaign_test_summary: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_76/ES/run130_12mo_opening_range_breakout_acceptance_staged/campaign_test_summary.json
+  failed_stage: limited_monkey_test
+  limited_core_grid_test:
+    passed: true
+    total_combinations_tested: 8
+    percentage_profitable_iterations: 1.0
+    apex_rule_violating_iterations: 0
+    number_passing_benchmark: 0
+    total_trades_range: 41 to 42
+    best_net_profit: 3282.5
+    best_net_profit_params:
+      entry.params.opening_range_seconds: 32
+      entry.params.breakout_hold_seconds: 0.5
+      tp.params.extension_fraction: 2.0
+    best_net_profit_profit_factor: 1.6638018200202225
+    best_net_profit_win_rate: 0.2926829268292683
+    common_failure_reason: preferred_min_total_trades and/or max_best_day_concentration
+  limited_monkey_test:
+    passed: false
+    selected_core_params:
+      entry.params.opening_range_seconds: 120
+      entry.params.breakout_hold_seconds: 0.5
+      tp.params.extension_fraction: 2.0
+    selected_core_total_trades: 42
+    selected_core_net_profit: 1277.5
+    selected_core_profit_factor: 1.2062146892655368
+    selected_core_win_rate: 0.19047619047619047
+    selected_core_max_drawdown: 2332.5
+    selected_core_best_day_concentration: 1.6164383561643836
+    selected_core_benchmark_passed: false
+    selected_core_failure_reason: max_consecutive_losses;preferred_min_total_trades;max_best_day_concentration
+    core_beats_monkey_net_profit_rate: 0.6575
+    required_core_beats_monkey_net_profit_rate: 0.9
+    core_beats_monkey_max_drawdown_rate: 0.91
+    required_core_beats_monkey_max_drawdown_rate: 0.9
+    monkey_runs: 8000
+    monkey_profitable_percentage: 0.433125
+    monkey_median_net_profit: -1050.0
+    monkey_p95_net_profit: 9245.124999999998
+review_status: failed_limited_monkey_test

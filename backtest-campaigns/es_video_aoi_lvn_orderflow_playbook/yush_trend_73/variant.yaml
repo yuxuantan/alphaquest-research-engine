@@ -1,0 +1,45 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_73
+strategy_name: yush_trend_73
+mechanic:
+  entry_module: yush_trend_73
+  take_profit_module: signal_price
+  stop_loss_module: sweep_extreme
+  flatten_time: '15:53:00'
+  setup_mode: model2_trend_lvn_short
+  forbidden_aoi_criteria:
+  - market_level
+  min_directional_delta_imbalance: 0.10
+  max_directional_signed_volume: 500.0
+  entry_hold_seconds_grid:
+  - 1.0
+  - 3.0
+  max_signal_risk_points_grid:
+  - 4.0
+  - 6.0
+  min_signal_target_r_multiple_grid:
+  - 1.0
+  - 1.5
+  stop_policy: sweep_extreme_plus_2_ticks
+  target_policy: structural_signal_target_or_3r_fallback
+  contracts: 1
+  staged_candidate: true
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: structural-target directional-edge test after price-held negative-RR branches failed monkey separation
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: failed_limited_monkey_test

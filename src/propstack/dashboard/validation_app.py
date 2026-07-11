@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ from propstack.validation import ManualReviewAnnotation, audit_trade_exit_path, 
 from propstack.validation.schema import MANUAL_REVIEW_COLUMNS, MANUAL_REVIEW_FILENAME, METADATA_FILENAME, normalize_columns
 
 DASHBOARD_VERSION = "validation-dashboard-review-v1"
+DEFAULT_SEARCH_ROOT = os.environ.get("PROPSTACK_VALIDATION_SEARCH_ROOT", "backtest-campaigns")
 
 REVIEW_STATUSES = [
     "Correct",
@@ -51,6 +53,9 @@ TRADE_TABLE_COLUMNS = [
     "debug_flags",
     "reviewer_status",
     "reviewed_at",
+    "check_error_count",
+    "check_warning_count",
+    "check_flags",
 ]
 
 CHECKLIST_FIELDS = {
@@ -97,6 +102,17 @@ FOOTPRINT_COLUMNS = [
     "ask_volume",
     "total_volume",
     "delta",
+]
+
+CHECK_TABLE_COLUMNS = [
+    "trade_id",
+    "status",
+    "category",
+    "check_name",
+    "description",
+    "expected",
+    "actual",
+    "details",
 ]
 
 SUSPICIOUS_TERMS = (
@@ -170,7 +186,11 @@ def run_summary(metadata: dict[str, Any], trades: pd.DataFrame) -> dict[str, Any
     }
 
 
-def prepare_trade_table(trades: pd.DataFrame, exit_audits: pd.DataFrame | None = None) -> pd.DataFrame:
+def prepare_trade_table(
+    trades: pd.DataFrame,
+    exit_audits: pd.DataFrame | None = None,
+    validation_checks: pd.DataFrame | None = None,
+) -> pd.DataFrame:
     table = trades.copy()
     if exit_audits is not None and not exit_audits.empty and "trade_id" in table.columns:
         audit_cols = [
@@ -187,9 +207,15 @@ def prepare_trade_table(trades: pd.DataFrame, exit_audits: pd.DataFrame | None =
         ]
         if len(audit_cols) > 1:
             table = table.merge(exit_audits[audit_cols], on="trade_id", how="left")
+    check_summary = validation_checks_by_trade(validation_checks)
+    if not check_summary.empty and "trade_id" in table.columns:
+        table = table.merge(check_summary, on="trade_id", how="left")
     for column in ("entry_time", "exit_time"):
         if column in table.columns:
             table[column] = pd.to_datetime(table[column], errors="coerce")
+    for column in ("check_error_count", "check_warning_count"):
+        if column in table.columns:
+            table[column] = pd.to_numeric(table[column], errors="coerce").fillna(0).astype(int)
     table["is_winner"] = _numeric_first(table, ["pnl_ticks", "r_multiple", "pnl_usd"]) > 0
     table["is_loser"] = _numeric_first(table, ["pnl_ticks", "r_multiple", "pnl_usd"]) < 0
     table["suspicious_debug"] = table.apply(has_suspicious_debug_flags, axis=1)
@@ -197,6 +223,54 @@ def prepare_trade_table(trades: pd.DataFrame, exit_audits: pd.DataFrame | None =
         if column not in table.columns:
             table[column] = pd.NA
     return table
+
+
+def validation_check_summary(checks: pd.DataFrame) -> dict[str, Any]:
+    if checks is None or checks.empty or "status" not in checks.columns:
+        return {
+            "total_checks": 0,
+            "passed_checks": 0,
+            "warnings": 0,
+            "errors": 0,
+            "affected_trade_ids": "",
+            "affected_trade_count": 0,
+        }
+    status = checks["status"].fillna("").astype(str).str.upper()
+    affected = checks.loc[status.isin(["WARNING", "ERROR"]), "trade_id"] if "trade_id" in checks.columns else pd.Series(dtype="object")
+    affected = affected.dropna().astype(str)
+    affected_ids = sorted(value for value in affected.unique() if value and value.lower() != "nan")
+    return {
+        "total_checks": int(len(checks)),
+        "passed_checks": int((status == "PASS").sum()),
+        "warnings": int((status == "WARNING").sum()),
+        "errors": int((status == "ERROR").sum()),
+        "affected_trade_ids": ", ".join(affected_ids),
+        "affected_trade_count": int(len(affected_ids)),
+    }
+
+
+def validation_checks_by_trade(checks: pd.DataFrame | None) -> pd.DataFrame:
+    columns = ["trade_id", "check_error_count", "check_warning_count", "check_flags"]
+    if checks is None or checks.empty or "trade_id" not in checks.columns or "status" not in checks.columns:
+        return pd.DataFrame(columns=columns)
+    rows = []
+    scoped = checks.dropna(subset=["trade_id"]).copy()
+    scoped["status"] = scoped["status"].fillna("").astype(str).str.upper()
+    for trade_id, group in scoped.groupby("trade_id", dropna=False):
+        failed = group[group["status"].isin(["WARNING", "ERROR"])]
+        flags = [
+            f"{row['status']}:{row.get('check_name', 'check')}"
+            for _, row in failed.sort_values(["status", "category", "check_name"]).iterrows()
+        ]
+        rows.append(
+            {
+                "trade_id": trade_id,
+                "check_error_count": int((group["status"] == "ERROR").sum()),
+                "check_warning_count": int((group["status"] == "WARNING").sum()),
+                "check_flags": "; ".join(flags),
+            }
+        )
+    return pd.DataFrame(rows, columns=columns)
 
 
 def load_manual_reviews(run_dir: str | Path) -> pd.DataFrame:
@@ -368,10 +442,14 @@ def filter_trade_table(
 
 def has_suspicious_debug_flags(row: pd.Series) -> bool:
     parts = []
-    for column in ("debug_flags", "ambiguity_resolution", "warning_flags", "notes", "exit_reason"):
+    for column in ("debug_flags", "ambiguity_resolution", "warning_flags", "check_flags", "notes", "exit_reason"):
         value = row.get(column)
         if not _is_missing(value):
             parts.append(str(value))
+    for column in ("check_error_count", "check_warning_count"):
+        value = _numeric_or_none(row.get(column))
+        if value is not None and value > 0:
+            return True
     text = " ".join(parts).lower()
     return any(term in text for term in SUSPICIOUS_TERMS)
 
@@ -1116,24 +1194,35 @@ def main() -> None:
 
     with st.sidebar:
         st.header("Run Selector")
-        search_root = st.text_input("Search root", value="backtest-campaigns")
-        discovered = discover_validation_runs(search_root)
+        search_root = st.text_input("Search root", value=DEFAULT_SEARCH_ROOT)
+        discovered = _cached_discover_validation_runs(search_root)
         discovered_labels = [str(path) for path in discovered]
         selected_label = st.selectbox("Discovered validation runs", discovered_labels, index=0 if discovered else None)
         manual_path = st.text_input("Validation run folder", value=selected_label or "")
         page = st.radio("Page", ["Trade Inspector", "Review Queue"], horizontal=False)
 
     if not manual_path:
-        st.info("Select a validation run folder or enter a path.")
+        st.info("Select a validation run folder or generate a sample run with `make sample-validation-run`.")
         return
     run_dir = Path(manual_path).expanduser()
     if not (run_dir / METADATA_FILENAME).exists():
         st.error(f"No {METADATA_FILENAME} found in {run_dir}.")
         return
 
-    run = _cached_load_run(str(run_dir))
-    reviews = load_manual_reviews(run_dir)
-    trades_table = add_review_annotations(prepare_trade_table(run.trades, run.exit_audits), reviews)
+    try:
+        with st.spinner("Loading validation artifacts..."):
+            run = _cached_load_run(str(run_dir))
+    except Exception as exc:  # pragma: no cover - defensive UI guard
+        st.error("Could not load this validation run. Check that the folder contains valid validation artifacts.")
+        st.caption(str(exc))
+        return
+    try:
+        reviews = load_manual_reviews(run_dir)
+    except Exception as exc:  # pragma: no cover - defensive UI guard
+        st.warning("Manual review annotations could not be loaded; continuing without them.")
+        st.caption(str(exc))
+        reviews = pd.DataFrame(columns=MANUAL_REVIEW_COLUMNS)
+    trades_table = add_review_annotations(prepare_trade_table(run.trades, run.exit_audits, run.validation_checks), reviews)
     summary = run_summary(run.metadata, run.trades)
     _render_run_summary(st, summary)
 
@@ -1152,25 +1241,23 @@ def main() -> None:
         st.warning("No trades match the selected filters.")
         return
 
-    selected_trade_id = st.selectbox("Selected trade", filtered["trade_id"].tolist(), format_func=lambda value: f"Trade {value}")
+    selected_trade_id = _select_trade_id(st, "Selected trade", filtered["trade_id"].tolist(), key="validation_selected_trade_id")
     trade = row_for_trade(trades_table, selected_trade_id)
     condition = row_for_trade(run.condition_snapshots, selected_trade_id)
     exit_audit = row_for_trade(run.exit_audits, selected_trade_id)
     bars = rows_for_trade(run.bar_windows, selected_trade_id)
-
-    detail_tab, chart_tab, exit_path_tab, orderflow_tab, debug_tab = st.tabs(
-        ["Trade Detail", "Price Chart", "Exit Path", "Orderflow", "Conditions / Debug"]
+    _render_trade_review_tabs(
+        st,
+        str(run_dir),
+        selected_trade_id,
+        trade,
+        bars,
+        condition,
+        exit_audit,
+        run.validation_checks,
+        run.metadata,
+        reviews,
     )
-    with detail_tab:
-        _render_trade_detail(st, trade, condition, exit_audit, None)
-    with chart_tab:
-        _render_price_chart(st, trade, bars, condition, exit_audit)
-    with exit_path_tab:
-        _render_exit_path_tab(st, str(run_dir), selected_trade_id, trade, bars, exit_audit, run.metadata)
-    with orderflow_tab:
-        _render_orderflow_tab(st, str(run_dir), selected_trade_id, trade, bars, condition, exit_audit)
-    with debug_tab:
-        _render_condition_and_debug(st, condition)
 
 
 def _render_review_queue_page(st, run_dir: str, run: Any, trades_table: pd.DataFrame, reviews: pd.DataFrame) -> None:
@@ -1215,7 +1302,10 @@ def _render_review_queue_page(st, run_dir: str, run: Any, trades_table: pd.DataF
         "pnl_ticks",
         "was_forced_flatten",
         "same_bar_ambiguous",
+        "check_error_count",
+        "check_warning_count",
         "warning_flags",
+        "check_flags",
     ]
     for column in queue_columns:
         if column not in queue.columns:
@@ -1225,32 +1315,55 @@ def _render_review_queue_page(st, run_dir: str, run: Any, trades_table: pd.DataF
         st.warning("No trades match this review queue.")
         return
 
-    selected_trade_id = st.selectbox(
-        "Review trade",
-        queue["trade_id"].tolist(),
-        format_func=lambda value: f"Trade {value}",
-        key=f"review_trade_{sample_mode}_{unreviewed_only}_{suspicious_only}",
-    )
+    selected_trade_id = _select_trade_id(st, "Review trade", queue["trade_id"].tolist(), key="validation_review_trade_id")
     trade = row_for_trade(trades_table, selected_trade_id)
     condition = row_for_trade(run.condition_snapshots, selected_trade_id)
     exit_audit = row_for_trade(run.exit_audits, selected_trade_id)
     bars = rows_for_trade(run.bar_windows, selected_trade_id)
 
-    _render_manual_review_form(st, run_dir, selected_trade_id, reviews)
-
-    detail_tab, chart_tab, exit_path_tab, orderflow_tab, debug_tab = st.tabs(
-        ["Trade Detail", "Price Chart", "Exit Path", "Orderflow", "Conditions / Debug"]
+    _render_trade_review_tabs(
+        st,
+        run_dir,
+        selected_trade_id,
+        trade,
+        bars,
+        condition,
+        exit_audit,
+        run.validation_checks,
+        run.metadata,
+        reviews,
     )
-    with detail_tab:
+
+
+def _render_trade_review_tabs(
+    st,
+    run_dir: str,
+    selected_trade_id: Any,
+    trade: pd.Series | None,
+    bars: pd.DataFrame,
+    condition: pd.Series | None,
+    exit_audit: pd.Series | None,
+    validation_checks: pd.DataFrame,
+    metadata: dict[str, Any],
+    reviews: pd.DataFrame,
+) -> None:
+    overview_tab, price_tab, conditions_tab, orderflow_tab, exit_path_tab, checks_tab, manual_tab = st.tabs(
+        ["Overview", "Price chart", "Conditions", "Orderflow", "Exit path", "Checks", "Manual review"]
+    )
+    with overview_tab:
         _render_trade_detail(st, trade, condition, exit_audit, None)
-    with chart_tab:
+    with price_tab:
         _render_price_chart(st, trade, bars, condition, exit_audit)
-    with exit_path_tab:
-        _render_exit_path_tab(st, run_dir, selected_trade_id, trade, bars, exit_audit, run.metadata)
+    with conditions_tab:
+        _render_condition_and_debug(st, condition)
     with orderflow_tab:
         _render_orderflow_tab(st, run_dir, selected_trade_id, trade, bars, condition, exit_audit)
-    with debug_tab:
-        _render_condition_and_debug(st, condition)
+    with exit_path_tab:
+        _render_exit_path_tab(st, run_dir, selected_trade_id, trade, bars, exit_audit, metadata)
+    with checks_tab:
+        _render_checks_tab(st, validation_checks, selected_trade_id)
+    with manual_tab:
+        _render_manual_review_form(st, run_dir, selected_trade_id, reviews)
 
 
 def _render_manual_review_form(st, run_dir: str, trade_id: Any, reviews: pd.DataFrame) -> None:
@@ -1269,6 +1382,41 @@ def _render_manual_review_form(st, run_dir: str, trade_id: Any, reviews: pd.Data
         rerun = getattr(st, "rerun", None) or getattr(st, "experimental_rerun", None)
         if rerun is not None:
             rerun()
+
+
+def _render_checks_tab(st, checks: pd.DataFrame, selected_trade_id: Any) -> None:
+    st.subheader("Validation Checks")
+    summary = validation_check_summary(checks)
+    cols = st.columns(5)
+    cols[0].metric("Total checks", summary["total_checks"])
+    cols[1].metric("Passed", summary["passed_checks"])
+    cols[2].metric("Warnings", summary["warnings"])
+    cols[3].metric("Errors", summary["errors"])
+    cols[4].metric("Affected trades", summary["affected_trade_count"])
+    if summary["affected_trade_ids"]:
+        st.caption(f"affected_trade_ids={summary['affected_trade_ids']}")
+    if checks.empty:
+        st.info("No validation_checks.parquet artifact was found for this run.")
+        return
+
+    selected_checks = checks[
+        checks["trade_id"].astype(str).eq(str(selected_trade_id)) | checks["trade_id"].isna()
+    ].copy()
+    severity_filter = st.multiselect("Status", ["ERROR", "WARNING", "PASS"], default=["ERROR", "WARNING", "PASS"])
+    if severity_filter:
+        selected_checks = selected_checks[selected_checks["status"].fillna("").astype(str).str.upper().isin(severity_filter)]
+    for column in CHECK_TABLE_COLUMNS:
+        if column not in selected_checks.columns:
+            selected_checks[column] = pd.NA
+    st.markdown("**Selected Trade Checks**")
+    st.dataframe(selected_checks[CHECK_TABLE_COLUMNS], use_container_width=True, hide_index=True)
+
+    with st.expander("Full Run Checks", expanded=False):
+        full = checks.copy()
+        for column in CHECK_TABLE_COLUMNS:
+            if column not in full.columns:
+                full[column] = pd.NA
+        st.dataframe(full[CHECK_TABLE_COLUMNS], use_container_width=True, hide_index=True)
 
 
 def _render_run_summary(st, summary: dict[str, Any]) -> None:
@@ -1320,7 +1468,7 @@ def _render_trade_filters(st, table: pd.DataFrame) -> pd.DataFrame:
 
 
 def _render_trade_detail(st, trade: pd.Series | None, condition: pd.Series | None, exit_audit: pd.Series | None, tick_count: int | None) -> None:
-    st.subheader("Trade Detail")
+    st.subheader("Overview")
     if trade is None:
         st.warning("Selected trade is missing from trades artifact.")
         return
@@ -1397,7 +1545,7 @@ def _render_exit_path_tab(
         value=True,
         key=f"load_exit_path_{selected_trade_id}",
     )
-    ticks = _cached_load_tick_window(run_dir, selected_trade_id) if load_ticks else pd.DataFrame()
+    ticks = _load_tick_window_or_empty(st, run_dir, selected_trade_id) if load_ticks else pd.DataFrame()
     computed = audit_trade_exit_path(
         trade,
         ticks,
@@ -1445,7 +1593,7 @@ def _render_orderflow_tab(
         value=False,
         key=f"load_footprint_{selected_trade_id}",
     )
-    ticks = _cached_load_tick_window(run_dir, selected_trade_id) if load_footprint else None
+    ticks = _load_tick_window_or_empty(st, run_dir, selected_trade_id) if load_footprint else None
     for warning in orderflow_warnings(trade, condition, bars, ticks):
         st.warning(warning)
 
@@ -1528,6 +1676,16 @@ def _cached_load_run(run_dir: str):
     return _load(run_dir)
 
 
+def _cached_discover_validation_runs(search_root: str) -> list[Path]:
+    import streamlit as st
+
+    @st.cache_data(ttl=30, show_spinner="Scanning validation runs")
+    def _discover(path: str) -> list[str]:
+        return [str(run_path) for run_path in discover_validation_runs(path)]
+
+    return [Path(path) for path in _discover(search_root)]
+
+
 def _cached_load_tick_window(run_dir: str, trade_id: Any):
     import streamlit as st
 
@@ -1536,6 +1694,36 @@ def _cached_load_tick_window(run_dir: str, trade_id: Any):
         return load_tick_window_for_trade(path, selected_trade_id)
 
     return _load(run_dir, trade_id)
+
+
+def _load_tick_window_or_empty(st, run_dir: str, trade_id: Any) -> pd.DataFrame:
+    try:
+        with st.spinner("Loading selected trade tick window..."):
+            return _cached_load_tick_window(run_dir, trade_id)
+    except Exception as exc:  # pragma: no cover - defensive UI guard
+        st.warning("Could not load the selected trade tick/footprint window. The dashboard will use bar-level artifacts only.")
+        st.caption(str(exc))
+        return pd.DataFrame()
+
+
+def _select_trade_id(st, label: str, trade_ids: list[Any], *, key: str) -> Any:
+    if not trade_ids:
+        return None
+    previous = st.session_state.get(key)
+    index = _index_for_trade_id(trade_ids, previous)
+    if index is None:
+        index = 0
+        st.session_state[key] = trade_ids[0]
+    return st.selectbox(label, trade_ids, index=index, format_func=lambda value: f"Trade {value}", key=key)
+
+
+def _index_for_trade_id(trade_ids: list[Any], value: Any) -> int | None:
+    if value is None:
+        return None
+    for idx, trade_id in enumerate(trade_ids):
+        if trade_id == value or str(trade_id) == str(value):
+            return idx
+    return None
 
 
 def _sort_by_entry_time(frame: pd.DataFrame) -> pd.DataFrame:

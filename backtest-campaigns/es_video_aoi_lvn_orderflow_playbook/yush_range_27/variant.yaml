@@ -1,0 +1,74 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_27
+strategy_name: yush_range_27
+mechanic:
+  entry_module: yush_range_27
+  take_profit_module: signal_price
+  stop_loss_module: signal_price
+  flatten_time: '11:00:00'
+  trade_window: 09:00:00-11:00:00 ET
+  allowed_market_level_types:
+  - PDH
+  - PDL
+  - PDC
+  - ONH
+  - ONL
+  - ORH
+  - ORL
+  aoi_condition:
+    max_width_points: 3.0
+    required_confluence:
+    - market_level
+    - developing_volume_profile_level
+    profile_levels:
+    - VAH
+    - VAL
+    - LVN
+    profile_bucket_points: 0.25
+  range_condition:
+    stable_30_minute_range_change_lt: 0.2
+    poc_middle_third_of_value_area: true
+    max_lvn_between_value_area: 1
+    failed_breakouts_required: 1
+    reversal_touches_required: 2
+  bubble_condition:
+    delta_profile_threshold: 300
+    delta_bucket_points: 1.0
+    delta_must_be_double_surrounding_two_levels: true
+    big_trade_threshold: 200
+    big_trade_agg_ms: 100
+  execution:
+    entry_type: stop_entry_two_ticks_outside_aoi_box
+    stop_type: two_ticks_outside_opposite_aoi_box
+    max_stop_points: 5.0
+    target_type: opposite_developing_value_area_edge
+    dynamic_stop_after_value_area_mid: entry_plus_or_minus_1_25_points
+    max_trades_per_day: 3
+    contracts: 1
+  data_window: 2026-05-01 to 2026-05-29 POC; 2025-03-07 to 2025-04-11 fast-runtime staged
+    core/monkey subset from the 2025-03-01 to 2026-02-28 staged source config
+  staged_candidate: false
+  known_caveats:
+  - No durable red USD news calendar is configured for the no-news guardrail.
+  - Switch-account-after-trade is not modeled in a single-account historical backtest.
+  - Sierra SCID replay is record-level, not exchange MBO sequencing.
+rescue_policy:
+  rescue_scope: user_supplied_fixed_mechanics
+  max_rescue_attempts_per_failed_variant: 0
+  allowed:
+  - reject_or_promote_after_official_results
+  forbidden:
+  - tune filters after seeing the POC or staged failure
+  - drop failing checklist conditions post hoc
+  - change data window after seeing the run
+  - change stage criteria
+review_status: failed_limited_monkey_test
+last_test:
+  test_run_id: run123_12mo_aoi_box_range_checklist_staged
+  result_path: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_range_27/ES/run123_12mo_aoi_box_range_checklist_staged/campaign_test_summary.json
+  verdict: FAIL
+  reason: Fast-runtime staged run passed limited_core_grid_test but failed limited_monkey_test.
+    Core subset had 9 trades, net profit 1305.0, PF 3.1933, win rate 0.5556,
+    max drawdown 402.5, best day concentration 0.6782, and benchmark failure
+    preferred_min_total_trades;max_best_day_concentration. Monkey robustness rejected
+    it because core_beats_monkey_net_profit_rate was 0.775 below the required 0.90.

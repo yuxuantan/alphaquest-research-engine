@@ -1,0 +1,55 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_28
+strategy_name: yush_range_28
+mechanic:
+  entry_module: yush_range_28
+  take_profit_module: fixed_r
+  stop_loss_module: sweep_extreme
+  flatten_time: '15:53:00'
+  setup_mode: failed_market_level_breakout_reclaim
+  market_levels:
+  - PDH
+  - PDL
+  - PDC
+  - ONH
+  - ONL
+  - ORH
+  - ORL
+  entry_window: 09:35:00 to 11:30:00 America/New_York
+  opening_range_seconds: 32
+  probe_ticks: 2
+  reclaim_ticks: 0
+  max_entry_distance_ticks: 16
+  reclaim_hold_seconds_grid:
+  - 0.5
+  - 1.0
+  confirmation_modes_grid:
+  - initiation
+  - absorption,initiation
+  target_r_multiple_grid:
+  - 1.0
+  - 1.5
+  - 2.0
+  stop_policy: swept_extreme_plus_2_ticks
+  contracts: 1
+  max_trades_per_day: 3
+  staged_candidate: true
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: distinct market-level reclaim branch after range AOI checklist sparsity and short-LVN monkey failures
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: failed_limited_monkey_test

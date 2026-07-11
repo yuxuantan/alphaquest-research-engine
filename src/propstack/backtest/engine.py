@@ -265,19 +265,24 @@ class BacktestEngine:
             nonlocal net_liq
 
             direction = opened["direction"]
-            if direction == "long":
-                mfe = max(0.0, float(bar["high"]) - opened["entry_price"])
-                mae = max(0.0, opened["entry_price"] - float(bar["low"]))
-            else:
-                mfe = max(0.0, opened["entry_price"] - float(bar["low"]))
-                mae = max(0.0, float(bar["high"]) - opened["entry_price"])
-            opened["max_favorable_excursion"] = max(opened["max_favorable_excursion"], mfe)
-            opened["max_adverse_excursion"] = max(opened["max_adverse_excursion"], mae)
-
+            segment_start = (
+                pd.Timestamp(detail_start_timestamp)
+                if detail_start_timestamp is not None
+                else pd.Timestamp(bar["timestamp"])
+            )
             bar_close_timestamp = bar_close_timestamps[index]
             next_bar_close_timestamp = next_bar_close_timestamps[index]
             event_window = None
             exit_audit = {} if self.validation_export.enabled else None
+            self._maybe_update_dynamic_stop(
+                opened,
+                bar,
+                direction,
+                detail_df,
+                segment_start,
+                bar_close_timestamp,
+                diagnostics,
+            )
             reason, raw_exit, exit_timestamp = self._resolve_stop_target_exit(
                 bar,
                 direction,
@@ -309,8 +314,28 @@ class BacktestEngine:
                 reason, raw_exit = "forced_apex_flatten", float(bar["close"])
                 exit_timestamp = bar_close_timestamp
             if reason is None:
+                _update_trade_excursions(
+                    opened,
+                    bar,
+                    detail_df,
+                    detail_timestamps,
+                    segment_start,
+                    bar_close_timestamp,
+                    exit_reason=None,
+                    raw_exit=None,
+                )
                 return opened, False
 
+            _update_trade_excursions(
+                opened,
+                bar,
+                detail_df,
+                detail_timestamps,
+                segment_start,
+                exit_timestamp,
+                exit_reason=reason,
+                raw_exit=raw_exit,
+            )
             xp = exit_price(float(raw_exit), direction, tick_size, slippage_ticks)
             point_pnl = xp - opened["entry_price"] if direction == "long" else opened["entry_price"] - xp
             contracts = int(opened["contracts"])
@@ -929,6 +954,7 @@ class BacktestEngine:
             "detail_conflicts_resolved": 0,
             "detail_conflicts_unresolved": 0,
             "intrabar_first_detail_targets_suppressed": 0,
+            "dynamic_stop_updates": 0,
             "apex": self._apex_diagnostics(),
             "event_filters": self._event_filter_diagnostics(),
         }
@@ -1738,6 +1764,32 @@ class BacktestEngine:
             if target_hit:
                 diagnostics["intrabar_first_detail_targets_suppressed"] += 1
             return None, None, exit_timestamp
+        if (stop_hit or target_hit) and detail_data is not None and not detail_data.empty:
+            detail_exit = _resolve_detail_stop_target(
+                detail_data,
+                start,
+                bar_close_timestamp,
+                direction,
+                stop_price,
+                target_price,
+                suppress_first_detail_target=suppress_first_detail_target,
+                diagnostics=diagnostics,
+            )
+            if detail_exit is not None:
+                if stop_hit and target_hit:
+                    diagnostics["stop_target_conflicts"] += 1
+                    diagnostics["detail_conflicts_resolved"] += 1
+                if audit is not None:
+                    audit["first_touch_exit_decision"] = detail_exit[0]
+                    audit["ambiguity_resolution"] = "detail_data" if stop_hit and target_hit else None
+                return detail_exit
+            if _detail_data_is_authoritative_execution_path(detail_data):
+                if stop_hit and target_hit:
+                    diagnostics["stop_target_conflicts"] += 1
+                diagnostics["detail_conflicts_unresolved"] += 1
+                if audit is not None and stop_hit and target_hit:
+                    audit["ambiguity_resolution"] = "detail_data_unresolved"
+                return None, None, exit_timestamp
         if stop_hit and target_hit:
             diagnostics["stop_target_conflicts"] += 1
             detail_exit = _resolve_detail_stop_target(
@@ -1765,6 +1817,58 @@ class BacktestEngine:
             if stop_hit and target_hit and not audit.get("ambiguity_resolution"):
                 audit["ambiguity_resolution"] = "pessimistic_stop_first"
         return reason, raw_exit, exit_timestamp
+
+    def _maybe_update_dynamic_stop(
+        self,
+        opened: dict,
+        bar: pd.Series,
+        direction: str,
+        detail_data: pd.DataFrame | None,
+        start_timestamp: pd.Timestamp,
+        end_timestamp: pd.Timestamp,
+        diagnostics: dict,
+    ) -> None:
+        if bool(opened.get("dynamic_stop_activated", False)):
+            return
+        trigger = _float_or_none(opened.get("dynamic_stop_trigger_price"))
+        new_stop = _float_or_none(opened.get("dynamic_stop_price"))
+        if trigger is None or new_stop is None:
+            return
+        current_stop = _float_or_none(opened.get("stop_price"))
+        target = _float_or_none(opened.get("target_price"))
+        if current_stop is None or target is None:
+            return
+        if direction == "long":
+            if new_stop <= current_stop:
+                return
+        elif new_stop >= current_stop:
+            return
+
+        if detail_data is not None and not detail_data.empty:
+            mask = (detail_data["timestamp"] >= start_timestamp) & (detail_data["timestamp"] < end_timestamp)
+            for _, detail_bar in detail_data.loc[mask].iterrows():
+                stop_hit, target_hit = _stop_target_hits(detail_bar, direction, current_stop, target)
+                trigger_hit = _dynamic_stop_trigger_hit(detail_bar, direction, trigger)
+                if stop_hit:
+                    return
+                if trigger_hit:
+                    opened["stop_price"] = new_stop
+                    opened["dynamic_stop_activated"] = True
+                    opened["dynamic_stop_activated_at"] = pd.Timestamp(detail_bar["timestamp"])
+                    diagnostics["dynamic_stop_updates"] = diagnostics.get("dynamic_stop_updates", 0) + 1
+                    return
+                if target_hit:
+                    return
+            return
+
+        stop_hit, target_hit = _stop_target_hits(bar, direction, current_stop, target)
+        if stop_hit or target_hit:
+            return
+        if _dynamic_stop_trigger_hit(bar, direction, trigger):
+            opened["stop_price"] = new_stop
+            opened["dynamic_stop_activated"] = True
+            opened["dynamic_stop_activated_at"] = end_timestamp
+            diagnostics["dynamic_stop_updates"] = diagnostics.get("dynamic_stop_updates", 0) + 1
 
     def _apex_diagnostics(self) -> dict:
         rules = self.apex_rules
@@ -2058,6 +2162,12 @@ def _stop_target_hits(
     return bool(bar["high"] >= stop_price), bool(bar["low"] <= target_price)
 
 
+def _dynamic_stop_trigger_hit(bar: pd.Series, direction: str, trigger_price: float) -> bool:
+    if direction == "long":
+        return bool(bar["high"] >= trigger_price)
+    return bool(bar["low"] <= trigger_price)
+
+
 def _resolve_detail_stop_target(
     detail_data: pd.DataFrame | None,
     start: pd.Timestamp,
@@ -2092,6 +2202,122 @@ def _resolve_detail_stop_target(
     return None
 
 
+def _update_trade_excursions(
+    opened: dict,
+    bar: pd.Series,
+    detail_data: pd.DataFrame | None,
+    detail_timestamps,
+    start_timestamp,
+    end_timestamp,
+    *,
+    exit_reason: str | None,
+    raw_exit: float | None,
+) -> None:
+    high, low = _held_segment_price_bounds(
+        bar,
+        detail_data,
+        detail_timestamps,
+        start_timestamp,
+        end_timestamp,
+        include_end=exit_reason is not None,
+    )
+    raw_exit_price = _float_or_none(raw_exit)
+    if raw_exit_price is not None:
+        if high is None or low is None:
+            high = low = raw_exit_price
+        else:
+            high = max(high, raw_exit_price)
+            low = min(low, raw_exit_price)
+    if high is None or low is None:
+        return
+    high, low = _clamp_exit_segment_bounds(
+        str(opened.get("direction")),
+        exit_reason,
+        raw_exit_price,
+        high,
+        low,
+    )
+    mfe, mae = _excursions_from_bounds(
+        str(opened.get("direction")),
+        float(opened["entry_price"]),
+        high,
+        low,
+    )
+    opened["max_favorable_excursion"] = max(float(opened.get("max_favorable_excursion", 0.0)), mfe)
+    opened["max_adverse_excursion"] = max(float(opened.get("max_adverse_excursion", 0.0)), mae)
+
+
+def _held_segment_price_bounds(
+    bar: pd.Series,
+    detail_data: pd.DataFrame | None,
+    detail_timestamps,
+    start_timestamp,
+    end_timestamp,
+    *,
+    include_end: bool,
+) -> tuple[float | None, float | None]:
+    if detail_data is not None and detail_timestamps is not None:
+        start = pd.Timestamp(start_timestamp)
+        end = pd.Timestamp(end_timestamp)
+        if end < start:
+            end = start
+        left = int(detail_timestamps.searchsorted(start, side="left"))
+        right = int(detail_timestamps.searchsorted(end, side="right" if include_end else "left"))
+        if right <= left:
+            return None, None
+        return _detail_rows_price_bounds(detail_data.iloc[left:right])
+    return _float_or_none(_series_value(bar, "high")), _float_or_none(_series_value(bar, "low"))
+
+
+def _detail_rows_price_bounds(rows: pd.DataFrame) -> tuple[float | None, float | None]:
+    high = _series_extreme(rows.get("high"), "max")
+    low = _series_extreme(rows.get("low"), "min")
+    if high is None:
+        high = _series_extreme(rows.get("close"), "max")
+    if low is None:
+        low = _series_extreme(rows.get("close"), "min")
+    return high, low
+
+
+def _series_extreme(series, method: str) -> float | None:
+    if series is None:
+        return None
+    numeric = pd.to_numeric(series, errors="coerce").dropna()
+    if numeric.empty:
+        return None
+    value = numeric.max() if method == "max" else numeric.min()
+    return _float_or_none(value)
+
+
+def _clamp_exit_segment_bounds(
+    direction: str,
+    exit_reason: str | None,
+    raw_exit: float | None,
+    high: float,
+    low: float,
+) -> tuple[float, float]:
+    if raw_exit is None:
+        return high, low
+    reason = str(exit_reason or "")
+    if direction == "long":
+        if reason == "stop":
+            low = max(low, raw_exit)
+        elif reason == "target":
+            high = min(high, raw_exit)
+    elif direction == "short":
+        if reason == "stop":
+            high = min(high, raw_exit)
+        elif reason == "target":
+            low = max(low, raw_exit)
+    return high, low
+
+
+def _excursions_from_bounds(direction: str, entry_price: float, high: float, low: float) -> tuple[float, float]:
+    if direction == "long":
+        return max(0.0, high - entry_price), max(0.0, entry_price - low)
+    return max(0.0, entry_price - low), max(0.0, high - entry_price)
+
+
 def _detail_granularity(detail_data: pd.DataFrame | None) -> str:
     if detail_data is None:
         return "minute_bar"
@@ -2103,6 +2329,10 @@ def _detail_granularity(detail_data: pd.DataFrame | None) -> str:
         if pd.notna(value):
             return str(value)
     return "minute_bar"
+
+
+def _detail_data_is_authoritative_execution_path(detail_data: pd.DataFrame | None) -> bool:
+    return _detail_granularity(detail_data) in {"scid_record"}
 
 
 def _detail_row_contains_start(detail_timestamp: pd.Timestamp, start: pd.Timestamp, granularity: str) -> bool:

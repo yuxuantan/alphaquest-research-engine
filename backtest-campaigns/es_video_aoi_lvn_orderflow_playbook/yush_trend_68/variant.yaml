@@ -1,0 +1,52 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_68
+strategy_name: yush_trend_68
+mechanic:
+  entry_module: yush_trend_68
+  take_profit_module: prop_fixed_fraction_r
+  stop_loss_module: sweep_extreme
+  flatten_time: '15:53:00'
+  entry_hold_seconds_grid:
+  - 0.0
+  - 3.0
+  - 5.0
+  target_r_fraction_grid:
+  - 0.33
+  - 0.5
+  - 0.75
+  target_round_to_tick: true
+  max_directional_signed_volume: 500.0
+  min_directional_delta_imbalance: 0.1
+  min_large200_record_volume: 200
+  contracts: 5
+  staged_candidate: true
+  entry_end_time: '11:59:59'
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: multi-signal price-held LVN negative-RR branch for 50k funded-account consistency
+    and random-entry separation testing
+  prop_consistency_target:
+    account_size: 50000
+    min_winning_days: 5
+    min_winning_day_net_pnl: 250
+    max_best_day_profit_share: 0.5
+  max_signals_per_session_grid:
+  - 3
+  - 5
+  max_trades_per_day: 5
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: failed_limited_core_grid_test

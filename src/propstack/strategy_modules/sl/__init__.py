@@ -13,6 +13,7 @@ from propstack.strategy_modules.sl.fixed_dollar_per_contract import (
     fixed_dollar_per_contract_stop,
 )
 from propstack.strategy_modules.sl.percent_from_entry import PercentFromEntryStop, percent_from_entry_stop
+from propstack.strategy_modules.sl.points_from_entry import PointsFromEntryStop
 from propstack.strategy_modules.sl.signal_percent_from_entry import SignalPercentFromEntryStop
 from propstack.strategy_modules.sl.signal_price import SignalPriceStop
 from propstack.strategy_modules.sl.sweep_extreme import SweepExtremeStop, sweep_stop
@@ -25,6 +26,7 @@ SL_MODULES = {
     OpeningRangeWidthStop.name: OpeningRangeWidthStop,
     FixedDollarPerContractStop.name: FixedDollarPerContractStop,
     PercentFromEntryStop.name: PercentFromEntryStop,
+    PointsFromEntryStop.name: PointsFromEntryStop,
     PriorLevelRetestBoundaryStop.name: PriorLevelRetestBoundaryStop,
     SignalPercentFromEntryStop.name: SignalPercentFromEntryStop,
     SignalPriceStop.name: SignalPriceStop,
@@ -48,6 +50,7 @@ __all__ = [
     "OpeningRangeWidthStop",
     "FixedDollarPerContractStop",
     "PercentFromEntryStop",
+    "PointsFromEntryStop",
     "PriorLevelRetestBoundaryStop",
     "SignalPriceStop",
     "fixed_dollar_per_contract_stop",

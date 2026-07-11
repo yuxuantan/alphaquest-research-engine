@@ -110,6 +110,165 @@ def test_same_bar_stop_target_conflict_exits_at_stop_without_detail_data():
     assert result["diagnostics"]["detail_conflicts_unresolved"] == 1
 
 
+def test_scid_record_detail_resolves_one_sided_stop_target_exit_timestamp():
+    engine = BacktestEngine(BASE_CFG)
+    ts = pd.Timestamp("2024-01-03 10:03:00", tz="America/New_York")
+    bar = pd.Series(
+        {
+            "timestamp": ts,
+            "open": 100.0,
+            "high": 101.50,
+            "low": 99.75,
+            "close": 101.25,
+        }
+    )
+    detail = pd.DataFrame(
+        [
+            {
+                "timestamp": ts + pd.Timedelta(seconds=5),
+                "open": 100.25,
+                "high": 100.25,
+                "low": 100.25,
+                "close": 100.25,
+                "execution_granularity": "scid_record",
+            },
+            {
+                "timestamp": ts + pd.Timedelta(seconds=42),
+                "open": 101.0,
+                "high": 101.0,
+                "low": 101.0,
+                "close": 101.0,
+                "execution_granularity": "scid_record",
+            },
+        ]
+    )
+    detail.attrs["detail_granularity"] = "scid_record"
+    diagnostics = {
+        "stop_target_conflicts": 0,
+        "detail_conflicts_resolved": 0,
+        "detail_conflicts_unresolved": 0,
+        "intrabar_first_detail_targets_suppressed": 0,
+    }
+
+    reason, raw_exit, exit_timestamp = engine._resolve_stop_target_exit(
+        bar,
+        "long",
+        99.0,
+        101.0,
+        ts + pd.Timedelta(minutes=1),
+        detail,
+        diagnostics,
+    )
+
+    assert reason == "target"
+    assert raw_exit == 101.0
+    assert exit_timestamp == ts + pd.Timedelta(seconds=42)
+
+
+def test_scid_record_detail_rejects_unconfirmed_bar_extreme_exit():
+    engine = BacktestEngine(BASE_CFG)
+    ts = pd.Timestamp("2024-01-03 10:03:00", tz="America/New_York")
+    bar = pd.Series(
+        {
+            "timestamp": ts,
+            "open": 100.0,
+            "high": 101.50,
+            "low": 99.75,
+            "close": 101.25,
+        }
+    )
+    detail = pd.DataFrame(
+        [
+            {
+                "timestamp": ts + pd.Timedelta(seconds=5),
+                "open": 100.25,
+                "high": 100.25,
+                "low": 100.25,
+                "close": 100.25,
+                "execution_granularity": "scid_record",
+            },
+            {
+                "timestamp": ts + pd.Timedelta(seconds=42),
+                "open": 100.50,
+                "high": 100.50,
+                "low": 100.50,
+                "close": 100.50,
+                "execution_granularity": "scid_record",
+            },
+        ]
+    )
+    detail.attrs["detail_granularity"] = "scid_record"
+    diagnostics = {
+        "stop_target_conflicts": 0,
+        "detail_conflicts_resolved": 0,
+        "detail_conflicts_unresolved": 0,
+        "intrabar_first_detail_targets_suppressed": 0,
+    }
+
+    reason, raw_exit, exit_timestamp = engine._resolve_stop_target_exit(
+        bar,
+        "long",
+        99.0,
+        101.0,
+        ts + pd.Timedelta(minutes=1),
+        detail,
+        diagnostics,
+    )
+
+    assert reason is None
+    assert raw_exit is None
+    assert exit_timestamp == ts
+    assert diagnostics["detail_conflicts_unresolved"] == 1
+
+
+def test_dynamic_stop_updates_only_after_ordered_detail_trigger():
+    engine = BacktestEngine(BASE_CFG)
+    ts = pd.Timestamp("2024-01-03 10:03:00", tz="America/New_York")
+    opened = {
+        "direction": "long",
+        "stop_price": 98.0,
+        "target_price": 104.0,
+        "dynamic_stop_trigger_price": 101.0,
+        "dynamic_stop_price": 100.5,
+    }
+    detail = pd.DataFrame(
+        [
+            {
+                "timestamp": ts + pd.Timedelta(seconds=3),
+                "open": 100.25,
+                "high": 100.25,
+                "low": 100.25,
+                "close": 100.25,
+                "execution_granularity": "scid_record",
+            },
+            {
+                "timestamp": ts + pd.Timedelta(seconds=7),
+                "open": 101.25,
+                "high": 101.25,
+                "low": 101.25,
+                "close": 101.25,
+                "execution_granularity": "scid_record",
+            },
+        ]
+    )
+    diagnostics = {"dynamic_stop_updates": 0}
+
+    engine._maybe_update_dynamic_stop(
+        opened,
+        pd.Series({"timestamp": ts, "open": 100.0, "high": 101.25, "low": 100.0, "close": 101.0}),
+        "long",
+        detail,
+        ts,
+        ts + pd.Timedelta(minutes=1),
+        diagnostics,
+    )
+
+    assert opened["stop_price"] == 100.5
+    assert opened["dynamic_stop_activated"] is True
+    assert opened["dynamic_stop_activated_at"] == ts + pd.Timedelta(seconds=7)
+    assert diagnostics["dynamic_stop_updates"] == 1
+
+
 def test_validation_mode_does_not_change_backtest_results():
     rows = _features()
     normal = BacktestEngine(BASE_CFG).run(rows)

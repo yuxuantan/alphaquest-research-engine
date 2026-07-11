@@ -1,0 +1,36 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_72
+strategy_name: yush_trend_72
+mechanic:
+  entry_module: yush_trend_72
+  take_profit_module: signal_price
+  stop_loss_module: sweep_extreme
+  flatten_time: '15:53:00'
+  min_signal_target_r_multiple_grid:
+  - 1.5
+  - 2.0
+  fallback_target_r_multiple: 3.0
+  max_signal_risk_points_grid:
+  - 4.0
+  - 6.0
+  contracts: 1
+  staged_candidate: true
+  data_window: 2024-09-01 to 2025-08-31
+  staged_window_reason: target-quality and known-risk-cap diagnostic after the yush_trend_59 limited-monkey near miss
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: failed_limited_core_grid_test_invalid_parameter_count

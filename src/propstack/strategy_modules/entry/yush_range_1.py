@@ -32,6 +32,10 @@ class YushRange1Entry:
         self.absorption_delta_threshold = float(params.get("absorption_delta_threshold", 300.0))
         self.absorption_hold_seconds = float(params.get("absorption_hold_seconds", 3.0))
         self.stop_offset_ticks = int(params.get("stop_offset_ticks", 2))
+        self.stop_points = _optional_positive_float(params.get("stop_points"))
+        self.target_points = _optional_positive_float(params.get("target_points"))
+        self.confirmation_modes = _confirmation_modes(params.get("confirmation_modes", ("absorption",)))
+        self.allowed_market_level_types = _level_type_filter(params.get("allowed_market_level_types"))
         self.max_trades_per_day = int(params.get("max_trades_per_day", 1))
         self.allow_long = bool(params.get("allow_long", True))
         self.allow_short = bool(params.get("allow_short", True))
@@ -108,8 +112,8 @@ class YushRange1Entry:
                 sweep = self._market_sweep(direction, levels, previous_bar)
                 if sweep is None:
                     continue
-                absorption = self.state.confirmed_absorption(direction)
-                if absorption is None:
+                confirmation = self.state.confirmed_orderflow(direction, self.confirmation_modes)
+                if confirmation is None:
                     continue
                 if (
                     range_cache is None
@@ -140,7 +144,7 @@ class YushRange1Entry:
                     continue
                 if not self._within_atr_of_value_edge(direction, tick_state["price"], profile, atr):
                     continue
-                signal = self._signal(direction, bar, tick_state, profile, sweep, absorption, atr)
+                signal = self._signal(direction, bar, tick_state, profile, sweep, confirmation, atr)
                 self.signals_by_session[session_key] = self.signals_by_session.get(session_key, 0) + 1
                 return signal
         return None
@@ -208,6 +212,45 @@ class YushRange1Entry:
                 self.completed_bars = self.completed_bars[-max_bars:]
         return None
 
+    def _iter_tick_states(self, detail_rows: pd.DataFrame, bar_timestamp: pd.Timestamp):
+        timestamps = pd.to_datetime(detail_rows["timestamp"])
+        close = pd.to_numeric(detail_rows["close"], errors="coerce").to_numpy()
+        volume = pd.to_numeric(detail_rows["volume"], errors="coerce").to_numpy()
+        high_source = detail_rows["high"] if "high" in detail_rows else detail_rows["close"]
+        low_source = detail_rows["low"] if "low" in detail_rows else detail_rows["close"]
+        high = pd.to_numeric(high_source, errors="coerce").to_numpy()
+        low = pd.to_numeric(low_source, errors="coerce").to_numpy()
+        if "buy_volume" in detail_rows:
+            buy_source = detail_rows["buy_volume"]
+        elif "ask_volume" in detail_rows:
+            buy_source = detail_rows["ask_volume"]
+        else:
+            buy_source = pd.Series(0.0, index=detail_rows.index)
+        if "sell_volume" in detail_rows:
+            sell_source = detail_rows["sell_volume"]
+        elif "bid_volume" in detail_rows:
+            sell_source = detail_rows["bid_volume"]
+        else:
+            sell_source = pd.Series(0.0, index=detail_rows.index)
+        buy = pd.to_numeric(buy_source, errors="coerce").fillna(0.0).to_numpy()
+        sell = pd.to_numeric(sell_source, errors="coerce").fillna(0.0).to_numpy()
+        for idx, timestamp in enumerate(timestamps):
+            yield self.state.update_tick_values(
+                timestamp=timestamp,
+                price=close[idx],
+                volume=volume[idx],
+                high=high[idx],
+                low=low[idx],
+                buy=buy[idx],
+                sell=sell[idx],
+                bar_timestamp=bar_timestamp,
+                profile_bucket_points=self.profile_bucket_points,
+                delta_bucket_points=self.delta_bucket_points,
+                absorption_delta_threshold=self.absorption_delta_threshold,
+                hold_seconds=self.absorption_hold_seconds,
+                range_snapshot_minutes=self.range_snapshot_minutes,
+            )
+
     def _roll_session(self, bar: pd.Series) -> None:
         session_key = bar.get("session_date")
         if pd.isna(session_key):
@@ -228,6 +271,8 @@ class YushRange1Entry:
         ]
         levels = []
         for label, column in candidates:
+            if self.allowed_market_level_types is not None and label not in self.allowed_market_level_types:
+                continue
             value = _finite_float(bar.get(column))
             if value is not None:
                 levels.append({"type": label, "price": value})
@@ -311,21 +356,25 @@ class YushRange1Entry:
         tick_state: dict,
         profile: dict,
         sweep: dict,
-        absorption: dict,
+        confirmation: dict,
         atr: float,
     ) -> Signal:
         entry_price = float(tick_state["price"])
-        if direction == "long":
-            stop_price = absorption["bucket_bottom"] - self.stop_offset_ticks * self.tick_size
+        if self.stop_points is not None:
+            stop_price = entry_price - self.stop_points if direction == "long" else entry_price + self.stop_points
+        elif direction == "long":
+            stop_price = confirmation["bucket_bottom"] - self.stop_offset_ticks * self.tick_size
         else:
-            stop_price = absorption["bucket_top"] + self.stop_offset_ticks * self.tick_size
+            stop_price = confirmation["bucket_top"] + self.stop_offset_ticks * self.tick_size
+        target_price = None
+        if self.target_points is not None:
+            target_price = entry_price + self.target_points if direction == "long" else entry_price - self.target_points
         fields = {
             "setup_mode": self.name,
             "entry_mode": "intrabar",
             "entry_reference_price": entry_price,
             "intrabar_entry_price": entry_price,
             "signal_stop_price": float(stop_price),
-            "signal_target_r_multiple": 2.0,
             "signal_timestamp": tick_state["timestamp"],
             "intended_entry_timestamp": tick_state["timestamp"],
             "signal_flatten_time": self.flatten_time.strftime("%H:%M:%S"),
@@ -351,18 +400,34 @@ class YushRange1Entry:
             "atr": atr,
             "atr_multiple": self.atr_multiple,
             "delta_bucket_points": self.delta_bucket_points,
-            "absorption_bucket_bottom": absorption["bucket_bottom"],
-            "absorption_bucket_top": absorption["bucket_top"],
-            "absorption_bucket_delta": absorption["delta"],
-            "absorption_hold_start": absorption["hold_start"],
-            "absorption_confirmed_at": absorption["confirmed_at"],
+            "orderflow_confirmation_type": confirmation["confirmation_type"],
+            "orderflow_bucket_bottom": confirmation["bucket_bottom"],
+            "orderflow_bucket_top": confirmation["bucket_top"],
+            "orderflow_bucket_delta": confirmation["delta"],
+            "orderflow_hold_start": confirmation["hold_start"],
+            "orderflow_confirmed_at": confirmation["confirmed_at"],
+            "absorption_bucket_bottom": confirmation["bucket_bottom"],
+            "absorption_bucket_top": confirmation["bucket_top"],
+            "absorption_bucket_delta": confirmation["delta"],
+            "absorption_hold_start": confirmation["hold_start"],
+            "absorption_confirmed_at": confirmation["confirmed_at"],
             "absorption_hold_seconds": self.absorption_hold_seconds,
             "absorption_delta_threshold": self.absorption_delta_threshold,
+            "confirmation_modes": ",".join(self.confirmation_modes),
+            "stop_points": self.stop_points,
+            "target_points": self.target_points,
             "intrabar_source": "sierra_scid_record_replay",
-            "intrabar_source_quality_label": "Sierra SCID records; not exchange MBO sequencing.",
+            "intrabar_source_quality_label": (
+                "Sierra SCID record close-only replay; raw high/low are not treated as traded-price extrema; "
+                "not exchange MBO sequencing."
+            ),
             "confirmation_high": entry_price,
             "confirmation_low": entry_price,
         }
+        if target_price is None:
+            fields["signal_target_r_multiple"] = 2.0
+        else:
+            fields["signal_target_price"] = float(target_price)
         return Signal(
             direction=direction,
             level_type=f"{self.name}_{direction}_{sweep['market_level_type']}",
@@ -371,7 +436,7 @@ class YushRange1Entry:
             sweep_high=float(self.state.current_bar_high or tick_state["price"]),
             sweep_low=float(self.state.current_bar_low or tick_state["price"]),
             reclaim_timestamp=tick_state["timestamp"],
-            breakout_level=float(absorption["bucket_top"] if direction == "long" else absorption["bucket_bottom"]),
+            breakout_level=float(confirmation["bucket_top"] if direction == "long" else confirmation["bucket_bottom"]),
             metadata=fields.copy(),
             report_fields=fields,
         )
@@ -391,6 +456,8 @@ class YushRange1Entry:
             raise ValueError("ATR settings must be positive.")
         if self.absorption_delta_threshold <= 0 or self.absorption_hold_seconds < 0:
             raise ValueError("absorption settings must be positive.")
+        if not self.confirmation_modes:
+            raise ValueError("entry.params.confirmation_modes must contain at least one mode.")
         if self.profile_recheck_seconds < 0:
             raise ValueError("entry.params.profile_recheck_seconds must be non-negative.")
         if self.range_recheck_seconds < 0:
@@ -413,6 +480,8 @@ class _SessionTickState:
         self.delta_by_bucket: dict[float, float] = {}
         self.active_long_candidate: _AbsorptionCandidate | None = None
         self.active_short_candidate: _AbsorptionCandidate | None = None
+        self.active_long_initiation_candidate: _AbsorptionCandidate | None = None
+        self.active_short_initiation_candidate: _AbsorptionCandidate | None = None
         self.session_high: float | None = None
         self.session_low: float | None = None
         self.current_bar_timestamp: pd.Timestamp | None = None
@@ -420,6 +489,7 @@ class _SessionTickState:
         self.current_bar_low: float | None = None
         self.current_price: float | None = None
         self.range_snapshots: deque[tuple[pd.Timestamp, float]] = deque()
+        self._last_range_snapshot_second: int | None = None
         self.latest_range_change_pct: float | None = None
 
     @property
@@ -452,8 +522,50 @@ class _SessionTickState:
         sell = _finite_float(_row_value(tick, "sell_volume"))
         if sell is None:
             sell = _finite_float(_row_value(tick, "bid_volume")) or 0.0
-        signed = buy - sell
 
+        return self.update_tick_values(
+            timestamp=timestamp,
+            price=price,
+            volume=volume,
+            high=high,
+            low=low,
+            buy=buy,
+            sell=sell,
+            bar_timestamp=bar_timestamp,
+            profile_bucket_points=profile_bucket_points,
+            delta_bucket_points=delta_bucket_points,
+            absorption_delta_threshold=absorption_delta_threshold,
+            hold_seconds=hold_seconds,
+            range_snapshot_minutes=range_snapshot_minutes,
+        )
+
+    def update_tick_values(
+        self,
+        *,
+        timestamp,
+        price,
+        volume,
+        high=None,
+        low=None,
+        buy=0.0,
+        sell=0.0,
+        bar_timestamp: pd.Timestamp,
+        profile_bucket_points: float,
+        delta_bucket_points: float,
+        absorption_delta_threshold: float,
+        hold_seconds: float,
+        range_snapshot_minutes: float,
+    ) -> dict | None:
+        timestamp = pd.Timestamp(timestamp)
+        price = _finite_float(price)
+        volume = _finite_float(volume)
+        if price is None or volume is None or volume <= 0:
+            return None
+        high = _finite_float(high) or price
+        low = _finite_float(low) or price
+        buy = _finite_float(buy) or 0.0
+        sell = _finite_float(sell) or 0.0
+        signed = buy - sell
         if self.current_bar_timestamp != bar_timestamp:
             self.current_bar_timestamp = bar_timestamp
             self.current_bar_high = None
@@ -461,6 +573,8 @@ class _SessionTickState:
             self.delta_by_bucket = {}
             self.active_long_candidate = None
             self.active_short_candidate = None
+            self.active_long_initiation_candidate = None
+            self.active_short_initiation_candidate = None
         self.current_bar_high = high if self.current_bar_high is None else max(self.current_bar_high, high)
         self.current_bar_low = low if self.current_bar_low is None else min(self.current_bar_low, low)
         self.session_high = high if self.session_high is None else max(self.session_high, high)
@@ -511,6 +625,8 @@ class _SessionTickState:
             self.delta_by_bucket = {}
             self.active_long_candidate = None
             self.active_short_candidate = None
+            self.active_long_initiation_candidate = None
+            self.active_short_initiation_candidate = None
         high = pd.to_numeric(detail_rows.loc[valid, "high"], errors="coerce").max()
         low = pd.to_numeric(detail_rows.loc[valid, "low"], errors="coerce").min()
         last_price = float(close.loc[valid].iloc[-1])
@@ -547,13 +663,31 @@ class _SessionTickState:
                 self.active_long_candidate = _AbsorptionCandidate(bucket, bucket + bucket_points, delta)
             else:
                 self.active_long_candidate.delta = delta
+            if delta < -threshold:
+                if (
+                    self.active_short_initiation_candidate is None
+                    or self.active_short_initiation_candidate.bucket_bottom != bucket
+                ):
+                    self.active_short_initiation_candidate = _AbsorptionCandidate(bucket, bucket + bucket_points, delta)
+                else:
+                    self.active_short_initiation_candidate.delta = delta
         if delta >= threshold:
             if self.active_short_candidate is None or self.active_short_candidate.bucket_bottom != bucket:
                 self.active_short_candidate = _AbsorptionCandidate(bucket, bucket + bucket_points, delta)
             else:
                 self.active_short_candidate.delta = delta
+            if delta > threshold:
+                if (
+                    self.active_long_initiation_candidate is None
+                    or self.active_long_initiation_candidate.bucket_bottom != bucket
+                ):
+                    self.active_long_initiation_candidate = _AbsorptionCandidate(bucket, bucket + bucket_points, delta)
+                else:
+                    self.active_long_initiation_candidate.delta = delta
         self._advance_long_candidates(timestamp, price, threshold, hold_seconds)
         self._advance_short_candidates(timestamp, price, threshold, hold_seconds)
+        self._advance_long_initiation_candidates(timestamp, price, threshold, hold_seconds)
+        self._advance_short_initiation_candidates(timestamp, price, threshold, hold_seconds)
 
     def _advance_long_candidates(
         self,
@@ -565,6 +699,7 @@ class _SessionTickState:
         candidate = self.active_long_candidate
         if candidate is None:
             return
+        candidate.delta = self.delta_by_bucket.get(candidate.bucket_bottom, 0.0)
         if candidate.delta > -threshold or price <= candidate.bucket_top:
             candidate.hold_start = None
             candidate.confirmed = False
@@ -586,7 +721,52 @@ class _SessionTickState:
         candidate = self.active_short_candidate
         if candidate is None:
             return
+        candidate.delta = self.delta_by_bucket.get(candidate.bucket_bottom, 0.0)
         if candidate.delta < threshold or price >= candidate.bucket_bottom:
+            candidate.hold_start = None
+            candidate.confirmed = False
+            candidate.confirmed_at = None
+            return
+        if candidate.hold_start is None:
+            candidate.hold_start = timestamp
+        if (timestamp - candidate.hold_start).total_seconds() >= hold_seconds:
+            candidate.confirmed = True
+            candidate.confirmed_at = timestamp
+
+    def _advance_long_initiation_candidates(
+        self,
+        timestamp: pd.Timestamp,
+        price: float,
+        threshold: float,
+        hold_seconds: float,
+    ) -> None:
+        candidate = self.active_long_initiation_candidate
+        if candidate is None:
+            return
+        candidate.delta = self.delta_by_bucket.get(candidate.bucket_bottom, 0.0)
+        if candidate.delta <= threshold or price <= candidate.bucket_top:
+            candidate.hold_start = None
+            candidate.confirmed = False
+            candidate.confirmed_at = None
+            return
+        if candidate.hold_start is None:
+            candidate.hold_start = timestamp
+        if (timestamp - candidate.hold_start).total_seconds() >= hold_seconds:
+            candidate.confirmed = True
+            candidate.confirmed_at = timestamp
+
+    def _advance_short_initiation_candidates(
+        self,
+        timestamp: pd.Timestamp,
+        price: float,
+        threshold: float,
+        hold_seconds: float,
+    ) -> None:
+        candidate = self.active_short_initiation_candidate
+        if candidate is None:
+            return
+        candidate.delta = self.delta_by_bucket.get(candidate.bucket_bottom, 0.0)
+        if candidate.delta >= -threshold or price >= candidate.bucket_bottom:
             candidate.hold_start = None
             candidate.confirmed = False
             candidate.confirmed_at = None
@@ -601,6 +781,13 @@ class _SessionTickState:
         current_range = self.session_range
         if current_range is None:
             return
+        timestamp = pd.Timestamp(timestamp)
+        second_key = timestamp.value // 1_000_000_000
+        if self._last_range_snapshot_second == second_key and self.range_snapshots:
+            self.range_snapshots[-1] = (self.range_snapshots[-1][0], current_range)
+            return
+        self._last_range_snapshot_second = second_key
+        timestamp = pd.Timestamp(second_key, unit="s", tz=timestamp.tz)
         self.range_snapshots.append((timestamp, current_range))
         cutoff = timestamp - pd.Timedelta(minutes=max(range_snapshot_minutes * 2.0, range_snapshot_minutes + 10.0))
         while self.range_snapshots and self.range_snapshots[0][0] < cutoff:
@@ -617,6 +804,36 @@ class _SessionTickState:
         if selected is None or not selected.confirmed:
             return None
         return {
+            "confirmation_type": "absorption",
+            "bucket_bottom": selected.bucket_bottom,
+            "bucket_top": selected.bucket_top,
+            "delta": selected.delta,
+            "hold_start": selected.hold_start,
+            "confirmed_at": selected.confirmed_at,
+        }
+
+    def confirmed_orderflow(self, direction: str, modes: tuple[str, ...]) -> dict | None:
+        for mode in modes:
+            if mode == "absorption":
+                confirmed = self.confirmed_absorption(direction)
+            elif mode == "initiation":
+                confirmed = self.confirmed_initiation(direction)
+            else:
+                confirmed = None
+            if confirmed is not None:
+                return confirmed
+        return None
+
+    def confirmed_initiation(self, direction: str) -> dict | None:
+        selected = (
+            self.active_long_initiation_candidate
+            if direction == "long"
+            else self.active_short_initiation_candidate
+        )
+        if selected is None or not selected.confirmed:
+            return None
+        return {
+            "confirmation_type": "initiation",
             "bucket_bottom": selected.bucket_bottom,
             "bucket_top": selected.bucket_top,
             "delta": selected.delta,
@@ -689,6 +906,40 @@ class _SessionTickState:
 
 def _bucket_start(price: float, bucket_points: float) -> float:
     return math.floor(price / bucket_points) * bucket_points
+
+
+def _optional_positive_float(value) -> float | None:
+    if value is None or value == "":
+        return None
+    out = float(value)
+    if not math.isfinite(out) or out <= 0:
+        raise ValueError("fixed point stop/target params must be positive when provided.")
+    return out
+
+
+def _confirmation_modes(value) -> tuple[str, ...]:
+    if isinstance(value, str):
+        raw_modes = [part.strip() for part in value.split(",")]
+    else:
+        raw_modes = [str(part).strip() for part in value]
+    modes = tuple(mode for mode in raw_modes if mode)
+    allowed = {"absorption", "initiation"}
+    unknown = [mode for mode in modes if mode not in allowed]
+    if unknown:
+        raise ValueError(f"Unsupported entry.params.confirmation_modes: {', '.join(unknown)}")
+    return modes
+
+
+def _level_type_filter(value) -> set[str] | None:
+    if value is None or value == "":
+        return None
+    raw_values = [value] if isinstance(value, str) else list(value)
+    allowed = {"PDH", "PDL", "PDC", "ONH", "ONL"}
+    out = {str(item).strip().upper() for item in raw_values if str(item).strip()}
+    unknown = sorted(out - allowed)
+    if unknown:
+        raise ValueError(f"Unsupported entry.params.allowed_market_level_types: {', '.join(unknown)}")
+    return out or None
 
 
 def _row_value(row, key: str):

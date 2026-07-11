@@ -1,0 +1,85 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_29
+strategy_name: yush_range_29
+mechanic:
+  entry_module: yush_range_29
+  take_profit_module: signal_price
+  stop_loss_module: signal_price
+  flatten_time: '15:53:00'
+  setup_mode: failed_market_level_reclaim_value_area_reversion
+  market_levels:
+  - PDH
+  - PDL
+  - PDC
+  - ONH
+  - ONL
+  - ORH
+  - ORL
+  entry_window: 09:35:00 to 11:30:00 America/New_York
+  opening_range_seconds: 32
+  range_condition:
+    max_30_minute_range_change_pct: 0.20
+    poc_middle_third_of_value_area: true
+    max_lvn_between_value_area: 1
+  value_area_filter:
+    profile_bucket_points: 1.0
+    atr_multiple_grid:
+    - 0.5
+    - 1.0
+    long_reference: developing_VAL
+    short_reference: developing_VAH
+  reclaim_hold_seconds_grid:
+  - 0.5
+  - 1.0
+  probe_ticks: 2
+  reclaim_ticks: 0
+  max_entry_distance_ticks: 16
+  stop_policy: swept_extreme_plus_2_ticks_via_signal_price
+  target_policy: opposite_developing_value_area_edge_with_2R_fallback
+  min_signal_target_r_multiple_grid:
+  - 1.0
+  - 1.5
+  confirmation_modes: initiation
+  contracts: 1
+  max_trades_per_day: 3
+  staged_candidate: true
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: stricter value-area range reversion branch after yush_range_28 fixed-R reclaim failed monkey
+stage_result:
+  test_run_id: run129_12mo_failed_level_reclaim_value_area_reversion_staged
+  run_dir: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_range_29/ES/run129_12mo_failed_level_reclaim_value_area_reversion_staged
+  source_config: campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_yush_range_29_reclaim_value_area_reversion_staged_run129/yush_range_29/config.yaml
+  campaign_test_summary: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_range_29/ES/run129_12mo_failed_level_reclaim_value_area_reversion_staged/campaign_test_summary.json
+  failed_stage: limited_monkey_test
+  limited_core_grid_test:
+    passed: true
+    total_combinations_tested: 8
+    percentage_profitable_iterations: 1.0
+    apex_rule_violating_iterations: 0
+    number_passing_benchmark: 0
+    common_failure_reason: min_trades_per_year;preferred_min_total_trades;max_best_day_concentration
+    total_trades_range: 3 to 4
+    best_net_profit: 3610.0
+    best_net_profit_best_day_concentration: 0.8469529085872576
+  limited_monkey_test:
+    passed: false
+    selected_core_params:
+      entry.params.reclaim_hold_seconds: 0.5
+      entry.params.atr_multiple: 0.5
+      tp.params.min_signal_target_r_multiple: 1.0
+    selected_core_total_trades: 3
+    selected_core_net_profit: 2685.0
+    selected_core_profit_factor: 5.43801652892562
+    selected_core_win_rate: 0.6666666666666666
+    selected_core_max_drawdown: 605.0
+    selected_core_best_day_concentration: 0.7942271880819367
+    selected_core_benchmark_passed: false
+    core_beats_monkey_net_profit_rate: 0.94475
+    required_core_beats_monkey_net_profit_rate: 0.9
+    core_beats_monkey_max_drawdown_rate: 0.555125
+    required_core_beats_monkey_max_drawdown_rate: 0.9
+    monkey_runs: 8000
+    monkey_profitable_percentage: 0.470375
+    monkey_median_net_profit: -102.5
+    monkey_p95_net_profit: 2873.124999999991
+review_status: failed_limited_monkey_test

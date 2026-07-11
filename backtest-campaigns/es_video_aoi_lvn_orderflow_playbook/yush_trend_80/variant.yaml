@@ -1,0 +1,74 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_80
+strategy_name: yush_trend_80
+source_config: campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_yush_trend_80_or_breakout_negative_rr_prop50k_5c_staged_run135/yush_trend_80/config.yaml
+latest_run: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_80/ES/run135_12mo_or_breakout_negative_rr_prop50k_5c_staged
+mechanic:
+  entry_module: yush_trend_76
+  take_profit_module: fixed_dollar_per_contract
+  stop_loss_module: fixed_dollar_per_contract
+  flatten_time: '15:53:00'
+  thesis: one-time negative-RR funded-account rescue of the OR-only breakout acceptance entry.
+  entry_summary: >
+    Entry is frozen from yush_trend_76: ORH/ORL from the first 32 or 120 seconds of RTH, 2-tick breakout probe,
+    0.5s or 1.0s hold beyond ORH/ORL, and same-direction initiation delta confirmation.
+  exit_summary: >
+    Five ES contracts, fixed-dollar per-contract target grid of $50/$75/$100 and stop grid of $150/$200/$250.
+    Every tested target is smaller than every tested stop, so the branch intentionally tests negative-RR payout
+    consistency rather than structural continuation.
+grid:
+  combinations: 36
+  parameters:
+    entry.params.opening_range_seconds:
+    - 32
+    - 120
+    entry.params.breakout_hold_seconds:
+    - 0.5
+    - 1.0
+    tp.params.dollars_per_contract:
+    - 50.0
+    - 75.0
+    - 100.0
+    sl.params.dollars_per_contract:
+    - 150.0
+    - 200.0
+    - 250.0
+latest_result:
+  review_status: runtime_incomplete_needs_manual_review
+  verdict: NEEDS MANUAL REVIEW
+  action: not_a_candidate_without_completed_stage
+  run_id: run135_12mo_or_breakout_negative_rr_prop50k_5c_staged
+  summary_path: null
+  completed_stage: none
+  partial_artifacts:
+    fixed_config_core_metrics: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_80/ES/run135_12mo_or_breakout_negative_rr_prop50k_5c_staged/limited_core_grid_test/fixed_config_core_metrics.json
+    fixed_config_core_trade_log: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_80/ES/run135_12mo_or_breakout_negative_rr_prop50k_5c_staged/limited_core_grid_test/fixed_config_core_trade_log.csv
+  partial_grid_progress: 3/36 before manual abort due runtime cost
+  fixed_config_core:
+    total_trades: 50
+    trades_per_year: 522.4991550865983
+    net_profit: -2125.0
+    profit_factor: 0.8371647509578544
+    expectancy_r: -0.0175
+    win_rate: 0.76
+    max_drawdown: 5575.0
+    best_day_concentration: 0.0
+    max_consecutive_losses: 2
+    apex_rule_violations: 0
+  caveat: >
+    The official staged core grid did not complete, so this is not a valid staged FAIL/PASS result. The fixed-config
+    default is negative after costs despite high win rate, and the full 36-combo SCID grid was too slow for this turn.
+rescue_policy:
+  rescue_scope: yush_trend_76_trade_management_rescue
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change take-profit module
+  - change stop-loss module
+  - change fixed-dollar exit parameter space
+  forbidden:
+  - rescue this OR-only entry family again from this partial result
+  - change entry module after seeing y80 partial evidence
+  - change stage criteria
+  - change data window
+  - change timeframe
+review_status: runtime_incomplete_needs_manual_review

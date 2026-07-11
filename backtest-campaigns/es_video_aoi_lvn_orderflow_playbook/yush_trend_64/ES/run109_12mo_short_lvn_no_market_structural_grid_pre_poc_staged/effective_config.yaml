@@ -1,0 +1,378 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_trend_64
+strategy_name: yush_trend_64
+symbol: ES
+dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_trend_64_no_market_structural_grid_prepoc_staged_202503_202602
+timeframe: 3m
+data:
+  dataset_id: es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_trend_64_no_market_structural_grid_prepoc_staged_202503_202602
+  source_timeframe: 3m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 30
+  rth_start: 09:30:00
+  rth_end: '15:59:00'
+  source_quality_label: ES native 3-minute Sierra cache for bar context plus Sierra
+    SCID-record replay for intrabar entry execution. SCID records are not exchange
+    MBO sequencing; large-trade confluence is a close-only Sierra record-volume proxy,
+    not exchange MBO print truth.
+  execution_data:
+    source: sierra_scid_records
+    raw_dir: data/raw/ES/sierra-es-trades
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    root_symbol: ES
+    timezone: America/New_York
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    batch_size: 1000000
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset:
+    start_date: '2025-03-01'
+    end_date: '2026-02-28'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:53:00'
+  max_trades_per_day: 100
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+prop_rules: &id001
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+test_run_id: run109_12mo_short_lvn_no_market_structural_grid_pre_poc_staged
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  source_video: Trader Yush Model 2 trend LVN pullback mechanics supplied by user/video
+    transcript
+  academic_source: Chart Fanatics / Trader Yush video; Osler (2000); Kavajecz and
+    Odders-White (2004); Cont, Kukanov, and Stoikov (2014); CME market profile educational
+    material.
+  edge_thesis: Short-trend pullbacks into developing LVN pockets may continue lower
+    when buy-side countertrend absorption fails and the developing 3-minute SCID record
+    replay also shows materially negative same-bar delta ratio.
+  mechanic: Pre-POC staged structural-payoff grid for the no-market Model 2 short
+    LVN pullback family. It keeps min_trend_move_ticks=8, forbidden_aoi_criteria=[market_level],
+    sweep_extreme stop, one signal per session, and the signal_price structural target
+    with a 3R fallback. Unlike yush_trend_62, it does not apply the 12:00:00 through
+    12:59:59 ET lunch block. The predeclared 8-combination grid varies only same-bar
+    directional delta ratio, known signal risk cap, and minimum acceptable structural
+    target distance on the 2025-03-01 through 2026-02-28 pre-POC staged window.
+  timeframe_rationale: The strategy uses 3-minute bars for trend/LVN context and enters
+    at SCID-record timestamp granularity inside the developing 3-minute bar when the
+    pullback rejection is confirmed.
+  mechanics_review:
+    mechanic_expresses_edge: This branch tests whether the broader no-market structural-target
+      short-LVN continuation family has enough payoff asymmetry before adding a lunch
+      block. Prior evidence was mixed across yush_trend_21, yush_trend_26, and yush_trend_31
+      had positive six-month diagnostics, while fixed no-lunch and negative-RR staged
+      rescues failed official gates.
+    entry_logic_rationale: Entry uses only prior completed 3-minute profile/context
+      plus sequential SCID records seen up to the decision timestamp. It rejects candidates
+      whose AOI confluence includes market_level, rejects candidates whose known stop
+      distance exceeds the selected 4.0 or 6.0 ES point cap, and optionally requires
+      same-bar signed-volume ratio to be directionally aligned by at least 10% of
+      cumulative same-bar volume.
+    stop_loss_rationale: The stop remains beyond the intrabar rejection path high
+      with a fixed two-tick offset. The entry filter only prevents opening positions
+      whose known stop distance is already too wide.
+    target_exit_rationale: Structural targets below the selected 1.0R or 1.5R threshold
+      are treated as insufficient reward for the modeled stop and are replaced by
+      the 3R fallback. This tests the structural-payoff family without introducing
+      sub-1R payout objectives.
+    profitability_rationale: The branch should pass only if the short-LVN continuation
+      signal has enough structural payoff to overcome its low win rate, costs, monkey
+      comparators, WFA decay, and Monte Carlo robustness across a broader pre-POC
+      year.
+    known_failure_modes: Sierra SCID records are not exchange MBO sequencing, so print
+      ordering, queue behavior, and true footprint-at-price absorption are approximations.
+      The structural-target family has already shown window instability, and the official
+      y59/y62 staged branches failed before WFA. Reject if any staged gate fails.
+    pre_test_decision: approve_for_testing
+strategy:
+  entry:
+    module: yush_trend_64
+    params:
+      start_time: '10:00:00'
+      end_time: '15:00:00'
+      flatten_time: '15:53:00'
+      bar_interval_minutes: 3
+      tick_size: 0.25
+      value_area_fraction: 0.7
+      lvn_quantile: 0.2
+      min_prior_profile_bars: 120
+      max_profile_distance_ticks: 64
+      market_aoi_max_distance_ticks: 16
+      aoi_reach_tolerance_ticks: 4
+      min_probe_ticks: 1
+      confirmation_ticks: 0
+      min_absorption_volume: 20
+      min_aoi_confluences: 2
+      min_large200_record_volume: 200
+      min_delta_activity_imbalance: 0.03
+      min_directional_delta_imbalance: 0.0
+      min_structure_bars: 10
+      min_trend_move_ticks: 8
+      max_signal_risk_points: 6.0
+      forbidden_aoi_criteria:
+      - market_level
+      allow_opening_range_proxy: false
+      profile_source: cached_developing_vap
+      min_developing_profile_bars: 10
+      cached_profile_prefix: developing_vap
+      setup_mode: model2_trend_lvn_short
+      target_reference: structural_grid_pre_poc_staged
+      stop_offset_ticks: 2
+      max_trades_per_day: 1
+      max_signals_per_session: 1
+      allow_long: false
+      allow_short: true
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 2
+  tp:
+    module: signal_price
+    params:
+      metadata_key: signal_target_price
+      fallback_target_r_multiple: 3.0
+      min_signal_target_r_multiple: 1.5
+      tick_size: 0.25
+      round_to_tick: true
+  flatten_time: '15:53:00'
+core_grid:
+  parameters:
+    entry.params.min_directional_delta_imbalance:
+    - 0.0
+    - 0.1
+    entry.params.max_signal_risk_points:
+    - 4.0
+    - 6.0
+    tp.params.min_signal_target_r_multiple:
+    - 1.0
+    - 1.5
+    sl.params.stop_offset_ticks:
+    - 2
+  retain_iteration_reports: true
+  parallel:
+    enabled: true
+    scope: grid
+    workers: 3
+monkey:
+  retain_iteration_reports: false
+  seed: 11
+  runs: 8000
+  parallel:
+    enabled: true
+    scope: runs
+    workers: 3
+wfa:
+  mode: unanchored
+  train_months: 6
+  test_months: 2
+  step_months: 2
+  objective: MAR
+  early_exit_min_train_profit_factor: 1.0
+  parameters:
+    entry.params.min_directional_delta_imbalance:
+    - 0.0
+    - 0.1
+    entry.params.max_signal_risk_points:
+    - 4.0
+    - 6.0
+    tp.params.min_signal_target_r_multiple:
+    - 1.0
+    - 1.5
+    sl.params.stop_offset_ticks:
+    - 2
+  parallel:
+    enabled: true
+    scope: window_grid
+    workers: 3
+monte_carlo:
+  runs: 1000
+  seed: 11
+  position_sizing:
+    mode: reference
+  prop_rules: *id001
+  parallel:
+    enabled: true
+    scope: runs
+    workers: 3
+campaign_tests:
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+    - metric: summary.apex_rule_violating_iterations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3
+  limited_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  walk_forward_analysis:
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+    - metric: stitched_oos_metrics.apex_rule_violations
+      max: 0
+    data_window:
+      mode: first_fraction
+      fraction: 0.9
+    parallel:
+      enabled: true
+      scope: window_grid
+      workers: 3
+  wfa_oos_monkey_test:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  wfa_oos_monte_carlo:
+    criteria:
+    - metric: summary.mean_net_pnl
+      exclusive_min: 0.0
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  simulated_incubation_core:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 48
+    test_months: 12
+  simulated_incubation_monkey:
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+    - metric: summary.core_metrics.apex_rule_violations
+      max: 0
+    runs: 8000
+    parallel:
+      enabled: true
+      scope: runs
+      workers: 3
+  acceptance_oos_test:
+    criteria:
+    - metric: metrics.profit_factor
+      min: 1.0
+    - metric: metrics.mar
+      min: 1.0
+    - metric: metrics.trades_per_year
+      min: 50
+    - metric: metrics.apex_rule_violations
+      max: 0
+    train_months: 24
+    test_months: 6
+    parallel:
+      enabled: true
+      scope: grid
+      workers: 3

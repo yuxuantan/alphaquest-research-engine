@@ -13,6 +13,7 @@ from typing import Any
 import pandas as pd
 
 from propstack.utils.config import write_json
+from propstack.validation.checks import run_validation_checks
 from propstack.validation.exit_path import enrich_exit_audits
 from propstack.validation.schema import (
     BAR_WINDOWS_FILENAME,
@@ -21,6 +22,7 @@ from propstack.validation.schema import (
     METADATA_FILENAME,
     TICK_WINDOWS_FILENAME,
     TRADES_FILENAME,
+    VALIDATION_CHECKS_FILENAME,
     VALIDATION_SCHEMA_VERSION,
     BAR_WINDOW_COLUMNS,
     CONDITION_SNAPSHOT_COLUMNS,
@@ -69,6 +71,14 @@ def write_validation_run(
         frames[TICK_WINDOWS_FILENAME],
         tick_size=_float_or_none(metadata_record.get("tick_size")),
     )
+    frames[VALIDATION_CHECKS_FILENAME] = run_validation_checks(
+        frames[TRADES_FILENAME],
+        frames[CONDITION_SNAPSHOTS_FILENAME],
+        frames[BAR_WINDOWS_FILENAME],
+        frames[TICK_WINDOWS_FILENAME],
+        frames[EXIT_AUDITS_FILENAME],
+        metadata_record,
+    )
 
     for filename, frame in frames.items():
         write_parquet_artifact(frame, run_dir / filename)
@@ -81,6 +91,7 @@ def write_validation_run(
         "bar_windows": BAR_WINDOWS_FILENAME,
         "tick_windows": TICK_WINDOWS_FILENAME,
         "exit_audits": EXIT_AUDITS_FILENAME,
+        "validation_checks": VALIDATION_CHECKS_FILENAME,
     }
     metadata_record["record_counts"] = {
         "trades": int(len(frames[TRADES_FILENAME])),
@@ -88,6 +99,7 @@ def write_validation_run(
         "bar_windows": int(len(frames[BAR_WINDOWS_FILENAME])),
         "tick_windows": int(len(frames[TICK_WINDOWS_FILENAME])),
         "exit_audits": int(len(frames[EXIT_AUDITS_FILENAME])),
+        "validation_checks": int(len(frames[VALIDATION_CHECKS_FILENAME])),
     }
     write_json(run_dir / METADATA_FILENAME, metadata_record)
     return metadata_record

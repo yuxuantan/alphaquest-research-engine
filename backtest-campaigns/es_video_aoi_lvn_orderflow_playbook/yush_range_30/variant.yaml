@@ -1,0 +1,72 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_30
+strategy_name: yush_range_30
+mechanic:
+  entry_module: yush_range_30
+  take_profit_module: signal_price
+  stop_loss_module: signal_price
+  flatten_time: '15:53:00'
+  setup_mode: absorption_reclaim_value_area_reversion
+  trade_window: 09:35:00-11:30:00 ET
+  allowed_market_level_types:
+  - PDH
+  - PDL
+  - PDC
+  - ONH
+  - ONL
+  - ORH
+  - ORL
+  range_condition:
+    stable_30_minute_range_change_lt: 0.2
+    poc_middle_third_of_value_area: true
+    max_lvn_between_value_area: 1
+  value_area_condition:
+    profile_bucket_points: 1.0
+    long_entry_near: developing_VAL
+    short_entry_near: developing_VAH
+    atr_multiple_grid:
+    - 0.5
+    - 1.0
+  reclaim_condition:
+    probe_ticks: 2
+    reclaim_ticks: 0
+    reclaim_hold_seconds_grid:
+    - 0.5
+    - 1.0
+    confirmation_modes:
+    - absorption
+    absorption_delta_threshold: 300
+    absorption_hold_seconds: 1.0
+  execution:
+    stop_type: swept_extreme_plus_2_ticks
+    target_type: opposite_developing_value_area_edge
+    min_signal_target_r_multiple_grid:
+    - 1.0
+    - 1.5
+    fallback_target_r_multiple: 2.0
+    max_trades_per_day: 3
+    contracts: 1
+  data_window: 2025-03-01 to 2026-02-28 staged source config; fast-runtime limited core subset
+  staged_candidate: false
+  known_caveats:
+  - Sierra SCID records are close-only aggregates rather than exchange MBO sequencing.
+  - Developing value-area levels are path-dependent and may differ from charting packages.
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 0
+  allowed:
+  - reject_after_official_results
+  forbidden:
+  - tune absorption threshold or ATR distance after seeing failure
+  - switch back to initiation confirmation as a rescue
+  - change data window after seeing failure
+  - change stage criteria
+review_status: failed_limited_core_grid_test
+last_test:
+  test_run_id: run133_12mo_absorption_reclaim_value_area_reversion_staged
+  result_path: backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_range_30/ES/run133_12mo_absorption_reclaim_value_area_reversion_staged/campaign_test_summary.json
+  verdict: FAIL
+  reason: Failed limited_core_grid_test. All 8 predeclared combinations were unprofitable;
+    profitable_iterations=0, percentage_profitable_iterations=0.0 below required 0.70,
+    number_passing_benchmark=0, and apex_rule_violating_iterations=0. Rows produced
+    only 3-4 trades, with best net_profit -102.5 and PF 0.9187.

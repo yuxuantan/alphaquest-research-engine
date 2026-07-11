@@ -1,0 +1,65 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_24
+strategy_name: yush_range_24
+mechanic:
+  entry_module: yush_range_24
+  take_profit_module: fixed_dollar_per_contract
+  stop_loss_module: fixed_dollar_per_contract
+  flatten_time: '15:53:00'
+  allowed_market_level_types:
+  - PDL
+  confirmation_modes:
+  - absorption
+  entry_end_time_grid: &id001
+  - '11:30:00'
+  - '12:00:00'
+  absorption_delta_threshold_grid: &id002
+  - 300
+  - 500
+  absorption_hold_seconds: 3
+  max_signal_risk_points: 4.0
+  target_dollars_per_contract: 75.0
+  stop_dollars_per_contract_grid: &id003
+  - 150.0
+  - 200.0
+  - 250.0
+  contracts: 5
+  negative_rr_grid: true
+  morning_only: true
+  staged_candidate: true
+  data_window: 2025-03-01 to 2026-02-28
+  staged_window_reason: Strong-absorption morning 50k funded-account negative-RR robustness check after yush_range_23
+    passed core but failed monkey net-profit separation.
+  prop_consistency_target:
+    account_size: 50000
+    min_winning_days: 5
+    min_winning_day_net_pnl: 250
+    max_best_day_profit_share: 0.5
+    contracts: 5
+    max_entries_per_day: 1
+    verdict_policy: FAIL if net profit is non-positive, fewer than five session days are >= $250 net PnL, best profitable
+      day is more than 50% of total net profit, validation is not clean, daily loss exceeds the configured 50k limit,
+      or any official staged gate fails. Treat any pass as a candidate strategy requiring manual review because
+      this is a stronger-orderflow negative-RR funded-account branch after prior failures.
+    entry_end_time_grid: *id001
+    absorption_delta_threshold_grid: *id002
+    target_dollars_per_contract: 75.0
+    stop_dollars_per_contract_grid: *id003
+    max_signal_risk_points: 4.0
+rescue_policy:
+  rescue_scope: failed_variant
+  max_rescue_attempts_per_failed_variant: 1
+  allowed:
+  - change fixed parameters inside existing strategy modules
+  - change tunable parameter space inside existing strategy modules
+  forbidden:
+  - rescue the same failed variant more than once
+  - change entry module
+  - change take-profit module
+  - change stop-loss module
+  - change the economic edge thesis
+  - change stage criteria
+  - change data window
+  - change timeframe
+  - add or remove filters outside the existing strategy modules
+review_status: failed_limited_monkey_test

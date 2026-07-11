@@ -1,5 +1,6 @@
 """Validation artifact schema and IO helpers."""
 
+from propstack.validation.checks import load_validation_checks_report, run_validation_checks, write_validation_checks_report
 from propstack.validation.exporter import (
     build_bar_window_rows,
     build_condition_snapshots,
@@ -17,6 +18,7 @@ from propstack.validation.schema import (
     ManualReviewAnnotation,
     TickWindowRow,
     TradeSummary,
+    ValidationCheck,
     ValidationMetadata,
 )
 
@@ -27,6 +29,7 @@ __all__ = [
     "ManualReviewAnnotation",
     "TickWindowRow",
     "TradeSummary",
+    "ValidationCheck",
     "ValidationMetadata",
     "ValidationRun",
     "build_bar_window_rows",
@@ -38,6 +41,9 @@ __all__ = [
     "enrich_exit_audits",
     "load_validation_run",
     "load_tick_window_for_trade",
+    "load_validation_checks_report",
+    "run_validation_checks",
     "trade_path_from_ticks",
+    "write_validation_checks_report",
     "write_validation_run",
 ]

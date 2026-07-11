@@ -84,6 +84,7 @@ from propstack.strategy_modules.tp.gap_fill_fraction import GapFillFractionTarge
 from propstack.strategy_modules.tp.opening_range_extension import OpeningRangeExtensionTarget
 from propstack.strategy_modules.tp.opening_range_opposite_edge import OpeningRangeOppositeEdgeTarget
 from propstack.strategy_modules.tp.percent_from_entry import PercentFromEntryTarget
+from propstack.strategy_modules.tp.prop_fixed_fraction_r import PropFixedFractionRTarget
 from propstack.strategy_modules.tp.signal_fixed_r import SignalFixedRTarget
 
 
@@ -98,6 +99,29 @@ def test_fixed_r_target_rejects_reward_risk_below_one():
     target = FixedRTarget({"target_r_multiple": 0.75})
 
     with pytest.raises(ValueError, match="target_r_multiple must be >= 1.0"):
+        target.price(entry_price=100.0, stop_price=98.0, direction="long")
+
+
+def test_prop_fixed_fraction_r_target_allows_negative_rr_experiment():
+    target = PropFixedFractionRTarget({"target_r_fraction": 0.5})
+
+    assert target.price(entry_price=100.0, stop_price=98.0, direction="long") == 101.0
+    assert target.price(entry_price=100.0, stop_price=102.0, direction="short") == 99.0
+
+
+def test_prop_fixed_fraction_r_target_can_round_conservatively_to_tick():
+    target = PropFixedFractionRTarget(
+        {"target_r_fraction": 0.75, "tick_size": 0.25, "round_to_tick": True}
+    )
+
+    assert target.price(entry_price=100.0, stop_price=99.25, direction="long") == 100.75
+    assert target.price(entry_price=100.0, stop_price=100.75, direction="short") == 99.25
+
+
+def test_prop_fixed_fraction_r_target_rejects_nonpositive_fraction():
+    target = PropFixedFractionRTarget({"target_r_fraction": 0.0})
+
+    with pytest.raises(ValueError, match="target_r_fraction must be greater than 0"):
         target.price(entry_price=100.0, stop_price=98.0, direction="long")
 
 
