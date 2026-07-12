@@ -428,3 +428,33 @@ def test_preflight_cli_runs_from_repo_root_with_explicit_config(tmp_path):
 
     assert proc.returncode == 0
     assert "Preflight PASS" in proc.stdout
+
+
+def test_preflight_cli_groups_repeated_warnings_by_default(tmp_path):
+    data = tmp_path / "bars.csv"
+    one = tmp_path / "one.yaml"
+    two = tmp_path / "two.yaml"
+    _write_csv(data)
+    for path in (one, two):
+        cfg = _config(data)
+        cfg["research_metadata"]["mechanics_review_required"] = False
+        cfg["research_metadata"].pop("mechanics_review_version", None)
+        _write_config(path, cfg)
+
+    proc = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "research.preflight",
+            "--config",
+            str(one),
+            "--config",
+            str(two),
+            "--skip-tests",
+        ],
+        text=True,
+        capture_output=True,
+    )
+
+    assert proc.returncode == 0
+    assert "WARNING x2:" in proc.stdout

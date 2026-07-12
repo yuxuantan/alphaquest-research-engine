@@ -74,6 +74,10 @@ def test_generated_views_are_replaceable_and_link_to_definitions(tmp_path):
     assert counts["candidate"] == 1
     assert (tmp_path / "views" / "candidate" / "definitions" / "demo").resolve() == tmp_path / "campaigns" / "demo"
     assert (tmp_path / "views" / "recent_failures" / "runs.csv").is_file()
+    readme = (tmp_path / "views" / "README.md").read_text(encoding="utf-8")
+    assert "Manual review" in readme
+    assert "review_runs/" not in readme
+    assert (tmp_path / "views" / "by_symbol" / "OTHER.csv").is_file()
 
 
 def test_registry_logically_partitions_durable_artifacts_without_moving_them(tmp_path):

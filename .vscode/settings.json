@@ -16,12 +16,19 @@
     "backtest-campaigns/**": true,
     "data/cache/**": true,
     "data/raw/**": true,
-    "research_artifacts/**": true,
-    "views/**": true
+    "research_artifacts/**": true
   },
   "files.watcherExclude": {
     "**/backtest-campaigns/**": true,
     "**/data/cache/**": true,
     "**/data/raw/**": true
+  },
+  "yaml.schemas": {
+    "./schemas/campaign.schema.json": "campaigns/*/campaign.yaml",
+    "./schemas/variant-config.schema.json": [
+      "campaigns/*/variants/*/config.yaml",
+      "campaigns/*/rescue_attempts/*/*/config.yaml"
+    ],
+    "./schemas/research-settings.schema.json": "config/research_settings.yaml"
   }
 }

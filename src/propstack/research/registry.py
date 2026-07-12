@@ -14,6 +14,7 @@ import yaml
 
 from propstack.research.catalog import catalog_rows
 from propstack.research.run_store import read_run_uid
+from propstack.maintenance.code_catalog import generate_code_views
 
 
 SCHEMA_VERSION = "1"
@@ -89,6 +90,7 @@ def generate_views(
     connection = sqlite3.connect(db_path)
     connection.row_factory = sqlite3.Row
     counts: dict[str, int] = {}
+    artifact_counts: dict[str, int] = {}
     try:
         for state in VIEW_STATES:
             rows = connection.execute(
@@ -99,7 +101,7 @@ def generate_views(
                 """,
                 (state,),
             ).fetchall()
-            _write_campaign_view(root, views_path / state, rows, state)
+            _write_campaign_view(root, views_path / state, rows, state, include_definition_links=state != "closed")
             counts[state] = len(rows)
 
         failures = connection.execute(
@@ -137,12 +139,17 @@ def generate_views(
             review_runs,
         )
         counts["review_runs"] = len(review_runs)
+        _write_review_queue_readme(views_path / "review_queue", counts["review_queue"], review_runs)
         artifact_counts = _write_artifact_views(connection, views_path / "artifacts")
-        counts.update({f"artifacts_{key}": value for key, value in artifact_counts.items()})
+        _write_discovery_views(connection, views_path)
+        built_at = _metadata_value(connection, "built_at")
     finally:
         connection.close()
 
-    _write_views_readme(views_path, counts)
+    _write_views_readme(views_path, counts, artifact_counts, built_at)
+    code_counts = generate_code_views(project_root=root, output_root=views_path / "code")
+    counts.update({f"code_{key}": value for key, value in code_counts.items()})
+    counts.update({f"artifacts_{key}": value for key, value in artifact_counts.items()})
     return counts
 
 
@@ -707,7 +714,14 @@ def _declared_hash(output_dir: Path, name: str) -> str | None:
     return path.read_text(encoding="utf-8").strip() if path.is_file() else None
 
 
-def _write_campaign_view(root: Path, path: Path, rows: Iterable[sqlite3.Row], state: str) -> None:
+def _write_campaign_view(
+    root: Path,
+    path: Path,
+    rows: Iterable[sqlite3.Row],
+    state: str,
+    *,
+    include_definition_links: bool,
+) -> None:
     path.mkdir(parents=True, exist_ok=True)
     rows = list(rows)
     columns = (
@@ -722,18 +736,32 @@ def _write_campaign_view(root: Path, path: Path, rows: Iterable[sqlite3.Row], st
         "definition_path",
     )
     _write_rows(path / "campaigns.csv", columns, rows)
-    links = path / "definitions"
-    links.mkdir()
-    for row in rows:
-        definition = _resolve(root, row["definition_path"])
-        target = definition.parent if definition.name == "campaign.yaml" else definition
-        if target.exists():
-            (links / row["campaign_id"]).symlink_to(os.path.relpath(target, links))
-    (path / "README.md").write_text(
-        f"# {state.replace('_', ' ').title()} Campaigns\n\n"
-        "Generated from the institutional research registry. Do not edit this view.\n",
-        encoding="utf-8",
-    )
+    if include_definition_links:
+        links = path / "definitions"
+        links.mkdir()
+        for row in rows:
+            definition = _resolve(root, row["definition_path"])
+            target = definition.parent if definition.name == "campaign.yaml" else definition
+            if target.exists():
+                (links / row["campaign_id"]).symlink_to(os.path.relpath(target, links))
+    if state == "closed":
+        _write_closed_symbol_views(path, rows)
+    lines = [
+        f"# {state.replace('_', ' ').title()} Campaigns",
+        "",
+        f"Campaigns: `{len(rows)}`",
+        "",
+        "Generated from the institutional research registry. Do not edit this view.",
+        "",
+    ]
+    if rows:
+        lines.extend(_campaign_markdown_table(rows[:20], use_view_links=include_definition_links))
+        if len(rows) > 20:
+            lines.extend(["", "The complete set is in `campaigns.csv`."])
+    else:
+        lines.append("No campaigns currently have this lifecycle state.")
+    lines.append("")
+    (path / "README.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 def _write_failure_view(root: Path, path: Path, rows: Iterable[sqlite3.Row]) -> None:
@@ -750,10 +778,19 @@ def _write_failure_view(root: Path, path: Path, rows: Iterable[sqlite3.Row]) -> 
         "output_dir",
     )
     _write_rows(path / "runs.csv", columns, rows)
-    (path / "README.md").write_text(
-        "# Recent Failures\n\nMost recently updated failed runs. This is a review view, not a deletion queue.\n",
-        encoding="utf-8",
-    )
+    lines = [
+        "# Recent Failures",
+        "",
+        f"Runs shown: `{len(rows)}`",
+        "",
+        "Most recently updated failed runs. This is a review view, not a deletion queue.",
+        "",
+        *_run_markdown_table(rows[:20]),
+        "",
+        "The complete set is in `runs.csv`.",
+        "",
+    ]
+    (path / "README.md").write_text("\n".join(lines), encoding="utf-8")
 
 
 def _write_artifact_views(connection: sqlite3.Connection, path: Path) -> dict[str, int]:
@@ -771,23 +808,171 @@ def _write_artifact_views(connection: sqlite3.Connection, path: Path) -> dict[st
         ).fetchall()
         _write_rows(path / f"{category['category']}.csv", columns, rows)
         counts[category["category"]] = int(category["count"])
-    (path / "README.md").write_text(
-        "# Artifact Views\n\nCategorized indexes over durable flat-path artifacts. Paths remain stable for provenance.\n",
-        encoding="utf-8",
+    lines = [
+        "# Artifact Views",
+        "",
+        "Categorized indexes over durable flat-path artifacts. Paths remain stable for provenance.",
+        "",
+        "| Category | Artifacts | Index |",
+        "| --- | ---: | --- |",
+    ]
+    lines.extend(
+        f"| {category.replace('_', ' ')} | {count} | [{category}.csv]({category}.csv) |"
+        for category, count in sorted(counts.items())
     )
+    lines.append("")
+    (path / "README.md").write_text("\n".join(lines), encoding="utf-8")
     return counts
 
 
-def _write_views_readme(path: Path, counts: dict[str, int]) -> None:
+def _write_views_readme(
+    path: Path,
+    counts: dict[str, int],
+    artifact_counts: dict[str, int],
+    built_at: str | None,
+) -> None:
     lines = [
         "# Research Views",
         "",
         "Generated navigation over the registry. Source definitions and immutable run evidence remain elsewhere.",
         "",
+        f"Registry built: `{built_at or 'unknown'}`",
+        "",
+        "## Research Queue",
+        "",
+        "| View | Campaigns | Runs |",
+        "| --- | ---: | ---: |",
+        f"| [Active](active/) | {counts.get('active', 0)} | - |",
+        f"| [Manual review](review_queue/) | {counts.get('review_queue', 0)} | {counts.get('review_runs', 0)} |",
+        f"| [Candidates](candidate/) | {counts.get('candidate', 0)} | - |",
+        f"| [Closed](closed/) | {counts.get('closed', 0)} | - |",
+        f"| [Recent failures](recent_failures/) | - | {counts.get('recent_failures', 0)} |",
+        "",
+        "## Discovery",
+        "",
+        "- [Campaigns by symbol](by_symbol/)",
+        "- [Campaigns by edge family](by_edge_family/campaigns.csv)",
+        "- [Durable artifacts](artifacts/)",
+        "- [Code navigation](code/)",
+        "",
+        "## Artifact Counts",
+        "",
+        "| Category | Count |",
+        "| --- | ---: |",
     ]
-    lines.extend(f"- `{name}/`: {count}" for name, count in counts.items())
+    lines.extend(f"| {name.replace('_', ' ')} | {count} |" for name, count in sorted(artifact_counts.items()))
     lines.append("")
     (path / "README.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_review_queue_readme(path: Path, campaign_count: int, rows: Iterable[sqlite3.Row]) -> None:
+    rows = list(rows)
+    lines = [
+        "# Manual Review Queue",
+        "",
+        f"Campaigns with review lifecycle: `{campaign_count}`",
+        f"Runs requiring review: `{len(rows)}`",
+        "",
+        "A run in this queue is incomplete or lacks a terminal staged verdict. It is not a candidate strategy.",
+        "",
+    ]
+    if rows:
+        lines.extend(_run_markdown_table(rows[:20]))
+        lines.extend(["", "The complete queue is in `runs.csv`."])
+    else:
+        lines.append("No runs currently require manual review.")
+    lines.append("")
+    (path / "README.md").write_text("\n".join(lines), encoding="utf-8")
+
+
+def _write_discovery_views(connection: sqlite3.Connection, views_path: Path) -> None:
+    rows = connection.execute(
+        """
+        SELECT campaign_id, title, edge_family, lifecycle_state, authored_decision,
+               run_count, variant_count, latest_updated_at, definition_path
+        FROM campaigns ORDER BY campaign_id
+        """
+    ).fetchall()
+    symbol_path = views_path / "by_symbol"
+    symbol_path.mkdir()
+    grouped: dict[str, list[sqlite3.Row]] = {"ES": [], "NQ": [], "OTHER": []}
+    for row in rows:
+        campaign_id = str(row["campaign_id"])
+        symbol = "ES" if campaign_id.startswith("es_") else "NQ" if campaign_id.startswith("nq_") else "OTHER"
+        grouped[symbol].append(row)
+    columns = (
+        "campaign_id",
+        "title",
+        "edge_family",
+        "lifecycle_state",
+        "authored_decision",
+        "run_count",
+        "variant_count",
+        "latest_updated_at",
+        "definition_path",
+    )
+    for symbol, symbol_rows in grouped.items():
+        _write_rows(symbol_path / f"{symbol}.csv", columns, symbol_rows)
+    (symbol_path / "README.md").write_text(
+        "# Campaigns By Symbol\n\n"
+        + "\n".join(f"- [{symbol}.csv]({symbol}.csv): {len(symbol_rows)}" for symbol, symbol_rows in grouped.items())
+        + "\n",
+        encoding="utf-8",
+    )
+    edge_path = views_path / "by_edge_family"
+    edge_path.mkdir()
+    _write_rows(edge_path / "campaigns.csv", columns, sorted(rows, key=lambda row: (row["edge_family"] or "", row["campaign_id"])))
+    (edge_path / "README.md").write_text(
+        "# Campaigns By Edge Family\n\nSee [campaigns.csv](campaigns.csv).\n", encoding="utf-8"
+    )
+
+
+def _write_closed_symbol_views(path: Path, rows: list[sqlite3.Row]) -> None:
+    by_symbol = path / "by_symbol"
+    by_symbol.mkdir()
+    columns = (
+        "campaign_id",
+        "title",
+        "edge_family",
+        "authored_decision",
+        "run_count",
+        "latest_updated_at",
+        "definition_path",
+    )
+    for symbol in ("ES", "NQ", "OTHER"):
+        symbol_rows = [
+            row
+            for row in rows
+            if (
+                (symbol == "ES" and str(row["campaign_id"]).startswith("es_"))
+                or (symbol == "NQ" and str(row["campaign_id"]).startswith("nq_"))
+                or (symbol == "OTHER" and not str(row["campaign_id"]).startswith(("es_", "nq_")))
+            )
+        ]
+        _write_rows(by_symbol / f"{symbol}.csv", columns, symbol_rows)
+
+
+def _campaign_markdown_table(rows: Iterable[sqlite3.Row], *, use_view_links: bool) -> list[str]:
+    lines = ["| Campaign | Edge family | Runs | Updated |", "| --- | --- | ---: | --- |"]
+    for row in rows:
+        campaign_id = str(row["campaign_id"])
+        href = f"definitions/{campaign_id}" if use_view_links else f"../../campaigns/{campaign_id}/campaign.yaml"
+        lines.append(
+            f"| [{campaign_id}]({href}) | {row['edge_family'] or ''} | {row['run_count']} | "
+            f"{row['latest_updated_at'] or ''} |"
+        )
+    return lines
+
+
+def _run_markdown_table(rows: Iterable[sqlite3.Row]) -> list[str]:
+    lines = ["| Campaign | Variant | Run | Failed stage | Updated |", "| --- | --- | --- | --- | --- |"]
+    for row in rows:
+        summary_path = str(row["summary_path"])
+        lines.append(
+            f"| {row['campaign_id']} | {row['variant_id']} | [{row['test_run_id']}](../../{summary_path}) | "
+            f"{row['failed_stage'] or ''} | {row['updated_at'] or ''} |"
+        )
+    return lines
 
 
 def _write_rows(path: Path, columns: Iterable[str], rows: Iterable[sqlite3.Row]) -> None:

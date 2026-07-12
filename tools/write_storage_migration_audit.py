@@ -6,21 +6,31 @@ import json
 from pathlib import Path
 import sqlite3
 
+from propstack.research.artifact_store import ArtifactStore
+
+
+DEFAULT_OUTPUT_PREFIX = "research_artifacts/cleanup/institutional_storage_migration_20260711"
+
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Write a durable audit of the institutional storage migration.")
     parser.add_argument("--database", default="catalogs/research_registry.sqlite")
     parser.add_argument(
         "--output-prefix",
-        default="research_artifacts/cleanup/institutional_storage_migration_20260711",
+        default=DEFAULT_OUTPUT_PREFIX,
     )
     args = parser.parse_args()
     database = Path(args.database)
     output = Path(args.output_prefix)
-    output.parent.mkdir(parents=True, exist_ok=True)
     payload = _payload(database)
-    output.with_suffix(".json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
-    output.with_suffix(".md").write_text(_markdown(payload), encoding="utf-8")
+    if args.output_prefix == DEFAULT_OUTPUT_PREFIX:
+        store = ArtifactStore("research_artifacts")
+        store.write_json("cleanup", f"{output.name}.json", payload)
+        store.write_text("cleanup", f"{output.name}.md", _markdown(payload))
+    else:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.with_suffix(".json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        output.with_suffix(".md").write_text(_markdown(payload), encoding="utf-8")
     print(f"{output}: runs={payload['runs']} objects={payload['artifact_objects']}")
     return 0
 

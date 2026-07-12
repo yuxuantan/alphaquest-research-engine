@@ -1,0 +1,2345 @@
+# Prop Stack Automation
+
+Start with [`START_HERE.md`](../../START_HERE.md). Routine research navigation should use the generated registry and `views/`, not direct browsing of the run store.
+
+Deterministic futures research and backtesting engine with fail-closed preflight,
+staged time-series validation, reproducible run manifests, and prop-rule simulation.
+The project is organized around **campaigns** and **variants**:
+
+```text
+campaign -> strategy idea found online or designed for research
+variant  -> one concrete strategy shape for that idea
+run      -> one fixed/tunable parameter-space attempt for that variant
+```
+
+The normal workflow is:
+
+```text
+download/export data
+place raw data under data/raw/
+create or update one campaign
+create one authored config.yaml under campaigns/
+run limited core/monkey, WFA, OOS stress, incubation, and locked acceptance stages
+review campaign_test_summary.json, variant_test_summary.json, and runs_index.csv
+```
+
+Authored research definitions live under `campaigns/`. Generated evidence lives
+under `backtest-campaigns/`; generated snapshots are provenance and must not be
+edited as source configs.
+
+Build the institutional research workspace after adding or running campaigns:
+
+```bash
+make research-workspace
+make research-status
+```
+
+This creates a rebuildable SQLite registry, portable CSV exports, short-ID definition indexes, and curated views for active, review, candidate, closed, and recently failed research. A registry `candidate` is still only a candidate strategy requiring manual due diligence and incubation.
+
+## Install
+
+```bash
+python3 -m pip install -e ".[dev]"
+python3 -m pytest
+```
+
+Run the complete local quality gate and write a durable qualification report:
+
+```bash
+make quality
+make qualify
+```
+
+`make qualify` writes `research_artifacts/engine_qualification.json` and
+`research_artifacts/engine_qualification.md` with the test result, engine and
+policy hashes, contract version, Git state, control evidence, and model-risk
+limitations. This qualifies the software build only. It does not make a
+candidate strategy tradeable.
+
+Audit reproducible generated payloads and superseded error runs without deleting:
+
+```bash
+make cleanup-generated
+```
+
+Apply the reviewed cleanup inventory with:
+
+```bash
+PYTHONPATH=src python3 tools/cleanup_redundant_generated_artifacts.py --apply
+```
+
+Campaign runs now retain compact validation summaries, equity CSVs, and
+stochastic-test summaries by default. Full validation frames, monkey iteration
+tables, Monte Carlo path files, and equity HTML can be retained explicitly with
+`data.artifact_retention.full_validation_frames`,
+`artifact_retention.monkey_iteration_results`,
+`artifact_retention.monte_carlo_paths`, and `artifact_retention.equity_html`.
+
+For the visual validation dashboard, install the optional dashboard extras:
+
+```bash
+python3 -m pip install -e ".[dev,dashboard]"
+```
+
+## Visual Validation Dashboard
+
+The validation dashboard is a Streamlit/Plotly tool for inspecting whether the
+Python backtest mechanics did what the strategy intended. It reads exported
+artifacts from a completed run and lets you inspect entry triggers, SL/TP
+placement, orderflow values, TP/SL sequencing, automated consistency checks, and
+manual review notes without rerunning the whole backtest.
+
+Install dashboard dependencies:
+
+```bash
+python3 -m pip install -e ".[dev,dashboard]"
+```
+
+Run a core backtest with validation export:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_core \
+  --config campaigns/<campaign_id>/variants/<variant_id>/config.yaml \
+  --export-validation \
+  --validation-window-bars-before 10 \
+  --validation-window-bars-after 20 \
+  --validation-max-trades 100
+```
+
+Normal backtests without `--export-validation` keep the fast path and do not
+write these extra artifacts. By default, `run_core` writes dashboard artifacts
+under the generated run root:
+
+```text
+backtest-campaigns/<campaign_id>/<variant_id>/<symbol>/<run_id>/validation_runs/core/
+```
+
+The validation run folder contains:
+
+```text
+metadata.json
+trades.parquet
+condition_snapshots.parquet
+bar_windows.parquet
+tick_windows.parquet
+exit_audits.parquet
+validation_checks.parquet
+manual_review.parquet       # created after you save review notes
+```
+
+Launch the dashboard with one command:
+
+```bash
+make validation-dashboard
+```
+
+Useful launch options:
+
+```bash
+VALIDATION_DASHBOARD_SEARCH_ROOT=backtest-campaigns make validation-dashboard
+VALIDATION_DASHBOARD_PORT=8503 make validation-dashboard
+```
+
+To smoke-test the UI without large Sierra files, generate and open a tiny
+synthetic run:
+
+```bash
+make validation-dashboard-sample
+```
+
+The dashboard sidebar scans `PROPSTACK_VALIDATION_SEARCH_ROOT` or
+`backtest-campaigns` by default. Select a discovered validation run, or paste the
+path to a specific `validation_runs/<stage>/` folder. The selected trade remains
+sticky while moving through tabs and queue pages.
+
+Tabs:
+
+- `Overview`: entry, stop, target, exit, R, and exported calculation details.
+- `Price chart`: bar window with entry, stop, target, exit, levels, and event
+  markers.
+- `Conditions`: condition checklist and raw exported JSON fields.
+- `Orderflow`: bar-level orderflow, filter explanation, and optional footprint
+  heatmap. Tick/footprint rows are loaded only after you enable the selected
+  trade footprint window.
+- `Exit path`: TP/SL first-touch audit from the exported selected-trade tick
+  window when available.
+- `Checks`: automated consistency checks from `validation_checks.parquet`.
+- `Manual review`: saves reviewer status and notes to `manual_review.parquet`.
+
+Use the sidebar `Review Queue` page for systematic manual validation. It can
+sample random, first, last, best-R, worst-R, forced-flatten, same-bar ambiguous,
+mismatch-warning, and high-impact edge-case trades. Review annotations are saved
+next to the validation artifacts with trade ID, status, notes, timestamp, and
+dashboard version, so notes persist after restarting Streamlit.
+
+The Orderflow tab uses the exported selected-trade bar and tick windows. Its
+filter explanation table shows raw strategy/export fields from
+`condition_snapshots.parquet`; the footprint heatmap only aggregates exported
+tick rows by bar timestamp and price level for visual inspection. Display-only
+fields such as bar `delta_pct`, max bid/ask volume at price, and imbalance
+markers are derived from those exported rows and should not be treated as new
+strategy rules.
+
+The Exit Path tab audits TP/SL sequencing from the selected trade's exported
+tick window when one exists. It shows the engine exit reason, the first TP/SL
+touch found in the exported path, MFE/MAE, same-bar ambiguity status, and warning
+flags for mismatches such as engine-target versus tick-stop-first. When no
+ordered tick path is present, the tab keeps the engine audit fields visible and
+warns that tick sequencing could not be independently verified.
+
+Each validation export also writes `validation_checks.parquet`, an automated
+consistency report over trade identity, timestamp ordering, price logic, filter
+flags, exit audit agreement, and data quality. The dashboard `Checks` tab shows
+run-level pass/warning/error totals and the selected trade's check rows before
+manual review.
+
+Known limitations:
+
+- The Python backtest engine remains the source of truth; the dashboard is an
+  inspection layer and does not change results.
+- `tick_windows.parquet` is an exported selected-trade window, not a full raw
+  Sierra dataset loader. If the run was exported without tick/detail rows,
+  first-hit sequencing can only use the engine audit and bar window.
+- Sierra signed volume is an aggregate bid/ask-volume proxy, not vendor-grade
+  MBO aggressor labeling.
+- Older validation runs may not include newer artifacts such as
+  `validation_checks.parquet`; regenerate the run with `--export-validation`.
+- Automated checks are consistency checks, not proof that a candidate strategy
+  is tradeable.
+
+## Project Layout
+
+```text
+data/
+  raw/
+    ES/
+    NQ/
+  cache/
+  external/
+  reference/
+    ES/
+      roll_calendars/
+        motivewave_rithmic_roll_calendar.csv
+
+campaigns/
+  pdh_pdl_sweep/
+    campaign.yaml
+    results_index.yaml
+    variants/
+      baseline/
+        config.yaml
+        README.md
+        strategy_modules/
+    rescue_attempts/
+      parameter_space_rescue_1/
+        baseline/
+          config.yaml
+
+backtest-campaigns/
+  pdh_pdl_sweep/
+    campaign.yaml
+    variants_index.yaml
+    baseline/
+      variant.yaml
+      ES/
+        run1/
+          source_config.yaml
+          effective_config.yaml
+          variant_test_summary.json
+          campaign_test_summary.json
+          config_hash.txt
+          input_data_hash.txt
+          run_manifest.json
+          validation/
+          core/
+          core_grid/
+          monkey/
+          wfa/
+          monte_carlo/
+        run2/
+          source_config.yaml
+          effective_config.yaml
+          limited_core_grid_test/
+          limited_monkey_test/
+          walk_forward_analysis/
+          variant_test_summary.json
+        runs_index.csv
+
+src/
+  propstack/
+    strategy/
+      modular.py
+    strategy_modules/
+
+tests/
+```
+
+## 1. Download Or Export Data
+
+Start with 1-minute OHLCV futures data exported from your data vendor or platform.
+
+Save raw files without modifying them:
+
+```text
+data/raw/ES/es_1m_20221201-20260529.csv
+data/raw/NQ/nq_1m_20221201-20260529.csv
+```
+
+The currently supported headerless format is:
+
+```text
+yyyyMMdd HHmmss,O,H,L,C,V
+```
+
+Example:
+
+```csv
+20240102 083000,100.00,101.00,99.50,100.50,100
+20240102 083100,100.50,100.75,99.00,99.75,110
+```
+
+Expected columns by position:
+
+```text
+timestamp, open, high, low, close, volume
+```
+
+For ES/NQ CME data, use exchange timezone:
+
+```text
+America/Chicago
+```
+
+Databento monthly DBN downloads are also supported. Keep the downloaded
+`.dbn.zst` files as the immutable raw archive and point the variant at the
+folder:
+
+```yaml
+data:
+  dataset_id: 1m_full_history
+  source: databento_dbn
+  feature_set: full
+  raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
+  cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
+  symbol: ES
+  timezone: America/New_York
+  continuous_contract: explicit_roll_calendar
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
+  include_spreads: false
+  warmup_days: 7
+```
+
+The first run converts only the required monthly DBN files to Parquet under
+`data/cache/`; later runs read those cached monthly files. For Databento parent
+futures requests, `continuous_contract: explicit_roll_calendar` filters each bar
+to the contract in the configured roll calendar while exposing the backtest
+symbol as `ES`. Use `dominant_session_volume` only as a quick diagnostic rule;
+it can roll early because it uses same-session volume.
+
+Databento monthly cache files can contain many `contract_symbol` values inside
+one calendar-month Parquet file. A parent futures request such as `ES.FUT`
+returns all ES instruments active in that period, including outright futures
+like `ESU2`, `ESZ2`, and `ESH3`, plus exchange-traded calendar spreads like
+`ESU2-ESZ2`. The row counts differ by contract because `ohlcv-1m` only prints a
+bar for an instrument when that instrument traded during that minute; no-volume
+minutes are absent rather than emitted as zero-volume rows.
+
+Symbols with a hyphen are spread instruments, not ordinary outright contracts.
+For example, `ESU2-ESZ2` is the September 2022 versus December 2022 ES calendar
+spread. It has its own instrument id, price, and volume, and its price is the
+spread between legs rather than the ES futures price level. Keep
+`include_spreads: false` for normal outright backtests; the loader drops hyphen
+symbols before the continuous-contract rule selects the active outright.
+
+Sierra Chart bar-level orderflow exports are supported for aggregated
+bid/ask-volume research. Export text or CSV bars with these fields:
+
+```text
+Date, Time, Open, High, Low, Last, Volume, NumberOfTrades, BidVolume, AskVolume
+```
+
+Then build the cache consumed by `trade_orderflow_features`:
+
+```bash
+PYTHONPATH=src python3 -m propstack.build_sierra_orderflow_cache \
+  --raw-path data/raw/ES/sierra-orderflow \
+  --out-csv data/cache/orderflow/es_sierra_orderflow_1m_20110101_20260608.csv \
+  --input-timezone America/New_York \
+  --output-timezone America/New_York
+```
+
+If the Sierra export uses your local chart timezone, pass that as
+`--input-timezone` instead. The cache maps `AskVolume` to `buy_volume`,
+`BidVolume` to `sell_volume`, and writes `signed_volume = AskVolume - BidVolume`.
+It intentionally does not create individual-print large-trade buckets, so use
+configs whose `data.trade_orderflow_features.large_trade_sizes` is empty for
+Sierra-first aggregated-orderflow tests.
+
+Do not treat raw Sierra `.scid` trade files as clean print-level truth for
+strategy validation. The ES archive used by this project included early
+contracts that were bar-like rather than individual prints, timestamp-order
+defects, a raw `open` field that can be sentinel-like or inconsistent, and
+sessions with weak bid/ask side-volume coverage.
+
+The backtestable SCID workflow is to canonicalize Sierra data into a validated
+aggregate orderflow cache with an explicit roll calendar, regular-session
+filtering, incomplete-session drops, and a strict side-volume coverage
+threshold. The SCID-derived minute OHLCV bars are reconstructed from sorted
+trade-price records: `open` is the first retained trade price in the minute,
+`high` and `low` are the max/min retained trade prices, `close` is the last
+retained trade price, and `volume` is summed volume. This is acceptable for
+completed-bar OHLCV and aggregate signed-volume research after validation.
+
+Treat Sierra signed volume as an aggregate bid/ask-volume proxy, not as
+vendor-grade aggressor labels or tick-replay data. Do not use the reconstructed
+minute bars for individual print sequencing, exact intra-minute stop/target
+ordering, trade-sequence assumptions, or large-print features unless a separate
+source-quality audit proves that specific archive supports that use. If a
+strategy needs those mechanics, mark the data basis `NEEDS MANUAL REVIEW` or
+use an independently verified tick/depth source.
+
+For configs that explicitly use `data.execution_data.source: sierra_scid_records`,
+the execution loader uses conservative close-only replay: each SCID record's
+`close` is the only traded-price proxy, and the execution `open/high/low/close`
+fields are all set to that close. The raw SCID OHLC values remain available in
+`raw_scid_*` columns for audit, but raw SCID high/low are not used for sweeps,
+TP/SL first touches, or intra-record price path decisions.
+
+The 2026-06-16 ES Databento-vs-Sierra audit is the current data-source
+checkpoint for this rule:
+`research_artifacts/databento_sierra_es_trades_discrepancy_20260616.md`. The
+completed one-year Databento ES trade-orderflow cache matched the validated
+Sierra cache on all timestamps, and after excluding four roll-selection dates
+there were zero OHLC mismatches and only three total-volume mismatches totaling
+seven contracts. The interrupted daily Databento pull in
+`data/raw/ES/databento-es-trades-2020-2026` is not a validated full-history
+input: it contains five partial files, two completed files that stop early, and
+additional timestamp coverage defects. Do not use that stopped daily directory
+as a complete ES input unless a later run resumes, completes, and validates it.
+
+That audit also confirmed that `trades`, `large10_*`, and `large20_*` are not
+vendor-equivalent between Databento and Sierra SCID-derived caches. Databento
+aggregates individual prints; Sierra aggregates SCID records with Sierra
+`num_trades`, side-volume, and record-volume semantics. Strategies based on
+trade count, trade fragmentation, or large-print behavior must therefore use an
+independently verified print source or be marked `NEEDS MANUAL REVIEW`.
+
+The included ES calendar at
+`data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv` covers 2010-2026. Rows
+from 2022-2026 were inferred from the MotiveWave/Rithmic export; earlier rows
+use the same observed Tuesday-of-expiration-week roll rule and should be
+manually spot-checked if you use pre-2022 results for decisions.
+
+## 2. Create A Campaign Variant Run
+
+A campaign is the strategy idea you are researching. It should stay the same while you test reasonable variations of that same idea: different parameters, slightly different entry/exit mechanics, symbols, timeframes, or datasets.
+
+A campaign keeps authored edge research and the planned variant list here:
+
+```text
+campaigns/{campaign_id}/campaign.yaml
+```
+
+Use `campaign.yaml` for the academic source, thesis, intended market, caveats, and the planned trade-mechanics variants. Five variants is the default campaign size. A campaign may declare six to eight variants only when clearly better distinct mechanics exist within the same edge and `campaign.yaml` includes a pre-test `variant_expansion_rationale`; more than eight variants fails preflight. The backtest runner does not use it as the executable strategy config, but run summaries and manifests record its path and hash when it exists.
+
+A variant is one concrete strategy shape under that campaign. Its authored source config lives here:
+
+```text
+campaigns/{campaign_id}/variants/{variant_id}/config.yaml
+```
+
+An allowed rescue attempt gets its own authored source config without replacing the original:
+
+```text
+campaigns/{campaign_id}/rescue_attempts/{rescue_id}/{variant_id}/config.yaml
+```
+
+Generated backtest evidence lives separately under `backtest-campaigns/`. The runner snapshots the submitted source config and writes the canonical effective config here:
+
+```text
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/source_config.yaml
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/effective_config.yaml
+```
+
+`source_config.yaml` is the exact submitted file. `effective_config.yaml` is the executable, canonicalized run config after default stage settings are expanded. Older generated reports may still have `config.yaml`; readers keep backward compatibility for those legacy artifacts.
+
+The generated variant root also keeps the invariant mechanic lock here:
+
+```text
+backtest-campaigns/{campaign_id}/{variant_id}/variant.yaml
+```
+
+`variant.yaml` records the entry, take-profit, and stop-loss modules plus the rescue policy. The runner creates a scaffold when it is missing and rejects a run when an existing `variant.yaml` says the variant uses different entry, TP, or SL modules. Rescue runs can change fixed parameters and tunable parameter space, but not those modules.
+
+A run is one attempt to validate that variant with a specific fixed parameter set and tunable search space. Use `run1`, `rescue1`, and so on for rescue attempts of the same variant.
+
+```text
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/
+```
+
+Example:
+
+```text
+campaigns/pdh_pdl_sweep/variants/baseline/config.yaml
+campaigns/pdh_pdl_sweep/rescue_attempts/parameter_space_rescue_1/baseline/config.yaml
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/effective_config.yaml
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/rescue1/effective_config.yaml
+```
+
+This keeps the config and generated evidence together:
+
+```text
+pdh_pdl_sweep  campaign / strategy idea
+baseline       strategy variant
+ES             instrument
+run1           first test-run parameter-space attempt
+```
+
+The generated campaign root maintains `variants_index.yaml`, a lightweight index of each variant's `variant.yaml` path, hash, and mechanics. When the submitted config comes from `campaigns/`, the authored campaign root also gets `results_index.yaml`, a lightweight pointer from source configs to generated run folders.
+
+Edit the authored source config:
+
+```yaml
+campaign_id: pdh_pdl_sweep
+variant_id: baseline
+test_run_id: run2
+strategy_name: pdh_pdl_sweep
+symbol: ES
+dataset_id: 1m_20221201_20260529
+
+data:
+  dataset_id: 1m_full_history
+  source: databento_dbn
+  feature_set: full
+  raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
+  cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  continuous_contract: explicit_roll_calendar
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
+  include_spreads: false
+  warmup_days: 7
+  rth_start: "09:30:00"
+  rth_end: "16:00:00"
+  eth_start: "16:00:00"
+  eth_end: "09:29:00"
+  rolling_volume_window: 3
+```
+
+Each run section can choose its own test window:
+
+```yaml
+core:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2023-05-29"
+```
+
+`start_date` and `end_date` are session dates. The loader reads a configurable
+warmup period before `start_date` so previous-session features remain available,
+then filters the prepared data to the requested test window.
+
+The `campaign_id`, `variant_id`, `dataset_id`, and `timeframe` are mandatory. `test_run_id` is optional when the config path is already under a legacy `.../{run_id}/config.yaml`, generated `.../{run_id}/source_config.yaml`, or generated `.../{run_id}/effective_config.yaml`; otherwise it defaults to `run1`. Outputs write to:
+
+```text
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/
+```
+
+Use one authored source config per concrete fixed/tunable parameter-space attempt, not one YAML per report type. A single source `config.yaml` can produce the core, core grid, monkey, WFA, Monte Carlo, and staged campaign-test reports for the same controlled setup.
+
+The runner rejects output paths that are not concrete run folders. Do not write summaries at `backtest-campaigns/{campaign_id}/{variant_id}/ES/` or `.../ES_1m/`; they must live under `.../ES/run1/`, `.../ES/run2/`, etc.
+
+Keep the same campaign when the core idea is still recognizable:
+
+```text
+reconfiguring default parameters
+slight changes to entry or exit mechanics
+testing ES versus NQ
+testing 1-minute versus 5-minute data
+changing costs, slippage, or prop rules
+running robustness tests for the same online strategy idea
+```
+
+Create a new campaign only when the strategy idea itself changes:
+
+```text
+different source strategy
+different market thesis
+different setup concept
+old idea is no longer recognizable
+```
+
+Create a new variant when the strategy mechanics change enough that it is not just a rescue attempt of the same shape:
+
+```text
+different entry, TP, or SL module
+different side logic or setup definition
+different economic edge inside the same campaign family
+different symbol-specific mechanics
+different benchmark assumption that changes the strategy's interpretation
+```
+
+Create a new run under the same variant when only the parameter-space attempt changes:
+
+```text
+different fixed parameter set
+different tunable grid bounds
+different data date range
+different cost, slippage, or prop rule values
+run2 rescue after run1 fails
+```
+
+## 3. Configure Strategy Rules
+
+In the same campaign file:
+
+```yaml
+strategy:
+  entry:
+    module: pdh_pdl_sweep_reclaim
+    params:
+      reclaim_window_bars: 3
+      min_volume_ratio: 0.0
+      start_time: "08:30:00"
+      end_time: "14:45:00"
+      max_trades_per_day: 3
+      allow_long: true
+      allow_short: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 1
+  flatten_time: "14:55:00"
+```
+
+The strategy is composed of three explicit modules:
+
+```text
+entry -> detects setup and emits a signal
+tp    -> calculates target price
+sl    -> calculates stop price
+```
+
+The simulation engine uses a generic `ModularStrategy` composer. There is no separate PDH/PDL strategy wrapper; the authored source `config.yaml` is the source of truth for which entry, TP, and SL modules are combined.
+
+Each module implementation lives in its own file:
+
+```text
+src/propstack/strategy/
+  modular.py
+
+src/propstack/strategy_modules/
+  entry/
+    pdh_pdl_sweep_reclaim.py
+  tp/
+    fixed_r.py
+  sl/
+    sweep_extreme.py
+```
+
+To add a reusable module, create a new file in the correct folder and register it in that folder's `__init__.py`.
+
+Current strategy logic:
+
+```text
+Long:
+  price trades below previous RTH low
+  price closes back above previous RTH low within reclaim_window_bars
+  enter long on next bar open plus slippage
+
+Short:
+  price trades above previous RTH high
+  price closes back below previous RTH high within reclaim_window_bars
+  enter short on next bar open minus slippage
+```
+
+## Strategy Creation And Backtest Guide
+
+Use this section when you want to create a strategy, choose one exact parameter set, run the core test, and understand the generated report.
+
+The cleanest workflow is:
+
+```text
+1. Define the strategy idea
+2. Build or reuse entry, TP, and SL modules
+3. Wire those modules in one authored source config.yaml
+4. Set the exact data, costs, and risk assumptions
+5. Run the core test
+6. Validate data and sample trades
+7. Interpret metrics, trades, daily results, and campaign metadata
+```
+
+### Step 1: Define The Strategy Idea
+
+Write the strategy as three separate decisions:
+
+```text
+entry: when does the setup trigger?
+sl:    where is the invalidation point?
+tp:    where is the profit target?
+```
+
+For example, the current PDH/PDL sweep strategy is:
+
+```text
+entry: previous day high/low sweep, then reclaim
+sl:    beyond the sweep candle extreme, offset by ticks
+tp:    fixed R multiple from entry to stop
+```
+
+For normal one-entry, one-stop, one-target strategies, do not create a strategy file. Create or swap the relevant module and wire it in the authored source `config.yaml`. A custom strategy orchestrator is only worth adding later if the engine needs behavior beyond this composition model, such as partial exits, trailing stops, pyramiding, or multiple simultaneous entry systems.
+
+### Step 2: Create Or Reuse An Entry Module
+
+Entry modules live here:
+
+```text
+src/propstack/strategy_modules/entry/
+```
+
+The current example is:
+
+```text
+src/propstack/strategy_modules/entry/pdh_pdl_sweep_reclaim.py
+```
+
+An entry module must expose:
+
+```python
+class MyEntry:
+    name = "my_entry"
+
+    def __init__(self, params: dict):
+        self.params = params
+
+    def on_bar_close(self, bar, trades_today: int = 0):
+        ...
+```
+
+When the setup triggers, it returns a `Signal`:
+
+```python
+from propstack.strategy_modules.entry import Signal
+
+return Signal(
+    direction="long",
+    level_type="pdl",
+    swept_level=previous_low,
+    sweep_timestamp=sweep_bar_timestamp,
+    sweep_high=sweep_bar_high,
+    sweep_low=sweep_bar_low,
+    reclaim_timestamp=bar["timestamp"],
+)
+```
+
+When there is no setup, return `None`.
+
+Register the module in:
+
+```text
+src/propstack/strategy_modules/entry/__init__.py
+```
+
+Add it to `ENTRY_MODULES`:
+
+```python
+ENTRY_MODULES = {
+    PdhPdlSweepReclaimEntry.name: PdhPdlSweepReclaimEntry,
+    MyEntry.name: MyEntry,
+}
+```
+
+### Step 3: Create Or Reuse A Stop Loss Module
+
+Stop modules live here:
+
+```text
+src/propstack/strategy_modules/sl/
+```
+
+The current example is:
+
+```text
+src/propstack/strategy_modules/sl/sweep_extreme.py
+```
+
+A stop module must expose:
+
+```python
+class MyStop:
+    name = "my_stop"
+
+    def __init__(self, params: dict):
+        self.params = params
+
+    def price(self, signal, direction: str, tick_size: float) -> float:
+        ...
+```
+
+For a long, the stop should normally be below entry. For a short, it should normally be above entry.
+
+Register the module in:
+
+```text
+src/propstack/strategy_modules/sl/__init__.py
+```
+
+Add it to `SL_MODULES`:
+
+```python
+SL_MODULES = {
+    SweepExtremeStop.name: SweepExtremeStop,
+    MyStop.name: MyStop,
+}
+```
+
+### Step 4: Create Or Reuse A Take Profit Module
+
+Take profit modules live here:
+
+```text
+src/propstack/strategy_modules/tp/
+```
+
+The current example is:
+
+```text
+src/propstack/strategy_modules/tp/fixed_r.py
+```
+
+A TP module must expose:
+
+```python
+class MyTarget:
+    name = "my_target"
+
+    def __init__(self, params: dict):
+        self.params = params
+
+    def price(self, entry_price: float, stop_price: float, direction: str) -> float:
+        ...
+```
+
+Register the module in:
+
+```text
+src/propstack/strategy_modules/tp/__init__.py
+```
+
+Add it to `TP_MODULES`:
+
+```python
+TP_MODULES = {
+    FixedRTarget.name: FixedRTarget,
+    MyTarget.name: MyTarget,
+}
+```
+
+### Step 5: Wire The Modules In A Source Config
+
+Authored campaign source configs live under:
+
+```text
+campaigns/{campaign_id}/variants/{variant_id}/config.yaml
+```
+
+For a new rescue attempt, copy the source config into a rescue folder and update only the allowed fixed/tunable parameter space:
+
+```bash
+mkdir -p campaigns/pdh_pdl_sweep/rescue_attempts/parameter_space_rescue_1/baseline
+cp campaigns/pdh_pdl_sweep/variants/baseline/config.yaml campaigns/pdh_pdl_sweep/rescue_attempts/parameter_space_rescue_1/baseline/config.yaml
+```
+
+Set the campaign, variant, and run identity:
+
+```yaml
+campaign_id: pdh_pdl_sweep
+variant_id: baseline
+test_run_id: run2
+strategy_name: pdh_pdl_sweep
+symbol: ES
+dataset_id: 1m_20221201_20260529
+```
+
+Use a new `test_run_id` for every rescue attempt you want to preserve under the same variant. Use a new `variant_id` only when the strategy mechanics change.
+
+Do not split one experiment into separate YAML files for core, core grid, monkey, WFA, and Monte Carlo. Keep those report sections together inside the same authored source `config.yaml`; the staged runner will write `source_config.yaml` and `effective_config.yaml` into the generated run folder.
+
+Then wire the modules and parameters:
+
+```yaml
+strategy:
+  entry:
+    module: pdh_pdl_sweep_reclaim
+    params:
+      reclaim_window_bars: 3
+      min_volume_ratio: 0.0
+      start_time: "08:30:00"
+      end_time: "14:45:00"
+      max_trades_per_day: 3
+      allow_long: true
+      allow_short: true
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 1
+  flatten_time: "14:55:00"
+```
+
+The important pattern is:
+
+```text
+strategy.{entry|tp|sl}.module = module name registered in __init__.py
+strategy.{entry|tp|sl}.params = parameters passed into that module
+```
+
+Core grid, monkey, and WFA use dotted paths to override the same values:
+
+```yaml
+core_grid:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2026-05-29"
+  parameters:
+    entry.params.reclaim_window_bars: [2, 3, 5]
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
+    sl.params.stop_offset_ticks: [1, 2]
+```
+
+### Step 6: Set The Exact Data And Core Assumptions
+
+The `data` section records exactly which raw dataset is used:
+
+```yaml
+data:
+  dataset_id: 1m_full_history
+  source: databento_dbn
+  feature_set: full
+  raw_dir: data/raw/ES/GLBX-20260601-U6S3S4F4GM
+  cache_dir: data/cache/databento/GLBX-20260601-U6S3S4F4GM
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  continuous_contract: explicit_roll_calendar
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+  price_adjustment: none
+  roll_boundary_policy:
+    reset_previous_day_levels: true
+    skip_sessions_around_roll: 1
+  include_spreads: false
+  warmup_days: 7
+  rth_start: "09:30:00"
+  rth_end: "16:00:00"
+  eth_start: "16:00:00"
+  eth_end: "09:29:00"
+  rolling_volume_window: 3
+```
+
+`feature_set` controls which derived columns are built during data preparation:
+
+```text
+full                     previous RTH, overnight, VWAP, and rolling volume
+opening_range            no derived global features; use for ORB-style entries
+pdh_pdl_sweep            previous RTH and rolling volume
+intraday_capitulation_mr VWAP only
+none                     cleaned/sessionized bars only
+```
+
+The default is `full` for backwards compatibility. For full-history WFA on
+`opening_range_breakout`, use `feature_set: opening_range` to avoid expensive
+unused feature generation.
+
+The `core` section records execution costs, account assumptions, and the data subset used by the core test:
+
+```yaml
+core:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2026-05-29"
+  initial_balance: 50000
+  tick_size: 0.25
+  tick_value: 12.50
+  commission_per_contract: 2.50
+  slippage_ticks: 1
+  contracts: 1
+  position_sizing:
+    mode: fixed_contracts
+  daily_loss_limit: 1000
+  daily_profit_stop: 1000
+  flatten_time: "14:55:00"
+```
+
+`position_sizing.mode: fixed_contracts` uses `contracts` for every trade. `fixed_contracts` is also the default when `position_sizing` is omitted, so existing configs that only define `contracts` keep the old behavior.
+
+To size each entry from the configured stop distance and current account net liquidation, use:
+
+```yaml
+core:
+  initial_balance: 100000
+  tick_size: 0.25
+  tick_value: 12.50
+  position_sizing:
+    mode: risk_percent_net_liq
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
+```
+
+In `risk_percent_net_liq` mode, do not set `contracts`; the engine calculates contracts per trade after entry and stop are known. Risk-percent sizing uses current net liquidation at entry time times `risk_pct` as the target dollar risk, then divides by the entry-to-stop risk per contract. Use `risk_pct: 0.01` for 1% risk, or `risk_percent: 1.0` if you prefer percent-point notation. Existing `risk_percent_initial_balance` configs are accepted as aliases for this net-liq behavior.
+
+`rounding: floor` is the default and treats the risk percent as a ceiling. `nearest` and `ceil` are available when you explicitly want to test over-risking behavior. If rounding produces fewer than `min_contracts`, the entry is skipped. `min_contracts` is not a fixed trade size; it is only the minimum size required to allow an entry.
+
+Do not compare variants unless these assumptions are intentionally identical or intentionally part of the test.
+
+### Step 7: Run Core
+
+Run one exact source config through the core test:
+
+```bash
+VARIANT_CONFIG=campaigns/pdh_pdl_sweep/rescue_attempts/parameter_space_rescue_1/baseline/config.yaml
+PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
+```
+
+The command prints the output folder. It will follow this layout:
+
+```text
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/
+```
+
+For the example above:
+
+```text
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/
+```
+
+### Step 8: Validate Before Interpreting Performance
+
+The core run also writes validation files:
+
+```text
+validation/
+  cleaned_data.csv
+  features_data.csv
+  data_quality_report.csv
+  missing_bars.csv
+  tradingview_comparison.csv
+```
+
+Check these first:
+
+```text
+data_quality_report.csv
+  Confirms row counts, date range, duplicate timestamps, missing values, and basic OHLCV checks.
+
+missing_bars.csv
+  Shows expected minute bars that are missing from the cleaned data.
+
+tradingview_comparison.csv
+  Gives sample session values to compare against TradingView or your charting platform.
+```
+
+Do not trust the test if previous day high/low, RTH boundaries, or timestamps are wrong.
+
+### Step 9: Read The Core Report Files
+
+Core outputs live here:
+
+```text
+core/
+  trade_log.csv
+  daily_results.csv
+  equity_curve.csv
+  equity_curve.html
+  metrics.json
+  sample_trades_for_tv_validation.csv
+```
+
+Use them in this order:
+
+```text
+1. sample_trades_for_tv_validation.csv
+2. trade_log.csv
+3. daily_results.csv
+4. equity_curve.html
+5. metrics.json
+```
+
+`sample_trades_for_tv_validation.csv` is for manual chart validation. Confirm:
+
+```text
+signal bar
+next-bar entry
+entry price after slippage
+stop price
+target price
+exit bar
+exit reason
+```
+
+`trade_log.csv` is one row per trade. Important columns:
+
+```text
+entry_timestamp / exit_timestamp
+  When the trade opened and closed.
+
+direction
+  long or short.
+
+level_type / swept_level
+  Which reference level triggered the setup.
+
+entry_price / stop_price / target_price / exit_price
+  The simulated prices after configured slippage rules.
+
+exit_reason
+  Usually stop, target, or eod_flatten.
+
+gross_pnl
+  PnL after slippage-adjusted entry/exit prices, before commission.
+
+net_pnl
+  PnL after commission.
+
+slippage_cost
+  Estimated cost of the configured entry and exit slippage.
+
+r_multiple
+  Trade result divided by initial risk.
+
+max_favorable_excursion / max_adverse_excursion
+  How far the trade moved in favor or against before exit.
+```
+
+`daily_results.csv` groups trades by session:
+
+```text
+session_date
+net_pnl
+gross_pnl
+trades
+wins
+losses
+```
+
+Use it to check prop-firm style behavior:
+
+```text
+large losing days
+days with too many trades
+profit concentration in one or two sessions
+whether daily loss limits are realistic
+```
+
+`equity_curve.html` opens in a browser and plots account equity from the
+configured `core.initial_balance` plus each closed trade's `net_pnl` in exit
+order. `equity_curve.csv` is the same curve data for audit, including
+`equity`, `peak_equity`, `drawdown`, and `drawdown_pct`.
+Hovering over the chart shows the point timestamp, net liquidation value, and
+current drawdown percentage from the embedded curve data.
+The HTML summary cards also include win rate, profit factor, and MAR for the
+displayed run.
+
+To generate equity curve files for existing reports without rerunning the
+backtests:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_equity_curves --config "$VARIANT_CONFIG"
+```
+
+Omit `--config` to scan all supported trade logs under `backtest-campaigns`.
+Use `--trade-log path/to/trade_log.csv --initial-balance 150000` for a single
+standalone trade log.
+
+`metrics.json` is the main performance summary:
+
+```text
+total_trades
+  Number of closed trades. Low trade count means weak statistical confidence.
+
+trades_per_year
+  Annualized trade frequency across the tested date range.
+
+net_profit
+  Sum of all net trade PnL after commission.
+
+profit_factor
+  Sum of positive net_pnl divided by absolute sum of negative net_pnl. Above 1.30 is your current minimum target.
+
+expectancy_r
+  Average trade result in R. Positive means the average trade makes more than it risks.
+
+win_rate
+  Percentage of trades with net_pnl > 0.
+
+max_drawdown
+  Worst peak-to-trough equity drawdown in account currency.
+
+max_drawdown_pct
+  Worst percentage drawdown from the equity curve all-time high. 0.20 means 20%.
+
+cagr
+  Annualized account growth based on initial_balance and ending balance.
+
+mar
+  cagr divided by max_drawdown_pct. Higher means better return per drawdown.
+
+worst_day / best_day
+  Worst and best session PnL.
+
+best_day_concentration
+  best_day divided by total net_profit. High values mean one day dominates results.
+
+max_consecutive_losses
+  Longest losing streak.
+
+positive_month_rate
+  Fraction of profitable months.
+
+average_trade
+  Mean net PnL per trade.
+```
+
+### Step 10: Interpret The Result Against Your Benchmarks
+
+Start with the benchmark fields in the run config:
+
+```yaml
+benchmarks:
+  min_trades_per_year: 100
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.30
+  max_drawdown_pct: 0.03
+  min_cagr: 0.06
+  min_mar: 2.0
+  min_win_rate: 0.50
+```
+
+A baseline core test is more interesting when it passes these checks together:
+
+```text
+enough trades
+profit factor remains above threshold after slippage and commission
+drawdown is within challenge constraints
+returns are not dominated by one day
+monthly and daily behavior are not fragile
+trade examples match the chart
+```
+
+Red flags:
+
+```text
+very high profit factor with very few trades
+large net profit but poor trades_per_year
+max_drawdown_pct above your account limit
+best_day_concentration above benchmark
+many eod_flatten exits when the strategy is supposed to hit stop or target
+sample trades do not match TradingView
+```
+
+### Step 11: Track Which Config Produced The Report
+
+The variant and run folders record the mechanic, config, and input hashes:
+
+```text
+variant.yaml
+source_config.yaml
+effective_config.yaml
+variant_test_summary.json
+config_hash.txt
+input_data_hash.txt
+run_manifest.json
+```
+
+Use them like this:
+
+```text
+variant.yaml
+  Variant-root file that locks the entry, take-profit, and stop-loss modules.
+
+source_config.yaml
+  Snapshot of the exact authored YAML submitted to the staged runner.
+
+effective_config.yaml
+  Canonical executable YAML used for the run after default stage settings are expanded.
+
+config_hash.txt
+  Changes when the effective run config changes.
+
+input_data_hash.txt
+  Changes when the selected raw input files or data window changes.
+
+run_manifest.json
+  Records which test sections have been run for this variant test run, including campaign.yaml and variant.yaml hashes.
+
+variant_test_summary.json
+  Collects latest summary metrics for core, core grid, monkey, WFA, and Monte Carlo.
+```
+
+The symbol-level index compares `run1`, `run2`, and other test runs for the same campaign variant and symbol:
+
+```text
+backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/runs_index.csv
+```
+
+Use a new `test_run_id` whenever you want to preserve a different fixed/tunable parameter-space attempt for the same variant.
+
+## 4. Configure Core Costs And Risk
+
+```yaml
+core:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2026-05-29"
+  initial_balance: 50000
+  tick_size: 0.25
+  tick_value: 12.50
+  commission_per_contract: 2.50
+  slippage_ticks: 1
+  contracts: 1
+  position_sizing:
+    mode: fixed_contracts
+  daily_loss_limit: 1000
+  daily_profit_stop: 1000
+  flatten_time: "14:55:00"
+```
+
+Sizing modes:
+
+```yaml
+# Fixed sizing: uses contracts on every trade.
+core:
+  contracts: 1
+  position_sizing:
+    mode: fixed_contracts
+
+# Dynamic risk sizing: ignores contracts and calculates size per entry.
+core:
+  initial_balance: 100000
+  position_sizing:
+    mode: risk_percent_net_liq
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
+```
+
+For dynamic sizing, `risk_pct: 0.01` means 1% of current net liquidation at entry time; `risk_percent: 1.0` is the equivalent percent-point form. The trade log includes `position_sizing_mode`, `position_sizing_net_liq`, `target_risk_amount`, `dollar_risk_per_contract`, `unrounded_contracts`, and `planned_dollar_risk` for audit.
+
+Important simulator assumptions:
+
+```text
+signals confirm only after bar close
+entry happens at next bar open
+stop and target activate only after entry fills
+if stop and target both hit in one bar, stop is assumed first
+commission and slippage are included
+```
+
+## 5. Configure Benchmarks
+
+Benchmarks live inside the campaign:
+
+```yaml
+benchmarks:
+  min_trades_per_year: 100
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.30
+  min_total_net_profit: 0
+  min_expectancy_r: 0.0
+  min_win_rate: 0.50
+  max_drawdown_pct: 0.03
+  min_cagr: 0.06
+  min_mar: 2.0
+  max_daily_loss: 1000
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.40
+  min_positive_month_rate: 0.50
+  min_wfa_profitable_window_rate: 0.70
+  min_monte_carlo_prop_pass_chance: 0.50
+```
+
+`max_drawdown_pct` is the worst percentage drawdown from the equity curve all-time high.
+
+Example:
+
+```text
+peak equity: 110000
+trough equity: 88000
+max_drawdown_pct: 0.20
+```
+
+## 6. Run Data Validation And Core
+
+```bash
+VARIANT_CONFIG=campaigns/pdh_pdl_sweep/variants/baseline/config.yaml
+PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
+```
+
+Outputs:
+
+```text
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1/
+  validation/
+    cleaned_data.csv
+    features_data.csv
+    data_quality_report.csv
+    missing_bars.csv
+    tradingview_comparison.csv
+  core/
+    trade_log.csv
+    daily_results.csv
+    metrics.json
+    sample_trades_for_tv_validation.csv
+```
+
+Before trusting results, manually compare these against TradingView or your charting platform:
+
+```text
+validation/tradingview_comparison.csv
+core/sample_trades_for_tv_validation.csv
+```
+
+Check:
+
+```text
+RTH open/high/low/close
+overnight high/low
+previous RTH high/low
+sample trade entry/stop/target/exit bars
+timezone and session boundaries
+```
+
+To compare a MotiveWave/Rithmic CSV export against the Databento DBN archive:
+
+```bash
+PYTHONPATH=src python3 -m propstack.compare_data_sources \
+  --csv data/raw/ES/es_1m_20221201-20260529.csv \
+  --dbn-dir data/raw/ES/GLBX-20260601-U6S3S4F4GM \
+  --continuous-contract explicit_roll_calendar \
+  --roll-calendar data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv \
+  --out data/reports/data_compare/ES/rithmic_vs_databento_1m_20221201_20260529
+```
+
+This writes timestamp coverage, OHLCV mismatch summaries, session-level
+differences, missing timestamp segments, selected Databento contracts, and an
+alternate-contract diagnostic that flags when the CSV matches a different
+Databento contract than the configured continuous-contract rule selected.
+
+## 7. Run Core Grid Search
+
+Configure core grid parameters:
+
+```yaml
+core_grid:
+  data_subset:
+    start_date: "2022-12-01"
+    end_date: "2026-05-29"
+  objective: net_profit
+  min_profitable_iteration_rate: 0.70
+  retain_iteration_reports: true
+  parallel:
+    enabled: true
+    workers: 6
+    scope: grid
+  parameters:
+    entry.params.reclaim_window_bars: [2, 3, 5]
+    tp.params.target_r_multiple: [1.0, 1.5, 2.0]
+    sl.params.stop_offset_ticks: [1, 2]
+    entry.params.min_volume_ratio: [0.0, 1.0]
+    entry.params.start_time: ["08:30:00", "09:00:00"]
+    entry.params.end_time: ["11:00:00", "14:45:00"]
+    entry.params.max_trades_per_day: [1, 3]
+    entry.params.allow_long: [true]
+    entry.params.allow_short: [true]
+```
+
+Run:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_core_grid --config "$VARIANT_CONFIG"
+```
+
+Outputs:
+
+```text
+core_grid/core_grid_results.csv
+core_grid/core_grid_summary.json
+core_grid/core_grid_iteration_trades.csv
+core_grid/core_grid_iteration_daily.csv
+core_grid/equity_curve.csv
+core_grid/equity_curve.html
+```
+
+Review:
+
+```text
+percentage_profitable_iterations
+meets_profitable_iteration_threshold
+percentage_passing_benchmark
+top_10_combinations
+stable_parameter_zones
+failure_reason
+```
+
+Each array under `core_grid.parameters` is combined with every other array, so the total iteration count is the product of all configured value counts. `core_grid_results.csv` has one row per iteration. When `retain_iteration_reports` is true, the trade and daily CSVs add the iteration `run_id` and parameter values to each row so entries, exits, P&L, and equity curves can be audited for any run. Open `core_grid/equity_curve.html` and choose the `run_id` from the selector.
+
+`core_grid.parallel.scope: grid` runs parameter combinations across worker
+processes. When iteration reports are retained, workers return trade/daily
+frames to the parent process and the parent writes the CSVs in `run_id` order.
+Parallel workers submit parameter combinations in bounded batches to reduce
+process scheduling overhead on larger grids.
+
+Prefer stable parameter regions over the single best row. `percentage_profitable_iterations` must meet `min_profitable_iteration_rate`, which defaults to `0.70` when omitted.
+
+## 8. Run Monkey / Random Robustness Testing
+
+Configure constrained random-entry/random-exit iterations. The runner first executes the
+configured core strategy, then generates monkey trade logs with trade count,
+long/short ratio, and average bars in trade kept close to that core result:
+
+```yaml
+monkey:
+  runs: 8000
+  seed: 7
+  beat_threshold: 0.90
+  retain_iteration_reports: true
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    trade_count_tolerance: 0
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.10
+    duration_sampling: core_distribution
+    duration_shape: 0.70
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+```
+
+Run:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_monkey --config "$VARIANT_CONFIG"
+```
+
+Outputs:
+
+```text
+monkey/monkey_results.csv
+monkey/monkey_summary.json
+monkey/monkey_iteration_trades.csv
+monkey/monkey_iteration_daily.csv
+```
+
+Review:
+
+```text
+core_beats_monkey_net_profit_rate
+core_beats_monkey_max_drawdown_rate
+meets_monkey_goal
+percentage_profitable
+percentage_passing_benchmark
+median_net_profit
+p5_net_profit
+p95_max_drawdown
+```
+
+The monkey goal passes only when the core run beats the random trades in both
+dimensions: higher net profit than at least `beat_threshold` of monkey
+iterations and lower max drawdown than at least `beat_threshold` of monkey
+iterations.
+
+`monkey.parallel.scope: runs` runs independent monkey iterations across worker
+processes. Iteration reports are still written by the parent process in
+`run_id` order when `retain_iteration_reports` is true. Parallel monkey runs
+are batched internally, so enabling this is recommended for full staged tests.
+
+How the constraints are enforced:
+
+```text
+trade_count_tolerance_pct
+  Each iteration samples a random trade count inside core_total_trades plus or
+  minus the configured tolerance. `trade_count_tolerance` can add an absolute
+  minimum tolerance.
+
+long_short_ratio_tolerance
+  The core long ratio is converted into an allowed integer range for the sampled
+  trade count. The iteration randomly picks a long count in that range, assigns
+  the remainder as shorts, then shuffles the direction order.
+
+average_bars_tolerance_pct
+  The iteration samples individual durations from the core run's observed
+  bars-in-trade distribution, then retries/adjusts the sample until the average
+  stays inside this tolerance.
+
+duration_sampling
+  Defaults to `core_distribution`. This preserves the core holding-time shape
+  and prevents synthetic monkey exits that are longer than any comparable core
+  trade. `gamma_multinomial` is still accepted as a legacy mode and uses
+  `duration_shape`.
+
+duration_shape
+  Legacy gamma/multinomial shape parameter. It is only used when
+  `duration_sampling: gamma_multinomial`.
+
+max_duration_bars
+  Reported in `monkey_summary.json`, not configured directly. The runner caps
+  sampled durations at `min(core max bars in trade, max feasible eligible-entry
+  room before flatten_time)`.
+
+rth_only
+  Restricts random entries to RTH bars when true.
+
+enforce_non_overlapping
+  Prevents simultaneous monkey positions when true.
+
+enforce_max_trades_per_day
+  Optionally caps monkey trades per day at the core run's observed daily max.
+```
+
+Where the randomness comes from:
+
+```text
+random trade count within tolerance
+random long count within tolerance
+shuffled long/short sequence
+bootstrap sample from the core bars-in-trade distribution
+average duration constrained by tolerance
+random entry-bar placement from eligible market bars
+real market movement from entry open to random-exit close
+```
+
+The monkey does not randomize P&L directly. It builds a trade log from real bars,
+enters at the selected entry bar open, exits at the selected exit bar close,
+applies the configured slippage and commission, then reuses the normal metrics
+calculation. Duration caps are applied before schedule placement, so impossible
+single-trade durations fail during sampling instead of after repeated placement
+attempts.
+
+Audit these columns in `monkey_results.csv` to confirm each run stayed near the
+core profile while retaining variance:
+
+```text
+total_trades
+trade_count_delta
+long_ratio
+long_ratio_delta
+average_bars_in_trade
+average_bars_delta
+net_profit
+max_drawdown
+```
+
+Audit these fields in `monkey_summary.json` to confirm the holding-time cap:
+
+```text
+core_metrics.max_bars_in_trade
+constraints.duration_sampling
+constraints.max_duration_bars
+constraints.max_feasible_duration_bars
+```
+
+When `retain_iteration_reports` is true, audit the generated monkey trades for
+any selected run in `monkey_iteration_trades.csv`:
+
+```text
+run_id
+trade_id
+direction
+entry_timestamp
+entry_price
+exit_timestamp
+exit_price
+bars_in_trade
+gross_pnl
+net_pnl
+commission
+slippage_cost
+```
+
+`monkey_iteration_daily.csv` gives the same per-run daily aggregation used by
+the normal daily report, with `run_id` added for filtering.
+
+When monkey iteration reports are retained, `monkey/equity_curve.html` plots
+the equity curve for each random run with a `run_id` selector.
+
+Small rounding effects are expected for `long_ratio_delta` and
+`average_bars_delta`, especially when the core run has a low trade count. The
+deltas are written per iteration so that constraint drift is visible instead of
+hidden.
+
+## 9. Run Walk-Forward Analysis
+
+Configure train/test windows:
+
+```yaml
+wfa:
+  mode: unanchored
+  train_months: 3
+  test_months: 1
+  step_months: 1
+  objective: MAR
+  parallel:
+    enabled: true
+    workers: 6
+    scope: window_grid
+  parameters:
+    entry.params.reclaim_window_bars: [2, 3]
+    tp.params.target_r_multiple: [1.0, 1.5]
+    sl.params.stop_offset_ticks: [1, 2]
+```
+
+WFA uses `wfa.parameters` for its train-window optimization. This is separate
+from `core_grid.parameters`, so core grid sweeps and walk-forward optimization
+can use different parameter spaces.
+
+`objective` supports `MAR`, `net_profit`, and `profit_factor`. `MAR` selects
+the parameter set with the highest in-sample CAGR divided by max drawdown
+percent (`max_drawdown_pct`) for each train window.
+
+`mode: unanchored` keeps the train window length fixed and moves it forward by
+`step_months`, which defaults to `test_months` when omitted. `mode: anchored`
+keeps the first train start fixed and expands the train window through each
+new out-of-sample period.
+
+`parallel.enabled: true` supports two scopes:
+
+```text
+grid
+  Keeps the older behavior: each WFA train window calls the normal core-grid
+  runner, which creates its own worker pool for that window.
+
+window_grid
+  Reuses one worker pool across WFA train windows and batches the in-sample
+  grid work. This is preferred for long WFA runs because it avoids repeated
+  process-pool startup and keeps worker data initialized.
+```
+
+During the run, each completed window prints the selected in-sample objective
+value plus train and out-of-sample MAR, CAGR, max drawdown percent, and net
+profit. The progress bar also carries the latest out-of-sample metrics.
+
+Run:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG"
+```
+
+Outputs:
+
+```text
+wfa/wfa_results.csv
+wfa/wfa_oos_trade_log.csv
+wfa/equity_curve.csv
+wfa/equity_curve.html
+wfa/wfa_summary.json
+wfa/window_###_train_grid.csv
+```
+
+Review:
+
+```text
+selected_params
+train_mar
+train_cagr
+train_max_drawdown_pct
+train_net_profit
+test_mar
+test_cagr
+test_max_drawdown_pct
+test_net_profit
+test_profit_factor
+test_max_drawdown
+profitable_window_rate
+meets_profitable_window_benchmark
+phase_timings_seconds
+window_timings_seconds
+```
+
+`wfa/equity_curve.html` plots the stitched out-of-sample trade log across all
+completed test windows.
+
+Each `window_###_train_grid.csv` file contains the full in-sample grid for one
+walk-forward train window. Rows are sorted with the same rule WFA uses to pick
+the winner, so `wfa_selection_rank == 1` and `wfa_selected == true` identify
+the parameter set applied to that window's out-of-sample test period.
+
+Set `reuse_existing_train_grids: true` only when rerunning the same WFA inputs.
+Reusable train-grid CSVs are validated against the WFA window dates, objective,
+base config hash, parameter-grid hash, selection-filter hash, and input data
+hash when available. The default `strict_train_grid_reuse: true` fails fast if
+an existing grid is stale or was written by an older unguarded runner.
+
+Target:
+
+```text
+profitable_window_rate >= 0.70
+```
+
+## 10. Configure Prop Rules
+
+```yaml
+prop_rules:
+  starting_balance: 50000
+  trailing_drawdown: 2000
+  max_contracts: 5
+  account_lifecycle_enabled: true
+  challenge_fee: 98
+  challenge_profit_target_amount: 3000
+  challenge_consistency_limit: 0.50
+  trailing_drawdown_lock_balance: 52100
+  trailing_drawdown_locked_floor: 50100
+  funded_starting_balance: 50000
+  funded_initial_drawdown_floor: 48000
+  funded_payout_min_profit_day: 150
+  funded_payout_required_profit_days: 5
+  funded_payout_profit_fraction: 0.50
+  funded_payout_profit_share: 0.90
+  funded_payout_max_amount: 2000
+  max_payouts_per_account: 5
+```
+
+The WFA OOS Monte Carlo stage defaults to this single-account lifecycle. It
+charges the challenge fee when a new account is bought, ignores account losses
+as external PnL, and counts only net payout share as external profit.
+
+The default lifecycle benchmark uses:
+
+```text
+mean_net_pnl > 0
+```
+
+This requires the arithmetic average of all simulated external PnL values to be
+positive after challenge fees and payout profit share.
+
+## 11. Run Monte Carlo
+
+Configure Monte Carlo:
+
+```yaml
+monte_carlo:
+  trade_source: core
+  runs: 1000
+  seed: 11
+  parallel:
+    enabled: true
+    workers: 6
+    scope: runs
+  path_months: 1
+  skip_trade_probability: 0.05
+  skip_winning_trade_probability: 0.05
+  adverse_slippage_per_trade: 0.0
+  position_sizing:
+    mode: reference
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+```
+
+Monte Carlo requires an explicit existing report trade log. It never reruns the
+strategy and does not load raw market data.
+
+```text
+trade_source: core    -> read core/trade_log.csv
+trade_source: wfa_oos -> read wfa/wfa_oos_trade_log.csv
+```
+
+For `trade_source: core`, run `propstack.run_core` first. For
+`trade_source: wfa_oos`, run `propstack.run_wfa` first. If the selected trade
+log is missing, Monte Carlo fails instead of creating a new source implicitly.
+
+To run Monte Carlo against stitched walk-forward out-of-sample trades, run WFA
+first, then set:
+
+```yaml
+monte_carlo:
+  trade_source: wfa_oos
+```
+
+This reads `wfa/wfa_oos_trade_log.csv` for the same campaign/symbol/dataset/variant.
+
+Optional explicit path overrides are available for report artifacts:
+
+```yaml
+monte_carlo:
+  trade_source: core
+  core_trade_log: backtest-campaigns/.../core/trade_log.csv
+
+monte_carlo:
+  trade_source: wfa_oos
+  wfa_oos_trade_log: backtest-campaigns/.../wfa/wfa_oos_trade_log.csv
+```
+
+Monte Carlo mechanics:
+
+```text
+1. Each run starts from the selected trade log.
+2. The trade order is shuffled without replacement.
+3. Trades can be removed using skip_trade_probability.
+4. Winning trades can also be removed using skip_winning_trade_probability.
+5. If cluster_losses is true, losing trades are moved to the front of the path.
+6. Simulated contracts are chosen from monte_carlo.position_sizing.
+7. If simulated contracts exceed prop_rules.max_contracts, contracts are capped at that max.
+8. adverse_slippage_per_trade is subtracted from each retained trade's simulated PnL.
+9. The stressed path is evaluated against prop_rules.
+10. When account_lifecycle_enabled is true, output net_pnl is external PnL:
+    net payout share minus challenge fees.
+```
+
+With account lifecycle enabled, each sampled path can trade only one account at
+a time. A new $50k challenge account is bought only at path start, after a
+breach, or after five funded payouts terminate the account. Challenge pass
+requires $3,000 account profit and 50% consistency, meaning no single winning
+trade can exceed 50% of total challenge profit. Passing resets the funded
+account balance and drawdown floor.
+
+The lifecycle drawdown is an EOD trailing floor. The floor starts $2,000 below
+the account balance, moves up only from end-of-day account balance, locks at
+$50,100 when EOD balance reaches $52,100, and any later intraday balance below
+the active floor breaches the account. Funded payout eligibility requires five
+days with at least $150 simulated account profit since the previous payout.
+The requested payout is 50% of account profit, capped at $2,000, and only 90%
+of the requested amount is credited to external PnL.
+
+For staged WFA OOS lifecycle Monte Carlo, trade order is shuffled without loss
+clustering by default. A top-level `monte_carlo.cluster_losses: true` stress
+setting is not inherited by this lifecycle stage unless
+`campaign_tests.wfa_oos_monte_carlo.cluster_losses: true` is set explicitly.
+
+Monte Carlo position sizing:
+
+```yaml
+monte_carlo:
+  position_sizing:
+    mode: reference
+```
+
+`mode: reference` uses the selected report trade log's sizing behavior.
+Fixed-contract source trades keep their source quantity. Risk-percent source
+trades are recomputed from the source trade's risk distance and the reference
+`core.position_sizing` risk settings using the current MC path balance before
+each trade. This preserves the core engine's legacy behavior where
+`risk_percent_initial_balance` is accepted as a net-liq sizing alias.
+
+You can override the reference test's position sizing for Monte Carlo only:
+
+```yaml
+monte_carlo:
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 2
+
+monte_carlo:
+  position_sizing:
+    mode: risk_percent_net_liq
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
+
+monte_carlo:
+  position_sizing:
+    mode: risk_percent_initial_balance
+    risk_pct: 0.01
+    rounding: floor
+    min_contracts: 1
+```
+
+`fixed_contracts` forces every retained MC trade to the configured contract
+count. `risk_percent_net_liq` sizes every retained MC trade from the current MC
+path account balance before that trade. `risk_percent_initial_balance` sizes
+every retained MC trade from `prop_rules.starting_balance`, so trade order and
+prior account PnL do not change the risk base. Percent sizing uses `risk_points`
+from the source trade log, or `dollar_risk_per_contract` if `risk_points` is
+missing.
+The simulated trade PnL is scaled from the source trade's per-contract PnL,
+then `adverse_slippage_per_trade` is subtracted. This is why
+`source_contracts` can differ from `sim_contracts`, and why `source_net_pnl`
+can differ from `sim_net_pnl`.
+
+If the simulated size is above `prop_rules.max_contracts`, Monte Carlo caps
+`sim_contracts` at `max_contracts` and recomputes `sim_net_pnl` from the capped
+quantity. This is logged as `max_contracts_capped` in
+`monte_carlo_path_events.csv`; it is not counted as an account breach.
+
+Important implementation details:
+
+```text
+- runs controls how many independent shuffled/stressed paths are generated.
+- seed makes the run reproducible; each run_id gets a deterministic derived seed.
+- Sampling is permutation/subset based, not bootstrap-with-replacement.
+- The simulation uses trade-log rows, not new bar-level market paths.
+- path_months is currently configured but not used by the Monte Carlo engine.
+- Lifecycle EOD updates use sampled path order and the sampled trades' session_date values.
+```
+
+Audit reports are optional because they can get large. Enable them when you
+want to inspect exactly how a run was sampled and evaluated:
+
+```yaml
+monte_carlo:
+  retain_path_trades: true
+  retain_path_events: true
+```
+
+The staged WFA OOS Monte Carlo lifecycle enables these path logs by default
+because challenge purchases, breaches, funded resets, payout requests, and
+account terminations are otherwise hard to audit.
+
+`monte_carlo_path_trades.csv` records every shuffled source trade for every
+run, including skipped trades:
+
+```text
+run_id
+sample_index
+path_index
+source_trade_id
+source_session_date
+source_contracts
+sim_contracts
+source_net_pnl
+sim_net_pnl
+position_sizing_mode
+position_sizing_net_liq
+target_risk_amount
+dollar_risk_per_contract
+unrounded_contracts
+planned_dollar_risk
+was_skipped
+skip_reason
+was_loss_clustered
+was_applied
+account_number
+account_phase
+balance
+trailing_floor
+event
+trader_net_pnl
+total_challenge_fees
+net_payouts
+```
+
+`monte_carlo_path_events.csv` records the account-state event trail for
+retained path trades:
+
+```text
+run_id
+event_sequence
+path_index
+source_trade_id
+source_session_date
+source_contracts
+sim_contracts
+source_net_pnl
+sim_net_pnl
+position_sizing_mode
+position_sizing_net_liq
+target_risk_amount
+dollar_risk_per_contract
+unrounded_contracts
+planned_dollar_risk
+balance
+account_high
+trailing_floor
+max_drawdown
+drawdown_limit_balance
+payout_target_balance
+profit_target_balance
+event
+breach_reason
+daily_pnl
+account_number
+account_phase
+trader_net_pnl
+total_challenge_fees
+gross_payouts
+net_payouts
+total_payout_count
+account_payout_count
+funded_profit_days
+challenge_total_profit
+challenge_largest_trade_profit
+challenge_consistency_ratio
+payout_request
+payout_net
+```
+
+`monte_carlo.parallel.scope: runs` runs independent path simulations across
+worker processes. Parallel Monte Carlo runs are batched internally to reduce
+per-run process scheduling overhead.
+
+Run:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$VARIANT_CONFIG"
+```
+
+Outputs:
+
+```text
+monte_carlo/monte_carlo_results.csv
+monte_carlo/monte_carlo_summary.json
+monte_carlo/monte_carlo_path_trades.csv   # when retain_path_trades is true
+monte_carlo/monte_carlo_path_events.csv   # when retain_path_events is true
+monte_carlo/equity_curve.html             # when retain_path_trades is true
+```
+
+Review:
+
+```text
+number_of_runs
+median_ending_balance
+p5_ending_balance
+mean_net_pnl
+average_net_pnl
+median_net_pnl
+p5_net_pnl
+p95_net_pnl
+p95_drawdown
+probability_account_breach
+probability_payout_eligible
+probability_profit_before_drawdown
+probability_net_profit_gt_0
+probability_challenge_passed
+probability_funded_payout
+median_accounts_purchased
+median_total_challenge_fees
+median_net_payouts
+parallel
+meets_prop_pass_chance_benchmark
+trade_source
+path_trades_report
+path_events_report
+```
+
+Monte Carlo summary metrics:
+
+```text
+number_of_runs
+  Number of independent shuffled/stressed paths evaluated.
+
+median_ending_balance
+  Median final account balance across all runs.
+
+p5_ending_balance
+  5th percentile final account balance. About 5% of runs ended at or below
+  this balance.
+
+p95_drawdown
+  95th percentile max drawdown. About 95% of runs had max drawdown at or below
+  this value, and about 5% were worse.
+
+probability_account_breach
+  Fraction of runs that eventually breached a prop rule, such as trailing
+  drawdown or daily loss limit.
+
+probability_payout_eligible
+  In lifecycle mode, fraction of runs that reached at least one funded payout.
+  In legacy mode, fraction of runs that reached starting_balance +
+  payout_threshold before reaching the drawdown_limit_pct balance.
+
+mean_net_pnl
+  Arithmetic average external PnL across all simulations. In lifecycle mode,
+  this is net payout share minus challenge fees. The staged WFA OOS Monte Carlo
+  pass gate requires this value to be strictly greater than 0.
+
+average_net_pnl
+  Alias for mean_net_pnl.
+
+median_net_pnl
+  Median external PnL across simulations.
+
+p5_net_pnl
+  5th percentile external PnL across simulations.
+
+p95_net_pnl
+  95th percentile external PnL across simulations.
+
+probability_profit_before_drawdown
+  In lifecycle mode, fraction of runs that passed at least one challenge before
+  account replacement. In legacy mode, fraction of runs that reached
+  starting_balance * (1 + profit_target_pct) before reaching starting_balance *
+  (1 - drawdown_limit_pct).
+
+probability_net_profit_gt_0
+  Fraction of runs whose external PnL was greater than zero. In lifecycle mode,
+  external PnL is net payout share minus challenge fees. This is diagnostic; it
+  is not the default staged WFA OOS Monte Carlo pass gate.
+
+parallel
+  Execution metadata showing whether runs were distributed across workers.
+
+meets_prop_pass_chance_benchmark
+  True when the configured prop benchmark metric clears its benchmark
+  threshold. Lifecycle mode defaults this benchmark metric to mean_net_pnl with
+  a strict threshold of 0 unless explicitly overridden.
+
+trade_source
+  Existing report trade log used as the Monte Carlo input, such as core/trade_log.csv
+  or wfa/wfa_oos_trade_log.csv.
+
+path_trades_report
+  Path to monte_carlo_path_trades.csv when retain_path_trades is true.
+
+path_events_report
+  Path to monte_carlo_path_events.csv when retain_path_events is true.
+```
+
+Target:
+
+```text
+probability_profit_before_drawdown >= 0.50
+```
+
+## 12. Track What Ran
+
+Each runner updates:
+
+```text
+source_config.yaml
+effective_config.yaml
+variant_test_summary.json
+config_hash.txt
+input_data_hash.txt
+run_manifest.json
+```
+
+Use these to answer:
+
+```text
+which config was used?
+which raw data source was used?
+did the config change?
+did the input data change?
+which sections have been run?
+```
+
+The variant summary accumulates results:
+
+```json
+{
+  "campaign_id": "pdh_pdl_sweep",
+  "variant_id": "baseline",
+  "strategy_name": "pdh_pdl_sweep",
+  "symbol": "ES",
+  "dataset_id": "1m_full_history",
+  "data_source": "databento_dbn",
+  "raw_dir": "data/raw/ES/GLBX-20260601-U6S3S4F4GM",
+  "config_hash": "...",
+  "input_data_hash": "...",
+  "sections": {
+    "core": {},
+    "core_grid": {},
+    "monkey": {},
+    "wfa": {},
+    "monte_carlo": {}
+  }
+}
+```
+
+The symbol-level index lets you compare test runs under the same campaign, variant, and symbol:
+
+```text
+backtest-campaigns/pdh_pdl_sweep/baseline/ES/runs_index.csv
+```
+
+## Staged Campaign Test Runner
+
+The staged runner executes the full gate sequence directly under the run folder:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --skip-validation
+```
+
+For exploratory iteration, use the runtime speed profile:
+
+```bash
+PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --fast-runtime-defaults
+PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --fast-runtime-defaults --no-acceptance
+```
+
+`--fast-runtime-defaults` enables conservative parallel defaults at runtime
+only: batched grid work, monkey and Monte Carlo run parallelism, and WFA
+`window_grid` pooling. It also skips staged validation outputs so prepared data
+can be cached across stages. It does not mutate the run config. Use
+`--no-acceptance` only for exploratory runs; a promotion-ready campaign should
+include `acceptance_oos_test`.
+
+When `--skip-validation` is used, prepared market/detail data is cached in
+memory for the current staged run and reused by later stages with the same data
+config, timeframe, and subset. Each stage's `data_quality` includes
+`prepare_data_duration_seconds` and `prepared_data_cache` so cache hits are
+visible in `stage_result.json`.
+
+## Recommended End-To-End Workflow
+
+For a serious strategy test:
+
+```bash
+VARIANT_CONFIG=campaigns/pdh_pdl_sweep/variants/baseline/config.yaml
+
+PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_core_grid --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_monkey --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$VARIANT_CONFIG"
+```
+
+Review in this order:
+
+```text
+1. validation/data_quality_report.csv
+2. validation/tradingview_comparison.csv
+3. core/metrics.json
+4. core/trade_log.csv
+5. core_grid/core_grid_summary.json
+6. monkey/monkey_summary.json
+7. wfa/wfa_summary.json
+8. monte_carlo/monte_carlo_summary.json
+9. variant_test_summary.json
+10. runs_index.csv
+```
+
+## Important Limitations
+
+This is a research skeleton, not a production trading engine.
+
+It does not implement:
+
+```text
+broker adapters
+live order routing
+database storage
+tick data
+order-book data
+machine learning
+broker reconciliation
+```
+
+Sierra Chart data is supported only after conversion into validated aggregate
+bar/orderflow caches. Reconstructed Sierra minute OHLCV is acceptable for
+completed-bar research after validation, but raw Sierra `.scid` files and
+SCID-derived bars must not be used directly for print-level features,
+tick-replay fills, intra-minute stop/target ordering, or trade-sequence
+assumptions unless a separate source-quality audit proves that specific archive
+is clean.
+
+The first trust checkpoint is always manual data and trade validation against your charting platform.

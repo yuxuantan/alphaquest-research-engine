@@ -1,0 +1,65 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propstack.local/schemas/variant-config.schema.json",
+  "title": "PropStack Variant Config",
+  "type": "object",
+  "required": ["campaign_id", "variant_id", "timeframe", "data", "strategy", "core"],
+  "properties": {
+    "campaign_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+    "variant_id": {"type": "string", "minLength": 1},
+    "test_run_id": {"type": "string"},
+    "symbol": {"type": "string"},
+    "dataset_id": {"type": "string"},
+    "timeframe": {"type": "string"},
+    "data": {
+      "type": "object",
+      "required": ["source"],
+      "properties": {
+        "source": {"enum": ["csv", "parquet", "databento", "databento_dbn", "dbn"]},
+        "raw_csv": {"type": "string"},
+        "raw_parquet": {"type": "string"},
+        "raw_dir": {"type": "string"},
+        "timezone": {"type": "string"},
+        "exchange_timezone": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "strategy": {
+      "type": "object",
+      "required": ["entry", "sl", "tp"],
+      "properties": {
+        "entry": {"$ref": "#/$defs/module"},
+        "sl": {"$ref": "#/$defs/module"},
+        "tp": {"$ref": "#/$defs/module"},
+        "flatten_time": {"type": "string"}
+      },
+      "additionalProperties": true
+    },
+    "core": {
+      "type": "object",
+      "required": ["tick_size", "commission_per_contract", "slippage_ticks"],
+      "properties": {
+        "tick_size": {"type": "number", "exclusiveMinimum": 0},
+        "point_value": {"type": "number", "exclusiveMinimum": 0},
+        "tick_value": {"type": "number", "exclusiveMinimum": 0},
+        "commission_per_contract": {"type": "number", "minimum": 0},
+        "slippage_ticks": {"type": "number", "minimum": 0}
+      },
+      "additionalProperties": true
+    },
+    "apex_rules": {"type": "object"},
+    "research_metadata": {"type": "object"}
+  },
+  "$defs": {
+    "module": {
+      "type": "object",
+      "required": ["module", "params"],
+      "properties": {
+        "module": {"type": "string", "minLength": 1},
+        "params": {"type": "object"}
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}

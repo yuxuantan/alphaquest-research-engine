@@ -2,7 +2,33 @@ VALIDATION_DASHBOARD_PORT ?= 8502
 VALIDATION_DASHBOARD_SEARCH_ROOT ?= backtest-campaigns
 SAMPLE_VALIDATION_RUN_DIR ?= examples/validation_runs/sample_core
 
-.PHONY: test lint quality qualify cleanup-generated preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
+.PHONY: help setup smoke tutorial docs-check test lint quality qualify cleanup-generated preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
+
+help:
+	@printf '%s\n' \
+	  'setup                 Install the package with development dependencies' \
+	  'smoke                 Run fast CLI, registry, preflight, and engine tests' \
+	  'tutorial              Generate and execute the isolated synthetic tutorial' \
+	  'docs-check            Validate local links in onboarding documentation' \
+	  'test                  Run the complete test suite' \
+	  'quality               Run lint and the complete test suite' \
+	  'preflight             Audit all authored campaign configs without rerunning tests' \
+	  'research-workspace    Rebuild registry, exports, views, run UIDs, and storage audit' \
+	  'research-status       Print the registry summary' \
+	  'qualify               Write the durable engine qualification report' \
+	  'cleanup-generated     Dry-run generated-artifact cleanup'
+
+setup:
+	python3 -m pip install -c constraints/dev.txt -e ".[dev]"
+
+smoke:
+	PYTHONPATH=src python3 -m pytest -q tests/test_cli.py tests/test_preflight.py tests/test_research_registry.py tests/test_backtest_contracts.py
+
+tutorial:
+	PYTHONPATH=src python3 -m propstack.cli tutorial
+
+docs-check:
+	PYTHONPATH=src python3 tools/check_docs_links.py
 
 test:
 	PYTHONPATH=src python3 -m pytest
@@ -19,7 +45,7 @@ cleanup-generated:
 	PYTHONPATH=src python3 tools/cleanup_redundant_generated_artifacts.py
 
 preflight:
-	PYTHONPATH=src python3 -m research.preflight --skip-tests
+	PYTHONPATH=src python3 -m propstack.research.preflight --skip-tests
 
 run-catalog:
 	PYTHONPATH=src python3 tools/build_run_catalog.py
@@ -28,7 +54,7 @@ research-registry:
 	PYTHONPATH=src python3 tools/build_research_registry.py
 
 research-status:
-	PYTHONPATH=src python3 tools/research_status.py
+	PYTHONPATH=src python3 -m propstack.cli research status
 
 research-definitions:
 	PYTHONPATH=src python3 tools/normalize_campaign_definitions.py --apply

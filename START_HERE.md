@@ -4,12 +4,14 @@ Use the registry and generated views for routine navigation. Do not browse the g
 
 ## Daily Entry Points
 
-- `make research-workspace`: rebuild the registry, CSV exports, one cataloged definition index per campaign, and generated views.
-- `make research-status`: show campaign lifecycle and run-verdict counts.
-- `PYTHONPATH=src python3 tools/research_status.py --state review_queue`: list campaigns requiring review.
-- `PYTHONPATH=src python3 tools/research_status.py --campaign <campaign_id>`: show one campaign and its latest runs.
+- `make help`: list supported repository commands.
+- `make tutorial`: execute the isolated synthetic onboarding workflow.
+- `make research-workspace`: rebuild the registry, exports, run store, and generated views.
+- `propstack research status`: show lifecycle and run-verdict counts.
+- `propstack research search --verdict NEEDS_MANUAL_REVIEW`: list campaigns containing incomplete runs.
+- `propstack campaign show <campaign_id>`: show definitions and recent runs.
 - `views/`: disposable, human-facing working sets.
-- `catalogs/exports/`: portable CSV exports of the SQLite registry.
+- `docs/README.md`: role-based documentation index.
 
 ## Ownership Boundaries
 
@@ -28,3 +30,7 @@ Use the registry and generated views for routine navigation. Do not browse the g
 ## Verdict Semantics
 
 `candidate` means a run reached a terminal pass in the recorded workflow. It never means ready to trade. Manual due diligence, independent replication, and paper/live incubation remain mandatory.
+
+## New Contributors
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md), [ARCHITECTURE.md](ARCHITECTURE.md), and the [repository tour](docs/getting-started/repository-tour.md) before changing engine or research contracts.

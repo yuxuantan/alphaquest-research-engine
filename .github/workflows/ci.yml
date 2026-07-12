@@ -16,5 +16,9 @@ jobs:
         run: python -m pip install -e ".[dev]"
       - name: Lint
         run: ruff check src research tests tools
+      - name: CLI smoke
+        run: propstack --help && make smoke
+      - name: Documentation links
+        run: make docs-check
       - name: Tests
         run: python -m pytest

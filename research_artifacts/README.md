@@ -14,3 +14,5 @@ Use `views/artifacts/` and the artifact catalog for categorized navigation. New 
 - `cleanup/`
 
 Do not relocate historical evidence without a reviewed migration map and reference-integrity audit.
+
+New code should write through `propstack.research.artifact_store.ArtifactStore` so category and path rules are enforced centrally. Historical flat paths remain stable until a separately audited migration updates all references.

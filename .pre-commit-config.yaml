@@ -1,0 +1,17 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-yaml
+        exclude: ^(backtest-campaigns|_archived)/
+      - id: check-json
+        exclude: ^(backtest-campaigns|research_artifacts|_archived)/
+      - id: end-of-file-fixer
+        exclude: ^(backtest-campaigns|research_artifacts|_archived|data)/
+      - id: trailing-whitespace
+        exclude: ^(backtest-campaigns|research_artifacts|_archived|data)/
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix]

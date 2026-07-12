@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://propstack.local/schemas/run-manifest.schema.json",
+  "title": "PropStack Run Manifest",
+  "type": "object",
+  "required": ["run_uid", "campaign_id", "variant_id", "test_run_id", "symbol", "dataset_id", "timeframe", "config_hash"],
+  "properties": {
+    "run_uid": {"type": "string", "format": "uuid"},
+    "campaign_id": {"type": "string"},
+    "variant_id": {"type": "string"},
+    "test_run_id": {"type": "string"},
+    "symbol": {"type": "string"},
+    "dataset_id": {"type": "string"},
+    "timeframe": {"type": "string"},
+    "config_hash": {"type": "string", "pattern": "^[a-fA-F0-9]{64}$"},
+    "source_config_hash": {"type": ["string", "null"]},
+    "input_data_hash": {"type": ["string", "null"]},
+    "created_at": {"type": ["string", "null"]},
+    "updated_at": {"type": ["string", "null"]}
+  },
+  "additionalProperties": true
+}
