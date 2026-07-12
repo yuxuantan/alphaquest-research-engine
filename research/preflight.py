@@ -17,7 +17,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from propstack.data.load import load_raw_data  # noqa: E402
+from propstack.data.load import infer_data_source, load_raw_data  # noqa: E402
 from propstack.strategy_modules.entry import ENTRY_MODULES, entry_module_metadata  # noqa: E402
 from propstack.strategy_modules.sl import SL_MODULES  # noqa: E402
 from propstack.strategy_modules.tp import TP_MODULES  # noqa: E402
@@ -48,6 +48,16 @@ SUPPORTED_CONTINUOUS_CONTRACT_RULES = {"none", "dominant_session_volume", "sessi
 DEFAULT_CAMPAIGN_VARIANT_COUNT = 5
 MAX_CAMPAIGN_VARIANT_COUNT = 8
 VARIANT_EXPANSION_RATIONALE_MIN_CHARS = 80
+APPROVED_PRE_TEST_DECISIONS = {
+    "approve_for_testing",
+    "approve_for_density_screen",
+    "approve_for_pre_pnl_density_audit",
+    "approve_rescue_for_testing_after_density_audit",
+}
+TERMINAL_PRE_TEST_DECISIONS = {
+    "blocked_by_campaign_density_failure",
+    "reject_pre_pnl_density",
+}
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -107,14 +117,30 @@ def run_preflight(
         )
 
     inspected = []
+    data_validation_cache: dict[str, tuple[list[str], list[str]]] = {}
+    data_cache_hits = 0
+    terminal_configs = 0
+    explicit_configs = config_paths is not None
     for path in paths:
         path = Path(path)
         inspected.append(str(_display_path(path)))
         try:
             cfg = _load_yaml(path)
-            _validate_config(cfg, path, failures, warnings)
+            decision = _pre_test_decision(cfg)
+            is_terminal = decision in TERMINAL_PRE_TEST_DECISIONS
+            _validate_config(
+                cfg,
+                path,
+                failures,
+                warnings,
+                allow_terminal_pretest=not explicit_configs,
+            )
             _validate_campaign_variant_count(path, failures, warnings)
-            _validate_data(cfg, path, failures, warnings)
+            if is_terminal and not explicit_configs:
+                terminal_configs += 1
+                continue
+            if _validate_data(cfg, path, failures, warnings, cache=data_validation_cache):
+                data_cache_hits += 1
         except Exception as exc:  # fail closed on malformed config or data loaders
             failures.append(f"{_display_path(path)}: preflight exception: {exc}")
 
@@ -128,6 +154,9 @@ def run_preflight(
         "warnings": warnings,
         "tests_ran": bool(run_tests),
         "include_generated_results": bool(include_generated_results),
+        "data_sources_checked": len(data_validation_cache),
+        "data_cache_hits": data_cache_hits,
+        "terminal_configs_not_executed": terminal_configs,
     }
 
 
@@ -160,7 +189,14 @@ def _load_yaml(path: Path) -> dict:
     return loaded
 
 
-def _validate_config(cfg: dict, path: Path, failures: list[str], warnings: list[str]) -> None:
+def _validate_config(
+    cfg: dict,
+    path: Path,
+    failures: list[str],
+    warnings: list[str],
+    *,
+    allow_terminal_pretest: bool = False,
+) -> None:
     prefix = str(_display_path(path))
     _require_keys(cfg, REQUIRED_TOP_LEVEL, prefix, failures)
     data_cfg = cfg.get("data") if isinstance(cfg.get("data"), dict) else {}
@@ -218,7 +254,13 @@ def _validate_config(cfg: dict, path: Path, failures: list[str], warnings: list[
 
     _validate_parameter_grid(cfg, path, failures, warnings)
     _validate_minimum_target_rr(cfg, path, failures)
-    _validate_mechanics_rationale(cfg, path, failures, warnings)
+    _validate_mechanics_rationale(
+        cfg,
+        path,
+        failures,
+        warnings,
+        allow_terminal_pretest=allow_terminal_pretest,
+    )
 
 
 def _validate_strategy_module_registry(
@@ -248,7 +290,14 @@ def _validate_strategy_module_registry(
         failures.append(f"{prefix}: unknown strategy.sl.module {sl_name!r}.")
 
 
-def _validate_mechanics_rationale(cfg: dict, path: Path, failures: list[str], warnings: list[str]) -> None:
+def _validate_mechanics_rationale(
+    cfg: dict,
+    path: Path,
+    failures: list[str],
+    warnings: list[str],
+    *,
+    allow_terminal_pretest: bool = False,
+) -> None:
     prefix = str(_display_path(path))
     research = cfg.get("research_metadata")
     if not isinstance(research, dict):
@@ -273,10 +322,20 @@ def _validate_mechanics_rationale(cfg: dict, path: Path, failures: list[str], wa
                 f"{prefix}: research_metadata.mechanics_review.{field} must be a detailed pre-test rationale."
             )
     decision = str(review.get("pre_test_decision", "")).strip().lower()
-    if decision != "approve_for_testing":
+    accepted = set(APPROVED_PRE_TEST_DECISIONS)
+    if allow_terminal_pretest:
+        accepted.update(TERMINAL_PRE_TEST_DECISIONS)
+    if decision not in accepted:
         failures.append(
-            f"{prefix}: research_metadata.mechanics_review.pre_test_decision must be approve_for_testing."
+            f"{prefix}: research_metadata.mechanics_review.pre_test_decision {decision!r} is not an accepted "
+            "pre-test lifecycle state."
         )
+
+
+def _pre_test_decision(cfg: dict) -> str:
+    research = cfg.get("research_metadata") if isinstance(cfg.get("research_metadata"), dict) else {}
+    review = research.get("mechanics_review") if isinstance(research.get("mechanics_review"), dict) else {}
+    return str(review.get("pre_test_decision") or "").strip().lower()
 
 
 def _validate_parameter_grid(cfg: dict, path: Path, failures: list[str], warnings: list[str]) -> None:
@@ -358,34 +417,88 @@ def _validate_campaign_variant_count(path: Path, failures: list[str], warnings: 
             )
 
 
-def _validate_data(cfg: dict, path: Path, failures: list[str], warnings: list[str]) -> None:
+def _validate_data(
+    cfg: dict,
+    path: Path,
+    failures: list[str],
+    warnings: list[str],
+    *,
+    cache: dict[str, tuple[list[str], list[str]]] | None = None,
+) -> bool:
     data_cfg = cfg.get("data")
     if not isinstance(data_cfg, dict):
-        return
+        return False
     prefix = str(_display_path(path))
     _validate_data_paths(data_cfg, path, failures)
     if any(item.startswith(f"{prefix}: data path") for item in failures):
-        return
+        return False
     load_cfg = _resolved_data_config(data_cfg, path)
+    cache_key = _data_validation_cache_key(load_cfg)
+    if cache is not None and cache_key in cache:
+        cached_failures, cached_warnings = cache[cache_key]
+        failures.extend(f"{prefix}: {message}" for message in cached_failures)
+        warnings.extend(f"{prefix}: {message}" for message in cached_warnings)
+        return True
+    data_failures: list[str] = []
+    data_warnings: list[str] = []
     try:
         df = load_raw_data(load_cfg)
     except Exception as exc:
-        failures.append(f"{prefix}: data load failed: {exc}")
-        return
+        data_failures.append(f"data load failed: {exc}")
+        _record_data_validation(cache, cache_key, data_failures, data_warnings)
+        failures.extend(f"{prefix}: {message}" for message in data_failures)
+        return False
     if df.empty:
-        failures.append(f"{prefix}: data source loaded zero rows.")
-        return
-    if "timestamp" not in df.columns:
-        failures.append(f"{prefix}: data source is missing timestamp column after load.")
-        return
-    if not _timestamps_are_aware(df["timestamp"]):
-        failures.append(f"{prefix}: timestamps are not timezone-aware after load.")
-    duplicate_subset = _duplicate_subset(df)
-    duplicate_count = int(df.duplicated(subset=duplicate_subset).sum())
-    if duplicate_count:
-        failures.append(f"{prefix}: data has {duplicate_count} duplicate bar(s) by {duplicate_subset}.")
-    if not df["timestamp"].is_monotonic_increasing:
-        warnings.append(f"{prefix}: loaded data timestamps are not monotonic before sorting.")
+        data_failures.append("data source loaded zero rows.")
+    elif "timestamp" not in df.columns:
+        data_failures.append("data source is missing timestamp column after load.")
+    else:
+        if not _timestamps_are_aware(df["timestamp"]):
+            data_failures.append("timestamps are not timezone-aware after load.")
+        duplicate_subset = _duplicate_subset(df)
+        duplicate_count = int(df.duplicated(subset=duplicate_subset).sum())
+        if duplicate_count:
+            data_failures.append(f"data has {duplicate_count} duplicate bar(s) by {duplicate_subset}.")
+        if not df["timestamp"].is_monotonic_increasing:
+            data_warnings.append("loaded data timestamps are not monotonic before sorting.")
+    _record_data_validation(cache, cache_key, data_failures, data_warnings)
+    failures.extend(f"{prefix}: {message}" for message in data_failures)
+    warnings.extend(f"{prefix}: {message}" for message in data_warnings)
+    return False
+
+
+def _record_data_validation(
+    cache: dict[str, tuple[list[str], list[str]]] | None,
+    key: str,
+    failures: list[str],
+    warnings: list[str],
+) -> None:
+    if cache is not None:
+        cache[key] = (list(failures), list(warnings))
+
+
+def _data_validation_cache_key(config: dict) -> str:
+    source = infer_data_source(config)
+    if source == "csv":
+        relevant = {
+            "source": source,
+            "raw_csv": config.get("raw_csv"),
+            "symbol": config.get("symbol", "ES"),
+            "timezone": config.get("timezone", "America/Chicago"),
+            "csv_format": config.get("csv_format", "standard"),
+            "has_header": bool(config.get("has_header", True)),
+            "timestamp_format": config.get("timestamp_format"),
+        }
+    elif source == "parquet":
+        relevant = {
+            "source": source,
+            "raw_parquet": config.get("raw_parquet") or config.get("raw_csv"),
+            "symbol": config.get("symbol", "ES"),
+            "timezone": config.get("timezone", "America/Chicago"),
+        }
+    else:
+        relevant = config
+    return json.dumps(relevant, sort_keys=True, default=str, separators=(",", ":"))
 
 
 def _validate_data_paths(data_cfg: dict, config_path: Path, failures: list[str]) -> None:
@@ -489,6 +602,9 @@ def _print_human_result(result: dict) -> None:
     print(f"Preflight {status}")
     print(f"Configs checked: {len(result['configs_checked'])}")
     print(f"Tests ran: {result['tests_ran']}")
+    print(f"Distinct data sources checked: {result['data_sources_checked']}")
+    print(f"Reused data validations: {result['data_cache_hits']}")
+    print(f"Terminal configs not executed: {result['terminal_configs_not_executed']}")
     for warning in result["warnings"]:
         print(f"WARNING: {warning}")
     for failure in result["failures"]:

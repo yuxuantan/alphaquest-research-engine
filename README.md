@@ -1,5 +1,7 @@
 # Prop Stack Automation
 
+Start with [`START_HERE.md`](START_HERE.md). Routine research navigation should use the generated registry and `views/`, not direct browsing of the run store.
+
 Deterministic futures research and backtesting engine with fail-closed preflight,
 staged time-series validation, reproducible run manifests, and prop-rule simulation.
 The project is organized around **campaigns** and **variants**:
@@ -24,6 +26,15 @@ review campaign_test_summary.json, variant_test_summary.json, and runs_index.csv
 Authored research definitions live under `campaigns/`. Generated evidence lives
 under `backtest-campaigns/`; generated snapshots are provenance and must not be
 edited as source configs.
+
+Build the institutional research workspace after adding or running campaigns:
+
+```bash
+make research-workspace
+make research-status
+```
+
+This creates a rebuildable SQLite registry, portable CSV exports, short-ID definition indexes, and curated views for active, review, candidate, closed, and recently failed research. A registry `candidate` is still only a candidate strategy requiring manual due diligence and incubation.
 
 ## Install
 

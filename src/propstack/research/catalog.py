@@ -63,11 +63,15 @@ def write_run_catalog(
 def _summary_paths(root: Path) -> list[Path]:
     if not root.exists():
         return []
-    campaign_paths = sorted(root.rglob("campaign_test_summary.json"))
+    # The engine enforces campaign/variant/symbol/run. Avoid recursively walking
+    # large stage payloads just to discover summaries at known depths.
+    campaign_paths = sorted(
+        [*root.glob("*/campaign_test_summary.json"), *root.glob("*/*/*/*/campaign_test_summary.json")]
+    )
     campaign_parent_dirs = {path.parent for path in campaign_paths}
     variant_paths = [
         path
-        for path in sorted(root.rglob("variant_test_summary.json"))
+        for path in sorted(root.glob("*/*/*/*/variant_test_summary.json"))
         if path.parent not in campaign_parent_dirs
     ]
     return [*campaign_paths, *variant_paths]

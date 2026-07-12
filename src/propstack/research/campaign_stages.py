@@ -24,6 +24,7 @@ from propstack.research.core_grid import run_core_grid
 from propstack.research.monkey import run_monkey
 from propstack.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
 from propstack.research.policy import active_research_policy_metadata, load_research_policy
+from propstack.research.run_store import ensure_run_uid
 from propstack.research.schemas import (
     validate_campaign_config_contract,
     validate_run_summary_contract,
@@ -249,8 +250,10 @@ def run_campaign_stage_tests(
             halted = True
 
     created_at = datetime.now().isoformat(timespec="seconds")
+    run_uid = ensure_run_uid(root)
     data_cfg = cfg.get("data") or {}
     summary = {
+        "run_uid": run_uid,
         "campaign_id": cfg.get("campaign_id"),
         "variant_id": cfg.get("variant_id"),
         "test_run_id": campaign_test_run_id(cfg, config_path=config_path, root_path=root),
@@ -289,6 +292,7 @@ def run_campaign_stage_tests(
     write_json(
         root / "run_manifest.json",
         {
+            "run_uid": run_uid,
             "campaign_id": summary["campaign_id"],
             "variant_id": summary["variant_id"],
             "test_run_id": summary["test_run_id"],

@@ -14,6 +14,7 @@ import yaml
 
 from propstack.data.timeframe import canonical_timeframe, parse_timeframe_minutes
 from propstack.research.policy import active_research_policy_metadata
+from propstack.research.run_store import ensure_run_uid
 from propstack.utils.hashing import file_sha256, object_sha256
 from propstack.version import ENGINE_CONTRACT_VERSION
 
@@ -78,6 +79,7 @@ def create_run_dir(
         if src.resolve() != step_dst.resolve():
             shutil.copy2(src, step_dst)
     manifest = {
+        "run_uid": ensure_run_uid(root),
         "campaign_id": _campaign_id(config),
         "variant_id": _variant_id(config),
         "test_run_id": campaign_test_run_id(config, config_path=config_path, root_path=root),
@@ -282,6 +284,7 @@ def record_campaign_result(
 def _update_manifest(root: Path, config: dict, config_path: str | Path, input_hash: str) -> None:
     variant_metadata = ensure_variant_metadata(config, root_path=root)
     manifest = {
+        "run_uid": ensure_run_uid(root),
         "campaign_id": _campaign_id(config),
         "variant_id": _variant_id(config),
         "test_run_id": campaign_test_run_id(config, config_path=config_path, root_path=root),

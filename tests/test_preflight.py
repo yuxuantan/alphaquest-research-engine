@@ -133,6 +133,49 @@ def test_preflight_accepts_valid_config_and_timezone_aware_data(tmp_path):
     assert result["failures"] == []
 
 
+def test_preflight_loads_shared_dataset_once(tmp_path, monkeypatch):
+    import research.preflight as preflight
+
+    data = tmp_path / "bars.csv"
+    config_one = tmp_path / "one.yaml"
+    config_two = tmp_path / "two.yaml"
+    _write_csv(data)
+    _write_config(config_one, _config(data, variant_id="one"))
+    second = _config(data, variant_id="two")
+    second["data"]["feature_set"] = "different_downstream_features"
+    _write_config(config_two, second)
+    original = preflight.load_raw_data
+    calls = 0
+
+    def counted_load(config):
+        nonlocal calls
+        calls += 1
+        return original(config)
+
+    monkeypatch.setattr(preflight, "load_raw_data", counted_load)
+
+    result = run_preflight(config_paths=[config_one, config_two], run_tests=False)
+
+    assert result["passed"]
+    assert calls == 1
+    assert result["data_sources_checked"] == 1
+    assert result["data_cache_hits"] == 1
+
+
+def test_explicit_terminal_rejection_remains_fail_closed(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    cfg = _config(data)
+    cfg["research_metadata"]["mechanics_review"]["pre_test_decision"] = "reject_pre_pnl_density"
+    _write_config(config, cfg)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("not an accepted pre-test lifecycle state" in failure for failure in result["failures"])
+
+
 def test_preflight_rejects_campaign_with_more_than_eight_variants(tmp_path):
     data = tmp_path / "bars.csv"
     campaign_root = tmp_path / "campaigns" / "es_active"

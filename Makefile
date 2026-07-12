@@ -2,7 +2,7 @@ VALIDATION_DASHBOARD_PORT ?= 8502
 VALIDATION_DASHBOARD_SEARCH_ROOT ?= backtest-campaigns
 SAMPLE_VALIDATION_RUN_DIR ?= examples/validation_runs/sample_core
 
-.PHONY: test lint quality qualify cleanup-generated preflight run-catalog validation-dashboard sample-validation-run validation-dashboard-sample
+.PHONY: test lint quality qualify cleanup-generated preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
 
 test:
 	PYTHONPATH=src python3 -m pytest
@@ -23,6 +23,26 @@ preflight:
 
 run-catalog:
 	PYTHONPATH=src python3 tools/build_run_catalog.py
+
+research-registry:
+	PYTHONPATH=src python3 tools/build_research_registry.py
+
+research-status:
+	PYTHONPATH=src python3 tools/research_status.py
+
+research-definitions:
+	PYTHONPATH=src python3 tools/normalize_campaign_definitions.py --apply
+
+run-uids:
+	PYTHONPATH=src python3 tools/backfill_run_uids.py --apply
+
+run-store:
+	PYTHONPATH=src python3 tools/build_run_store_index.py --apply
+
+storage-audit:
+	PYTHONPATH=src python3 tools/write_storage_migration_audit.py
+
+research-workspace: run-uids research-registry run-store storage-audit
 
 validation-dashboard:
 	PYTHONPATH=src PROPSTACK_VALIDATION_SEARCH_ROOT=$(VALIDATION_DASHBOARD_SEARCH_ROOT) streamlit run apps/validation_dashboard.py --server.port $(VALIDATION_DASHBOARD_PORT)
