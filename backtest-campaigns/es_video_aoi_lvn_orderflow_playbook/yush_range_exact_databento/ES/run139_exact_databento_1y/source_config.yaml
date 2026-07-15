@@ -1,0 +1,130 @@
+campaign_id: es_video_aoi_lvn_orderflow_playbook
+variant_id: yush_range_exact_databento
+strategy_name: yush_range_exact_databento
+run_id: run139_exact_databento_1y
+symbol: ES
+dataset_id: databento_glbx_es_trades_20250714_20260710
+engine_lane: canonical_event_replay
+implementation: src/propstack/backtest/yush_exact_orderflow.py
+timeframe: 3m
+execution_granularity: canonical_trade_event
+data:
+  source: databento_zip_trades
+  dataset_id: databento_glbx_es_trades_20250714_20260710
+  archive: data/raw/ES/GLBX-20260713-S6XF67C8UA.zip
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+  start_date: '2025-07-14'
+  end_date: '2026-07-10'
+  timezone: America/New_York
+  active_contract_rule: explicit_roll_calendar
+  reset_previous_levels_on_roll: true
+  source_quality_label: Direct Databento GLBX trades messages ordered by exchange timestamp and source ordinal; active outright only; not MBO.
+core:
+  initial_balance: 50000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  contracts: 1
+  commission_per_contract: 2.5
+  slippage_ticks: 0
+  entry_start: '09:30:00'
+  flatten_time: '11:00:00'
+  max_trades_per_day: 3
+  event_stop_market_fill_policy: exact_requested_price
+strategy:
+  execution_lane: canonical_event_replay
+  entry:
+    module: yush_exact_orderflow_event_strategy
+    params: {}
+  sl:
+    module: engine_event_protective_stop
+    params: {}
+  tp:
+    module: engine_event_dynamic_value_area_target
+    params: {}
+mechanics:
+  entry_start: '09:30:00'
+  entry_end_exclusive: '11:00:00'
+  flatten_time: '11:00:00'
+  max_trades_per_day: 3
+  value_area_fraction: 0.70
+  profile_bucket_ticks: 1
+  opening_range_seconds: 32
+  max_aoi_width_points: 3.0
+  entry_offset_ticks: 2
+  stop_offset_ticks: 2
+  max_stop_points: 5.0
+  range_expansion_fraction: 0.20
+  breakout_probe_ticks: 2
+  breakout_followthrough_completed_bars: 2
+  reversal_count_required: 2
+  delta_profile_bucket_ticks: [1, 4]
+  delta_profile_min_abs: 300
+  delta_profile_neighbour_multiple: 2.0
+  delta_profile_neighbours_each_side: 2
+  delta_bubble_bucket_ticks: 4
+  delta_bubble_threshold: 300
+  big_trade_threshold: 200
+  big_trade_window_ms: 100
+  breakeven_offset_points: 1.25
+  breakeven_activation_requires_stop_level_traded: true
+  bar_seconds: 180
+  causal_order: eligible_aoi_before_tap_before_bubble_before_fill
+  aoi_anchor_levels: [VAL, VAH]
+  additional_confluence_categories: [market, delta_profile, big_trade]
+  market_levels: [PDH, PDL, PDC, ONH, ONL, ORH, ORL]
+  bubble_trigger_operator: OR
+  exact_fill_assumption: requested_trigger_price_zero_slippage
+  post_initial_stop_direction_rule: opposite_until_opposite_fill_or_session_end
+event_filters:
+  high_impact_usd_news:
+    required: true
+    flatten_at_minutes_before: 5
+    block_entries_from_minutes_before: 5
+    block_entries_through_release: true
+    post_release_buffer_minutes: 0
+    calendar: null
+    limitation: No durable historical high-impact USD event calendar exists locally, so the numerical run cannot be called fully faithful.
+benchmarks:
+  min_trade_count: 150
+  min_trades_per_year: 156
+  min_total_net_profit: 0
+  min_profit_factor: 1.2
+  max_drawdown_pct: 0.10
+  min_expectancy_r: 0.03
+  max_best_day_concentration: 0.50
+  max_consecutive_losses: 8
+prop_rules:
+  starting_balance: 50000
+  daily_loss_limit: 2500
+  trailing_drawdown: 2500
+  max_contracts: 5
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 5
+  payout_threshold: 250
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.05
+  account_lifecycle_enabled: true
+  challenge_profit_target_amount: 3000
+  challenge_consistency_limit: 0.5
+  funded_starting_balance: 50000
+  funded_initial_drawdown_floor: 47500
+  funded_payout_min_profit_day: 250
+  funded_payout_required_profit_days: 5
+  funded_payout_profit_fraction: 0.5
+  funded_payout_profit_share: 0.9
+monte_carlo:
+  runs: 1000
+  seed: 11
+  min_monte_carlo_mean_net_pnl: 0
+  min_monte_carlo_prop_pass_chance: 0.5
+  position_sizing:
+    mode: reference
+research_metadata:
+  mechanics_status: frozen_from_user_decisions_and_eight_accepted_defaults
+  parameter_search: none_one_fixed_combination
+  verdict_policy: Fail closed on missing news data, causal validation errors, insufficient frequency, non-positive expectancy, weak PF, excessive drawdown, or concentration.
+  known_limitations:
+    - Databento trades are market-by-price trade messages with aggressor side, not MBO order identity or queue state.
+    - The required versioned high-impact USD release calendar is absent.
+    - Exact trigger-price zero-slippage fills are the user-directed base assumption and require adverse-fill sensitivity before any candidate promotion.

@@ -294,6 +294,9 @@ from propstack.strategy_modules.entry.trend_orderflow_pdh_pdl_sweep_reclaim impo
 from propstack.strategy_modules.entry.positive_delta_dislocation import PositiveDeltaDislocationEntry
 from propstack.strategy_modules.entry.preholiday_effect import PreholidayEffectEntry
 from propstack.strategy_modules.entry.profile_aoi_footprint_trap import ProfileAoiFootprintTrapEntry
+from propstack.strategy_modules.entry.tpo_value_edge_auction_rejection import (
+    TpoValueEdgeAuctionRejectionEntry,
+)
 from propstack.strategy_modules.entry.nq_nonconfirming_vap_aoi_trap import (
     NqNonconfirmingVapAoiTrapEntry,
 )
@@ -694,6 +697,7 @@ ENTRY_MODULES = {
     PositiveDeltaDislocationEntry.name: PositiveDeltaDislocationEntry,
     PreholidayEffectEntry.name: PreholidayEffectEntry,
     ProfileAoiFootprintTrapEntry.name: ProfileAoiFootprintTrapEntry,
+    TpoValueEdgeAuctionRejectionEntry.name: TpoValueEdgeAuctionRejectionEntry,
     NqNonconfirmingVapAoiTrapEntry.name: NqNonconfirmingVapAoiTrapEntry,
     NqConfirmingVapAoiBreakoutEntry.name: NqConfirmingVapAoiBreakoutEntry,
     TrueVapAoiBreakoutContinuationEntry.name: TrueVapAoiBreakoutContinuationEntry,

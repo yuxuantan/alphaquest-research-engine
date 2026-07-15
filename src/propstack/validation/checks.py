@@ -269,6 +269,9 @@ class _ValidationChecker:
         direction = str(trade.get("direction") or "").lower()
         entry = _num(trade.get("entry_price"))
         stop = _num(trade.get("stop_price"))
+        initial_stop = _num(_flag_value(trade.get("debug_flags"), "signal_stop_price"))
+        if initial_stop is not None:
+            stop = initial_stop
         target = _num(trade.get("target_price"))
         if entry is None or stop is None or target is None:
             return
@@ -570,7 +573,13 @@ class _ValidationChecker:
             if frame.empty or "timestamp" not in frame.columns:
                 continue
             parsed = pd.to_datetime(frame["timestamp"], errors="coerce", utc=True)
-            if name == "tick" and "price_level" in frame.columns and frame["price_level"].notna().any():
+            if name == "tick" and "source_ordinal" in frame.columns and frame["source_ordinal"].notna().any():
+                duplicate_basis = pd.DataFrame(
+                    {"timestamp": parsed, "source_ordinal": frame["source_ordinal"]}
+                )
+                duplicated = duplicate_basis.duplicated().any()
+                duplicate_expected = "no duplicate timestamp/source_ordinal event keys"
+            elif name == "tick" and "price_level" in frame.columns and frame["price_level"].notna().any():
                 duplicate_basis = pd.DataFrame({"timestamp": parsed, "price_level": frame["price_level"]})
                 duplicated = duplicate_basis.duplicated().any()
                 duplicate_expected = "no duplicate timestamp/price_level rows"
@@ -735,6 +744,17 @@ def _has_flag(value: Any, flag: str) -> bool:
     if _is_missing(value):
         return False
     return flag in {item.strip() for item in str(value).split(";") if item.strip()}
+
+
+def _flag_value(value: Any, key: str) -> str | None:
+    if _is_missing(value):
+        return None
+    prefix = f"{key}="
+    for item in str(value).split(";"):
+        item = item.strip()
+        if item.startswith(prefix):
+            return item[len(prefix) :]
+    return None
 
 
 def _is_missing(value: Any) -> bool:

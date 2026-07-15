@@ -14,6 +14,7 @@ from propstack.validation.loaders import ValidationRun, load_tick_window_for_tra
 from propstack.validation.schema import (
     BarWindowRow,
     ConditionSnapshot,
+    EventTransition,
     ExitAudit,
     ManualReviewAnnotation,
     TickWindowRow,
@@ -25,6 +26,7 @@ from propstack.validation.schema import (
 __all__ = [
     "BarWindowRow",
     "ConditionSnapshot",
+    "EventTransition",
     "ExitAudit",
     "ManualReviewAnnotation",
     "TickWindowRow",

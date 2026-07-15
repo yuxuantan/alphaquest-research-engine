@@ -131,6 +131,7 @@ class ValidationExportConfig:
 class BacktestEngine:
     def __init__(self, config: dict, show_progress: bool = False):
         require_minimum_target_rr(config.get("strategy", {}), context="strategy")
+        _validate_large_record_source_contract(config)
         self.config = config
         self.strategy_config = copy.deepcopy(config.get("strategy", {}))
         if "strategy_name" not in self.strategy_config and config.get("strategy_name"):
@@ -144,6 +145,35 @@ class BacktestEngine:
         self.show_progress = show_progress
         self.timeframe_minutes = self._configured_bar_interval_minutes()
         self._apply_timeframe_to_strategy()
+
+    def run_event_replay(self, sessions, strategy) -> dict:
+        """Run a strategy through the canonical trade-event execution lane.
+
+        This lane is intentionally separate from :meth:`run`: bar-close signal
+        timing and OHLC conflict semantics remain unchanged. Event strategies
+        update causal state before execution and submit or reprice orders after
+        execution, with all new requests becoming active on the next canonical
+        event.
+        """
+
+        if self.apex_rules.enabled:
+            raise ValueError(
+                "canonical event replay does not yet implement apex_rules; disable them or add an event-lane policy adapter."
+            )
+        if self.event_filters.enabled:
+            raise ValueError(
+                "canonical event replay does not yet implement generic event_filters.no_trade_windows; "
+                "use strategy pre_execution controls or disable the generic filter."
+            )
+        if self.validation_export.enabled:
+            raise ValueError(
+                "canonical event replay validation must be exported from its returned event evidence with "
+                "write_validation_run; bar-lane validation_export cannot be reused implicitly."
+            )
+
+        from propstack.backtest.event_replay import CanonicalEventReplay
+
+        return CanonicalEventReplay(self.config, self.execution_assumptions).run(sessions, strategy)
 
     def run(self, data: pd.DataFrame, detail_data: pd.DataFrame | None = None) -> dict:
         data_contract = validate_market_data_contract(
@@ -163,7 +193,10 @@ class BacktestEngine:
         detail_df = None
         detail_attrs = getattr(detail_data, "attrs", {}) if detail_data is not None else {}
         if detail_data is not None and not detail_data.empty:
-            detail_df = detail_data.sort_values("timestamp", kind="mergesort").reset_index(drop=True)
+            detail_sort = ["timestamp"]
+            if "source_ordinal" in detail_data.columns:
+                detail_sort.append("source_ordinal")
+            detail_df = detail_data.sort_values(detail_sort, kind="mergesort").reset_index(drop=True)
             detail_df.attrs.update(detail_attrs)
         diagnostics = self._preflight(df, detail_df, data_contract, detail_contract)
         strategy = ModularStrategy(self.strategy_config)
@@ -246,6 +279,22 @@ class BacktestEngine:
                     "max_adverse_excursion": 0.0,
                 }
             )
+            dynamic_stop_trigger = _signal_metadata_float(sig, "dynamic_stop_trigger_price")
+            dynamic_stop_price = _signal_metadata_float(sig, "dynamic_stop_price")
+            dynamic_stop_offset = _signal_metadata_float(sig, "dynamic_stop_offset_points")
+            if dynamic_stop_price is None and dynamic_stop_offset is not None:
+                dynamic_stop_price = (
+                    ep + dynamic_stop_offset if direction == "long" else ep - dynamic_stop_offset
+                )
+            dynamic_stop_valid = False
+            if dynamic_stop_trigger is not None and dynamic_stop_price is not None:
+                if direction == "long":
+                    dynamic_stop_valid = stop < dynamic_stop_price <= dynamic_stop_trigger < target
+                else:
+                    dynamic_stop_valid = stop > dynamic_stop_price >= dynamic_stop_trigger > target
+            if dynamic_stop_valid:
+                opened["dynamic_stop_trigger_price"] = dynamic_stop_trigger
+                opened["dynamic_stop_price"] = dynamic_stop_price
             opened.update(sizing.report_fields())
             risk.record_entry(bar["session_date"])
             diagnostics["entries_opened"] += 1
@@ -394,6 +443,7 @@ class BacktestEngine:
                 self._record_event_flatten(diagnostics, event_window)
             risk.record_exit(opened["session_date"], net)
             net_liq += net
+            strategy.on_trade_closed(trade)
             if self.validation_export.enabled:
                 context = validation_trade_contexts.setdefault(opened["trade_id"], {})
                 context["exit_bar_index"] = int(index)
@@ -2421,7 +2471,34 @@ def _detail_granularity(detail_data: pd.DataFrame | None) -> str:
 
 
 def _detail_data_is_authoritative_execution_path(detail_data: pd.DataFrame | None) -> bool:
-    return _detail_granularity(detail_data) in {"scid_record"}
+    return _detail_granularity(detail_data) in {"scid_record", "normalized_trade_event"}
+
+
+def _validate_large_record_source_contract(config: dict) -> None:
+    entry = (config.get("strategy", {}).get("entry", {}) or {})
+    params = entry.get("params", {}) or {}
+    if "min_large200_record_volume" not in params:
+        return
+    # Unit-level and caller-supplied in-memory runs have no persisted source contract;
+    # their detail frame is validated at replay time. Production campaign configs do.
+    if "data" not in config:
+        return
+    data = config.get("data", {}) or {}
+    execution = data.get("execution_data", {}) or {}
+    execution_source = str(execution.get("source", "")).lower()
+    module = str(entry.get("module", "")).lower()
+    intrabar_direct_modules = module == "video_exact_orderflow_playbook_scid_intrabar" or module.startswith(
+        "yush_trend_"
+    )
+    direct_events = execution_source in {"databento_zip_trades", "databento_trades_zip"}
+    bar_semantics = str(data.get("large_record_source_semantics", "")).lower()
+    if (direct_events and intrabar_direct_modules) or bar_semantics == "reconstructed_trade_event":
+        return
+    raise ValueError(
+        "Strategy requires large200 trade-event fields, but data.large_record_source_semantics is not "
+        "reconstructed_trade_event and no supported direct-event intrabar source is configured. Legacy raw "
+        "Sierra component-row large200 proxies are prohibited."
+    )
 
 
 def _detail_row_contains_start(detail_timestamp: pd.Timestamp, start: pd.Timestamp, granularity: str) -> bool:

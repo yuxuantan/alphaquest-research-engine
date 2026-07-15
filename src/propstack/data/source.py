@@ -68,19 +68,44 @@ def _execution_source_payload(execution_config: dict | None, subset_config: dict
     if not execution_config:
         return {}
     source = str(execution_config.get("source", "")).lower()
+    if source in {"databento_zip_trades", "databento_trades_zip"}:
+        archive = execution_config.get("archive")
+        manifest = execution_config.get(
+            "contract_manifest",
+            "data/reference/ES/event_quality/sierra_event_capabilities_0930_1100.csv",
+        )
+        return {
+            "source": source,
+            "price_path_semantics": "databento_trade_message_v1",
+            "archive": str(archive or ""),
+            "archive_sha256": file_sha256(archive) if archive else "",
+            "contract_manifest": str(manifest or ""),
+            "contract_manifest_sha256": file_sha256(manifest) if manifest else "",
+            "subset": subset_config or {},
+            "rth_start": execution_config.get("rth_start"),
+            "rth_end": execution_config.get("rth_end"),
+        }
     if source not in {"sierra_scid_records", "scid_records", "sierra_scid"}:
         return {"source": source}
     raw_dir = Path(execution_config.get("raw_dir", ""))
     roll_calendar = execution_config.get("roll_calendar")
+    quality_manifest = execution_config.get(
+        "quality_manifest",
+        "data/reference/ES/event_quality/sierra_event_capabilities_0930_1100.csv",
+    )
     files = sorted(raw_dir.glob("*.parquet")) if raw_dir.exists() else []
     return {
         "source": source,
-        "price_path_semantics": "scid_record_close_only_v1",
+        "price_path_semantics": "sierra_unbundled_trade_event_v1",
         "raw_dir": str(raw_dir),
         "subset": subset_config or {},
         "root_symbol": execution_config.get("root_symbol", execution_config.get("symbol", "")),
         "roll_calendar": str(roll_calendar or ""),
         "roll_calendar_sha256": file_sha256(roll_calendar) if roll_calendar else "",
+        "quality_manifest": str(quality_manifest),
+        "quality_manifest_sha256": file_sha256(quality_manifest),
+        "required_capability": execution_config.get("required_capability", "full_strategy_events"),
+        "ineligible_session_policy": execution_config.get("ineligible_session_policy", "error"),
         "files": [
             {
                 "path": str(path),

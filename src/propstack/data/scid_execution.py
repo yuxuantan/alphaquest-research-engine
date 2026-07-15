@@ -8,6 +8,12 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+from propstack.data.sierra_events import (
+    SIERRA_EVENT_PRICE_PATH_SEMANTICS,
+    SIERRA_TIMESTAMP_PRECISION_NS,
+    reconstruct_sierra_trade_events,
+)
+
 SCID_EPOCH = datetime(1899, 12, 30)
 ET = ZoneInfo("America/New_York")
 
@@ -23,7 +29,7 @@ SCID_RECORD_COLUMNS = [
     "ask_volume",
 ]
 
-SCID_RECORD_PRICE_PATH_SEMANTICS = "scid_record_close_only_v1"
+SCID_RECORD_PRICE_PATH_SEMANTICS = SIERRA_EVENT_PRICE_PATH_SEMANTICS
 
 _SCID_EXECUTION_COLUMNS = [
     "timestamp",
@@ -40,6 +46,13 @@ _SCID_EXECUTION_COLUMNS = [
     "trades",
     "num_trades",
     "scid_datetime_us",
+    "last_scid_datetime_us",
+    "source_ordinal",
+    "side",
+    "component_rows",
+    "timestamp_precision_ns",
+    "timestamp_uncertainty_ns",
+    "quality_capability",
     "execution_granularity",
     "price_path_semantics",
     "raw_scid_open",
@@ -54,14 +67,11 @@ def load_scid_record_execution_data(
     *,
     date_bounds: dict | None = None,
 ) -> pd.DataFrame:
-    """Load active-contract Sierra SCID-derived records for tick-style execution.
+    """Load Databento-validated, reconstructed Sierra trade events.
 
-    The local Sierra Parquet files are SCID records, not MBO events. They are
-    useful for deterministic record replay when the strategy explicitly accepts
-    this source-quality limitation. For execution-path decisions, the loader
-    treats the record close as the only traded-price proxy and exposes
-    open/high/low equal to close. Raw SCID OHLC fields are retained separately
-    for audit, but are not used as traded-price extrema.
+    Every requested session must pass the configured capability in the quality
+    manifest, unless the caller explicitly chooses the ``blackout`` policy.
+    Unbundled FIRST/LAST component rows are collapsed before replay.
     """
 
     raw_dir = Path(config.get("raw_dir", "data/raw/ES/sierra-es-trades"))
@@ -69,10 +79,24 @@ def load_scid_record_execution_data(
         config.get("roll_calendar", "data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv")
     )
     root_symbol = str(config.get("root_symbol", config.get("symbol", "ES")))
-    batch_size = int(config.get("batch_size", 1_000_000))
     timezone = str(config.get("timezone", "America/New_York"))
     rth_start_minute = _time_to_minute(config.get("rth_start", "09:30:00"))
     rth_end_minute = _time_to_minute(config.get("rth_end", "16:00:00"))
+    verified_start_minute = _time_to_minute(config.get("verified_window_start", "09:30:00"))
+    verified_end_minute = _time_to_minute(config.get("verified_window_end", "11:00:00"))
+    if rth_start_minute < verified_start_minute or rth_end_minute > verified_end_minute:
+        raise ValueError(
+            "Sierra event replay window exceeds the independently verified 09:30-11:00 ET scope."
+        )
+    quality_manifest = Path(
+        config.get(
+            "quality_manifest",
+            "data/reference/ES/event_quality/sierra_event_capabilities_0930_1100.csv",
+        )
+    )
+    required_capability = str(config.get("required_capability", "full_strategy_events"))
+    ineligible_policy = str(config.get("ineligible_session_policy", "error")).lower()
+    allow_unverified_for_tests = bool(config.get("allow_unverified_for_tests", False))
 
     files = {path.stem.replace("-CME", ""): path for path in raw_dir.glob("*.parquet")}
     if not files:
@@ -80,21 +104,34 @@ def load_scid_record_execution_data(
 
     periods = _active_periods(roll_calendar, files, root_symbol)
     start, end = _bounds_to_utc_naive(date_bounds, timezone)
+    manifest = _load_quality_manifest(
+        quality_manifest,
+        required_capability=required_capability,
+        allow_unverified_for_tests=allow_unverified_for_tests,
+    )
+    requested = _requested_manifest_rows(manifest, start=start, end=end, periods=periods)
+    ineligible = requested.loc[~requested[required_capability].map(_as_bool)].copy()
+    if len(ineligible) and ineligible_policy != "blackout":
+        sample = ", ".join(ineligible["session_date"].astype(str).head(8))
+        raise ValueError(
+            f"{len(ineligible)} requested Sierra sessions fail capability {required_capability!r} "
+            f"({sample}). Set ineligible_session_policy=blackout only for explicit session exclusion."
+        )
+    eligible = requested.loc[requested[required_capability].map(_as_bool)].copy()
     parts = []
-    for period in periods:
-        period_start = max(period["start"], start) if start is not None else period["start"]
-        period_end = min(period["end"], end) if end is not None else period["end"]
-        if period_start >= period_end:
+    period_by_symbol = {period["symbol"]: period for period in periods}
+    for row in eligible.itertuples(index=False):
+        period = period_by_symbol.get(str(row.contract))
+        if period is None:
             continue
-        part = _load_period_records(
+        part = _load_session_events(
             period["path"],
+            session_date=str(row.session_date),
             root_symbol=root_symbol,
-            contract_symbol=period["symbol"],
-            start=period_start,
-            end=period_end,
-            batch_size=batch_size,
+            contract_symbol=str(row.contract),
             rth_start_minute=rth_start_minute,
             rth_end_minute=rth_end_minute,
+            required_capability=required_capability,
         )
         if not part.empty:
             parts.append(part)
@@ -102,14 +139,164 @@ def load_scid_record_execution_data(
     if not parts:
         out = pd.DataFrame(columns=_SCID_EXECUTION_COLUMNS)
     else:
-        out = pd.concat(parts, ignore_index=True).sort_values("timestamp", kind="mergesort").reset_index(drop=True)
-    out.attrs["detail_granularity"] = "scid_record"
+        out = pd.concat(parts, ignore_index=True)
+        out = out.sort_values(["timestamp", "source_ordinal"], kind="mergesort").reset_index(drop=True)
+    out.attrs["detail_granularity"] = "normalized_trade_event"
     out.attrs["price_path_semantics"] = SCID_RECORD_PRICE_PATH_SEMANTICS
     out.attrs["source_quality_label"] = (
-        "Sierra SCID record close-only replay; raw SCID high/low retained for audit, "
-        "not used as traded-price extrema; not exchange MBO sequencing."
+        "Databento-compared Sierra trade-event replay after FIRST/LAST unbundled-trade "
+        "reconstruction; source order retained; not exchange MBO sequencing."
     )
+    out.attrs["required_capability"] = required_capability
+    out.attrs["eligible_session_dates"] = eligible["session_date"].astype(str).tolist()
+    out.attrs["blackout_session_dates"] = ineligible["session_date"].astype(str).tolist()
+    out.attrs["timestamp_precision_ns"] = SIERRA_TIMESTAMP_PRECISION_NS
     return out
+
+
+def _load_session_events(
+    path: Path,
+    *,
+    session_date: str,
+    root_symbol: str,
+    contract_symbol: str,
+    rth_start_minute: int,
+    rth_end_minute: int,
+    required_capability: str,
+) -> pd.DataFrame:
+    day = pd.Timestamp(session_date, tz=ET)
+    start_et = day + pd.Timedelta(minutes=rth_start_minute)
+    end_et = day + pd.Timedelta(minutes=rth_end_minute)
+    start_utc = start_et.tz_convert("UTC").tz_localize(None).to_pydatetime()
+    end_utc = end_et.tz_convert("UTC").tz_localize(None).to_pydatetime()
+    buffer_us = 1_000_000
+    raw = pq.read_table(
+        path,
+        columns=SCID_RECORD_COLUMNS,
+        filters=[
+            ("scid_datetime_us", ">=", _datetime_to_scid_us(start_utc) - buffer_us),
+            ("scid_datetime_us", "<", _datetime_to_scid_us(end_utc) + buffer_us),
+        ],
+    ).to_pandas()
+    if raw.empty:
+        return pd.DataFrame(columns=_SCID_EXECUTION_COLUMNS)
+    raw["source_ordinal"] = np.arange(len(raw), dtype=np.int64)
+    events, _ = reconstruct_sierra_trade_events(raw)
+    in_window = events["scid_datetime_us"].between(
+        _datetime_to_scid_us(start_utc), _datetime_to_scid_us(end_utc), inclusive="left"
+    )
+    events = events.loc[in_window].copy()
+    if events.empty:
+        return pd.DataFrame(columns=_SCID_EXECUTION_COLUMNS)
+    timestamps = pd.to_datetime(
+        [SCID_EPOCH + timedelta(microseconds=int(value)) for value in events["scid_datetime_us"]]
+    ).tz_localize("UTC").tz_convert(ET)
+    price = events["price"].to_numpy(dtype=float)
+    result = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "symbol": root_symbol,
+            "contract_symbol": contract_symbol,
+            "open": price,
+            "high": price,
+            "low": price,
+            "close": price,
+            "volume": events["volume"].to_numpy(dtype=np.int64),
+            "signed_volume": events["signed_volume"].to_numpy(dtype=np.int64),
+            "buy_volume": events["buy_volume"].to_numpy(dtype=np.int64),
+            "sell_volume": events["sell_volume"].to_numpy(dtype=np.int64),
+            "trades": np.ones(len(events), dtype=np.int64),
+            "num_trades": np.ones(len(events), dtype=np.int64),
+            "scid_datetime_us": events["scid_datetime_us"].to_numpy(dtype=np.int64),
+            "last_scid_datetime_us": events["last_scid_datetime_us"].to_numpy(dtype=np.int64),
+            "source_ordinal": events["source_ordinal"].to_numpy(dtype=np.int64),
+            "side": events["side"].to_numpy(),
+            "component_rows": events["component_rows"].to_numpy(dtype=np.int64),
+            "timestamp_precision_ns": SIERRA_TIMESTAMP_PRECISION_NS,
+            "timestamp_uncertainty_ns": SIERRA_TIMESTAMP_PRECISION_NS,
+            "quality_capability": required_capability,
+            "execution_granularity": "normalized_trade_event",
+            "price_path_semantics": SCID_RECORD_PRICE_PATH_SEMANTICS,
+            "raw_scid_open": price,
+            "raw_scid_high": price,
+            "raw_scid_low": price,
+            "raw_scid_close": price,
+        }
+    )
+    return result[_SCID_EXECUTION_COLUMNS]
+
+
+def _load_quality_manifest(
+    path: Path,
+    *,
+    required_capability: str,
+    allow_unverified_for_tests: bool,
+) -> pd.DataFrame:
+    if allow_unverified_for_tests:
+        return pd.DataFrame(
+            columns=["session_date", "contract", required_capability]
+        )
+    if not path.exists():
+        raise ValueError(f"Sierra event quality manifest not found: {path}")
+    manifest = pd.read_csv(path, dtype={"session_date": "string", "contract": "string"})
+    required = {"session_date", "contract", required_capability}
+    missing = sorted(required - set(manifest.columns))
+    if missing:
+        raise ValueError(f"Sierra quality manifest is missing columns: {missing}")
+    return manifest
+
+
+def _requested_manifest_rows(
+    manifest: pd.DataFrame,
+    *,
+    start: datetime | None,
+    end: datetime | None,
+    periods: list[dict],
+) -> pd.DataFrame:
+    if manifest.empty:
+        dates = pd.date_range(
+            pd.Timestamp(start).date(),
+            (pd.Timestamp(end) - pd.Timedelta(microseconds=1)).date(),
+            freq="B",
+        )
+        rows = []
+        for date in dates:
+            session_date = pd.Timestamp(date).date()
+            period = next(
+                (
+                    item
+                    for item in periods
+                    if item["start"].date() <= session_date <= item["end"].date()
+                ),
+                None,
+            )
+            if period:
+                rows.append(
+                    {
+                        "session_date": str(session_date),
+                        "contract": period["symbol"],
+                        next(
+                            column
+                            for column in manifest.columns
+                            if column not in {"session_date", "contract"}
+                        ): True,
+                    }
+                )
+        return pd.DataFrame(rows, columns=manifest.columns)
+    result = manifest.copy()
+    dates = pd.to_datetime(result["session_date"])
+    if start is not None:
+        result = result.loc[dates >= pd.Timestamp(start).normalize()]
+        dates = pd.to_datetime(result["session_date"])
+    if end is not None:
+        result = result.loc[dates < pd.Timestamp(end).normalize()]
+    return result.reset_index(drop=True)
+
+
+def _as_bool(value) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    return bool(value)
 
 
 def _load_period_records(

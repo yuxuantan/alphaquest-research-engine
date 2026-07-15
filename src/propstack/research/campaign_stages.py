@@ -385,6 +385,12 @@ def _update_source_results_index(config_path: Path, cfg: dict, summary: dict) ->
     return index_path
 
 
+def update_source_results_index(config_path: Path, cfg: dict, summary: dict) -> Path | None:
+    """Publish a source-tree run pointer from a non-staged campaign runner."""
+
+    return _update_source_results_index(config_path, cfg, summary)
+
+
 def _source_campaign_root(config_path: Path) -> Path | None:
     parts = config_path.parts
     if "campaigns" not in parts:

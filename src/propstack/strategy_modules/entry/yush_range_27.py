@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections import deque
 import math
 
 import pandas as pd
@@ -44,7 +43,10 @@ class YushRange27Entry(YushRange1Entry):
         self._opening_range_low: float | None = None
         self._traded_aoi_keys: set[tuple] = set()
         self._pending_aoi: dict[tuple, dict] = {}
-        self._recent_trade_records: deque[dict] = deque()
+        self._big_trade_anchor: dict | None = None
+        self._big_trade_snapshots: list[dict] = []
+        self._delta_qualified_at: dict[float, pd.Timestamp] = {}
+        self._delta_bar_timestamp: pd.Timestamp | None = None
         self._validate_range27_params()
 
     def _roll_session(self, bar: pd.Series) -> None:
@@ -55,7 +57,10 @@ class YushRange27Entry(YushRange1Entry):
             self._opening_range_low = None
             self._traded_aoi_keys = set()
             self._pending_aoi = {}
-            self._recent_trade_records = deque()
+            self._big_trade_anchor = None
+            self._big_trade_snapshots = []
+            self._delta_qualified_at = {}
+            self._delta_bar_timestamp = None
 
     def on_bar_intrabar(
         self,
@@ -97,16 +102,13 @@ class YushRange27Entry(YushRange1Entry):
             )
             if tick_state is None:
                 continue
-            self._update_recent_trade_records(tick_state)
+            self._update_event_triggers(tick_state, bar_timestamp)
             if not can_emit:
                 continue
             timestamp = tick_state["timestamp"]
             tick_time = timestamp.time()
             if tick_time < self.start_time or tick_time > self.end_time:
                 continue
-            if not self._has_past_range_snapshot(timestamp):
-                continue
-
             if (
                 profile_cache is None
                 or profile_cache_timestamp is None
@@ -140,17 +142,23 @@ class YushRange27Entry(YushRange1Entry):
                     continue
                 if direction == "short" and not self.allow_short:
                     continue
-                if not self._aoi_tapped_or_exceeded(direction, candidate, tick_state):
+                existing = self._pending_aoi.get(key)
+                if not self._aoi_tapped_or_exceeded(direction, candidate, tick_state) and existing is None:
                     continue
-                bubble = self._bubble_in_or_past_aoi(direction, candidate)
+                tap_timestamp = existing["tap_timestamp"] if existing is not None else timestamp
+                tap_price = existing["tap_price"] if existing is not None else tick_state["price"]
+                bubble = self._bubble_in_or_past_aoi(
+                    direction,
+                    candidate,
+                    after_timestamp=tap_timestamp,
+                )
                 if bubble is None:
-                    self._pending_aoi.pop(key, None)
                     continue
                 self._pending_aoi[key] = {
                     **candidate,
                     "bubble": bubble,
-                    "tap_timestamp": timestamp,
-                    "tap_price": tick_state["price"],
+                    "tap_timestamp": tap_timestamp,
+                    "tap_price": tap_price,
                 }
             if (
                 range_cache is None
@@ -177,7 +185,7 @@ class YushRange27Entry(YushRange1Entry):
                     continue
                 if not self._entry_triggered(direction, pending, tick_state):
                     continue
-                entry_bubble = self._entry_tick_delta_bubble(direction, pending)
+                entry_bubble = self._entry_tick_bubble(direction, pending)
                 if entry_bubble is None:
                     self._pending_aoi.pop(key, None)
                     continue
@@ -240,8 +248,38 @@ class YushRange27Entry(YushRange1Entry):
         )
 
     def _has_past_range_snapshot(self, timestamp: pd.Timestamp) -> bool:
-        target = timestamp - pd.Timedelta(minutes=self.range_snapshot_minutes)
-        return bool(self.state.range_snapshots and self.state.range_snapshots[0][0] <= target)
+        return self._range_reference(timestamp) is not None
+
+    def _range_is_stable(self, timestamp: pd.Timestamp) -> bool:
+        current_range = self.state.session_range
+        reference = self._range_reference(timestamp)
+        if current_range is None or reference is None or reference <= 0:
+            self.state.latest_range_change_pct = None
+            return False
+        change = (current_range - reference) / reference
+        self.state.latest_range_change_pct = change
+        return change <= self.max_range_change_pct
+
+    def _range_reference(self, timestamp: pd.Timestamp) -> float | None:
+        open_timestamp = pd.Timestamp(timestamp).replace(
+            hour=self.opening_range_start_time.hour,
+            minute=self.opening_range_start_time.minute,
+            second=self.opening_range_start_time.second,
+            microsecond=0,
+        )
+        elapsed = pd.Timestamp(timestamp) - open_timestamp
+        if elapsed < pd.Timedelta(0):
+            return None
+        comparison_timestamp = open_timestamp + elapsed * (2.0 / 3.0)
+        return self.state.range_at(comparison_timestamp)
+
+    def _profile_is_balanced(self, profile: dict) -> bool:
+        session_low = self.state.session_low
+        session_high = self.state.session_high
+        if session_low is None or session_high is None or session_high <= session_low:
+            return False
+        width = session_high - session_low
+        return session_low + width / 3.0 <= profile["poc"] <= session_low + 2.0 * width / 3.0
 
     def _breakouts_lack_followthrough(self, profile: dict) -> bool:
         if self.min_failed_breakouts <= 0:
@@ -319,18 +357,10 @@ class YushRange27Entry(YushRange1Entry):
         return sorted(out, key=lambda item: (item["box_width"], item["market_level_type"], item["profile_level_type"]))
 
     def _profile_levels(self, profile: dict) -> list[dict]:
-        levels = [
+        return [
             {"type": "VAL", "price": float(profile["val"])},
             {"type": "VAH", "price": float(profile["vah"])},
         ]
-        poc_volume = float(profile["poc_volume"])
-        threshold = poc_volume * self.lvn_poc_fraction
-        val = float(profile["val"])
-        vah = float(profile["vah"])
-        for bucket, volume in sorted(self.state.profile_volume.items()):
-            if val <= bucket < vah and volume < threshold:
-                levels.append({"type": "LVN", "price": bucket + self.profile_bucket_points / 2.0})
-        return levels
 
     def _aoi_direction(self, profile: dict, profile_level: dict) -> str:
         if profile_level["type"] == "VAL":
@@ -357,16 +387,30 @@ class YushRange27Entry(YushRange1Entry):
         offset = self.stop_offset_ticks * self.tick_size
         return candidate["box_low"] - offset if direction == "long" else candidate["box_high"] + offset
 
-    def _bubble_in_or_past_aoi(self, direction: str, candidate: dict) -> dict | None:
-        delta = self._delta_bubble_in_or_past_aoi(direction, candidate)
-        big_trade = self._big_trade_bubble_in_or_past_aoi(direction, candidate)
+    def _bubble_in_or_past_aoi(
+        self,
+        direction: str,
+        candidate: dict,
+        *,
+        after_timestamp: pd.Timestamp,
+    ) -> dict | None:
+        delta = self._delta_bubble_in_or_past_aoi(direction, candidate, after_timestamp)
+        big_trade = self._big_trade_bubble_in_or_past_aoi(direction, candidate, after_timestamp)
         if delta is not None:
             return delta
         return big_trade
 
-    def _delta_bubble_in_or_past_aoi(self, direction: str, candidate: dict) -> dict | None:
+    def _delta_bubble_in_or_past_aoi(
+        self,
+        direction: str,
+        candidate: dict,
+        after_timestamp: pd.Timestamp,
+    ) -> dict | None:
         for bucket, delta in self.state.delta_by_bucket.items():
-            if abs(delta) < self.bubble_delta_threshold:
+            if abs(delta) <= self.bubble_delta_threshold:
+                continue
+            qualified_at = self._delta_qualified_at.get(float(bucket))
+            if qualified_at is None or qualified_at < after_timestamp:
                 continue
             if not self._bucket_in_or_past_aoi(direction, float(bucket), candidate):
                 continue
@@ -375,33 +419,42 @@ class YushRange27Entry(YushRange1Entry):
                 "bubble_bucket": float(bucket),
                 "bubble_delta": float(delta),
                 "bubble_bucket_points": self.delta_bucket_points,
+                "bubble_qualified_at": qualified_at,
             }
         return None
 
-    def _big_trade_bubble_in_or_past_aoi(self, direction: str, candidate: dict) -> dict | None:
-        total_volume = 0.0
-        signed_volume = 0.0
-        for record in self._recent_trade_records:
+    def _big_trade_bubble_in_or_past_aoi(
+        self,
+        direction: str,
+        candidate: dict,
+        after_timestamp: pd.Timestamp,
+    ) -> dict | None:
+        for record in reversed(self._big_trade_snapshots):
+            if record["qualified_at"] < after_timestamp:
+                continue
             if not self._price_in_or_past_aoi(direction, record["price"], candidate):
                 continue
-            total_volume += record["volume"]
-            signed_volume += record["signed_volume"]
-        if total_volume < self.big_trade_threshold:
-            return None
-        return {
-            "bubble_type": "big_trade_100ms",
-            "bubble_volume": total_volume,
-            "bubble_signed_volume": signed_volume,
-            "bubble_agg_ms": self.big_trade_agg_ms,
-        }
+            return {
+                "bubble_type": "big_trade_100ms",
+                "bubble_volume": record["volume"],
+                "bubble_signed_volume": record["signed_volume"],
+                "bubble_price": record["price"],
+                "bubble_side": record["side"],
+                "bubble_agg_ms": self.big_trade_agg_ms,
+                "bubble_qualified_at": record["qualified_at"],
+                "bubble_persistence": "session_snapshot",
+            }
+        return None
 
-    def _entry_tick_delta_bubble(self, direction: str, candidate: dict) -> dict | None:
+    def _entry_tick_bubble(self, direction: str, candidate: dict) -> dict | None:
         bubble = candidate.get("bubble") or {}
+        if bubble.get("bubble_type") == "big_trade_100ms":
+            return {**bubble, "bubble_timing": "qualified_after_aoi_tap"}
         bucket = _finite_float(bubble.get("bubble_bucket"))
         if bucket is None:
             return None
         delta = self.state.delta_by_bucket.get(float(bucket))
-        if delta is None or abs(delta) < self.bubble_delta_threshold:
+        if delta is None or abs(delta) <= self.bubble_delta_threshold:
             return None
         if not self._bucket_in_or_past_aoi(direction, float(bucket), candidate):
             return None
@@ -424,19 +477,51 @@ class YushRange27Entry(YushRange1Entry):
     def _price_in_or_past_aoi(self, direction: str, price: float, candidate: dict) -> bool:
         return price <= candidate["box_high"] if direction == "long" else price >= candidate["box_low"]
 
-    def _update_recent_trade_records(self, tick_state: dict) -> None:
-        timestamp = tick_state["timestamp"]
-        self._recent_trade_records.append(
-            {
-                "timestamp": timestamp,
-                "price": float(tick_state["price"]),
-                "volume": float(tick_state["volume"]),
-                "signed_volume": float(tick_state["signed_volume"]),
-            }
+    def _update_event_triggers(self, tick_state: dict, bar_timestamp: pd.Timestamp) -> None:
+        timestamp = pd.Timestamp(tick_state["timestamp"])
+        price = float(tick_state["price"])
+        volume = float(tick_state["volume"])
+        signed_volume = float(tick_state["signed_volume"])
+        side = "B" if signed_volume > 0 else "A" if signed_volume < 0 else "N"
+        anchor = self._big_trade_anchor
+        matches = bool(
+            anchor is not None
+            and timestamp - anchor["timestamp"] <= pd.Timedelta(milliseconds=self.big_trade_agg_ms)
+            and price == anchor["price"]
+            and side == anchor["side"]
         )
-        cutoff = timestamp - pd.Timedelta(milliseconds=self.big_trade_agg_ms)
-        while self._recent_trade_records and self._recent_trade_records[0]["timestamp"] < cutoff:
-            self._recent_trade_records.popleft()
+        if not matches:
+            anchor = {
+                "timestamp": timestamp,
+                "price": price,
+                "side": side,
+                "volume": volume,
+                "signed_volume": signed_volume,
+                "qualified": False,
+            }
+            self._big_trade_anchor = anchor
+        else:
+            anchor["volume"] += volume
+            anchor["signed_volume"] += signed_volume
+        if side != "N" and not anchor["qualified"] and anchor["volume"] > self.big_trade_threshold:
+            anchor["qualified"] = True
+            self._big_trade_snapshots.append(
+                {
+                    **anchor,
+                    "qualified_at": timestamp,
+                }
+            )
+
+        if self._delta_bar_timestamp != bar_timestamp:
+            self._delta_bar_timestamp = bar_timestamp
+            self._delta_qualified_at = {}
+        for bucket, delta in self.state.delta_by_bucket.items():
+            if abs(delta) > self.bubble_delta_threshold and float(bucket) not in self._delta_qualified_at:
+                self._delta_qualified_at[float(bucket)] = timestamp
+
+    def _entry_tick_delta_bubble(self, direction: str, candidate: dict) -> dict | None:
+        """Backward-compatible test helper; production uses the OR-trigger method."""
+        return self._entry_tick_bubble(direction, candidate)
 
     def _aoi_signal(
         self,

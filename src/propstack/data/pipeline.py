@@ -5,6 +5,7 @@ from collections.abc import Callable
 import pandas as pd
 
 from propstack.data.clean import clean_data
+from propstack.data.databento_execution import load_databento_zip_execution_data
 from propstack.data.features import build_features
 from propstack.data.quality import save_pipeline_outputs
 from propstack.data.scid_execution import load_scid_record_execution_data
@@ -94,6 +95,8 @@ def _load_custom_execution_data(execution_config: dict, bounds: dict | None) -> 
     source = str(execution_config.get("source", "")).lower()
     if source in {"sierra_scid_records", "scid_records", "sierra_scid"}:
         return load_scid_record_execution_data(execution_config, date_bounds=bounds)
+    if source in {"databento_zip_trades", "databento_trades_zip"}:
+        return load_databento_zip_execution_data(execution_config, date_bounds=bounds)
     raise ValueError(f"Unsupported data.execution_data.source: {execution_config.get('source')!r}")
 
 

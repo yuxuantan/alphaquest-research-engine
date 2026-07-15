@@ -18,6 +18,7 @@ from propstack.validation.exit_path import enrich_exit_audits
 from propstack.validation.schema import (
     BAR_WINDOWS_FILENAME,
     CONDITION_SNAPSHOTS_FILENAME,
+    EVENT_TRANSITIONS_FILENAME,
     EXIT_AUDITS_FILENAME,
     METADATA_FILENAME,
     TICK_WINDOWS_FILENAME,
@@ -26,6 +27,7 @@ from propstack.validation.schema import (
     VALIDATION_SCHEMA_VERSION,
     BAR_WINDOW_COLUMNS,
     CONDITION_SNAPSHOT_COLUMNS,
+    EVENT_TRANSITION_COLUMNS,
     EXIT_AUDIT_COLUMNS,
     TICK_WINDOW_COLUMNS,
     TRADE_SUMMARY_COLUMNS,
@@ -49,6 +51,7 @@ def write_validation_run(
     condition_snapshots: Any = None,
     bar_windows: Any = None,
     tick_windows: Any = None,
+    event_transitions: Any = None,
     exit_audits: Any = None,
 ) -> dict[str, Any]:
     run_dir = Path(output_dir)
@@ -63,6 +66,10 @@ def write_validation_run(
         ),
         BAR_WINDOWS_FILENAME: records_to_frame(bar_windows, BAR_WINDOW_COLUMNS),
         TICK_WINDOWS_FILENAME: records_to_frame(tick_windows, TICK_WINDOW_COLUMNS),
+        EVENT_TRANSITIONS_FILENAME: records_to_frame(
+            event_transitions,
+            EVENT_TRANSITION_COLUMNS,
+        ),
         EXIT_AUDITS_FILENAME: records_to_frame(exit_audits, EXIT_AUDIT_COLUMNS),
     }
     frames[EXIT_AUDITS_FILENAME] = enrich_exit_audits(
@@ -90,6 +97,7 @@ def write_validation_run(
         "condition_snapshots": CONDITION_SNAPSHOTS_FILENAME,
         "bar_windows": BAR_WINDOWS_FILENAME,
         "tick_windows": TICK_WINDOWS_FILENAME,
+        "event_transitions": EVENT_TRANSITIONS_FILENAME,
         "exit_audits": EXIT_AUDITS_FILENAME,
         "validation_checks": VALIDATION_CHECKS_FILENAME,
     }
@@ -98,6 +106,7 @@ def write_validation_run(
         "condition_snapshots": int(len(frames[CONDITION_SNAPSHOTS_FILENAME])),
         "bar_windows": int(len(frames[BAR_WINDOWS_FILENAME])),
         "tick_windows": int(len(frames[TICK_WINDOWS_FILENAME])),
+        "event_transitions": int(len(frames[EVENT_TRANSITIONS_FILENAME])),
         "exit_audits": int(len(frames[EXIT_AUDITS_FILENAME])),
         "validation_checks": int(len(frames[VALIDATION_CHECKS_FILENAME])),
     }
@@ -286,6 +295,7 @@ def build_tick_window_rows(ticks: pd.DataFrame, *, trade_id: str | int | None = 
             {
                 "trade_id": _first_value(tick, "trade_id") if trade_id is None else trade_id,
                 "timestamp": _first_value(tick, "timestamp", "datetime"),
+                "source_ordinal": _int_or_none(_first_value(tick, "source_ordinal")),
                 "price": price,
                 "volume": _float_or_none(_first_value(tick, "volume")),
                 "bid_volume": _float_or_none(bid_volume),
@@ -510,6 +520,8 @@ def _debug_flags(trade: pd.Series) -> str | None:
     flags: list[str] = []
     for column in (
         "entry_mode",
+        "signal_stop_price",
+        "dynamic_stop_activated",
         "intrabar_source_quality_label",
         "intrabar_source_quality_is_execution_equivalent",
         "same_bar_ambiguous",

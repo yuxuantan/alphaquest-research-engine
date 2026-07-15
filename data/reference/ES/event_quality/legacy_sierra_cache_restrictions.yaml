@@ -1,0 +1,23 @@
+version: 1
+verdict: FAIL
+scope: ES Sierra-derived caches built before unbundled-trade reconstruction
+prohibited_for_faithful_testing:
+  - large200_record_max_volume
+  - large200_record_volume
+  - large200_record_signed_volume
+  - large200_record_count
+  - trades
+reason: >-
+  These fields were derived from raw SCID component rows. Databento comparison proved that FIRST/LAST
+  component groups must be collapsed into one price/side trade event before event size, event count,
+  fragmentation, or large-trade thresholds are evaluated.
+still_usable_when_separately_validated:
+  - open
+  - high
+  - low
+  - close
+  - volume
+  - buy_volume
+  - sell_volume
+  - signed_volume
+required_replacement_semantics: reconstructed_trade_event

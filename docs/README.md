@@ -10,6 +10,7 @@
 
 - [System overview](architecture/system-overview.md)
 - [Backtest lifecycle](architecture/backtest-lifecycle.md)
+- [Canonical event replay](architecture/canonical-event-replay.md)
 - [Artifact lineage](architecture/artifact-lineage.md)
 
 ## Research

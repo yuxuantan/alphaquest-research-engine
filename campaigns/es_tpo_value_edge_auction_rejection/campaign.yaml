@@ -1,0 +1,101 @@
+campaign_id: es_tpo_value_edge_auction_rejection
+title: ES Completed-Bar TPO Value-Edge Auction Rejection
+created_at: '2026-07-14'
+status: completed_failed
+decision: FAIL
+instrument: ES
+market_timezone: America/New_York
+edge_family: completed_bar_tpo_value_edge_auction_rejection
+hypothesis: A balanced developing ES auction that rejects a TPO value-area edge near its corresponding opening-range extreme
+  may rotate toward the opposite developing value-area edge before 11:00 ET.
+rationale: This price-only proxy preserves the original range strategy's balanced-auction, value-edge AOI, failed-auction
+  rejection, opposite-edge target, midpoint stop adjustment, and morning flatten concepts while removing all features that
+  require reliable trade events, aggressor side, delta, volume profile, or sub-second sequencing.
+sources:
+- title: Markets and Market Logic
+  authors: J. Peter Steidlmayer and Kevin Koy
+  year: 1986
+  link: https://archive.org/details/marketsmarketlog00stei
+  relevance: Practitioner foundation for time-price opportunity profiles, value areas, and auction rotations.
+- title: Trading and Exchanges - Market Microstructure for Practitioners
+  authors: Larry Harris
+  year: 2003
+  link: https://global.oup.com/academic/product/trading-and-exchanges-9780195144703
+  relevance: Microstructure basis for liquidity, failed price discovery, and reversal around public reference levels.
+data_needs:
+- data/cache/price_only/es_sierra_price_only_tpo_1m_20110815_20260609_0930_1100_ny.parquet
+- completed one-minute ES OHLC bars from 09:30 through 10:59 ET
+- internally screened regular-session capability allowlist
+data_capability:
+  lane: completed_bar_price_only
+  sessions: 3580
+  allowed: [completed one-minute OHLC, TPO/time-at-price, opening range]
+  prohibited: [volume profile, delta, aggressor side, event size/count, 100ms sequencing]
+  independent_event_verification_required: false
+  limitations:
+  - Older sessions are internally screened rather than independently event-verified.
+  - Historical high-impact USD news timestamps are unavailable, so the T-5m through T news block cannot be tested.
+lookahead_risks:
+- The developing TPO profile and AOI used for a rejection bar exclude that rejection bar.
+- Signals use completed bars and enter at the next one-minute bar open.
+- The opposite-edge target is frozen at signal time and never repriced from future profile changes; the engine's predeclared
+  one-R floor applies when the structural edge is closer than initial risk.
+- The variable-range comparison uses only the first two-thirds of already elapsed RTH bars.
+- No final-session high, low, POC, VAH, VAL, volume, or future bar is used.
+failure_modes:
+- TPO reconstructed from OHLC ranges assumes every tick between a bar's high and low was visited at least once.
+- Opening-range confluence may make the AOI too sparse to reach the required three trades per week.
+- One-minute OHLC cannot establish stop/target order within an ambiguous bar; the engine uses pessimistic stop-first ordering.
+- The proxy may remove the order-flow information that supplied the original strategy's edge.
+- Missing historical news timestamps can contaminate results near high-impact USD releases.
+duplicate_edge_check:
+  compared_campaign: es_video_aoi_lvn_orderflow_playbook
+  conclusion: Separate proxy family. It tests completed-bar TPO auction rejection and expressly does not claim to be an exact
+    implementation of the event-sensitive order-flow strategy.
+variants:
+- tpo_value_edge_two_sided_rejection
+- tpo_value_edge_strong_close_rejection
+- tpo_value_edge_two_bar_confirmation
+- tpo_val_long_rejection
+- tpo_vah_short_rejection
+parameter_space:
+  combinations_per_variant: 8
+  entry_parameters:
+    min_probe_ticks: [0, 1]
+    max_aoi_width_points: [1.5, 3.0]
+  stop_parameters:
+    stop_offset_ticks: [2, 4]
+  take_profit_parameters: {}
+  frozen_before_pnl: true
+density_gate:
+  minimum_average_trades_per_week: 3
+  equivalent_min_trades_per_year: 156
+  failure_action: reject_variant_before_later_stages
+rescue_policy:
+  allowed: false
+  reason: No post-result mechanics or parameter rescue is authorized.
+testing_plan:
+  methodology: current staged research pipeline
+  costs:
+    commission_per_contract: 2.5
+    slippage_ticks: 0
+    tick_size: 0.25
+    point_value: 50.0
+  note: Zero modeled slippage follows the user's exact-price fill instruction; adverse slippage remains in Monte Carlo.
+result_summary:
+  verdict: FAIL
+  completed_at: '2026-07-14T17:43:30+08:00'
+  campaign_test_summary: backtest-campaigns/es_tpo_value_edge_auction_rejection/campaign_test_summary.json
+  campaign_results_csv: backtest-campaigns/es_tpo_value_edge_auction_rejection/campaign_results.csv
+  methodology_audit: campaigns/es_tpo_value_edge_auction_rejection/methodology_audit.md
+  variants_passing_all_tests: 0
+  terminal_failure_summary:
+    limited_core_grid_test: 5
+  density_result:
+    required_trades_per_year: 156
+    best_observed_shortlist_trades_per_year: 112.698537
+    variants_meeting_density: 0
+  economics_result:
+    profitable_parameter_combinations: 0
+    total_parameter_combinations: 40
+    full_history_fixed_variants_profitable: 0

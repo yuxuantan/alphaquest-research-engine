@@ -21,11 +21,14 @@ from propstack.validation import (
 from propstack.validation.schema import (
     BAR_WINDOWS_FILENAME,
     CONDITION_SNAPSHOTS_FILENAME,
+    EVENT_TRANSITIONS_FILENAME,
     EXIT_AUDITS_FILENAME,
     METADATA_FILENAME,
     TICK_WINDOWS_FILENAME,
     TRADES_FILENAME,
     VALIDATION_CHECKS_FILENAME,
+    EVENT_TRANSITION_COLUMNS,
+    EventTransition,
 )
 
 
@@ -122,6 +125,26 @@ def test_validation_run_round_trips_sample_records(tmp_path):
                 price_level_delta=10,
             )
         ],
+        event_transitions=[
+            EventTransition(
+                trade_id=1,
+                session_date="2024-03-11",
+                contract="ESH24",
+                order_id="VAL-1",
+                timestamp=entry_time,
+                source_ordinal=42,
+                event_index=17,
+                transition="entry_filled",
+                direction="long",
+                price=5200.0,
+                active_from_event_index=16,
+                stop_price=5198.0,
+                target_price=5204.0,
+                reason="stop_crossed",
+                state_json='{"position":"open"}',
+                evidence_json='{"event_price":5200.0}',
+            )
+        ],
         exit_audits=[
             ExitAudit(
                 trade_id=1,
@@ -144,6 +167,7 @@ def test_validation_run_round_trips_sample_records(tmp_path):
         CONDITION_SNAPSHOTS_FILENAME,
         BAR_WINDOWS_FILENAME,
         TICK_WINDOWS_FILENAME,
+        EVENT_TRANSITIONS_FILENAME,
         EXIT_AUDITS_FILENAME,
         VALIDATION_CHECKS_FILENAME,
     ):
@@ -151,7 +175,7 @@ def test_validation_run_round_trips_sample_records(tmp_path):
 
     loaded = load_validation_run(run_dir)
     assert metadata_record["record_counts"]["trades"] == 1
-    assert loaded.metadata["schema_version"] == "1.1"
+    assert loaded.metadata["schema_version"] == "1.3"
     assert loaded.trades.loc[0, "trade_id"] == 1
     assert loaded.trades.loc[0, "entry_time"] == entry_time
     assert str(loaded.trades.loc[0, "entry_time"].tz) in {eastern, "America/New_York"}
@@ -162,8 +186,29 @@ def test_validation_run_round_trips_sample_records(tmp_path):
     assert loaded.exit_audits.loc[0, "entry_price"] == 5200.0
     assert "warning_flags" in loaded.exit_audits.columns
     assert metadata_record["record_counts"]["validation_checks"] > 0
+    assert metadata_record["record_counts"]["event_transitions"] == 1
+    assert loaded.event_transitions.loc[0, "transition"] == "entry_filled"
+    transition_frame = pd.read_parquet(run_dir / EVENT_TRANSITIONS_FILENAME)
+    assert list(transition_frame.columns) == EVENT_TRANSITION_COLUMNS
+    assert transition_frame.loc[0, "transition"] == "entry_filled"
+    assert transition_frame.loc[0, "event_index"] == 17
     assert not loaded.validation_checks.empty
     assert "price_logic" in set(loaded.validation_checks["category"])
+
+
+def test_validation_run_writes_empty_event_transition_artifact_for_legacy_callers(tmp_path):
+    metadata_record = write_validation_run(
+        tmp_path / "legacy_validation_run",
+        ValidationMetadata(run_id="legacy"),
+    )
+
+    transition_path = tmp_path / "legacy_validation_run" / EVENT_TRANSITIONS_FILENAME
+    transition_frame = pd.read_parquet(transition_path)
+    assert transition_path.exists()
+    assert transition_frame.empty
+    assert list(transition_frame.columns) == EVENT_TRANSITION_COLUMNS
+    assert metadata_record["artifact_files"]["event_transitions"] == EVENT_TRANSITIONS_FILENAME
+    assert metadata_record["record_counts"]["event_transitions"] == 0
 
 
 def test_builders_map_existing_trade_log_columns_without_strategy_logic():

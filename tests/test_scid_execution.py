@@ -11,7 +11,7 @@ from propstack.data.scid_execution import (
 )
 
 
-def test_scid_execution_loader_uses_close_only_price_path_and_preserves_raw_ohlc(tmp_path, monkeypatch):
+def test_scid_execution_loader_emits_normalized_trade_events(tmp_path, monkeypatch):
     monkeypatch.setattr("propstack.data.scid_execution._is_bar_like_contract", lambda symbol, path: False)
 
     raw_dir = tmp_path / "scid"
@@ -22,7 +22,7 @@ def test_scid_execution_loader_uses_close_only_price_path_and_preserves_raw_ohlc
     rows = [
         {
             "scid_datetime_us": _datetime_to_scid_us(datetime(2025, 6, 9, 13, 30, 0)),
-            "open": -1.999e37,
+            "open": 0.0,
             "high": 6000.25,
             "low": 5999.75,
             "close": 6000.00,
@@ -65,19 +65,20 @@ def test_scid_execution_loader_uses_close_only_price_path_and_preserves_raw_ohlc
             "root_symbol": "ES",
             "timezone": "America/New_York",
             "rth_start": "09:30:00",
-            "rth_end": "16:00:00",
+            "rth_end": "11:00:00",
+            "allow_unverified_for_tests": True,
         },
         date_bounds={"start_date": "2025-06-09", "end_date": "2025-06-09"},
     )
 
-    assert list(out["close"]) == [6000.00, 6000.25]
+    assert list(out["close"]) == [6000.00, 6000.25, 6001.00]
     assert list(out["open"]) == list(out["close"])
     assert list(out["high"]) == list(out["close"])
     assert list(out["low"]) == list(out["close"])
-    assert list(out["raw_scid_high"]) == [6000.25, 6000.50]
-    assert list(out["raw_scid_low"]) == [5999.75, 6000.25]
+    assert list(out["raw_scid_high"]) == list(out["close"])
+    assert list(out["raw_scid_low"]) == list(out["close"])
     assert list(out["raw_scid_close"]) == list(out["close"])
-    assert list(out["signed_volume"]) == [-2, 3]
+    assert list(out["signed_volume"]) == [-2, 3, -1]
     assert set(out["price_path_semantics"]) == {SCID_RECORD_PRICE_PATH_SEMANTICS}
-    assert out.attrs["detail_granularity"] == "scid_record"
+    assert out.attrs["detail_granularity"] == "normalized_trade_event"
     assert out.attrs["price_path_semantics"] == SCID_RECORD_PRICE_PATH_SEMANTICS

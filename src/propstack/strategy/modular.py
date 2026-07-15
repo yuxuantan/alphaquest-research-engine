@@ -29,6 +29,11 @@ class ModularStrategy:
             return None
         return handler(bar, detail_rows, trades_today=trades_today)
 
+    def on_trade_closed(self, trade: dict) -> None:
+        handler = getattr(self.entry, "on_trade_closed", None)
+        if handler is not None:
+            handler(trade)
+
     def stop_price(
         self,
         signal: Signal,

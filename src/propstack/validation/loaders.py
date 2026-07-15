@@ -12,6 +12,7 @@ import pandas as pd
 from propstack.validation.schema import (
     BAR_WINDOWS_FILENAME,
     CONDITION_SNAPSHOTS_FILENAME,
+    EVENT_TRANSITIONS_FILENAME,
     EXIT_AUDITS_FILENAME,
     METADATA_FILENAME,
     TICK_WINDOWS_FILENAME,
@@ -19,6 +20,7 @@ from propstack.validation.schema import (
     VALIDATION_CHECKS_FILENAME,
     BAR_WINDOW_COLUMNS,
     CONDITION_SNAPSHOT_COLUMNS,
+    EVENT_TRANSITION_COLUMNS,
     EXIT_AUDIT_COLUMNS,
     TICK_WINDOW_COLUMNS,
     TRADE_SUMMARY_COLUMNS,
@@ -35,6 +37,7 @@ class ValidationRun:
     condition_snapshots: pd.DataFrame
     bar_windows: pd.DataFrame
     tick_windows: pd.DataFrame
+    event_transitions: pd.DataFrame
     exit_audits: pd.DataFrame
     validation_checks: pd.DataFrame
 
@@ -76,6 +79,11 @@ def load_validation_run(path: str | Path, *, include_tick_windows: bool = True) 
         tick_windows=_read_optional_artifact(run_dir, TICK_WINDOWS_FILENAME, TICK_WINDOW_COLUMNS)
         if include_tick_windows
         else empty_frame(TICK_WINDOW_COLUMNS),
+        event_transitions=_read_optional_artifact(
+            run_dir,
+            EVENT_TRANSITIONS_FILENAME,
+            EVENT_TRANSITION_COLUMNS,
+        ),
         exit_audits=_read_optional_artifact(run_dir, EXIT_AUDITS_FILENAME, EXIT_AUDIT_COLUMNS),
         validation_checks=_read_optional_artifact(run_dir, VALIDATION_CHECKS_FILENAME, VALIDATION_CHECK_COLUMNS),
     )

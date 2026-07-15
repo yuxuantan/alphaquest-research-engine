@@ -12,13 +12,14 @@ from typing import Any
 
 import pandas as pd
 
-VALIDATION_SCHEMA_VERSION = "1.1"
+VALIDATION_SCHEMA_VERSION = "1.3"
 
 METADATA_FILENAME = "metadata.json"
 TRADES_FILENAME = "trades.parquet"
 CONDITION_SNAPSHOTS_FILENAME = "condition_snapshots.parquet"
 BAR_WINDOWS_FILENAME = "bar_windows.parquet"
 TICK_WINDOWS_FILENAME = "tick_windows.parquet"
+EVENT_TRANSITIONS_FILENAME = "event_transitions.parquet"
 EXIT_AUDITS_FILENAME = "exit_audits.parquet"
 MANUAL_REVIEW_FILENAME = "manual_review.parquet"
 VALIDATION_CHECKS_FILENAME = "validation_checks.parquet"
@@ -162,6 +163,7 @@ class BarWindowRow:
 class TickWindowRow:
     trade_id: str | int
     timestamp: Any
+    source_ordinal: int | None = None
     price: float | None = None
     volume: float | None = None
     bid_volume: float | None = None
@@ -172,6 +174,36 @@ class TickWindowRow:
     price_level_bid_volume: float | None = None
     price_level_ask_volume: float | None = None
     price_level_delta: float | None = None
+
+    def to_record(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+@dataclass(frozen=True)
+class EventTransition:
+    """One causally ordered state transition from an event-replay run.
+
+    ``state_json`` captures the resulting state while ``evidence_json`` records
+    the event-local facts used to make the transition.  Both fields are JSON
+    strings so the parquet contract remains stable across strategies.
+    """
+
+    trade_id: str | int | None = None
+    session_date: str | None = None
+    contract: str | None = None
+    order_id: str | int | None = None
+    timestamp: Any = None
+    source_ordinal: int | None = None
+    event_index: int | None = None
+    transition: str | None = None
+    direction: str | None = None
+    price: float | None = None
+    active_from_event_index: int | None = None
+    stop_price: float | None = None
+    target_price: float | None = None
+    reason: str | None = None
+    state_json: str | None = None
+    evidence_json: str | None = None
 
     def to_record(self) -> dict[str, Any]:
         return asdict(self)
@@ -255,6 +287,7 @@ TRADE_SUMMARY_COLUMNS = [field.name for field in TradeSummary.__dataclass_fields
 CONDITION_SNAPSHOT_COLUMNS = [field.name for field in ConditionSnapshot.__dataclass_fields__.values()]
 BAR_WINDOW_COLUMNS = [field.name for field in BarWindowRow.__dataclass_fields__.values()]
 TICK_WINDOW_COLUMNS = [field.name for field in TickWindowRow.__dataclass_fields__.values()]
+EVENT_TRANSITION_COLUMNS = [field.name for field in EventTransition.__dataclass_fields__.values()]
 EXIT_AUDIT_COLUMNS = [field.name for field in ExitAudit.__dataclass_fields__.values()]
 MANUAL_REVIEW_COLUMNS = [field.name for field in ManualReviewAnnotation.__dataclass_fields__.values()]
 VALIDATION_CHECK_COLUMNS = [field.name for field in ValidationCheck.__dataclass_fields__.values()]
