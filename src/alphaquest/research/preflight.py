@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from collections import defaultdict
+from datetime import date
 import json
 from pathlib import Path
 import shlex
@@ -26,11 +27,15 @@ from alphaquest.utils.target_rr import MIN_TARGET_R_MULTIPLE, target_rr_violatio
 
 
 ACTIVE_CONFIG_GLOBS = (
+    "research/campaigns/active/**/variants/**/config.yaml",
+    "research/campaigns/active/**/rescue_attempts/**/config.yaml",
     "campaigns/**/variants/**/config.yaml",
     "campaigns/**/rescue_attempts/**/config.yaml",
     "configs/campaigns/**/*.yaml",
 )
 GENERATED_RESULT_CONFIG_GLOBS = (
+    "research/evidence/runs/**/effective_config.yaml",
+    "research/evidence/runs/**/config.yaml",
     "backtest-campaigns/**/effective_config.yaml",
     "backtest-campaigns/**/config.yaml",
 )
@@ -48,6 +53,7 @@ REQUIRED_MECHANICS_RATIONALE_FIELDS = (
 SUPPORTED_CONTINUOUS_CONTRACT_RULES = {"none", "dominant_session_volume", "session_volume", "explicit_roll_calendar"}
 DEFAULT_CAMPAIGN_VARIANT_COUNT = 5
 MAX_CAMPAIGN_VARIANT_COUNT = 8
+GOVERNANCE_CONTRACT_VERSION = 2
 VARIANT_EXPANSION_RATIONALE_MIN_CHARS = 80
 APPROVED_PRE_TEST_DECISIONS = {
     "approve_for_testing",
@@ -138,6 +144,7 @@ def run_preflight(
                 allow_terminal_pretest=not explicit_configs,
             )
             _validate_campaign_variant_count(path, failures, warnings)
+            _validate_campaign_governance(path, failures, warnings)
             if is_terminal and not explicit_configs:
                 terminal_configs += 1
                 continue
@@ -405,6 +412,23 @@ def _validate_campaign_variant_count(path: Path, failures: list[str], warnings: 
         return
 
     variant_count = len(variants)
+    contract_version = int(campaign.get("governance_contract_version") or 0)
+    if contract_version >= GOVERNANCE_CONTRACT_VERSION:
+        if variant_count != DEFAULT_CAMPAIGN_VARIANT_COUNT:
+            failures.append(
+                f"{campaign_prefix}: governance contract v{contract_version} requires exactly "
+                f"{DEFAULT_CAMPAIGN_VARIANT_COUNT} initial variants; found {variant_count}."
+            )
+        variant_dirs = {
+            item.parent.name for item in (campaign_root / "variants").glob("*/config.yaml") if item.is_file()
+        }
+        declared = {str(item) for item in variants}
+        if declared != variant_dirs:
+            failures.append(
+                f"{campaign_prefix}: declared variants must exactly match authored variants/*/config.yaml "
+                f"(declared={sorted(declared)}, authored={sorted(variant_dirs)})."
+            )
+        return
     if variant_count > MAX_CAMPAIGN_VARIANT_COUNT:
         failures.append(
             f"{campaign_prefix}: campaign variant cap is {MAX_CAMPAIGN_VARIANT_COUNT}; found {variant_count} variants."
@@ -417,6 +441,137 @@ def _validate_campaign_variant_count(path: Path, failures: list[str], warnings: 
                 "a detailed pre-test variant_expansion_rationale explaining why variants 6-8 "
                 "are better distinct mechanics within the same edge."
             )
+
+
+def _validate_campaign_governance(path: Path, failures: list[str], warnings: list[str]) -> None:
+    campaign_root = _source_campaign_root(path)
+    if campaign_root is None:
+        return
+    campaign_yaml = campaign_root / "campaign.yaml"
+    if not campaign_yaml.is_file():
+        return
+    campaign = _load_yaml(campaign_yaml)
+    if int(campaign.get("governance_contract_version") or 0) < GOVERNANCE_CONTRACT_VERSION:
+        return
+
+    prefix = str(_display_path(campaign_yaml))
+    fingerprint = campaign.get("economic_edge_fingerprint")
+    required_fingerprint = ("market_behavior", "causal_mechanism", "signal_inputs", "market_context", "holding_period")
+    if not isinstance(fingerprint, dict):
+        failures.append(f"{prefix}: economic_edge_fingerprint must be a mapping under governance contract v2.")
+    else:
+        for field in required_fingerprint:
+            value = fingerprint.get(field)
+            if not isinstance(value, str) or len(value.strip()) < 20:
+                failures.append(f"{prefix}: economic_edge_fingerprint.{field} must be substantive and predeclared.")
+        normalized = _normalized_fingerprint(fingerprint)
+        if normalized:
+            for other_path in sorted(PROJECT_ROOT.glob("campaigns/*/campaign.yaml")):
+                if other_path.resolve() == campaign_yaml.resolve():
+                    continue
+                other = _load_yaml(other_path)
+                other_fingerprint = other.get("economic_edge_fingerprint")
+                if isinstance(other_fingerprint, dict) and _normalized_fingerprint(other_fingerprint) == normalized:
+                    failures.append(
+                        f"{prefix}: economic edge fingerprint duplicates {_display_path(other_path)}; "
+                        "create no sibling campaign for the same economic edge."
+                    )
+                    break
+
+    review = campaign.get("duplicate_edge_review")
+    if not isinstance(review, dict):
+        failures.append(f"{prefix}: duplicate_edge_review is required before campaign testing.")
+    else:
+        reviewed = review.get("reviewed_campaign_ids")
+        ledger_queries = review.get("ledger_queries")
+        if not isinstance(reviewed, list):
+            failures.append(f"{prefix}: duplicate_edge_review.reviewed_campaign_ids must be a list.")
+        if not isinstance(ledger_queries, list) or not ledger_queries:
+            failures.append(f"{prefix}: duplicate_edge_review.ledger_queries must record at least one ledger search.")
+        if str(review.get("conclusion") or "").lower() not in {"distinct", "duplicate_rejected"}:
+            failures.append(f"{prefix}: duplicate_edge_review.conclusion must be distinct or duplicate_rejected.")
+        distinction = review.get("substantive_distinction")
+        if not isinstance(distinction, str) or len(distinction.strip()) < 80:
+            failures.append(f"{prefix}: duplicate_edge_review.substantive_distinction must explain the economic difference.")
+
+    variants = [str(item) for item in campaign.get("variants") or []]
+    distinctions = campaign.get("variant_distinctions")
+    if not isinstance(distinctions, dict):
+        failures.append(f"{prefix}: variant_distinctions must document five materially different mechanics.")
+    else:
+        mechanics: list[str] = []
+        for variant_id in variants:
+            item = distinctions.get(variant_id)
+            if not isinstance(item, dict):
+                failures.append(f"{prefix}: variant_distinctions.{variant_id} is required.")
+                continue
+            mechanic = str(item.get("mechanic") or "").strip()
+            difference = str(item.get("material_difference") or "").strip()
+            if len(mechanic) < 40 or len(difference) < 40:
+                failures.append(
+                    f"{prefix}: variant_distinctions.{variant_id} must predeclare mechanic and material_difference."
+                )
+            mechanics.append(" ".join(mechanic.lower().split()))
+        if len(set(mechanics)) != len(mechanics):
+            failures.append(f"{prefix}: variant_distinctions contains duplicate mechanics.")
+
+    rescue = campaign.get("rescue_policy")
+    if not isinstance(rescue, dict):
+        failures.append(f"{prefix}: rescue_policy is required.")
+    else:
+        maximum = rescue.get("max_rescues_per_failed_variant")
+        if not isinstance(maximum, int) or maximum < 0 or maximum > 1:
+            failures.append(f"{prefix}: rescue_policy.max_rescues_per_failed_variant must be 0 or 1.")
+        rescue_root = campaign_root / "rescue_attempts"
+        by_parent: dict[str, int] = {}
+        if rescue_root.exists():
+            for config in rescue_root.glob("*/*/config.yaml"):
+                rescue_cfg = _load_yaml(config)
+                parent = str((rescue_cfg.get("research_metadata") or {}).get("parent_variant_id") or "")
+                if not parent:
+                    failures.append(f"{_display_path(config)}: rescue must declare research_metadata.parent_variant_id.")
+                    continue
+                by_parent[parent] = by_parent.get(parent, 0) + 1
+        for parent, count in by_parent.items():
+            if isinstance(maximum, int) and count > maximum:
+                failures.append(f"{prefix}: variant {parent} has {count} rescue attempts; maximum is {maximum}.")
+
+    _validate_validation_gate_declaration(path, failures)
+
+
+def _validate_validation_gate_declaration(path: Path, failures: list[str]) -> None:
+    cfg = _load_yaml(path)
+    research = cfg.get("research_metadata") if isinstance(cfg.get("research_metadata"), dict) else {}
+    gate = research.get("validation_gate") if isinstance(research.get("validation_gate"), dict) else None
+    prefix = str(_display_path(path))
+    if gate is None:
+        failures.append(f"{prefix}: governance contract v2 requires research_metadata.validation_gate.")
+        return
+    if gate.get("required") is not True:
+        failures.append(f"{prefix}: research_metadata.validation_gate.required must be true.")
+    if str(gate.get("lane") or "") not in {"bar", "event_replay"}:
+        failures.append(f"{prefix}: research_metadata.validation_gate.lane must be bar or event_replay.")
+    for field in ("evidence_dir", "approval_path"):
+        if not str(gate.get(field) or "").strip():
+            failures.append(f"{prefix}: research_metadata.validation_gate.{field} is required.")
+    subset = gate.get("data_subset")
+    if not isinstance(subset, dict):
+        failures.append(f"{prefix}: research_metadata.validation_gate.data_subset must be a deterministic date slice.")
+    else:
+        try:
+            start = date.fromisoformat(str(subset.get("start_date")))
+            end = date.fromisoformat(str(subset.get("end_date")))
+            if end < start or (end - start).days > 14:
+                failures.append(f"{prefix}: validation_gate.data_subset must span 0 to 14 calendar days.")
+        except ValueError:
+            failures.append(f"{prefix}: validation_gate.data_subset start_date/end_date must be ISO dates.")
+
+
+def _normalized_fingerprint(value: dict) -> str:
+    fields = ("market_behavior", "causal_mechanism", "signal_inputs", "market_context", "holding_period")
+    if not all(isinstance(value.get(field), str) and value.get(field).strip() for field in fields):
+        return ""
+    return "|".join(" ".join(str(value[field]).lower().split()) for field in fields)
 
 
 def _validate_data(

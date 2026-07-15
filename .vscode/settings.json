@@ -6,29 +6,47 @@
     "**/.ruff_cache": true,
     "_archived": true,
     "backtest-campaigns": true,
-    "data/cache": false,
-    "data/raw": false,
-    "research_artifacts/*.*": true,
-    "campaigns/*/rescue_attempts": true
+    "campaigns": true,
+    "catalogs": true,
+    "run-store": true,
+    "data/cache": true,
+    "data/raw": true,
+    "research/campaigns/archive": true,
+    "research/evidence": true,
+    "research_artifacts/*.*": true
   },
   "search.exclude": {
     "_archived/**": true,
     "backtest-campaigns/**": true,
+    "campaigns/**": true,
+    "catalogs/**": true,
+    "run-store/**": true,
     "data/cache/**": true,
     "data/raw/**": true,
+    "research/campaigns/archive/**": true,
+    "research/evidence/**": true,
     "research_artifacts/**": true
   },
   "files.watcherExclude": {
     "**/backtest-campaigns/**": true,
+    "**/catalogs/**": true,
+    "**/run-store/**": true,
     "**/data/cache/**": true,
-    "**/data/raw/**": true
+    "**/data/raw/**": true,
+    "**/research/campaigns/archive/**": true,
+    "**/research/evidence/**": true
   },
   "yaml.schemas": {
-    "./schemas/campaign.schema.json": "campaigns/*/campaign.yaml",
-    "./schemas/variant-config.schema.json": [
-      "campaigns/*/variants/*/config.yaml",
-      "campaigns/*/rescue_attempts/*/*/config.yaml"
+    "./schemas/campaign.schema.json": [
+      "research/campaigns/active/*/campaign.yaml",
+      "research/campaigns/archive/*/campaign.yaml"
     ],
-    "./schemas/research-settings.schema.json": "config/research_settings.yaml"
+    "./schemas/variant-config.schema.json": [
+      "research/campaigns/active/*/variants/*/config.yaml",
+      "research/campaigns/archive/*/variants/*/config.yaml",
+      "research/campaigns/archive/*/rescue_attempts/*/*/config.yaml"
+    ],
+    "./schemas/research-settings.schema.json": "config/research_settings.yaml",
+    "./schemas/storage-layout.schema.json": "config/storage_layout.yaml"
   }
 }

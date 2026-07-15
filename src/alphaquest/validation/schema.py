@@ -42,6 +42,14 @@ class ValidationMetadata:
     source_trade_log: str | None = None
     config_hash: str | None = None
     input_data_hash: str | None = None
+    validation_lane: str | None = None
+    source_data_type: str | None = None
+    source_data_path: str | None = None
+    source_trade_count: int | None = None
+    commission_per_contract: float | None = None
+    slippage_ticks: float | None = None
+    point_value: float | None = None
+    forced_flatten_time: str | None = None
     notes: str | None = None
     schema_version: str = VALIDATION_SCHEMA_VERSION
     created_at_utc: str | None = None

@@ -15,11 +15,17 @@ import yaml
 from alphaquest.data.timeframe import canonical_timeframe, parse_timeframe_minutes
 from alphaquest.research.policy import active_research_policy_metadata
 from alphaquest.research.run_store import ensure_run_uid
+from alphaquest.research.storage import load_storage_layout
 from alphaquest.utils.hashing import file_sha256, object_sha256
 from alphaquest.version import ENGINE_CONTRACT_VERSION
 
 
-CAMPAIGN_REPORT_ROOT = Path("backtest-campaigns")
+_STORAGE_LAYOUT = load_storage_layout()
+try:
+    CAMPAIGN_REPORT_ROOT = _STORAGE_LAYOUT.evidence_roots[0].relative_to(_STORAGE_LAYOUT.project_root)
+except ValueError:
+    CAMPAIGN_REPORT_ROOT = _STORAGE_LAYOUT.evidence_roots[0]
+LEGACY_CAMPAIGN_REPORT_ROOT = Path("backtest-campaigns")
 CAMPAIGN_METADATA_FILENAME = "campaign.yaml"
 VARIANT_METADATA_FILENAME = "variant.yaml"
 CAMPAIGN_VARIANTS_INDEX_FILENAME = "variants_index.yaml"
@@ -231,7 +237,7 @@ def validate_campaign_run_root(
     if len(rel) != 4:
         raise ValueError(
             "Campaign run output must be "
-            "backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}; "
+            f"{CAMPAIGN_REPORT_ROOT}/{{campaign_id}}/{{variant_id}}/{{symbol}}/{{run_id}}; "
             f"got {path}"
         )
     expected = {
@@ -482,7 +488,7 @@ def _campaign_test_run_id_from_path(config_path: str | Path | None) -> str | Non
     path = Path(config_path)
     if path.name not in CONFIG_SNAPSHOT_FILENAMES:
         return None
-    if CAMPAIGN_REPORT_ROOT.name not in path.parts:
+    if _campaign_report_root_index(path.parts) is None:
         return None
     return path.parent.name or None
 
@@ -496,11 +502,11 @@ def _campaign_test_run_id_from_root(root_path: str | Path | None) -> str | None:
 
 def _campaign_report_relative_parts(path: Path) -> tuple[str, ...]:
     parts = path.parts
-    root_name = CAMPAIGN_REPORT_ROOT.name
-    if root_name not in parts:
+    found = _campaign_report_root_index(parts)
+    if found is None:
         return ()
-    index = len(parts) - 1 - list(reversed(parts)).index(root_name)
-    return tuple(parts[index + 1 :])
+    index, width = found
+    return tuple(parts[index + width :])
 
 
 def _campaign_root_from_layout_path(root_path: str | Path | None) -> Path | None:
@@ -508,13 +514,13 @@ def _campaign_root_from_layout_path(root_path: str | Path | None) -> Path | None
         return None
     path = Path(root_path)
     parts = path.parts
-    root_name = CAMPAIGN_REPORT_ROOT.name
-    if root_name not in parts:
+    found = _campaign_report_root_index(parts)
+    if found is None:
         return None
-    index = len(parts) - 1 - list(reversed(parts)).index(root_name)
-    if len(parts) <= index + 1:
+    index, width = found
+    if len(parts) <= index + width:
         return None
-    return Path(*parts[: index + 2])
+    return Path(*parts[: index + width + 1])
 
 
 def _campaign_variant_root_from_layout_path(root_path: str | Path | None) -> Path | None:
@@ -522,13 +528,22 @@ def _campaign_variant_root_from_layout_path(root_path: str | Path | None) -> Pat
         return None
     path = Path(root_path)
     parts = path.parts
-    root_name = CAMPAIGN_REPORT_ROOT.name
-    if root_name not in parts:
+    found = _campaign_report_root_index(parts)
+    if found is None:
         return None
-    index = len(parts) - 1 - list(reversed(parts)).index(root_name)
-    if len(parts) <= index + 2:
+    index, width = found
+    if len(parts) <= index + width + 1:
         return None
-    return Path(*parts[: index + 3])
+    return Path(*parts[: index + width + 2])
+
+
+def _campaign_report_root_index(parts: tuple[str, ...]) -> tuple[int, int] | None:
+    for root in (CAMPAIGN_REPORT_ROOT, LEGACY_CAMPAIGN_REPORT_ROOT):
+        needle = root.parts
+        for index in range(len(parts) - len(needle), -1, -1):
+            if tuple(parts[index : index + len(needle)]) == needle:
+                return index, len(needle)
+    return None
 
 
 def _variant_metadata_scaffold(config: dict | None) -> dict:

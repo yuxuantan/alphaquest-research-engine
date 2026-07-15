@@ -10,6 +10,10 @@ Preflight checks:
 - duplicate bars
 - required OHLCV fields
 - explicit continuous-contract rule
+- explicit vendor and raw/detail source identity
+- exact start/end dates and America/New_York session interpretation
+- inspectable contracts, roll boundaries, gaps, duplicates, and out-of-order records
+- parent hashes and transformation policy for every derived cache
 
 Feature builders must use only information available at the decision timestamp. Daily or macro series require a documented publication lag. Current-session levels must be developing values, never final-session values used retrospectively.
 
@@ -28,3 +32,5 @@ Fields based on event size, event count, fragmentation, or sequential timing mus
 rebuilt from canonical events. Legacy raw-component `large200_record_*` fields are not
 valid trade-event features. Databento `trades` provides trade messages, not MBO/DOM, and
 that limitation must remain in the source-quality label.
+
+Use `alphaquest campaign show <campaign_id> --explain --run <run_uid>` to reconcile a run's authored and effective config snapshots, declared hashes, raw sources, dates, session, contracts, roll policy, costs, transformations, validation lane, stage sequence, and terminal verdict. A generated snapshot records what the run says it used; the snapshot alone does not prove a rerun or validate the underlying data.

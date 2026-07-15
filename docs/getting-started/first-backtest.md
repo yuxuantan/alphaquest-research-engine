@@ -17,9 +17,13 @@ For a real authored campaign:
 
 ```bash
 alphaquest campaign validate <campaign_id>
+alphaquest campaign validate-mechanics <campaign_id> --variant <variant_id>
+# Review the lane-correct evidence and write the declared approval.json.
 alphaquest campaign run <campaign_id> --variant <variant_id>
 make research-workspace
-alphaquest campaign show <campaign_id>
+alphaquest campaign show <campaign_id> --explain --run <run_uid>
 ```
+
+The staged performance command fails closed until a governance-v2 variant's lane-correct evidence and hash-bound manual decision are `approved_for_testing`.
 
 Never edit generated `effective_config.yaml` or result summaries as source. Change the authored config, rerun under a new run ID, and preserve prior evidence.

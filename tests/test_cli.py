@@ -18,11 +18,27 @@ def test_campaign_new_creates_five_variant_scaffold(tmp_path, monkeypatch):
     code = main(["campaign", "new", "demo_edge", "--symbol", "ES", "--edge-family", "demo"])
 
     assert code == 0
-    campaign = yaml.safe_load((tmp_path / "campaigns" / "demo_edge" / "campaign.yaml").read_text(encoding="utf-8"))
+    campaign = yaml.safe_load(
+        (tmp_path / "research/campaigns/active/demo_edge/campaign.yaml").read_text(encoding="utf-8")
+    )
+    assert campaign["governance_contract_version"] == 2
     assert campaign["variants"] == ["v01", "v02", "v03", "v04", "v05"]
-    assert len(list((tmp_path / "campaigns" / "demo_edge" / "variants").glob("*/config.yaml"))) == 5
-    first_modules = tmp_path / "campaigns" / "demo_edge" / "variants" / "v01" / "strategy_modules"
+    assert set(campaign["variant_distinctions"]) == set(campaign["variants"])
+    assert "economic_edge_fingerprint" in campaign
+    assert "duplicate_edge_review" in campaign
+    assert len(
+        list((tmp_path / "research/campaigns/active/demo_edge/variants").glob("*/config.yaml"))
+    ) == 5
+    first_modules = (
+        tmp_path / "research/campaigns/active/demo_edge/variants/v01/strategy_modules"
+    )
     assert {path.name for path in first_modules.iterdir()} == {"README.md", "entry.py", "stop.py", "target.py"}
+    first_config = yaml.safe_load((first_modules.parent / "config.yaml").read_text(encoding="utf-8"))
+    gate = first_config["research_metadata"]["validation_gate"]
+    assert gate["required"] is True
+    assert gate["evidence_dir"].startswith("research/evidence/runs/")
+    assert gate["approval_path"].startswith("research_artifacts/validation_approvals/")
+    assert (first_modules.parent / "validation" / "approval.template.json").is_file()
 
 
 def test_campaign_new_rejects_unsafe_identifier(tmp_path, monkeypatch, capsys):

@@ -22,7 +22,7 @@ attempt  = an original or explicitly authorized rescue definition
 run      = immutable generated evidence for one fixed attempt
 ```
 
-Authored definitions live under `campaigns/`. Generated evidence lives under `backtest-campaigns/`. Use `views/` and the registry for navigation instead of browsing the evidence store directly.
+Active authored definitions live under `research/campaigns/active/`; closed definitions live under `research/campaigns/archive/`. Generated evidence lives under `research/evidence/runs/`. Use `views/workbench/` and the registry instead of browsing either archive directly.
 
 ## Quick Start
 
@@ -44,6 +44,7 @@ make tutorial
 ```bash
 alphaquest research search --symbol ES --state closed --limit 20
 alphaquest campaign show es_video_aoi_lvn_orderflow_playbook
+alphaquest campaign show es_video_aoi_lvn_orderflow_playbook --explain --run <run_uid>
 alphaquest campaign validate <campaign_id>
 make preflight
 make test
@@ -55,10 +56,11 @@ make qualify
 | Path | Purpose |
 | --- | --- |
 | `src/alphaquest/` | Engine and reusable library code |
-| `campaigns/` | Authored research definitions |
+| `research/campaigns/active/` | Active authored research definitions |
+| `research/campaigns/archive/` | Closed authored research definitions |
 | `tests/` | Engine, methodology, strategy, and regression tests |
 | `data/` | Raw, reference, external, and generated market data |
-| `backtest-campaigns/` | Immutable generated staged evidence |
+| `research/evidence/runs/` | Immutable generated staged evidence |
 | `catalogs/` | Rebuildable SQLite registry and exports |
 | `views/` | Generated human-facing research navigation |
 | `research_artifacts/` | Durable audits and decisions |

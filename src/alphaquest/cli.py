@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 import re
 import sqlite3
+import subprocess
 import sys
 from typing import Any, Iterable
 
@@ -16,6 +17,8 @@ from alphaquest.research.campaign_stages import run_campaign_stage_tests
 from alphaquest.research.definitions import write_definition_manifests
 from alphaquest.research.registry import build_registry, export_registry_csvs, generate_views, registry_summary
 from alphaquest.research.run_store import backfill_run_uids, build_run_store_index
+from alphaquest.research.storage import display_path, load_storage_layout
+from alphaquest.utils.config import CAMPAIGN_REPORT_ROOT
 
 
 DEFAULT_DATABASE = Path("catalogs/research_registry.sqlite")
@@ -70,6 +73,15 @@ def _parser() -> argparse.ArgumentParser:
     show.add_argument("campaign_id")
     _database_argument(show)
     show.add_argument("--limit", type=int, default=10)
+    show.add_argument("--explain", action="store_true", help="Resolve authored mechanics, run lineage, validation, and verdict.")
+    show.add_argument("--variant", help="Select one authored variant for the explanation and latest-run lookup.")
+    show.add_argument("--run", help="Select a run UID or test run ID for the explanation.")
+    show.add_argument(
+        "--write-card",
+        nargs="?",
+        const="",
+        help="Write a generated Markdown run card; optionally provide an output path.",
+    )
     show.add_argument("--json", action="store_true")
     show.set_defaults(handler=_campaign_show)
     new = campaign_commands.add_parser("new", help="Create a five-variant authored campaign scaffold.")
@@ -79,18 +91,26 @@ def _parser() -> argparse.ArgumentParser:
     new.add_argument("--timeframe", default="1m")
     new.add_argument("--dataset-id")
     new.add_argument("--data-path")
-    new.add_argument("--campaign-root", default="campaigns")
+    new.add_argument("--campaign-root", default="research/campaigns/active")
     new.set_defaults(handler=_campaign_new)
     validate = campaign_commands.add_parser("validate", help="Run fail-closed preflight on one campaign.")
     validate.add_argument("campaign_id")
-    validate.add_argument("--campaign-root", default="campaigns")
+    validate.add_argument("--campaign-root", default="research/campaigns/active")
     validate.add_argument("--skip-tests", action="store_true")
     validate.add_argument("--json", action="store_true")
     validate.set_defaults(handler=_campaign_validate)
+    mechanics = campaign_commands.add_parser(
+        "validate-mechanics",
+        help="Run the declared small deterministic bar-lane mechanics-validation slice.",
+    )
+    mechanics.add_argument("campaign_id")
+    mechanics.add_argument("--variant", required=True)
+    mechanics.add_argument("--campaign-root", default="research/campaigns/active")
+    mechanics.set_defaults(handler=_campaign_validate_mechanics)
     run = campaign_commands.add_parser("run", help="Run the staged workflow for one authored variant.")
     run.add_argument("campaign_id")
     run.add_argument("--variant", required=True)
-    run.add_argument("--campaign-root", default="campaigns")
+    run.add_argument("--campaign-root", default="research/campaigns/active")
     run.add_argument("--skip-validation", action="store_true")
     run.add_argument("--continue-on-failure", action="store_true")
     run.add_argument("--no-acceptance", action="store_true")
@@ -128,15 +148,19 @@ def _database_argument(parser: argparse.ArgumentParser) -> None:
 
 def _workspace_build(args: argparse.Namespace) -> int:
     root = Path(args.project_root).resolve()
+    layout = load_storage_layout(root)
+    campaign_roots = [display_path(path, root) for path in layout.campaign_roots]
+    evidence_roots = [display_path(path, root) for path in layout.evidence_roots]
     counts: dict[str, int] = {}
-    counts.update({f"uids_{key}": value for key, value in backfill_run_uids(project_root=root, apply=True).items()})
-    counts.update(
-        {
-            f"definitions_{key}": value
-            for key, value in write_definition_manifests(project_root=root, apply=True).items()
-        }
-    )
-    counts.update(build_registry(project_root=root))
+    for evidence_root in evidence_roots:
+        result = backfill_run_uids(evidence_root, project_root=root, apply=True)
+        for key, value in result.items():
+            counts[f"uids_{key}"] = counts.get(f"uids_{key}", 0) + value
+    for campaign_root in campaign_roots:
+        result = write_definition_manifests(campaign_root, project_root=root, apply=True)
+        for key, value in result.items():
+            counts[f"definitions_{key}"] = counts.get(f"definitions_{key}", 0) + value
+    counts.update(build_registry(project_root=root, campaign_roots=campaign_roots, run_roots=evidence_roots))
     counts.update({f"export_{key}": value for key, value in export_registry_csvs(project_root=root).items()})
     counts.update({f"view_{key}": value for key, value in generate_views(project_root=root).items()})
     counts.update({f"store_{key}": value for key, value in build_run_store_index(project_root=root, apply=True).items()})
@@ -206,6 +230,28 @@ def _research_search(args: argparse.Namespace) -> int:
 
 def _campaign_show(args: argparse.Namespace) -> int:
     database = _require_database(args.database)
+    if args.explain or args.write_card is not None or args.variant or args.run:
+        from alphaquest.research.explain import explain_research, explanation_markdown
+
+        payload = explain_research(
+            args.campaign_id,
+            database_path=database,
+            variant_id=args.variant,
+            run_id=args.run,
+        )
+        markdown = explanation_markdown(payload)
+        if args.write_card is not None:
+            run = payload.get("run") or {}
+            default_name = str(run.get("run_uid") or args.campaign_id)
+            card_path = Path(args.write_card) if args.write_card else Path("views/run_cards") / f"{default_name}.md"
+            card_path.parent.mkdir(parents=True, exist_ok=True)
+            card_path.write_text(markdown, encoding="utf-8")
+            payload["run_card_path"] = str(card_path)
+        if args.json:
+            print(json.dumps(payload, indent=2))
+        else:
+            print(markdown)
+        return 0
     campaign_rows = _query(database, "SELECT * FROM campaigns WHERE campaign_id = ?", [args.campaign_id])
     if not campaign_rows:
         raise ValueError(f"unknown campaign: {args.campaign_id}")
@@ -250,8 +296,22 @@ def _campaign_new(args: argparse.Namespace) -> int:
         "created_at": datetime.now(timezone.utc).date().isoformat(),
         "instrument": args.symbol,
         "timeframe": args.timeframe,
+        "governance_contract_version": 2,
         "edge_family": args.edge_family,
         "hypothesis": "TODO: state the market behavior, mechanism, and falsifiable expectation.",
+        "economic_edge_fingerprint": {
+            "market_behavior": "TODO: identify the repeatable market behavior without implementation labels.",
+            "causal_mechanism": "TODO: explain why counterparties or market structure should create the behavior.",
+            "signal_inputs": "TODO: list the economically meaningful inputs, not parameter names.",
+            "market_context": "TODO: state the instrument, session, and regime where the mechanism should apply.",
+            "holding_period": "TODO: state the expected economic horizon from signal to exit.",
+        },
+        "duplicate_edge_review": {
+            "reviewed_campaign_ids": [],
+            "ledger_queries": ["TODO: record the research_ledger.csv query used before scaffolding."],
+            "conclusion": "needs_review",
+            "substantive_distinction": "TODO: explain in at least 80 characters why this is economically distinct from prior campaigns.",
+        },
         "sources": [
             {
                 "title": "TODO",
@@ -262,6 +322,13 @@ def _campaign_new(args: argparse.Namespace) -> int:
             }
         ],
         "variants": [f"v{index:02d}" for index in range(1, 6)],
+        "variant_distinctions": {
+            f"v{index:02d}": {
+                "mechanic": "TODO: predeclare this variant's invariant entry, risk, and exit expression.",
+                "material_difference": "TODO: explain how this mechanic differs economically from the other four variants.",
+            }
+            for index in range(1, 6)
+        },
         "rescue_policy": {"allowed": False, "max_rescues_per_failed_variant": 1},
     }
     _write_yaml(campaign_dir / "campaign.yaml", campaign)
@@ -284,6 +351,12 @@ def _campaign_new(args: argparse.Namespace) -> int:
                 f'"""Bind this variant to its reviewed strategy module."""\n\n{binding} = None\n',
                 encoding="utf-8",
             )
+        validation_dir = variant_dir / "validation"
+        validation_dir.mkdir()
+        (validation_dir / "approval.template.json").write_text(
+            json.dumps(_validation_approval_template(args, variant_id), indent=2) + "\n",
+            encoding="utf-8",
+        )
     print(campaign_dir)
     print("Complete TODO fields and strategy modules, then run `alphaquest campaign validate`.")
     return 0
@@ -309,6 +382,18 @@ def _variant_scaffold(args: argparse.Namespace, *, dataset_id: str, data_path: s
                 "profitability_rationale": "TODO: explain in at least 80 characters why the expected payoff may survive modeled costs.",
                 "known_failure_modes": "TODO: explain in at least 80 characters how this edge may fail or become unstable.",
                 "pre_test_decision": "needs_completion",
+            },
+            "validation_gate": {
+                "required": True,
+                "lane": "bar",
+                "data_subset": {"start_date": "TODO", "end_date": "TODO"},
+                "evidence_dir": (
+                    f"{CAMPAIGN_REPORT_ROOT}/{args.campaign_id}/{variant_id}/{args.symbol}/"
+                    "mechanics_validation/validation_runs/core"
+                ),
+                "approval_path": (
+                    f"research_artifacts/validation_approvals/{args.campaign_id}/{variant_id}/approval.json"
+                ),
             },
         },
         "data": {
@@ -347,6 +432,34 @@ def _variant_scaffold(args: argparse.Namespace, *, dataset_id: str, data_path: s
     }
 
 
+def _validation_approval_template(args: argparse.Namespace, variant_id: str) -> dict[str, Any]:
+    return {
+        "schema": "alphaquest.validation-approval/v1",
+        "status": "needs_review",
+        "reviewer": "",
+        "reviewed_at": "",
+        "notes": "",
+        "campaign_id": args.campaign_id,
+        "variant_id": variant_id,
+        "lane": "bar",
+        "config_hash": "",
+        "input_data_hash": "",
+        "validation_schema_version": "1.3",
+        "sampled_trade_ids": [],
+        "sampling_categories": {
+            "first_trade": [],
+            "last_trade": [],
+            "random_trades": [],
+            "best_trade": [],
+            "worst_trade": [],
+            "forced_flattens": [],
+            "same_bar_ambiguity": [],
+            "warnings": [],
+            "strategy_edge_cases": [],
+        },
+    }
+
+
 def _campaign_validate(args: argparse.Namespace) -> int:
     from alphaquest.research.preflight import run_preflight
 
@@ -366,6 +479,17 @@ def _campaign_validate(args: argparse.Namespace) -> int:
         for failure in result["failures"]:
             print(f"FAIL: {failure}")
     return 0 if result["passed"] else 1
+
+
+def _campaign_validate_mechanics(args: argparse.Namespace) -> int:
+    config = Path(args.campaign_root) / args.campaign_id / "variants" / args.variant / "config.yaml"
+    if not config.is_file():
+        raise FileNotFoundError(f"variant config not found: {config}")
+    result = subprocess.run(
+        [sys.executable, "-m", "alphaquest.run_core", "--config", str(config), "--mechanics-validation"],
+        check=False,
+    )
+    return int(result.returncode)
 
 
 def _campaign_run(args: argparse.Namespace) -> int:
@@ -518,12 +642,14 @@ def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
 
 def _warn_if_stale(database: Path) -> None:
     database_mtime = database.stat().st_mtime
-    candidates = [
-        *Path("campaigns").glob("*/campaign.yaml"),
-        *Path("campaigns").glob("*/variants/*/config.yaml"),
-        *Path("backtest-campaigns").glob("*/*/*/*/campaign_test_summary.json"),
-        *Path("backtest-campaigns").glob("*/*/*/*/variant_test_summary.json"),
-    ]
+    layout = load_storage_layout()
+    candidates = []
+    for campaign_root in layout.campaign_roots:
+        candidates.extend(campaign_root.glob("*/campaign.yaml"))
+        candidates.extend(campaign_root.glob("*/variants/*/config.yaml"))
+    for evidence_root in layout.evidence_roots:
+        candidates.extend(evidence_root.glob("*/*/*/*/campaign_test_summary.json"))
+        candidates.extend(evidence_root.glob("*/*/*/*/variant_test_summary.json"))
     latest = max((path.stat().st_mtime for path in candidates if path.is_file()), default=0.0)
     if latest > database_mtime:
         print("WARNING: registry is older than authored campaign source; run `alphaquest workspace build`.", file=sys.stderr)

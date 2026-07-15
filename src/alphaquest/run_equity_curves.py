@@ -13,6 +13,7 @@ from alphaquest.utils.config import (
     variant_root,
 )
 from alphaquest.utils.reports import market_timezone
+from alphaquest.research.storage import display_path, load_storage_layout
 
 
 @dataclass(frozen=True)
@@ -49,7 +50,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--report-dir",
-        default="backtest-campaigns",
+        default=display_path(load_storage_layout().evidence_roots[0]),
         help="Report root to scan when --config and --trade-log are not set.",
     )
     parser.add_argument(

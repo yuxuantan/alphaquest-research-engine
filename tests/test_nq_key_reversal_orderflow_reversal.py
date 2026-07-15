@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 
-CAMPAIGN_ROOT = Path("campaigns/nq_key_reversal_orderflow_reversal")
+CAMPAIGN_ROOT = Path("research/campaigns/archive/nq_key_reversal_orderflow_reversal")
 
 
 def test_nq_key_reversal_campaign_is_distinct_and_scaled_before_pnl():

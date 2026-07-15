@@ -474,9 +474,9 @@ def test_canonicalized_campaign_forces_monkey_runs_to_8000():
 
 def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    config_path = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run2/config.yaml"
+    config_path = tmp_path / "research/evidence/runs/demo_campaign/demo_variant/ES/run2/config.yaml"
     config_path.parent.mkdir(parents=True)
-    campaign_metadata = tmp_path / "backtest-campaigns/demo_campaign/campaign.yaml"
+    campaign_metadata = tmp_path / "research/evidence/runs/demo_campaign/campaign.yaml"
     campaign_metadata.write_text(
         "\n".join(
             [
@@ -534,8 +534,8 @@ def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, m
         skip_validation=True,
     )
 
-    run_dir = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run2"
-    assert Path(summary["output_dir"]) == Path("backtest-campaigns/demo_campaign/demo_variant/ES/run2")
+    run_dir = tmp_path / "research/evidence/runs/demo_campaign/demo_variant/ES/run2"
+    assert Path(summary["output_dir"]) == Path("research/evidence/runs/demo_campaign/demo_variant/ES/run2")
     assert summary["test_run_id"] == "run2"
     assert (run_dir / "effective_config.yaml").is_file()
     assert (run_dir / "source_config.yaml").is_file()
@@ -544,16 +544,16 @@ def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, m
     assert (run_dir / "campaign_test_summary.json").is_file()
     assert not (run_dir / "campaign_tests").exists()
     assert (run_dir.parent / "runs_index.csv").is_file()
-    assert summary["campaign_metadata"]["path"] == "backtest-campaigns/demo_campaign/campaign.yaml"
+    assert summary["campaign_metadata"]["path"] == "research/evidence/runs/demo_campaign/campaign.yaml"
     assert summary["campaign_metadata"]["hash"]
     assert summary["effective_config_path"] == (
-        "backtest-campaigns/demo_campaign/demo_variant/ES/run2/effective_config.yaml"
+        "research/evidence/runs/demo_campaign/demo_variant/ES/run2/effective_config.yaml"
     )
-    assert summary["source_config_snapshot_path"] == "backtest-campaigns/demo_campaign/demo_variant/ES/run2/source_config.yaml"
-    assert summary["variant_metadata"]["path"] == "backtest-campaigns/demo_campaign/demo_variant/variant.yaml"
+    assert summary["source_config_snapshot_path"] == "research/evidence/runs/demo_campaign/demo_variant/ES/run2/source_config.yaml"
+    assert summary["variant_metadata"]["path"] == "research/evidence/runs/demo_campaign/demo_variant/variant.yaml"
     assert summary["variant_metadata"]["mechanic"]["entry_module"] == "demo_entry"
-    assert (tmp_path / "backtest-campaigns/demo_campaign/demo_variant/variant.yaml").is_file()
-    assert (tmp_path / "backtest-campaigns/demo_campaign/variants_index.yaml").is_file()
+    assert (tmp_path / "research/evidence/runs/demo_campaign/demo_variant/variant.yaml").is_file()
+    assert (tmp_path / "research/evidence/runs/demo_campaign/variants_index.yaml").is_file()
     effective_config = (run_dir / "effective_config.yaml").read_text(encoding="utf-8")
     source_config = (run_dir / "source_config.yaml").read_text(encoding="utf-8")
     assert "stage_order:" in effective_config
@@ -670,13 +670,13 @@ def test_staged_campaign_writes_source_results_index_for_campaign_source_config(
         skip_validation=True,
     )
 
-    run_dir = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run1"
+    run_dir = tmp_path / "research/evidence/runs/demo_campaign/demo_variant/ES/run1"
     index_path = tmp_path / "campaigns/demo_campaign/results_index.yaml"
     assert summary["source_results_index_path"] == str(index_path)
     assert (run_dir / "effective_config.yaml").is_file()
     assert (run_dir / "source_config.yaml").is_file()
     manifest = yaml.safe_load((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
-    assert manifest["effective_config"] == "backtest-campaigns/demo_campaign/demo_variant/ES/run1/effective_config.yaml"
+    assert manifest["effective_config"] == "research/evidence/runs/demo_campaign/demo_variant/ES/run1/effective_config.yaml"
     index = yaml.safe_load(index_path.read_text(encoding="utf-8"))
     assert index["runs"] == [
         {
@@ -685,13 +685,13 @@ def test_staged_campaign_writes_source_results_index_for_campaign_source_config(
             "symbol": "ES",
             "test_run_id": "run1",
             "source_config_path": str(config_path),
-            "source_config_snapshot_path": "backtest-campaigns/demo_campaign/demo_variant/ES/run1/source_config.yaml",
+            "source_config_snapshot_path": "research/evidence/runs/demo_campaign/demo_variant/ES/run1/source_config.yaml",
             "source_config_hash": summary["source_config_hash"],
-            "effective_config_path": "backtest-campaigns/demo_campaign/demo_variant/ES/run1/effective_config.yaml",
+            "effective_config_path": "research/evidence/runs/demo_campaign/demo_variant/ES/run1/effective_config.yaml",
             "effective_config_hash": summary["config_hash"],
-            "run_dir": "backtest-campaigns/demo_campaign/demo_variant/ES/run1",
-            "campaign_test_summary": "backtest-campaigns/demo_campaign/demo_variant/ES/run1/campaign_test_summary.json",
-            "variant_test_summary": "backtest-campaigns/demo_campaign/demo_variant/ES/run1/variant_test_summary.json",
+            "run_dir": "research/evidence/runs/demo_campaign/demo_variant/ES/run1",
+            "campaign_test_summary": "research/evidence/runs/demo_campaign/demo_variant/ES/run1/campaign_test_summary.json",
+            "variant_test_summary": "research/evidence/runs/demo_campaign/demo_variant/ES/run1/variant_test_summary.json",
             "passed": True,
             "halted": False,
             "failed_stage": None,

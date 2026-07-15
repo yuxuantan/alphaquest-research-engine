@@ -2,6 +2,8 @@
 
 Use one short Markdown file per durable architecture decision:
 
+- [2026-07-15: Validation and campaign-governance promotion gate](20260715-validation-governance-gate.md)
+
 ```text
 YYYYMMDD-short-title.md
 ```

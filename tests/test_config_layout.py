@@ -23,7 +23,7 @@ def test_variant_root_includes_campaign_dataset_timeframe_and_variant():
     }
 
     assert str(variant_root(config)) == (
-        "backtest-campaigns/pdh_pdl_sweep/baseline/ES/run1"
+        "research/evidence/runs/pdh_pdl_sweep/baseline/ES/run1"
     )
 
 
@@ -39,7 +39,7 @@ def test_variant_root_uses_campaign_test_run_id():
     }
 
     assert str(variant_root(config)) == (
-        "backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2"
+        "research/evidence/runs/pdh_pdl_sweep/baseline/ES/run2"
     )
 
 
@@ -58,7 +58,7 @@ def test_variant_root_can_derive_campaign_test_run_id_from_local_config_path():
             config,
             config_path="backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/effective_config.yaml",
         )
-    ) == "backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2"
+    ) == "research/evidence/runs/pdh_pdl_sweep/baseline/ES/run2"
 
 
 def test_variant_root_can_derive_campaign_test_run_id_from_legacy_local_config_path():
@@ -76,7 +76,7 @@ def test_variant_root_can_derive_campaign_test_run_id_from_legacy_local_config_p
             config,
             config_path="backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2/config.yaml",
         )
-    ) == "backtest-campaigns/pdh_pdl_sweep/baseline/ES/run2"
+    ) == "research/evidence/runs/pdh_pdl_sweep/baseline/ES/run2"
 
 
 def test_variant_root_can_derive_campaign_test_run_id_from_source_snapshot_path():
@@ -94,7 +94,7 @@ def test_variant_root_can_derive_campaign_test_run_id_from_source_snapshot_path(
             config,
             config_path="backtest-campaigns/pdh_pdl_sweep/baseline/ES/rescue1/source_config.yaml",
         )
-    ) == "backtest-campaigns/pdh_pdl_sweep/baseline/ES/rescue1"
+    ) == "research/evidence/runs/pdh_pdl_sweep/baseline/ES/rescue1"
 
 
 def test_campaign_metadata_path_lives_at_campaign_root():
@@ -107,7 +107,7 @@ def test_campaign_metadata_path_lives_at_campaign_root():
         "timeframe": "5m",
     }
 
-    assert str(campaign_metadata_path(config)) == "backtest-campaigns/pdh_pdl_sweep/campaign.yaml"
+    assert str(campaign_metadata_path(config)) == "research/evidence/runs/pdh_pdl_sweep/campaign.yaml"
 
 
 def test_variant_metadata_path_lives_at_variant_root():
@@ -120,7 +120,7 @@ def test_variant_metadata_path_lives_at_variant_root():
         "timeframe": "5m",
     }
 
-    assert str(variant_metadata_path(config)) == "backtest-campaigns/pdh_pdl_sweep/baseline/variant.yaml"
+    assert str(variant_metadata_path(config)) == "research/evidence/runs/pdh_pdl_sweep/baseline/variant.yaml"
 
 
 def test_ensure_variant_metadata_writes_variant_file_and_campaign_index(tmp_path, monkeypatch):
@@ -141,7 +141,7 @@ def test_ensure_variant_metadata_writes_variant_file_and_campaign_index(tmp_path
 
     info = ensure_variant_metadata(config)
 
-    assert info["path"] == "backtest-campaigns/pdh_pdl_sweep/baseline/variant.yaml"
+    assert info["path"] == "research/evidence/runs/pdh_pdl_sweep/baseline/variant.yaml"
     variant_metadata = yaml.safe_load(Path(info["path"]).read_text(encoding="utf-8"))
     assert variant_metadata["mechanic"] == {
         "entry_module": "pdh_pdl_sweep_reclaim",
@@ -168,7 +168,7 @@ def test_ensure_variant_metadata_writes_variant_file_and_campaign_index(tmp_path
         ],
     }
     index = yaml.safe_load(
-        Path("backtest-campaigns/pdh_pdl_sweep/variants_index.yaml").read_text(encoding="utf-8")
+        Path("research/evidence/runs/pdh_pdl_sweep/variants_index.yaml").read_text(encoding="utf-8")
     )
     assert index["variants"][0]["variant_id"] == "baseline"
     assert index["variants"][0]["mechanic"]["entry_module"] == "pdh_pdl_sweep_reclaim"
@@ -176,7 +176,7 @@ def test_ensure_variant_metadata_writes_variant_file_and_campaign_index(tmp_path
 
 def test_ensure_variant_metadata_rejects_changed_mechanic(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    metadata = tmp_path / "backtest-campaigns/pdh_pdl_sweep/baseline/variant.yaml"
+    metadata = tmp_path / "research/evidence/runs/pdh_pdl_sweep/baseline/variant.yaml"
     metadata.parent.mkdir(parents=True)
     metadata.write_text(
         "\n".join(
@@ -211,7 +211,7 @@ def test_ensure_variant_metadata_rejects_changed_mechanic(tmp_path, monkeypatch)
 
 def test_ensure_variant_metadata_tightens_existing_rescue_policy(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    metadata = tmp_path / "backtest-campaigns/pdh_pdl_sweep/baseline/variant.yaml"
+    metadata = tmp_path / "research/evidence/runs/pdh_pdl_sweep/baseline/variant.yaml"
     metadata.parent.mkdir(parents=True)
     metadata.write_text(
         "\n".join(
@@ -268,7 +268,7 @@ def test_validate_campaign_run_root_rejects_symbol_level_summary_folder():
         "timeframe": "5m",
     }
 
-    with pytest.raises(ValueError, match="backtest-campaigns/\\{campaign_id\\}"):
+    with pytest.raises(ValueError, match="research/evidence/runs/\\{campaign_id\\}"):
         validate_campaign_run_root("backtest-campaigns/pdh_pdl_sweep/baseline/ES", config)
 
 
@@ -353,7 +353,7 @@ def test_active_configs_do_not_reference_invalid_prefixed_sierra_cache():
         "es_sierra_footprint_extreme_1m_20110105_20260610",
     ]
     offenders = []
-    for path in Path("backtest-campaigns").rglob("*.yaml"):
+    for path in Path("research/evidence/runs").rglob("*.yaml"):
         text = path.read_text(encoding="utf-8")
         if any(token in text for token in invalid_tokens):
             offenders.append(str(path))

@@ -68,6 +68,7 @@ class _ValidationChecker:
         self._counter = 0
 
     def run(self) -> pd.DataFrame:
+        self._check_metadata_contract()
         self._check_trade_ids_unique()
         for _, trade in self.trades.iterrows():
             trade_id = trade.get("trade_id")
@@ -83,6 +84,70 @@ class _ValidationChecker:
             self._check_exits(trade, condition, exit_audit)
             self._check_data_quality(trade, condition, bars, ticks)
         return normalize_columns(pd.DataFrame(self.rows), VALIDATION_CHECK_COLUMNS)
+
+    def _check_metadata_contract(self) -> None:
+        self._assert(
+            bool(str(self.metadata.get("config_hash") or "").strip()),
+            check_name="metadata_config_hash_present",
+            category="reconciliation",
+            description="Validation evidence is bound to an authored config hash.",
+            expected="non-empty config_hash",
+            actual=self.metadata.get("config_hash"),
+        )
+        self._assert(
+            bool(str(self.metadata.get("input_data_hash") or "").strip()),
+            check_name="metadata_input_data_hash_present",
+            category="reconciliation",
+            description="Validation evidence is bound to an input-data hash.",
+            expected="non-empty input_data_hash",
+            actual=self.metadata.get("input_data_hash"),
+        )
+        self._assert(
+            str(self.metadata.get("validation_lane") or "") in {"bar", "event_replay"},
+            check_name="validation_lane_declared",
+            category="reconciliation",
+            description="Validation evidence declares the bar or event-replay lane.",
+            expected="bar or event_replay",
+            actual=self.metadata.get("validation_lane"),
+        )
+        source_type = self.metadata.get("source_data_type")
+        source_path = self.metadata.get("source_data_path")
+        self._assert(
+            bool(source_type and source_path),
+            check_name="source_identity_explicit",
+            category="reconciliation",
+            description="Validation evidence records explicit source type and source path.",
+            expected="source_data_type and source_data_path",
+            actual={"source_data_type": source_type, "source_data_path": source_path},
+        )
+        costs = {
+            "commission_per_contract": self.metadata.get("commission_per_contract"),
+            "slippage_ticks": self.metadata.get("slippage_ticks"),
+            "tick_size": self.metadata.get("tick_size"),
+            "point_value_or_tick_value": self.metadata.get("point_value") or self.metadata.get("tick_value"),
+            "forced_flatten_time": self.metadata.get("forced_flatten_time"),
+        }
+        self._assert(
+            all(value is not None and value != "" for value in costs.values()),
+            check_name="execution_costs_and_flatten_explicit",
+            category="reconciliation",
+            description="Costs, contract value, and forced flatten are explicit in validation metadata.",
+            expected="all execution fields present",
+            actual=costs,
+        )
+        source_count = self.metadata.get("source_trade_count")
+        try:
+            count_matches = source_count is not None and int(source_count) == len(self.trades)
+        except (TypeError, ValueError):
+            count_matches = False
+        self._assert(
+            count_matches,
+            check_name="trade_log_count_reconciled",
+            category="reconciliation",
+            description="Exported validation trades reconcile to the completed source trade log count.",
+            expected=source_count,
+            actual=len(self.trades),
+        )
 
     def _add(
         self,

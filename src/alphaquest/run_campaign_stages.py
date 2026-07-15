@@ -10,7 +10,7 @@ def main() -> None:
     parser.add_argument("--config", required=True, help="Authored campaign source config.yaml path.")
     parser.add_argument(
         "--out",
-        help="Optional output directory. Defaults to backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/.",
+        help="Optional output directory. Defaults to the configured evidence root/{campaign_id}/{variant_id}/{symbol}/{run_id}/.",
     )
     parser.add_argument(
         "--skip-validation",

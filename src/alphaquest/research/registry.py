@@ -14,6 +14,7 @@ import yaml
 
 from alphaquest.research.catalog import catalog_rows
 from alphaquest.research.run_store import read_run_uid
+from alphaquest.research.storage import resolve_recorded_path
 from alphaquest.maintenance.code_catalog import generate_code_views
 
 
@@ -23,12 +24,24 @@ CRITICAL_ARTIFACTS = (
     "campaign_test_summary.json",
     "variant_test_summary.json",
     "run_manifest.json",
+    "data_manifest.json",
     "effective_config.yaml",
     "source_config.yaml",
     "config_hash.txt",
     "input_data_hash.txt",
     "methodology_audit.md",
     "run_uid.txt",
+    "validation_approval.json",
+)
+CRITICAL_ARTIFACT_GLOBS = (
+    "**/stage_result.json",
+    "**/fixed_config_trade_log.csv",
+    "**/wfa_oos_trade_log.csv",
+    "**/wfa_stitched_oos_trade_log.csv",
+    "**/*monte_carlo_summary.json",
+    "validation_runs/*/metadata.json",
+    "validation_runs/*/validation_checks.parquet",
+    "validation_runs/*/approval.json",
 )
 
 
@@ -39,19 +52,23 @@ def build_registry(
     campaign_root: str | Path = "campaigns",
     run_root: str | Path = "backtest-campaigns",
     research_artifact_root: str | Path = "research_artifacts",
+    campaign_roots: Iterable[str | Path] | None = None,
+    run_roots: Iterable[str | Path] | None = None,
 ) -> dict[str, int]:
     root = Path(project_root).resolve()
     db_path = _resolve(root, database_path)
-    campaigns_path = _resolve(root, campaign_root)
-    runs_path = _resolve(root, run_root)
+    campaign_paths = [_resolve(root, item) for item in (campaign_roots or (campaign_root,))]
+    runs_paths = [_resolve(root, item) for item in (run_roots or (run_root,))]
     research_artifacts_path = _resolve(root, research_artifact_root)
     db_path.parent.mkdir(parents=True, exist_ok=True)
     temporary_path = db_path.with_suffix(f"{db_path.suffix}.tmp")
     temporary_path.unlink(missing_ok=True)
 
-    source_campaigns, source_variants, source_attempts = _source_records(root, campaigns_path)
-    runs = _run_records(root, runs_path)
-    campaign_records = _campaign_records(root, source_campaigns, source_variants, runs, runs_path)
+    source_campaigns, source_variants, source_attempts = _source_records_many(root, campaign_paths)
+    runs = _run_records_many(root, runs_paths)
+    campaign_records = _campaign_records(
+        root, source_campaigns, source_variants, source_attempts, runs, runs_paths
+    )
     durable_artifacts = _durable_artifact_records(root, research_artifacts_path, campaign_records)
 
     connection = sqlite3.connect(temporary_path)
@@ -142,6 +159,8 @@ def generate_views(
         _write_review_queue_readme(views_path / "review_queue", counts["review_queue"], review_runs)
         artifact_counts = _write_artifact_views(connection, views_path / "artifacts")
         _write_discovery_views(connection, views_path)
+        workbench_counts = _write_workbench(root, connection, views_path / "workbench")
+        counts.update({f"workbench_{key}": value for key, value in workbench_counts.items()})
         built_at = _metadata_value(connection, "built_at")
     finally:
         connection.close()
@@ -151,6 +170,82 @@ def generate_views(
     counts.update({f"code_{key}": value for key, value in code_counts.items()})
     counts.update({f"artifacts_{key}": value for key, value in artifact_counts.items()})
     return counts
+
+
+def _write_workbench(
+    root: Path, connection: sqlite3.Connection, output: Path
+) -> dict[str, int]:
+    """Write the ledger/remediation-aware human decision surface.
+
+    Registry views preserve recorded historical verdicts. The workbench applies
+    the durable remediation classification so rejected and superseded history
+    cannot swamp the actual human-review boundary.
+    """
+    output.mkdir(parents=True, exist_ok=True)
+    manifests = sorted(
+        (root / "research_artifacts" / "remediation").glob("*/review_manifest.json"),
+        key=lambda path: path.stat().st_mtime,
+    )
+    remediation = _read_json(manifests[-1]) if manifests else {}
+    automatic = remediation.get("automatic_dispositions") or []
+    manual = remediation.get("manual_review_queue") or []
+    if not isinstance(automatic, list) or not isinstance(manual, list):
+        automatic, manual = [], []
+    _write_dict_csv(output / "automatic_dispositions.csv", automatic)
+    _write_dict_csv(output / "manual_review.csv", manual)
+    campaigns = connection.execute(
+        """
+        SELECT campaign_id, lifecycle_state, authored_decision, definition_path,
+               variant_count, run_count, latest_updated_at
+        FROM campaigns ORDER BY campaign_id
+        """
+    ).fetchall()
+    _write_rows(
+        output / "campaign_index.csv",
+        (
+            "campaign_id",
+            "lifecycle_state",
+            "authored_decision",
+            "definition_path",
+            "variant_count",
+            "run_count",
+            "latest_updated_at",
+        ),
+        campaigns,
+    )
+    coverage = remediation.get("coverage") or {}
+    source = _display(root, manifests[-1]) if manifests else "not available"
+    (output / "README.md").write_text(
+        "# Research decision workbench\n\n"
+        "This is the ledger-aware decision surface. Historical run evidence remains immutable; "
+        "automatic dispositions are retained without rerunning, while `manual_review.csv` is the "
+        "only human action queue.\n\n"
+        f"- Source remediation manifest: `{source}`\n"
+        f"- Registered coverage: {coverage.get('registered_run_count', 0)}\n"
+        f"- Automatically disposed: {len(automatic)}\n"
+        f"- Human review required: {len(manual)}\n"
+        f"- Coverage complete: {coverage.get('coverage_complete', False)}\n\n"
+        "A candidate label never means ready to trade. Manual due diligence and incubation remain mandatory.\n",
+        encoding="utf-8",
+    )
+    return {"automatic": len(automatic), "manual": len(manual), "campaigns": len(campaigns)}
+
+
+def _write_dict_csv(path: Path, rows: list[dict[str, Any]]) -> None:
+    columns: list[str] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        for key, value in row.items():
+            if key not in columns and not isinstance(value, (dict, list)):
+                columns.append(key)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as handle:
+        writer = csv.DictWriter(handle, fieldnames=columns)
+        if columns:
+            writer.writeheader()
+            for row in rows:
+                writer.writerow({key: row.get(key) for key in columns})
 
 
 def export_registry_csvs(
@@ -429,6 +524,30 @@ def _source_records(
     return campaigns, sorted(variants_by_key.values(), key=_definition_key), sorted(attempts, key=_attempt_key)
 
 
+def _source_records_many(
+    root: Path, campaign_roots: Iterable[Path]
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]], list[dict[str, Any]]]:
+    campaigns: dict[str, dict[str, Any]] = {}
+    variants: dict[tuple[str, str, str], dict[str, Any]] = {}
+    attempts: dict[tuple[str, str, str, str], dict[str, Any]] = {}
+    for campaign_root in campaign_roots:
+        root_campaigns, root_variants, root_attempts = _source_records(root, campaign_root)
+        for record in root_campaigns:
+            campaign_id = record["campaign_id"]
+            if campaign_id in campaigns:
+                raise RuntimeError(f"duplicate campaign_id across configured roots: {campaign_id}")
+            campaigns[campaign_id] = record
+        for record in root_variants:
+            variants[_definition_key(record)] = record
+        for record in root_attempts:
+            attempts[_attempt_key(record)] = record
+    return (
+        sorted(campaigns.values(), key=lambda item: item["campaign_id"]),
+        sorted(variants.values(), key=_definition_key),
+        sorted(attempts.values(), key=_attempt_key),
+    )
+
+
 def _indexed_source_records(
     root: Path, campaign_dir: Path, campaign_id: str
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
@@ -548,6 +667,17 @@ def _run_records(root: Path, run_root: Path) -> list[dict[str, Any]]:
     return sorted(records, key=lambda item: (item["campaign_id"], item["variant_id"], item["run_uid"]))
 
 
+def _run_records_many(root: Path, run_roots: Iterable[Path]) -> list[dict[str, Any]]:
+    records: dict[str, dict[str, Any]] = {}
+    for run_root in run_roots:
+        for record in _run_records(root, run_root):
+            run_uid = record["run_uid"]
+            if run_uid in records:
+                raise RuntimeError(f"duplicate run_uid across configured evidence roots: {run_uid}")
+            records[run_uid] = record
+    return sorted(records.values(), key=lambda item: (item["campaign_id"], item["variant_id"], item["run_uid"]))
+
+
 def _assign_parent_run_uids(records: list[dict[str, Any]]) -> None:
     originals: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for record in records:
@@ -566,8 +696,9 @@ def _campaign_records(
     root: Path,
     source_campaigns: list[dict[str, Any]],
     variants: list[dict[str, Any]],
+    attempts: list[dict[str, Any]],
     runs: list[dict[str, Any]],
-    run_root: Path,
+    run_roots: Iterable[Path],
 ) -> list[dict[str, Any]]:
     variants_by_campaign = _group_by(variants, "campaign_id")
     runs_by_campaign = _group_by(runs, "campaign_id")
@@ -575,7 +706,11 @@ def _campaign_records(
     for source in source_campaigns:
         campaign_id = source["campaign_id"]
         campaign_runs = runs_by_campaign.get(campaign_id, [])
-        root_summary = _read_json(run_root / campaign_id / "campaign_test_summary.json")
+        root_summary = {}
+        for run_root in run_roots:
+            root_summary = _read_json(run_root / campaign_id / "campaign_test_summary.json")
+            if root_summary:
+                break
         decision = _scalar_text(root_summary.get("decision") or source.get("authored_decision"))
         status = _scalar_text(root_summary.get("status") or source.get("authored_status"))
         lifecycle, reason = _campaign_lifecycle(decision, status, campaign_runs)
@@ -592,12 +727,11 @@ def _campaign_records(
                 "latest_updated_at": max((run.get("updated_at") or "" for run in campaign_runs), default="") or None,
             }
         )
-    attempt_counts: dict[str, int] = {}
-    campaign_root = _resolve(root, "campaigns")
-    for path in campaign_root.glob("*/rescue_attempts/*") if campaign_root.exists() else []:
-        attempt_counts[path.parent.parent.name] = attempt_counts.get(path.parent.parent.name, 0) + 1
+    attempt_counts: dict[str, set[str]] = {}
+    for attempt in attempts:
+        attempt_counts.setdefault(attempt["campaign_id"], set()).add(attempt["attempt_id"])
     for record in result:
-        record["attempt_count"] = attempt_counts.get(record["campaign_id"], 0)
+        record["attempt_count"] = len(attempt_counts.get(record["campaign_id"], set()))
     return result
 
 
@@ -621,14 +755,18 @@ def _durable_artifact_records(
         return []
     campaign_ids = sorted((row["campaign_id"] for row in campaigns), key=len, reverse=True)
     records = []
-    for path in sorted(item for item in artifact_root.iterdir() if item.is_file()):
-        campaign_id = next((value for value in campaign_ids if path.name.startswith(f"{value}_")), None)
+    for path in sorted(item for item in artifact_root.rglob("*") if item.is_file()):
+        relative = path.relative_to(artifact_root)
+        campaign_id = next(
+            (value for value in campaign_ids if path.name.startswith(f"{value}_") or value in relative.parts),
+            None,
+        )
         stat = path.stat()
         records.append(
             {
                 "path": _display(root, path),
                 "filename": path.name,
-                "category": _artifact_category(path.name, campaign_id),
+                "category": _artifact_category(str(relative), campaign_id),
                 "campaign_id": campaign_id,
                 "suffix": path.suffix.lower(),
                 "size_bytes": stat.st_size,
@@ -640,6 +778,8 @@ def _durable_artifact_records(
 
 def _artifact_category(filename: str, campaign_id: str | None) -> str:
     value = filename.lower()
+    if "validation_approvals/" in value:
+        return "validation_approvals"
     if "cleanup" in value:
         return "cleanup"
     if "density" in value:
@@ -671,6 +811,8 @@ def _critical_artifacts(root: Path, output_dir: Path, summary_path: Path, run_ui
         candidate = output_dir / name
         if candidate.is_file():
             paths.add(candidate)
+    for pattern in CRITICAL_ARTIFACT_GLOBS:
+        paths.update(path for path in output_dir.glob(pattern) if path.is_file())
     artifacts = []
     for path in sorted(paths):
         artifacts.append(
@@ -1061,8 +1203,7 @@ def _bool_int(value: Any) -> int | None:
 
 
 def _resolve(root: Path, path: str | Path) -> Path:
-    value = Path(path)
-    return value if value.is_absolute() else root / value
+    return resolve_recorded_path(path, project_root=root)
 
 
 def _display(root: Path, path: Path) -> str:

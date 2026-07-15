@@ -5,7 +5,7 @@ import yaml
 
 from alphaquest.backtest.equity_report import write_equity_report
 from alphaquest.data.quality import save_pipeline_outputs
-from tools.cleanup_redundant_generated_artifacts import find_heavy_generated_payloads, find_redundant_runs
+from tools.cleanup_redundant_generated_artifacts import build_report, find_heavy_generated_payloads, find_redundant_runs
 
 
 def _write_run(root, run_id, *, status):
@@ -57,6 +57,10 @@ def test_cleanup_payload_inventory_is_scoped_to_reconstructable_files(tmp_path):
     root = tmp_path / "backtest-campaigns"
     validation = root / "campaign" / "variant" / "ES" / "run1" / "stage" / "validation"
     validation.mkdir(parents=True)
+    run = validation.parents[1]
+    (run / "campaign_test_summary.json").write_text("{}", encoding="utf-8")
+    (run / "source_config.yaml").write_text("data: {}", encoding="utf-8")
+    (run / "effective_config.yaml").write_text("data: {}", encoding="utf-8")
     heavy = validation / "features_data.csv"
     retained = validation / "data_quality_report.csv"
     heavy.write_text("large", encoding="utf-8")
@@ -92,3 +96,34 @@ def test_equity_report_can_omit_redundant_html(tmp_path):
     assert (tmp_path / "equity_curve.csv").is_file()
     assert not (tmp_path / "equity_curve.html").exists()
     assert report["equity_curve_html"] is None
+
+
+def test_cleanup_report_inventories_every_candidate_before_apply(tmp_path):
+    root = tmp_path / "backtest-campaigns"
+    validation = root / "campaign" / "variant" / "ES" / "run1" / "validation"
+    validation.mkdir(parents=True)
+    run = validation.parent
+    (run / "campaign_test_summary.json").write_text("{}", encoding="utf-8")
+    (run / "source_config.yaml").write_text("data: {}", encoding="utf-8")
+    (run / "effective_config.yaml").write_text("data: {}", encoding="utf-8")
+    candidate = validation / "features_data.csv"
+    candidate.write_text("rebuildable", encoding="utf-8")
+
+    report = build_report(find_heavy_generated_payloads(root), [], [], applied=False)
+
+    assert report["status"] == "DRY_RUN"
+    assert report["inventory"] == [
+        {
+            "path": candidate,
+            "artifact_class": "reproducible_bulk_output:validation_feature_frames",
+            "size_bytes": len("rebuildable"),
+            "references": [
+                run / "campaign_test_summary.json",
+                run / "source_config.yaml",
+                run / "effective_config.yaml",
+            ],
+            "reproducible": True,
+            "retention_decision": "delete",
+            "reason": "bulk iteration or visualization payload is reconstructable from retained compact evidence",
+        }
+    ]

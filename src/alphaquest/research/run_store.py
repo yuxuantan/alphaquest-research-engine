@@ -10,6 +10,8 @@ import sqlite3
 import uuid
 from typing import Any
 
+from alphaquest.research.storage import resolve_recorded_path
+
 
 RUN_UID_FILENAME = "run_uid.txt"
 RUN_STORE_SCHEMA = "alphaquest.run-store/v1"
@@ -173,8 +175,7 @@ def _reset_store(path: Path) -> None:
 
 
 def _resolve(root: Path, path: str | Path) -> Path:
-    value = Path(path)
-    return value if value.is_absolute() else root / value
+    return resolve_recorded_path(path, project_root=root)
 
 
 def _display(root: Path, path: Path) -> str:

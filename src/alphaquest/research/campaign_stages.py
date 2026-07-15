@@ -48,6 +48,7 @@ from alphaquest.utils.config import (
 from alphaquest.utils.hashing import file_sha256, object_sha256
 from alphaquest.utils.params import apply_dotted_params
 from alphaquest.utils.reports import market_timezone, write_report_csv
+from alphaquest.validation.promotion_gate import require_prior_variant_approvals, require_validation_approval
 from alphaquest.version import ENGINE_CONTRACT_VERSION
 
 
@@ -201,6 +202,8 @@ def run_campaign_stage_tests(
     source_config_hash = hashlib.sha256(source_config_text.encode("utf-8")).hexdigest()
     cfg = canonicalize_campaign_config(load_yaml(config_path), include_acceptance=include_acceptance)
     _validate_pre_test_mechanics_review(cfg, config_path)
+    validation_gate = require_validation_approval(cfg, config_path)
+    require_prior_variant_approvals(cfg, config_path)
     if fast_runtime_defaults:
         cfg = apply_fast_runtime_defaults(cfg)
     root = Path(out_dir) if out_dir else variant_root(cfg, config_path=config_path)
@@ -278,6 +281,7 @@ def run_campaign_stage_tests(
         "created_at": created_at,
         "updated_at": created_at,
         "skip_validation": skip_validation,
+        "mechanics_validation_gate": validation_gate,
         "fast_runtime_defaults": fast_runtime_defaults,
         "passed": all(result["passed"] or result["status"] == "skipped" for result in results)
         and any(result["status"] == "passed" for result in results),
@@ -316,6 +320,7 @@ def run_campaign_stage_tests(
             "created_at": created_at,
             "updated_at": created_at,
             "stage_order": stage_order,
+            "mechanics_validation_gate": validation_gate,
             "layout": "campaign_variant_symbol_run",
         },
     )

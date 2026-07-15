@@ -15,11 +15,14 @@ alphaquest campaign validate <campaign_id>
 make smoke
 ```
 
+Complete the deterministic mechanics export and hash-bound `approved_for_testing` decision before invoking the staged performance command.
+
 ## After A Run
 
 ```bash
 make research-workspace
 alphaquest campaign show <campaign_id>
+alphaquest campaign show <campaign_id> --explain --run <run_uid> --write-card
 make qualify
 ```
 

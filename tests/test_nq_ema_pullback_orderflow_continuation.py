@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 
-CAMPAIGN_ROOT = Path("campaigns/nq_ema_pullback_orderflow_continuation")
+CAMPAIGN_ROOT = Path("research/campaigns/archive/nq_ema_pullback_orderflow_continuation")
 
 
 def test_nq_ema_pullback_campaign_has_five_distinct_variants_and_no_rescue():

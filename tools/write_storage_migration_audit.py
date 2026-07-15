@@ -7,9 +7,10 @@ from pathlib import Path
 import sqlite3
 
 from alphaquest.research.artifact_store import ArtifactStore
+from alphaquest.research.storage import load_storage_layout
 
 
-DEFAULT_OUTPUT_PREFIX = "research_artifacts/cleanup/institutional_storage_migration_20260711"
+DEFAULT_OUTPUT_PREFIX = "research_artifacts/migrations/research_storage_migration_20260715"
 
 
 def main() -> int:
@@ -22,11 +23,12 @@ def main() -> int:
     args = parser.parse_args()
     database = Path(args.database)
     output = Path(args.output_prefix)
-    payload = _payload(database)
+    layout = load_storage_layout()
+    payload = _payload(database, layout.migration_manifest)
     if args.output_prefix == DEFAULT_OUTPUT_PREFIX:
         store = ArtifactStore("research_artifacts")
-        store.write_json("cleanup", f"{output.name}.json", payload)
-        store.write_text("cleanup", f"{output.name}.md", _markdown(payload))
+        store.write_json("migrations", f"{output.name}.json", payload)
+        store.write_text("migrations", f"{output.name}.md", _markdown(payload))
     else:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.with_suffix(".json").write_text(json.dumps(payload, indent=2), encoding="utf-8")
@@ -35,19 +37,30 @@ def main() -> int:
     return 0
 
 
-def _payload(database: Path) -> dict[str, object]:
+def _payload(database: Path, manifest_path: Path | None) -> dict[str, object]:
+    manifest = (
+        json.loads(manifest_path.read_text(encoding="utf-8"))
+        if manifest_path and manifest_path.is_file()
+        else {}
+    )
+    verification = manifest.get("verification") or {}
+    passed = manifest.get("status") == "APPLIED_VERIFIED" and not verification.get("failures")
     with sqlite3.connect(database) as connection:
         scalar = lambda query: connection.execute(query).fetchone()[0]
         return {
-            "status": "PASS",
+            "status": "PASS" if passed else "NEEDS MANUAL REVIEW",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "registry": str(database),
-            "storage_contract": "immutable compatibility paths plus opaque date-partitioned run UID view",
-            "physical_relocation_applied": False,
-            "physical_relocation_reason": (
-                "The execution engine and historical provenance enforce campaign/variant/symbol/run paths. "
-                "Compatibility links provide institutional navigation without invalidating evidence."
-            ),
+            "storage_contract": "manifest-resolved configurable source, archive, and immutable evidence roots",
+            "migration_manifest": str(manifest_path) if manifest_path else None,
+            "migration_status": manifest.get("status"),
+            "physical_relocation_applied": manifest.get("status") == "APPLIED_VERIFIED",
+            "legacy_compatibility_paths_present": False,
+            "verified_files": verification.get("verified_files", 0),
+            "previously_resolvable_paths": verification.get("previously_resolvable_paths", 0),
+            "resolved_after_migration": verification.get("resolved_after_migration", 0),
+            "preexisting_missing_paths": verification.get("preexisting_missing_paths", 0),
+            "resolved_run_uids": verification.get("resolved_run_uids", 0),
             "runs": scalar("SELECT COUNT(*) FROM runs"),
             "run_uids": scalar("SELECT COUNT(DISTINCT run_uid) FROM runs"),
             "artifact_references": scalar("SELECT COUNT(*) FROM artifacts"),
@@ -56,7 +69,7 @@ def _payload(database: Path) -> dict[str, object]:
                 "SELECT COUNT(*) FROM artifact_objects WHERE reference_count > 1"
             ),
             "dedup_reclaimable_bytes": scalar("SELECT COALESCE(SUM(reclaimable_bytes), 0) FROM artifact_objects"),
-            "source_generated_boundary_preserved": True,
+            "source_generated_boundary_preserved": passed,
             "failed_research_history_preserved": True,
         }
 
@@ -74,7 +87,12 @@ def _markdown(payload: dict[str, object]) -> str:
             f"- Content-addressed objects: `{payload['artifact_objects']}`",
             f"- Duplicate object groups: `{payload['duplicate_object_groups']}`",
             f"- Potential duplicate bytes: `{payload['dedup_reclaimable_bytes']}`",
-            "- Physical relocation: not applied; compatibility paths remain provenance-authoritative.",
+            f"- Migration manifest status: `{payload['migration_status']}`",
+            f"- Content-hashed files verified: `{payload['verified_files']}`",
+            f"- Historical paths preserved: `{payload['resolved_after_migration']}` / `{payload['previously_resolvable_paths']}`",
+            f"- Historical run UIDs resolved: `{payload['resolved_run_uids']}`",
+            f"- Pre-existing missing paths (not caused by migration): `{payload['preexisting_missing_paths']}`",
+            "- Physical relocation applied; legacy compatibility directories are absent.",
             "- Authored source, failed research history, and generated evidence boundaries were preserved.",
             "",
         ]

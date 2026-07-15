@@ -86,10 +86,19 @@ def test_registry_logically_partitions_durable_artifacts_without_moving_them(tmp
     artifacts.mkdir()
     source = artifacts / "demo_density_audit_20260711.md"
     source.write_text("audit\n", encoding="utf-8")
+    approval = artifacts / "validation_approvals" / "demo" / "v01" / "approval.json"
+    approval.parent.mkdir(parents=True)
+    approval.write_text("{}\n", encoding="utf-8")
     database = tmp_path / "catalogs" / "registry.sqlite"
 
     build_registry(project_root=tmp_path, database_path=database)
     generate_views(project_root=tmp_path, database_path=database)
 
     assert source.is_file()
+    assert approval.is_file()
+    with sqlite3.connect(database) as connection:
+        assert connection.execute(
+            "SELECT COUNT(*) FROM research_artifacts WHERE path = ?",
+            ("research_artifacts/validation_approvals/demo/v01/approval.json",),
+        ).fetchone()[0] == 1
     assert "demo_density" in (tmp_path / "views" / "artifacts" / "audits_density.csv").read_text(encoding="utf-8")

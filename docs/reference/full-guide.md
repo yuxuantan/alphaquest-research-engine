@@ -23,8 +23,8 @@ run limited core/monkey, WFA, OOS stress, incubation, and locked acceptance stag
 review campaign_test_summary.json, variant_test_summary.json, and runs_index.csv
 ```
 
-Authored research definitions live under `campaigns/`. Generated evidence lives
-under `backtest-campaigns/`; generated snapshots are provenance and must not be
+Active authored research definitions live under `research/campaigns/active/`, with closed definitions under `research/campaigns/archive/`. Generated evidence lives
+under `research/evidence/runs/`; generated snapshots are provenance and must not be
 edited as source configs.
 
 Build the institutional research workspace after adding or running campaigns:
@@ -444,7 +444,7 @@ A campaign keeps authored edge research and the planned variant list here:
 campaigns/{campaign_id}/campaign.yaml
 ```
 
-Use `campaign.yaml` for the academic source, thesis, intended market, caveats, and the planned trade-mechanics variants. Five variants is the default campaign size. A campaign may declare six to eight variants only when clearly better distinct mechanics exist within the same edge and `campaign.yaml` includes a pre-test `variant_expansion_rationale`; more than eight variants fails preflight. The backtest runner does not use it as the executable strategy config, but run summaries and manifests record its path and hash when it exists.
+Use `campaign.yaml` for the academic source, thesis, intended market, caveats, economic-edge fingerprint, duplicate-edge review, and planned trade-mechanics variants. Governance-v2 campaigns require exactly five initial variants. Additional post-failure definitions are not variants; at most one explicitly authorized rescue per failed variant may be recorded with parent lineage. The backtest runner does not use `campaign.yaml` as the executable strategy config, but run summaries and manifests record its path and hash when it exists.
 
 A variant is one concrete strategy shape under that campaign. Its authored source config lives here:
 
@@ -458,7 +458,7 @@ An allowed rescue attempt gets its own authored source config without replacing 
 campaigns/{campaign_id}/rescue_attempts/{rescue_id}/{variant_id}/config.yaml
 ```
 
-Generated backtest evidence lives separately under `backtest-campaigns/`. The runner snapshots the submitted source config and writes the canonical effective config here:
+Generated backtest evidence lives separately under `research/evidence/runs/`. The runner snapshots the submitted source config and writes the canonical effective config here:
 
 ```text
 backtest-campaigns/{campaign_id}/{variant_id}/{symbol}/{run_id}/source_config.yaml
@@ -499,7 +499,7 @@ ES             instrument
 run1           first test-run parameter-space attempt
 ```
 
-The generated campaign root maintains `variants_index.yaml`, a lightweight index of each variant's `variant.yaml` path, hash, and mechanics. When the submitted config comes from `campaigns/`, the authored campaign root also gets `results_index.yaml`, a lightweight pointer from source configs to generated run folders.
+The generated campaign root maintains `variants_index.yaml`, a lightweight index of each variant's `variant.yaml` path, hash, and mechanics. When the submitted config comes from `research/campaigns/active/`, the authored campaign root also gets `results_index.yaml`, a lightweight pointer from source configs to generated run folders.
 
 Edit the authored source config:
 

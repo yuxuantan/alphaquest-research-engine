@@ -13,6 +13,8 @@ from typing import Any
 import pandas as pd
 import yaml
 
+from alphaquest.research.storage import display_path, load_storage_layout
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 HEAVY_GENERATED_PATTERNS = {
@@ -36,16 +38,28 @@ TOP_LEVEL_RUN_ID_KEYS = {"test_run_id", "campaign_test_run_id", "run_name", "run
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Prune reproducible bulk artifacts and exact superseded error runs.")
-    parser.add_argument("--root", default="backtest-campaigns")
-    parser.add_argument("--audit-prefix", default="research_artifacts/repo_cleanup_20260711")
+    parser.add_argument("--root")
+    parser.add_argument(
+        "--audit-prefix",
+        default=f"research_artifacts/cleanup/repository_cleanup_{datetime.now().date().isoformat().replace('-', '')}",
+    )
     parser.add_argument("--apply", action="store_true", help="Delete candidates. Without this flag the command is dry-run.")
     args = parser.parse_args()
 
-    generated_root = PROJECT_ROOT / args.root
+    layout = load_storage_layout(PROJECT_ROOT)
+    generated_root = PROJECT_ROOT / (
+        args.root or display_path(layout.evidence_roots[0], PROJECT_ROOT)
+    )
     payload_groups = find_heavy_generated_payloads(generated_root)
     redundant_runs = find_redundant_runs(generated_root)
     junk_paths = find_junk_paths(PROJECT_ROOT)
-    report = build_report(payload_groups, redundant_runs, junk_paths, applied=args.apply)
+    report = build_report(payload_groups, redundant_runs, junk_paths, applied=False)
+
+    audit_prefix = PROJECT_ROOT / args.audit_prefix
+    audit_prefix.parent.mkdir(parents=True, exist_ok=True)
+    if args.apply:
+        report["status"] = "APPROVED_PENDING_APPLY"
+        _write_audit(audit_prefix, report)
 
     if args.apply:
         removed_run_paths = {str(item["remove_path"].relative_to(PROJECT_ROOT)) for item in redundant_runs}
@@ -61,11 +75,10 @@ def main() -> int:
                 path.unlink(missing_ok=True)
         _remove_stale_source_result_pointers(removed_run_paths)
         _remove_stale_runs_index_rows(removed_run_paths)
+        report["status"] = "APPLIED"
+        report["applied_at"] = datetime.now(timezone.utc).isoformat()
 
-    audit_prefix = PROJECT_ROOT / args.audit_prefix
-    audit_prefix.parent.mkdir(parents=True, exist_ok=True)
-    audit_prefix.with_suffix(".json").write_text(json.dumps(_json_safe(report), indent=2), encoding="utf-8")
-    audit_prefix.with_suffix(".md").write_text(_markdown(report), encoding="utf-8")
+    _write_audit(audit_prefix, report)
     mode = "APPLIED" if args.apply else "DRY RUN"
     print(
         f"{mode}: files={report['deleted_file_count']} runs={report['removed_run_count']} "
@@ -76,7 +89,7 @@ def main() -> int:
 
 def find_heavy_generated_payloads(root: Path) -> dict[str, list[Path]]:
     return {
-        label: sorted(path for path in root.glob(pattern) if path.is_file())
+        label: sorted(path for path in root.glob(pattern) if path.is_file() and _payload_is_reproducible(path))
         for label, pattern in HEAVY_GENERATED_PATTERNS.items()
     }
 
@@ -158,18 +171,53 @@ def build_report(
     applied: bool,
 ) -> dict[str, Any]:
     payload_summary = {}
+    inventory: list[dict[str, Any]] = []
     candidate_files: set[Path] = set()
     for label, paths in payload_groups.items():
         size = sum(path.stat().st_size for path in paths)
         payload_summary[label] = {"file_count": len(paths), "bytes": size}
         candidate_files.update(paths)
+        inventory.extend(
+            {
+                "path": path,
+                "artifact_class": f"reproducible_bulk_output:{label}",
+                "size_bytes": path.stat().st_size,
+                "references": _payload_references(path),
+                "reproducible": True,
+                "retention_decision": "delete",
+                "reason": "bulk iteration or visualization payload is reconstructable from retained compact evidence",
+            }
+            for path in paths
+        )
     for item in redundant_runs:
         candidate_files.update(path for path in item["remove_path"].rglob("*") if path.is_file())
+        inventory.append(
+            {
+                "path": item["remove_path"],
+                "artifact_class": "superseded_duplicate:error_run",
+                "size_bytes": item["size_bytes"],
+                "references": [item["keep_path"]],
+                "reproducible": True,
+                "retention_decision": "delete",
+                "reason": item["reason"],
+            }
+        )
     for path in junk_paths:
         if path.is_dir():
             candidate_files.update(item for item in path.rglob("*") if item.is_file())
         elif path.is_file():
             candidate_files.add(path)
+        inventory.append(
+            {
+                "path": path,
+                "artifact_class": "cache_or_junk",
+                "size_bytes": _tree_size(path),
+                "references": [],
+                "reproducible": True,
+                "retention_decision": "delete",
+                "reason": "interpreter, test, lint, editor, or operating-system cache/junk",
+            }
+        )
     reclaim_bytes = sum(path.stat().st_size for path in candidate_files if path.exists())
     junk_bytes = sum(
         path.stat().st_size
@@ -188,6 +236,7 @@ def build_report(
         "deleted_file_count": len(candidate_files),
         "removed_run_count": len(redundant_runs),
         "reclaim_bytes": reclaim_bytes,
+        "inventory": sorted(inventory, key=lambda item: str(item["path"])),
         "retained": [
             "authored campaigns and strategy modules",
             "research ledgers and methodology audits",
@@ -198,6 +247,11 @@ def build_report(
             "compact validation trades, conditions, bar windows, exit audits, and checks",
         ],
     }
+
+
+def _write_audit(prefix: Path, report: dict[str, Any]) -> None:
+    prefix.with_suffix(".json").write_text(json.dumps(_json_safe(report), indent=2), encoding="utf-8")
+    prefix.with_suffix(".md").write_text(_markdown(report), encoding="utf-8")
 
 
 def _config_identity(config: dict[str, Any]) -> str:
@@ -235,8 +289,82 @@ def _tree_size(path: Path) -> int:
     return sum(item.stat().st_size for item in path.rglob("*") if item.is_file())
 
 
+def _payload_is_reproducible(path: Path) -> bool:
+    if path.suffix.lower() == ".html":
+        return (path.parent / f"{path.stem}.csv").is_file()
+    run_root = _run_root(path)
+    if run_root is None:
+        return False
+    if not (run_root / "campaign_test_summary.json").is_file():
+        return False
+    if not ((run_root / "effective_config.yaml").is_file() and (run_root / "source_config.yaml").is_file()):
+        return False
+    if "validation_runs" in path.parts and path.name == "tick_windows.parquet":
+        validation_dir = path.parent
+        compact = (
+            validation_dir / "trades.parquet",
+            validation_dir / "condition_snapshots.parquet",
+            validation_dir / "exit_audits.parquet",
+            validation_dir / "validation_checks.parquet",
+        )
+        if not all(item.is_file() for item in compact):
+            return False
+        return bool(_existing_raw_sources(run_root / "effective_config.yaml"))
+    return True
+
+
+def _payload_references(path: Path) -> list[Path]:
+    if path.suffix.lower() == ".html":
+        csv_path = path.parent / f"{path.stem}.csv"
+        return [csv_path] if csv_path.is_file() else []
+    run_root = _run_root(path)
+    if run_root is None:
+        return []
+    candidates = [
+        run_root / "campaign_test_summary.json",
+        run_root / "run_manifest.json",
+        run_root / "source_config.yaml",
+        run_root / "effective_config.yaml",
+        run_root / "input_data_hash.txt",
+        path.parent / "trades.parquet",
+        path.parent / "condition_snapshots.parquet",
+        path.parent / "event_transitions.parquet",
+        path.parent / "exit_audits.parquet",
+        path.parent / "validation_checks.parquet",
+        *_existing_raw_sources(run_root / "effective_config.yaml"),
+    ]
+    return [item for item in candidates if item.exists()]
+
+
+def _run_root(path: Path) -> Path | None:
+    for parent in path.parents:
+        if (parent / "campaign_test_summary.json").is_file():
+            return parent
+    return None
+
+
+def _existing_raw_sources(config_path: Path) -> list[Path]:
+    try:
+        cfg = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError):
+        return []
+    data = cfg.get("data") if isinstance(cfg.get("data"), dict) else {}
+    execution = data.get("execution_data") if isinstance(data.get("execution_data"), dict) else {}
+    values = []
+    for container in (data, execution):
+        for key in ("raw_csv", "raw_parquet", "raw_dir", "archive", "roll_calendar", "contract_manifest", "quality_manifest"):
+            if container.get(key):
+                values.append(Path(str(container[key])))
+    return sorted({path for path in values if path.exists()})
+
+
 def _remove_stale_source_result_pointers(removed_run_paths: set[str]) -> None:
-    for index_path in (PROJECT_ROOT / "campaigns").rglob("results_index.yaml"):
+    layout = load_storage_layout(PROJECT_ROOT)
+    for index_path in (
+        path
+        for campaign_root in layout.campaign_roots
+        for path in campaign_root.rglob("results_index.yaml")
+    ):
         try:
             data = yaml.safe_load(index_path.read_text(encoding="utf-8")) or {}
         except yaml.YAMLError:

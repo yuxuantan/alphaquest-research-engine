@@ -4,14 +4,15 @@ The filesystem is storage, not the primary research interface. Begin with `views
 
 ## Source Of Truth
 
-- `campaigns/`: authored hypotheses, configs, rationale, and approved attempts.
+- `research/campaigns/active/`: authored hypotheses currently under research.
+- `research/campaigns/archive/`: closed hypotheses, configs, rationale, and attempts.
 - `src/alphaquest/`: reusable engine, validation, data, and research code.
 - `tests/`: executable controls and regressions.
 - `config/`: repository-level research policy settings.
 
 ## Generated Or Durable Evidence
 
-- `backtest-campaigns/`: generated run evidence; do not hand-edit.
+- `research/evidence/runs/`: generated run evidence; do not hand-edit.
 - `run-store/`: opaque run-UID compatibility view.
 - `catalogs/`: rebuildable registry and exports.
 - `views/`: rebuildable navigation.

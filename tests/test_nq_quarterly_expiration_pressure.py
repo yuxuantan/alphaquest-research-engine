@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 
-CAMPAIGN_ROOT = Path("campaigns/nq_quarterly_expiration_pressure")
+CAMPAIGN_ROOT = Path("research/campaigns/archive/nq_quarterly_expiration_pressure")
 NQ_DATASET_ID = "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny"
 
 

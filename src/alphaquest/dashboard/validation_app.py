@@ -9,9 +9,12 @@ import pandas as pd
 
 from alphaquest.validation import ManualReviewAnnotation, audit_trade_exit_path, load_tick_window_for_trade, load_validation_run, trade_path_from_ticks
 from alphaquest.validation.schema import MANUAL_REVIEW_COLUMNS, MANUAL_REVIEW_FILENAME, METADATA_FILENAME, normalize_columns
+from alphaquest.research.storage import display_path, load_storage_layout
 
 DASHBOARD_VERSION = "validation-dashboard-review-v1"
-DEFAULT_SEARCH_ROOT = os.environ.get("PROPSTACK_VALIDATION_SEARCH_ROOT", "backtest-campaigns")
+DEFAULT_SEARCH_ROOT = os.environ.get(
+    "PROPSTACK_VALIDATION_SEARCH_ROOT", display_path(load_storage_layout().evidence_roots[0])
+)
 
 REVIEW_STATUSES = [
     "Correct",

@@ -1,8 +1,8 @@
 VALIDATION_DASHBOARD_PORT ?= 8502
-VALIDATION_DASHBOARD_SEARCH_ROOT ?= backtest-campaigns
+VALIDATION_DASHBOARD_SEARCH_ROOT ?= research/evidence/runs
 SAMPLE_VALIDATION_RUN_DIR ?= examples/validation_runs/sample_core
 
-.PHONY: help setup smoke tutorial docs-check test lint quality qualify cleanup-generated preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
+.PHONY: help setup smoke tutorial docs-check test lint quality qualify cleanup-generated research-audit remediation-review preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit storage-migration-verify research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
 
 help:
 	@printf '%s\n' \
@@ -16,7 +16,10 @@ help:
 	  'research-workspace    Rebuild registry, exports, views, run UIDs, and storage audit' \
 	  'research-status       Print the registry summary' \
 	  'qualify               Write the durable engine qualification report' \
-	  'cleanup-generated     Dry-run generated-artifact cleanup'
+	  'cleanup-generated     Dry-run generated-artifact cleanup' \
+	  'research-audit        Write current-truth, lineage, validation, and cleanup audits' \
+	  'remediation-review    Prepare the immutable historical human-review boundary' \
+	  'storage-migration-verify Verify the manifest, historical paths, and run UIDs'
 
 setup:
 	python3 -m pip install -c constraints/dev.txt -e ".[dev]"
@@ -44,6 +47,12 @@ qualify:
 cleanup-generated:
 	PYTHONPATH=src python3 tools/cleanup_redundant_generated_artifacts.py
 
+research-audit:
+	PYTHONPATH=src python3 tools/audit_research_repository.py
+
+remediation-review:
+	PYTHONPATH=src python3 tools/prepare_historical_remediation_review.py
+
 preflight:
 	PYTHONPATH=src python3 -m alphaquest.research.preflight --skip-tests
 
@@ -67,6 +76,9 @@ run-store:
 
 storage-audit:
 	PYTHONPATH=src python3 tools/write_storage_migration_audit.py
+
+storage-migration-verify:
+	PYTHONPATH=src python3 tools/migrate_research_storage.py --verify
 
 research-workspace: run-uids research-registry run-store storage-audit
 
