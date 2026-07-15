@@ -18,7 +18,7 @@ from alphaquest.research.storage import resolve_recorded_path
 from alphaquest.maintenance.code_catalog import generate_code_views
 
 
-SCHEMA_VERSION = "1"
+SCHEMA_VERSION = "2"
 VIEW_STATES = ("active", "review_queue", "candidate", "closed")
 CRITICAL_ARTIFACTS = (
     "campaign_test_summary.json",
@@ -66,20 +66,21 @@ def build_registry(
 
     source_campaigns, source_variants, source_attempts = _source_records_many(root, campaign_paths)
     runs = _run_records_many(root, runs_paths)
+    attempts = _reconcile_attempt_records(source_campaigns, source_attempts, runs)
     campaign_records = _campaign_records(
-        root, source_campaigns, source_variants, source_attempts, runs, runs_paths
+        root, source_campaigns, source_variants, attempts, runs, runs_paths
     )
     durable_artifacts = _durable_artifact_records(root, research_artifacts_path, campaign_records)
 
     connection = sqlite3.connect(temporary_path)
     try:
         _create_schema(connection)
-        _insert_records(connection, campaign_records, source_variants, source_attempts, runs, durable_artifacts)
+        _insert_records(connection, campaign_records, source_variants, attempts, runs, durable_artifacts)
         connection.commit()
         result = {
             "campaigns": len(campaign_records),
             "variants": len(source_variants),
-            "attempts": len(source_attempts),
+            "attempts": len(attempts),
             "runs": len(runs),
             "research_artifacts": len(durable_artifacts),
         }
@@ -298,12 +299,27 @@ def registry_summary(database_path: str | Path) -> dict[str, Any]:
             row["verdict"]: row["count"]
             for row in connection.execute("SELECT verdict, COUNT(*) AS count FROM runs GROUP BY verdict")
         }
+        attempt_provenance = {
+            row["provenance"]: row["count"]
+            for row in connection.execute(
+                "SELECT provenance, COUNT(*) AS count FROM attempts GROUP BY provenance"
+            )
+        }
         return {
             "schema_version": _metadata_value(connection, "schema_version"),
             "built_at": _metadata_value(connection, "built_at"),
             "campaigns": connection.execute("SELECT COUNT(*) FROM campaigns").fetchone()[0],
             "variants": connection.execute("SELECT COUNT(*) FROM variants").fetchone()[0],
             "attempts": connection.execute("SELECT COUNT(*) FROM attempts").fetchone()[0],
+            "attempt_provenance": attempt_provenance,
+            "ambiguous_attempts": connection.execute(
+                "SELECT COUNT(*) FROM attempts WHERE lineage_status = 'NEEDS MANUAL REVIEW'"
+            ).fetchone()[0],
+            "one_run_attempt_violations": connection.execute(
+                "SELECT COUNT(*) FROM ("
+                "SELECT campaign_id, variant_id, attempt_id FROM runs "
+                "GROUP BY campaign_id, variant_id, attempt_id HAVING COUNT(*) > 1)"
+            ).fetchone()[0],
             "runs": connection.execute("SELECT COUNT(*) FROM runs").fetchone()[0],
             "research_artifacts": connection.execute("SELECT COUNT(*) FROM research_artifacts").fetchone()[0],
             "artifact_objects": connection.execute("SELECT COUNT(*) FROM artifact_objects").fetchone()[0],
@@ -329,6 +345,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             definition_path TEXT,
             authored_status TEXT,
             authored_decision TEXT,
+            governance_contract_version INTEGER NOT NULL,
             lifecycle_state TEXT NOT NULL,
             lifecycle_reason TEXT NOT NULL,
             variant_count INTEGER NOT NULL,
@@ -353,6 +370,11 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             variant_id TEXT NOT NULL,
             attempt_kind TEXT NOT NULL,
             parent_variant_id TEXT,
+            parent_attempt_id TEXT,
+            provenance TEXT NOT NULL,
+            lineage_status TEXT NOT NULL,
+            governance_contract_version INTEGER NOT NULL,
+            run_uid TEXT UNIQUE,
             test_run_id TEXT,
             definition_path TEXT NOT NULL,
             config_hash TEXT NOT NULL,
@@ -381,7 +403,11 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             output_dir TEXT,
             summary_path TEXT NOT NULL,
             source_config_path TEXT,
-            attempt_id TEXT,
+            attempt_id TEXT NOT NULL,
+            attempt_kind TEXT NOT NULL,
+            attempt_provenance TEXT NOT NULL,
+            attempt_lineage_status TEXT NOT NULL,
+            parent_attempt_id TEXT,
             parent_run_uid TEXT,
             updated_at TEXT,
             FOREIGN KEY (campaign_id) REFERENCES campaigns(campaign_id)
@@ -423,6 +449,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX runs_campaign_idx ON runs(campaign_id, variant_id, updated_at);
         CREATE INDEX runs_verdict_idx ON runs(verdict, updated_at);
+        CREATE UNIQUE INDEX runs_one_per_attempt_idx ON runs(campaign_id, variant_id, attempt_id);
         CREATE INDEX attempts_campaign_idx ON attempts(campaign_id, attempt_id);
         """
     )
@@ -475,6 +502,7 @@ def _source_records(
         campaign_yaml = campaign_dir / "campaign.yaml"
         metadata = _read_yaml(campaign_yaml)
         campaign_id = str(metadata.get("campaign_id") or campaign_dir.name)
+        governance_contract_version = int(metadata.get("governance_contract_version") or 0)
         campaigns.append(
             {
                 "campaign_id": campaign_id,
@@ -483,14 +511,22 @@ def _source_records(
                 "definition_path": _display(root, campaign_yaml) if campaign_yaml.is_file() else _display(root, campaign_dir),
                 "authored_status": _scalar_text(metadata.get("status")),
                 "authored_decision": _scalar_text(metadata.get("decision")),
+                "governance_contract_version": governance_contract_version,
             }
         )
         indexed = _indexed_source_records(root, campaign_dir, campaign_id)
         if indexed is not None:
             indexed_variants, indexed_attempts = indexed
             for record in indexed_variants:
-                variants_by_key.setdefault((campaign_id, record["variant_id"]), record)
-            attempts.extend(indexed_attempts)
+                variants_by_key.setdefault((campaign_id, record["variant_id"]), _variant_record(record))
+                if governance_contract_version >= 2:
+                    attempts.append(
+                        _authored_attempt_record(record, governance_contract_version=governance_contract_version)
+                    )
+            attempts.extend(
+                _source_attempt_record(item, governance_contract_version=governance_contract_version)
+                for item in indexed_attempts
+            )
             continue
         for config_path in sorted(campaign_dir.rglob("config.yaml")):
             config = _read_yaml(config_path)
@@ -507,19 +543,33 @@ def _source_records(
             relative = config_path.relative_to(campaign_dir)
             if relative.parts[0] == "variants":
                 variants_by_key.setdefault((campaign_id, variant_id), record)
+                if governance_contract_version >= 2:
+                    attempts.append(
+                        _authored_attempt_record(
+                            {**record, **_attempt_fields(config)},
+                            governance_contract_version=governance_contract_version,
+                        )
+                    )
                 continue
             attempt_id = _attempt_id(relative)
             attempts.append(
-                {
-                    "campaign_id": campaign_id,
-                    "attempt_id": attempt_id,
-                    "variant_id": variant_id,
-                    "attempt_kind": "rescue" if relative.parts[0] == "rescue_attempts" else "alternate",
-                    "parent_variant_id": variant_id if (campaign_id, variant_id) in variants_by_key else None,
-                    "test_run_id": _scalar_text(config.get("test_run_id") or config.get("run_id")),
-                    "definition_path": _display(root, config_path),
-                    "config_hash": record["config_hash"],
-                }
+                _source_attempt_record(
+                    {
+                        "campaign_id": campaign_id,
+                        "attempt_id": config.get("attempt_id") or attempt_id,
+                        "variant_id": variant_id,
+                        "attempt_kind": config.get("attempt_kind")
+                        or ("rescue" if relative.parts[0] == "rescue_attempts" else "alternate"),
+                        "parent_variant_id": config.get("parent_variant_id")
+                        or (variant_id if (campaign_id, variant_id) in variants_by_key else None),
+                        "parent_attempt_id": config.get("parent_attempt_id"),
+                        "attempt_provenance": config.get("attempt_provenance"),
+                        "test_run_id": _scalar_text(config.get("test_run_id") or config.get("run_id")),
+                        "definition_path": _display(root, config_path),
+                        "config_hash": record["config_hash"],
+                    },
+                    governance_contract_version=governance_contract_version,
+                )
             )
     return campaigns, sorted(variants_by_key.values(), key=_definition_key), sorted(attempts, key=_attempt_key)
 
@@ -548,6 +598,142 @@ def _source_records_many(
     )
 
 
+def _variant_record(record: dict[str, Any]) -> dict[str, Any]:
+    return {
+        key: record.get(key)
+        for key in ("campaign_id", "variant_id", "definition_path", "symbol", "timeframe", "dataset_id", "config_hash")
+    }
+
+
+def _attempt_fields(config: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "attempt_id": config.get("attempt_id"),
+        "attempt_kind": config.get("attempt_kind"),
+        "attempt_provenance": config.get("attempt_provenance"),
+        "parent_attempt_id": config.get("parent_attempt_id"),
+        "test_run_id": config.get("test_run_id") or config.get("campaign_test_run_id") or config.get("run_id"),
+    }
+
+
+def _authored_attempt_record(
+    record: dict[str, Any], *, governance_contract_version: int
+) -> dict[str, Any]:
+    attempt_id = _scalar_text(record.get("attempt_id"))
+    if not attempt_id:
+        raise RuntimeError(
+            f"governance-v2 variant requires attempt_id: {record.get('definition_path')}"
+        )
+    provenance = _scalar_text(record.get("attempt_provenance"))
+    if provenance != "authored":
+        raise RuntimeError(
+            f"governance-v2 authored attempt requires attempt_provenance=authored: {record.get('definition_path')}"
+        )
+    return {
+        "campaign_id": record["campaign_id"],
+        "attempt_id": attempt_id,
+        "variant_id": record["variant_id"],
+        "attempt_kind": _scalar_text(record.get("attempt_kind")) or "original",
+        "parent_variant_id": record["variant_id"],
+        "parent_attempt_id": _scalar_text(record.get("parent_attempt_id")),
+        "provenance": provenance,
+        "lineage_status": "declared",
+        "governance_contract_version": governance_contract_version,
+        "run_uid": None,
+        "test_run_id": _scalar_text(record.get("test_run_id")),
+        "definition_path": record["definition_path"],
+        "config_hash": record["config_hash"],
+    }
+
+
+def _source_attempt_record(
+    record: dict[str, Any], *, governance_contract_version: int
+) -> dict[str, Any]:
+    provenance = _scalar_text(record.get("attempt_provenance"))
+    if governance_contract_version >= 2 and provenance != "authored":
+        raise RuntimeError(
+            f"governance-v2 attempt requires attempt_provenance=authored: {record.get('definition_path')}"
+        )
+    return {
+        "campaign_id": record["campaign_id"],
+        "attempt_id": str(record["attempt_id"]),
+        "variant_id": record["variant_id"],
+        "attempt_kind": _scalar_text(record.get("attempt_kind")) or "alternate",
+        "parent_variant_id": _scalar_text(record.get("parent_variant_id")),
+        "parent_attempt_id": _scalar_text(record.get("parent_attempt_id")),
+        "provenance": provenance or "legacy_authored_definition",
+        "lineage_status": "declared",
+        "governance_contract_version": governance_contract_version,
+        "run_uid": None,
+        "test_run_id": _scalar_text(record.get("test_run_id")),
+        "definition_path": record["definition_path"],
+        "config_hash": record["config_hash"],
+    }
+
+
+def _reconcile_attempt_records(
+    campaigns: list[dict[str, Any]],
+    source_attempts: list[dict[str, Any]],
+    runs: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Combine authored attempts with one unique inferred attempt per legacy run."""
+
+    versions = {
+        row["campaign_id"]: int(row.get("governance_contract_version") or 0)
+        for row in campaigns
+    }
+    attempts = [dict(row) for row in source_attempts]
+    by_key: dict[tuple[str, str, str], list[dict[str, Any]]] = {}
+    for row in attempts:
+        key = (row["campaign_id"], row["variant_id"], row["attempt_id"])
+        by_key.setdefault(key, []).append(row)
+    for key, rows in by_key.items():
+        if versions.get(key[0], 0) >= 2 and len(rows) != 1:
+            raise RuntimeError(
+                "governance-v2 attempt identity is not unique: "
+                f"campaign={key[0]} variant={key[1]} attempt={key[2]} definitions={len(rows)}"
+            )
+
+    seen_runs: set[tuple[str, str, str]] = set()
+    for run in runs:
+        key = (run["campaign_id"], run["variant_id"], run["attempt_id"])
+        if key in seen_runs:
+            raise RuntimeError(
+                "one-run-per-attempt violation: "
+                f"campaign={key[0]} variant={key[1]} attempt={key[2]}"
+            )
+        seen_runs.add(key)
+        matches = by_key.get(key, [])
+        if run["attempt_provenance"] == "authored" and versions.get(run["campaign_id"], 0) >= 2:
+            if len(matches) != 1:
+                raise RuntimeError(
+                    "governance-v2 run does not resolve to exactly one authored attempt: "
+                    f"campaign={key[0]} variant={key[1]} attempt={key[2]} matches={len(matches)}"
+                )
+            matches[0]["run_uid"] = run["run_uid"]
+            matches[0]["lineage_status"] = run["attempt_lineage_status"]
+            continue
+
+        derived = {
+            "campaign_id": run["campaign_id"],
+            "attempt_id": run["attempt_id"],
+            "variant_id": run["variant_id"],
+            "attempt_kind": run["attempt_kind"],
+            "parent_variant_id": run["variant_id"],
+            "parent_attempt_id": run.get("parent_attempt_id"),
+            "provenance": run["attempt_provenance"],
+            "lineage_status": run["attempt_lineage_status"],
+            "governance_contract_version": versions.get(run["campaign_id"], 0),
+            "run_uid": run["run_uid"],
+            "test_run_id": run.get("test_run_id"),
+            "definition_path": run.get("source_config_path") or run["summary_path"],
+            "config_hash": run.get("source_config_hash") or run.get("config_hash") or "",
+        }
+        attempts.append(derived)
+        by_key.setdefault(key, []).append(derived)
+
+    return sorted(attempts, key=_attempt_key)
+
+
 def _indexed_source_records(
     root: Path, campaign_dir: Path, campaign_id: str
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]]] | None:
@@ -566,6 +752,10 @@ def _indexed_source_records(
                 "symbol": _scalar_text(reference.get("symbol")),
                 "timeframe": _scalar_text(reference.get("timeframe")),
                 "dataset_id": _scalar_text(reference.get("dataset_id")),
+                "attempt_id": _scalar_text(reference.get("attempt_id")),
+                "attempt_kind": _scalar_text(reference.get("attempt_kind")),
+                "attempt_provenance": _scalar_text(reference.get("attempt_provenance")),
+                "parent_attempt_id": _scalar_text(reference.get("parent_attempt_id")),
                 "config_hash": str(reference.get("config_sha256") or ""),
             }
         )
@@ -576,10 +766,12 @@ def _indexed_source_records(
         attempts.append(
             {
                 "campaign_id": campaign_id,
-                "attempt_id": str(reference.get("definition_state") or "supplemental"),
+                "attempt_id": str(reference.get("attempt_id") or reference.get("definition_state") or "supplemental"),
                 "variant_id": str(reference.get("variant_id")),
-                "attempt_kind": "alternate",
+                "attempt_kind": str(reference.get("attempt_kind") or "alternate"),
                 "parent_variant_id": None,
+                "parent_attempt_id": reference.get("parent_attempt_id"),
+                "attempt_provenance": reference.get("attempt_provenance"),
                 "test_run_id": _scalar_text(reference.get("test_run_id")),
                 "definition_path": str(reference.get("config_path")),
                 "config_hash": str(reference.get("config_sha256") or ""),
@@ -594,10 +786,17 @@ def _indexed_source_records(
             attempts.append(
                 {
                     "campaign_id": campaign_id,
-                    "attempt_id": str(manifest.get("attempt_id") or manifest.get("short_id") or "rescue"),
+                    "attempt_id": str(
+                        reference.get("attempt_id")
+                        or manifest.get("attempt_id")
+                        or manifest.get("short_id")
+                        or "rescue"
+                    ),
                     "variant_id": str(reference.get("variant_id")),
-                    "attempt_kind": str(manifest.get("attempt_kind") or "rescue"),
+                    "attempt_kind": str(reference.get("attempt_kind") or manifest.get("attempt_kind") or "rescue"),
                     "parent_variant_id": str(reference.get("variant_id")),
+                    "parent_attempt_id": manifest.get("parent_attempt") or reference.get("parent_attempt_id"),
+                    "attempt_provenance": reference.get("attempt_provenance"),
                     "test_run_id": _scalar_text(reference.get("test_run_id")),
                     "definition_path": str(reference.get("config_path")),
                     "config_hash": str(reference.get("config_sha256") or ""),
@@ -619,6 +818,20 @@ def _run_records(root: Path, run_root: Path) -> list[dict[str, Any]]:
         output_dir = _resolve(root, row.get("output_dir") or summary_path.parent)
         run_uid = read_run_uid(output_dir) or hashlib.sha256(display_summary.encode("utf-8")).hexdigest()[:24]
         verdict = _run_verdict(row)
+        declared_attempt_id = _scalar_text(row.get("attempt_id"))
+        declared_provenance = _scalar_text(row.get("attempt_provenance"))
+        if declared_attempt_id and declared_provenance in {"authored", "generated_validation"}:
+            attempt_id = declared_attempt_id
+            attempt_kind = _scalar_text(row.get("attempt_kind")) or "original"
+            attempt_provenance = declared_provenance
+            parent_attempt_id = _scalar_text(row.get("parent_attempt_id"))
+            attempt_lineage_status = "resolved"
+        else:
+            attempt_id = f"legacy_{run_uid.replace('-', '')}"
+            attempt_kind = _legacy_attempt_kind(row.get("source_config_path"))
+            attempt_provenance = "inferred_legacy"
+            parent_attempt_id = None
+            attempt_lineage_status = "NEEDS MANUAL REVIEW" if verdict == "NEEDS MANUAL REVIEW" else "resolved"
         stages = []
         for index, stage in enumerate(summary.get("stages") or []):
             if not isinstance(stage, dict):
@@ -656,7 +869,11 @@ def _run_records(root: Path, run_root: Path) -> list[dict[str, Any]]:
                 "output_dir": _display(root, output_dir),
                 "summary_path": display_summary,
                 "source_config_path": _scalar_text(row.get("source_config_path")),
-                "attempt_id": _attempt_from_source_path(row.get("source_config_path")),
+                "attempt_id": attempt_id,
+                "attempt_kind": attempt_kind,
+                "attempt_provenance": attempt_provenance,
+                "attempt_lineage_status": attempt_lineage_status,
+                "parent_attempt_id": parent_attempt_id,
                 "parent_run_uid": None,
                 "updated_at": _scalar_text(row.get("updated_at")),
                 "stages": stages,
@@ -681,10 +898,10 @@ def _run_records_many(root: Path, run_roots: Iterable[Path]) -> list[dict[str, A
 def _assign_parent_run_uids(records: list[dict[str, Any]]) -> None:
     originals: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for record in records:
-        if record.get("attempt_id") == "original":
+        if record.get("attempt_kind") == "original":
             originals.setdefault((record["campaign_id"], record["variant_id"]), []).append(record)
     for record in records:
-        if record.get("attempt_id") in {None, "original"}:
+        if record.get("attempt_kind") != "rescue":
             continue
         candidates = originals.get((record["campaign_id"], record["variant_id"]), [])
         if candidates:
@@ -1149,6 +1366,12 @@ def _attempt_id(relative: Path) -> str:
     if relative.parts[0] == "rescue_attempts" and len(relative.parts) > 1:
         return relative.parts[1]
     return relative.parent.as_posix().replace("/", "__")
+
+
+def _legacy_attempt_kind(value: Any) -> str:
+    if not value:
+        return "legacy_unknown"
+    return "rescue" if "rescue_attempts" in Path(str(value)).parts else "original"
 
 
 def _attempt_from_source_path(value: Any) -> str | None:

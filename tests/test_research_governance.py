@@ -48,6 +48,9 @@ def _write_campaign(tmp_path: Path, variants):
                 {
                     "campaign_id": "demo",
                     "variant_id": variant,
+                    "attempt_id": "original",
+                    "attempt_kind": "original",
+                    "attempt_provenance": "authored",
                     "research_metadata": {
                         "validation_gate": {
                             "required": True,
@@ -102,3 +105,29 @@ def test_governance_v2_limits_rescue_attempts_per_failed_variant(tmp_path, monke
     preflight._validate_campaign_governance(campaign / "variants/v01/config.yaml", failures, [])
 
     assert any("v01 has 2 rescue attempts" in item for item in failures)
+
+
+def test_governance_v2_requires_unique_authored_attempt_identity(tmp_path, monkeypatch):
+    monkeypatch.setattr(preflight, "PROJECT_ROOT", tmp_path)
+    variants = ["v01", "v02", "v03", "v04", "v05"]
+    campaign = _write_campaign(tmp_path, variants)
+    duplicate = campaign / "rescue_attempts/rescue_one/v01/config.yaml"
+    duplicate.parent.mkdir(parents=True)
+    duplicate.write_text(
+        yaml.safe_dump(
+            {
+                "campaign_id": "demo",
+                "variant_id": "v01",
+                "attempt_id": "original",
+                "attempt_kind": "rescue",
+                "attempt_provenance": "authored",
+                "parent_attempt_id": "original",
+            }
+        ),
+        encoding="utf-8",
+    )
+    failures = []
+
+    preflight._validate_attempt_declaration(campaign / "variants/v01/config.yaml", campaign, failures)
+
+    assert any("must be unique" in item for item in failures)

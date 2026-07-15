@@ -5,6 +5,7 @@ from collections import defaultdict
 from datetime import date
 import json
 from pathlib import Path
+import re
 import shlex
 import subprocess
 import sys
@@ -537,6 +538,38 @@ def _validate_campaign_governance(path: Path, failures: list[str], warnings: lis
                 failures.append(f"{prefix}: variant {parent} has {count} rescue attempts; maximum is {maximum}.")
 
     _validate_validation_gate_declaration(path, failures)
+    _validate_attempt_declaration(path, campaign_root, failures)
+
+
+def _validate_attempt_declaration(path: Path, campaign_root: Path, failures: list[str]) -> None:
+    cfg = _load_yaml(path)
+    prefix = str(_display_path(path))
+    attempt_id = str(cfg.get("attempt_id") or "")
+    if re.fullmatch(r"[a-z0-9][a-z0-9_]*", attempt_id) is None:
+        failures.append(f"{prefix}: governance contract v2 requires a lowercase attempt_id.")
+    if str(cfg.get("attempt_provenance") or "") != "authored":
+        failures.append(f"{prefix}: governance contract v2 requires attempt_provenance=authored.")
+    attempt_kind = str(cfg.get("attempt_kind") or "")
+    if not attempt_kind:
+        failures.append(f"{prefix}: governance contract v2 requires attempt_kind.")
+    if "variants" in path.parts and attempt_kind and attempt_kind != "original":
+        failures.append(f"{prefix}: initial variant attempts must use attempt_kind=original.")
+    if attempt_kind and attempt_kind != "original" and not str(cfg.get("parent_attempt_id") or ""):
+        failures.append(f"{prefix}: non-original attempts must declare parent_attempt_id.")
+
+    if not attempt_id:
+        return
+    identity = (str(cfg.get("variant_id") or path.parent.name), attempt_id)
+    matches = 0
+    for config_path in campaign_root.rglob("config.yaml"):
+        other = _load_yaml(config_path)
+        other_identity = (str(other.get("variant_id") or config_path.parent.name), str(other.get("attempt_id") or ""))
+        if other_identity == identity:
+            matches += 1
+    if matches > 1:
+        failures.append(
+            f"{prefix}: attempt identity {identity[0]}/{identity[1]} is declared by {matches} configs; it must be unique."
+        )
 
 
 def _validate_validation_gate_declaration(path: Path, failures: list[str]) -> None:

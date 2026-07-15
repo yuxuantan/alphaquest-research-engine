@@ -19,7 +19,7 @@ from alphaquest.utils.config import (
     validation_dir,
     write_json,
 )
-from alphaquest.utils.hashing import file_sha256
+from alphaquest.utils.hashing import file_sha256, object_sha256
 from alphaquest.utils.reports import market_timezone, write_report_csv
 from alphaquest.validation import ValidationMetadata, build_trade_summaries, write_validation_run
 from alphaquest.validation.promotion_gate import validation_gate_config
@@ -151,6 +151,7 @@ def _apply_validation_export_args(config: dict, args: argparse.Namespace) -> Non
 
 
 def _apply_mechanics_validation_contract(config: dict) -> None:
+    authored_config_hash = object_sha256(config)[:12]
     gate = validation_gate_config(config)
     if not gate or gate.get("required") is not True:
         raise ValueError("mechanics validation requires research_metadata.validation_gate.required=true")
@@ -167,7 +168,12 @@ def _apply_mechanics_validation_contract(config: dict) -> None:
     end = date.fromisoformat(str(subset["end_date"]))
     if end < start or (end - start).days > 14:
         raise ValueError("validation_gate.data_subset must span 0 to 14 calendar days")
-    config["test_run_id"] = "mechanics_validation"
+    if config.get("attempt_id"):
+        config["attempt_id"] = f"{config['attempt_id']}__mechanics_{authored_config_hash}"
+        config["attempt_kind"] = "mechanics_validation"
+        config["attempt_provenance"] = "generated_validation"
+        config["parent_attempt_id"] = None
+    config["test_run_id"] = f"mechanics_validation_{authored_config_hash}"
     core = config.setdefault("core", {})
     core["data_subset"] = dict(subset)
     core["validation_export"] = {

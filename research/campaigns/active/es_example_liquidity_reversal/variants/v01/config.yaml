@@ -1,0 +1,65 @@
+campaign_id: es_example_liquidity_reversal
+variant_id: v01
+attempt_id: original
+attempt_kind: original
+attempt_provenance: authored
+strategy_name: v01
+symbol: ES
+dataset_id: es_governed_1m_dataset
+timeframe: 1m
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  mechanics_review:
+    mechanic_expresses_edge: 'TODO: explain in at least 80 characters how this variant expresses the campaign edge.'
+    entry_logic_rationale: 'TODO: explain in at least 80 characters why the entry is causal, testable, and economically justified.'
+    stop_loss_rationale: 'TODO: explain in at least 80 characters why this stop represents mechanical invalidation.'
+    target_exit_rationale: 'TODO: explain in at least 80 characters why the target and flatten rules fit the edge.'
+    profitability_rationale: 'TODO: explain in at least 80 characters why the expected payoff may survive modeled costs.'
+    known_failure_modes: 'TODO: explain in at least 80 characters how this edge may fail or become unstable.'
+    pre_test_decision: needs_completion
+  validation_gate:
+    required: true
+    lane: bar
+    data_subset:
+      start_date: TODO
+      end_date: TODO
+    evidence_dir: research/evidence/runs/es_example_liquidity_reversal/v01/ES/mechanics_validation/validation_runs/core
+    approval_path: research_artifacts/validation_approvals/es_example_liquidity_reversal/v01/approval.json
+data:
+  dataset_id: es_governed_1m_dataset
+  source: parquet
+  raw_parquet: data/cache/example/es_governed_1m.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+core:
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  flatten_time: '15:55:00'
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+apex_rules:
+  enabled: true
+  force_flatten_enabled: true
+  force_flatten_time: '15:55:00'
+  latest_flat_time: '15:56:00'
+  latest_entry_time: '15:45:00'
+  no_overnight_positions: true
+strategy:
+  entry:
+    module: TODO_entry_module
+    params: {}
+  sl:
+    module: TODO_stop_module
+    params: {}
+  tp:
+    module: TODO_target_module
+    params: {}
+  flatten_time: '15:55:00'
+test_run_id: run1

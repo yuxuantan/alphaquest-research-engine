@@ -7,6 +7,10 @@
   "properties": {
     "campaign_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
     "variant_id": {"type": "string", "minLength": 1},
+    "attempt_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_]*$"},
+    "attempt_kind": {"type": "string", "minLength": 1},
+    "attempt_provenance": {"enum": ["authored", "generated_validation", "inferred_legacy"]},
+    "parent_attempt_id": {"type": ["string", "null"]},
     "test_run_id": {"type": "string"},
     "symbol": {"type": "string"},
     "dataset_id": {"type": "string"},

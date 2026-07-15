@@ -3,10 +3,12 @@ from __future__ import annotations
 import copy
 from datetime import datetime
 import hashlib
+import json
 import math
 import os
 from pathlib import Path
 import random
+import re
 import shutil
 import time
 from typing import Any
@@ -32,6 +34,7 @@ from alphaquest.research.schemas import (
 )
 from alphaquest.research.wfa import run_wfa
 from alphaquest.utils.config import (
+    CAMPAIGN_REPORT_ROOT,
     CAMPAIGN_CONFIG_FILENAME,
     SOURCE_CONFIG_SNAPSHOT_FILENAME,
     VARIANT_TEST_SUMMARY_FILENAME,
@@ -169,6 +172,83 @@ def apply_fast_runtime_defaults(cfg: dict, workers: int | None = None) -> dict:
     return out
 
 
+def _require_attempt_contract(
+    cfg: dict[str, Any],
+    config_path: Path,
+    *,
+    out_dir: str | Path | None,
+) -> dict[str, Any]:
+    """Enforce one immutable staged run for each governance-v2 authored attempt."""
+
+    version = _campaign_governance_version(cfg, config_path)
+    attempt = {
+        "attempt_id": cfg.get("attempt_id"),
+        "attempt_kind": cfg.get("attempt_kind"),
+        "attempt_provenance": cfg.get("attempt_provenance"),
+        "parent_attempt_id": cfg.get("parent_attempt_id"),
+    }
+    if version < 2:
+        return attempt
+
+    attempt_id = str(attempt.get("attempt_id") or "")
+    if re.fullmatch(r"[a-z0-9][a-z0-9_]*", attempt_id) is None:
+        raise ValueError("governance-v2 staged runs require a lowercase authored attempt_id")
+    if attempt.get("attempt_provenance") != "authored":
+        raise ValueError("governance-v2 staged runs require attempt_provenance=authored")
+    attempt_kind = str(attempt.get("attempt_kind") or "")
+    if not attempt_kind:
+        raise ValueError("governance-v2 staged runs require attempt_kind")
+    if attempt_kind != "original" and not attempt.get("parent_attempt_id"):
+        raise ValueError("non-original governance-v2 attempts require parent_attempt_id")
+
+    campaign_id = str(cfg.get("campaign_id") or "")
+    variant_id = str(cfg.get("variant_id") or "")
+    proposed_root = Path(out_dir) if out_dir else variant_root(cfg, config_path=config_path)
+    existing_at_root = _existing_run_summary(proposed_root)
+    if existing_at_root is not None:
+        raise ValueError(
+            "immutable run directory already contains evidence; create a new attempt_id and test_run_id: "
+            f"{proposed_root}"
+        )
+
+    variant_evidence_root = CAMPAIGN_REPORT_ROOT / campaign_id / variant_id
+    summary_paths = {
+        *variant_evidence_root.glob("*/*/campaign_test_summary.json"),
+        *variant_evidence_root.glob("*/*/variant_test_summary.json"),
+    }
+    for summary_path in sorted(summary_paths):
+        try:
+            summary = json.loads(summary_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if str(summary.get("attempt_id") or "") == attempt_id:
+            raise ValueError(
+                "one-run-per-attempt violation; this governance-v2 attempt already has immutable evidence: "
+                f"{summary_path.parent}"
+            )
+    return attempt
+
+
+def _campaign_governance_version(cfg: dict[str, Any], config_path: Path) -> int:
+    campaign_id = str(cfg.get("campaign_id") or "")
+    for parent in config_path.resolve().parents:
+        campaign_path = parent / "campaign.yaml"
+        if not campaign_path.is_file():
+            continue
+        campaign = load_yaml(campaign_path)
+        if str(campaign.get("campaign_id") or parent.name) == campaign_id:
+            return int(campaign.get("governance_contract_version") or 0)
+    return 0
+
+
+def _existing_run_summary(root: Path) -> Path | None:
+    for filename in ("campaign_test_summary.json", VARIANT_TEST_SUMMARY_FILENAME):
+        path = root / filename
+        if path.is_file():
+            return path
+    return None
+
+
 def _enable_parallel(container: dict, section: str | None, scope: str, workers: int) -> None:
     target = container.setdefault(section, {}) if section else container
     if not isinstance(target, dict):
@@ -202,6 +282,7 @@ def run_campaign_stage_tests(
     source_config_hash = hashlib.sha256(source_config_text.encode("utf-8")).hexdigest()
     cfg = canonicalize_campaign_config(load_yaml(config_path), include_acceptance=include_acceptance)
     _validate_pre_test_mechanics_review(cfg, config_path)
+    attempt = _require_attempt_contract(cfg, config_path, out_dir=out_dir)
     validation_gate = require_validation_approval(cfg, config_path)
     require_prior_variant_approvals(cfg, config_path)
     if fast_runtime_defaults:
@@ -260,6 +341,10 @@ def run_campaign_stage_tests(
         "campaign_id": cfg.get("campaign_id"),
         "variant_id": cfg.get("variant_id"),
         "test_run_id": campaign_test_run_id(cfg, config_path=config_path, root_path=root),
+        "attempt_id": attempt.get("attempt_id"),
+        "attempt_kind": attempt.get("attempt_kind"),
+        "attempt_provenance": attempt.get("attempt_provenance"),
+        "parent_attempt_id": attempt.get("parent_attempt_id"),
         "symbol": cfg.get("symbol") or (cfg.get("data") or {}).get("symbol"),
         "dataset_id": cfg.get("dataset_id") or (cfg.get("data") or {}).get("dataset_id"),
         "timeframe": config_timeframe(cfg),
@@ -300,6 +385,10 @@ def run_campaign_stage_tests(
             "campaign_id": summary["campaign_id"],
             "variant_id": summary["variant_id"],
             "test_run_id": summary["test_run_id"],
+            "attempt_id": summary["attempt_id"],
+            "attempt_kind": summary["attempt_kind"],
+            "attempt_provenance": summary["attempt_provenance"],
+            "parent_attempt_id": summary["parent_attempt_id"],
             "symbol": summary["symbol"],
             "dataset_id": summary["dataset_id"],
             "timeframe": summary["timeframe"],
@@ -352,6 +441,10 @@ def _update_source_results_index(config_path: Path, cfg: dict, summary: dict) ->
         "variant_id": summary.get("variant_id"),
         "symbol": summary.get("symbol"),
         "test_run_id": summary.get("test_run_id"),
+        "attempt_id": summary.get("attempt_id"),
+        "attempt_kind": summary.get("attempt_kind"),
+        "attempt_provenance": summary.get("attempt_provenance"),
+        "parent_attempt_id": summary.get("parent_attempt_id"),
         "source_config_path": str(config_path),
         "source_config_snapshot_path": summary.get("source_config_snapshot_path"),
         "source_config_hash": summary.get("source_config_hash"),

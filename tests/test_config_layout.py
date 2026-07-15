@@ -4,12 +4,39 @@ import pytest
 import yaml
 
 from alphaquest.utils.config import (
+    create_run_dir,
     ensure_variant_metadata,
     campaign_metadata_path,
     validate_campaign_run_root,
     variant_metadata_path,
     variant_root,
 )
+
+
+def test_explicit_attempt_cannot_reuse_generic_run_directory(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("campaign_id: demo\n", encoding="utf-8")
+    config = {
+        "campaign_id": "demo",
+        "variant_id": "v01",
+        "attempt_id": "original",
+        "attempt_kind": "original",
+        "attempt_provenance": "authored",
+        "symbol": "ES",
+        "dataset_id": "fixture",
+        "timeframe": "1m",
+        "strategy": {
+            "entry": {"module": "demo"},
+            "tp": {"module": "fixed_r"},
+            "sl": {"module": "points_from_entry"},
+        },
+    }
+
+    create_run_dir("core", config_path, config)
+
+    with pytest.raises(ValueError, match="one-run-per-attempt violation"):
+        create_run_dir("core", config_path, config)
 
 
 def test_variant_root_includes_campaign_dataset_timeframe_and_variant():

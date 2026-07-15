@@ -684,6 +684,10 @@ def test_staged_campaign_writes_source_results_index_for_campaign_source_config(
             "variant_id": "demo_variant",
             "symbol": "ES",
             "test_run_id": "run1",
+            "attempt_id": None,
+            "attempt_kind": None,
+            "attempt_provenance": None,
+            "parent_attempt_id": None,
             "source_config_path": str(config_path),
             "source_config_snapshot_path": "research/evidence/runs/demo_campaign/demo_variant/ES/run1/source_config.yaml",
             "source_config_hash": summary["source_config_hash"],
@@ -768,6 +772,41 @@ def test_staged_campaign_requires_pre_test_mechanics_review(tmp_path, monkeypatc
             include_acceptance=False,
             skip_validation=True,
         )
+
+
+def test_governance_v2_attempt_can_have_at_most_one_staged_run(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    campaign = tmp_path / "research/campaigns/active/demo_campaign"
+    config_path = campaign / "variants/v01/config.yaml"
+    config_path.parent.mkdir(parents=True)
+    (campaign / "campaign.yaml").write_text(
+        "campaign_id: demo_campaign\ngovernance_contract_version: 2\n",
+        encoding="utf-8",
+    )
+    cfg = {
+        "campaign_id": "demo_campaign",
+        "variant_id": "v01",
+        "attempt_id": "original",
+        "attempt_kind": "original",
+        "attempt_provenance": "authored",
+        "test_run_id": "run1",
+        "timeframe": "1m",
+        "data": {"symbol": "ES", "dataset_id": "fixture"},
+    }
+    config_path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+
+    first = campaign_stages._require_attempt_contract(cfg, config_path, out_dir=None)
+
+    assert first["attempt_id"] == "original"
+    run_dir = tmp_path / "research/evidence/runs/demo_campaign/v01/ES/run1"
+    run_dir.mkdir(parents=True)
+    (run_dir / "campaign_test_summary.json").write_text(
+        json.dumps({"campaign_id": "demo_campaign", "variant_id": "v01", "attempt_id": "original"}),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="already contains evidence|already has immutable evidence"):
+        campaign_stages._require_attempt_contract(cfg, config_path, out_dir=None)
 
 
 def test_default_stage_criteria_match_screenshot_benchmarks():

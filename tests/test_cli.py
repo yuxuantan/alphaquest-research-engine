@@ -34,6 +34,9 @@ def test_campaign_new_creates_five_variant_scaffold(tmp_path, monkeypatch):
     )
     assert {path.name for path in first_modules.iterdir()} == {"README.md", "entry.py", "stop.py", "target.py"}
     first_config = yaml.safe_load((first_modules.parent / "config.yaml").read_text(encoding="utf-8"))
+    assert first_config["attempt_id"] == "original"
+    assert first_config["attempt_kind"] == "original"
+    assert first_config["attempt_provenance"] == "authored"
     gate = first_config["research_metadata"]["validation_gate"]
     assert gate["required"] is True
     assert gate["evidence_dir"].startswith("research/evidence/runs/")

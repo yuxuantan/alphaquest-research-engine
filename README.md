@@ -18,9 +18,11 @@ Start with [START_HERE.md](START_HERE.md), then choose the path that matches you
 ```text
 campaign = one economic edge
 variant  = one predeclared mechanical expression
-attempt  = an original or explicitly authorized rescue definition
-run      = immutable generated evidence for one fixed attempt
+attempt  = one immutable original, validation, replication, methodology-rerun, or authorized-rescue definition
+run      = zero or one immutable generated evidence record for that attempt
 ```
+
+Governance-v2 attempts have a strict one-run maximum. Repeating an execution requires a new authored attempt ID and explicit parent lineage; historical runs are represented by unique `inferred_legacy` attempt records without rewriting their evidence or verdicts.
 
 Active authored definitions live under `research/campaigns/active/`; closed definitions live under `research/campaigns/archive/`. Generated evidence lives under `research/evidence/runs/`. Use `views/workbench/` and the registry instead of browsing either archive directly.
 

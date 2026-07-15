@@ -3,6 +3,7 @@
 Use one short Markdown file per durable architecture decision:
 
 - [2026-07-15: Validation and campaign-governance promotion gate](20260715-validation-governance-gate.md)
+- [2026-07-15: One run per attempt](20260715-one-run-per-attempt.md)
 
 ```text
 YYYYMMDD-short-title.md

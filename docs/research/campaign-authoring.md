@@ -21,6 +21,7 @@ Then complete:
 - a ledger/campaign-backed `duplicate_edge_review` with a substantive economic distinction
 - `variant_distinctions` for exactly five initial variants
 - the bar or event-replay `research_metadata.validation_gate` paths
+- an explicit `attempt_id`, `attempt_kind`, and `attempt_provenance: authored` for every governance-v2 config
 
 Validate before execution:
 
@@ -35,3 +36,5 @@ For bar strategies, `alphaquest campaign validate-mechanics <campaign_id> --vari
 `alphaquest campaign run` is a performance command. For a governance-v2 definition it will not start until the declared deterministic validation evidence and `approval.json` reconcile to the authored-config hash, validation-slice input-data hash, validation schema, and declared validation lane. The next variant is also blocked until earlier variants in `campaign.yaml` have completed mechanics approval.
 
 Do not silently change mechanics after OOS. An authorized rescue must preserve the edge, be declared as an attempt, and record its parent variant and rationale.
+
+Each governance-v2 attempt may produce at most one staged run. A replication, data refresh, methodology rerun, or rescue must use a new `attempt_id`; non-original attempts also declare `parent_attempt_id`. Completed run directories are immutable and cannot be reused by a later attempt.

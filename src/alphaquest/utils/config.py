@@ -74,6 +74,20 @@ def create_run_dir(
 ) -> Path:
     root = variant_root(config, config_path=config_path)
     validate_campaign_run_root(root, config, config_path=config_path)
+    if (config or {}).get("attempt_provenance") in {"authored", "generated_validation"}:
+        existing = next(
+            (
+                root / filename
+                for filename in ("run_manifest.json", VARIANT_TEST_SUMMARY_FILENAME, "campaign_test_summary.json")
+                if (root / filename).is_file()
+            ),
+            None,
+        )
+        if existing is not None:
+            raise ValueError(
+                "one-run-per-attempt violation; immutable evidence already exists for "
+                f"attempt {(config or {}).get('attempt_id')!r}: {existing}"
+            )
     variant_metadata = ensure_variant_metadata(config, root_path=root)
     out = root / run_type
     out.mkdir(parents=True, exist_ok=True)
@@ -88,6 +102,10 @@ def create_run_dir(
         "run_uid": ensure_run_uid(root),
         "campaign_id": _campaign_id(config),
         "variant_id": _variant_id(config),
+        "attempt_id": config.get("attempt_id"),
+        "attempt_kind": config.get("attempt_kind"),
+        "attempt_provenance": config.get("attempt_provenance"),
+        "parent_attempt_id": config.get("parent_attempt_id"),
         "test_run_id": campaign_test_run_id(config, config_path=config_path, root_path=root),
         "strategy_name": _strategy_name(config),
         "symbol": _symbol(config),
@@ -293,6 +311,10 @@ def _update_manifest(root: Path, config: dict, config_path: str | Path, input_ha
         "run_uid": ensure_run_uid(root),
         "campaign_id": _campaign_id(config),
         "variant_id": _variant_id(config),
+        "attempt_id": config.get("attempt_id"),
+        "attempt_kind": config.get("attempt_kind"),
+        "attempt_provenance": config.get("attempt_provenance"),
+        "parent_attempt_id": config.get("parent_attempt_id"),
         "test_run_id": campaign_test_run_id(config, config_path=config_path, root_path=root),
         "strategy_name": _strategy_name(config),
         "symbol": _symbol(config),
@@ -335,6 +357,10 @@ def _update_variant_summary(
         {
             "campaign_id": _campaign_id(config),
             "variant_id": _variant_id(config),
+            "attempt_id": config.get("attempt_id"),
+            "attempt_kind": config.get("attempt_kind"),
+            "attempt_provenance": config.get("attempt_provenance"),
+            "parent_attempt_id": config.get("parent_attempt_id"),
             "test_run_id": campaign_test_run_id(config, config_path=config_path, root_path=root),
             "strategy_name": _strategy_name(config),
             "symbol": _symbol(config),

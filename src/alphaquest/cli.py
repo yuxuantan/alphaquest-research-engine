@@ -181,6 +181,9 @@ def _research_status(args: argparse.Namespace) -> int:
             {"metric": "variants", "value": payload.get("variants")},
             {"metric": "attempts", "value": payload.get("attempts")},
             {"metric": "runs", "value": payload.get("runs")},
+            {"metric": "attempt_provenance", "value": json.dumps(payload.get("attempt_provenance"), sort_keys=True)},
+            {"metric": "ambiguous_attempts", "value": payload.get("ambiguous_attempts")},
+            {"metric": "one_run_attempt_violations", "value": payload.get("one_run_attempt_violations")},
             {"metric": "campaign_lifecycle", "value": json.dumps(payload.get("campaign_lifecycle"), sort_keys=True)},
             {"metric": "run_verdicts", "value": json.dumps(payload.get("run_verdicts"), sort_keys=True)},
         ]
@@ -367,6 +370,9 @@ def _variant_scaffold(args: argparse.Namespace, *, dataset_id: str, data_path: s
     return {
         "campaign_id": args.campaign_id,
         "variant_id": variant_id,
+        "attempt_id": "original",
+        "attempt_kind": "original",
+        "attempt_provenance": "authored",
         "strategy_name": variant_id,
         "symbol": args.symbol,
         "dataset_id": dataset_id,

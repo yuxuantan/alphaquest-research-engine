@@ -133,6 +133,10 @@ def _config_reference(root: Path, path: Path, index: int) -> dict[str, Any]:
         "symbol": config.get("symbol") or (config.get("data") or {}).get("symbol"),
         "timeframe": config.get("timeframe") or (config.get("data") or {}).get("source_timeframe"),
         "dataset_id": config.get("dataset_id") or (config.get("data") or {}).get("dataset_id"),
+        "attempt_id": config.get("attempt_id"),
+        "attempt_kind": config.get("attempt_kind"),
+        "attempt_provenance": config.get("attempt_provenance"),
+        "parent_attempt_id": config.get("parent_attempt_id"),
         "config_path": _display(root, path),
         "config_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
     }

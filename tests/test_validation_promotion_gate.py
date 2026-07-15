@@ -195,6 +195,9 @@ def test_later_variant_blocks_until_prior_mechanics_approval(tmp_path, monkeypat
 
 def test_bar_mechanics_command_contract_uses_small_dedicated_generated_run():
     cfg = {
+        "attempt_id": "original",
+        "attempt_kind": "original",
+        "attempt_provenance": "authored",
         "test_run_id": "performance_run",
         "core": {},
         "research_metadata": {
@@ -209,7 +212,10 @@ def test_bar_mechanics_command_contract_uses_small_dedicated_generated_run():
 
     run_core._apply_mechanics_validation_contract(cfg)
 
-    assert cfg["test_run_id"] == "mechanics_validation"
+    assert cfg["test_run_id"].startswith("mechanics_validation_")
+    assert cfg["attempt_id"].startswith("original__mechanics_")
+    assert cfg["attempt_kind"] == "mechanics_validation"
+    assert cfg["attempt_provenance"] == "generated_validation"
     assert cfg["core"]["data_subset"] == {"start_date": "2026-07-01", "end_date": "2026-07-10"}
     assert cfg["core"]["validation_export"]["max_trades"] == 30
     assert cfg["core"]["validation_export"]["output_dir"].startswith("backtest-campaigns/")

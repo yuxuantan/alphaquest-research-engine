@@ -13,3 +13,5 @@
 11. Treat a pass only as a candidate pending independent review and paper/live incubation.
 
 The runner halts before performance testing when an opted-in governance-v2 validation gate is missing, stale, rejected, hash-mismatched, or lane-incompatible. It also halts after a failed performance stage unless explicitly invoked in diagnostic mode. Later-stage folders from older runs are not evidence for a newer run.
+
+Every governance-v2 staged execution has an explicit authored attempt identity. An attempt has zero runs while pending and exactly one immutable run after execution. A second execution requires a new attempt and test-run ID; the runner and registry both reject one attempt resolving to multiple runs.

@@ -27,6 +27,10 @@ CATALOG_COLUMNS = (
     "output_dir",
     "summary_path",
     "source_config_path",
+    "attempt_id",
+    "attempt_kind",
+    "attempt_provenance",
+    "parent_attempt_id",
     "updated_at",
 )
 
@@ -102,6 +106,10 @@ def _catalog_row(path: Path) -> dict[str, Any]:
         "output_dir": summary.get("output_dir") or str(path.parent),
         "summary_path": str(path),
         "source_config_path": summary.get("source_config_path"),
+        "attempt_id": summary.get("attempt_id"),
+        "attempt_kind": summary.get("attempt_kind"),
+        "attempt_provenance": summary.get("attempt_provenance"),
+        "parent_attempt_id": summary.get("parent_attempt_id"),
         "updated_at": summary.get("updated_at") or summary.get("created_at"),
     }
 
