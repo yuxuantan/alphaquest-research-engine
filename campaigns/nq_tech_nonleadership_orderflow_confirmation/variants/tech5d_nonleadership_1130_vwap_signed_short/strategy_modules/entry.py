@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.nq_tech_relative_orderflow_confirmation import NqTechRelativeOrderflowConfirmationEntry
+from alphaquest.strategy_modules.entry.nq_tech_relative_orderflow_confirmation import NqTechRelativeOrderflowConfirmationEntry
 
 ENTRY_MODULE = NqTechRelativeOrderflowConfirmationEntry

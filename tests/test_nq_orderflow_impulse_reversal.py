@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.orderflow_regime import OrderflowRegimeEntry
+from alphaquest.strategy_modules.entry.orderflow_regime import OrderflowRegimeEntry
 
 
 def _bar(

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry.cboe_implied_correlation_orderflow_confirmation import (
+from alphaquest.strategy_modules.entry.cboe_implied_correlation_orderflow_confirmation import (
     CboeImpliedCorrelationOrderflowConfirmationEntry,
 )
 

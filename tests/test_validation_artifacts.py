@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.validation import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.validation import (
     BarWindowRow,
     ConditionSnapshot,
     ExitAudit,
@@ -18,7 +18,7 @@ from propstack.validation import (
     load_validation_run,
     write_validation_run,
 )
-from propstack.validation.schema import (
+from alphaquest.validation.schema import (
     BAR_WINDOWS_FILENAME,
     CONDITION_SNAPSHOTS_FILENAME,
     EVENT_TRANSITIONS_FILENAME,

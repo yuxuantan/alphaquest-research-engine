@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from propstack.research import campaign_stages as cs
+from alphaquest.research import campaign_stages as cs
 
 
 SUMMARY_FILENAMES = ("campaign_test_summary.json", "variant_test_summary.json")

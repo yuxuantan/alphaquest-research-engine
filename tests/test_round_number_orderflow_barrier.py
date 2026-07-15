@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.round_number_orderflow_barrier import RoundNumberOrderflowBarrierEntry
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.round_number_orderflow_barrier import RoundNumberOrderflowBarrierEntry
 
 
 def test_support_reclaim_long_requires_absorbed_selling_flow():

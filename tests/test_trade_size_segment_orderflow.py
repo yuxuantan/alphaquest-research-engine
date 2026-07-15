@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry.trade_size_segment_orderflow import TradeSizeSegmentOrderflowEntry
+from alphaquest.strategy_modules.entry.trade_size_segment_orderflow import TradeSizeSegmentOrderflowEntry
 
 
 def _bar(

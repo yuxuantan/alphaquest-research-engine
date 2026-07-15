@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.overnight_inventory_reversion import OvernightInventoryReversionEntry
+from alphaquest.strategy_modules.entry.overnight_inventory_reversion import OvernightInventoryReversionEntry

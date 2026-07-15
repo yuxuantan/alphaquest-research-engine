@@ -1,6 +1,6 @@
 import json
 
-from propstack.research.catalog import catalog_rows, write_run_catalog
+from alphaquest.research.catalog import catalog_rows, write_run_catalog
 
 
 def test_run_catalog_extracts_policy_and_failed_stage(tmp_path):

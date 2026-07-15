@@ -1,6 +1,6 @@
 import pytest
 
-from propstack.strategy_modules.entry import all_entry_module_metadata, entry_module_metadata
+from alphaquest.strategy_modules.entry import all_entry_module_metadata, entry_module_metadata
 
 
 def test_entry_registry_exposes_metadata_for_every_registered_module():

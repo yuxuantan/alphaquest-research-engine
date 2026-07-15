@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from propstack.research.artifact_store import ArtifactStore
+from alphaquest.research.artifact_store import ArtifactStore
 
 
 DEFAULT_OUTPUT_PREFIX = "research_artifacts/cleanup/institutional_storage_migration_20260711"

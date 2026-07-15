@@ -1,5 +1,5 @@
-from propstack.research import campaign_stages
-from propstack.research.policy import load_research_policy
+from alphaquest.research import campaign_stages
+from alphaquest.research.policy import load_research_policy
 
 
 def test_research_policy_yaml_is_stage_runner_source_of_truth():

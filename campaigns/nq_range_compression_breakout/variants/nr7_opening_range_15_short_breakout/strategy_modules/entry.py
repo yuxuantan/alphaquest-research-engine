@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.range_compression_breakout import RangeCompressionBreakoutEntry
+from alphaquest.strategy_modules.entry.range_compression_breakout import RangeCompressionBreakoutEntry
 
 __all__ = ["RangeCompressionBreakoutEntry"]

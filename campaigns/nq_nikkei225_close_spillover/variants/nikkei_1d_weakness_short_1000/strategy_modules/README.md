@@ -1,6 +1,6 @@
 # Strategy Module
 
-Entry module: `src/propstack/strategy_modules/entry/nq_nikkei225_close_spillover.py`
+Entry module: `src/alphaquest/strategy_modules/entry/nq_nikkei225_close_spillover.py`
 
 Setup mode: `nikkei_1d_weakness_short`
 

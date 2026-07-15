@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.nq_es_lead_lag import NqEsLeadLagEntry
+from alphaquest.strategy_modules.entry.nq_es_lead_lag import NqEsLeadLagEntry
 
 
 def test_nq_es_lead_lag_entry_emits_long_on_completed_es_up_nq_lag():

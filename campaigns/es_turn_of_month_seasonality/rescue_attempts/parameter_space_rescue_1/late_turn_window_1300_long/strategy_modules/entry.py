@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
+from alphaquest.strategy_modules.entry.turn_of_month_bias import TurnOfMonthBiasEntry
 
 ENTRY_MODULE = TurnOfMonthBiasEntry

@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.realized_semivariance_asymmetry import RealizedSemivarianceAsymmetryEntry
+from alphaquest.strategy_modules.entry.realized_semivariance_asymmetry import RealizedSemivarianceAsymmetryEntry
 from tools.build_es_realized_semivariance_features import build_features
 
 

@@ -10,7 +10,7 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from propstack.data.es_nq_lead_lag import build_es_nq_lead_lag_cache
+from alphaquest.data.es_nq_lead_lag import build_es_nq_lead_lag_cache
 
 
 def main() -> int:

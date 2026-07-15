@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.measured_move_pullback_continuation import MeasuredMovePullbackContinuationEntry
+from alphaquest.strategy_modules.entry.measured_move_pullback_continuation import MeasuredMovePullbackContinuationEntry
 
 __all__ = ["MeasuredMovePullbackContinuationEntry"]

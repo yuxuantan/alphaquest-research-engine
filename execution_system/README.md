@@ -540,7 +540,7 @@ historical, and replay bars all go through the same in-memory shape.
 `StrategyRuntime` wraps either a campaign YAML strategy or a built-in strategy.
 For campaign strategies it loads the YAML, validates the `strategy.entry`,
 `strategy.sl`, and `strategy.tp` modules, resolves project-relative file paths,
-and builds the same `propstack.strategy.ModularStrategy` used in backtests.
+and builds the same `alphaquest.strategy.ModularStrategy` used in backtests.
 
 `PendingSignal` is a setup that has fired but is not actionable yet. It stores
 the strategy, completed feature row, raw signal object, due timestamp, and a
@@ -564,7 +564,7 @@ are merged into the preflight `data_plan`.
 
 The source bar is always a 1-minute bar, even when a strategy runs on a higher
 timeframe. Higher timeframe bars are built later by
-`propstack.data.timeframe.aggregate_timeframe()`.
+`alphaquest.data.timeframe.aggregate_timeframe()`.
 
 Important source fields:
 
@@ -754,7 +754,7 @@ A strategy must provide three things by the time `StrategyRuntime` is built:
 
 Campaign YAML strategies already define these under `strategy.entry`,
 `strategy.sl`, and `strategy.tp`. The engine wraps them with
-`propstack.strategy.ModularStrategy`, which is the same strategy wrapper used by
+`alphaquest.strategy.ModularStrategy`, which is the same strategy wrapper used by
 the backtester.
 
 Built-in strategies are defined entirely inside the execution config. The dummy
@@ -1052,12 +1052,12 @@ Databento subscription without editing the config file.
 For every completed source bar, the runtime builds the feature frame like this:
 
 1. `BarStore.to_dataframe()` converts in-memory bars to a pandas frame.
-2. `propstack.data.sessions.assign_sessions()` assigns RTH/ETH session fields.
-3. `propstack.data.sessions.filter_trading_sessions()` removes bars outside the
+2. `alphaquest.data.sessions.assign_sessions()` assigns RTH/ETH session fields.
+3. `alphaquest.data.sessions.filter_trading_sessions()` removes bars outside the
    configured trading sessions.
-4. `propstack.data.timeframe.aggregate_timeframe()` converts source 1-minute
+4. `alphaquest.data.timeframe.aggregate_timeframe()` converts source 1-minute
    bars to the strategy timeframe.
-5. `propstack.data.features.build_features()` creates the same feature columns
+5. `alphaquest.data.features.build_features()` creates the same feature columns
    used by backtests.
 6. Each new completed strategy row is passed to `strategy.on_bar_close()`.
 
@@ -1083,7 +1083,7 @@ does the final trade math:
 5. Rounds entry, basis, stop, and target to the configured tick grid.
 6. Rejects the signal if rounded stop/target are missing, non-finite,
    non-positive, collapsed by tick rounding, or on the wrong side of entry.
-7. Sizes the position with `propstack.backtest.sizing.size_position()` using
+7. Sizes the position with `alphaquest.backtest.sizing.size_position()` using
    the executable rounded stop distance.
 8. Applies account-level `min_contracts` and `max_contracts`.
 9. Applies `engine.trade_sanity` maximum-distance and maximum-dollar ceilings.
@@ -2073,7 +2073,7 @@ Important fields:
 - `price_normalization`: raw prices, executable rounded prices, and tick
   adjustments used to make the order valid for the futures tick grid.
 - `signal`: raw strategy signal metadata.
-- `sizing`: sizing-mode details from `propstack.backtest.sizing`.
+- `sizing`: sizing-mode details from `alphaquest.backtest.sizing`.
 - `execution_intent`: nested, versioned automation-facing order intent.
 
 `execution_intent` is the future order-router boundary. It intentionally

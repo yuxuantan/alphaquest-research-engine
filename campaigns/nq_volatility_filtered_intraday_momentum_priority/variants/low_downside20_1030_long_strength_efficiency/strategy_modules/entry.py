@@ -1,4 +1,4 @@
-from propstack.strategy_modules.entry.volatility_filtered_intraday_momentum_priority import (
+from alphaquest.strategy_modules.entry.volatility_filtered_intraday_momentum_priority import (
     VolatilityFilteredIntradayMomentumPriorityEntry,
 )
 

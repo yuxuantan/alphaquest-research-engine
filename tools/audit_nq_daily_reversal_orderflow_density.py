@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from propstack.data.pipeline import prepare_data
+from alphaquest.data.pipeline import prepare_data
 
 
 CAMPAIGN_ID = "nq_daily_reversal_orderflow_confirmation"

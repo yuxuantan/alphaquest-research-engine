@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.daily_short_term_reversal import DailyShortTermReversalEntry
+from alphaquest.strategy_modules.entry.daily_short_term_reversal import DailyShortTermReversalEntry
 
 __all__ = ["DailyShortTermReversalEntry"]

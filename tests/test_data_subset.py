@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.data.subset import apply_data_subset
+from alphaquest.data.subset import apply_data_subset
 
 
 def test_apply_data_subset_filters_by_session_date():

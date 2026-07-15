@@ -1,4 +1,4 @@
-from propstack.strategy_modules.entry.real_yield_breakeven_state import (
+from alphaquest.strategy_modules.entry.real_yield_breakeven_state import (
     RealYieldBreakevenStateEntry,
 )
 

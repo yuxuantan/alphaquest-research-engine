@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.epu_policy_uncertainty import EpuPolicyUncertaintyEntry
+from alphaquest.strategy_modules.entry.epu_policy_uncertainty import EpuPolicyUncertaintyEntry
 from tools.build_es_epu_policy_uncertainty_features import build_features
 
 

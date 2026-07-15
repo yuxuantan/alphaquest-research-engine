@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.consumer_sentiment_state import ConsumerSentimentStateEntry
+from alphaquest.strategy_modules.entry.consumer_sentiment_state import ConsumerSentimentStateEntry
 from tools.build_es_consumer_sentiment_features import build_features
 
 

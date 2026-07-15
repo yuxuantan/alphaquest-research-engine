@@ -8,7 +8,7 @@ The repository contains hundreds of campaigns, thousands of runs, and large dura
 
 - Authored campaign and generated evidence paths remain stable.
 - SQLite is the operational index; CSV and Markdown views are disposable projections.
-- `propstack` is the supported command interface.
+- `alphaquest` is the supported command interface.
 - `views/` is the supported filesystem navigation interface.
 - Historical tools and tests keep stable paths and receive generated categorized indexes instead of bulk relocation.
 - New artifacts use a centrally validated structured store.

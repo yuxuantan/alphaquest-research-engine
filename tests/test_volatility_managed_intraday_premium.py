@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.volatility_managed_intraday_premium import (
+from alphaquest.strategy_modules.entry.volatility_managed_intraday_premium import (
     VolatilityManagedIntradayPremiumEntry,
 )
 

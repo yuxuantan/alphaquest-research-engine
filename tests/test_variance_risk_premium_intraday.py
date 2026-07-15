@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.variance_risk_premium_intraday import VarianceRiskPremiumIntradayEntry
+from alphaquest.strategy_modules.entry.variance_risk_premium_intraday import VarianceRiskPremiumIntradayEntry
 from tools.build_es_variance_risk_premium_features import build_features
 
 

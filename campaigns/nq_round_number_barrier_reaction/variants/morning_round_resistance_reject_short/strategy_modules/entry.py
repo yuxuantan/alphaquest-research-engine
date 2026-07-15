@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.round_number_barrier import RoundNumberBarrierEntry
+from alphaquest.strategy_modules.entry.round_number_barrier import RoundNumberBarrierEntry
 
 ENTRY_MODULE = RoundNumberBarrierEntry

@@ -8,7 +8,7 @@ import shutil
 import traceback
 from typing import Any
 
-from propstack.research.campaign_stages import run_campaign_stage_tests
+from alphaquest.research.campaign_stages import run_campaign_stage_tests
 
 
 REPORT_ROOT = Path("backtest-campaigns")

@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.overnight_intraday_reversal import OvernightIntradayReversalEntry
+from alphaquest.strategy_modules.entry.overnight_intraday_reversal import OvernightIntradayReversalEntry
 
 ENTRY_MODULE = OvernightIntradayReversalEntry

@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.cboe_vix_term_structure import CboeVixTermStructureEntry
+from alphaquest.strategy_modules.entry.cboe_vix_term_structure import CboeVixTermStructureEntry
 from tools.build_es_cboe_vix_term_structure_features import build_features
 
 

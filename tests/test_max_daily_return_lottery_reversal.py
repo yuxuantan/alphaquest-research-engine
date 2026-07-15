@@ -4,10 +4,10 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.max_daily_return_lottery_reversal import (
+from alphaquest.strategy_modules.entry.max_daily_return_lottery_reversal import (
     MaxDailyReturnLotteryReversalEntry,
 )
-from propstack.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
 from tools.build_nq_max_daily_return_features import build_features
 
 

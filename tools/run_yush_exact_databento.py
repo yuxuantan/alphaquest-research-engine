@@ -10,25 +10,25 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.backtest.yush_exact_orderflow import ExactYushRangeConfig, ExactYushRangeEventStrategy, _extended_metrics
-from propstack.data.databento_session_stream import iter_databento_trade_sessions
-from propstack.prop.rules import PropRules
-from propstack.research.campaign_stages import update_source_results_index
-from propstack.research.monte_carlo import run_monte_carlo
-from propstack.research.policy import active_research_policy_metadata
-from propstack.research.run_store import ensure_run_uid
-from propstack.research.schemas import validate_run_summary_contract
-from propstack.utils.config import update_runs_index
-from propstack.utils.hashing import file_sha256, object_sha256
-from propstack.validation import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.backtest.yush_exact_orderflow import ExactYushRangeConfig, ExactYushRangeEventStrategy, _extended_metrics
+from alphaquest.data.databento_session_stream import iter_databento_trade_sessions
+from alphaquest.prop.rules import PropRules
+from alphaquest.research.campaign_stages import update_source_results_index
+from alphaquest.research.monte_carlo import run_monte_carlo
+from alphaquest.research.policy import active_research_policy_metadata
+from alphaquest.research.run_store import ensure_run_uid
+from alphaquest.research.schemas import validate_run_summary_contract
+from alphaquest.utils.config import update_runs_index
+from alphaquest.utils.hashing import file_sha256, object_sha256
+from alphaquest.validation import (
     ValidationMetadata,
     build_condition_snapshots,
     build_exit_audits,
     build_trade_summaries,
     write_validation_run,
 )
-from propstack.version import ENGINE_CONTRACT_VERSION
+from alphaquest.version import ENGINE_CONTRACT_VERSION
 
 
 def main() -> None:
@@ -277,7 +277,7 @@ def _write_breakdowns(trades: pd.DataFrame, output: Path) -> None:
 
 
 def _write_split_metrics(trades: pd.DataFrame, output: Path, initial_balance: float) -> None:
-    from propstack.backtest.metrics import calculate_metrics
+    from alphaquest.backtest.metrics import calculate_metrics
 
     trades = trades.copy()
     for column in ("entry_timestamp", "exit_timestamp"):
@@ -440,29 +440,29 @@ def _write_provenance(config: dict, config_path: Path, output: Path) -> None:
     data = config["data"]
     news_calendar = config["event_filters"]["high_impact_usd_news"].get("calendar")
     implementation_paths = [
-        Path("src/propstack/backtest/engine.py"),
-        Path("src/propstack/backtest/event_replay.py"),
-        Path("src/propstack/backtest/yush_exact_orderflow.py"),
-        Path("src/propstack/backtest/contracts.py"),
-        Path("src/propstack/backtest/fills.py"),
-        Path("src/propstack/backtest/metrics.py"),
-        Path("src/propstack/backtest/risk.py"),
-        Path("src/propstack/backtest/sizing.py"),
-        Path("src/propstack/data/databento_session_stream.py"),
-        Path("src/propstack/prop/rules.py"),
-        Path("src/propstack/research/campaign_stages.py"),
-        Path("src/propstack/research/monte_carlo.py"),
-        Path("src/propstack/research/policy.py"),
-        Path("src/propstack/research/run_store.py"),
-        Path("src/propstack/research/schemas.py"),
-        Path("src/propstack/utils/config.py"),
-        Path("src/propstack/utils/hashing.py"),
-        Path("src/propstack/utils/time.py"),
-        Path("src/propstack/validation/__init__.py"),
-        Path("src/propstack/validation/exporter.py"),
-        Path("src/propstack/validation/exit_path.py"),
-        Path("src/propstack/validation/schema.py"),
-        Path("src/propstack/version.py"),
+        Path("src/alphaquest/backtest/engine.py"),
+        Path("src/alphaquest/backtest/event_replay.py"),
+        Path("src/alphaquest/backtest/yush_exact_orderflow.py"),
+        Path("src/alphaquest/backtest/contracts.py"),
+        Path("src/alphaquest/backtest/fills.py"),
+        Path("src/alphaquest/backtest/metrics.py"),
+        Path("src/alphaquest/backtest/risk.py"),
+        Path("src/alphaquest/backtest/sizing.py"),
+        Path("src/alphaquest/data/databento_session_stream.py"),
+        Path("src/alphaquest/prop/rules.py"),
+        Path("src/alphaquest/research/campaign_stages.py"),
+        Path("src/alphaquest/research/monte_carlo.py"),
+        Path("src/alphaquest/research/policy.py"),
+        Path("src/alphaquest/research/run_store.py"),
+        Path("src/alphaquest/research/schemas.py"),
+        Path("src/alphaquest/utils/config.py"),
+        Path("src/alphaquest/utils/hashing.py"),
+        Path("src/alphaquest/utils/time.py"),
+        Path("src/alphaquest/validation/__init__.py"),
+        Path("src/alphaquest/validation/exporter.py"),
+        Path("src/alphaquest/validation/exit_path.py"),
+        Path("src/alphaquest/validation/schema.py"),
+        Path("src/alphaquest/version.py"),
         Path("tools/run_yush_exact_databento.py"),
     ]
     payload = {

@@ -1,4 +1,4 @@
-from propstack.strategy_modules.entry.ai_gpr_geopolitical_risk_state import (
+from alphaquest.strategy_modules.entry.ai_gpr_geopolitical_risk_state import (
     AiGprGeopoliticalRiskStateEntry,
 )
 

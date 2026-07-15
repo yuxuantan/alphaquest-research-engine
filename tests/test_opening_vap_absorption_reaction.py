@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.opening_vap_absorption_reaction import (
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.opening_vap_absorption_reaction import (
     OpeningVapAbsorptionReactionEntry,
 )
 

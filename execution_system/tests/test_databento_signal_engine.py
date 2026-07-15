@@ -39,7 +39,7 @@ def load_execution_config(name: str) -> dict:
     cfg = engine.load_yaml(EXECUTION_DIR / name)
     cfg.setdefault("engine", {}).setdefault("console", {})["debug"] = True
     cfg["engine"].setdefault("process_lock", {})["path"] = str(
-        Path("/tmp") / f"propstack_signal_engine_test_{os.getpid()}_{name}.lock"
+        Path("/tmp") / f"alphaquest_signal_engine_test_{os.getpid()}_{name}.lock"
     )
     if name == "dummy_delta_signal_engine.example.yaml":
         cost_guard = cfg.setdefault("databento", {}).setdefault("live", {}).setdefault("cost_guard", {})

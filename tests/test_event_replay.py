@@ -6,13 +6,13 @@ from datetime import date
 import pandas as pd
 import pytest
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.backtest.event_replay import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.backtest.event_replay import (
     CanonicalEventReplayStrategy,
     PositionDirective,
 )
-from propstack.validation import ValidationMetadata, write_validation_run
-from propstack.validation.loaders import load_validation_run
+from alphaquest.validation import ValidationMetadata, write_validation_run
+from alphaquest.validation.loaders import load_validation_run
 
 
 @dataclass(frozen=True)

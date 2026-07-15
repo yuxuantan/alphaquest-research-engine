@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.utils.reports import market_timezone, normalize_report_timestamps, write_report_csv
+from alphaquest.utils.reports import market_timezone, normalize_report_timestamps, write_report_csv
 
 
 def test_market_timezone_prefers_exchange_timezone():

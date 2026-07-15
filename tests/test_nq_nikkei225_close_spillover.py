@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.nq_nikkei225_close_spillover import (
+from alphaquest.strategy_modules.entry.nq_nikkei225_close_spillover import (
     NqNikkei225CloseSpilloverEntry,
 )
 from tools.build_nq_nikkei225_spillover_features import build_features

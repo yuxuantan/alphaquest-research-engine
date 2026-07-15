@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from propstack.research.definitions import write_definition_manifests
+from alphaquest.research.definitions import write_definition_manifests
 
 
 def main() -> int:

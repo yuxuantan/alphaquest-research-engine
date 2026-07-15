@@ -1,6 +1,6 @@
 # Test Suite
 
-Tests remain top-level because the package and CI deliberately configure `testpaths = ["tests"]`. After `propstack workspace build`, the collection is indexed by domain under `views/code/tests/`.
+Tests remain top-level because the package and CI deliberately configure `testpaths = ["tests"]`. After `alphaquest workspace build`, the collection is indexed by domain under `views/code/tests/`.
 
 New tests should follow the source ownership boundary:
 

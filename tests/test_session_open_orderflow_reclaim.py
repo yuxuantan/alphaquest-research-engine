@@ -1,7 +1,7 @@
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.session_open_orderflow_reclaim import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.session_open_orderflow_reclaim import (
     SessionOpenOrderflowReclaimEntry,
 )
 

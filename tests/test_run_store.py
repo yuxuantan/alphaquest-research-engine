@@ -1,6 +1,6 @@
 import sqlite3
 
-from propstack.research.run_store import backfill_run_uids, build_run_store_index, ensure_run_uid, read_run_uid
+from alphaquest.research.run_store import backfill_run_uids, build_run_store_index, ensure_run_uid, read_run_uid
 
 
 def test_run_uid_is_valid_and_stable(tmp_path):

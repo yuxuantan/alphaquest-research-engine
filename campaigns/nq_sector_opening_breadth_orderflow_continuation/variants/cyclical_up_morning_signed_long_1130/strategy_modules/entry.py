@@ -1,4 +1,4 @@
-from propstack.strategy_modules.entry.sector_opening_breadth_orderflow import (
+from alphaquest.strategy_modules.entry.sector_opening_breadth_orderflow import (
     SectorOpeningBreadthOrderflowEntry,
 )
 

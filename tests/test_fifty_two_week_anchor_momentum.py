@@ -4,8 +4,8 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.fifty_two_week_anchor_momentum import FiftyTwoWeekAnchorMomentumEntry
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.fifty_two_week_anchor_momentum import FiftyTwoWeekAnchorMomentumEntry
 
 
 def test_near_high_opening_drive_long_uses_prior_252_day_anchor() -> None:

@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.cboe_put_call_sentiment import CboePutCallSentimentEntry
+from alphaquest.strategy_modules.entry.cboe_put_call_sentiment import CboePutCallSentimentEntry
 from tools.build_es_cboe_put_call_features import build_features
 
 

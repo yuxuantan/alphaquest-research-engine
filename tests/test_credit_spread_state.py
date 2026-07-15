@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.credit_spread_state import CreditSpreadStateEntry
+from alphaquest.strategy_modules.entry.credit_spread_state import CreditSpreadStateEntry
 from tools.build_es_credit_spread_features import build_features
 
 

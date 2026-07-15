@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.rolling_stat_envelope_orderflow_reversion import RollingStatEnvelopeOrderflowReversionEntry
+from alphaquest.strategy_modules.entry.rolling_stat_envelope_orderflow_reversion import RollingStatEnvelopeOrderflowReversionEntry
 
 __all__ = ['RollingStatEnvelopeOrderflowReversionEntry']

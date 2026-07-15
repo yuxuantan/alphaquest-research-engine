@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.data.compare_sources import compare_ohlcv_sources, timestamp_gap_segments
+from alphaquest.data.compare_sources import compare_ohlcv_sources, timestamp_gap_segments
 
 
 def _bars(rows):

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from propstack.backtest.engine import _validate_large_record_source_contract
+from alphaquest.backtest.engine import _validate_large_record_source_contract
 
 
 def test_rejects_legacy_component_row_large200_proxy() -> None:

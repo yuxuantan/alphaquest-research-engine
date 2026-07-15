@@ -1,0 +1,23 @@
+from __future__ import annotations
+
+from alphaquest.strategy_modules.entry.yush_trend_20 import YushTrend20Entry
+
+
+class YushTrend21Entry(YushTrend20Entry):
+    name = "yush_trend_21"
+
+    def __init__(self, params: dict):
+        super().__init__(params)
+        raw = params.get("forbidden_aoi_criteria", ("market_level",))
+        values = [raw] if isinstance(raw, str) else list(raw)
+        self.forbidden_aoi_criteria = {str(item).strip() for item in values if str(item).strip()}
+
+    def _intrabar_aoi_confluence(self, bar, profile, direction, model, level, state):
+        confluence = super()._intrabar_aoi_confluence(bar, profile, direction, model, level, state)
+        criteria = set(confluence["criteria"])
+        forbidden = self.forbidden_aoi_criteria.intersection(criteria)
+        if forbidden:
+            details = dict(confluence["details"])
+            details["forbidden_aoi_criteria"] = ",".join(sorted(forbidden))
+            return {"criteria": [], "details": details}
+        return confluence

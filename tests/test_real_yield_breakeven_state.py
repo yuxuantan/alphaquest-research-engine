@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.real_yield_breakeven_state import RealYieldBreakevenStateEntry
+from alphaquest.strategy_modules.entry.real_yield_breakeven_state import RealYieldBreakevenStateEntry
 from tools.build_nq_real_yield_breakeven_features import build_features
 
 

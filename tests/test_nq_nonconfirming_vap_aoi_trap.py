@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.nq_nonconfirming_vap_aoi_trap import (
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.nq_nonconfirming_vap_aoi_trap import (
     NqNonconfirmingVapAoiTrapEntry,
 )
 

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.treasury_rate_orderflow_state import (
+from alphaquest.strategy_modules.entry.treasury_rate_orderflow_state import (
     TreasuryRateOrderflowStateEntry,
 )
 

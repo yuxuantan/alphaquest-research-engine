@@ -1,4 +1,4 @@
-# Prop Stack Automation
+# AlphaQuest Research Engine
 
 Start with [`START_HERE.md`](../../START_HERE.md). Routine research navigation should use the generated registry and `views/`, not direct browsing of the run store.
 
@@ -98,7 +98,7 @@ python3 -m pip install -e ".[dev,dashboard]"
 Run a core backtest with validation export:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_core \
+PYTHONPATH=src python3 -m alphaquest.run_core \
   --config campaigns/<campaign_id>/variants/<variant_id>/config.yaml \
   --export-validation \
   --validation-window-bars-before 10 \
@@ -266,7 +266,7 @@ backtest-campaigns/
         runs_index.csv
 
 src/
-  propstack/
+  alphaquest/
     strategy/
       modular.py
     strategy_modules/
@@ -365,7 +365,7 @@ Date, Time, Open, High, Low, Last, Volume, NumberOfTrades, BidVolume, AskVolume
 Then build the cache consumed by `trade_orderflow_features`:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.build_sierra_orderflow_cache \
+PYTHONPATH=src python3 -m alphaquest.build_sierra_orderflow_cache \
   --raw-path data/raw/ES/sierra-orderflow \
   --out-csv data/cache/orderflow/es_sierra_orderflow_1m_20110101_20260608.csv \
   --input-timezone America/New_York \
@@ -638,10 +638,10 @@ The simulation engine uses a generic `ModularStrategy` composer. There is no sep
 Each module implementation lives in its own file:
 
 ```text
-src/propstack/strategy/
+src/alphaquest/strategy/
   modular.py
 
-src/propstack/strategy_modules/
+src/alphaquest/strategy_modules/
   entry/
     pdh_pdl_sweep_reclaim.py
   tp/
@@ -707,13 +707,13 @@ For normal one-entry, one-stop, one-target strategies, do not create a strategy 
 Entry modules live here:
 
 ```text
-src/propstack/strategy_modules/entry/
+src/alphaquest/strategy_modules/entry/
 ```
 
 The current example is:
 
 ```text
-src/propstack/strategy_modules/entry/pdh_pdl_sweep_reclaim.py
+src/alphaquest/strategy_modules/entry/pdh_pdl_sweep_reclaim.py
 ```
 
 An entry module must expose:
@@ -732,7 +732,7 @@ class MyEntry:
 When the setup triggers, it returns a `Signal`:
 
 ```python
-from propstack.strategy_modules.entry import Signal
+from alphaquest.strategy_modules.entry import Signal
 
 return Signal(
     direction="long",
@@ -750,7 +750,7 @@ When there is no setup, return `None`.
 Register the module in:
 
 ```text
-src/propstack/strategy_modules/entry/__init__.py
+src/alphaquest/strategy_modules/entry/__init__.py
 ```
 
 Add it to `ENTRY_MODULES`:
@@ -767,13 +767,13 @@ ENTRY_MODULES = {
 Stop modules live here:
 
 ```text
-src/propstack/strategy_modules/sl/
+src/alphaquest/strategy_modules/sl/
 ```
 
 The current example is:
 
 ```text
-src/propstack/strategy_modules/sl/sweep_extreme.py
+src/alphaquest/strategy_modules/sl/sweep_extreme.py
 ```
 
 A stop module must expose:
@@ -794,7 +794,7 @@ For a long, the stop should normally be below entry. For a short, it should norm
 Register the module in:
 
 ```text
-src/propstack/strategy_modules/sl/__init__.py
+src/alphaquest/strategy_modules/sl/__init__.py
 ```
 
 Add it to `SL_MODULES`:
@@ -811,13 +811,13 @@ SL_MODULES = {
 Take profit modules live here:
 
 ```text
-src/propstack/strategy_modules/tp/
+src/alphaquest/strategy_modules/tp/
 ```
 
 The current example is:
 
 ```text
-src/propstack/strategy_modules/tp/fixed_r.py
+src/alphaquest/strategy_modules/tp/fixed_r.py
 ```
 
 A TP module must expose:
@@ -836,7 +836,7 @@ class MyTarget:
 Register the module in:
 
 ```text
-src/propstack/strategy_modules/tp/__init__.py
+src/alphaquest/strategy_modules/tp/__init__.py
 ```
 
 Add it to `TP_MODULES`:
@@ -1014,7 +1014,7 @@ Run one exact source config through the core test:
 
 ```bash
 VARIANT_CONFIG=campaigns/pdh_pdl_sweep/rescue_attempts/parameter_space_rescue_1/baseline/config.yaml
-PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_core --config "$VARIANT_CONFIG"
 ```
 
 The command prints the output folder. It will follow this layout:
@@ -1160,7 +1160,7 @@ To generate equity curve files for existing reports without rerunning the
 backtests:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_equity_curves --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_equity_curves --config "$VARIANT_CONFIG"
 ```
 
 Omit `--config` to scan all supported trade logs under `backtest-campaigns`.
@@ -1388,7 +1388,7 @@ max_drawdown_pct: 0.20
 
 ```bash
 VARIANT_CONFIG=campaigns/pdh_pdl_sweep/variants/baseline/config.yaml
-PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_core --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
@@ -1428,7 +1428,7 @@ timezone and session boundaries
 To compare a MotiveWave/Rithmic CSV export against the Databento DBN archive:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.compare_data_sources \
+PYTHONPATH=src python3 -m alphaquest.compare_data_sources \
   --csv data/raw/ES/es_1m_20221201-20260529.csv \
   --dbn-dir data/raw/ES/GLBX-20260601-U6S3S4F4GM \
   --continuous-contract explicit_roll_calendar \
@@ -1472,7 +1472,7 @@ core_grid:
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_core_grid --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_core_grid --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
@@ -1538,7 +1538,7 @@ monkey:
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_monkey --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_monkey --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
@@ -1741,7 +1741,7 @@ profit. The progress bar also carries the latest out-of-sample metrics.
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_wfa --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
@@ -1863,8 +1863,8 @@ trade_source: core    -> read core/trade_log.csv
 trade_source: wfa_oos -> read wfa/wfa_oos_trade_log.csv
 ```
 
-For `trade_source: core`, run `propstack.run_core` first. For
-`trade_source: wfa_oos`, run `propstack.run_wfa` first. If the selected trade
+For `trade_source: core`, run `alphaquest.run_core` first. For
+`trade_source: wfa_oos`, run `alphaquest.run_wfa` first. If the selected trade
 log is missing, Monte Carlo fails instead of creating a new source implicitly.
 
 To run Monte Carlo against stitched walk-forward out-of-sample trades, run WFA
@@ -2089,7 +2089,7 @@ per-run process scheduling overhead.
 Run:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_monte_carlo --config "$VARIANT_CONFIG"
 ```
 
 Outputs:
@@ -2266,14 +2266,14 @@ backtest-campaigns/pdh_pdl_sweep/baseline/ES/runs_index.csv
 The staged runner executes the full gate sequence directly under the run folder:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --skip-validation
+PYTHONPATH=src python3 -m alphaquest.run_campaign_stages --config "$VARIANT_CONFIG" --skip-validation
 ```
 
 For exploratory iteration, use the runtime speed profile:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --fast-runtime-defaults
-PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --fast-runtime-defaults --no-acceptance
+PYTHONPATH=src python3 -m alphaquest.run_campaign_stages --config "$VARIANT_CONFIG" --fast-runtime-defaults
+PYTHONPATH=src python3 -m alphaquest.run_campaign_stages --config "$VARIANT_CONFIG" --fast-runtime-defaults --no-acceptance
 ```
 
 `--fast-runtime-defaults` enables conservative parallel defaults at runtime
@@ -2296,11 +2296,11 @@ For a serious strategy test:
 ```bash
 VARIANT_CONFIG=campaigns/pdh_pdl_sweep/variants/baseline/config.yaml
 
-PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_core_grid --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_monkey --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_core --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_core_grid --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_monkey --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_wfa --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_monte_carlo --config "$VARIANT_CONFIG"
 ```
 
 Review in this order:

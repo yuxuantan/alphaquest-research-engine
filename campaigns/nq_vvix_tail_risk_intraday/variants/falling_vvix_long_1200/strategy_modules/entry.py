@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.vvix_tail_risk import VvixTailRiskEntry
+from alphaquest.strategy_modules.entry.vvix_tail_risk import VvixTailRiskEntry

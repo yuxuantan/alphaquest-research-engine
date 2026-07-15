@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.cboe_put_call_orderflow_confirmation import (
+from alphaquest.strategy_modules.entry.cboe_put_call_orderflow_confirmation import (
     CboePutCallOrderflowConfirmationEntry,
 )
 

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.data.sierra_orderflow import (
+from alphaquest.data.sierra_orderflow import (
     aggregate_sierra_orderflow_frame,
     build_sierra_orderflow_cache,
 )

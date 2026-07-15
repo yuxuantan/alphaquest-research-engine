@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.spx_0dte_orderflow_continuation import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.spx_0dte_orderflow_continuation import (
     Spx0dteOrderflowContinuationEntry,
 )
 

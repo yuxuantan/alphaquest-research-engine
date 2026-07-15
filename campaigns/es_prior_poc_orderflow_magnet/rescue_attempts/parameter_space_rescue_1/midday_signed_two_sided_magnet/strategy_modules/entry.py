@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.prior_poc_orderflow_magnet import PriorPocOrderflowMagnetEntry
+from alphaquest.strategy_modules.entry.prior_poc_orderflow_magnet import PriorPocOrderflowMagnetEntry

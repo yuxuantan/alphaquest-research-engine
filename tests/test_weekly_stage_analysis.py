@@ -4,8 +4,8 @@ from datetime import date
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.weekly_stage_analysis import WeeklyStageAnalysisEntry
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.weekly_stage_analysis import WeeklyStageAnalysisEntry
 
 
 def _seed_weekly_sessions(entry: WeeklyStageAnalysisEntry, *, start: str, weeks: int, rising: bool) -> list[date]:

@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.cboe_skew_tail_risk import CboeSkewTailRiskEntry
+from alphaquest.strategy_modules.entry.cboe_skew_tail_risk import CboeSkewTailRiskEntry
 from tools.build_es_cboe_skew_tail_risk_features import build_features
 
 

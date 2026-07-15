@@ -4,7 +4,7 @@ from zipfile import ZipFile
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.aqr_bab_factor_state import AqrBabFactorStateEntry
+from alphaquest.strategy_modules.entry.aqr_bab_factor_state import AqrBabFactorStateEntry
 from tools.build_es_aqr_bab_features import build_features
 
 

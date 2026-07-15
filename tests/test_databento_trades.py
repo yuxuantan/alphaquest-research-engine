@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.data.databento_trades import aggregate_trade_orderflow_1m
+from alphaquest.data.databento_trades import aggregate_trade_orderflow_1m
 
 
 def test_aggregate_trade_orderflow_selects_active_contract_and_signed_volume():

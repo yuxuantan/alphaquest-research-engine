@@ -1,4 +1,4 @@
-# Prop Stack Automation
+# AlphaQuest Research Engine
 
 Institutional, fail-closed futures research and backtesting system. It separates authored hypotheses from generated evidence, enforces causal execution rules, and records every staged decision.
 
@@ -30,7 +30,7 @@ Authored definitions live under `campaigns/`. Generated evidence lives under `ba
 make setup
 make smoke
 make research-workspace
-propstack research status
+alphaquest research status
 ```
 
 Run the synthetic tutorial without touching real campaign evidence:
@@ -42,9 +42,9 @@ make tutorial
 ## Daily Commands
 
 ```bash
-propstack research search --symbol ES --state closed --limit 20
-propstack campaign show es_video_aoi_lvn_orderflow_playbook
-propstack campaign validate <campaign_id>
+alphaquest research search --symbol ES --state closed --limit 20
+alphaquest campaign show es_video_aoi_lvn_orderflow_playbook
+alphaquest campaign validate <campaign_id>
 make preflight
 make test
 make qualify
@@ -54,7 +54,7 @@ make qualify
 
 | Path | Purpose |
 | --- | --- |
-| `src/propstack/` | Engine and reusable library code |
+| `src/alphaquest/` | Engine and reusable library code |
 | `campaigns/` | Authored research definitions |
 | `tests/` | Engine, methodology, strategy, and regression tests |
 | `data/` | Raw, reference, external, and generated market data |
@@ -64,7 +64,7 @@ make qualify
 | `research_artifacts/` | Durable audits and decisions |
 | `apps/` | Interactive applications |
 | `execution_system/` | Separate execution bridge with its own README |
-| `tools/` | Compatibility scripts; prefer the `propstack` CLI |
+| `tools/` | Compatibility scripts; prefer the `alphaquest` CLI |
 
 ## Quality Contract
 

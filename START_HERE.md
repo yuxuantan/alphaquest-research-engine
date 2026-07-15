@@ -7,9 +7,9 @@ Use the registry and generated views for routine navigation. Do not browse the g
 - `make help`: list supported repository commands.
 - `make tutorial`: execute the isolated synthetic onboarding workflow.
 - `make research-workspace`: rebuild the registry, exports, run store, and generated views.
-- `propstack research status`: show lifecycle and run-verdict counts.
-- `propstack research search --verdict NEEDS_MANUAL_REVIEW`: list campaigns containing incomplete runs.
-- `propstack campaign show <campaign_id>`: show definitions and recent runs.
+- `alphaquest research status`: show lifecycle and run-verdict counts.
+- `alphaquest research search --verdict NEEDS_MANUAL_REVIEW`: list campaigns containing incomplete runs.
+- `alphaquest campaign show <campaign_id>`: show definitions and recent runs.
 - `views/`: disposable, human-facing working sets.
 - `docs/README.md`: role-based documentation index.
 

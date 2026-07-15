@@ -1,1 +1,1 @@
-from propstack.strategy_modules.tp.fixed_r import FixedRTarget as TargetModule
+from alphaquest.strategy_modules.tp.fixed_r import FixedRTarget as TargetModule

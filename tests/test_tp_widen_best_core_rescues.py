@@ -4,7 +4,7 @@ import sys
 
 import pytest
 
-from propstack.utils.target_rr import require_minimum_target_rr
+from alphaquest.utils.target_rr import require_minimum_target_rr
 
 
 def _load_tool_module():

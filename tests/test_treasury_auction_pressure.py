@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.treasury_auction_pressure import TreasuryAuctionPressureEntry
+from alphaquest.strategy_modules.entry.treasury_auction_pressure import TreasuryAuctionPressureEntry
 from tools.build_es_treasury_auction_calendar import build_calendar
 
 

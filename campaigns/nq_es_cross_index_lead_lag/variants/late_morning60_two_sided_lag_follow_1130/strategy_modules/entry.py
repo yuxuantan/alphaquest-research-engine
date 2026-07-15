@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.nq_es_lead_lag import NqEsLeadLagEntry
+from alphaquest.strategy_modules.entry.nq_es_lead_lag import NqEsLeadLagEntry

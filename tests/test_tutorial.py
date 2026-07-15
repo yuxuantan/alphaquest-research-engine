@@ -1,6 +1,6 @@
 import json
 
-from propstack.tutorial import run_tutorial
+from alphaquest.tutorial import run_tutorial
 
 
 def test_tutorial_generates_isolated_source_without_execution(tmp_path):

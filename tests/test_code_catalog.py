@@ -1,4 +1,4 @@
-from propstack.maintenance.code_catalog import generate_code_views
+from alphaquest.maintenance.code_catalog import generate_code_views
 
 
 def test_code_catalog_groups_tools_and_tests_without_moving_them(tmp_path):

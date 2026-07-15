@@ -1400,9 +1400,9 @@ class StrategyRuntime:
 
     def current_features(self, store: BarStore) -> Any:
         add_project_src_to_path(self.project_root)
-        from propstack.data.features import build_features
-        from propstack.data.sessions import assign_sessions, filter_trading_sessions
-        from propstack.data.timeframe import aggregate_timeframe
+        from alphaquest.data.features import build_features
+        from alphaquest.data.sessions import assign_sessions, filter_trading_sessions
+        from alphaquest.data.timeframe import aggregate_timeframe
 
         source = store.to_dataframe(market_timezone=self.timezone, root_symbol=self.symbol)
         if source.empty:
@@ -1984,7 +1984,7 @@ class StrategyRuntime:
             raise ValueError(f"Unsupported builtin strategy type: {self.strategy_type}")
 
         add_project_src_to_path(self.project_root)
-        from propstack.strategy import ModularStrategy
+        from alphaquest.strategy import ModularStrategy
 
         strategy_config = copy.deepcopy(self.variant_config.get("strategy", {}))
         if "strategy_name" not in strategy_config and self.variant_config.get("strategy_name"):
@@ -2039,7 +2039,7 @@ class StrategyRuntime:
         account: dict[str, Any],
     ) -> Any:
         add_project_src_to_path(self.project_root)
-        from propstack.backtest.sizing import size_position
+        from alphaquest.backtest.sizing import size_position
 
         if "position_sizing" not in core:
             core["position_sizing"] = {"mode": "fixed_contracts", "contracts": 1}
@@ -3841,7 +3841,7 @@ class SignalEngine:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run Databento historical/live ticks through propstack strategy YAMLs.")
+    parser = argparse.ArgumentParser(description="Run Databento historical/live ticks through alphaquest strategy YAMLs.")
     parser.add_argument("--config", default=DEFAULT_CONFIG, help="Signal-engine YAML config.")
     parser.add_argument("--project-root", help="Project root containing src/ and configs/.")
     parser.add_argument("--strategy-config", action="append", help="Add/override with a campaign strategy YAML path.")
@@ -8602,7 +8602,7 @@ def validate_databento_historical_fetch_contract(engine: SignalEngine) -> None:
 def fetch_databento_historical_bars(engine: SignalEngine, hist_cfg: dict[str, Any]) -> list[SourceMinuteBar]:
     validate_databento_historical_fetch_contract(engine)
     add_project_src_to_path(engine.project_root)
-    from propstack.data.databento_trades import aggregate_trade_orderflow_1m
+    from alphaquest.data.databento_trades import aggregate_trade_orderflow_1m
 
     import databento as db
 

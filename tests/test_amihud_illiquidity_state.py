@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.amihud_illiquidity_state import AmihudIlliquidityStateEntry
+from alphaquest.strategy_modules.entry.amihud_illiquidity_state import AmihudIlliquidityStateEntry
 from tools.build_es_amihud_illiquidity_features import build_features
 
 

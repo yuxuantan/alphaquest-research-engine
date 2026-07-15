@@ -1,5 +1,5 @@
-from propstack.data.source import data_source_hash
-from propstack.utils.hashing import file_sha256
+from alphaquest.data.source import data_source_hash
+from alphaquest.utils.hashing import file_sha256
 
 
 def test_plain_parquet_source_hash_remains_file_hash(tmp_path):

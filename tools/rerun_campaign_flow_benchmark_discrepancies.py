@@ -9,8 +9,8 @@ from pathlib import Path
 import traceback
 from typing import Any
 
-from propstack.research import campaign_stages as cs
-from propstack.utils.config import load_yaml
+from alphaquest.research import campaign_stages as cs
+from alphaquest.utils.config import load_yaml
 
 
 CONFIG_CANDIDATES = (

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.validation.checks import run_validation_checks
+from alphaquest.validation.checks import run_validation_checks
 
 
 def _rows(report: pd.DataFrame, check_name: str) -> pd.DataFrame:

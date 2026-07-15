@@ -1,7 +1,7 @@
 import pandas as pd
 
-from propstack.data.clean import clean_data
-from propstack.data.sessions import assign_sessions
+from alphaquest.data.clean import clean_data
+from alphaquest.data.sessions import assign_sessions
 
 from tests.test_data_pipeline import DATA_CFG
 

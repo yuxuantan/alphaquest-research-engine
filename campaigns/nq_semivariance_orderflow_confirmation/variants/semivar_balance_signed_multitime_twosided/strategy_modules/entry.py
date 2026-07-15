@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.realized_semivariance_orderflow_confirmation import (
+from alphaquest.strategy_modules.entry.realized_semivariance_orderflow_confirmation import (
     RealizedSemivarianceOrderflowConfirmationEntry,
 )

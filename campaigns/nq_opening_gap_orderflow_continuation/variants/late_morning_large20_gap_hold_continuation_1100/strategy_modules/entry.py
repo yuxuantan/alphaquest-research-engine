@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.opening_gap_orderflow_continuation import OpeningGapOrderflowContinuationEntry
+from alphaquest.strategy_modules.entry.opening_gap_orderflow_continuation import OpeningGapOrderflowContinuationEntry

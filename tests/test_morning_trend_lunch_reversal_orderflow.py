@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.strategy_modules.entry.morning_trend_lunch_reversal_orderflow import (
+from alphaquest.strategy_modules.entry.morning_trend_lunch_reversal_orderflow import (
     MorningTrendLunchReversalOrderflowEntry,
 )
 

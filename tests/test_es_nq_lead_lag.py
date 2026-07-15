@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.data.es_nq_lead_lag import build_es_nq_lead_lag_cache
-from propstack.strategy_modules.entry.es_nq_lead_lag import EsNqLeadLagEntry
+from alphaquest.data.es_nq_lead_lag import build_es_nq_lead_lag_cache
+from alphaquest.strategy_modules.entry.es_nq_lead_lag import EsNqLeadLagEntry
 
 
 def test_build_es_nq_lead_lag_cache_uses_completed_aligned_windows(tmp_path):

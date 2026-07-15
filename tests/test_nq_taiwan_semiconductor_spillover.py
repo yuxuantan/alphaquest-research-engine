@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_taiwan_semiconductor_spillover import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_taiwan_semiconductor_spillover import (
     NqTaiwanSemiconductorSpilloverEntry,
 )
 from tools.build_nq_taiwan_semiconductor_spillover_features import build_features

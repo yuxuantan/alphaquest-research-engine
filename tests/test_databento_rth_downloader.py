@@ -1,9 +1,9 @@
-from propstack.data.databento_rth_downloader import DownloadConfig
-from propstack.data.databento_rth_downloader import build_download_plan
-from propstack.data.databento_rth_downloader import filter_available_sessions
-from propstack.data.databento_rth_downloader import iter_rth_sessions
-from propstack.data.databento_rth_downloader import session_output_path
-from propstack.data.databento_rth_downloader import write_manifest
+from alphaquest.data.databento_rth_downloader import DownloadConfig
+from alphaquest.data.databento_rth_downloader import build_download_plan
+from alphaquest.data.databento_rth_downloader import filter_available_sessions
+from alphaquest.data.databento_rth_downloader import iter_rth_sessions
+from alphaquest.data.databento_rth_downloader import session_output_path
+from alphaquest.data.databento_rth_downloader import write_manifest
 
 
 def test_iter_rth_sessions_builds_weekday_timezone_aware_windows():

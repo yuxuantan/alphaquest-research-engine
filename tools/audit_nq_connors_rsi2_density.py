@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 import yaml
 
-from propstack.data.pipeline import prepare_data
-from propstack.strategy_modules.entry.connors_rsi2_mean_reversion import _rsi
+from alphaquest.data.pipeline import prepare_data
+from alphaquest.strategy_modules.entry.connors_rsi2_mean_reversion import _rsi
 
 
 CAMPAIGN_ID = "nq_connors_rsi2_mean_reversion"

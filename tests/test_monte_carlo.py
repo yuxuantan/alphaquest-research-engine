@@ -1,11 +1,11 @@
-from propstack.backtest.engine import BacktestEngine
-from propstack.data.clean import clean_data
-from propstack.data.features import build_features
-from propstack.prop.rules import PropRules
-from propstack.prop.simulator import simulate_prop_path, simulate_prop_path_with_events
-import propstack.research.monte_carlo as monte_carlo_module
-from propstack.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
-from propstack.run_monte_carlo import load_monte_carlo_trade_source
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.data.clean import clean_data
+from alphaquest.data.features import build_features
+from alphaquest.prop.rules import PropRules
+from alphaquest.prop.simulator import simulate_prop_path, simulate_prop_path_with_events
+import alphaquest.research.monte_carlo as monte_carlo_module
+from alphaquest.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
+from alphaquest.run_monte_carlo import load_monte_carlo_trade_source
 from tests.test_backtest_engine import BASE_CFG
 from tests.test_data_pipeline import DATA_CFG
 import pandas as pd

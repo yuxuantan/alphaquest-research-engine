@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from propstack.research.run_store import build_run_store_index
+from alphaquest.research.run_store import build_run_store_index
 
 
 def main() -> int:

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
+from alphaquest.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
 
 
 def test_calendar_session_bias_emits_configured_weekday_direction_on_completed_bar():

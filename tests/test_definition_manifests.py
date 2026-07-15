@@ -2,7 +2,7 @@ from pathlib import Path
 
 import yaml
 
-from propstack.research.definitions import definition_manifests, write_definition_manifests
+from alphaquest.research.definitions import definition_manifests, write_definition_manifests
 
 
 def _fixture(root: Path) -> Path:

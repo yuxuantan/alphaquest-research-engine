@@ -7,7 +7,7 @@ from pathlib import Path
 import shutil
 from typing import Any
 
-from propstack.utils.config import update_runs_index, write_json
+from alphaquest.utils.config import update_runs_index, write_json
 
 
 AUDIT_PATH = Path("research_artifacts/invalid_config_run_cleanup_20260621.json")

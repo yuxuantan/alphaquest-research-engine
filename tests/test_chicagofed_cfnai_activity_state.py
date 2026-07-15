@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.chicagofed_cfnai_activity_state import (
+from alphaquest.strategy_modules.entry.chicagofed_cfnai_activity_state import (
     ChicagoFedCfnaiActivityStateEntry,
 )
 from tools.build_es_chicagofed_cfnai_features import build_features

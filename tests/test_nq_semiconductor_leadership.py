@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_semiconductor_leadership import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_semiconductor_leadership import (
     NqSemiconductorLeadershipEntry,
 )
 from tools.build_nq_semiconductor_leadership_features import build_features

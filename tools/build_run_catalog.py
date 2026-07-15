@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import argparse
 
-from propstack.research.catalog import catalog_rows, write_run_catalog
+from alphaquest.research.catalog import catalog_rows, write_run_catalog
 
 
 def main() -> int:

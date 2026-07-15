@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.strategy_modules.entry.nq_pivot_mes_orderflow_confirmation import (
+from alphaquest.strategy_modules.entry.nq_pivot_mes_orderflow_confirmation import (
     NqPivotMesOrderflowConfirmationEntry,
 )
 

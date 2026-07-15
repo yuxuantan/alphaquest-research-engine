@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.naaim_exposure_sentiment import NaaimExposureSentimentEntry
+from alphaquest.strategy_modules.entry.naaim_exposure_sentiment import NaaimExposureSentimentEntry
 from tools.build_es_naaim_exposure_features import build_session_features
 
 

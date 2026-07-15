@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_europe_equity_close_spillover import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_europe_equity_close_spillover import (
     NqEuropeEquityCloseSpilloverEntry,
 )
 from tools.build_nq_europe_equity_close_spillover_features import build_features

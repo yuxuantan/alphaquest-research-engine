@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.strategy_modules.entry.mes_footprint_liquidity_sweep_reversion import (
+from alphaquest.strategy_modules.entry.mes_footprint_liquidity_sweep_reversion import (
     MesFootprintLiquiditySweepReversionEntry,
 )
 

@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.nq_tech_relative_strength import NqTechRelativeStrengthEntry
+from alphaquest.strategy_modules.entry.nq_tech_relative_strength import NqTechRelativeStrengthEntry
 from tools.build_nq_tech_relative_strength_features import build_features
 
 

@@ -5,9 +5,9 @@ import re
 
 import pandas as pd
 
-from propstack.backtest.equity_report import equity_curve_frame, write_equity_report
-from propstack.run_equity_curves import _config_for_trade_log, _initial_balance, _trade_log_spec
-from propstack.run_equity_curves import discover_trade_logs
+from alphaquest.backtest.equity_report import equity_curve_frame, write_equity_report
+from alphaquest.run_equity_curves import _config_for_trade_log, _initial_balance, _trade_log_spec
+from alphaquest.run_equity_curves import discover_trade_logs
 
 
 def test_equity_curve_frame_orders_by_exit_timestamp_and_tracks_drawdown():

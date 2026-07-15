@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from propstack.strategy_modules.entry.macro_event_amd_distribution import MacroEventAmdDistributionEntry
+from alphaquest.strategy_modules.entry.macro_event_amd_distribution import MacroEventAmdDistributionEntry
 
 
 CAMPAIGN_ID = "nq_chartfanatics_amd_fomc_distribution"

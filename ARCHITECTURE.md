@@ -3,7 +3,7 @@
 The system has four strict ownership layers:
 
 1. **Authored research:** `campaigns/`, policy, and reference configuration.
-2. **Engine:** reusable deterministic code under `src/propstack/`.
+2. **Engine:** reusable deterministic code under `src/alphaquest/`.
 3. **Generated evidence:** immutable run outputs under `backtest-campaigns/`.
 4. **Indexes and views:** rebuildable registry, exports, and navigation.
 

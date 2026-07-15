@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from propstack.research.artifact_store import ArtifactStore
+from alphaquest.research.artifact_store import ArtifactStore
 
 
 def test_artifact_store_writes_structured_campaign_json(tmp_path):

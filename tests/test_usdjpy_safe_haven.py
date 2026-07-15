@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.usdjpy_safe_haven import UsdJpySafeHavenEntry
+from alphaquest.strategy_modules.entry.usdjpy_safe_haven import UsdJpySafeHavenEntry
 from tools.build_es_usdjpy_safe_haven_features import build_features
 
 

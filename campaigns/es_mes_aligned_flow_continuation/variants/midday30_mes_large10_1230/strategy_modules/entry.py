@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.es_mes_aligned_flow_continuation import EsMesAlignedFlowContinuationEntry
+from alphaquest.strategy_modules.entry.es_mes_aligned_flow_continuation import EsMesAlignedFlowContinuationEntry
 
 ENTRY_MODULE = EsMesAlignedFlowContinuationEntry

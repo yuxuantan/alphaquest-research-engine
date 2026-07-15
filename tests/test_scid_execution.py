@@ -4,7 +4,7 @@ from datetime import datetime
 
 import pandas as pd
 
-from propstack.data.scid_execution import (
+from alphaquest.data.scid_execution import (
     SCID_RECORD_PRICE_PATH_SEMANTICS,
     _datetime_to_scid_us,
     load_scid_record_execution_data,
@@ -12,7 +12,7 @@ from propstack.data.scid_execution import (
 
 
 def test_scid_execution_loader_emits_normalized_trade_events(tmp_path, monkeypatch):
-    monkeypatch.setattr("propstack.data.scid_execution._is_bar_like_contract", lambda symbol, path: False)
+    monkeypatch.setattr("alphaquest.data.scid_execution._is_bar_like_contract", lambda symbol, path: False)
 
     raw_dir = tmp_path / "scid"
     raw_dir.mkdir()

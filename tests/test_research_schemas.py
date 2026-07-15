@@ -1,6 +1,6 @@
 import pytest
 
-from propstack.research.schemas import (
+from alphaquest.research.schemas import (
     SchemaValidationError,
     validate_campaign_config_contract,
     validate_run_summary_contract,

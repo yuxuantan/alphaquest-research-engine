@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.es_nq_relative_value_reversion import EsNqRelativeValueReversionEntry
+from alphaquest.strategy_modules.entry.es_nq_relative_value_reversion import EsNqRelativeValueReversionEntry

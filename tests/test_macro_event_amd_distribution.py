@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.macro_event_amd_distribution import MacroEventAmdDistributionEntry
+from alphaquest.strategy_modules.entry.macro_event_amd_distribution import MacroEventAmdDistributionEntry
 
 
 def test_bls_amd_emits_long_after_completed_sellside_sweep_and_displacement(tmp_path):

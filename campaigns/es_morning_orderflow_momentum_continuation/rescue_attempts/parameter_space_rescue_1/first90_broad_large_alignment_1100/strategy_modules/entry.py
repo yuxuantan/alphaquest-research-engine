@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.morning_orderflow_momentum import MorningOrderflowMomentumEntry
+from alphaquest.strategy_modules.entry.morning_orderflow_momentum import MorningOrderflowMomentumEntry
 
 ENTRY_MODULE = MorningOrderflowMomentumEntry

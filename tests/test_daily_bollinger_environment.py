@@ -4,8 +4,8 @@ from datetime import date, timedelta
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.daily_bollinger_environment import DailyBollingerEnvironmentEntry
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.daily_bollinger_environment import DailyBollingerEnvironmentEntry
 
 
 def test_daily_bollinger_expansion_long_uses_completed_prior_daily_state():

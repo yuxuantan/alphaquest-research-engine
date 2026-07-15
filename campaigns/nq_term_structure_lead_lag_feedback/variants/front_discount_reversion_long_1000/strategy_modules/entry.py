@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.es_term_structure_lead_lag import EsTermStructureLeadLagEntry
+from alphaquest.strategy_modules.entry.es_term_structure_lead_lag import EsTermStructureLeadLagEntry

@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.opening_range_retest_orderflow import OpeningRangeRetestOrderflowEntry
-from propstack.strategy_modules.sl.opening_range_retest_boundary import OpeningRangeRetestBoundaryStop
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.opening_range_retest_orderflow import OpeningRangeRetestOrderflowEntry
+from alphaquest.strategy_modules.sl.opening_range_retest_boundary import OpeningRangeRetestBoundaryStop
 
 
 def test_upside_retest_long_requires_absorbed_selling_flow():

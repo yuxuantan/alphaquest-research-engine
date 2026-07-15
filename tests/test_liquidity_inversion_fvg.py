@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.liquidity_inversion_fvg import LiquidityInversionFvgEntry
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.liquidity_inversion_fvg import LiquidityInversionFvgEntry
 
 
 def _bar(ts: str, open_: float, high: float, low: float, close: float) -> pd.Series:

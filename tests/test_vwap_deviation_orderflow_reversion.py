@@ -1,7 +1,7 @@
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.vwap_deviation_orderflow_reversion import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.vwap_deviation_orderflow_reversion import (
     VwapDeviationOrderflowReversionEntry,
 )
 

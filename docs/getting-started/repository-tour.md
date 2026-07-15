@@ -1,11 +1,11 @@
 # Repository Tour
 
-The filesystem is storage, not the primary research interface. Begin with `views/README.md` or `propstack research status`.
+The filesystem is storage, not the primary research interface. Begin with `views/README.md` or `alphaquest research status`.
 
 ## Source Of Truth
 
 - `campaigns/`: authored hypotheses, configs, rationale, and approved attempts.
-- `src/propstack/`: reusable engine, validation, data, and research code.
+- `src/alphaquest/`: reusable engine, validation, data, and research code.
 - `tests/`: executable controls and regressions.
 - `config/`: repository-level research policy settings.
 

@@ -5,7 +5,7 @@ One campaign represents one economic edge. A normal campaign declares exactly fi
 Create a scaffold:
 
 ```bash
-propstack campaign new my_campaign --symbol ES --edge-family my_edge
+alphaquest campaign new my_campaign --symbol ES --edge-family my_edge
 ```
 
 Then complete:
@@ -21,7 +21,7 @@ Then complete:
 Validate before execution:
 
 ```bash
-propstack campaign validate my_campaign
+alphaquest campaign validate my_campaign
 ```
 
 Do not silently change mechanics after OOS. An authorized rescue must preserve the edge, be declared as an attempt, and record its parent variant and rationale.

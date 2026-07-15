@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.opening_range_orderflow_breakout import OpeningRangeOrderflowBreakoutEntry
+from alphaquest.strategy_modules.entry.opening_range_orderflow_breakout import OpeningRangeOrderflowBreakoutEntry
 
 ENTRY_MODULE = OpeningRangeOrderflowBreakoutEntry

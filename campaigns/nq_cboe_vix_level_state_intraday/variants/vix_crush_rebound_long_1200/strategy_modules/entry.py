@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.cboe_vix_level_state import CboeVixLevelStateEntry
+from alphaquest.strategy_modules.entry.cboe_vix_level_state import CboeVixLevelStateEntry
 
 ENTRY_MODULE = CboeVixLevelStateEntry

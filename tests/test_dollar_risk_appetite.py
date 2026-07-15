@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.dollar_risk_appetite import DollarRiskAppetiteEntry
+from alphaquest.strategy_modules.entry.dollar_risk_appetite import DollarRiskAppetiteEntry
 from tools.build_es_dollar_risk_appetite_features import build_features
 
 

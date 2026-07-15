@@ -1,5 +1,5 @@
-from propstack.backtest.engine import BacktestEngine
-from propstack.research.golden import backtest_result_signature
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.research.golden import backtest_result_signature
 from tests.test_backtest_engine import BASE_CFG, _features
 
 

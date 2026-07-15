@@ -1,7 +1,0 @@
-from __future__ import annotations
-
-from propstack.strategy_modules.entry.yush_range_23 import YushRange23Entry
-
-
-class YushRange26Entry(YushRange23Entry):
-    name = "yush_range_26"

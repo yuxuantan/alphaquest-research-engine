@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.realized_vol_of_vol_state import RealizedVolOfVolStateEntry
+from alphaquest.strategy_modules.entry.realized_vol_of_vol_state import RealizedVolOfVolStateEntry
 from tools.build_es_realized_vol_of_vol_features import build_features
 
 

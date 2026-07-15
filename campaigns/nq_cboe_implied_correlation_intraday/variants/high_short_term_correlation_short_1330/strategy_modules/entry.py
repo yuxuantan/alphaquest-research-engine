@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.cboe_implied_correlation import CboeImpliedCorrelationEntry
+from alphaquest.strategy_modules.entry.cboe_implied_correlation import CboeImpliedCorrelationEntry

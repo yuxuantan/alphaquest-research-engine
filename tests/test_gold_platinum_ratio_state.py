@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.gold_platinum_ratio_state import GoldPlatinumRatioStateEntry
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.gold_platinum_ratio_state import GoldPlatinumRatioStateEntry
 from tools import build_nq_gold_platinum_ratio_features as builder
 
 

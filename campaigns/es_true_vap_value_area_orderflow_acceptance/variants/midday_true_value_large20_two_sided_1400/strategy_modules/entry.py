@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.true_vap_value_area_orderflow_acceptance import TrueVapValueAreaOrderflowAcceptanceEntry
+from alphaquest.strategy_modules.entry.true_vap_value_area_orderflow_acceptance import TrueVapValueAreaOrderflowAcceptanceEntry

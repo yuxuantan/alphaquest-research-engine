@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.dashboard.validation_app import (
+from alphaquest.dashboard.validation_app import (
     aggregate_footprint_by_price,
     add_review_annotations,
     build_review_queue,
@@ -29,7 +29,7 @@ from propstack.dashboard.validation_app import (
     validation_check_summary,
     validation_checks_by_trade,
 )
-from propstack.validation import (
+from alphaquest.validation import (
     BarWindowRow,
     ConditionSnapshot,
     ExitAudit,

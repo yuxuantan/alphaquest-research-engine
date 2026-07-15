@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.trend_orderflow_pdh_pdl_sweep_reclaim import TrendOrderflowPdhPdlSweepReclaimEntry
+from alphaquest.strategy_modules.entry.trend_orderflow_pdh_pdl_sweep_reclaim import TrendOrderflowPdhPdlSweepReclaimEntry

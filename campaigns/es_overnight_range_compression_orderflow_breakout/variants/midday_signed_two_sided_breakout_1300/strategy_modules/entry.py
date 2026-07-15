@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.overnight_range_orderflow_breakout import OvernightRangeOrderflowBreakoutEntry
+from alphaquest.strategy_modules.entry.overnight_range_orderflow_breakout import OvernightRangeOrderflowBreakoutEntry
 
 __all__ = ["OvernightRangeOrderflowBreakoutEntry"]

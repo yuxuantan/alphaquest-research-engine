@@ -19,7 +19,7 @@ Verify the installation:
 
 ```bash
 make smoke
-propstack --help
+alphaquest --help
 ```
 
 Install dashboard dependencies only when needed:

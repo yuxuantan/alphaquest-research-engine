@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry.turnaround_tuesday_reversal import TurnaroundTuesdayReversalEntry
+from alphaquest.strategy_modules.entry.turnaround_tuesday_reversal import TurnaroundTuesdayReversalEntry
 
 
 def test_turnaround_tuesday_goes_long_after_completed_monday_loss():

@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.ai_gpr_geopolitical_risk_state import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.ai_gpr_geopolitical_risk_state import (
     AiGprGeopoliticalRiskStateEntry,
 )
 from tools.build_nq_ai_gpr_features import build_features

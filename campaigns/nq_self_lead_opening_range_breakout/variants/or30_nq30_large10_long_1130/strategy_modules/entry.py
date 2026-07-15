@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.opening_range_nq_orderflow_breakout import OpeningRangeNqOrderflowBreakoutEntry
+from alphaquest.strategy_modules.entry.opening_range_nq_orderflow_breakout import OpeningRangeNqOrderflowBreakoutEntry

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.monthly_opex_pressure import MonthlyOpexPressureEntry
+from alphaquest.strategy_modules.entry.monthly_opex_pressure import MonthlyOpexPressureEntry
 from tools.build_nyse_monthly_opex_calendar import monthly_opex_rows
 
 

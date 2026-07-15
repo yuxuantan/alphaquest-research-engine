@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry.session_extreme_delta_divergence import (
+from alphaquest.strategy_modules.entry.session_extreme_delta_divergence import (
     SessionExtremeDeltaDivergenceEntry,
 )
 

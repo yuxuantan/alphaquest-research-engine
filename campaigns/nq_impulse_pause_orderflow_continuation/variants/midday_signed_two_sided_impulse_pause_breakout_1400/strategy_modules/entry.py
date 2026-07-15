@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.impulse_pause_orderflow_continuation import ImpulsePauseOrderflowContinuationEntry
+from alphaquest.strategy_modules.entry.impulse_pause_orderflow_continuation import ImpulsePauseOrderflowContinuationEntry

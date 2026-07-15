@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.realized_semivariance_asymmetry import RealizedSemivarianceAsymmetryEntry
+from alphaquest.strategy_modules.entry.realized_semivariance_asymmetry import RealizedSemivarianceAsymmetryEntry
 
 __all__ = ["RealizedSemivarianceAsymmetryEntry"]

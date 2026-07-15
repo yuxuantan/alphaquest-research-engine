@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.sector_dispersion_state import SectorDispersionStateEntry
+from alphaquest.strategy_modules.entry.sector_dispersion_state import SectorDispersionStateEntry
 from tools.build_es_sector_dispersion_features import build_features
 from tools.build_es_sector_rotation_features import SECTOR_SYMBOLS
 

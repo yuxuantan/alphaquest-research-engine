@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.market_structure_filtered_entry import MarketStructureFilteredEntry
-from propstack.strategy_modules.entry.price_ending_barrier import PriceEndingBarrierEntry
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.market_structure_filtered_entry import MarketStructureFilteredEntry
+from alphaquest.strategy_modules.entry.price_ending_barrier import PriceEndingBarrierEntry
 
 
 def test_price_ending_barrier_support_reclaim_uses_completed_bar_close():

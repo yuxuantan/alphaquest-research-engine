@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_consumer_credit_state import NqConsumerCreditStateEntry
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_consumer_credit_state import NqConsumerCreditStateEntry
 from tools.build_nq_consumer_credit_state_features import build_features
 
 

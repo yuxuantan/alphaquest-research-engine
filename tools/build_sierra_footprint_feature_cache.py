@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from propstack.data.footprint import FOOTPRINT_FEATURE_COLUMNS, add_footprint_imbalance_features
+from alphaquest.data.footprint import FOOTPRINT_FEATURE_COLUMNS, add_footprint_imbalance_features
 from tools.build_sierra_trade_orderflow_cache import (
     PRINT_COLUMNS,
     RTH_START_MINUTE,

@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from propstack.research.parity import assert_trade_intent_parity, backtest_trade_intents, compare_trade_intents
+from alphaquest.research.parity import assert_trade_intent_parity, backtest_trade_intents, compare_trade_intents
 
 
 def test_backtest_trade_intent_parity_accepts_matching_rows():

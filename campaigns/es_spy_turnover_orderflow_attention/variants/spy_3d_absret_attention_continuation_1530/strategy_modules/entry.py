@@ -1,4 +1,4 @@
-from propstack.strategy_modules.entry.spy_turnover_orderflow_attention import (
+from alphaquest.strategy_modules.entry.spy_turnover_orderflow_attention import (
     SpyTurnoverOrderflowAttentionEntry,
 )
 

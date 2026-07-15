@@ -9,7 +9,7 @@ import shutil
 import traceback
 from typing import Any
 
-from propstack.research.campaign_stages import (
+from alphaquest.research.campaign_stages import (
     ACCEPTANCE_STAGE,
     DEFAULT_STAGE_ORDER,
     PRE_ACCEPTANCE_STAGE_ORDER,
@@ -20,8 +20,8 @@ from propstack.research.campaign_stages import (
     _run_stage,
     _stage_config,
 )
-from propstack.utils.config import VARIANT_TEST_SUMMARY_FILENAME, ensure_variant_metadata, update_runs_index
-from propstack.utils.hashing import file_sha256
+from alphaquest.utils.config import VARIANT_TEST_SUMMARY_FILENAME, ensure_variant_metadata, update_runs_index
+from alphaquest.utils.hashing import file_sha256
 
 
 REPORT_ROOT = Path("backtest-campaigns")

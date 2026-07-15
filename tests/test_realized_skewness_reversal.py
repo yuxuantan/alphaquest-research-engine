@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.realized_skewness_reversal import RealizedSkewnessReversalEntry
+from alphaquest.strategy_modules.entry.realized_skewness_reversal import RealizedSkewnessReversalEntry
 from tools.build_es_lagged_realized_skewness_features import build_features
 
 

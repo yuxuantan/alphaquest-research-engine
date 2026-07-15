@@ -1,6 +1,6 @@
 # stage2_prior_close_reclaim_1200
 
-Entry module: `weekly_stage_analysis` (`src/propstack/strategy_modules/entry/weekly_stage_analysis.py`).
+Entry module: `weekly_stage_analysis` (`src/alphaquest/strategy_modules/entry/weekly_stage_analysis.py`).
 
 Stop module: `sweep_extreme`.
 

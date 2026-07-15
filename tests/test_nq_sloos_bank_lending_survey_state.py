@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_sloos_bank_lending_survey_state import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_sloos_bank_lending_survey_state import (
     NqSloosBankLendingSurveyStateEntry,
 )
 from tools.build_nq_sloos_bank_lending_survey_state_features import build_features

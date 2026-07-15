@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.intraday_capitulation_mr import IntradayCapitulationMREntry
 
 
 def test_capitulation_requires_completed_sell_imbalance():

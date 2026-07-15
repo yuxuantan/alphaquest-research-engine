@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from propstack.utils.config import (
+from alphaquest.utils.config import (
     ensure_variant_metadata,
     campaign_metadata_path,
     validate_campaign_run_root,

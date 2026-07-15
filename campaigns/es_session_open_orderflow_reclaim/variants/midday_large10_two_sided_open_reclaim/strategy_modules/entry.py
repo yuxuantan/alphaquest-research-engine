@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.session_open_orderflow_reclaim import SessionOpenOrderflowReclaimEntry
+from alphaquest.strategy_modules.entry.session_open_orderflow_reclaim import SessionOpenOrderflowReclaimEntry
 
 ENTRY_MODULE = SessionOpenOrderflowReclaimEntry

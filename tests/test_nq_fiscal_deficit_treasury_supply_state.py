@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_fiscal_deficit_treasury_supply_state import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_fiscal_deficit_treasury_supply_state import (
     NqFiscalDeficitTreasurySupplyStateEntry,
 )
 from tools.build_nq_fiscal_deficit_treasury_supply_features import build_features

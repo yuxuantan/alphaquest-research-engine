@@ -5,13 +5,13 @@ from types import MappingProxyType
 
 import pandas as pd
 
-from propstack.backtest.event_replay import (
+from alphaquest.backtest.event_replay import (
     CanonicalEvent,
     EventEntryOrder,
     EventPositionView,
     EventReplaySessionView,
 )
-from propstack.backtest.yush_exact_orderflow import (
+from alphaquest.backtest.yush_exact_orderflow import (
     AoiCandidate,
     AoiLineage,
     ConfluencePoint,
@@ -24,7 +24,7 @@ from propstack.backtest.yush_exact_orderflow import (
     _best_aoi,
     _entry_tick,
 )
-from propstack.data.databento_session_stream import DatabentoTradeSession, RthSummary
+from alphaquest.data.databento_session_stream import DatabentoTradeSession, RthSummary
 
 
 def _session(prices=(100.0, 100.25, 100.5), sizes=(1, 1, 1), sides=("B", "B", "B"), offsets_ms=None):

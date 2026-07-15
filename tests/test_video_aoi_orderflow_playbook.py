@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.video_aoi_orderflow_playbook import (
+from alphaquest.strategy_modules.entry.video_aoi_orderflow_playbook import (
     VideoAoiOrderflowPlaybookEntry,
 )
 

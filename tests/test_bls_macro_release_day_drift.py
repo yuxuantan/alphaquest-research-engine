@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.bls_macro_release_day_drift import BlsMacroReleaseDayDriftEntry
+from alphaquest.strategy_modules.entry.bls_macro_release_day_drift import BlsMacroReleaseDayDriftEntry
 from tools.build_bls_macro_release_calendar import _parse_release_dates
 
 

@@ -5,4 +5,4 @@
 - Stop loss: `percent_from_entry`
 - Take profit: `fixed_r`
 
-The executable entry module lives in `src/propstack/strategy_modules/entry/nq_pivot_mes_orderflow_confirmation.py`.
+The executable entry module lives in `src/alphaquest/strategy_modules/entry/nq_pivot_mes_orderflow_confirmation.py`.

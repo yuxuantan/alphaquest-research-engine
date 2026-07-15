@@ -1,8 +1,8 @@
 import pandas as pd
 
-from propstack.data.es_mes_participation import build_es_mes_participation_features
-from propstack.strategy_modules.entry.mes_participation_crowding import MesParticipationCrowdingEntry
-from propstack.strategy_modules.entry.trend_filtered_mes_participation_crowding import (
+from alphaquest.data.es_mes_participation import build_es_mes_participation_features
+from alphaquest.strategy_modules.entry.mes_participation_crowding import MesParticipationCrowdingEntry
+from alphaquest.strategy_modules.entry.trend_filtered_mes_participation_crowding import (
     TrendFilteredMesParticipationCrowdingEntry,
 )
 

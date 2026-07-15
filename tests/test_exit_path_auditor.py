@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.validation import audit_trade_exit_path, enrich_exit_audits
+from alphaquest.validation import audit_trade_exit_path, enrich_exit_audits
 
 
 TZ = "America/New_York"

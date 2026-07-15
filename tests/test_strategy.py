@@ -1,6 +1,6 @@
-from propstack.data.clean import clean_data
-from propstack.data.features import build_features
-from propstack.strategy import ModularStrategy
+from alphaquest.data.clean import clean_data
+from alphaquest.data.features import build_features
+from alphaquest.strategy import ModularStrategy
 
 from tests.test_data_pipeline import DATA_CFG
 

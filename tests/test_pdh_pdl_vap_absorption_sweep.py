@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.data.timeframe import aggregate_timeframe
-from propstack.strategy_modules.entry.pdh_pdl_vap_absorption_sweep import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.data.timeframe import aggregate_timeframe
+from alphaquest.strategy_modules.entry.pdh_pdl_vap_absorption_sweep import (
     PdhPdlVapAbsorptionSweepEntry,
 )
 from tools.build_es_pdh_pdl_vap_absorption_sweep_cache import (

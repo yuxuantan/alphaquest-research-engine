@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.oil_price_shock_spillover import OilPriceShockSpilloverEntry
+from alphaquest.strategy_modules.entry.oil_price_shock_spillover import OilPriceShockSpilloverEntry
 from tools.build_es_oil_price_shock_features import build_features
 
 

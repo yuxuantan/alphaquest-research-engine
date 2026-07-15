@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.nq_semiconductor_leadership import NqSemiconductorLeadershipEntry
+from alphaquest.strategy_modules.entry.nq_semiconductor_leadership import NqSemiconductorLeadershipEntry

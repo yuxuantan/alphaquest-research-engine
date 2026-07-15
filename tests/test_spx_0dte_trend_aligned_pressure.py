@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.spx_0dte_trend_aligned_pressure import (
+from alphaquest.strategy_modules.entry.spx_0dte_trend_aligned_pressure import (
     Spx0dteTrendAlignedPressureEntry,
 )
 

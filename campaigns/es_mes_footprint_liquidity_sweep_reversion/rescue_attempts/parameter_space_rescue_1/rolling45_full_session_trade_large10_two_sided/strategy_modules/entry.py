@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.mes_footprint_liquidity_sweep_reversion import MesFootprintLiquiditySweepReversionEntry
+from alphaquest.strategy_modules.entry.mes_footprint_liquidity_sweep_reversion import MesFootprintLiquiditySweepReversionEntry
 
 Entry = MesFootprintLiquiditySweepReversionEntry

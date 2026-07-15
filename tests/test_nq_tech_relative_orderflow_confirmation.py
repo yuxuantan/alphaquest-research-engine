@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry.nq_tech_relative_orderflow_confirmation import (
+from alphaquest.strategy_modules.entry.nq_tech_relative_orderflow_confirmation import (
     NqTechRelativeOrderflowConfirmationEntry,
 )
 

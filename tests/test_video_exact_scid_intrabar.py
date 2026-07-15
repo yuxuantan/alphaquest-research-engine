@@ -1,26 +1,26 @@
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.video_exact_orderflow_playbook_scid_intrabar import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.video_exact_orderflow_playbook_scid_intrabar import (
     VideoExactOrderflowPlaybookScidIntrabarEntry,
 )
-from propstack.strategy_modules.entry.yush_trend_1 import YushTrend1Entry
-from propstack.strategy_modules.entry.yush_trend_2 import YushTrend2Entry
-from propstack.strategy_modules.entry.yush_trend_3 import YushTrend3Entry
-from propstack.strategy_modules.entry.yush_trend_4 import YushTrend4Entry
-from propstack.strategy_modules.entry.yush_trend_5 import YushTrend5Entry
-from propstack.strategy_modules.entry.yush_trend_6 import YushTrend6Entry
-from propstack.strategy_modules.entry.yush_trend_7 import YushTrend7Entry
-from propstack.strategy_modules.entry.yush_trend_8 import YushTrend8Entry
-from propstack.strategy_modules.entry.yush_trend_9 import YushTrend9Entry
-from propstack.strategy_modules.entry.yush_trend_10 import YushTrend10Entry
-from propstack.strategy_modules.entry.yush_trend_11 import YushTrend11Entry
-from propstack.strategy_modules.entry.yush_trend_12 import YushTrend12Entry
-from propstack.strategy_modules.entry.yush_trend_13 import YushTrend13Entry
-from propstack.strategy_modules.entry.yush_trend_14 import YushTrend14Entry
-from propstack.strategy_modules.entry.yush_trend_15 import YushTrend15Entry
-from propstack.strategy_modules.entry.yush_range_15 import YushRange15Entry
-from propstack.strategy_modules.entry.yush_range_16 import YushRange16Entry
+from alphaquest.strategy_modules.entry.yush_trend_1 import YushTrend1Entry
+from alphaquest.strategy_modules.entry.yush_trend_2 import YushTrend2Entry
+from alphaquest.strategy_modules.entry.yush_trend_3 import YushTrend3Entry
+from alphaquest.strategy_modules.entry.yush_trend_4 import YushTrend4Entry
+from alphaquest.strategy_modules.entry.yush_trend_5 import YushTrend5Entry
+from alphaquest.strategy_modules.entry.yush_trend_6 import YushTrend6Entry
+from alphaquest.strategy_modules.entry.yush_trend_7 import YushTrend7Entry
+from alphaquest.strategy_modules.entry.yush_trend_8 import YushTrend8Entry
+from alphaquest.strategy_modules.entry.yush_trend_9 import YushTrend9Entry
+from alphaquest.strategy_modules.entry.yush_trend_10 import YushTrend10Entry
+from alphaquest.strategy_modules.entry.yush_trend_11 import YushTrend11Entry
+from alphaquest.strategy_modules.entry.yush_trend_12 import YushTrend12Entry
+from alphaquest.strategy_modules.entry.yush_trend_13 import YushTrend13Entry
+from alphaquest.strategy_modules.entry.yush_trend_14 import YushTrend14Entry
+from alphaquest.strategy_modules.entry.yush_trend_15 import YushTrend15Entry
+from alphaquest.strategy_modules.entry.yush_range_15 import YushRange15Entry
+from alphaquest.strategy_modules.entry.yush_range_16 import YushRange16Entry
 
 
 def _bar(timestamp, **overrides):

@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.strategy_modules.entry.ema_pullback_orderflow_continuation import (
+from alphaquest.strategy_modules.entry.ema_pullback_orderflow_continuation import (
     EmaPullbackOrderflowContinuationEntry,
 )
 

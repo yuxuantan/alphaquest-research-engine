@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_manufacturing_orders_state import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_manufacturing_orders_state import (
     NqManufacturingOrdersStateEntry,
 )
 from tools.build_nq_manufacturing_orders_state_features import build_features

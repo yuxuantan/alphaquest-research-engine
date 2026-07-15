@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.profile_aoi_footprint_trap import (
+from alphaquest.strategy_modules.entry.profile_aoi_footprint_trap import (
     ProfileAoiFootprintTrapEntry,
 )
 

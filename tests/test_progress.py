@@ -1,4 +1,4 @@
-from propstack.utils.progress import progress_bar
+from alphaquest.utils.progress import progress_bar
 
 
 def test_progress_bar_force_outputs_repeated_same_percent_updates(capsys):

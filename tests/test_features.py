@@ -1,14 +1,14 @@
 import pandas as pd
 
-from propstack.data.clean import clean_data
-from propstack.data.quality import tradingview_comparison_report
-from propstack.data.features import (
+from alphaquest.data.clean import clean_data
+from alphaquest.data.quality import tradingview_comparison_report
+from alphaquest.data.features import (
     add_orderflow_recent_pocket_combo_features,
     add_trade_orderflow_features,
     add_vwap,
     build_features,
 )
-from propstack.data.sessions import assign_sessions
+from alphaquest.data.sessions import assign_sessions
 
 from tests.test_data_pipeline import DATA_CFG
 

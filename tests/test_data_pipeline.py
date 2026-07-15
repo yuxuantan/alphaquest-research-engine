@@ -1,9 +1,9 @@
 import pandas as pd
 
-from propstack.data.clean import clean_data, detect_missing_bars
-from propstack.data.features import build_features
-from propstack.data.pipeline import prepare_data
-from propstack.data.timeframe import aggregate_timeframe
+from alphaquest.data.clean import clean_data, detect_missing_bars
+from alphaquest.data.features import build_features
+from alphaquest.data.pipeline import prepare_data
+from alphaquest.data.timeframe import aggregate_timeframe
 
 
 DATA_CFG = {

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.data.pipeline import prepare_data
+from alphaquest.data.pipeline import prepare_data
 
 
 EDGE_ID = "nq_prior_level_delta_dislocation"

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.sector_rotation_risk_appetite import (
+from alphaquest.strategy_modules.entry.sector_rotation_risk_appetite import (
     SectorRotationRiskAppetiteEntry,
 )
 from tools.build_es_sector_rotation_features import SECTOR_SYMBOLS, build_features

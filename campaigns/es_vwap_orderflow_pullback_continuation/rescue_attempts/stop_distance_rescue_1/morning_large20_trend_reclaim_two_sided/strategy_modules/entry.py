@@ -1,4 +1,4 @@
-from propstack.strategy_modules.entry.vwap_orderflow_pullback_continuation import (
+from alphaquest.strategy_modules.entry.vwap_orderflow_pullback_continuation import (
     VwapOrderflowPullbackContinuationEntry,
 )
 

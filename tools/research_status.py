@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from propstack.research.registry import registry_summary
+from alphaquest.research.registry import registry_summary
 
 
 def main() -> int:

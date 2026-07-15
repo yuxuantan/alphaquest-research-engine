@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.volume_conditioned_liquidity_reversal import VolumeConditionedLiquidityReversalEntry
+from alphaquest.strategy_modules.entry.volume_conditioned_liquidity_reversal import VolumeConditionedLiquidityReversalEntry
 
 ENTRY_MODULE = VolumeConditionedLiquidityReversalEntry

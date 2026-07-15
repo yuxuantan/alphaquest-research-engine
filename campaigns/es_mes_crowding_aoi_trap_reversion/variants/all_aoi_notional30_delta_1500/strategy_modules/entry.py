@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.mes_crowding_aoi_trap import MesCrowdingAoiTrapEntry
+from alphaquest.strategy_modules.entry.mes_crowding_aoi_trap import MesCrowdingAoiTrapEntry

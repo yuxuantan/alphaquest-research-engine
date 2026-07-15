@@ -1,7 +1,7 @@
 import pandas as pd
 
-from propstack.data.features import build_features
-from propstack.data.footprint import add_footprint_imbalance_features, price_volume_from_prints
+from alphaquest.data.features import build_features
+from alphaquest.data.footprint import add_footprint_imbalance_features, price_volume_from_prints
 from tools.build_sierra_footprint_feature_cache import aggregate_base_bars, _floor_local_timestamp_to_rth_bar
 
 

@@ -3,8 +3,8 @@ import os
 
 import pandas as pd
 
-from propstack.data.clean import apply_continuous_contract, apply_roll_boundary_policy, load_roll_calendar
-from propstack.data.load import _read_cached_dbn_file, list_databento_dbn_files, parse_dbn_file_dates
+from alphaquest.data.clean import apply_continuous_contract, apply_roll_boundary_policy, load_roll_calendar
+from alphaquest.data.load import _read_cached_dbn_file, list_databento_dbn_files, parse_dbn_file_dates
 
 
 def test_databento_file_dates_parse_monthly_names():

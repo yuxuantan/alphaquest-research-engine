@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.strategy_modules.entry.emv_macro_news_state import EmvMacroNewsStateEntry
+from alphaquest.strategy_modules.entry.emv_macro_news_state import EmvMacroNewsStateEntry
 from tools.build_es_emv_macro_news_features import build_features
 
 

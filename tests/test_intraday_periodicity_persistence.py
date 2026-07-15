@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.intraday_periodicity_persistence import (
+from alphaquest.strategy_modules.entry.intraday_periodicity_persistence import (
     IntradayPeriodicityPersistenceEntry,
 )
 from tools.build_es_intraday_periodicity_features import build_features

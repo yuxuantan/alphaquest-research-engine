@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.usdjpy_safe_haven import UsdjpySafeHavenEntry
+from alphaquest.strategy_modules.entry.usdjpy_safe_haven import UsdjpySafeHavenEntry

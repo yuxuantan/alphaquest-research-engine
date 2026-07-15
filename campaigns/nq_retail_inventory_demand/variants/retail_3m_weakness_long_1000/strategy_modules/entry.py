@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.nq_retail_inventory_demand import NqRetailInventoryDemandEntry
+from alphaquest.strategy_modules.entry.nq_retail_inventory_demand import NqRetailInventoryDemandEntry

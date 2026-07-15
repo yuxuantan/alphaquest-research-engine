@@ -15,8 +15,8 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from propstack.utils.hashing import file_sha256  # noqa: E402
-from propstack.version import ENGINE_CONTRACT_VERSION  # noqa: E402
+from alphaquest.utils.hashing import file_sha256  # noqa: E402
+from alphaquest.version import ENGINE_CONTRACT_VERSION  # noqa: E402
 
 
 CONTROL_EVIDENCE = (
@@ -86,8 +86,8 @@ def main() -> int:
         "finished_at": finished.isoformat(),
         "duration_seconds": (finished - started).total_seconds(),
         "policy_hash": file_sha256(PROJECT_ROOT / "config" / "research_settings.yaml"),
-        "engine_hash": file_sha256(PROJECT_ROOT / "src" / "propstack" / "backtest" / "engine.py"),
-        "contracts_hash": file_sha256(PROJECT_ROOT / "src" / "propstack" / "backtest" / "contracts.py"),
+        "engine_hash": file_sha256(PROJECT_ROOT / "src" / "alphaquest" / "backtest" / "engine.py"),
+        "contracts_hash": file_sha256(PROJECT_ROOT / "src" / "alphaquest" / "backtest" / "contracts.py"),
         "test_result": test_result,
         "control_evidence": list(CONTROL_EVIDENCE),
         "model_limitations": list(MODEL_LIMITATIONS),

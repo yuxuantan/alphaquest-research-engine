@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.cboe_skew_tail_risk import CboeSkewTailRiskEntry
+from alphaquest.strategy_modules.entry.cboe_skew_tail_risk import CboeSkewTailRiskEntry
 
 ENTRY_MODULE = CboeSkewTailRiskEntry

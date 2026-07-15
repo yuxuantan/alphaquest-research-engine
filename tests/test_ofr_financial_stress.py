@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.ofr_financial_stress import OfrFinancialStressEntry
+from alphaquest.strategy_modules.entry.ofr_financial_stress import OfrFinancialStressEntry
 from tools.build_es_ofr_financial_stress_features import build_features
 
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
+from alphaquest.strategy_modules.entry.daily_time_series_momentum import DailyTimeSeriesMomentumEntry
 
 
 def test_daily_time_series_momentum_uses_only_recorded_prior_closes():

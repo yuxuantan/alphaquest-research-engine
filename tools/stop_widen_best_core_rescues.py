@@ -468,7 +468,7 @@ def run_configs(
                 [
                     sys.executable,
                     "-m",
-                    "propstack.run_campaign_stages",
+                    "alphaquest.run_campaign_stages",
                     "--config",
                     str(rel),
                     "--fast-runtime-defaults",

@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from propstack.research.campaign_stages import DEFAULT_SHORTLIST_DATA_WINDOW, _subset_from_window
-from propstack.strategy_modules.entry.vix_term_structure_orderflow_pullback import (
+from alphaquest.research.campaign_stages import DEFAULT_SHORTLIST_DATA_WINDOW, _subset_from_window
+from alphaquest.strategy_modules.entry.vix_term_structure_orderflow_pullback import (
     TERM_STATE_RULES,
     VixTermStructureOrderflowPullbackEntry,
 )

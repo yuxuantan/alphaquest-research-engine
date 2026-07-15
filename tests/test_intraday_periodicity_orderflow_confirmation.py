@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.intraday_periodicity_orderflow_confirmation import (
+from alphaquest.strategy_modules.entry.intraday_periodicity_orderflow_confirmation import (
     IntradayPeriodicityOrderflowConfirmationEntry,
 )
 

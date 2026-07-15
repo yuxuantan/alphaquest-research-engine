@@ -1,3 +1,3 @@
-from propstack.strategy_modules.tp.opening_range_opposite_edge import OpeningRangeOppositeEdgeTarget
+from alphaquest.strategy_modules.tp.opening_range_opposite_edge import OpeningRangeOppositeEdgeTarget
 
 TARGET_MODULE = OpeningRangeOppositeEdgeTarget

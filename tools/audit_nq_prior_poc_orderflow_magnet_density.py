@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.data.pipeline import prepare_data
-from propstack.strategy_modules.entry.prior_poc_orderflow_magnet import PriorPocOrderflowMagnetEntry
+from alphaquest.data.pipeline import prepare_data
+from alphaquest.strategy_modules.entry.prior_poc_orderflow_magnet import PriorPocOrderflowMagnetEntry
 
 
 CAMPAIGN_ID = "nq_prior_poc_orderflow_magnet"

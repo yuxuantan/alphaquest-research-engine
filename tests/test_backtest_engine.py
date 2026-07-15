@@ -4,12 +4,12 @@ import json
 import pandas as pd
 import pytest
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.backtest.equity_report import equity_curve_frame
-from propstack.backtest.fills import stop_target_hit
-from propstack.backtest.metrics import benchmark, calculate_metrics
-from propstack.data.clean import clean_data
-from propstack.data.features import build_features
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.backtest.equity_report import equity_curve_frame
+from alphaquest.backtest.fills import stop_target_hit
+from alphaquest.backtest.metrics import benchmark, calculate_metrics
+from alphaquest.data.clean import clean_data
+from alphaquest.data.features import build_features
 from tests.test_data_pipeline import DATA_CFG
 
 

@@ -2,7 +2,7 @@
 
 This exact variant uses shared repo modules rather than variant-local copied code:
 
-- Entry: `src/propstack/strategy_modules/entry/pdh_pdl_vap_absorption_sweep.py`
+- Entry: `src/alphaquest/strategy_modules/entry/pdh_pdl_vap_absorption_sweep.py`
 - Stop: `sweep_extreme`
 - Target: `fixed_r`
 

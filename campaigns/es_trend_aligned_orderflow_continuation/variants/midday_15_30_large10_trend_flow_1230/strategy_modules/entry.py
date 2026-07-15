@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.trend_aligned_orderflow_continuation import TrendAlignedOrderflowContinuationEntry
+from alphaquest.strategy_modules.entry.trend_aligned_orderflow_continuation import TrendAlignedOrderflowContinuationEntry
 
 ENTRY_MODULE = TrendAlignedOrderflowContinuationEntry

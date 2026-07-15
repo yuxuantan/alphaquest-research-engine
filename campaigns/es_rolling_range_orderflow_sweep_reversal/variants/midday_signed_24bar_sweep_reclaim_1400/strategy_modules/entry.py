@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.rolling_range_orderflow_sweep_reversal import RollingRangeOrderflowSweepReversalEntry
+from alphaquest.strategy_modules.entry.rolling_range_orderflow_sweep_reversal import RollingRangeOrderflowSweepReversalEntry

@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry.halloween_seasonal_premium import HalloweenSeasonalPremiumEntry
+from alphaquest.strategy_modules.entry.halloween_seasonal_premium import HalloweenSeasonalPremiumEntry
 
 
 def _bar(timestamp: str = "2024-11-04 09:59:00", *, is_rth: bool = True) -> pd.Series:

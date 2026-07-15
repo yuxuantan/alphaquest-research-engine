@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.nq_industrial_production_state import NqIndustrialProductionStateEntry
+from alphaquest.strategy_modules.entry.nq_industrial_production_state import NqIndustrialProductionStateEntry

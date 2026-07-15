@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
+from alphaquest.strategy_modules.entry.late_day_intraday_momentum import LateDayIntradayMomentumEntry
 
 ENTRY_MODULE = LateDayIntradayMomentumEntry

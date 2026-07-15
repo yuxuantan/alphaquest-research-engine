@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.strategy_modules.entry.daily_reversal_orderflow_confirmation import (
+from alphaquest.strategy_modules.entry.daily_reversal_orderflow_confirmation import (
     DailyReversalOrderflowConfirmationEntry,
 )
 

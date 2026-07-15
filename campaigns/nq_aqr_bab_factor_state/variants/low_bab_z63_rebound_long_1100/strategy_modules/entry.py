@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.aqr_bab_factor_state import AqrBabFactorStateEntry
+from alphaquest.strategy_modules.entry.aqr_bab_factor_state import AqrBabFactorStateEntry

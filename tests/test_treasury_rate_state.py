@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.treasury_rate_state import TreasuryRateStateEntry
+from alphaquest.strategy_modules.entry.treasury_rate_state import TreasuryRateStateEntry
 from tools.build_es_treasury_rate_state_features import build_features
 
 

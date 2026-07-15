@@ -1,10 +1,10 @@
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.opening_range_failed_breakout_orderflow import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.opening_range_failed_breakout_orderflow import (
     OpeningRangeFailedBreakoutOrderflowEntry,
 )
-from propstack.strategy_modules.entry.opening_range_failed_breakout_trend_orderflow import (
+from alphaquest.strategy_modules.entry.opening_range_failed_breakout_trend_orderflow import (
     OpeningRangeFailedBreakoutTrendOrderflowEntry,
 )
 

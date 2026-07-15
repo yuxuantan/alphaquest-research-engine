@@ -15,7 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
-from propstack.strategy_modules.entry.es_term_structure_lead_lag import EsTermStructureLeadLagEntry  # noqa: E402
+from alphaquest.strategy_modules.entry.es_term_structure_lead_lag import EsTermStructureLeadLagEntry  # noqa: E402
 
 
 CAMPAIGN_ID = "nq_term_structure_lead_lag_feedback"

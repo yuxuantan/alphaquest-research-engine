@@ -1,4 +1,4 @@
-from propstack.strategy_modules.entry.volatility_filtered_trend_mes_participation_crowding import (
+from alphaquest.strategy_modules.entry.volatility_filtered_trend_mes_participation_crowding import (
     VolatilityFilteredTrendMesParticipationCrowdingEntry,
 )
 

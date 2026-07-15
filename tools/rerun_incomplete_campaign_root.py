@@ -4,7 +4,7 @@ import argparse
 import multiprocessing as mp
 from pathlib import Path
 
-from propstack.research.campaign_stages import run_campaign_stage_tests
+from alphaquest.research.campaign_stages import run_campaign_stage_tests
 
 
 def main() -> int:

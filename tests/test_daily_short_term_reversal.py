@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry.daily_short_term_reversal import DailyShortTermReversalEntry
+from alphaquest.strategy_modules.entry.daily_short_term_reversal import DailyShortTermReversalEntry
 
 
 def test_daily_short_term_reversal_fades_completed_prior_loss():

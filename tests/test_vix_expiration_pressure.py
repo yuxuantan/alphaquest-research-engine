@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.vix_expiration_pressure import VixExpirationPressureEntry
+from alphaquest.strategy_modules.entry.vix_expiration_pressure import VixExpirationPressureEntry
 from tools.build_vix_expiration_calendar import vix_expiration_rows
 
 

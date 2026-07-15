@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_jobless_claims_state import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_jobless_claims_state import (
     NqJoblessClaimsStateEntry,
 )
 from tools.build_nq_jobless_claims_state_features import build_features

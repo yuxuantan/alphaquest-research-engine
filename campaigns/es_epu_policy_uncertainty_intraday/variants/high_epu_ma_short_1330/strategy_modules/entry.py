@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.epu_policy_uncertainty import EpuPolicyUncertaintyEntry
+from alphaquest.strategy_modules.entry.epu_policy_uncertainty import EpuPolicyUncertaintyEntry

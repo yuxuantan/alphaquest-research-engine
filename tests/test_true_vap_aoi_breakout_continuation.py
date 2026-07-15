@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.true_vap_aoi_breakout_continuation import (
+from alphaquest.strategy_modules.entry.true_vap_aoi_breakout_continuation import (
     TrueVapAoiBreakoutContinuationEntry,
 )
 

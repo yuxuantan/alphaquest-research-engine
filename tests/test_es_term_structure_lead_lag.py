@@ -3,8 +3,8 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.data.es_term_structure_lead_lag import build_es_term_structure_lead_lag_frame
-from propstack.strategy_modules.entry.es_term_structure_lead_lag import EsTermStructureLeadLagEntry
+from alphaquest.data.es_term_structure_lead_lag import build_es_term_structure_lead_lag_frame
+from alphaquest.strategy_modules.entry.es_term_structure_lead_lag import EsTermStructureLeadLagEntry
 
 
 def test_build_es_term_structure_features_use_completed_aligned_windows():

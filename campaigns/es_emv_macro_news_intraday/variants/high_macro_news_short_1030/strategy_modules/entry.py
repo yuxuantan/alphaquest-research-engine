@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.emv_macro_news_state import EmvMacroNewsStateEntry
+from alphaquest.strategy_modules.entry.emv_macro_news_state import EmvMacroNewsStateEntry

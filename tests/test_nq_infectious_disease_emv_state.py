@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.infectious_disease_emv_state import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.infectious_disease_emv_state import (
     InfectiousDiseaseEmvStateEntry,
 )
 from tools.build_nq_infectious_disease_emv_features import build_features

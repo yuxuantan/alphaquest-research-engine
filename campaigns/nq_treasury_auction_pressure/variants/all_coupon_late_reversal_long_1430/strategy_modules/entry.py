@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.treasury_auction_pressure import TreasuryAuctionPressureEntry
+from alphaquest.strategy_modules.entry.treasury_auction_pressure import TreasuryAuctionPressureEntry

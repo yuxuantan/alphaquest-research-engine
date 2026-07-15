@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.cboe_vix_level_state import CboeVixLevelStateEntry
+from alphaquest.strategy_modules.entry.cboe_vix_level_state import CboeVixLevelStateEntry
 from tools.build_es_cboe_vix_level_features import build_features
 
 

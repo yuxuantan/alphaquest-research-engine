@@ -3,7 +3,7 @@
 Run these from the repo root:
 
 ```bash
-cd /Users/yx/Desktop/prop_stack_automation
+cd /Users/yx/Desktop/alphaquest-research-engine
 ```
 
 Default morning orderflow config:

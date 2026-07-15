@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.utils.hashing import file_sha256
+from alphaquest.utils.hashing import file_sha256
 
 
 DEFAULT_INPUT = Path(

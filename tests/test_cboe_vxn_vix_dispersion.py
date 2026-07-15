@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.cboe_vxn_vix_dispersion import CboeVxnVixDispersionEntry
+from alphaquest.strategy_modules.entry.cboe_vxn_vix_dispersion import CboeVxnVixDispersionEntry
 from tools.build_es_cboe_vxn_vix_dispersion_features import build_features
 
 

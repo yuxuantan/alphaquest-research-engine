@@ -3,8 +3,8 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 
-from propstack.research.definitions import write_definition_manifests
-from propstack.research.registry import build_registry, export_registry_csvs, generate_views
+from alphaquest.research.definitions import write_definition_manifests
+from alphaquest.research.registry import build_registry, export_registry_csvs, generate_views
 
 
 def main() -> int:

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.spx_0dte_expiration_pressure import Spx0dteExpirationPressureEntry
+from alphaquest.strategy_modules.entry.spx_0dte_expiration_pressure import Spx0dteExpirationPressureEntry
 from tools.build_spx_0dte_calendar import build_spx_0dte_rows
 
 

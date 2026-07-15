@@ -2,10 +2,10 @@ import pandas as pd
 import pytest
 from concurrent.futures import Future
 
-from propstack.data.clean import clean_data
-from propstack.data.features import build_features
-from propstack.research.wfa import create_windows, run_wfa
-from propstack.research import wfa as wfa_module
+from alphaquest.data.clean import clean_data
+from alphaquest.data.features import build_features
+from alphaquest.research.wfa import create_windows, run_wfa
+from alphaquest.research import wfa as wfa_module
 from tests.test_backtest_engine import BASE_CFG
 from tests.test_data_pipeline import DATA_CFG
 
@@ -147,8 +147,8 @@ def test_wfa_uses_own_parameter_space(monkeypatch):
                 }
             }
 
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
-    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("alphaquest.research.wfa.BacktestEngine", FakeBacktestEngine)
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
@@ -237,8 +237,8 @@ def test_wfa_can_return_stitched_oos_trade_log(monkeypatch):
                 ),
             }
 
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
-    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("alphaquest.research.wfa.BacktestEngine", FakeBacktestEngine)
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
@@ -324,8 +324,8 @@ def test_wfa_can_persist_window_train_grids(monkeypatch, tmp_path):
                 }
             }
 
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
-    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("alphaquest.research.wfa.BacktestEngine", FakeBacktestEngine)
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
@@ -424,8 +424,8 @@ def test_wfa_can_reuse_existing_window_train_grid(monkeypatch, tmp_path):
                 }
             }
 
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fail_run_core_grid)
-    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", fail_run_core_grid)
+    monkeypatch.setattr("alphaquest.research.wfa.BacktestEngine", FakeBacktestEngine)
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
@@ -471,7 +471,7 @@ def test_wfa_rejects_stale_reusable_train_grid(monkeypatch, tmp_path):
         ]
     )
     existing.to_csv(tmp_path / "window_001_train_grid.csv", index=False)
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
 
     data = pd.DataFrame({"timestamp": pd.to_datetime(["2022-01-15", "2022-02-15"], utc=True)})
     with pytest.raises(ValueError, match="missing metadata column wfa_window_id"):
@@ -547,8 +547,8 @@ def test_wfa_window_grid_parallel_uses_pooled_worker_path(monkeypatch):
     monkeypatch.setattr(wfa_module, "ProcessPoolExecutor", FakeExecutor)
     monkeypatch.setattr(wfa_module, "as_completed", lambda futures: list(futures))
     monkeypatch.setattr(wfa_module, "_evaluate_core_grid_combo", fake_evaluate)
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
-    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
+    monkeypatch.setattr("alphaquest.research.wfa.BacktestEngine", FakeBacktestEngine)
     data = pd.DataFrame({"timestamp": pd.to_datetime(["2022-01-15", "2022-02-15"], utc=True)})
 
     results, summary = run_wfa(
@@ -602,8 +602,8 @@ def test_wfa_early_exits_when_selected_train_row_is_not_profitable(monkeypatch):
         def __init__(self, config):
             raise AssertionError("OOS backtest should not run after non-profitable train early exit")
 
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
-    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FailBacktestEngine)
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("alphaquest.research.wfa.BacktestEngine", FailBacktestEngine)
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
@@ -654,8 +654,8 @@ def test_wfa_progress_updates_at_start_and_after_each_window(monkeypatch):
         progress_kwargs.append(kwargs)
         return FakeProgress()
 
-    monkeypatch.setattr("propstack.research.wfa.progress_bar", fake_progress_bar)
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("alphaquest.research.wfa.progress_bar", fake_progress_bar)
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", fake_run_core_grid)
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
@@ -728,9 +728,9 @@ def test_wfa_logs_current_window_details(monkeypatch, capsys):
                 }
             }
 
-    monkeypatch.setattr("propstack.research.wfa.progress_bar", lambda total, label, **kwargs: FakeProgress())
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
-    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    monkeypatch.setattr("alphaquest.research.wfa.progress_bar", lambda total, label, **kwargs: FakeProgress())
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("alphaquest.research.wfa.BacktestEngine", FakeBacktestEngine)
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
@@ -823,8 +823,8 @@ def test_wfa_mar_objective_selects_highest_in_sample_mar(monkeypatch):
                 }
             }
 
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
-    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FakeBacktestEngine)
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("alphaquest.research.wfa.BacktestEngine", FakeBacktestEngine)
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
@@ -917,8 +917,8 @@ def test_wfa_early_exits_when_selection_filter_removes_all_rows(monkeypatch):
         def __init__(self, config):
             raise AssertionError("OOS backtest should not run when no in-sample row is eligible")
 
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
-    monkeypatch.setattr("propstack.research.wfa.BacktestEngine", FailBacktestEngine)
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("alphaquest.research.wfa.BacktestEngine", FailBacktestEngine)
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
@@ -972,7 +972,7 @@ def test_wfa_can_early_exit_on_low_selected_train_profit_factor(monkeypatch):
             {},
         )
 
-    monkeypatch.setattr("propstack.research.wfa.run_core_grid", fake_run_core_grid)
+    monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", fake_run_core_grid)
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(

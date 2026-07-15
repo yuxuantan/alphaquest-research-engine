@@ -4,4 +4,4 @@ Interactive applications consume generated evidence but do not define strategy o
 
 - `validation_dashboard.py`: Streamlit mechanics-review application backed by exported validation artifacts.
 
-Reusable dashboard logic belongs under `src/propstack/dashboard/`. Application files should remain thin launch surfaces.
+Reusable dashboard logic belongs under `src/alphaquest/dashboard/`. Application files should remain thin launch surfaces.

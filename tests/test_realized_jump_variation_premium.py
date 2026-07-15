@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.realized_jump_variation_premium import RealizedJumpVariationPremiumEntry
+from alphaquest.strategy_modules.entry.realized_jump_variation_premium import RealizedJumpVariationPremiumEntry
 from tools.build_es_realized_jump_variation_features import build_features
 
 

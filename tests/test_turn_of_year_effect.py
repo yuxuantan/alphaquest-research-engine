@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.turn_of_year_effect import TurnOfYearEffectEntry
+from alphaquest.strategy_modules.entry.turn_of_year_effect import TurnOfYearEffectEntry
 
 
 def test_turn_of_year_entry_emits_on_december_window_date(tmp_path):

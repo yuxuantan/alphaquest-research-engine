@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry.trade_fragmentation_liquidity_reversion import (
+from alphaquest.strategy_modules.entry.trade_fragmentation_liquidity_reversion import (
     TradeFragmentationLiquidityReversionEntry,
 )
 

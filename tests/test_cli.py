@@ -4,7 +4,7 @@ import sqlite3
 
 import yaml
 
-from propstack.cli import main
+from alphaquest.cli import main
 
 
 def test_cli_help(capsys):

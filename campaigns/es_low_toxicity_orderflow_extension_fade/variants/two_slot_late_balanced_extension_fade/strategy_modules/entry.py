@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.trade_orderflow_multi_state_rank import TradeOrderflowMultiStateRankEntry
+from alphaquest.strategy_modules.entry.trade_orderflow_multi_state_rank import TradeOrderflowMultiStateRankEntry
 
 ENTRY_MODULE = TradeOrderflowMultiStateRankEntry

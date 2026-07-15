@@ -1,1 +1,1 @@
-from propstack.strategy_modules.sl.opening_gap_boundary import OpeningGapBoundaryStop
+from alphaquest.strategy_modules.sl.opening_gap_boundary import OpeningGapBoundaryStop

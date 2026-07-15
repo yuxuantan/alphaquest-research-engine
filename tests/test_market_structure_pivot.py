@@ -1,11 +1,11 @@
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.market_structure_filtered_entry import MarketStructureFilteredEntry
-from propstack.strategy_modules.entry.market_structure_pivot_continuation import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.market_structure_filtered_entry import MarketStructureFilteredEntry
+from alphaquest.strategy_modules.entry.market_structure_pivot_continuation import (
     MarketStructurePivotContinuationEntry,
 )
-from propstack.strategy_modules.entry.market_structure_pivots import MultiTimeframePivotStructure
+from alphaquest.strategy_modules.entry.market_structure_pivots import MultiTimeframePivotStructure
 
 
 def test_market_structure_pivot_emits_after_four_confirmed_pivots_only():

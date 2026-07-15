@@ -1,10 +1,10 @@
 import pandas as pd
 import pytest
 
-from propstack.data.clean import clean_data
-from propstack.data.features import build_features
-import propstack.research.core_grid as core_grid_module
-from propstack.research.core_grid import parameter_combinations, run_core_grid
+from alphaquest.data.clean import clean_data
+from alphaquest.data.features import build_features
+import alphaquest.research.core_grid as core_grid_module
+from alphaquest.research.core_grid import parameter_combinations, run_core_grid
 from tests.test_backtest_engine import BASE_CFG
 from tests.test_data_pipeline import DATA_CFG
 

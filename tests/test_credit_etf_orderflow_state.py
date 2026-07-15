@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.credit_etf_orderflow_state import CreditEtfOrderflowStateEntry
+from alphaquest.strategy_modules.entry.credit_etf_orderflow_state import CreditEtfOrderflowStateEntry
 
 
 def _feature_csv(tmp_path: Path) -> str:

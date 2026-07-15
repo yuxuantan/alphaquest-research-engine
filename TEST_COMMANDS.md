@@ -21,20 +21,20 @@ export VARIANT_CONFIG=configs/campaigns/five_min_orb_vol_filter/variants/ES/1m/i
 ## Campaign Tests
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_core --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_core_grid --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_monkey --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_monte_carlo --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_equity_curves --config "$VARIANT_CONFIG"
-PYTHONPATH=src python3 -m propstack.run_campaign_stages --config "$VARIANT_CONFIG" --skip-validation
+PYTHONPATH=src python3 -m alphaquest.run_core --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_core_grid --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_monkey --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_wfa --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_monte_carlo --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_equity_curves --config "$VARIANT_CONFIG"
+PYTHONPATH=src python3 -m alphaquest.run_campaign_stages --config "$VARIANT_CONFIG" --skip-validation
 ```
 
 Monte Carlo reads an existing report trade log. Use `monte_carlo.trade_source:
-core` after `propstack.run_core`, or `monte_carlo.trade_source: wfa_oos` after
-`propstack.run_wfa`.
+core` after `alphaquest.run_core`, or `monte_carlo.trade_source: wfa_oos` after
+`alphaquest.run_wfa`.
 
-`propstack.run_equity_curves` backfills `equity_curve.csv` and
+`alphaquest.run_equity_curves` backfills `equity_curve.csv` and
 `equity_curve.html` from existing trade logs. New core, WFA, retained
 core-grid/monkey, and audited Monte Carlo runs write those files automatically.
 
@@ -48,13 +48,13 @@ Arguments for all campaign tests:
 Repeated full-history WFA example:
 
 ```bash
-PYTHONPATH=src python3 -m propstack.run_wfa --config "$VARIANT_CONFIG" --skip-validation
+PYTHONPATH=src python3 -m alphaquest.run_wfa --config "$VARIANT_CONFIG" --skip-validation
 ```
 
 ## Data Source Comparison
 
 ```bash
-PYTHONPATH=src python3 -m propstack.compare_data_sources \
+PYTHONPATH=src python3 -m alphaquest.compare_data_sources \
   --csv data/raw/ES/es_1m_20221201-20260529.csv \
   --dbn-dir data/raw/ES/GLBX-20260601-U6S3S4F4GM \
   --out data/reports/data_compare/ES/rithmic_vs_databento_1m \

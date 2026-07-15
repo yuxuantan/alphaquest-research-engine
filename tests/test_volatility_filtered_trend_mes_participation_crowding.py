@@ -2,8 +2,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.volatility_filtered_trend_mes_participation_crowding import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.volatility_filtered_trend_mes_participation_crowding import (
     VolatilityFilteredTrendMesParticipationCrowdingEntry,
 )
 

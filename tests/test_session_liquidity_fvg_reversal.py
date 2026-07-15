@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.session_liquidity_fvg_reversal import SessionLiquidityFvgReversalEntry
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.session_liquidity_fvg_reversal import SessionLiquidityFvgReversalEntry
 from tools.build_nq_asia_london_session_levels import build_features
 
 

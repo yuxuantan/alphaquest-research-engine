@@ -2,8 +2,8 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.measured_move_pullback_continuation import (
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.measured_move_pullback_continuation import (
     MeasuredMovePullbackContinuationEntry,
 )
 

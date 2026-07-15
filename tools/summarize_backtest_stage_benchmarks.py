@@ -8,7 +8,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from propstack.research import campaign_stages as cs
+from alphaquest.research import campaign_stages as cs
 
 
 DEFAULT_OUT_STEM = Path("research_artifacts/backtest_campaign_stage_benchmarks")

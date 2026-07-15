@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.large_record_aoi_reaction import LargeRecordAoiReactionEntry
+from alphaquest.strategy_modules.entry.large_record_aoi_reaction import LargeRecordAoiReactionEntry
 
 
 def _bar(

@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.gao_last_half_hour_orderflow import GaoLastHalfHourOrderflowEntry
+from alphaquest.strategy_modules.entry.gao_last_half_hour_orderflow import GaoLastHalfHourOrderflowEntry
 
 ENTRY_MODULE = GaoLastHalfHourOrderflowEntry

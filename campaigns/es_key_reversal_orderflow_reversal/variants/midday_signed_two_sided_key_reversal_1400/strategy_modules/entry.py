@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.key_reversal_orderflow_reversal import KeyReversalOrderflowReversalEntry
+from alphaquest.strategy_modules.entry.key_reversal_orderflow_reversal import KeyReversalOrderflowReversalEntry

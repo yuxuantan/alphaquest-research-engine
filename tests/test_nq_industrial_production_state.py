@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_industrial_production_state import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_industrial_production_state import (
     NqIndustrialProductionStateEntry,
 )
 from tools.build_nq_industrial_production_state_features import build_features

@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.turnaround_tuesday_reversal import TurnaroundTuesdayReversalEntry
+from alphaquest.strategy_modules.entry.turnaround_tuesday_reversal import TurnaroundTuesdayReversalEntry

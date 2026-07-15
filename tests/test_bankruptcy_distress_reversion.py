@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.bankruptcy_distress_reversion import (
+from alphaquest.strategy_modules.entry.bankruptcy_distress_reversion import (
     BankruptcyDistressReversionEntry,
 )
 

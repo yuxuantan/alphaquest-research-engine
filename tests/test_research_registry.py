@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 import sqlite3
 
-from propstack.research.registry import build_registry, generate_views, registry_summary
+from alphaquest.research.registry import build_registry, generate_views, registry_summary
 
 
 def _write_fixture(root: Path, *, passed: bool = False) -> None:

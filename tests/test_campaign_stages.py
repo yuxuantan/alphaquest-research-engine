@@ -5,8 +5,8 @@ import pandas as pd
 import pytest
 import yaml
 
-from propstack.research.campaign_stages import evaluate_criteria
-from propstack.research import campaign_stages
+from alphaquest.research.campaign_stages import evaluate_criteria
+from alphaquest.research import campaign_stages
 
 
 def _mechanics_review_yaml() -> list[str]:

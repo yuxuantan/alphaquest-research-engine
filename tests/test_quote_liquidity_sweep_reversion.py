@@ -1,8 +1,8 @@
 import pandas as pd
 
-from propstack.data.tbbo_liquidity import aggregate_tbbo_liquidity_1m
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.quote_liquidity_sweep_reversion import (
+from alphaquest.data.tbbo_liquidity import aggregate_tbbo_liquidity_1m
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.quote_liquidity_sweep_reversion import (
     QuoteLiquiditySweepReversionEntry,
 )
 

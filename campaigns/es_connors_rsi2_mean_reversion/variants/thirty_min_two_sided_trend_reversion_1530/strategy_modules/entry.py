@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.connors_rsi2_mean_reversion import ConnorsRsi2MeanReversionEntry
+from alphaquest.strategy_modules.entry.connors_rsi2_mean_reversion import ConnorsRsi2MeanReversionEntry
 
 ENTRY_MODULE = ConnorsRsi2MeanReversionEntry

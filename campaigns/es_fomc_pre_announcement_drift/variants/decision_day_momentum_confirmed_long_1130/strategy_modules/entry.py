@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.fomc_pre_announcement_drift import FomcPreAnnouncementDriftEntry
+from alphaquest.strategy_modules.entry.fomc_pre_announcement_drift import FomcPreAnnouncementDriftEntry

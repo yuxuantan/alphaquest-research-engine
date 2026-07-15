@@ -817,43 +817,43 @@ def _write_modules(vroot: Path, kind: str) -> None:
     if kind == "orderflow":
         _write_text(
             modules / "entry.py",
-            "from propstack.strategy_modules.entry.morning_orderflow_momentum import MorningOrderflowMomentumEntry\n\nENTRY_MODULE = MorningOrderflowMomentumEntry\n",
+            "from alphaquest.strategy_modules.entry.morning_orderflow_momentum import MorningOrderflowMomentumEntry\n\nENTRY_MODULE = MorningOrderflowMomentumEntry\n",
         )
         _write_text(
             modules / "stop.py",
-            "from propstack.strategy_modules.sl.percent_from_entry import PercentFromEntryStop\n\nSTOP_MODULE = PercentFromEntryStop\n",
+            "from alphaquest.strategy_modules.sl.percent_from_entry import PercentFromEntryStop\n\nSTOP_MODULE = PercentFromEntryStop\n",
         )
         _write_text(
             modules / "target.py",
-            "from propstack.strategy_modules.tp.fixed_r import FixedRTarget\n\nTARGET_MODULE = FixedRTarget\n",
+            "from alphaquest.strategy_modules.tp.fixed_r import FixedRTarget\n\nTARGET_MODULE = FixedRTarget\n",
         )
         return
     if kind == "momentum":
         _write_text(
             modules / "entry.py",
-            "from propstack.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry\n\nENTRY_MODULE = IntradayMomentumPriorityEntry\n",
+            "from alphaquest.strategy_modules.entry.intraday_momentum_priority import IntradayMomentumPriorityEntry\n\nENTRY_MODULE = IntradayMomentumPriorityEntry\n",
         )
         _write_text(
             modules / "stop.py",
-            "from propstack.strategy_modules.sl.signal_percent_from_entry import SignalPercentFromEntryStop\n\nSTOP_MODULE = SignalPercentFromEntryStop\n",
+            "from alphaquest.strategy_modules.sl.signal_percent_from_entry import SignalPercentFromEntryStop\n\nSTOP_MODULE = SignalPercentFromEntryStop\n",
         )
         _write_text(
             modules / "target.py",
-            "from propstack.strategy_modules.tp.signal_fixed_r import SignalFixedRTarget\n\nTARGET_MODULE = SignalFixedRTarget\n",
+            "from alphaquest.strategy_modules.tp.signal_fixed_r import SignalFixedRTarget\n\nTARGET_MODULE = SignalFixedRTarget\n",
         )
         return
     if kind == "range":
         _write_text(
             modules / "entry.py",
-            "from propstack.strategy_modules.entry.range_compression_breakout import RangeCompressionBreakoutEntry\n\nENTRY_MODULE = RangeCompressionBreakoutEntry\n",
+            "from alphaquest.strategy_modules.entry.range_compression_breakout import RangeCompressionBreakoutEntry\n\nENTRY_MODULE = RangeCompressionBreakoutEntry\n",
         )
         _write_text(
             modules / "stop.py",
-            "from propstack.strategy_modules.sl.percent_from_entry import PercentFromEntryStop\n\nSTOP_MODULE = PercentFromEntryStop\n",
+            "from alphaquest.strategy_modules.sl.percent_from_entry import PercentFromEntryStop\n\nSTOP_MODULE = PercentFromEntryStop\n",
         )
         _write_text(
             modules / "target.py",
-            "from propstack.strategy_modules.tp.cost_adjusted_fixed_r import CostAdjustedFixedRTarget\n\nTARGET_MODULE = CostAdjustedFixedRTarget\n",
+            "from alphaquest.strategy_modules.tp.cost_adjusted_fixed_r import CostAdjustedFixedRTarget\n\nTARGET_MODULE = CostAdjustedFixedRTarget\n",
         )
         return
     raise ValueError(kind)

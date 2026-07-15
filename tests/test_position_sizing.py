@@ -1,4 +1,4 @@
-from propstack.backtest.sizing import size_position, tick_value_from_core
+from alphaquest.backtest.sizing import size_position, tick_value_from_core
 
 
 def test_tick_value_can_be_derived_from_point_value():

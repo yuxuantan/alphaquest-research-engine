@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.spx_0dte_orderflow_confirmation import Spx0dteOrderflowConfirmationEntry
+from alphaquest.strategy_modules.entry.spx_0dte_orderflow_confirmation import Spx0dteOrderflowConfirmationEntry
 
 ENTRY_MODULE = Spx0dteOrderflowConfirmationEntry

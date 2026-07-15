@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.pdh_pdl_orderflow_breakout_continuation import PdhPdlOrderflowBreakoutContinuationEntry
+from alphaquest.strategy_modules.entry.pdh_pdl_orderflow_breakout_continuation import PdhPdlOrderflowBreakoutContinuationEntry

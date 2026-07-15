@@ -1,7 +1,7 @@
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.opening_drive_mes_crowding_reversal import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.opening_drive_mes_crowding_reversal import (
     OpeningDriveMesCrowdingReversalEntry,
 )
 

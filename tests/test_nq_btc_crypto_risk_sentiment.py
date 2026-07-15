@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_btc_crypto_risk_sentiment import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_btc_crypto_risk_sentiment import (
     NqBtcCryptoRiskSentimentEntry,
 )
 from tools.build_nq_btc_crypto_risk_sentiment_features import build_features

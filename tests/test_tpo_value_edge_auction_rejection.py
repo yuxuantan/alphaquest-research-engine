@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.base import Signal
-from propstack.strategy_modules.entry.tpo_value_edge_auction_rejection import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.base import Signal
+from alphaquest.strategy_modules.entry.tpo_value_edge_auction_rejection import (
     TpoValueEdgeAuctionRejectionEntry,
 )
 

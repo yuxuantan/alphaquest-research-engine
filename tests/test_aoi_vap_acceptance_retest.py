@@ -1,8 +1,8 @@
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.aoi_vap_acceptance_retest import AoiVapAcceptanceRetestEntry
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.aoi_vap_acceptance_retest import AoiVapAcceptanceRetestEntry
 
 
 def _bar(ts: str, **overrides):

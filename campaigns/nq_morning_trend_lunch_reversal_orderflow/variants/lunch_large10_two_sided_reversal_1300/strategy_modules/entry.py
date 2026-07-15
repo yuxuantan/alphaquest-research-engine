@@ -1,4 +1,4 @@
-from propstack.strategy_modules.entry.morning_trend_lunch_reversal_orderflow import MorningTrendLunchReversalOrderflowEntry
+from alphaquest.strategy_modules.entry.morning_trend_lunch_reversal_orderflow import MorningTrendLunchReversalOrderflowEntry
 
 ENTRY_MODULE = MorningTrendLunchReversalOrderflowEntry
 __all__ = ["MorningTrendLunchReversalOrderflowEntry", "ENTRY_MODULE"]

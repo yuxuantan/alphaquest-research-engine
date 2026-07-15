@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.data.sierra_events import reconstruct_sierra_trade_events
+from alphaquest.data.sierra_events import reconstruct_sierra_trade_events
 
 
 def test_reconstructs_unbundled_trade_and_preserves_first_source_order() -> None:

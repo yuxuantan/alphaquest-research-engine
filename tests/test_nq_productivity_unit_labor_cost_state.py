@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_productivity_unit_labor_cost_state import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_productivity_unit_labor_cost_state import (
     NqProductivityUnitLaborCostStateEntry,
 )
 from tools.build_nq_productivity_unit_labor_cost_features import build_features

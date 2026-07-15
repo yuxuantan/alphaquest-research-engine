@@ -1,4 +1,4 @@
-from propstack.utils.params import apply_dotted_params
+from alphaquest.utils.params import apply_dotted_params
 
 
 def test_apply_dotted_params_updates_nested_dicts_and_slot_lists():

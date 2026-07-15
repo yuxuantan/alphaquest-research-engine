@@ -1,3 +1,3 @@
-from propstack.strategy_modules.entry.vix_term_structure_orderflow_pullback import VixTermStructureOrderflowPullbackEntry
+from alphaquest.strategy_modules.entry.vix_term_structure_orderflow_pullback import VixTermStructureOrderflowPullbackEntry
 
 __all__ = ["VixTermStructureOrderflowPullbackEntry"]

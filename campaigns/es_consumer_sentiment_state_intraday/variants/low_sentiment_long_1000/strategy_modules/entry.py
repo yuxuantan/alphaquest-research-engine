@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.consumer_sentiment_state import ConsumerSentimentStateEntry
+from alphaquest.strategy_modules.entry.consumer_sentiment_state import ConsumerSentimentStateEntry

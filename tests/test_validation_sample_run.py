@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from propstack.validation.loaders import load_validation_run
-from propstack.validation.sample_run import write_sample_validation_run
+from alphaquest.validation.loaders import load_validation_run
+from alphaquest.validation.sample_run import write_sample_validation_run
 
 
 def test_sample_validation_run_writes_dashboard_artifacts(tmp_path):

@@ -4,8 +4,8 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry import ENTRY_MODULES
-from propstack.strategy_modules.entry.nq_retail_inventory_demand import (
+from alphaquest.strategy_modules.entry import ENTRY_MODULES
+from alphaquest.strategy_modules.entry.nq_retail_inventory_demand import (
     NqRetailInventoryDemandEntry,
 )
 from tools.build_nq_retail_inventory_demand_features import build_features

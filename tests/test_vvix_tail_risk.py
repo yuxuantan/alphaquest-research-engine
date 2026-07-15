@@ -4,7 +4,7 @@ import math
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.vvix_tail_risk import VvixTailRiskEntry
+from alphaquest.strategy_modules.entry.vvix_tail_risk import VvixTailRiskEntry
 from tools.build_es_vvix_tail_risk_features import build_features
 
 

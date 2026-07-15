@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry.finra_margin_leverage import FinraMarginLeverageEntry
+from alphaquest.strategy_modules.entry.finra_margin_leverage import FinraMarginLeverageEntry
 from tools.build_es_finra_margin_features import build_features
 
 

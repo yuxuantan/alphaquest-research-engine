@@ -1,10 +1,10 @@
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.pdh_pdl_orderflow_breakout_continuation import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.pdh_pdl_orderflow_breakout_continuation import (
     PdhPdlOrderflowBreakoutContinuationEntry,
 )
-from propstack.strategy_modules.sl.prior_level_retest_boundary import PriorLevelRetestBoundaryStop
+from alphaquest.strategy_modules.sl.prior_level_retest_boundary import PriorLevelRetestBoundaryStop
 
 
 def test_prior_high_breakout_requires_aligned_aggregate_orderflow():

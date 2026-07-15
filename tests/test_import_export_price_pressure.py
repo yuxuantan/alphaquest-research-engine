@@ -5,7 +5,7 @@ import math
 import pandas as pd
 import pytest
 
-from propstack.strategy_modules.entry.import_export_price_pressure import ImportExportPricePressureEntry
+from alphaquest.strategy_modules.entry.import_export_price_pressure import ImportExportPricePressureEntry
 from tools.build_es_import_export_price_pressure_features import build_features
 
 

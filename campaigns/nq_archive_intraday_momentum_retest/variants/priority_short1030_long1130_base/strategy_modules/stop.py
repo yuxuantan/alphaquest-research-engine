@@ -1,3 +1,3 @@
-from propstack.strategy_modules.sl.signal_percent_from_entry import SignalPercentFromEntryStop
+from alphaquest.strategy_modules.sl.signal_percent_from_entry import SignalPercentFromEntryStop
 
 STOP_MODULE = SignalPercentFromEntryStop

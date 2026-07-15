@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.round_number_barrier import RoundNumberBarrierEntry
+from alphaquest.strategy_modules.entry.round_number_barrier import RoundNumberBarrierEntry
 
 
 def test_round_number_barrier_support_reclaim_uses_completed_bar_close():

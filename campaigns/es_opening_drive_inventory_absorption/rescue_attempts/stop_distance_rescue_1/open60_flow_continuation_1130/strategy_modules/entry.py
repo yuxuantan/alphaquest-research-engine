@@ -1,4 +1,4 @@
-from propstack.strategy_modules.entry.opening_drive_inventory_combo import OpeningDriveInventoryComboEntry
+from alphaquest.strategy_modules.entry.opening_drive_inventory_combo import OpeningDriveInventoryComboEntry
 
 ENTRY_MODULE = OpeningDriveInventoryComboEntry
 

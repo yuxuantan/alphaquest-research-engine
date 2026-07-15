@@ -3,8 +3,8 @@ import json
 import pandas as pd
 import yaml
 
-from propstack.backtest.equity_report import write_equity_report
-from propstack.data.quality import save_pipeline_outputs
+from alphaquest.backtest.equity_report import write_equity_report
+from alphaquest.data.quality import save_pipeline_outputs
 from tools.cleanup_redundant_generated_artifacts import find_heavy_generated_payloads, find_redundant_runs
 
 

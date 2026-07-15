@@ -4,11 +4,11 @@ import random
 import pandas as pd
 import pytest
 
-from propstack.backtest.contracts import ExecutionAssumptions, validate_market_data_contract
-from propstack.backtest.engine import BacktestEngine
-from propstack.backtest.fills import entry_price, exit_price, stop_target_hit
-from propstack.research.golden import backtest_result_signature
-from propstack.version import ENGINE_CONTRACT_VERSION
+from alphaquest.backtest.contracts import ExecutionAssumptions, validate_market_data_contract
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.backtest.fills import entry_price, exit_price, stop_target_hit
+from alphaquest.research.golden import backtest_result_signature
+from alphaquest.version import ENGINE_CONTRACT_VERSION
 from tests.test_backtest_engine import BASE_CFG, _features
 
 

@@ -3,10 +3,10 @@ import random
 import numpy as np
 import pandas as pd
 
-from propstack.data.clean import clean_data
-from propstack.data.features import build_features
-import propstack.research.monkey as monkey_module
-from propstack.research.monkey import _sample_durations, run_monkey, run_trade_path_stress
+from alphaquest.data.clean import clean_data
+from alphaquest.data.features import build_features
+import alphaquest.research.monkey as monkey_module
+from alphaquest.research.monkey import _sample_durations, run_monkey, run_trade_path_stress
 from tests.test_backtest_engine import BASE_CFG
 from tests.test_data_pipeline import DATA_CFG
 

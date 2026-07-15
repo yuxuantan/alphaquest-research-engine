@@ -6,8 +6,8 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from propstack.data.pipeline import prepare_data
-from propstack.strategy_modules.entry.session_liquidity_fvg_reversal import SessionLiquidityFvgReversalEntry
+from alphaquest.data.pipeline import prepare_data
+from alphaquest.strategy_modules.entry.session_liquidity_fvg_reversal import SessionLiquidityFvgReversalEntry
 
 
 CAMPAIGN_ID = "nq_chartfanatics_jadecap_session_liquidity_fvg"

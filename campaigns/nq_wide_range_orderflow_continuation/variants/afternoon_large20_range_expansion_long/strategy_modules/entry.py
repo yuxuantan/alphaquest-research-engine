@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.wide_range_orderflow_continuation import WideRangeOrderflowContinuationEntry
+from alphaquest.strategy_modules.entry.wide_range_orderflow_continuation import WideRangeOrderflowContinuationEntry

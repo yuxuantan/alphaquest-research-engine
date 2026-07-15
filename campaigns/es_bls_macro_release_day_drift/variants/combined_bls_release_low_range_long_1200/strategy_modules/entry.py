@@ -1,1 +1,1 @@
-from propstack.strategy_modules.entry.bls_macro_release_day_drift import BlsMacroReleaseDayDriftEntry
+from alphaquest.strategy_modules.entry.bls_macro_release_day_drift import BlsMacroReleaseDayDriftEntry

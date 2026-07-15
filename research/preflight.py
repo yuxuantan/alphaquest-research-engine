@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 
-from propstack.research import preflight as _implementation
+from alphaquest.research import preflight as _implementation
 
 
 if __name__ == "__main__":

@@ -12,9 +12,9 @@ import time
 
 import pandas as pd
 
-from propstack.research import campaign_stages as cs
-from propstack.utils.config import load_yaml, write_json
-from propstack.utils.hashing import file_sha256
+from alphaquest.research import campaign_stages as cs
+from alphaquest.utils.config import load_yaml, write_json
+from alphaquest.utils.hashing import file_sha256
 
 
 TARGET_RUNS = 8000

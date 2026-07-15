@@ -4,14 +4,14 @@
 
 ```bash
 make research-workspace
-propstack research status
-propstack research search --verdict NEEDS_MANUAL_REVIEW
+alphaquest research status
+alphaquest research search --verdict NEEDS_MANUAL_REVIEW
 ```
 
 ## Before A Run
 
 ```bash
-propstack campaign validate <campaign_id>
+alphaquest campaign validate <campaign_id>
 make smoke
 ```
 
@@ -19,7 +19,7 @@ make smoke
 
 ```bash
 make research-workspace
-propstack campaign show <campaign_id>
+alphaquest campaign show <campaign_id>
 make qualify
 ```
 

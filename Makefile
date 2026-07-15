@@ -25,7 +25,7 @@ smoke:
 	PYTHONPATH=src python3 -m pytest -q tests/test_cli.py tests/test_preflight.py tests/test_research_registry.py tests/test_backtest_contracts.py
 
 tutorial:
-	PYTHONPATH=src python3 -m propstack.cli tutorial
+	PYTHONPATH=src python3 -m alphaquest.cli tutorial
 
 docs-check:
 	PYTHONPATH=src python3 tools/check_docs_links.py
@@ -45,7 +45,7 @@ cleanup-generated:
 	PYTHONPATH=src python3 tools/cleanup_redundant_generated_artifacts.py
 
 preflight:
-	PYTHONPATH=src python3 -m propstack.research.preflight --skip-tests
+	PYTHONPATH=src python3 -m alphaquest.research.preflight --skip-tests
 
 run-catalog:
 	PYTHONPATH=src python3 tools/build_run_catalog.py
@@ -54,7 +54,7 @@ research-registry:
 	PYTHONPATH=src python3 tools/build_research_registry.py
 
 research-status:
-	PYTHONPATH=src python3 -m propstack.cli research status
+	PYTHONPATH=src python3 -m alphaquest.cli research status
 
 research-definitions:
 	PYTHONPATH=src python3 tools/normalize_campaign_definitions.py --apply
@@ -74,7 +74,7 @@ validation-dashboard:
 	PYTHONPATH=src PROPSTACK_VALIDATION_SEARCH_ROOT=$(VALIDATION_DASHBOARD_SEARCH_ROOT) streamlit run apps/validation_dashboard.py --server.port $(VALIDATION_DASHBOARD_PORT)
 
 sample-validation-run:
-	PYTHONPATH=src python3 -m propstack.validation.sample_run --output-dir $(SAMPLE_VALIDATION_RUN_DIR)
+	PYTHONPATH=src python3 -m alphaquest.validation.sample_run --output-dir $(SAMPLE_VALIDATION_RUN_DIR)
 
 validation-dashboard-sample: sample-validation-run
 	PYTHONPATH=src PROPSTACK_VALIDATION_SEARCH_ROOT=examples/validation_runs streamlit run apps/validation_dashboard.py --server.port $(VALIDATION_DASHBOARD_PORT)

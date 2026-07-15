@@ -1,7 +1,7 @@
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry.es_mes_lead_lag import EsMesLeadLagEntry
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry.es_mes_lead_lag import EsMesLeadLagEntry
 
 
 def test_es_mes_lead_lag_emits_long_when_mes_leads_and_es_lags():

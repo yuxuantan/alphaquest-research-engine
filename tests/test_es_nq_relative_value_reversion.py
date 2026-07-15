@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.es_nq_relative_value_reversion import EsNqRelativeValueReversionEntry
+from alphaquest.strategy_modules.entry.es_nq_relative_value_reversion import EsNqRelativeValueReversionEntry
 
 
 def test_es_nq_relative_value_reversion_emits_long_when_es_underperforms_nq():

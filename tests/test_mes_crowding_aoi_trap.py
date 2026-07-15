@@ -2,9 +2,9 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.backtest.engine import BacktestEngine
-from propstack.strategy_modules.entry import build_entry_module
-from propstack.strategy_modules.entry.mes_crowding_aoi_trap import MesCrowdingAoiTrapEntry
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.entry import build_entry_module
+from alphaquest.strategy_modules.entry.mes_crowding_aoi_trap import MesCrowdingAoiTrapEntry
 
 
 def _params(**overrides):

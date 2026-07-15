@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from propstack.strategy_modules.entry.vix_term_structure_orderflow_pullback import (
+from alphaquest.strategy_modules.entry.vix_term_structure_orderflow_pullback import (
     VixTermStructureOrderflowPullbackEntry,
 )
 

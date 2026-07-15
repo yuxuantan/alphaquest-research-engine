@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from propstack.data.es_mes_flow_divergence import build_es_mes_flow_divergence_cache
+from alphaquest.data.es_mes_flow_divergence import build_es_mes_flow_divergence_cache
 
 
 def _write_cache(path, symbol: str, signed: list[int], large20_signed: list[int]) -> None:

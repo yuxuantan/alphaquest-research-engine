@@ -1,6 +1,6 @@
 import pandas as pd
 
-from propstack.strategy_modules.entry.range_compression_orderflow_breakout import (
+from alphaquest.strategy_modules.entry.range_compression_orderflow_breakout import (
     RangeCompressionOrderflowBreakoutEntry,
 )
 
