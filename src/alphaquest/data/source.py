@@ -14,24 +14,28 @@ def data_source_hash(data_config: dict, subset_config: dict | None = None) -> st
     execution_payload = _execution_source_payload(execution_config, subset_config) if execution_config else None
     if source == "csv":
         raw_csv = data_config.get("raw_csv")
-        if not execution_payload:
+        roll_payload = _roll_source_payload(data_config)
+        if not execution_payload and not roll_payload:
             return file_sha256(raw_csv) if raw_csv else object_sha256({"source": source})
         return object_sha256(
             {
                 "source": source,
                 "raw_csv_sha256": file_sha256(raw_csv) if raw_csv else "",
                 "execution_data": execution_payload,
+                "roll_selection": roll_payload,
             }
         )
     if source == "parquet":
         raw_parquet = data_config.get("raw_parquet") or data_config.get("raw_csv")
-        if not execution_payload:
+        roll_payload = _roll_source_payload(data_config)
+        if not execution_payload and not roll_payload:
             return file_sha256(raw_parquet) if raw_parquet else object_sha256({"source": source})
         return object_sha256(
             {
                 "source": source,
                 "raw_parquet_sha256": file_sha256(raw_parquet) if raw_parquet else "",
                 "execution_data": execution_payload,
+                "roll_selection": roll_payload,
             }
         )
     if source == "databento_dbn":
@@ -62,6 +66,19 @@ def data_source_hash(data_config: dict, subset_config: dict | None = None) -> st
             payload["execution_data"] = execution_payload
         return object_sha256(payload)
     raise ValueError(f"Unsupported data source: {source}")
+
+
+def _roll_source_payload(data_config: dict) -> dict:
+    rule = str(data_config.get("continuous_contract") or "none").lower()
+    if rule in {"", "none", "false"}:
+        return {}
+    calendar = data_config.get("roll_calendar")
+    return {
+        "continuous_contract": rule,
+        "roll_calendar": str(calendar or ""),
+        "roll_calendar_sha256": file_sha256(calendar) if calendar else "",
+        "roll_boundary_policy": data_config.get("roll_boundary_policy", {}),
+    }
 
 
 def _execution_source_payload(execution_config: dict | None, subset_config: dict | None) -> dict:

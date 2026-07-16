@@ -622,7 +622,7 @@ def test_staged_campaign_can_write_external_config_to_explicit_run_folder(tmp_pa
 
 def test_staged_campaign_writes_source_results_index_for_campaign_source_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    config_path = tmp_path / "campaigns/demo_campaign/variants/demo_variant/config.yaml"
+    config_path = tmp_path / "research/campaigns/active/demo_campaign/variants/demo_variant/config.yaml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
         "\n".join(
@@ -671,7 +671,7 @@ def test_staged_campaign_writes_source_results_index_for_campaign_source_config(
     )
 
     run_dir = tmp_path / "research/evidence/runs/demo_campaign/demo_variant/ES/run1"
-    index_path = tmp_path / "campaigns/demo_campaign/results_index.yaml"
+    index_path = tmp_path / "research/campaigns/active/demo_campaign/results_index.yaml"
     assert summary["source_results_index_path"] == str(index_path)
     assert (run_dir / "effective_config.yaml").is_file()
     assert (run_dir / "source_config.yaml").is_file()
@@ -696,11 +696,105 @@ def test_staged_campaign_writes_source_results_index_for_campaign_source_config(
             "run_dir": "research/evidence/runs/demo_campaign/demo_variant/ES/run1",
             "campaign_test_summary": "research/evidence/runs/demo_campaign/demo_variant/ES/run1/campaign_test_summary.json",
             "variant_test_summary": "research/evidence/runs/demo_campaign/demo_variant/ES/run1/variant_test_summary.json",
-            "passed": True,
+                "passed": False,
+                "research_verdict": "NEEDS MANUAL REVIEW",
+                "finalization_state": None,
+                "result_bundle_path": None,
+                "incomplete_attempt_marker_path": None,
+                "diagnostic_only": True,
             "halted": False,
             "failed_stage": None,
             "updated_at": summary["updated_at"],
         }
+    ]
+    assert summary["research_verdict"] == "NEEDS MANUAL REVIEW"
+    assert summary["diagnostic_only"] is True
+    assert summary["passed"] is False
+    assert not (run_dir / "candidate_strategy_report.md").exists()
+
+
+def test_submission_preflight_failure_blocks_before_attempt_or_evidence(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "research/campaigns/active/demo/variants/v01/config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("campaign_id: demo\nvariant_id: v01\n", encoding="utf-8")
+    attempt_checked = False
+
+    def failed_preflight(**kwargs):
+        return {
+            "passed": False,
+            "configs_checked": [str(config_path)],
+            "failures": ["data quality is unresolved"],
+            "warnings": [],
+            "tests_ran": False,
+        }
+
+    def attempt_contract(*args, **kwargs):
+        nonlocal attempt_checked
+        attempt_checked = True
+        return {}
+
+    monkeypatch.setattr(campaign_stages, "run_preflight", failed_preflight)
+    monkeypatch.setattr(campaign_stages, "_require_attempt_contract", attempt_contract)
+
+    with pytest.raises(ValueError, match="Staged submission preflight failed before attempt reservation"):
+        campaign_stages.run_campaign_stage_tests(
+            config_path,
+            skip_validation=False,
+            include_acceptance=True,
+        )
+
+    assert attempt_checked is False
+    assert not (tmp_path / "research/evidence/runs/demo").exists()
+
+
+def test_submission_preflight_and_approval_finish_before_attempt_check(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    config_path = tmp_path / "research/campaigns/active/demo/variants/v01/config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text("campaign_id: demo\nvariant_id: v01\n", encoding="utf-8")
+    events = []
+
+    def passing_preflight(**kwargs):
+        events.append(("preflight", kwargs["run_tests"]))
+        return {"passed": True, "failures": [], "warnings": [], "tests_ran": False}
+
+    monkeypatch.setattr(campaign_stages, "run_preflight", passing_preflight)
+    monkeypatch.setattr(
+        campaign_stages,
+        "_validate_pre_test_mechanics_review",
+        lambda *args: events.append(("mechanics", None)),
+    )
+    monkeypatch.setattr(
+        campaign_stages,
+        "require_validation_approval",
+        lambda *args: events.append(("approval", None)) or {"status": "APPROVED_FOR_TESTING"},
+    )
+    monkeypatch.setattr(
+        campaign_stages,
+        "require_prior_variant_approvals",
+        lambda *args: events.append(("prior_approvals", None)),
+    )
+
+    def stop_at_attempt(*args, **kwargs):
+        events.append(("attempt", None))
+        raise RuntimeError("stop after ordering check")
+
+    monkeypatch.setattr(campaign_stages, "_require_attempt_contract", stop_at_attempt)
+
+    with pytest.raises(RuntimeError, match="ordering check"):
+        campaign_stages.run_campaign_stage_tests(
+            config_path,
+            skip_validation=True,
+            include_acceptance=False,
+        )
+
+    assert events == [
+        ("preflight", False),
+        ("mechanics", None),
+        ("approval", None),
+        ("prior_approvals", None),
+        ("attempt", None),
     ]
 
 

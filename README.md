@@ -6,7 +6,8 @@ Start with [START_HERE.md](START_HERE.md), then choose the path that matches you
 
 | Role | Start here |
 | --- | --- |
-| Researcher | [First backtest](docs/getting-started/first-backtest.md) |
+| Researcher (no code) | [Research Studio](docs/getting-started/research-studio.md) |
+| Researcher (expert CLI) | [First backtest](docs/getting-started/first-backtest.md) |
 | Strategy author | [Campaign authoring](docs/research/campaign-authoring.md) |
 | Engine developer | [Architecture](ARCHITECTURE.md) |
 | Data engineer | [Data contracts](docs/data/data-contracts.md) |
@@ -18,7 +19,7 @@ Start with [START_HERE.md](START_HERE.md), then choose the path that matches you
 ```text
 campaign = one economic edge
 variant  = one predeclared mechanical expression
-attempt  = one immutable original, validation, replication, methodology-rerun, or authorized-rescue definition
+attempt  = one immutable original, validation, replication, data-refresh, methodology-rerun, pre-PnL-correction, or authorized-rescue definition
 run      = zero or one immutable generated evidence record for that attempt
 ```
 
@@ -28,20 +29,26 @@ Active authored definitions live under `research/campaigns/active/`; closed defi
 
 ## Quick Start
 
+After an administrator completes [installation](docs/getting-started/installation.md), a researcher can double-click **`AlphaQuest Studio.command`**. No terminal, Python, or YAML editing is required inside the research workflow.
+
+Administrator setup:
+
 ```bash
-make setup
+make studio-setup
 make smoke
-make research-workspace
-alphaquest research status
 ```
 
-Run the synthetic tutorial without touching real campaign evidence:
+Studio is the novice path. It guides source declaration, duplicate review, governed data intake, execution rules, five frozen variants, mechanics approval, staged execution, and result review. Unsupported intrabar or custom mechanics become a durable `NEEDS MANUAL REVIEW` engineering handoff; Studio never approximates them with bars.
+
+Run the isolated synthetic tutorial from Studio, or use the expert command:
 
 ```bash
 make tutorial
 ```
 
 ## Daily Commands
+
+These are expert/operator interfaces; researchers do not need them to use Studio.
 
 ```bash
 alphaquest research search --symbol ES --state closed --limit 20
@@ -59,6 +66,9 @@ make qualify
 | --- | --- |
 | `src/alphaquest/` | Engine and reusable library code |
 | `research/campaigns/active/` | Active authored research definitions |
+| `research/drafts/` | Incomplete Studio drafts outside active discovery |
+| `research/datasets/` | Governed Studio dataset manifests and canonical bars |
+| `research/handoffs/` | Unsupported mechanics awaiting certified engineering |
 | `research/campaigns/archive/` | Closed authored research definitions |
 | `tests/` | Engine, methodology, strategy, and regression tests |
 | `data/` | Raw, reference, external, and generated market data |
@@ -77,5 +87,6 @@ make qualify
 - Costs, session rules, forced flattening, contract values, and roll rules are explicit.
 - Time-series validation is contiguous or purged; final acceptance is locked.
 - A passing result is only a candidate strategy pending independent review and incubation.
+- Diagnostic or shortened stage sets resolve to `NEEDS MANUAL REVIEW` and cannot create candidate artifacts.
 
 See the [documentation index](docs/README.md) for detailed workflows. The former monolithic guide is preserved as [full-guide.md](docs/reference/full-guide.md).

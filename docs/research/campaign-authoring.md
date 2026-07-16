@@ -1,8 +1,10 @@
 # Campaign Authoring
 
+This is the expert YAML interface. New researchers should use [Research Studio](../getting-started/research-studio.md), which compiles the same authoritative contracts after strict validation. The legacy `alphaquest campaign new` TODO scaffold is retained for engine developers and compatibility; it is not the novice workflow.
+
 One campaign represents one economic edge. A normal campaign declares exactly five distinct mechanical variants before PnL is inspected.
 
-Create a scaffold:
+Engine developers may create a legacy scaffold:
 
 ```bash
 alphaquest campaign new my_campaign --symbol ES --edge-family my_edge

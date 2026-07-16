@@ -42,6 +42,10 @@ CRITICAL_ARTIFACT_GLOBS = (
     "validation_runs/*/metadata.json",
     "validation_runs/*/validation_checks.parquet",
     "validation_runs/*/approval.json",
+    "reporting_v2/result_bundle_v2.json",
+    "reporting_v2/finalization_manifest.json",
+    "reporting_v2/methodology_audit.md",
+    "studio_incomplete_attempt.json",
 )
 
 
@@ -817,7 +821,13 @@ def _run_records(root: Path, run_root: Path) -> list[dict[str, Any]]:
         display_summary = _display(root, summary_path)
         output_dir = _resolve(root, row.get("output_dir") or summary_path.parent)
         run_uid = read_run_uid(output_dir) or hashlib.sha256(display_summary.encode("utf-8")).hexdigest()[:24]
-        verdict = _run_verdict(row)
+        studio_verdict = _studio_result_verdict(output_dir, project_root=root)
+        verdict = studio_verdict or _run_verdict(
+            {
+                **row,
+                "research_verdict": summary.get("research_verdict"),
+            }
+        )
         declared_attempt_id = _scalar_text(row.get("attempt_id"))
         declared_provenance = _scalar_text(row.get("attempt_provenance"))
         if declared_attempt_id and declared_provenance in {"authored", "generated_validation"}:
@@ -930,7 +940,12 @@ def _campaign_records(
                 break
         decision = _scalar_text(root_summary.get("decision") or source.get("authored_decision"))
         status = _scalar_text(root_summary.get("status") or source.get("authored_status"))
-        lifecycle, reason = _campaign_lifecycle(decision, status, campaign_runs)
+        lifecycle, reason = _campaign_lifecycle(
+            decision,
+            status,
+            campaign_runs,
+            candidate_reviewed=_has_approved_candidate_review(root, campaign_runs),
+        )
         result.append(
             {
                 **source,
@@ -952,17 +967,59 @@ def _campaign_records(
     return result
 
 
-def _campaign_lifecycle(decision: str | None, status: str | None, runs: list[dict[str, Any]]) -> tuple[str, str]:
+def _campaign_lifecycle(
+    decision: str | None,
+    status: str | None,
+    runs: list[dict[str, Any]],
+    *,
+    candidate_reviewed: bool = False,
+) -> tuple[str, str]:
     decision_upper = (decision or "").upper()
     status_lower = (status or "").lower()
     verdicts = {run["verdict"] for run in runs}
     if decision_upper == "PASS" or "PASS" in verdicts:
-        return "candidate", "at least one terminal pass; still requires manual due diligence and incubation"
+        if candidate_reviewed:
+            return "candidate", "terminal pass has a valid independent candidate review; incubation remains mandatory"
+        return "review_queue", "terminal pass awaits a valid independent candidate_review.json"
     if decision_upper == "FAIL" or status_lower in {"failed", "completed_failed", "closed"}:
         return "closed", "authored or generated campaign decision is terminal FAIL"
     if "NEEDS MANUAL REVIEW" in verdicts or "error" in status_lower or "incomplete" in status_lower:
         return "review_queue", "run evidence is incomplete, ambiguous, or errored"
     return "active", "no terminal campaign decision is recorded"
+
+
+def _has_approved_candidate_review(root: Path, runs: list[dict[str, Any]]) -> bool:
+    from alphaquest.studio.candidate_review import CandidateReviewService
+
+    service = CandidateReviewService()
+    for run in runs:
+        if run.get("verdict") != "PASS":
+            continue
+        output = Path(str(run.get("output_dir") or ""))
+        output = output if output.is_absolute() else root / output
+        source = Path(str(run.get("source_config_path") or ""))
+        source = source if source.is_absolute() else root / source
+        candidates = (
+            output / "reporting_v2" / "result_bundle_v2.json",
+            output / "result_bundle_v2.json",
+        )
+        result_bundle = next((path for path in candidates if path.is_file()), None)
+        if result_bundle is None or not source.is_file():
+            continue
+        review_path = result_bundle.parent / "candidate_review.json"
+        if not review_path.is_file():
+            continue
+        try:
+            report = service.inspect(
+                candidate_review_path=review_path,
+                result_bundle_path=result_bundle,
+                config_path=source,
+            )
+        except (OSError, ValueError):
+            continue
+        if report.get("valid") and report.get("lifecycle_state") == "candidate":
+            return True
+    return False
 
 
 def _durable_artifact_records(
@@ -1015,11 +1072,84 @@ def _artifact_category(filename: str, campaign_id: str | None) -> str:
 
 
 def _run_verdict(row: dict[str, Any]) -> str:
+    explicit = str(row.get("research_verdict") or "").strip().upper()
+    if explicit in {"PASS", "FAIL", "NEEDS MANUAL REVIEW"}:
+        return explicit
     if row.get("passed") is True:
         return "PASS"
     if row.get("passed") is False or row.get("halted") is True or row.get("failed_stage"):
         return "FAIL"
     return "NEEDS MANUAL REVIEW"
+
+
+def _studio_result_verdict(output_dir: Path, *, project_root: Path) -> str | None:
+    """Return the authoritative Studio verdict when Studio evidence exists.
+
+    A complete, schema-valid ResultBundleV2 supersedes the provisional staged
+    summary.  Any incomplete Studio transaction or reserved-attempt marker is
+    deliberately fail-closed, including a runner summary that still says PASS.
+    """
+
+    if (output_dir / "studio_incomplete_attempt.json").is_file():
+        return "NEEDS MANUAL REVIEW"
+    reporting = output_dir / "reporting_v2"
+    if not reporting.exists():
+        return None
+    manifest_path = reporting / "finalization_manifest.json"
+    bundle_path = reporting / "result_bundle_v2.json"
+    if not manifest_path.is_file() or not bundle_path.is_file():
+        return "NEEDS MANUAL REVIEW"
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(manifest, dict)
+            or manifest.get("schema") != "alphaquest.studio-finalization/v1"
+            or manifest.get("transaction_complete") is not True
+            or manifest.get("ledger_recorded") is not True
+            or manifest.get("automatic_replay_permitted") is not False
+            or manifest.get("result_bundle") != "result_bundle_v2.json"
+        ):
+            return "NEEDS MANUAL REVIEW"
+        if manifest.get("registry_published") is not True or not isinstance(
+            manifest.get("registry_counts"), dict
+        ):
+            return "NEEDS MANUAL REVIEW"
+        if manifest.get("terminal_recovery_phase") != "FINALIZED":
+            return "NEEDS MANUAL REVIEW"
+        journal_hash = str(manifest.get("terminal_recovery_journal_sha256") or "")
+        if len(journal_hash) != 64:
+            return "NEEDS MANUAL REVIEW"
+        journal_value = manifest.get("recovery_journal")
+        if not journal_value:
+            return "NEEDS MANUAL REVIEW"
+        journal_path = Path(str(journal_value))
+        if not journal_path.is_absolute():
+            journal_path = project_root / journal_path
+        journal = json.loads(journal_path.read_text(encoding="utf-8"))
+        if (
+            not isinstance(journal, dict)
+            or journal.get("schema") != "alphaquest.studio-recovery-journal/v1"
+            or journal.get("job_id") != manifest.get("job_id")
+            or journal.get("phase") != "FINALIZED"
+            or journal.get("terminal") is not True
+            or journal.get("automatic_replay_permitted") is not False
+            or _file_hash(journal_path) != journal_hash
+        ):
+            return "NEEDS MANUAL REVIEW"
+        from alphaquest.studio.results import load_result_bundle
+
+        bundle = load_result_bundle(bundle_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return "NEEDS MANUAL REVIEW"
+    if manifest.get("research_verdict") != bundle.verdict:
+        return "NEEDS MANUAL REVIEW"
+    if (
+        manifest.get("campaign_id") != bundle.campaign_id
+        or manifest.get("variant_id") != bundle.variant_id
+        or manifest.get("run_id") != bundle.run_id
+    ):
+        return "NEEDS MANUAL REVIEW"
+    return bundle.verdict
 
 
 def _critical_artifacts(root: Path, output_dir: Path, summary_path: Path, run_uid: str) -> list[dict[str, Any]]:

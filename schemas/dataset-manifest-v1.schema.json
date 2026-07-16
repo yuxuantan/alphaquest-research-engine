@@ -1,0 +1,266 @@
+{
+  "$id": "https://alphaquest.local/schemas/dataset-manifest-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "cadence_violation_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Cadence Violation Count",
+      "type": "integer"
+    },
+    "canonical_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Canonical Sha256",
+      "type": "string"
+    },
+    "certified_features": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Certified Features",
+      "type": "array"
+    },
+    "continuous_contract": {
+      "default": "none",
+      "enum": [
+        "none",
+        "dominant_session_volume",
+        "session_volume",
+        "explicit_roll_calendar"
+      ],
+      "title": "Continuous Contract",
+      "type": "string"
+    },
+    "contract_column": {
+      "anyOf": [
+        {
+          "const": "contract_symbol",
+          "enum": [
+            "contract_symbol"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Contract Column"
+    },
+    "contract_count": {
+      "default": 1,
+      "minimum": 0,
+      "title": "Contract Count",
+      "type": "integer"
+    },
+    "coverage_end": {
+      "minLength": 1,
+      "title": "Coverage End",
+      "type": "string"
+    },
+    "coverage_start": {
+      "minLength": 1,
+      "title": "Coverage Start",
+      "type": "string"
+    },
+    "dataset_id": {
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "title": "Dataset Id",
+      "type": "string"
+    },
+    "dropped_row_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Dropped Row Count",
+      "type": "integer"
+    },
+    "duplicate_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Duplicate Count",
+      "type": "integer"
+    },
+    "exchange_timezone": {
+      "minLength": 1,
+      "title": "Exchange Timezone",
+      "type": "string"
+    },
+    "gap_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Gap Count",
+      "type": "integer"
+    },
+    "invalid_ohlc_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Invalid Ohlc Count",
+      "type": "integer"
+    },
+    "out_of_order_count": {
+      "default": 0,
+      "minimum": 0,
+      "title": "Out Of Order Count",
+      "type": "integer"
+    },
+    "path": {
+      "minLength": 1,
+      "title": "Path",
+      "type": "string"
+    },
+    "quality_notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Quality Notes",
+      "type": "array"
+    },
+    "quality_verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Quality Verdict",
+      "type": "string"
+    },
+    "roll_calendar": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Roll Calendar"
+    },
+    "roll_calendar_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Roll Calendar Sha256"
+    },
+    "roll_policy": {
+      "minLength": 1,
+      "title": "Roll Policy",
+      "type": "string"
+    },
+    "row_count": {
+      "minimum": 1,
+      "title": "Row Count",
+      "type": "integer"
+    },
+    "schema": {
+      "const": "alphaquest.dataset-manifest/v1",
+      "default": "alphaquest.dataset-manifest/v1",
+      "enum": [
+        "alphaquest.dataset-manifest/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "source": {
+      "enum": [
+        "csv",
+        "parquet"
+      ],
+      "title": "Source",
+      "type": "string"
+    },
+    "source_contract_column": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Contract Column"
+    },
+    "source_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Source Sha256",
+      "type": "string"
+    },
+    "source_timestamp_semantics": {
+      "anyOf": [
+        {
+          "enum": [
+            "bar_open",
+            "bar_close"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Source Timestamp Semantics"
+    },
+    "symbol": {
+      "enum": [
+        "ES",
+        "NQ"
+      ],
+      "title": "Symbol",
+      "type": "string"
+    },
+    "timeframe": {
+      "pattern": "^[1-9]\\d*[mhd]$",
+      "title": "Timeframe",
+      "type": "string"
+    },
+    "timestamp_semantics": {
+      "enum": [
+        "bar_open",
+        "bar_close"
+      ],
+      "title": "Timestamp Semantics",
+      "type": "string"
+    },
+    "timezone": {
+      "minLength": 1,
+      "title": "Timezone",
+      "type": "string"
+    },
+    "transformations": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Transformations",
+      "type": "array"
+    }
+  },
+  "required": [
+    "dataset_id",
+    "source",
+    "path",
+    "symbol",
+    "timeframe",
+    "timezone",
+    "exchange_timezone",
+    "timestamp_semantics",
+    "source_sha256",
+    "canonical_sha256",
+    "coverage_start",
+    "coverage_end",
+    "roll_policy",
+    "row_count",
+    "quality_verdict"
+  ],
+  "title": "DatasetManifestV1",
+  "type": "object"
+}

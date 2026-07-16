@@ -1,0 +1,817 @@
+{
+  "$defs": {
+    "DatasetManifestV1": {
+      "additionalProperties": false,
+      "properties": {
+        "cadence_violation_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Cadence Violation Count",
+          "type": "integer"
+        },
+        "canonical_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Canonical Sha256",
+          "type": "string"
+        },
+        "certified_features": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Certified Features",
+          "type": "array"
+        },
+        "continuous_contract": {
+          "default": "none",
+          "enum": [
+            "none",
+            "dominant_session_volume",
+            "session_volume",
+            "explicit_roll_calendar"
+          ],
+          "title": "Continuous Contract",
+          "type": "string"
+        },
+        "contract_column": {
+          "anyOf": [
+            {
+              "const": "contract_symbol",
+              "enum": [
+                "contract_symbol"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Contract Column"
+        },
+        "contract_count": {
+          "default": 1,
+          "minimum": 0,
+          "title": "Contract Count",
+          "type": "integer"
+        },
+        "coverage_end": {
+          "minLength": 1,
+          "title": "Coverage End",
+          "type": "string"
+        },
+        "coverage_start": {
+          "minLength": 1,
+          "title": "Coverage Start",
+          "type": "string"
+        },
+        "dataset_id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Dataset Id",
+          "type": "string"
+        },
+        "dropped_row_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Dropped Row Count",
+          "type": "integer"
+        },
+        "duplicate_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Duplicate Count",
+          "type": "integer"
+        },
+        "exchange_timezone": {
+          "minLength": 1,
+          "title": "Exchange Timezone",
+          "type": "string"
+        },
+        "gap_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Gap Count",
+          "type": "integer"
+        },
+        "invalid_ohlc_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Invalid Ohlc Count",
+          "type": "integer"
+        },
+        "out_of_order_count": {
+          "default": 0,
+          "minimum": 0,
+          "title": "Out Of Order Count",
+          "type": "integer"
+        },
+        "path": {
+          "minLength": 1,
+          "title": "Path",
+          "type": "string"
+        },
+        "quality_notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Quality Notes",
+          "type": "array"
+        },
+        "quality_verdict": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NEEDS MANUAL REVIEW"
+          ],
+          "title": "Quality Verdict",
+          "type": "string"
+        },
+        "roll_calendar": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Roll Calendar"
+        },
+        "roll_calendar_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Roll Calendar Sha256"
+        },
+        "roll_policy": {
+          "minLength": 1,
+          "title": "Roll Policy",
+          "type": "string"
+        },
+        "row_count": {
+          "minimum": 1,
+          "title": "Row Count",
+          "type": "integer"
+        },
+        "schema": {
+          "const": "alphaquest.dataset-manifest/v1",
+          "default": "alphaquest.dataset-manifest/v1",
+          "enum": [
+            "alphaquest.dataset-manifest/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        },
+        "source": {
+          "enum": [
+            "csv",
+            "parquet"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "source_contract_column": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Contract Column"
+        },
+        "source_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Source Sha256",
+          "type": "string"
+        },
+        "source_timestamp_semantics": {
+          "anyOf": [
+            {
+              "enum": [
+                "bar_open",
+                "bar_close"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Timestamp Semantics"
+        },
+        "symbol": {
+          "enum": [
+            "ES",
+            "NQ"
+          ],
+          "title": "Symbol",
+          "type": "string"
+        },
+        "timeframe": {
+          "pattern": "^[1-9]\\d*[mhd]$",
+          "title": "Timeframe",
+          "type": "string"
+        },
+        "timestamp_semantics": {
+          "enum": [
+            "bar_open",
+            "bar_close"
+          ],
+          "title": "Timestamp Semantics",
+          "type": "string"
+        },
+        "timezone": {
+          "minLength": 1,
+          "title": "Timezone",
+          "type": "string"
+        },
+        "transformations": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Transformations",
+          "type": "array"
+        }
+      },
+      "required": [
+        "dataset_id",
+        "source",
+        "path",
+        "symbol",
+        "timeframe",
+        "timezone",
+        "exchange_timezone",
+        "timestamp_semantics",
+        "source_sha256",
+        "canonical_sha256",
+        "coverage_start",
+        "coverage_end",
+        "roll_policy",
+        "row_count",
+        "quality_verdict"
+      ],
+      "title": "DatasetManifestV1",
+      "type": "object"
+    },
+    "DuplicateReviewV1": {
+      "additionalProperties": false,
+      "properties": {
+        "conclusion": {
+          "enum": [
+            "distinct",
+            "duplicate",
+            "needs_review"
+          ],
+          "title": "Conclusion",
+          "type": "string"
+        },
+        "ledger_queries": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Ledger Queries",
+          "type": "array"
+        },
+        "reviewed_campaign_ids": {
+          "items": {
+            "pattern": "^[a-z0-9][a-z0-9_]*$",
+            "type": "string"
+          },
+          "title": "Reviewed Campaign Ids",
+          "type": "array"
+        },
+        "substantive_distinction": {
+          "minLength": 1,
+          "title": "Substantive Distinction",
+          "type": "string"
+        }
+      },
+      "required": [
+        "ledger_queries",
+        "conclusion",
+        "substantive_distinction"
+      ],
+      "title": "DuplicateReviewV1",
+      "type": "object"
+    },
+    "EconomicEdgeFingerprintV1": {
+      "additionalProperties": false,
+      "properties": {
+        "causal_mechanism": {
+          "minLength": 1,
+          "title": "Causal Mechanism",
+          "type": "string"
+        },
+        "holding_period": {
+          "minLength": 1,
+          "title": "Holding Period",
+          "type": "string"
+        },
+        "market_behavior": {
+          "minLength": 1,
+          "title": "Market Behavior",
+          "type": "string"
+        },
+        "market_context": {
+          "minLength": 1,
+          "title": "Market Context",
+          "type": "string"
+        },
+        "signal_inputs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Signal Inputs",
+          "type": "array"
+        }
+      },
+      "required": [
+        "market_behavior",
+        "causal_mechanism",
+        "signal_inputs",
+        "market_context",
+        "holding_period"
+      ],
+      "title": "EconomicEdgeFingerprintV1",
+      "type": "object"
+    },
+    "ExecutionSettingsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "commission_per_contract": {
+          "minimum": 0.0,
+          "title": "Commission Per Contract",
+          "type": "number"
+        },
+        "contracts": {
+          "default": 1,
+          "minimum": 1,
+          "title": "Contracts",
+          "type": "integer"
+        },
+        "flatten_time": {
+          "default": "15:55:00",
+          "title": "Flatten Time",
+          "type": "string"
+        },
+        "initial_balance": {
+          "default": 150000.0,
+          "exclusiveMinimum": 0.0,
+          "title": "Initial Balance",
+          "type": "number"
+        },
+        "latest_entry_time": {
+          "default": "15:45:00",
+          "title": "Latest Entry Time",
+          "type": "string"
+        },
+        "latest_flat_time": {
+          "default": "15:56:00",
+          "title": "Latest Flat Time",
+          "type": "string"
+        },
+        "overnight_allowed": {
+          "const": false,
+          "default": false,
+          "enum": [
+            false
+          ],
+          "title": "Overnight Allowed",
+          "type": "boolean"
+        },
+        "point_value": {
+          "exclusiveMinimum": 0.0,
+          "title": "Point Value",
+          "type": "number"
+        },
+        "prop_profile": {
+          "minLength": 1,
+          "title": "Prop Profile",
+          "type": "string"
+        },
+        "session_end": {
+          "default": "16:00:00",
+          "title": "Session End",
+          "type": "string"
+        },
+        "session_start": {
+          "default": "09:30:00",
+          "title": "Session Start",
+          "type": "string"
+        },
+        "slippage_ticks": {
+          "minimum": 0.0,
+          "title": "Slippage Ticks",
+          "type": "number"
+        },
+        "tick_size": {
+          "exclusiveMinimum": 0.0,
+          "title": "Tick Size",
+          "type": "number"
+        },
+        "tick_value": {
+          "exclusiveMinimum": 0.0,
+          "title": "Tick Value",
+          "type": "number"
+        }
+      },
+      "required": [
+        "tick_size",
+        "point_value",
+        "tick_value",
+        "commission_per_contract",
+        "slippage_ticks",
+        "prop_profile"
+      ],
+      "title": "ExecutionSettingsV1",
+      "type": "object"
+    },
+    "ModuleBindingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "module": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Module",
+          "type": "string"
+        },
+        "parameter_grid": {
+          "additionalProperties": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 20,
+            "minItems": 2,
+            "type": "array"
+          },
+          "title": "Parameter Grid",
+          "type": "object"
+        },
+        "params": {
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "module"
+      ],
+      "title": "ModuleBindingV1",
+      "type": "object"
+    },
+    "ResearchSourceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "authors": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Authors",
+          "type": "array"
+        },
+        "doi": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Doi"
+        },
+        "link": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Link"
+        },
+        "relevance": {
+          "minLength": 1,
+          "title": "Relevance",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "year": {
+          "maximum": 2200,
+          "minimum": 1900,
+          "title": "Year",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "title",
+        "authors",
+        "year",
+        "relevance"
+      ],
+      "title": "ResearchSourceV1",
+      "type": "object"
+    },
+    "VariantDraftV1": {
+      "additionalProperties": false,
+      "properties": {
+        "confirmed": {
+          "default": false,
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "entry": {
+          "$ref": "#/$defs/ModuleBindingV1"
+        },
+        "entry_rationale": {
+          "minLength": 1,
+          "title": "Entry Rationale",
+          "type": "string"
+        },
+        "known_failure_modes": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Known Failure Modes",
+          "type": "array"
+        },
+        "material_difference": {
+          "minLength": 1,
+          "title": "Material Difference",
+          "type": "string"
+        },
+        "mechanic_rationale": {
+          "minLength": 1,
+          "title": "Mechanic Rationale",
+          "type": "string"
+        },
+        "schema": {
+          "const": "alphaquest.variant-draft/v1",
+          "default": "alphaquest.variant-draft/v1",
+          "enum": [
+            "alphaquest.variant-draft/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        },
+        "stop": {
+          "$ref": "#/$defs/ModuleBindingV1"
+        },
+        "stop_rationale": {
+          "minLength": 1,
+          "title": "Stop Rationale",
+          "type": "string"
+        },
+        "target": {
+          "$ref": "#/$defs/ModuleBindingV1"
+        },
+        "target_rationale": {
+          "minLength": 1,
+          "title": "Target Rationale",
+          "type": "string"
+        },
+        "timeframe_session_rationale": {
+          "minLength": 1,
+          "title": "Timeframe Session Rationale",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "variant_id": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Variant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "variant_id",
+        "title",
+        "entry",
+        "stop",
+        "target",
+        "mechanic_rationale",
+        "entry_rationale",
+        "stop_rationale",
+        "target_rationale",
+        "timeframe_session_rationale",
+        "known_failure_modes",
+        "material_difference"
+      ],
+      "title": "VariantDraftV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://alphaquest.local/schemas/campaign-draft-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "authoring_lane": {
+      "default": "certified_recipe",
+      "enum": [
+        "certified_recipe",
+        "visual_completed_bar_rule",
+        "engineering_handoff"
+      ],
+      "title": "Authoring Lane",
+      "type": "string"
+    },
+    "campaign_id": {
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "certified_recipe": {
+      "anyOf": [
+        {
+          "enum": [
+            "calendar_session_bias",
+            "opening_range_breakout",
+            "daily_tsm_close_to_close",
+            "daily_tsm_volatility_normalized",
+            "daily_tsm_short_term_alignment"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Certified Recipe"
+    },
+    "confirmation_context_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Confirmation Context Sha256"
+    },
+    "created_at": {
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+      "title": "Created At",
+      "type": "string"
+    },
+    "dataset": {
+      "$ref": "#/$defs/DatasetManifestV1"
+    },
+    "duplicate_review": {
+      "$ref": "#/$defs/DuplicateReviewV1"
+    },
+    "economic_edge_fingerprint": {
+      "$ref": "#/$defs/EconomicEdgeFingerprintV1"
+    },
+    "edge_family": {
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "title": "Edge Family",
+      "type": "string"
+    },
+    "engineering_handoff_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Engineering Handoff Path"
+    },
+    "execution": {
+      "$ref": "#/$defs/ExecutionSettingsV1"
+    },
+    "expected_mechanism": {
+      "minLength": 1,
+      "title": "Expected Mechanism",
+      "type": "string"
+    },
+    "frozen": {
+      "default": false,
+      "title": "Frozen",
+      "type": "boolean"
+    },
+    "holding_horizon": {
+      "minLength": 1,
+      "title": "Holding Horizon",
+      "type": "string"
+    },
+    "hypothesis": {
+      "minLength": 1,
+      "title": "Hypothesis",
+      "type": "string"
+    },
+    "instrument": {
+      "enum": [
+        "ES",
+        "NQ"
+      ],
+      "title": "Instrument",
+      "type": "string"
+    },
+    "known_failure_modes": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Known Failure Modes",
+      "type": "array"
+    },
+    "schema": {
+      "const": "alphaquest.campaign-draft/v1",
+      "default": "alphaquest.campaign-draft/v1",
+      "enum": [
+        "alphaquest.campaign-draft/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "sources": {
+      "items": {
+        "$ref": "#/$defs/ResearchSourceV1"
+      },
+      "minItems": 1,
+      "title": "Sources",
+      "type": "array"
+    },
+    "timeframe": {
+      "pattern": "^[1-9]\\d*[mhd]$",
+      "title": "Timeframe",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "variants": {
+      "items": {
+        "$ref": "#/$defs/VariantDraftV1"
+      },
+      "maxItems": 5,
+      "minItems": 5,
+      "title": "Variants",
+      "type": "array"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "title",
+    "instrument",
+    "timeframe",
+    "edge_family",
+    "hypothesis",
+    "expected_mechanism",
+    "holding_horizon",
+    "known_failure_modes",
+    "sources",
+    "economic_edge_fingerprint",
+    "duplicate_review",
+    "dataset",
+    "execution",
+    "variants"
+  ],
+  "title": "CampaignDraftV1",
+  "type": "object"
+}

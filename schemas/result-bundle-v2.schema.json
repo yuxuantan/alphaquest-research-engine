@@ -1,0 +1,396 @@
+{
+  "$defs": {
+    "ArtifactStatusV2": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "title": "Available",
+          "type": "boolean"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Path"
+        },
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "rows": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Rows"
+        },
+        "sha256": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Sha256"
+        }
+      },
+      "required": [
+        "path",
+        "available"
+      ],
+      "title": "ArtifactStatusV2",
+      "type": "object"
+    },
+    "BreakdownArtifactsV2": {
+      "additionalProperties": false,
+      "properties": {
+        "drawdown_curve": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "entry_session": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "equity_curve": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "monthly": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "side": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "yearly": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        }
+      },
+      "required": [
+        "yearly",
+        "monthly",
+        "entry_session",
+        "side",
+        "equity_curve",
+        "drawdown_curve"
+      ],
+      "title": "BreakdownArtifactsV2",
+      "type": "object"
+    },
+    "MetricValueV2": {
+      "additionalProperties": false,
+      "description": "A JSON-safe scalar and an explicit explanation when it is undefined.",
+      "properties": {
+        "reason": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reason"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "value"
+      ],
+      "title": "MetricValueV2",
+      "type": "object"
+    },
+    "ScalarMetricsV2": {
+      "additionalProperties": false,
+      "properties": {
+        "average_loss": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "average_trade_duration_minutes": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "average_win": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "daily_sharpe": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "daily_sortino": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "expectancy_currency": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "expectancy_r": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "forced_flatten_compliance": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "largest_winning_trade_contribution": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "mar": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "max_drawdown": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "max_drawdown_pct": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "max_losing_streak": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "net_profit_after_costs": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "payoff_ratio": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "profit_factor": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "prop_rule_outcome": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "total_trades": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "total_transaction_costs": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "trades_per_year": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "win_rate": {
+          "$ref": "#/$defs/MetricValueV2"
+        }
+      },
+      "required": [
+        "net_profit_after_costs",
+        "total_transaction_costs",
+        "profit_factor",
+        "expectancy_currency",
+        "expectancy_r",
+        "total_trades",
+        "trades_per_year",
+        "max_drawdown",
+        "max_drawdown_pct",
+        "mar",
+        "daily_sharpe",
+        "daily_sortino",
+        "average_trade_duration_minutes",
+        "win_rate",
+        "average_win",
+        "average_loss",
+        "payoff_ratio",
+        "max_losing_streak",
+        "largest_winning_trade_contribution",
+        "prop_rule_outcome",
+        "forced_flatten_compliance"
+      ],
+      "title": "ScalarMetricsV2",
+      "type": "object"
+    },
+    "StageCriterionV2": {
+      "additionalProperties": false,
+      "properties": {
+        "actual": {
+          "$ref": "#/$defs/MetricValueV2"
+        },
+        "evidence_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Path"
+        },
+        "metric": {
+          "title": "Metric",
+          "type": "string"
+        },
+        "operator": {
+          "enum": [
+            ">=",
+            ">",
+            "<=",
+            "<",
+            "==",
+            "!=",
+            "present"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "reason": {
+          "title": "Reason",
+          "type": "string"
+        },
+        "result": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NEEDS MANUAL REVIEW"
+          ],
+          "title": "Result",
+          "type": "string"
+        },
+        "stage": {
+          "title": "Stage",
+          "type": "string"
+        },
+        "threshold": {
+          "$ref": "#/$defs/MetricValueV2"
+        }
+      },
+      "required": [
+        "stage",
+        "metric",
+        "operator",
+        "threshold",
+        "actual",
+        "result",
+        "reason"
+      ],
+      "title": "StageCriterionV2",
+      "type": "object"
+    },
+    "SupplementalArtifactsV2": {
+      "additionalProperties": false,
+      "properties": {
+        "monte_carlo_summary": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "parameter_neighbors": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "wfa_stitched_oos": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        }
+      },
+      "required": [
+        "parameter_neighbors",
+        "wfa_stitched_oos",
+        "monte_carlo_summary"
+      ],
+      "title": "SupplementalArtifactsV2",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Sole strict-JSON source for Studio result presentation.",
+  "properties": {
+    "breakdowns": {
+      "$ref": "#/$defs/BreakdownArtifactsV2"
+    },
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "metrics": {
+      "$ref": "#/$defs/ScalarMetricsV2"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.result-bundle/v2",
+      "default": "alphaquest.result-bundle/v2",
+      "enum": [
+        "alphaquest.result-bundle/v2"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "stage_criteria": {
+      "items": {
+        "$ref": "#/$defs/StageCriterionV2"
+      },
+      "title": "Stage Criteria",
+      "type": "array"
+    },
+    "supplemental_artifacts": {
+      "$ref": "#/$defs/SupplementalArtifactsV2"
+    },
+    "variant_id": {
+      "title": "Variant Id",
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    },
+    "verdict_message": {
+      "title": "Verdict Message",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "variant_id",
+    "run_id",
+    "generated_at",
+    "verdict",
+    "verdict_message",
+    "metrics",
+    "breakdowns",
+    "supplemental_artifacts"
+  ],
+  "title": "ResultBundleV2",
+  "type": "object"
+}

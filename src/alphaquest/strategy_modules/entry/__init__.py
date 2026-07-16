@@ -10,6 +10,7 @@ from alphaquest.strategy_modules.entry.ai_gpr_geopolitical_risk_state import (
 )
 from alphaquest.strategy_modules.entry.bls_macro_release_day_drift import BlsMacroReleaseDayDriftEntry
 from alphaquest.strategy_modules.entry.calendar_session_bias import CalendarSessionBiasEntry
+from alphaquest.strategy_modules.entry.safe_bar_rule import SafeBarRuleEntry
 from alphaquest.strategy_modules.entry.cftc_tff_hedging_pressure import CftcTffHedgingPressureEntry
 from alphaquest.strategy_modules.entry.cftc_tff_tiered_hedging_pressure import CftcTffTieredHedgingPressureEntry
 from alphaquest.strategy_modules.entry.cboe_put_call_sentiment import CboePutCallSentimentEntry
@@ -552,6 +553,7 @@ ENTRY_MODULES = {
     AmihudIlliquidityStateEntry.name: AmihudIlliquidityStateEntry,
     BlsMacroReleaseDayDriftEntry.name: BlsMacroReleaseDayDriftEntry,
     CalendarSessionBiasEntry.name: CalendarSessionBiasEntry,
+    SafeBarRuleEntry.name: SafeBarRuleEntry,
     CftcTffHedgingPressureEntry.name: CftcTffHedgingPressureEntry,
     CftcTffTieredHedgingPressureEntry.name: CftcTffTieredHedgingPressureEntry,
     CboePutCallSentimentEntry.name: CboePutCallSentimentEntry,
@@ -912,6 +914,7 @@ __all__ = [
     "BankruptcyDistressReversionEntry",
     "BlsMacroReleaseDayDriftEntry",
     "CalendarSessionBiasEntry",
+    "SafeBarRuleEntry",
     "CftcTffHedgingPressureEntry",
     "CftcTffTieredHedgingPressureEntry",
     "CboePutCallSentimentEntry",

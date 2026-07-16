@@ -32,7 +32,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     try:
         return int(args.handler(args) or 0)
-    except (FileNotFoundError, ValueError, RuntimeError, sqlite3.Error) as exc:
+    except (OSError, ValueError, RuntimeError, sqlite3.Error) as exc:
         print(f"ERROR: {exc}", file=sys.stderr)
         return 2
 
@@ -67,7 +67,7 @@ def _parser() -> argparse.ArgumentParser:
     search.add_argument("--json", action="store_true")
     search.set_defaults(handler=_research_search)
 
-    campaign = commands.add_parser("campaign", help="Create, validate, inspect, or run a campaign.")
+    campaign = commands.add_parser("campaign", help="Expert YAML compatibility, validation, inspection, and execution.")
     campaign_commands = campaign.add_subparsers(dest="campaign_command")
     show = campaign_commands.add_parser("show", help="Show campaign source and latest run state.")
     show.add_argument("campaign_id")
@@ -84,7 +84,10 @@ def _parser() -> argparse.ArgumentParser:
     )
     show.add_argument("--json", action="store_true")
     show.set_defaults(handler=_campaign_show)
-    new = campaign_commands.add_parser("new", help="Create a five-variant authored campaign scaffold.")
+    new = campaign_commands.add_parser(
+        "new",
+        help="Create the legacy developer TODO scaffold; novice researchers should use Studio.",
+    )
     new.add_argument("campaign_id")
     new.add_argument("--symbol", required=True, choices=("ES", "NQ"))
     new.add_argument("--edge-family", required=True)
@@ -124,6 +127,44 @@ def _parser() -> argparse.ArgumentParser:
     inspect.add_argument("--database", default=str(DEFAULT_DATABASE))
     inspect.add_argument("--json", action="store_true")
     inspect.set_defaults(handler=_data_inspect)
+    data_import = data_commands.add_parser("import", help="Quarantine and govern a local CSV or Parquet dataset.")
+    data_import.add_argument("source")
+    data_import.add_argument("--project-root", default=".")
+    data_import.add_argument("--dataset-id", required=True)
+    data_import.add_argument("--symbol", required=True, choices=("ES", "NQ"))
+    data_import.add_argument("--timeframe", required=True)
+    data_import.add_argument("--timezone", required=True)
+    data_import.add_argument("--timestamp-semantics", required=True, choices=("bar_open", "bar_close"))
+    data_import.add_argument(
+        "--roll-policy",
+        required=True,
+        choices=("single_contract", "explicit_roll_calendar"),
+        help="Executable governed contract-selection rule; multi-contract files require a predeclared roll calendar.",
+    )
+    data_import.add_argument("--timestamp-column", default="timestamp")
+    data_import.add_argument("--open-column", default="open")
+    data_import.add_argument("--high-column", default="high")
+    data_import.add_argument("--low-column", default="low")
+    data_import.add_argument("--close-column", default="close")
+    data_import.add_argument("--volume-column", default="volume")
+    data_import.add_argument("--contract-column")
+    data_import.add_argument("--roll-calendar", help="CSV with start_timestamp and contract_symbol columns.")
+    data_import.add_argument("--single-contract", action="store_true")
+    data_import.add_argument("--json", action="store_true")
+    data_import.set_defaults(handler=_data_import)
+
+    draft = commands.add_parser("draft", help="Validate or publish a Studio-authored draft.")
+    draft_commands = draft.add_subparsers(dest="draft_command")
+    draft_validate = draft_commands.add_parser("validate", help="Validate the strict CampaignDraftV1 contract.")
+    draft_validate.add_argument("campaign_id")
+    draft_validate.add_argument("--project-root", default=".")
+    draft_validate.add_argument("--json", action="store_true")
+    draft_validate.set_defaults(handler=_draft_validate)
+    draft_publish = draft_commands.add_parser("publish", help="Compile and transactionally publish a frozen draft.")
+    draft_publish.add_argument("campaign_id")
+    draft_publish.add_argument("--project-root", default=".")
+    draft_publish.add_argument("--json", action="store_true")
+    draft_publish.set_defaults(handler=_draft_publish)
 
     artifacts = commands.add_parser("artifacts", help="Resolve generated evidence from the registry.")
     artifact_commands = artifacts.add_subparsers(dest="artifact_command")
@@ -139,11 +180,333 @@ def _parser() -> argparse.ArgumentParser:
     tutorial.add_argument("--output-root", default="examples/tutorial_campaign/generated")
     tutorial.add_argument("--no-run", action="store_true")
     tutorial.set_defaults(handler=_tutorial)
+
+    studio = commands.add_parser("studio", help="Start or inspect the local no-code Research Studio.")
+    studio_commands = studio.add_subparsers(dest="studio_command")
+    studio_start = studio_commands.add_parser("start", help="Launch Research Studio on this workstation.")
+    studio_start.add_argument("--project-root", default=".")
+    studio_start.add_argument("--port", type=int, default=8501)
+    studio_start.add_argument("--address", default="127.0.0.1")
+    studio_start.add_argument("--background", action="store_true")
+    studio_start.add_argument("--no-browser", action="store_true")
+    studio_start.add_argument("--json", action="store_true")
+    studio_start.set_defaults(handler=_studio_start)
+    studio_status = studio_commands.add_parser("status", help="Show Research Studio process status.")
+    studio_status.add_argument("--project-root", default=".")
+    studio_status.add_argument("--json", action="store_true")
+    studio_status.set_defaults(handler=_studio_status)
+    studio_stop = studio_commands.add_parser("stop", help="Stop the background Research Studio process.")
+    studio_stop.add_argument("--project-root", default=".")
+    studio_stop.add_argument("--json", action="store_true")
+    studio_stop.set_defaults(handler=_studio_stop)
+    studio_worker = studio_commands.add_parser("worker", help="Run the durable single local Studio worker.")
+    studio_worker.add_argument("--project-root", default=".")
+    studio_worker.add_argument("--once", action="store_true", help="Drain at most one job, then exit.")
+    studio_worker.add_argument("--poll-interval", type=float, default=0.5)
+    studio_worker.set_defaults(handler=_studio_worker)
+    studio_attempt = studio_commands.add_parser(
+        "attempt",
+        help="Create or submit an explicit governed follow-up attempt.",
+    )
+    studio_attempt_commands = studio_attempt.add_subparsers(dest="studio_attempt_command")
+    attempt_create = studio_attempt_commands.add_parser(
+        "create",
+        help="Clone all five frozen definitions into a new auditable attempt identity.",
+    )
+    attempt_create.add_argument("campaign_id")
+    attempt_create.add_argument(
+        "--kind",
+        required=True,
+        choices=(
+            "replication",
+            "data_refresh",
+            "methodology_rerun",
+            "pre_pnl_mechanics_correction",
+            "rescue",
+        ),
+    )
+    attempt_create.add_argument("--parent", default="original")
+    attempt_create.add_argument("--reason", required=True)
+    attempt_create.add_argument("--created-by", required=True)
+    attempt_create.add_argument("--dataset-id")
+    attempt_create.add_argument("--target-variant")
+    attempt_create.add_argument("--component", choices=("entry", "sl", "tp"))
+    attempt_create.add_argument("--parameter")
+    attempt_create.add_argument("--value", help="JSON scalar for an explicit mechanics correction.")
+    attempt_create.add_argument("--authorized-by")
+    attempt_create.add_argument("--project-root", default=".")
+    attempt_create.add_argument("--json", action="store_true")
+    attempt_create.set_defaults(handler=_studio_attempt_create)
+    attempt_list = studio_attempt_commands.add_parser("list", help="List original and governed follow-up identities.")
+    attempt_list.add_argument("campaign_id")
+    attempt_list.add_argument("--project-root", default=".")
+    attempt_list.add_argument("--json", action="store_true")
+    attempt_list.set_defaults(handler=_studio_attempt_list)
+    attempt_mechanics = studio_attempt_commands.add_parser(
+        "queue-mechanics",
+        help="Queue fresh mechanics evidence for all five configs in one attempt.",
+    )
+    attempt_mechanics.add_argument("campaign_id")
+    attempt_mechanics.add_argument("attempt_id")
+    attempt_mechanics.add_argument("--project-root", default=".")
+    attempt_mechanics.add_argument("--json", action="store_true")
+    attempt_mechanics.set_defaults(handler=_studio_attempt_queue_mechanics)
+    attempt_run = studio_attempt_commands.add_parser(
+        "queue-run",
+        help="Queue all five approved configs in one explicit attempt.",
+    )
+    attempt_run.add_argument("campaign_id")
+    attempt_run.add_argument("attempt_id")
+    attempt_run.add_argument("--project-root", default=".")
+    attempt_run.add_argument("--json", action="store_true")
+    attempt_run.set_defaults(handler=_studio_attempt_queue_run)
     return parser
 
 
 def _database_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--database", default=str(DEFAULT_DATABASE))
+
+
+def _studio_start(args: argparse.Namespace) -> int:
+    from alphaquest.studio.launcher import start_studio
+
+    payload = start_studio(
+        project_root=args.project_root,
+        port=args.port,
+        address=args.address,
+        background=args.background,
+        open_browser=not args.no_browser,
+    )
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
+    return int(payload.get("exit_code") or 0)
+
+
+def _studio_status(args: argparse.Namespace) -> int:
+    from alphaquest.studio.launcher import studio_status
+
+    payload = studio_status(project_root=args.project_root)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
+    return 0
+
+
+def _studio_stop(args: argparse.Namespace) -> int:
+    from alphaquest.studio.launcher import stop_studio
+
+    payload = stop_studio(project_root=args.project_root)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
+    return 0
+
+
+def _studio_worker(args: argparse.Namespace) -> int:
+    from alphaquest.research.storage import load_storage_layout
+    from alphaquest.studio.worker import run_forever
+
+    root = Path(args.project_root).resolve()
+    database = load_storage_layout(root).studio_runtime_root / "jobs.sqlite3"
+    handled = run_forever(
+        database,
+        project_root=root,
+        poll_interval=args.poll_interval,
+        max_jobs=1 if args.once else None,
+    )
+    print(json.dumps({"worker": "stopped", "jobs_handled": handled, "database": str(database)}))
+    return 0
+
+
+def _studio_attempt_create(args: argparse.Namespace) -> int:
+    from alphaquest.studio.followups import FollowUpAttemptRequestV1, FollowUpAttemptService
+
+    patches = []
+    patch_values = (args.target_variant, args.component, args.parameter, args.value)
+    if any(value is not None for value in patch_values):
+        if not all(value is not None for value in patch_values):
+            raise ValueError(
+                "mechanics changes require --target-variant, --component, --parameter, and --value together"
+            )
+        try:
+            scalar = json.loads(args.value)
+        except json.JSONDecodeError:
+            scalar = args.value
+        if isinstance(scalar, (dict, list)):
+            raise ValueError("--value must be one JSON scalar, not an object or list")
+        patches.append(
+            {
+                "variant_id": args.target_variant,
+                "component": args.component,
+                "parameter_path": args.parameter,
+                "value": scalar,
+            }
+        )
+    request = FollowUpAttemptRequestV1.model_validate(
+        {
+            "campaign_id": args.campaign_id,
+            "attempt_kind": args.kind,
+            "parent_attempt_id": args.parent,
+            "reason": args.reason,
+            "created_by": args.created_by,
+            "dataset_id": args.dataset_id,
+            "target_variant_id": args.target_variant,
+            "authorized_by": args.authorized_by,
+            "mechanic_patches": patches,
+        }
+    )
+    result = FollowUpAttemptService(args.project_root).create(request)
+    payload = {
+        "campaign_id": result.campaign_id,
+        "attempt_id": result.attempt_id,
+        "attempt_kind": result.attempt_kind,
+        "parent_attempt_id": result.parent_attempt_id,
+        "destination": str(result.destination),
+        "manifest_path": str(result.manifest_path),
+        "config_paths": [str(path) for path in result.config_paths],
+        "config_sha256": dict(result.config_sha256),
+        "ledger_rows_appended": result.ledger_rows_appended,
+        "indexes_refreshed": result.indexes_refreshed,
+        "next_action": result.next_action,
+        "preflight_verdict": result.preflight_verdict,
+    }
+    _print_studio_payload(payload, as_json=args.json)
+    return 0
+
+
+def _studio_attempt_list(args: argparse.Namespace) -> int:
+    from alphaquest.studio.followups import FollowUpAttemptService
+
+    payload = FollowUpAttemptService(args.project_root).list_attempts(args.campaign_id)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _emit_rows(payload, False)
+    return 0
+
+
+def _studio_attempt_queue_mechanics(args: argparse.Namespace) -> int:
+    from alphaquest.studio.followups import FollowUpAttemptService
+
+    jobs = FollowUpAttemptService(args.project_root).queue_mechanics_validation(
+        args.campaign_id,
+        args.attempt_id,
+    )
+    payload = [job.model_dump(mode="json", by_alias=True) for job in jobs]
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _emit_rows(payload, False)
+    return 0
+
+
+def _studio_attempt_queue_run(args: argparse.Namespace) -> int:
+    from alphaquest.studio.followups import FollowUpAttemptService
+
+    jobs = FollowUpAttemptService(args.project_root).queue_performance(
+        args.campaign_id,
+        args.attempt_id,
+    )
+    payload = [job.model_dump(mode="json", by_alias=True) for job in jobs]
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _emit_rows(payload, False)
+    return 0
+
+
+def _print_studio_payload(payload: dict[str, Any], *, as_json: bool) -> None:
+    if as_json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
+
+
+def _draft_validate(args: argparse.Namespace) -> int:
+    from alphaquest.studio.drafts import DraftStore
+    from alphaquest.studio.publishing import StudioPublicationService
+
+    store = DraftStore(args.project_root)
+    report = store.validation_report(args.campaign_id)
+    if report.get("valid") and report.get("frozen"):
+        try:
+            report["publication_preflight"] = StudioPublicationService(args.project_root).preflight_draft(
+                store.validate(args.campaign_id)
+            )
+        except (OSError, ValueError, RuntimeError) as exc:
+            report["valid"] = False
+            report["errors"] = [
+                {"field": "publication_preflight", "message": str(exc)}
+            ]
+    if args.json:
+        print(json.dumps(report, indent=2))
+    else:
+        _print_mapping(report)
+    return 0 if report["valid"] else 1
+
+
+def _draft_publish(args: argparse.Namespace) -> int:
+    from alphaquest.studio.drafts import DraftStore
+    from alphaquest.studio.publishing import StudioPublicationService
+
+    root = Path(args.project_root).resolve()
+    draft = DraftStore(root).validate(args.campaign_id)
+    result = StudioPublicationService(root).publish(draft)
+    payload = {
+        "campaign_id": result.campaign_id,
+        "destination": str(result.destination),
+        "files": [str(path) for path in result.files],
+        "file_sha256": dict(result.file_sha256),
+        "draft_sha256": result.draft_sha256,
+        "ledger_rows_appended": result.ledger_rows_appended,
+        "indexes_refreshed": result.indexes_refreshed,
+        "journal_path": str(result.journal_path),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
+    return 0
+
+
+def _data_import(args: argparse.Namespace) -> int:
+    from alphaquest.studio.data_import import DataImportSpec, DatasetImporter
+
+    result = DatasetImporter(args.project_root).import_file(
+        args.source,
+        DataImportSpec(
+            dataset_id=args.dataset_id,
+            symbol=args.symbol,
+            timeframe=args.timeframe,
+            timezone=args.timezone,
+            timestamp_semantics=args.timestamp_semantics,
+            roll_policy=args.roll_policy,
+            roll_calendar_path=args.roll_calendar,
+            timestamp_column=args.timestamp_column,
+            open_column=args.open_column,
+            high_column=args.high_column,
+            low_column=args.low_column,
+            close_column=args.close_column,
+            volume_column=args.volume_column,
+            contract_column=args.contract_column,
+            single_contract_confirmed=args.single_contract,
+        ),
+    )
+    payload = {
+        "manifest": result.manifest.model_dump(mode="json", by_alias=True),
+        "manifest_path": str(result.manifest_path),
+        "canonical_path": str(result.canonical_path),
+        "quarantined_path": str(result.quarantined_path),
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
+    return 0 if result.manifest.quality_verdict == "PASS" else 1
 
 
 def _workspace_build(args: argparse.Namespace) -> int:

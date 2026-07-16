@@ -3,6 +3,7 @@
 ## Getting Started
 
 - [Installation](getting-started/installation.md)
+- [Research Studio](getting-started/research-studio.md)
 - [Repository tour](getting-started/repository-tour.md)
 - [First backtest](getting-started/first-backtest.md)
 - [Trace research end to end](getting-started/trace-research.md)

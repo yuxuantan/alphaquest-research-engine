@@ -1,0 +1,208 @@
+{
+  "$defs": {
+    "ParameterSpecV1": {
+      "additionalProperties": false,
+      "properties": {
+        "choices": {
+          "anyOf": [
+            {
+              "items": {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "integer"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string"
+                  }
+                ]
+              },
+              "type": "array"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Choices"
+        },
+        "default": {
+          "default": null,
+          "title": "Default"
+        },
+        "description": {
+          "minLength": 1,
+          "title": "Description",
+          "type": "string"
+        },
+        "maximum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum"
+        },
+        "minimum": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "tunable": {
+          "default": false,
+          "title": "Tunable",
+          "type": "boolean"
+        },
+        "value_type": {
+          "enum": [
+            "boolean",
+            "integer",
+            "number",
+            "string",
+            "object",
+            "array"
+          ],
+          "title": "Value Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "value_type",
+        "description"
+      ],
+      "title": "ParameterSpecV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://alphaquest.local/schemas/module-manifest-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "certification_status": {
+      "enum": [
+        "certified",
+        "developer_only"
+      ],
+      "title": "Certification Status",
+      "type": "string"
+    },
+    "decision_timing": {
+      "enum": [
+        "completed_bar_close",
+        "entry_price",
+        "post_entry",
+        "intrabar_or_event"
+      ],
+      "title": "Decision Timing",
+      "type": "string"
+    },
+    "max_tunable_parameters": {
+      "default": 0,
+      "maximum": 2,
+      "minimum": 0,
+      "title": "Max Tunable Parameters",
+      "type": "integer"
+    },
+    "module_type": {
+      "enum": [
+        "entry",
+        "sl",
+        "tp"
+      ],
+      "title": "Module Type",
+      "type": "string"
+    },
+    "name": {
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "title": "Name",
+      "type": "string"
+    },
+    "next_bar_entry": {
+      "default": false,
+      "title": "Next Bar Entry",
+      "type": "boolean"
+    },
+    "parameters": {
+      "additionalProperties": {
+        "$ref": "#/$defs/ParameterSpecV1"
+      },
+      "title": "Parameters",
+      "type": "object"
+    },
+    "required_columns": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Required Columns",
+      "type": "array"
+    },
+    "required_detail_granularity": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Required Detail Granularity"
+    },
+    "schema": {
+      "const": "alphaquest.module-manifest/v1",
+      "default": "alphaquest.module-manifest/v1",
+      "enum": [
+        "alphaquest.module-manifest/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "summary": {
+      "minLength": 1,
+      "title": "Summary",
+      "type": "string"
+    },
+    "supported_symbols": {
+      "items": {
+        "enum": [
+          "ES",
+          "NQ"
+        ],
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Supported Symbols",
+      "type": "array"
+    }
+  },
+  "required": [
+    "name",
+    "module_type",
+    "certification_status",
+    "summary",
+    "decision_timing"
+  ],
+  "title": "ModuleManifestV1",
+  "type": "object"
+}

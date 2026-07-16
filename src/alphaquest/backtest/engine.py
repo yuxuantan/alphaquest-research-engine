@@ -1059,8 +1059,25 @@ class BacktestEngine:
         }
         self._validate_strategy_feature_columns(data, diagnostics)
         self._validate_timeframe_column(data, diagnostics)
+        self._validate_bar_cadence(data)
         self._validate_detail_data_coverage(data, detail_data, diagnostics)
         return diagnostics
+
+    def _validate_bar_cadence(self, data: pd.DataFrame) -> None:
+        if data.empty or len(data) < 2:
+            return
+        timestamps = pd.to_datetime(data["timestamp"])
+        differences = timestamps.diff().dropna()
+        minimum = pd.Timedelta(minutes=self.timeframe_minutes)
+        overlap = differences < minimum
+        if overlap.any():
+            index = overlap[overlap].index[0]
+            prior = timestamps.iloc[index - 1]
+            current = timestamps.iloc[index]
+            raise ValueError(
+                "Backtest bars overlap the configured timeframe: next entry timestamp "
+                f"{current} is earlier than decision bar close {prior + minimum}."
+            )
 
     def _validate_strategy_feature_columns(self, data: pd.DataFrame, diagnostics: dict) -> None:
         module = str(self.strategy_config.get("entry", {}).get("module", ""))

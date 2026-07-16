@@ -35,3 +35,21 @@ def test_execution_data_changes_parquet_source_hash(tmp_path):
     )
 
     assert execution_hash != plain_hash
+
+
+def test_explicit_roll_calendar_is_bound_into_bar_source_hash(tmp_path):
+    bars = tmp_path / "bars.csv"
+    bars.write_bytes(b"timestamp,open,high,low,close,volume\n")
+    calendar = tmp_path / "roll.csv"
+    calendar.write_text("start_timestamp,contract_symbol\n2026-01-01T00:00:00Z,ESH26\n")
+    config = {
+        "source": "csv",
+        "raw_csv": str(bars),
+        "continuous_contract": "explicit_roll_calendar",
+        "roll_calendar": str(calendar),
+    }
+
+    before = data_source_hash(config, {})
+    calendar.write_text("start_timestamp,contract_symbol\n2026-01-01T00:00:00Z,ESM26\n")
+
+    assert data_source_hash(config, {}) != before

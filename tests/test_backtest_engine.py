@@ -90,6 +90,16 @@ def test_bar_close_signal_enters_next_bar_open():
     assert first["entry_timestamp"] == pd.Timestamp("2024-01-03 09:31", tz="America/New_York")
 
 
+def test_engine_rejects_overlapping_bars_before_next_bar_entry() -> None:
+    cfg = _calendar_apex_cfg(signal_time="09:31:00")
+    cfg["apex_rules"]["enabled"] = False
+    cfg["timeframe"] = "5m"
+    cfg["strategy"]["entry"]["params"]["bar_interval_minutes"] = 5
+    rows = _calendar_rows("2024-01-03 09:30", 3)
+    with pytest.raises(ValueError, match="earlier than decision bar close"):
+        BacktestEngine(cfg).run(rows)
+
+
 def test_same_bar_stop_target_conflict_exits_at_stop_without_detail_data():
     cfg = _calendar_apex_cfg(signal_time="09:31:00")
     cfg["apex_rules"]["enabled"] = False

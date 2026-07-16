@@ -26,6 +26,7 @@ from alphaquest.research.core_grid import run_core_grid
 from alphaquest.research.monkey import run_monkey
 from alphaquest.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
 from alphaquest.research.policy import active_research_policy_metadata, load_research_policy
+from alphaquest.research.preflight import run_preflight
 from alphaquest.research.run_store import ensure_run_uid
 from alphaquest.research.schemas import (
     validate_campaign_config_contract,
@@ -33,6 +34,7 @@ from alphaquest.research.schemas import (
     validate_stage_result_contract,
 )
 from alphaquest.research.wfa import run_wfa
+from alphaquest.research.storage import resolve_campaign_context
 from alphaquest.utils.config import (
     CAMPAIGN_REPORT_ROOT,
     CAMPAIGN_CONFIG_FILENAME,
@@ -231,13 +233,13 @@ def _require_attempt_contract(
 
 def _campaign_governance_version(cfg: dict[str, Any], config_path: Path) -> int:
     campaign_id = str(cfg.get("campaign_id") or "")
-    for parent in config_path.resolve().parents:
-        campaign_path = parent / "campaign.yaml"
-        if not campaign_path.is_file():
-            continue
-        campaign = load_yaml(campaign_path)
-        if str(campaign.get("campaign_id") or parent.name) == campaign_id:
-            return int(campaign.get("governance_contract_version") or 0)
+    campaign_root = _source_campaign_root(config_path)
+    if campaign_root is not None:
+        campaign_path = campaign_root / "campaign.yaml"
+        if campaign_path.is_file():
+            campaign = load_yaml(campaign_path)
+            if str(campaign.get("campaign_id") or campaign_root.name) == campaign_id:
+                return int(campaign.get("governance_contract_version") or 0)
     return 0
 
 
@@ -280,11 +282,29 @@ def run_campaign_stage_tests(
     config_path = Path(config_path)
     source_config_text = config_path.read_text(encoding="utf-8")
     source_config_hash = hashlib.sha256(source_config_text.encode("utf-8")).hexdigest()
+    diagnostic_reasons = _diagnostic_reasons(
+        skip_validation=skip_validation,
+        include_acceptance=include_acceptance,
+        fast_runtime_defaults=fast_runtime_defaults,
+    )
+    submission_preflight = run_preflight(
+        config_paths=[config_path],
+        # The staged submission invokes the complete campaign/config/data
+        # checks. Repository tests remain an installation/CI gate; running
+        # pytest from here would recursively execute staged-run tests.
+        run_tests=False,
+        project_root=_storage_project_root(config_path),
+    )
+    if not submission_preflight["passed"] and not diagnostic_reasons:
+        raise ValueError(
+            "Staged submission preflight failed before attempt reservation:\n- "
+            + "\n- ".join(submission_preflight["failures"])
+        )
     cfg = canonicalize_campaign_config(load_yaml(config_path), include_acceptance=include_acceptance)
     _validate_pre_test_mechanics_review(cfg, config_path)
-    attempt = _require_attempt_contract(cfg, config_path, out_dir=out_dir)
     validation_gate = require_validation_approval(cfg, config_path)
     require_prior_variant_approvals(cfg, config_path)
+    attempt = _require_attempt_contract(cfg, config_path, out_dir=out_dir)
     if fast_runtime_defaults:
         cfg = apply_fast_runtime_defaults(cfg)
     root = Path(out_dir) if out_dir else variant_root(cfg, config_path=config_path)
@@ -336,6 +356,7 @@ def run_campaign_stage_tests(
     created_at = datetime.now().isoformat(timespec="seconds")
     run_uid = ensure_run_uid(root)
     data_cfg = cfg.get("data") or {}
+    research_verdict = _research_verdict(results, diagnostic_reasons)
     summary = {
         "run_uid": run_uid,
         "campaign_id": cfg.get("campaign_id"),
@@ -368,8 +389,11 @@ def run_campaign_stage_tests(
         "skip_validation": skip_validation,
         "mechanics_validation_gate": validation_gate,
         "fast_runtime_defaults": fast_runtime_defaults,
-        "passed": all(result["passed"] or result["status"] == "skipped" for result in results)
-        and any(result["status"] == "passed" for result in results),
+        "submission_preflight": submission_preflight,
+        "diagnostic_only": bool(diagnostic_reasons),
+        "diagnostic_reasons": diagnostic_reasons,
+        "research_verdict": research_verdict,
+        "passed": research_verdict == "PASS",
         "halted": halted,
         "stages": results,
     }
@@ -410,13 +434,17 @@ def run_campaign_stage_tests(
             "updated_at": created_at,
             "stage_order": stage_order,
             "mechanics_validation_gate": validation_gate,
+            "submission_preflight": submission_preflight,
+            "diagnostic_only": summary["diagnostic_only"],
+            "diagnostic_reasons": diagnostic_reasons,
+            "research_verdict": research_verdict,
             "layout": "campaign_variant_symbol_run",
         },
     )
     write_json(root / "campaign_test_summary.json", summary)
     write_json(root / VARIANT_TEST_SUMMARY_FILENAME, summary)
     (root / "campaign_test_summary.md").write_text(_markdown_summary(summary), encoding="utf-8")
-    if summary["passed"]:
+    if research_verdict == "PASS":
         _write_candidate_due_diligence_package(root, cfg, summary, config_snapshot_path)
     update_runs_index(root)
     return summary
@@ -429,10 +457,10 @@ def _update_source_results_index(config_path: Path, cfg: dict, summary: dict) ->
     source configs a stable navigation hook to the run folder that tested them.
     """
 
-    source_root = _source_campaign_root(config_path)
-    if source_root is None or source_root.name != str(cfg.get("campaign_id")):
+    context = resolve_campaign_context(config_path, project_root=_storage_project_root(config_path))
+    if context is None or context.campaign_id != str(cfg.get("campaign_id")):
         return None
-    index_path = source_root / "results_index.yaml"
+    index_path = context.results_index
     existing = load_yaml(index_path) if index_path.is_file() else {}
     entries = existing.get("runs") if isinstance(existing.get("runs"), list) else []
     run_dir = Path(str(summary["output_dir"]))
@@ -454,6 +482,11 @@ def _update_source_results_index(config_path: Path, cfg: dict, summary: dict) ->
         "campaign_test_summary": str(run_dir / "campaign_test_summary.json"),
         "variant_test_summary": str(run_dir / VARIANT_TEST_SUMMARY_FILENAME),
         "passed": summary.get("passed"),
+        "research_verdict": summary.get("research_verdict"),
+        "finalization_state": summary.get("finalization_state"),
+        "result_bundle_path": summary.get("result_bundle_path"),
+        "incomplete_attempt_marker_path": summary.get("incomplete_attempt_marker_path"),
+        "diagnostic_only": summary.get("diagnostic_only"),
         "halted": summary.get("halted"),
         "failed_stage": _first_failed_stage(summary.get("stages") or []),
         "updated_at": summary.get("updated_at"),
@@ -490,13 +523,44 @@ def update_source_results_index(config_path: Path, cfg: dict, summary: dict) -> 
 
 
 def _source_campaign_root(config_path: Path) -> Path | None:
-    parts = config_path.parts
-    if "campaigns" not in parts:
-        return None
-    index = len(parts) - 1 - list(reversed(parts)).index("campaigns")
-    if len(parts) <= index + 1:
-        return None
-    return Path(*parts[: index + 2])
+    context = resolve_campaign_context(config_path, project_root=_storage_project_root(config_path))
+    return context.campaign_root if context is not None else None
+
+
+def _storage_project_root(config_path: Path) -> Path:
+    resolved = config_path.resolve()
+    for parent in resolved.parents:
+        if (parent / "config" / "storage_layout.yaml").is_file():
+            return parent
+    return Path.cwd()
+
+
+def _diagnostic_reasons(
+    *,
+    skip_validation: bool,
+    include_acceptance: bool,
+    fast_runtime_defaults: bool,
+) -> list[str]:
+    reasons: list[str] = []
+    if skip_validation:
+        reasons.append("staged data validation artifacts were skipped")
+    if not include_acceptance:
+        reasons.append(f"mandatory {ACCEPTANCE_STAGE} was omitted")
+    if fast_runtime_defaults:
+        reasons.append("fast runtime defaults were applied")
+    return reasons
+
+
+def _research_verdict(results: list[dict], diagnostic_reasons: list[str]) -> str:
+    if diagnostic_reasons:
+        return "NEEDS MANUAL REVIEW"
+    statuses = [str(result.get("status") or "") for result in results]
+    stage_names = [str(result.get("stage") or "") for result in results]
+    if stage_names == DEFAULT_STAGE_ORDER and statuses == ["passed"] * len(DEFAULT_STAGE_ORDER):
+        return "PASS"
+    if any(status == "failed" for status in statuses):
+        return "FAIL"
+    return "NEEDS MANUAL REVIEW"
 
 
 def _first_failed_stage(stages: list[dict]) -> str | None:
@@ -2252,6 +2316,7 @@ def _markdown_summary(summary: dict) -> str:
         f"- Campaign: `{summary.get('campaign_id')}`",
         f"- Variant: `{summary.get('variant_id')}`",
         f"- Timeframe: `{summary.get('timeframe')}`",
+        f"- Research verdict: `{summary.get('research_verdict', 'NEEDS MANUAL REVIEW')}`",
         f"- Overall passed: `{summary.get('passed')}`",
         "",
         "| Stage | Status | Failed Criteria |",

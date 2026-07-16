@@ -20,23 +20,28 @@ SRC_ROOT = PROJECT_ROOT / "src"
 if str(SRC_ROOT) not in sys.path:
     sys.path.insert(0, str(SRC_ROOT))
 
+from alphaquest.data.clean import apply_continuous_contract, validate_ohlc  # noqa: E402
 from alphaquest.data.load import infer_data_source, load_raw_data  # noqa: E402
+from alphaquest.data.sessions import assign_sessions  # noqa: E402
+from alphaquest.research.storage import (  # noqa: E402
+    campaign_definition_paths,
+    load_storage_layout,
+    resolve_campaign_context,
+)
 from alphaquest.strategy_modules.entry import ENTRY_MODULES, entry_module_metadata  # noqa: E402
 from alphaquest.strategy_modules.sl import SL_MODULES  # noqa: E402
 from alphaquest.strategy_modules.tp import TP_MODULES  # noqa: E402
+from alphaquest.utils.hashing import file_sha256  # noqa: E402
 from alphaquest.utils.target_rr import MIN_TARGET_R_MULTIPLE, target_rr_violations  # noqa: E402
 
 
 ACTIVE_CONFIG_GLOBS = (
-    "research/campaigns/active/**/variants/**/config.yaml",
-    "research/campaigns/active/**/rescue_attempts/**/config.yaml",
     "campaigns/**/variants/**/config.yaml",
     "campaigns/**/rescue_attempts/**/config.yaml",
+    "campaigns/**/follow_up_attempts/**/config.yaml",
     "configs/campaigns/**/*.yaml",
 )
 GENERATED_RESULT_CONFIG_GLOBS = (
-    "research/evidence/runs/**/effective_config.yaml",
-    "research/evidence/runs/**/config.yaml",
     "backtest-campaigns/**/effective_config.yaml",
     "backtest-campaigns/**/config.yaml",
 )
@@ -92,6 +97,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--json", action="store_true", help="Emit machine-readable JSON.")
     parser.add_argument("--verbose", action="store_true", help="Print every warning instead of grouped summaries.")
+    parser.add_argument(
+        "--project-root",
+        default=None,
+        help="Workspace root used for storage layout, relative data paths, duplicate scans, and tests.",
+    )
     args = parser.parse_args(argv)
 
     result = run_preflight(
@@ -100,6 +110,7 @@ def main(argv: list[str] | None = None) -> int:
         allow_no_configs=args.allow_no_configs,
         run_tests=not args.skip_tests,
         pytest_args=shlex.split(args.pytest_args),
+        project_root=args.project_root,
     )
     if args.json:
         print(json.dumps(result, indent=2, sort_keys=True))
@@ -115,10 +126,16 @@ def run_preflight(
     allow_no_configs: bool = False,
     run_tests: bool = True,
     pytest_args: Iterable[str] = ("tests",),
+    project_root: str | Path | None = None,
 ) -> dict:
+    root = _resolved_project_root(project_root)
     failures: list[str] = []
     warnings: list[str] = []
-    paths = _config_paths(config_paths, include_generated_results=include_generated_results)
+    paths = _config_paths(
+        config_paths,
+        include_generated_results=include_generated_results,
+        project_root=root,
+    )
 
     if not paths and not allow_no_configs:
         failures.append(
@@ -132,7 +149,7 @@ def run_preflight(
     explicit_configs = config_paths is not None
     for path in paths:
         path = Path(path)
-        inspected.append(str(_display_path(path)))
+        inspected.append(str(_display_path(path, project_root=root)))
         try:
             cfg = _load_yaml(path)
             decision = _pre_test_decision(cfg)
@@ -143,19 +160,27 @@ def run_preflight(
                 failures,
                 warnings,
                 allow_terminal_pretest=not explicit_configs,
+                project_root=root,
             )
-            _validate_campaign_variant_count(path, failures, warnings)
-            _validate_campaign_governance(path, failures, warnings)
+            _validate_campaign_variant_count(path, failures, warnings, project_root=root)
+            _validate_campaign_governance(path, failures, warnings, project_root=root)
             if is_terminal and not explicit_configs:
                 terminal_configs += 1
                 continue
-            if _validate_data(cfg, path, failures, warnings, cache=data_validation_cache):
+            if _validate_data(
+                cfg,
+                path,
+                failures,
+                warnings,
+                cache=data_validation_cache,
+                project_root=root,
+            ):
                 data_cache_hits += 1
         except Exception as exc:  # fail closed on malformed config or data loaders
-            failures.append(f"{_display_path(path)}: preflight exception: {exc}")
+            failures.append(f"{_display_path(path, project_root=root)}: preflight exception: {exc}")
 
     if run_tests:
-        failures.extend(_pytest_failures(pytest_args))
+        failures.extend(_pytest_failures(pytest_args, project_root=root))
 
     return {
         "passed": not failures,
@@ -174,16 +199,34 @@ def _config_paths(
     config_paths: Iterable[str | Path] | None,
     *,
     include_generated_results: bool = False,
+    project_root: str | Path | None = None,
 ) -> list[Path]:
+    root = _resolved_project_root(project_root)
     if config_paths:
-        return [Path(path) for path in config_paths]
-    found: list[Path] = []
+        return [path if (path := Path(value)).is_absolute() else root / path for value in config_paths]
+    layout = load_storage_layout(root)
+    found: set[Path] = set()
+    if layout.active_campaign_root.is_dir():
+        found.update(layout.active_campaign_root.glob("*/variants/*/config.yaml"))
+        found.update(layout.active_campaign_root.glob("*/rescue_attempts/*/*/config.yaml"))
+        found.update(layout.active_campaign_root.glob("*/follow_up_attempts/*/*/config.yaml"))
+    if include_generated_results:
+        for evidence_root in layout.evidence_roots:
+            if not evidence_root.is_dir():
+                continue
+            found.update(evidence_root.glob("**/effective_config.yaml"))
+            found.update(evidence_root.glob("**/config.yaml"))
+
     patterns = list(ACTIVE_CONFIG_GLOBS)
     if include_generated_results:
         patterns.extend(GENERATED_RESULT_CONFIG_GLOBS)
     for pattern in patterns:
-        found.extend(PROJECT_ROOT.glob(pattern))
-    return sorted(path for path in found if path.is_file() and not _is_archived_path(path))
+        found.update(
+            path
+            for path in root.glob(pattern)
+            if path.is_file() and not _is_archived_path(path)
+        )
+    return sorted(path for path in found if path.is_file())
 
 
 def _is_archived_path(path: Path) -> bool:
@@ -206,8 +249,9 @@ def _validate_config(
     warnings: list[str],
     *,
     allow_terminal_pretest: bool = False,
+    project_root: str | Path | None = None,
 ) -> None:
-    prefix = str(_display_path(path))
+    prefix = str(_display_path(path, project_root=project_root))
     _require_keys(cfg, REQUIRED_TOP_LEVEL, prefix, failures)
     data_cfg = cfg.get("data") if isinstance(cfg.get("data"), dict) else {}
     strategy = cfg.get("strategy") if isinstance(cfg.get("strategy"), dict) else {}
@@ -225,6 +269,8 @@ def _validate_config(
                 f"{prefix}: data.continuous_contract={rule} is unsupported; expected one of "
                 f"{sorted(SUPPORTED_CONTINUOUS_CONTRACT_RULES)}."
             )
+        if str(rule) == "explicit_roll_calendar" and not data_cfg.get("roll_calendar"):
+            failures.append(f"{prefix}: data.roll_calendar is required for explicit_roll_calendar.")
 
     for section in ("entry", "tp", "sl"):
         value = strategy.get(section)
@@ -262,14 +308,15 @@ def _validate_config(
             failures.append(f"{prefix}: apex_rules.force_flatten_enabled must be true.")
         _require_keys(apex, REQUIRED_APEX_FIELDS, f"{prefix}: apex_rules", failures)
 
-    _validate_parameter_grid(cfg, path, failures, warnings)
-    _validate_minimum_target_rr(cfg, path, failures)
+    _validate_parameter_grid(cfg, path, failures, warnings, project_root=project_root)
+    _validate_minimum_target_rr(cfg, path, failures, project_root=project_root)
     _validate_mechanics_rationale(
         cfg,
         path,
         failures,
         warnings,
         allow_terminal_pretest=allow_terminal_pretest,
+        project_root=project_root,
     )
 
 
@@ -307,8 +354,9 @@ def _validate_mechanics_rationale(
     warnings: list[str],
     *,
     allow_terminal_pretest: bool = False,
+    project_root: str | Path | None = None,
 ) -> None:
-    prefix = str(_display_path(path))
+    prefix = str(_display_path(path, project_root=project_root))
     research = cfg.get("research_metadata")
     if not isinstance(research, dict):
         warnings.append(f"{prefix}: research_metadata is absent; new variants should include a mechanics review.")
@@ -348,8 +396,15 @@ def _pre_test_decision(cfg: dict) -> str:
     return str(review.get("pre_test_decision") or "").strip().lower()
 
 
-def _validate_parameter_grid(cfg: dict, path: Path, failures: list[str], warnings: list[str]) -> None:
-    prefix = str(_display_path(path))
+def _validate_parameter_grid(
+    cfg: dict,
+    path: Path,
+    failures: list[str],
+    warnings: list[str],
+    *,
+    project_root: str | Path | None = None,
+) -> None:
+    prefix = str(_display_path(path, project_root=project_root))
     for section in ("core_grid", "wfa"):
         container = cfg.get(section)
         if not isinstance(container, dict):
@@ -382,8 +437,14 @@ def _validate_parameter_grid(cfg: dict, path: Path, failures: list[str], warning
             )
 
 
-def _validate_minimum_target_rr(cfg: dict, path: Path, failures: list[str]) -> None:
-    prefix = str(_display_path(path))
+def _validate_minimum_target_rr(
+    cfg: dict,
+    path: Path,
+    failures: list[str],
+    *,
+    project_root: str | Path | None = None,
+) -> None:
+    prefix = str(_display_path(path, project_root=project_root))
     for violation in target_rr_violations(cfg, minimum=MIN_TARGET_R_MULTIPLE, context=prefix):
         failures.append(
             f"{violation} is below the minimum allowed reward:risk target_r_multiple "
@@ -391,12 +452,18 @@ def _validate_minimum_target_rr(cfg: dict, path: Path, failures: list[str]) -> N
         )
 
 
-def _validate_campaign_variant_count(path: Path, failures: list[str], warnings: list[str]) -> None:
-    campaign_root = _source_campaign_root(path)
+def _validate_campaign_variant_count(
+    path: Path,
+    failures: list[str],
+    warnings: list[str],
+    *,
+    project_root: str | Path | None = None,
+) -> None:
+    campaign_root = _source_campaign_root(path, project_root=project_root)
     if campaign_root is None:
         return
 
-    prefix = str(_display_path(path))
+    prefix = str(_display_path(path, project_root=project_root))
     campaign_yaml = campaign_root / "campaign.yaml"
     if not campaign_yaml.is_file():
         warnings.append(f"{prefix}: campaign.yaml is absent; variant-count policy could not be checked.")
@@ -404,7 +471,7 @@ def _validate_campaign_variant_count(path: Path, failures: list[str], warnings: 
 
     campaign = _load_yaml(campaign_yaml)
     variants = campaign.get("variants")
-    campaign_prefix = str(_display_path(campaign_yaml))
+    campaign_prefix = str(_display_path(campaign_yaml, project_root=project_root))
     if variants is None:
         warnings.append(f"{campaign_prefix}: variants list is absent; variant-count policy could not be checked.")
         return
@@ -444,8 +511,15 @@ def _validate_campaign_variant_count(path: Path, failures: list[str], warnings: 
             )
 
 
-def _validate_campaign_governance(path: Path, failures: list[str], warnings: list[str]) -> None:
-    campaign_root = _source_campaign_root(path)
+def _validate_campaign_governance(
+    path: Path,
+    failures: list[str],
+    warnings: list[str],
+    *,
+    project_root: str | Path | None = None,
+) -> None:
+    root = _resolved_project_root(project_root)
+    campaign_root = _source_campaign_root(path, project_root=root)
     if campaign_root is None:
         return
     campaign_yaml = campaign_root / "campaign.yaml"
@@ -455,7 +529,7 @@ def _validate_campaign_governance(path: Path, failures: list[str], warnings: lis
     if int(campaign.get("governance_contract_version") or 0) < GOVERNANCE_CONTRACT_VERSION:
         return
 
-    prefix = str(_display_path(campaign_yaml))
+    prefix = str(_display_path(campaign_yaml, project_root=root))
     fingerprint = campaign.get("economic_edge_fingerprint")
     required_fingerprint = ("market_behavior", "causal_mechanism", "signal_inputs", "market_context", "holding_period")
     if not isinstance(fingerprint, dict):
@@ -467,14 +541,15 @@ def _validate_campaign_governance(path: Path, failures: list[str], warnings: lis
                 failures.append(f"{prefix}: economic_edge_fingerprint.{field} must be substantive and predeclared.")
         normalized = _normalized_fingerprint(fingerprint)
         if normalized:
-            for other_path in sorted(PROJECT_ROOT.glob("campaigns/*/campaign.yaml")):
+            for other_path in campaign_definition_paths(project_root=root):
                 if other_path.resolve() == campaign_yaml.resolve():
                     continue
                 other = _load_yaml(other_path)
                 other_fingerprint = other.get("economic_edge_fingerprint")
                 if isinstance(other_fingerprint, dict) and _normalized_fingerprint(other_fingerprint) == normalized:
                     failures.append(
-                        f"{prefix}: economic edge fingerprint duplicates {_display_path(other_path)}; "
+                        f"{prefix}: economic edge fingerprint duplicates "
+                        f"{_display_path(other_path, project_root=root)}; "
                         "create no sibling campaign for the same economic edge."
                     )
                     break
@@ -523,27 +598,51 @@ def _validate_campaign_governance(path: Path, failures: list[str], warnings: lis
         maximum = rescue.get("max_rescues_per_failed_variant")
         if not isinstance(maximum, int) or maximum < 0 or maximum > 1:
             failures.append(f"{prefix}: rescue_policy.max_rescues_per_failed_variant must be 0 or 1.")
-        rescue_root = campaign_root / "rescue_attempts"
-        by_parent: dict[str, int] = {}
-        if rescue_root.exists():
-            for config in rescue_root.glob("*/*/config.yaml"):
-                rescue_cfg = _load_yaml(config)
-                parent = str((rescue_cfg.get("research_metadata") or {}).get("parent_variant_id") or "")
-                if not parent:
-                    failures.append(f"{_display_path(config)}: rescue must declare research_metadata.parent_variant_id.")
-                    continue
-                by_parent[parent] = by_parent.get(parent, 0) + 1
-        for parent, count in by_parent.items():
+        by_parent: dict[str, set[str]] = {}
+        for config in campaign_root.rglob("config.yaml"):
+            rescue_cfg = _load_yaml(config)
+            is_legacy_rescue_path = "rescue_attempts" in config.relative_to(campaign_root).parts
+            if str(rescue_cfg.get("attempt_kind") or "") != "rescue" and not is_legacy_rescue_path:
+                continue
+            research = rescue_cfg.get("research_metadata") or {}
+            parent = str(
+                research.get("rescue_target_variant_id")
+                or research.get("parent_variant_id")
+                or ""
+            )
+            if not parent:
+                failures.append(
+                    f"{_display_path(config, project_root=root)}: rescue must declare "
+                    "research_metadata.rescue_target_variant_id or parent_variant_id."
+                )
+                continue
+            if is_legacy_rescue_path:
+                relative = config.relative_to(campaign_root / "rescue_attempts")
+                path_attempt_id = relative.parts[0]
+            else:
+                path_attempt_id = str(config.parent)
+            attempt_id = str(rescue_cfg.get("attempt_id") or path_attempt_id)
+            by_parent.setdefault(parent, set()).add(attempt_id)
+        if by_parent and rescue.get("allowed") is not True:
+            failures.append(f"{prefix}: authored rescue attempts exist but rescue_policy.allowed is not true.")
+        for parent, attempts in by_parent.items():
+            count = len(attempts)
             if isinstance(maximum, int) and count > maximum:
                 failures.append(f"{prefix}: variant {parent} has {count} rescue attempts; maximum is {maximum}.")
 
-    _validate_validation_gate_declaration(path, failures)
-    _validate_attempt_declaration(path, campaign_root, failures)
+    _validate_validation_gate_declaration(path, failures, project_root=root)
+    _validate_attempt_declaration(path, campaign_root, failures, project_root=root)
 
 
-def _validate_attempt_declaration(path: Path, campaign_root: Path, failures: list[str]) -> None:
+def _validate_attempt_declaration(
+    path: Path,
+    campaign_root: Path,
+    failures: list[str],
+    *,
+    project_root: str | Path | None = None,
+) -> None:
     cfg = _load_yaml(path)
-    prefix = str(_display_path(path))
+    prefix = str(_display_path(path, project_root=project_root))
     attempt_id = str(cfg.get("attempt_id") or "")
     if re.fullmatch(r"[a-z0-9][a-z0-9_]*", attempt_id) is None:
         failures.append(f"{prefix}: governance contract v2 requires a lowercase attempt_id.")
@@ -552,7 +651,11 @@ def _validate_attempt_declaration(path: Path, campaign_root: Path, failures: lis
     attempt_kind = str(cfg.get("attempt_kind") or "")
     if not attempt_kind:
         failures.append(f"{prefix}: governance contract v2 requires attempt_kind.")
-    if "variants" in path.parts and attempt_kind and attempt_kind != "original":
+    try:
+        relative = path.resolve().relative_to(campaign_root.resolve())
+    except ValueError:
+        relative = path
+    if relative.parts and relative.parts[0] == "variants" and attempt_kind and attempt_kind != "original":
         failures.append(f"{prefix}: initial variant attempts must use attempt_kind=original.")
     if attempt_kind and attempt_kind != "original" and not str(cfg.get("parent_attempt_id") or ""):
         failures.append(f"{prefix}: non-original attempts must declare parent_attempt_id.")
@@ -572,11 +675,16 @@ def _validate_attempt_declaration(path: Path, campaign_root: Path, failures: lis
         )
 
 
-def _validate_validation_gate_declaration(path: Path, failures: list[str]) -> None:
+def _validate_validation_gate_declaration(
+    path: Path,
+    failures: list[str],
+    *,
+    project_root: str | Path | None = None,
+) -> None:
     cfg = _load_yaml(path)
     research = cfg.get("research_metadata") if isinstance(cfg.get("research_metadata"), dict) else {}
     gate = research.get("validation_gate") if isinstance(research.get("validation_gate"), dict) else None
-    prefix = str(_display_path(path))
+    prefix = str(_display_path(path, project_root=project_root))
     if gate is None:
         failures.append(f"{prefix}: governance contract v2 requires research_metadata.validation_gate.")
         return
@@ -614,15 +722,16 @@ def _validate_data(
     warnings: list[str],
     *,
     cache: dict[str, tuple[list[str], list[str]]] | None = None,
+    project_root: str | Path | None = None,
 ) -> bool:
     data_cfg = cfg.get("data")
     if not isinstance(data_cfg, dict):
         return False
-    prefix = str(_display_path(path))
-    _validate_data_paths(data_cfg, path, failures)
+    prefix = str(_display_path(path, project_root=project_root))
+    _validate_data_paths(data_cfg, path, failures, project_root=project_root)
     if any(item.startswith(f"{prefix}: data path") for item in failures):
         return False
-    load_cfg = _resolved_data_config(data_cfg, path)
+    load_cfg = _resolved_data_config(data_cfg, path, project_root=project_root)
     cache_key = _data_validation_cache_key(load_cfg)
     if cache is not None and cache_key in cache:
         cached_failures, cached_warnings = cache[cache_key]
@@ -651,6 +760,29 @@ def _validate_data(
             data_failures.append(f"data has {duplicate_count} duplicate bar(s) by {duplicate_subset}.")
         if not df["timestamp"].is_monotonic_increasing:
             data_warnings.append("loaded data timestamps are not monotonic before sorting.")
+        invalid_ohlcv = int((~validate_ohlc(df)).sum())
+        if invalid_ohlcv:
+            data_failures.append(
+                f"data has {invalid_ohlcv} non-finite, non-positive, negative-volume, or inconsistent OHLCV row(s)."
+            )
+        if "row_quality_valid" in df.columns:
+            flagged = int((df["row_quality_valid"] != True).sum())  # noqa: E712 - explicit data comparison
+            if flagged:
+                data_failures.append(f"governed source still contains {flagged} row(s) flagged invalid at intake.")
+        rule = str(load_cfg.get("continuous_contract") or "none")
+        if rule not in {"", "none", "false"}:
+            try:
+                selected = apply_continuous_contract(assign_sessions(df, load_cfg), load_cfg)
+            except Exception as exc:
+                data_failures.append(f"continuous-contract selection failed: {exc}")
+            else:
+                if selected.empty:
+                    data_failures.append("continuous-contract selection produced zero bars.")
+                selected_duplicates = int(selected.duplicated(subset=["timestamp", "symbol"]).sum())
+                if selected_duplicates:
+                    data_failures.append(
+                        f"continuous-contract selection left {selected_duplicates} duplicate timestamp/symbol bar(s)."
+                    )
     _record_data_validation(cache, cache_key, data_failures, data_warnings)
     failures.extend(f"{prefix}: {message}" for message in data_failures)
     warnings.extend(f"{prefix}: {message}" for message in data_warnings)
@@ -678,6 +810,8 @@ def _data_validation_cache_key(config: dict) -> str:
             "csv_format": config.get("csv_format", "standard"),
             "has_header": bool(config.get("has_header", True)),
             "timestamp_format": config.get("timestamp_format"),
+            "continuous_contract": config.get("continuous_contract"),
+            "roll_calendar": config.get("roll_calendar"),
         }
     elif source == "parquet":
         relevant = {
@@ -685,46 +819,73 @@ def _data_validation_cache_key(config: dict) -> str:
             "raw_parquet": config.get("raw_parquet") or config.get("raw_csv"),
             "symbol": config.get("symbol", "ES"),
             "timezone": config.get("timezone", "America/Chicago"),
+            "continuous_contract": config.get("continuous_contract"),
+            "roll_calendar": config.get("roll_calendar"),
         }
     else:
         relevant = config
     return json.dumps(relevant, sort_keys=True, default=str, separators=(",", ":"))
 
 
-def _validate_data_paths(data_cfg: dict, config_path: Path, failures: list[str]) -> None:
-    prefix = str(_display_path(config_path))
-    for key in ("raw_csv", "raw_parquet", "raw_dir"):
+def _validate_data_paths(
+    data_cfg: dict,
+    config_path: Path,
+    failures: list[str],
+    *,
+    project_root: str | Path | None = None,
+) -> None:
+    prefix = str(_display_path(config_path, project_root=project_root))
+    for key in ("raw_csv", "raw_parquet", "raw_dir", "roll_calendar"):
         value = data_cfg.get(key)
-        if value and not _resolve_path(value, config_path).exists():
+        if value and not _resolve_path(value, config_path, project_root=project_root).exists():
             failures.append(f"{prefix}: data path {key} does not exist: {value}")
+    roll_calendar = data_cfg.get("roll_calendar")
+    expected_roll_hash = data_cfg.get("roll_calendar_sha256")
+    if roll_calendar and expected_roll_hash:
+        resolved_roll = _resolve_path(roll_calendar, config_path, project_root=project_root)
+        if resolved_roll.is_file() and file_sha256(resolved_roll) != str(expected_roll_hash):
+            failures.append(f"{prefix}: data.roll_calendar_sha256 does not match {roll_calendar}.")
     if not any(data_cfg.get(key) for key in ("raw_csv", "raw_parquet", "raw_dir")):
         failures.append(f"{prefix}: data.raw_csv, data.raw_parquet, or data.raw_dir is required.")
 
 
-def _resolved_data_config(data_cfg: dict, config_path: Path) -> dict:
+def _resolved_data_config(
+    data_cfg: dict,
+    config_path: Path,
+    *,
+    project_root: str | Path | None = None,
+) -> dict:
     out = dict(data_cfg)
-    for key in ("raw_csv", "raw_parquet", "raw_dir"):
+    for key in ("raw_csv", "raw_parquet", "raw_dir", "roll_calendar"):
         if out.get(key):
-            out[key] = str(_resolve_path(out[key], config_path))
+            out[key] = str(_resolve_path(out[key], config_path, project_root=project_root))
     return out
 
 
-def _source_campaign_root(config_path: Path) -> Path | None:
-    parts = config_path.parts
-    if "campaigns" not in parts:
-        return None
-    campaigns_index = len(parts) - 1 - list(reversed(parts)).index("campaigns")
-    if len(parts) <= campaigns_index + 1:
-        return None
-    return Path(*parts[: campaigns_index + 2])
+def _source_campaign_root(
+    config_path: Path,
+    *,
+    project_root: str | Path | None = None,
+) -> Path | None:
+    context = resolve_campaign_context(
+        config_path,
+        project_root=_resolved_project_root(project_root),
+    )
+    return context.campaign_root if context is not None else None
 
 
-def _resolve_path(value: str | Path, config_path: Path) -> Path:
+def _resolve_path(
+    value: str | Path,
+    config_path: Path,
+    *,
+    project_root: str | Path | None = None,
+) -> Path:
+    root = _resolved_project_root(project_root)
     path = Path(value)
-    if path.is_absolute() or path.exists():
+    if path.is_absolute():
         return path
     candidate = config_path.parent / path
-    return candidate if candidate.exists() else PROJECT_ROOT / path
+    return candidate if candidate.exists() else root / path
 
 
 def _timestamps_are_aware(series: pd.Series) -> bool:
@@ -747,10 +908,14 @@ def _duplicate_subset(df: pd.DataFrame) -> list[str]:
     return subset
 
 
-def _pytest_failures(pytest_args: Iterable[str]) -> list[str]:
+def _pytest_failures(
+    pytest_args: Iterable[str],
+    *,
+    project_root: str | Path | None = None,
+) -> list[str]:
     args = list(pytest_args)
     cmd = [sys.executable, "-m", "pytest", *args]
-    proc = subprocess.run(cmd, cwd=PROJECT_ROOT, text=True, capture_output=True)
+    proc = subprocess.run(cmd, cwd=_resolved_project_root(project_root), text=True, capture_output=True)
     if proc.returncode == 0:
         return []
     tail = "\n".join((proc.stdout + "\n" + proc.stderr).splitlines()[-80:])
@@ -813,9 +978,14 @@ def _print_human_result(result: dict, *, verbose: bool = False) -> None:
         print(f"FAIL: {failure}")
 
 
-def _display_path(path: Path) -> Path:
+def _resolved_project_root(value: str | Path | None) -> Path:
+    return Path(PROJECT_ROOT if value is None else value).resolve()
+
+
+def _display_path(path: Path, *, project_root: str | Path | None = None) -> Path:
+    root = _resolved_project_root(project_root)
     try:
-        return path.resolve().relative_to(PROJECT_ROOT)
+        return path.resolve().relative_to(root)
     except ValueError:
         return path
 

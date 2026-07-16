@@ -12,6 +12,55 @@ def test_cli_help(capsys):
     assert "Institutional futures research operations CLI" in capsys.readouterr().out
 
 
+def test_studio_status_is_available_without_optional_process(tmp_path, capsys):
+    assert main(["studio", "status", "--project-root", str(tmp_path), "--json"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["running"] is False
+    assert payload["stale_state"] is False
+
+
+def test_draft_validate_reports_strict_errors_without_yaml(tmp_path, capsys):
+    from alphaquest.studio.drafts import DraftStore
+
+    DraftStore(tmp_path).save("es_unfinished", {"title": "Unfinished"}, wizard_step=1)
+
+    assert main(["draft", "validate", "es_unfinished", "--project-root", str(tmp_path), "--json"]) == 1
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["valid"] is False
+    assert payload["errors"]
+
+
+def test_studio_worker_once_is_a_nonblocking_health_check(tmp_path, capsys):
+    assert main(["studio", "worker", "--project-root", str(tmp_path), "--once"]) == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["jobs_handled"] == 0
+    assert Path(payload["database"]).is_file()
+
+
+def test_studio_attempt_cli_enforces_substantive_reason_before_source_changes(tmp_path, capsys):
+    code = main(
+        [
+            "studio",
+            "attempt",
+            "create",
+            "demo",
+            "--kind",
+            "replication",
+            "--reason",
+            "too short",
+            "--created-by",
+            "researcher",
+            "--project-root",
+            str(tmp_path),
+        ]
+    )
+
+    assert code == 2
+    error = capsys.readouterr().err
+    assert "at least 80 characters" in error or "min_length" in error
+    assert not (tmp_path / "research/campaigns/active/demo/follow_up_attempts").exists()
+
+
 def test_campaign_new_creates_five_variant_scaffold(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
 

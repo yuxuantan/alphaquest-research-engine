@@ -1,0 +1,802 @@
+{
+  "$defs": {
+    "AllConditionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "conditions": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "all": "#/$defs/AllConditionV1",
+                "any": "#/$defs/AnyConditionV1",
+                "comparison": "#/$defs/ComparisonConditionV1",
+                "cross": "#/$defs/CrossConditionV1",
+                "not": "#/$defs/NotConditionV1",
+                "range": "#/$defs/RangeConditionV1"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ComparisonConditionV1"
+              },
+              {
+                "$ref": "#/$defs/RangeConditionV1"
+              },
+              {
+                "$ref": "#/$defs/CrossConditionV1"
+              },
+              {
+                "$ref": "#/$defs/AllConditionV1"
+              },
+              {
+                "$ref": "#/$defs/AnyConditionV1"
+              },
+              {
+                "$ref": "#/$defs/NotConditionV1"
+              }
+            ]
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Conditions",
+          "type": "array"
+        },
+        "type": {
+          "const": "all",
+          "enum": [
+            "all"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "conditions"
+      ],
+      "title": "AllConditionV1",
+      "type": "object"
+    },
+    "AnyConditionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "conditions": {
+          "items": {
+            "discriminator": {
+              "mapping": {
+                "all": "#/$defs/AllConditionV1",
+                "any": "#/$defs/AnyConditionV1",
+                "comparison": "#/$defs/ComparisonConditionV1",
+                "cross": "#/$defs/CrossConditionV1",
+                "not": "#/$defs/NotConditionV1",
+                "range": "#/$defs/RangeConditionV1"
+              },
+              "propertyName": "type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/ComparisonConditionV1"
+              },
+              {
+                "$ref": "#/$defs/RangeConditionV1"
+              },
+              {
+                "$ref": "#/$defs/CrossConditionV1"
+              },
+              {
+                "$ref": "#/$defs/AllConditionV1"
+              },
+              {
+                "$ref": "#/$defs/AnyConditionV1"
+              },
+              {
+                "$ref": "#/$defs/NotConditionV1"
+              }
+            ]
+          },
+          "maxItems": 20,
+          "minItems": 1,
+          "title": "Conditions",
+          "type": "array"
+        },
+        "type": {
+          "const": "any",
+          "enum": [
+            "any"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "conditions"
+      ],
+      "title": "AnyConditionV1",
+      "type": "object"
+    },
+    "ComparisonConditionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "left": {
+          "discriminator": {
+            "mapping": {
+              "constant": "#/$defs/ConstantValueV1",
+              "feature": "#/$defs/FeatureValueV1",
+              "rolling": "#/$defs/RollingValueV1",
+              "tunable": "#/$defs/TunableValueV1"
+            },
+            "propertyName": "source"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FeatureValueV1"
+            },
+            {
+              "$ref": "#/$defs/ConstantValueV1"
+            },
+            {
+              "$ref": "#/$defs/TunableValueV1"
+            },
+            {
+              "$ref": "#/$defs/RollingValueV1"
+            }
+          ],
+          "title": "Left"
+        },
+        "operator": {
+          "enum": [
+            "gt",
+            "gte",
+            "lt",
+            "lte",
+            "eq",
+            "ne"
+          ],
+          "title": "Operator",
+          "type": "string"
+        },
+        "right": {
+          "discriminator": {
+            "mapping": {
+              "constant": "#/$defs/ConstantValueV1",
+              "feature": "#/$defs/FeatureValueV1",
+              "rolling": "#/$defs/RollingValueV1",
+              "tunable": "#/$defs/TunableValueV1"
+            },
+            "propertyName": "source"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FeatureValueV1"
+            },
+            {
+              "$ref": "#/$defs/ConstantValueV1"
+            },
+            {
+              "$ref": "#/$defs/TunableValueV1"
+            },
+            {
+              "$ref": "#/$defs/RollingValueV1"
+            }
+          ],
+          "title": "Right"
+        },
+        "type": {
+          "const": "comparison",
+          "enum": [
+            "comparison"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "operator",
+        "left",
+        "right"
+      ],
+      "title": "ComparisonConditionV1",
+      "type": "object"
+    },
+    "ConstantValueV1": {
+      "additionalProperties": false,
+      "properties": {
+        "source": {
+          "const": "constant",
+          "enum": [
+            "constant"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "value": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "source",
+        "value"
+      ],
+      "title": "ConstantValueV1",
+      "type": "object"
+    },
+    "CrossConditionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "direction": {
+          "enum": [
+            "above",
+            "below"
+          ],
+          "title": "Direction",
+          "type": "string"
+        },
+        "left": {
+          "discriminator": {
+            "mapping": {
+              "constant": "#/$defs/ConstantValueV1",
+              "feature": "#/$defs/FeatureValueV1",
+              "rolling": "#/$defs/RollingValueV1",
+              "tunable": "#/$defs/TunableValueV1"
+            },
+            "propertyName": "source"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FeatureValueV1"
+            },
+            {
+              "$ref": "#/$defs/ConstantValueV1"
+            },
+            {
+              "$ref": "#/$defs/TunableValueV1"
+            },
+            {
+              "$ref": "#/$defs/RollingValueV1"
+            }
+          ],
+          "title": "Left"
+        },
+        "right": {
+          "discriminator": {
+            "mapping": {
+              "constant": "#/$defs/ConstantValueV1",
+              "feature": "#/$defs/FeatureValueV1",
+              "rolling": "#/$defs/RollingValueV1",
+              "tunable": "#/$defs/TunableValueV1"
+            },
+            "propertyName": "source"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FeatureValueV1"
+            },
+            {
+              "$ref": "#/$defs/ConstantValueV1"
+            },
+            {
+              "$ref": "#/$defs/TunableValueV1"
+            },
+            {
+              "$ref": "#/$defs/RollingValueV1"
+            }
+          ],
+          "title": "Right"
+        },
+        "type": {
+          "const": "cross",
+          "enum": [
+            "cross"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "direction",
+        "left",
+        "right"
+      ],
+      "title": "CrossConditionV1",
+      "type": "object"
+    },
+    "FeatureValueV1": {
+      "additionalProperties": false,
+      "properties": {
+        "lag": {
+          "default": 0,
+          "maximum": 512,
+          "minimum": 0,
+          "title": "Lag",
+          "type": "integer"
+        },
+        "name": {
+          "minLength": 1,
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "const": "feature",
+          "enum": [
+            "feature"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "name"
+      ],
+      "title": "FeatureValueV1",
+      "type": "object"
+    },
+    "NotConditionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "condition": {
+          "discriminator": {
+            "mapping": {
+              "all": "#/$defs/AllConditionV1",
+              "any": "#/$defs/AnyConditionV1",
+              "comparison": "#/$defs/ComparisonConditionV1",
+              "cross": "#/$defs/CrossConditionV1",
+              "not": "#/$defs/NotConditionV1",
+              "range": "#/$defs/RangeConditionV1"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ComparisonConditionV1"
+            },
+            {
+              "$ref": "#/$defs/RangeConditionV1"
+            },
+            {
+              "$ref": "#/$defs/CrossConditionV1"
+            },
+            {
+              "$ref": "#/$defs/AllConditionV1"
+            },
+            {
+              "$ref": "#/$defs/AnyConditionV1"
+            },
+            {
+              "$ref": "#/$defs/NotConditionV1"
+            }
+          ],
+          "title": "Condition"
+        },
+        "type": {
+          "const": "not",
+          "enum": [
+            "not"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "condition"
+      ],
+      "title": "NotConditionV1",
+      "type": "object"
+    },
+    "RangeConditionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "inclusive": {
+          "default": true,
+          "title": "Inclusive",
+          "type": "boolean"
+        },
+        "lower": {
+          "discriminator": {
+            "mapping": {
+              "constant": "#/$defs/ConstantValueV1",
+              "feature": "#/$defs/FeatureValueV1",
+              "rolling": "#/$defs/RollingValueV1",
+              "tunable": "#/$defs/TunableValueV1"
+            },
+            "propertyName": "source"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FeatureValueV1"
+            },
+            {
+              "$ref": "#/$defs/ConstantValueV1"
+            },
+            {
+              "$ref": "#/$defs/TunableValueV1"
+            },
+            {
+              "$ref": "#/$defs/RollingValueV1"
+            }
+          ],
+          "title": "Lower"
+        },
+        "type": {
+          "const": "range",
+          "enum": [
+            "range"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "upper": {
+          "discriminator": {
+            "mapping": {
+              "constant": "#/$defs/ConstantValueV1",
+              "feature": "#/$defs/FeatureValueV1",
+              "rolling": "#/$defs/RollingValueV1",
+              "tunable": "#/$defs/TunableValueV1"
+            },
+            "propertyName": "source"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FeatureValueV1"
+            },
+            {
+              "$ref": "#/$defs/ConstantValueV1"
+            },
+            {
+              "$ref": "#/$defs/TunableValueV1"
+            },
+            {
+              "$ref": "#/$defs/RollingValueV1"
+            }
+          ],
+          "title": "Upper"
+        },
+        "value": {
+          "discriminator": {
+            "mapping": {
+              "constant": "#/$defs/ConstantValueV1",
+              "feature": "#/$defs/FeatureValueV1",
+              "rolling": "#/$defs/RollingValueV1",
+              "tunable": "#/$defs/TunableValueV1"
+            },
+            "propertyName": "source"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/FeatureValueV1"
+            },
+            {
+              "$ref": "#/$defs/ConstantValueV1"
+            },
+            {
+              "$ref": "#/$defs/TunableValueV1"
+            },
+            {
+              "$ref": "#/$defs/RollingValueV1"
+            }
+          ],
+          "title": "Value"
+        }
+      },
+      "required": [
+        "type",
+        "value",
+        "lower",
+        "upper"
+      ],
+      "title": "RangeConditionV1",
+      "type": "object"
+    },
+    "RollingValueV1": {
+      "additionalProperties": false,
+      "properties": {
+        "feature": {
+          "minLength": 1,
+          "title": "Feature",
+          "type": "string"
+        },
+        "function": {
+          "enum": [
+            "mean",
+            "sum",
+            "min",
+            "max",
+            "std"
+          ],
+          "title": "Function",
+          "type": "string"
+        },
+        "lag": {
+          "default": 0,
+          "maximum": 512,
+          "minimum": 0,
+          "title": "Lag",
+          "type": "integer"
+        },
+        "min_periods": {
+          "anyOf": [
+            {
+              "maximum": 256,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Min Periods"
+        },
+        "source": {
+          "const": "rolling",
+          "enum": [
+            "rolling"
+          ],
+          "title": "Source",
+          "type": "string"
+        },
+        "window": {
+          "maximum": 256,
+          "minimum": 2,
+          "title": "Window",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "source",
+        "feature",
+        "function",
+        "window"
+      ],
+      "title": "RollingValueV1",
+      "type": "object"
+    },
+    "TunableDefinitionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "default": {
+          "anyOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "number"
+            },
+            {
+              "type": "string"
+            }
+          ],
+          "title": "Default"
+        },
+        "name": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "value_type": {
+          "enum": [
+            "boolean",
+            "integer",
+            "number",
+            "string"
+          ],
+          "title": "Value Type",
+          "type": "string"
+        },
+        "values": {
+          "items": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              }
+            ]
+          },
+          "maxItems": 20,
+          "minItems": 2,
+          "title": "Values",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "value_type",
+        "values",
+        "default"
+      ],
+      "title": "TunableDefinitionV1",
+      "type": "object"
+    },
+    "TunableValueV1": {
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Name",
+          "type": "string"
+        },
+        "source": {
+          "const": "tunable",
+          "enum": [
+            "tunable"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "source",
+        "name"
+      ],
+      "title": "TunableValueV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://alphaquest.local/schemas/bar-rule-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "bar_interval_minutes": {
+      "default": 1.0,
+      "exclusiveMinimum": 0.0,
+      "maximum": 1440.0,
+      "title": "Bar Interval Minutes",
+      "type": "number"
+    },
+    "long_rule": {
+      "anyOf": [
+        {
+          "discriminator": {
+            "mapping": {
+              "all": "#/$defs/AllConditionV1",
+              "any": "#/$defs/AnyConditionV1",
+              "comparison": "#/$defs/ComparisonConditionV1",
+              "cross": "#/$defs/CrossConditionV1",
+              "not": "#/$defs/NotConditionV1",
+              "range": "#/$defs/RangeConditionV1"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ComparisonConditionV1"
+            },
+            {
+              "$ref": "#/$defs/RangeConditionV1"
+            },
+            {
+              "$ref": "#/$defs/CrossConditionV1"
+            },
+            {
+              "$ref": "#/$defs/AllConditionV1"
+            },
+            {
+              "$ref": "#/$defs/AnyConditionV1"
+            },
+            {
+              "$ref": "#/$defs/NotConditionV1"
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Long Rule"
+    },
+    "max_trades_per_day": {
+      "default": 1,
+      "maximum": 20,
+      "minimum": 1,
+      "title": "Max Trades Per Day",
+      "type": "integer"
+    },
+    "rth_only": {
+      "default": true,
+      "title": "Rth Only",
+      "type": "boolean"
+    },
+    "schema": {
+      "const": "alphaquest.bar-rule/v1",
+      "default": "alphaquest.bar-rule/v1",
+      "enum": [
+        "alphaquest.bar-rule/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "short_rule": {
+      "anyOf": [
+        {
+          "discriminator": {
+            "mapping": {
+              "all": "#/$defs/AllConditionV1",
+              "any": "#/$defs/AnyConditionV1",
+              "comparison": "#/$defs/ComparisonConditionV1",
+              "cross": "#/$defs/CrossConditionV1",
+              "not": "#/$defs/NotConditionV1",
+              "range": "#/$defs/RangeConditionV1"
+            },
+            "propertyName": "type"
+          },
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ComparisonConditionV1"
+            },
+            {
+              "$ref": "#/$defs/RangeConditionV1"
+            },
+            {
+              "$ref": "#/$defs/CrossConditionV1"
+            },
+            {
+              "$ref": "#/$defs/AllConditionV1"
+            },
+            {
+              "$ref": "#/$defs/AnyConditionV1"
+            },
+            {
+              "$ref": "#/$defs/NotConditionV1"
+            }
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Short Rule"
+    },
+    "signal_end_time": {
+      "default": "15:45:00",
+      "title": "Signal End Time",
+      "type": "string"
+    },
+    "signal_start_time": {
+      "default": "09:30:00",
+      "title": "Signal Start Time",
+      "type": "string"
+    },
+    "tunables": {
+      "items": {
+        "$ref": "#/$defs/TunableDefinitionV1"
+      },
+      "maxItems": 2,
+      "title": "Tunables",
+      "type": "array"
+    }
+  },
+  "title": "BarRuleV1",
+  "type": "object"
+}

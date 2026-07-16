@@ -133,6 +133,22 @@ def test_preflight_accepts_valid_config_and_timezone_aware_data(tmp_path):
     assert result["failures"] == []
 
 
+def test_preflight_rejects_nonfinite_or_nonpositive_ohlcv_before_runtime_cleaning(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    frame = pd.read_csv(data)
+    frame.loc[0, "open"] = float("inf")
+    frame.loc[1, "low"] = -1.0
+    frame.to_csv(data, index=False)
+    _write_config(config, _config(data))
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert result["passed"] is False
+    assert any("non-finite, non-positive" in failure for failure in result["failures"])
+
+
 def test_preflight_loads_shared_dataset_once(tmp_path, monkeypatch):
     import research.preflight as preflight
 
@@ -197,6 +213,24 @@ def test_preflight_rejects_campaign_with_more_than_eight_variants(tmp_path):
     assert any("campaign variant cap is 8" in failure for failure in result["failures"])
 
 
+def test_preflight_finds_campaign_yaml_below_configured_active_root(tmp_path, monkeypatch):
+    import research.preflight as preflight
+
+    data = tmp_path / "bars.csv"
+    campaign_root = tmp_path / "research/campaigns/active/es_active"
+    config = campaign_root / "variants/v01/config.yaml"
+    _write_csv(data)
+    _write_campaign_yaml(campaign_root, variant_count=9)
+    _write_config(config, _config(data, campaign_id="es_active", variant_id="v01"))
+    monkeypatch.setattr(preflight, "PROJECT_ROOT", tmp_path)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("campaign variant cap is 8" in failure for failure in result["failures"])
+    assert not any("campaign.yaml is absent" in warning for warning in result["warnings"])
+
+
 def test_preflight_requires_expansion_rationale_above_default_variant_count(tmp_path):
     data = tmp_path / "bars.csv"
     campaign_root = tmp_path / "campaigns" / "es_active"
@@ -245,9 +279,10 @@ def test_preflight_default_discovery_uses_authored_configs_only(tmp_path, monkey
 
     variant = tmp_path / "campaigns/es_active/variants/baseline/config.yaml"
     rescue = tmp_path / "campaigns/es_active/rescue_attempts/rescue1/baseline/config.yaml"
+    follow_up = tmp_path / "campaigns/es_active/follow_up_attempts/replication1/baseline/config.yaml"
     generated = tmp_path / "backtest-campaigns/es_active/baseline/ES/run1/effective_config.yaml"
     archived = tmp_path / "_archived/campaigns/es_old/variants/baseline/config.yaml"
-    for path in (variant, rescue, generated, archived):
+    for path in (variant, rescue, follow_up, generated, archived):
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("campaign_id: test\n", encoding="utf-8")
 
@@ -261,9 +296,105 @@ def test_preflight_default_discovery_uses_authored_configs_only(tmp_path, monkey
     assert default_paths == {
         Path("campaigns/es_active/variants/baseline/config.yaml"),
         Path("campaigns/es_active/rescue_attempts/rescue1/baseline/config.yaml"),
+        Path("campaigns/es_active/follow_up_attempts/replication1/baseline/config.yaml"),
     }
     assert Path("backtest-campaigns/es_active/baseline/ES/run1/effective_config.yaml") in generated_paths
     assert Path("_archived/campaigns/es_old/variants/baseline/config.yaml") not in generated_paths
+
+
+def test_preflight_default_discovery_uses_configured_active_root(tmp_path, monkeypatch):
+    import research.preflight as preflight
+
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/storage_layout.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema": "alphaquest.storage-layout/v1",
+                "active_campaign_root": "workspace/open",
+                "archive_campaign_roots": ["workspace/closed"],
+                "evidence_roots": ["workspace/evidence"],
+                "research_artifact_root": "artifacts",
+                "catalog_root": "catalogs",
+                "views_root": "views",
+                "run_store_root": "run-store",
+            }
+        ),
+        encoding="utf-8",
+    )
+    configured = tmp_path / "workspace/open/live_edge/variants/v01/config.yaml"
+    configured.parent.mkdir(parents=True)
+    configured.write_text("campaign_id: live_edge\n", encoding="utf-8")
+    monkeypatch.setattr(preflight, "PROJECT_ROOT", tmp_path)
+
+    assert _config_paths(None) == [configured]
+
+
+def test_preflight_explicit_project_root_controls_layout_and_relative_data_paths(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/storage_layout.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema": "alphaquest.storage-layout/v1",
+                "active_campaign_root": "workspace/open",
+                "archive_campaign_roots": ["workspace/closed"],
+                "evidence_roots": ["workspace/evidence"],
+                "research_artifact_root": "artifacts",
+                "catalog_root": "catalogs",
+                "views_root": "views",
+                "run_store_root": "run-store",
+            }
+        ),
+        encoding="utf-8",
+    )
+    data = tmp_path / "research/datasets/bars.csv"
+    data.parent.mkdir(parents=True)
+    _write_csv(data)
+    campaign = tmp_path / "workspace/open/fresh_root_edge"
+    config = campaign / "variants/v01/config.yaml"
+    _write_campaign_yaml(campaign, variant_count=1)
+    cfg = _config("research/datasets/bars.csv", campaign_id="fresh_root_edge", variant_id="v01")
+    _write_config(config, cfg)
+
+    result = run_preflight(
+        config_paths=["workspace/open/fresh_root_edge/variants/v01/config.yaml"],
+        project_root=tmp_path,
+        run_tests=False,
+    )
+
+    assert result["passed"]
+    assert result["configs_checked"] == ["workspace/open/fresh_root_edge/variants/v01/config.yaml"]
+    assert _config_paths(None, project_root=tmp_path) == [config]
+
+
+def test_preflight_explicit_project_root_finds_campaign_governance_in_custom_active_root(tmp_path):
+    (tmp_path / "config").mkdir()
+    (tmp_path / "config/storage_layout.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema": "alphaquest.storage-layout/v1",
+                "active_campaign_root": "custom/active",
+                "archive_campaign_roots": ["custom/archive"],
+                "evidence_roots": ["custom/evidence"],
+                "research_artifact_root": "artifacts",
+                "catalog_root": "catalogs",
+                "views_root": "views",
+                "run_store_root": "run-store",
+            }
+        ),
+        encoding="utf-8",
+    )
+    data = tmp_path / "bars.csv"
+    _write_csv(data)
+    campaign = tmp_path / "custom/active/too_many"
+    config = campaign / "variants/v01/config.yaml"
+    _write_campaign_yaml(campaign, variant_count=9)
+    _write_config(config, _config(data, campaign_id="too_many", variant_id="v01"))
+
+    result = run_preflight(config_paths=[config], project_root=tmp_path, run_tests=False)
+
+    assert not result["passed"]
+    assert any("campaign variant cap is 8" in failure for failure in result["failures"])
+    assert not any("campaign.yaml is absent" in warning for warning in result["warnings"])
 
 
 def test_preflight_rejects_missing_timezone(tmp_path):

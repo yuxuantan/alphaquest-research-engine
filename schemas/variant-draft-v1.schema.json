@@ -1,0 +1,140 @@
+{
+  "$defs": {
+    "ModuleBindingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "module": {
+          "pattern": "^[a-z0-9][a-z0-9_]*$",
+          "title": "Module",
+          "type": "string"
+        },
+        "parameter_grid": {
+          "additionalProperties": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "number"
+                },
+                {
+                  "type": "string"
+                }
+              ]
+            },
+            "maxItems": 20,
+            "minItems": 2,
+            "type": "array"
+          },
+          "title": "Parameter Grid",
+          "type": "object"
+        },
+        "params": {
+          "title": "Params",
+          "type": "object"
+        }
+      },
+      "required": [
+        "module"
+      ],
+      "title": "ModuleBindingV1",
+      "type": "object"
+    }
+  },
+  "$id": "https://alphaquest.local/schemas/variant-draft-v1.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "confirmed": {
+      "default": false,
+      "title": "Confirmed",
+      "type": "boolean"
+    },
+    "entry": {
+      "$ref": "#/$defs/ModuleBindingV1"
+    },
+    "entry_rationale": {
+      "minLength": 1,
+      "title": "Entry Rationale",
+      "type": "string"
+    },
+    "known_failure_modes": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Known Failure Modes",
+      "type": "array"
+    },
+    "material_difference": {
+      "minLength": 1,
+      "title": "Material Difference",
+      "type": "string"
+    },
+    "mechanic_rationale": {
+      "minLength": 1,
+      "title": "Mechanic Rationale",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.variant-draft/v1",
+      "default": "alphaquest.variant-draft/v1",
+      "enum": [
+        "alphaquest.variant-draft/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "stop": {
+      "$ref": "#/$defs/ModuleBindingV1"
+    },
+    "stop_rationale": {
+      "minLength": 1,
+      "title": "Stop Rationale",
+      "type": "string"
+    },
+    "target": {
+      "$ref": "#/$defs/ModuleBindingV1"
+    },
+    "target_rationale": {
+      "minLength": 1,
+      "title": "Target Rationale",
+      "type": "string"
+    },
+    "timeframe_session_rationale": {
+      "minLength": 1,
+      "title": "Timeframe Session Rationale",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    },
+    "variant_id": {
+      "pattern": "^[a-z0-9][a-z0-9_]*$",
+      "title": "Variant Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "variant_id",
+    "title",
+    "entry",
+    "stop",
+    "target",
+    "mechanic_rationale",
+    "entry_rationale",
+    "stop_rationale",
+    "target_rationale",
+    "timeframe_session_rationale",
+    "known_failure_modes",
+    "material_difference"
+  ],
+  "title": "VariantDraftV1",
+  "type": "object"
+}

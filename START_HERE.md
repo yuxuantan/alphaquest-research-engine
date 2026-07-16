@@ -1,4 +1,12 @@
-# Institutional Research Workspace
+# AlphaQuest Research Studio
+
+If you are a researcher, double-click **`AlphaQuest Studio.command`** after the one-time administrator install. Studio is the primary interface: no terminal, Python, YAML, hashes, or manual artifact paths are required. Follow its seven gated steps and begin with the isolated 15-minute Tutorial.
+
+Studio never converts unsupported intrabar, order-flow, event-replay, or custom-feature ideas into an approximate bar test. It writes an engineering handoff and reports `NEEDS MANUAL REVIEW` until a certified implementation exists.
+
+See [the Studio walkthrough](docs/getting-started/research-studio.md). The commands below are for administrators and expert operators.
+
+# Institutional Research Workspace · expert/operator reference
 
 Use the registry and generated views for routine navigation. Do not browse the generated run store to discover research state.
 
@@ -7,6 +15,8 @@ Open `alphaquest-research.code-workspace` for the curated VS Code surface. It ex
 ## Daily Entry Points
 
 - `make help`: list supported repository commands.
+- `make studio`: launch Research Studio.
+- `alphaquest studio status`: inspect its local process.
 - `make tutorial`: execute the isolated synthetic onboarding workflow.
 - `make research-workspace`: rebuild the registry, exports, run store, and generated views.
 - `alphaquest research status`: show lifecycle and run-verdict counts.
@@ -21,6 +31,9 @@ Open `alphaquest-research.code-workspace` for the curated VS Code surface. It ex
 | Path | Role | Edit policy |
 | --- | --- | --- |
 | `research/campaigns/active/` | Authored hypotheses currently under research | Human-authored source of truth |
+| `research/drafts/` | Autosaved, incomplete Studio work | Not executable and not actively discovered |
+| `research/datasets/` | Canonical bars plus strict manifests | Only `PASS` inputs may compile |
+| `research/handoffs/` | Unsupported-mechanics specifications | `NEEDS MANUAL REVIEW`; never executable |
 | `research/campaigns/archive/` | Closed authored hypotheses and attempts | Read-only historical source |
 | `src/` | Deterministic engine and research controls | Reviewed code |
 | `tests/` | Engine, methodology, and regression controls | Reviewed code |
@@ -34,7 +47,7 @@ Open `alphaquest-research.code-workspace` for the curated VS Code surface. It ex
 
 ## Verdict Semantics
 
-`candidate` means a run reached a terminal pass in the recorded workflow. It never means ready to trade. Manual due diligence, independent replication, and paper/live incubation remain mandatory.
+`candidate` is available only after a terminal `PASS` and a separately identified reviewer signs the hash-bound candidate review. It never means ready to trade. Manual due diligence, independent replication, and paper/live incubation remain mandatory.
 
 ## New Contributors
 

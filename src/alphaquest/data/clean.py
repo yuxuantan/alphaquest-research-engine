@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 
 from alphaquest.data.load import infer_data_source, load_raw_data
@@ -10,14 +11,17 @@ from alphaquest.data.sessions import assign_sessions
 
 
 def validate_ohlc(df: pd.DataFrame) -> pd.Series:
+    numeric = df[["open", "high", "low", "close", "volume"]].apply(pd.to_numeric, errors="coerce")
+    finite = pd.Series(np.isfinite(numeric.to_numpy(dtype=float)).all(axis=1), index=df.index)
     return (
-        (df["high"] >= df["open"])
-        & (df["high"] >= df["close"])
-        & (df["low"] <= df["open"])
-        & (df["low"] <= df["close"])
-        & (df["high"] >= df["low"])
-        & (df[["open", "high", "low", "close"]] > 0).all(axis=1)
-        & (df["volume"] >= 0)
+        finite
+        & (numeric["high"] >= numeric["open"])
+        & (numeric["high"] >= numeric["close"])
+        & (numeric["low"] <= numeric["open"])
+        & (numeric["low"] <= numeric["close"])
+        & (numeric["high"] >= numeric["low"])
+        & (numeric[["open", "high", "low", "close"]] > 0).all(axis=1)
+        & (numeric["volume"] >= 0)
     )
 
 
@@ -186,8 +190,11 @@ def clean_data(
         show_progress=show_progress,
     )
     _emit(status_callback, f"Loaded {len(df):,} raw bars. Removing duplicate bars...")
-    duplicate_count = int(df.duplicated(subset=["timestamp", "symbol"]).sum())
-    df = df.drop_duplicates(subset=["timestamp", "symbol"], keep="last")
+    duplicate_key = ["timestamp", "symbol"]
+    if "contract_symbol" in df.columns:
+        duplicate_key.append("contract_symbol")
+    duplicate_count = int(df.duplicated(subset=duplicate_key).sum())
+    df = df.drop_duplicates(subset=duplicate_key, keep="last")
     _emit(status_callback, "Validating OHLC rows...")
     valid_mask = validate_ohlc(df)
     invalid_count = int((~valid_mask).sum())

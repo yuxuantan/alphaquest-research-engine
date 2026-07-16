@@ -42,7 +42,10 @@ def main() -> None:
         fast_runtime_defaults=args.fast_runtime_defaults,
     )
     print(summary["output_dir"])
-    print("passed" if summary["passed"] else "failed")
+    verdict = str(summary.get("research_verdict") or "").strip().upper()
+    if verdict not in {"PASS", "FAIL", "NEEDS MANUAL REVIEW"}:
+        verdict = "PASS" if summary["passed"] else "FAIL"
+    print(verdict)
 
 
 if __name__ == "__main__":

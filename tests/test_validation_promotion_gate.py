@@ -193,6 +193,44 @@ def test_later_variant_blocks_until_prior_mechanics_approval(tmp_path, monkeypat
         require_prior_variant_approvals(current_cfg, current_path)
 
 
+def test_follow_up_variant_sequencing_checks_prior_config_in_same_attempt(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    campaign = tmp_path / "research/campaigns/active/demo"
+    campaign.mkdir(parents=True)
+    (campaign / "campaign.yaml").write_text(
+        yaml.safe_dump(
+            {"campaign_id": "demo", "governance_contract_version": 2, "variants": ["v01", "v02"]}
+        ),
+        encoding="utf-8",
+    )
+    attempt = campaign / "follow_up_attempts/replication_20260715"
+    current_cfg = None
+    current_path = None
+    for variant in ("v01", "v02"):
+        path = attempt / variant / "config.yaml"
+        path.parent.mkdir(parents=True)
+        cfg = {
+            "campaign_id": "demo",
+            "variant_id": variant,
+            "attempt_id": "replication_20260715",
+            "research_metadata": {
+                "validation_gate": {
+                    "required": True,
+                    "lane": "bar",
+                    "evidence_dir": str(attempt / variant / "validation/evidence"),
+                    "approval_path": str(attempt / variant / "validation/approval.json"),
+                }
+            },
+            "data": {"source": "csv", "raw_csv": "missing.csv"},
+        }
+        path.write_text(yaml.safe_dump(cfg), encoding="utf-8")
+        if variant == "v02":
+            current_cfg, current_path = cfg, path
+
+    with pytest.raises(ValueError, match="v01: BLOCKED"):
+        require_prior_variant_approvals(current_cfg, current_path)
+
+
 def test_bar_mechanics_command_contract_uses_small_dedicated_generated_run():
     cfg = {
         "attempt_id": "original",

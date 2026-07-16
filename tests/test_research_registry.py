@@ -1,10 +1,13 @@
+import hashlib
 import json
 from pathlib import Path
 import sqlite3
 
+import pandas as pd
 import pytest
 
-from alphaquest.research.registry import build_registry, generate_views, registry_summary
+from alphaquest.research.registry import _campaign_lifecycle, build_registry, generate_views, registry_summary
+from alphaquest.studio.results import ResultBundleBuilder
 
 
 def _write_fixture(root: Path, *, passed: bool = False) -> None:
@@ -35,6 +38,64 @@ def _write_fixture(root: Path, *, passed: bool = False) -> None:
         "stages": [{"stage": "limited_core_grid_test", "status": "passed" if passed else "failed", "passed": passed}],
     }
     (run / "campaign_test_summary.json").write_text(json.dumps(summary), encoding="utf-8")
+
+
+def _write_complete_studio_manifest(
+    root: Path,
+    reporting: Path,
+    *,
+    verdict: str,
+) -> None:
+    job_id = "registry-result-job"
+    journal = root / ".alphaquest-studio/recovery/registry-result-job.json"
+    journal.parent.mkdir(parents=True, exist_ok=True)
+    journal.write_text(
+        json.dumps(
+            {
+                "schema": "alphaquest.studio-recovery-journal/v1",
+                "job_id": job_id,
+                "phase": "FINALIZED",
+                "terminal": True,
+                "automatic_replay_permitted": False,
+                "events": [{"phase": "FINALIZED"}],
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    summary = reporting.parent / "campaign_test_summary.json"
+    reporting_hashes = {
+        path.name: hashlib.sha256(path.read_bytes()).hexdigest()
+        for path in reporting.iterdir()
+        if path.is_file() and path.name != "finalization_manifest.json"
+    }
+    (reporting / "finalization_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": "alphaquest.studio-finalization/v1",
+                "job_id": job_id,
+                "campaign_id": "demo",
+                "variant_id": "base",
+                "run_id": "run1",
+                "research_verdict": verdict,
+                "automatic_replay_permitted": False,
+                "result_bundle": "result_bundle_v2.json",
+                "evidence_issues": [],
+                "evidence_artifact_sha256": {
+                    summary.name: hashlib.sha256(summary.read_bytes()).hexdigest()
+                },
+                "reporting_artifact_sha256": reporting_hashes,
+                "ledger_recorded": True,
+                "registry_published": True,
+                "registry_counts": {},
+                "recovery_journal": str(journal.resolve()),
+                "terminal_recovery_phase": "FINALIZED",
+                "terminal_recovery_journal_sha256": hashlib.sha256(journal.read_bytes()).hexdigest(),
+                "transaction_complete": True,
+            }
+        ),
+        encoding="utf-8",
+    )
 
 
 def test_registry_records_source_lineage_runs_and_stages(tmp_path):
@@ -107,6 +168,113 @@ def test_registry_keeps_ambiguous_legacy_run_needs_manual_review(tmp_path):
         )
 
 
+def test_registry_honors_explicit_diagnostic_needs_manual_review(tmp_path):
+    _write_fixture(tmp_path)
+    path = tmp_path / "backtest-campaigns/demo/base/ES/run1/campaign_test_summary.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["research_verdict"] = "NEEDS MANUAL REVIEW"
+    payload["diagnostic_only"] = True
+    payload["halted"] = False
+    payload["stages"] = [
+        {"stage": "limited_core_grid_test", "status": "passed", "passed": True}
+    ]
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    database = tmp_path / "catalogs/registry.sqlite"
+
+    build_registry(project_root=tmp_path, database_path=database)
+
+    summary = registry_summary(database)
+    assert summary["run_verdicts"] == {"NEEDS MANUAL REVIEW": 1}
+    assert summary["campaign_lifecycle"] == {"review_queue": 1}
+
+
+def test_registry_prefers_complete_result_bundle_over_runner_pass(tmp_path):
+    _write_fixture(tmp_path, passed=True)
+    run = tmp_path / "backtest-campaigns/demo/base/ES/run1"
+    reporting = run / "reporting_v2"
+    ResultBundleBuilder().build_and_write(
+        pd.DataFrame(columns=["net_pnl"]),
+        reporting,
+        campaign_id="demo",
+        variant_id="base",
+        run_id="run1",
+        verdict="NEEDS MANUAL REVIEW",
+    )
+    _write_complete_studio_manifest(
+        tmp_path,
+        reporting,
+        verdict="NEEDS MANUAL REVIEW",
+    )
+
+    build_registry(
+        project_root=tmp_path,
+        database_path=tmp_path / "catalogs/registry.sqlite",
+    )
+
+    summary = registry_summary(tmp_path / "catalogs/registry.sqlite")
+    assert summary["run_verdicts"] == {"NEEDS MANUAL REVIEW": 1}
+    assert summary["campaign_lifecycle"] == {"review_queue": 1}
+
+
+def test_registry_marks_incomplete_studio_finalization_nmr_even_with_pass_bundle(tmp_path):
+    _write_fixture(tmp_path, passed=True)
+    run = tmp_path / "backtest-campaigns/demo/base/ES/run1"
+    reporting = run / "reporting_v2"
+    ResultBundleBuilder().build_and_write(
+        pd.DataFrame(columns=["net_pnl"]),
+        reporting,
+        campaign_id="demo",
+        variant_id="base",
+        run_id="run1",
+        verdict="PASS",
+    )
+    (reporting / "finalization_manifest.json").write_text(
+        json.dumps(
+            {
+                "schema": "alphaquest.studio-finalization/v1",
+                "campaign_id": "demo",
+                "variant_id": "base",
+                "research_verdict": "PASS",
+                "transaction_complete": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    build_registry(
+        project_root=tmp_path,
+        database_path=tmp_path / "catalogs/registry.sqlite",
+    )
+
+    summary = registry_summary(tmp_path / "catalogs/registry.sqlite")
+    assert summary["run_verdicts"] == {"NEEDS MANUAL REVIEW": 1}
+    assert summary["campaign_lifecycle"] == {"review_queue": 1}
+
+
+def test_registry_incomplete_attempt_marker_overrides_complete_pass(tmp_path):
+    _write_fixture(tmp_path, passed=True)
+    run = tmp_path / "backtest-campaigns/demo/base/ES/run1"
+    (run / "studio_incomplete_attempt.json").write_text(
+        json.dumps(
+            {
+                "schema": "alphaquest.studio-incomplete-attempt/v1",
+                "research_verdict": "NEEDS MANUAL REVIEW",
+                "attempt_reserved": True,
+                "automatic_replay_permitted": False,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    build_registry(
+        project_root=tmp_path,
+        database_path=tmp_path / "catalogs/registry.sqlite",
+    )
+
+    summary = registry_summary(tmp_path / "catalogs/registry.sqlite")
+    assert summary["run_verdicts"] == {"NEEDS MANUAL REVIEW": 1}
+
+
 def test_registry_rejects_second_run_for_governance_v2_authored_attempt(tmp_path):
     campaign = tmp_path / "campaigns/demo"
     config = campaign / "variants/base/config.yaml"
@@ -148,14 +316,26 @@ def test_registry_rejects_second_run_for_governance_v2_authored_attempt(tmp_path
         build_registry(project_root=tmp_path, database_path=tmp_path / "catalogs/registry.sqlite")
 
 
-def test_registry_pass_is_candidate_not_tradeable(tmp_path):
+def test_registry_pass_waits_for_independent_candidate_review(tmp_path):
     _write_fixture(tmp_path, passed=True)
     database = tmp_path / "catalogs" / "registry.sqlite"
     build_registry(project_root=tmp_path, database_path=database)
 
     summary = registry_summary(database)
 
-    assert summary["campaign_lifecycle"] == {"candidate": 1}
+    assert summary["campaign_lifecycle"] == {"review_queue": 1}
+
+
+def test_registry_promotes_only_after_valid_candidate_review_signal():
+    lifecycle, reason = _campaign_lifecycle(
+        None,
+        None,
+        [{"verdict": "PASS"}],
+        candidate_reviewed=True,
+    )
+
+    assert lifecycle == "candidate"
+    assert "independent candidate review" in reason
 
 
 def test_generated_views_are_replaceable_and_link_to_definitions(tmp_path):
@@ -167,8 +347,8 @@ def test_generated_views_are_replaceable_and_link_to_definitions(tmp_path):
     counts_again = generate_views(project_root=tmp_path, database_path=database)
 
     assert counts == counts_again
-    assert counts["candidate"] == 1
-    assert (tmp_path / "views" / "candidate" / "definitions" / "demo").resolve() == tmp_path / "campaigns" / "demo"
+    assert counts["review_queue"] == 1
+    assert (tmp_path / "views" / "review_queue" / "definitions" / "demo").resolve() == tmp_path / "campaigns" / "demo"
     assert (tmp_path / "views" / "recent_failures" / "runs.csv").is_file()
     readme = (tmp_path / "views" / "README.md").read_text(encoding="utf-8")
     assert "Manual review" in readme

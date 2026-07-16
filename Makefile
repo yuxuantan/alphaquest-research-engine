@@ -1,12 +1,17 @@
 VALIDATION_DASHBOARD_PORT ?= 8502
 VALIDATION_DASHBOARD_SEARCH_ROOT ?= research/evidence/runs
 SAMPLE_VALIDATION_RUN_DIR ?= examples/validation_runs/sample_core
+STUDIO_PORT ?= 8501
 
-.PHONY: help setup smoke tutorial docs-check test lint quality qualify cleanup-generated research-audit remediation-review preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit storage-migration-verify research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
+.PHONY: help setup studio-setup studio studio-status studio-stop smoke tutorial docs-check test lint quality qualify cleanup-generated research-audit remediation-review preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit storage-migration-verify research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
 
 help:
 	@printf '%s\n' \
 	  'setup                 Install the package with development dependencies' \
+	  'studio-setup          Install development and Research Studio dependencies' \
+	  'studio                Launch the local Research Studio in the browser' \
+	  'studio-status         Show the local Research Studio process status' \
+	  'studio-stop           Stop the background Research Studio process' \
 	  'smoke                 Run fast CLI, registry, preflight, and engine tests' \
 	  'tutorial              Generate and execute the isolated synthetic tutorial' \
 	  'docs-check            Validate local links in onboarding documentation' \
@@ -23,6 +28,18 @@ help:
 
 setup:
 	python3 -m pip install -c constraints/dev.txt -e ".[dev]"
+
+studio-setup:
+	python3 -m pip install -c constraints/dev.txt -e ".[dev,studio]"
+
+studio:
+	PYTHONPATH=src python3 -m alphaquest.cli studio start --port $(STUDIO_PORT)
+
+studio-status:
+	PYTHONPATH=src python3 -m alphaquest.cli studio status
+
+studio-stop:
+	PYTHONPATH=src python3 -m alphaquest.cli studio stop
 
 smoke:
 	PYTHONPATH=src python3 -m pytest -q tests/test_cli.py tests/test_preflight.py tests/test_research_registry.py tests/test_backtest_contracts.py

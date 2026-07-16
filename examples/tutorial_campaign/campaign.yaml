@@ -1,15 +1,27 @@
 campaign_id: tutorial_calendar_bias
-title: Synthetic Calendar Bias Tutorial
+title: 15-Minute Synthetic Research Studio Walkthrough
 status: synthetic_example_only
 instrument: ES
 timeframe: 1m
 edge_family: none_synthetic_onboarding
-hypothesis: This is deterministic onboarding data and makes no economic-edge claim.
+hypothesis: A fixed weekday entry appears profitable on the constructed trend, but has no timing skill beyond random entries.
+expected_failure: The profitable lead variant must fail the seeded randomized-entry benchmark.
+known_failure_modes:
+  - The bars are constructed and contain no empirical market evidence.
+  - A broad upward trend rewards arbitrary long entries.
+  - Ten sessions are deliberately insufficient for real research.
 variants:
   - v01
   - v02
   - v03
   - v04
   - v05
+protocol:
+  random_seed: 1729
+  operational_expected: PASS
+  research_expected: FAIL
+  first_failed_gate_for_lead_variant: randomized_entry_benchmark
+synthetic: true
 research_eligibility: prohibited
+promotion_eligible: false
 production_ledger_update: false

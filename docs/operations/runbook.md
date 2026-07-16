@@ -2,6 +2,14 @@
 
 ## Daily Research
 
+The novice workflow runs entirely in Research Studio. Operators can inspect the durable local processes and queue with:
+
+```bash
+alphaquest studio status
+```
+
+Expert registry commands remain:
+
 ```bash
 make research-workspace
 alphaquest research status

@@ -10,6 +10,7 @@ repository coverage audit.
 from __future__ import annotations
 
 from datetime import datetime
+from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
@@ -20,6 +21,12 @@ import pyarrow.parquet as pq
 import yaml
 
 from alphaquest.data.source import data_source_hash
+from alphaquest.research.storage import (
+    display_path,
+    load_storage_layout,
+    resolve_campaign_context,
+    resolve_recorded_path,
+)
 from alphaquest.validation.schema import (
     BAR_WINDOWS_FILENAME,
     EVENT_TRANSITIONS_FILENAME,
@@ -117,7 +124,11 @@ def inspect_validation_gate(
     if compute_input_hash:
         try:
             subset = gate.get("data_subset") if isinstance(gate.get("data_subset"), dict) else None
-            input_hash = data_source_hash(cfg.get("data") or {}, subset)
+            project_root = _storage_project_root(source_path)
+            input_hash = data_source_hash(
+                _resolved_data_config(cfg.get("data") or {}, project_root),
+                subset,
+            )
         except (FileNotFoundError, KeyError, OSError, ValueError) as exc:
             report["errors"].append(f"input data hash could not be computed: {exc}")
     else:
@@ -159,13 +170,14 @@ def require_validation_approval(cfg: dict[str, Any], config_path: str | Path) ->
 def require_prior_variant_approvals(cfg: dict[str, Any], config_path: str | Path) -> None:
     """Serialize v2 campaign mechanics review in declared variant order."""
 
-    path = Path(config_path)
-    try:
-        campaign_root = path.parents[2]
-    except IndexError:
+    path = Path(config_path).resolve()
+    project_root = _storage_project_root(path)
+    context = resolve_campaign_context(path, project_root=project_root)
+    if context is None or context.campaign_id != str(cfg.get("campaign_id") or ""):
         return
+    campaign_root = context.campaign_root
     campaign_path = campaign_root / "campaign.yaml"
-    if not campaign_path.is_file() or campaign_root.name != str(cfg.get("campaign_id") or ""):
+    if not campaign_path.is_file():
         return
     try:
         campaign = yaml.safe_load(campaign_path.read_text(encoding="utf-8")) or {}
@@ -178,8 +190,19 @@ def require_prior_variant_approvals(cfg: dict[str, Any], config_path: str | Path
     if current not in variants:
         raise ValueError("Campaign sequencing gate failed: current variant is not in campaign.yaml variants")
     unresolved = []
+    try:
+        relative = path.relative_to(campaign_root)
+    except ValueError:
+        raise ValueError("Campaign sequencing gate failed: config is outside its resolved campaign root")
+    parts = relative.parts
+    if len(parts) >= 4 and parts[0] == "follow_up_attempts" and parts[-1] == "config.yaml":
+        prior_root = campaign_root / "follow_up_attempts" / parts[1]
+    elif len(parts) >= 3 and parts[0] == "variants" and parts[-1] == "config.yaml":
+        prior_root = campaign_root / "variants"
+    else:
+        raise ValueError("Campaign sequencing gate failed: config does not belong to a governed attempt layout")
     for prior_variant in variants[: variants.index(current)]:
-        prior_path = campaign_root / "variants" / prior_variant / "config.yaml"
+        prior_path = prior_root / prior_variant / "config.yaml"
         try:
             prior_cfg = yaml.safe_load(prior_path.read_text(encoding="utf-8")) or {}
         except (OSError, yaml.YAMLError) as exc:
@@ -318,10 +341,88 @@ def _resolve_path(value: Any, config_path: Path) -> Path | None:
     path = Path(str(value))
     if path.is_absolute():
         return path
-    cwd_path = Path.cwd() / path
-    if cwd_path.exists() or str(path).startswith(("campaigns/", "backtest-campaigns/", "examples/")):
-        return cwd_path
+    project_root = _storage_project_root(config_path)
+    layout = load_storage_layout(project_root)
+    configured_roots = (
+        *layout.campaign_roots,
+        *layout.evidence_roots,
+        layout.research_artifact_root,
+        layout.catalog_root,
+        layout.views_root,
+        layout.run_store_root,
+        layout.draft_root,
+        layout.dataset_root,
+        layout.handoff_root,
+        layout.studio_runtime_root,
+    )
+    text = path.as_posix()
+    for root in configured_roots:
+        recorded = display_path(root, project_root)
+        recorded_path = Path(recorded)
+        if recorded_path.is_absolute():
+            continue
+        prefix = recorded_path.as_posix().rstrip("/")
+        if text == prefix or text.startswith(prefix + "/"):
+            return project_root / path
+    project_path = resolve_recorded_path(path, project_root=project_root, layout=layout)
+    if project_path.exists() or text.startswith(("campaigns/", "backtest-campaigns/", "examples/")):
+        return project_path
     return config_path.parent / path
+
+
+def _storage_project_root(config_path: Path) -> Path:
+    resolved = config_path.resolve()
+    for parent in (resolved.parent, *resolved.parents):
+        if (parent / "config" / "storage_layout.yaml").is_file():
+            return parent
+    for parent in (resolved.parent, *resolved.parents):
+        for campaign_root in (
+            parent / "research" / "campaigns" / "active",
+            parent / "research" / "campaigns" / "archive",
+        ):
+            try:
+                resolved.relative_to(campaign_root)
+            except ValueError:
+                continue
+            return parent
+    for parent in (resolved.parent, *resolved.parents):
+        if parent.name == "research":
+            continue
+        try:
+            resolved.relative_to(parent / "campaigns")
+        except ValueError:
+            continue
+        return parent
+    return Path.cwd().resolve()
+
+
+def _resolved_data_config(data_config: dict[str, Any], project_root: Path) -> dict[str, Any]:
+    """Resolve recorded local inputs for hashing without mutating the config contract."""
+
+    resolved = deepcopy(data_config)
+    path_keys = {
+        "raw_csv",
+        "raw_parquet",
+        "raw_dir",
+        "roll_calendar",
+        "archive",
+        "contract_manifest",
+        "quality_manifest",
+    }
+
+    def visit(value: Any) -> None:
+        if not isinstance(value, dict):
+            return
+        for key, item in tuple(value.items()):
+            if key in path_keys and isinstance(item, str) and item:
+                path = Path(item)
+                if not path.is_absolute():
+                    value[key] = str(project_root / path)
+            elif isinstance(item, dict):
+                visit(item)
+
+    visit(resolved)
+    return resolved
 
 
 def _read_json(path: Path | None) -> dict[str, Any]:

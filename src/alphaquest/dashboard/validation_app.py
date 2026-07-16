@@ -1189,23 +1189,36 @@ def exit_path_summary_frame(exit_audit: pd.Series | dict[str, Any] | None) -> pd
     )
 
 
-def main() -> None:
+def main(*, embedded: bool = False, project_root: str | Path | None = None) -> None:
     import streamlit as st
 
-    st.set_page_config(page_title="Validation Dashboard", layout="wide")
-    st.title("Strategy Validation Dashboard")
+    if not embedded:
+        st.set_page_config(page_title="Validation Dashboard", layout="wide")
+        st.title("Strategy Validation Dashboard")
+    else:
+        st.subheader("Mechanics validation")
 
     with st.sidebar:
         st.header("Run Selector")
-        search_root = st.text_input("Search root", value=DEFAULT_SEARCH_ROOT)
+        if embedded:
+            layout = load_storage_layout(project_root or ".")
+            search_root = str(layout.evidence_roots[0])
+        else:
+            search_root = st.text_input("Search root", value=DEFAULT_SEARCH_ROOT)
         discovered = _cached_discover_validation_runs(search_root)
         discovered_labels = [str(path) for path in discovered]
         selected_label = st.selectbox("Discovered validation runs", discovered_labels, index=0 if discovered else None)
-        manual_path = st.text_input("Validation run folder", value=selected_label or "")
+        if embedded:
+            manual_path = selected_label or ""
+        else:
+            manual_path = st.text_input("Validation run folder", value=selected_label or "")
         page = st.radio("Page", ["Trade Inspector", "Review Queue"], horizontal=False)
 
     if not manual_path:
-        st.info("Select a validation run folder or generate a sample run with `make sample-validation-run`.")
+        if embedded:
+            st.info("Generate mechanics evidence from the campaign, then select the completed validation run here.")
+        else:
+            st.info("Select a validation run folder or generate a sample run with `make sample-validation-run`.")
         return
     run_dir = Path(manual_path).expanduser()
     if not (run_dir / METADATA_FILENAME).exists():

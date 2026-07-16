@@ -1,0 +1,104 @@
+{
+  "additionalProperties": false,
+  "description": "Hash-bound independent decision for a terminal PASS result.",
+  "properties": {
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "config_hash": {
+      "title": "Config Hash",
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "approved_candidate",
+        "rejected",
+        "needs_manual_review"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "input_data_hash": {
+      "title": "Input Data Hash",
+      "type": "string"
+    },
+    "lifecycle_state": {
+      "enum": [
+        "candidate",
+        "rejected",
+        "needs_manual_review"
+      ],
+      "title": "Lifecycle State",
+      "type": "string"
+    },
+    "mechanics_approval_sha256": {
+      "title": "Mechanics Approval Sha256",
+      "type": "string"
+    },
+    "mechanics_reviewer": {
+      "title": "Mechanics Reviewer",
+      "type": "string"
+    },
+    "notes": {
+      "title": "Notes",
+      "type": "string"
+    },
+    "result_bundle_sha256": {
+      "title": "Result Bundle Sha256",
+      "type": "string"
+    },
+    "review_scope": {
+      "const": "independent_candidate_assessment",
+      "default": "independent_candidate_assessment",
+      "enum": [
+        "independent_candidate_assessment"
+      ],
+      "title": "Review Scope",
+      "type": "string"
+    },
+    "reviewed_at": {
+      "format": "date-time",
+      "title": "Reviewed At",
+      "type": "string"
+    },
+    "reviewer": {
+      "title": "Reviewer",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.candidate-review/v1",
+      "default": "alphaquest.candidate-review/v1",
+      "enum": [
+        "alphaquest.candidate-review/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "variant_id": {
+      "title": "Variant Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "variant_id",
+    "run_id",
+    "decision",
+    "reviewer",
+    "reviewed_at",
+    "notes",
+    "result_bundle_sha256",
+    "mechanics_approval_sha256",
+    "config_hash",
+    "input_data_hash",
+    "mechanics_reviewer",
+    "lifecycle_state"
+  ],
+  "title": "CandidateReviewV1",
+  "type": "object"
+}
