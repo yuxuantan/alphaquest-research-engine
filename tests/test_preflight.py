@@ -192,7 +192,7 @@ def test_explicit_terminal_rejection_remains_fail_closed(tmp_path):
     assert any("not an accepted pre-test lifecycle state" in failure for failure in result["failures"])
 
 
-def test_preflight_rejects_campaign_with_more_than_eight_variants(tmp_path):
+def test_preflight_rejects_campaign_with_more_than_five_variants(tmp_path):
     data = tmp_path / "bars.csv"
     campaign_root = tmp_path / "campaigns" / "es_active"
     config = campaign_root / "variants" / "v01" / "config.yaml"
@@ -202,7 +202,7 @@ def test_preflight_rejects_campaign_with_more_than_eight_variants(tmp_path):
         variant_count=9,
         expansion_rationale=(
             "The extra mechanics are predeclared for density screening, but this text should not matter "
-            "because the hard campaign cap is eight variants."
+            "because the hard campaign cap is five variants."
         ),
     )
     _write_config(config, _config(data, campaign_id="es_active", variant_id="v01"))
@@ -210,7 +210,7 @@ def test_preflight_rejects_campaign_with_more_than_eight_variants(tmp_path):
     result = run_preflight(config_paths=[config], run_tests=False)
 
     assert not result["passed"]
-    assert any("campaign variant cap is 8" in failure for failure in result["failures"])
+    assert any("campaign variant cap is 5" in failure for failure in result["failures"])
 
 
 def test_preflight_finds_campaign_yaml_below_configured_active_root(tmp_path, monkeypatch):
@@ -227,11 +227,11 @@ def test_preflight_finds_campaign_yaml_below_configured_active_root(tmp_path, mo
     result = run_preflight(config_paths=[config], run_tests=False)
 
     assert not result["passed"]
-    assert any("campaign variant cap is 8" in failure for failure in result["failures"])
+    assert any("campaign variant cap is 5" in failure for failure in result["failures"])
     assert not any("campaign.yaml is absent" in warning for warning in result["warnings"])
 
 
-def test_preflight_requires_expansion_rationale_above_default_variant_count(tmp_path):
+def test_preflight_rejects_six_variants_even_with_a_rationale(tmp_path):
     data = tmp_path / "bars.csv"
     campaign_root = tmp_path / "campaigns" / "es_active"
     config = campaign_root / "variants" / "v01" / "config.yaml"
@@ -242,21 +242,20 @@ def test_preflight_requires_expansion_rationale_above_default_variant_count(tmp_
     result = run_preflight(config_paths=[config], run_tests=False)
 
     assert not result["passed"]
-    assert any("variant_expansion_rationale" in failure for failure in result["failures"])
+    assert any("campaign variant cap is 5" in failure for failure in result["failures"])
 
 
-def test_preflight_accepts_six_to_eight_variants_with_expansion_rationale(tmp_path):
+def test_preflight_accepts_five_legacy_variants(tmp_path):
     data = tmp_path / "bars.csv"
     campaign_root = tmp_path / "campaigns" / "es_active"
     config = campaign_root / "variants" / "v01" / "config.yaml"
     _write_csv(data)
     _write_campaign_yaml(
         campaign_root,
-        variant_count=8,
+        variant_count=5,
         expansion_rationale=(
-            "Variants six through eight are predeclared because they express materially different "
-            "area-of-interest interaction mechanics under the same edge, and each will be rejected "
-            "unless it passes the same frozen staged workflow."
+            "This legacy campaign records five predeclared mechanics and remains readable while all new "
+            "governance-v3 campaigns use the sequential one-at-a-time workflow."
         ),
     )
     _write_config(config, _config(data, campaign_id="es_active", variant_id="v01"))
@@ -393,7 +392,7 @@ def test_preflight_explicit_project_root_finds_campaign_governance_in_custom_act
     result = run_preflight(config_paths=[config], project_root=tmp_path, run_tests=False)
 
     assert not result["passed"]
-    assert any("campaign variant cap is 8" in failure for failure in result["failures"])
+    assert any("campaign variant cap is 5" in failure for failure in result["failures"])
     assert not any("campaign.yaml is absent" in warning for warning in result["warnings"])
 
 

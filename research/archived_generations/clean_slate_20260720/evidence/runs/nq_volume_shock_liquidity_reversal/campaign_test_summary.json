@@ -1,0 +1,73 @@
+{
+  "campaign_id": "nq_volume_shock_liquidity_reversal",
+  "title": "NQ Volume-Shock Liquidity Reversal",
+  "decision": "FAIL",
+  "terminal_stage": "pre_pnl_density_screen",
+  "completed_at": "2026-06-30T14:45:00+08:00",
+  "density_audit": {
+    "artifact": "research_artifacts/nq_volume_shock_liquidity_reversal_density_audit_20260630.md",
+    "csv": "research_artifacts/nq_volume_shock_liquidity_reversal_density_audit_20260630.csv",
+    "declared_entry_rows": 45,
+    "density_pass_rows": 42,
+    "density_fail_rows": 3
+  },
+  "failure_reason": "Rejected before staged NQ PnL: 3/45 declared entry-grid rows failed the pre-PnL density gate. The sparse rows were in midday_symmetric_shock_reversion at min_volume_ratio=2.25 with min_move_ticks 6, 10, and 14; latest-252-session signal count was only 29 for each sparse row, and the 10/14-tick rows also failed the limited-core 50 signals/year gate. Dropping the strict 2.25 volume-ratio tier or the midday variant after this screen would be post-result narrowing of the declared five-variant edge. No NQ PnL was inspected.",
+  "staged_pnl_run": false,
+  "monkey_reached": 0,
+  "wfa_reached": 0,
+  "monte_carlo_reached": 0,
+  "candidate_strategy_report_created": false,
+  "variant_density_summary": [
+    {
+      "variant_id": "afternoon_symmetric_shock_reversion",
+      "rows": 9,
+      "pass_rows": 9,
+      "min_full": 82.810386,
+      "min_limited": 91.698113,
+      "min_latest": 71,
+      "decision": "NEEDS MANUAL REVIEW"
+    },
+    {
+      "variant_id": "all_day_symmetric_shock_reversion",
+      "rows": 9,
+      "pass_rows": 9,
+      "min_full": 219.68214,
+      "min_limited": 197.660377,
+      "min_latest": 241,
+      "decision": "NEEDS MANUAL REVIEW"
+    },
+    {
+      "variant_id": "midday_symmetric_shock_reversion",
+      "rows": 9,
+      "pass_rows": 6,
+      "min_full": 32.185681,
+      "min_limited": 37.358491,
+      "min_latest": 29,
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "morning_down_shock_reversal_long",
+      "rows": 9,
+      "pass_rows": 9,
+      "min_full": 130.461054,
+      "min_limited": 93.056604,
+      "min_latest": 176,
+      "decision": "NEEDS MANUAL REVIEW"
+    },
+    {
+      "variant_id": "morning_up_shock_reversal_short",
+      "rows": 9,
+      "pass_rows": 9,
+      "min_full": 129.535799,
+      "min_limited": 90.339623,
+      "min_latest": 159,
+      "decision": "NEEDS MANUAL REVIEW"
+    }
+  ],
+  "artifacts": {
+    "campaign_results_csv": "backtest-campaigns/nq_volume_shock_liquidity_reversal/campaign_results.csv",
+    "density_audit_md": "research_artifacts/nq_volume_shock_liquidity_reversal_density_audit_20260630.md",
+    "density_audit_csv": "research_artifacts/nq_volume_shock_liquidity_reversal_density_audit_20260630.csv",
+    "methodology_audit": "campaigns/nq_volume_shock_liquidity_reversal/methodology_audit.md"
+  }
+}

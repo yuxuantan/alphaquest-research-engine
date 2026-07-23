@@ -32,7 +32,7 @@ class PublishResult:
 class TransactionalCampaignPublisher:
     """Write and atomically install one compiled campaign source tree.
 
-    Repository preflight runs against all five staged configs by default.
+    Repository preflight runs against every currently declared config by default.
     Duplicate scanning and any additional repository refresh checks can be
     supplied as read-only callbacks; every check completes before the single
     atomic rename.

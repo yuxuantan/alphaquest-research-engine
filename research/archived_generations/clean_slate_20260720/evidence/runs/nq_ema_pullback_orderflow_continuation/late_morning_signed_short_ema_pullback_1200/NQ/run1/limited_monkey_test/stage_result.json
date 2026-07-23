@@ -1,0 +1,277 @@
+{
+  "stage": "limited_monkey_test",
+  "label": "Limited Monkey Test",
+  "status": "passed",
+  "passed": true,
+  "started_at": "2026-06-30T16:48:34",
+  "completed_at": "2026-06-30T16:50:17",
+  "duration_seconds": 103.459731,
+  "criteria": [
+    {
+      "metric": "summary.core_beats_monkey_net_profit_rate",
+      "actual": 0.995875,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.core_beats_monkey_max_drawdown_rate",
+      "actual": 0.939875,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.core_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "number_of_runs": 8000,
+    "core_metrics": {
+      "total_trades": 169,
+      "long_trades": 0,
+      "short_trades": 169,
+      "long_ratio": 0.0,
+      "average_bars_in_trade": 3.2781065088757395,
+      "max_bars_in_trade": 25,
+      "net_profit": 515.0,
+      "max_drawdown": 1440.0,
+      "max_drawdown_pct": 0.009531689558166474,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0
+    },
+    "beat_threshold": 0.9,
+    "core_beats_monkey_net_profit_rate": 0.995875,
+    "core_beats_monkey_max_drawdown_rate": 0.939875,
+    "meets_monkey_goal": true,
+    "number_passing_benchmark": 0,
+    "percentage_passing_benchmark": 0.0,
+    "profitable_iterations": 120,
+    "percentage_profitable": 0.015,
+    "median_net_profit": -2415.0,
+    "p5_net_profit": -4275.0,
+    "p95_net_profit": -585.0,
+    "median_max_drawdown": 2815.0,
+    "p5_max_drawdown": 1385.0,
+    "p95_max_drawdown": 4535.0,
+    "median_average_bars_in_trade": 3.2781065088757395,
+    "median_long_ratio": 0.024844720496894408,
+    "representative_profitable_run": {
+      "run_id": 53,
+      "total_trades": 174,
+      "long_trades": 3,
+      "short_trades": 171,
+      "long_ratio": 0.017241379310344827,
+      "average_bars_in_trade": 3.557471264367816,
+      "trade_count_delta": 5,
+      "long_ratio_delta": 0.017241379310344827,
+      "average_bars_delta": 0.2793647554920766,
+      "net_profit": 315.0,
+      "max_drawdown": 1275.0,
+      "max_drawdown_pct": 0.00842446066933166,
+      "profit_factor": 1.0499603489294211,
+      "expectancy_r": 0.07495592809261276,
+      "win_rate": 0.40804597701149425,
+      "apex_rule_violations": 0,
+      "profitable": true,
+      "core_net_profit_gt_monkey": true,
+      "core_max_drawdown_lt_monkey": false,
+      "benchmark_passed": false,
+      "failure_reason": "min_profit_factor;min_mar;preferred_min_total_trades;max_best_day_concentration;min_positive_month_rate",
+      "profitable_median_net_profit": 317.5
+    },
+    "constraints": {
+      "trade_count_tolerance_pct": 0.05,
+      "trade_count_tolerance": 0,
+      "long_short_ratio_tolerance": 0.05,
+      "average_bars_tolerance_pct": 0.1,
+      "duration_sampling": "core_distribution",
+      "duration_shape": 0.7,
+      "max_duration_bars": 25,
+      "max_feasible_duration_bars": 43,
+      "rth_only": true,
+      "enforce_non_overlapping": true,
+      "enforce_max_trades_per_day": false
+    },
+    "iteration_reports_retained": false,
+    "iteration_report_files": [],
+    "data_subset": {
+      "start_date": "2011-02-22",
+      "end_date": "2012-09-07",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "parallel": {
+      "enabled": true,
+      "workers": 6,
+      "scope": "runs"
+    },
+    "trade_path_stress": {
+      "enabled": false,
+      "skipped": true,
+      "skip_reason": "trade-path stress is globally disabled for campaign stages; monkey gates use random-entry core-beat rates",
+      "configured_data_subset": {},
+      "resolved_data_subset": {
+        "start_date": "2011-02-22",
+        "end_date": "2012-09-07",
+        "session_labels": [
+          "RTH"
+        ]
+      },
+      "data_subset": {
+        "start_date": "2011-02-22",
+        "end_date": "2012-09-07",
+        "session_labels": [
+          "RTH"
+        ]
+      },
+      "actual_data_period": {
+        "first_timestamp": "2011-02-22 09:30:00-05:00",
+        "last_timestamp": "2012-09-07 15:59:00-04:00",
+        "rows": 144690,
+        "strategy_rows": 28938,
+        "timeframe": "5m",
+        "source_timeframe": "1m"
+      }
+    },
+    "selected_core_params": {
+      "entry.params.min_trend_gap_ticks": "4",
+      "entry.params.min_orderflow_imbalance": 0.02,
+      "sl.params.stop_offset_ticks": "2",
+      "tp.params.target_r_multiple": 1.0
+    },
+    "selected_core_row": {
+      "run_id": 23,
+      "entry.params.min_trend_gap_ticks": 4,
+      "entry.params.min_orderflow_imbalance": 0.02,
+      "sl.params.stop_offset_ticks": 2,
+      "tp.params.target_r_multiple": 1.0,
+      "signals_generated": 169,
+      "entries_opened": 169,
+      "trades_closed": 169,
+      "entry_rejections_total": 0,
+      "reject_missing_stop": 0,
+      "reject_target_already_reached": 0,
+      "reject_position_sizing": 0,
+      "reject_daily_risk_lockout": 0,
+      "reject_apex_latest_entry_time": 0,
+      "reject_event_no_trade_window": 0,
+      "total_trades": 169,
+      "trades_per_year": 110.24090288974328,
+      "net_profit": 515.0,
+      "profit_factor": 1.070020394289599,
+      "expectancy_r": 0.006316869909476875,
+      "max_drawdown": 1440.0,
+      "max_drawdown_pct": 0.009531689558166474,
+      "cagr": 0.0022382734055395037,
+      "mar": 0.2348244130151948,
+      "win_rate": 0.5384615384615384,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0,
+      "profitable": true,
+      "worst_day": -285.0,
+      "best_day_concentration": 0.5145631067961165,
+      "consecutive_losses": 5,
+      "benchmark_passed": false,
+      "failure_reason": "max_best_day_concentration"
+    },
+    "configured_data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2026-06-12",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "resolved_data_subset": {
+      "start_date": "2011-02-22",
+      "end_date": "2012-09-07",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "actual_data_period": {
+      "first_timestamp": "2011-02-22 09:30:00-05:00",
+      "last_timestamp": "2012-09-07 15:59:00-04:00",
+      "rows": 144690,
+      "strategy_rows": 28938,
+      "timeframe": "5m",
+      "source_timeframe": "1m"
+    }
+  },
+  "data_quality": {
+    "rows": 144690,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 0,
+    "first_timestamp": "2011-02-22 09:30:00-05:00",
+    "last_timestamp": "2012-09-07 15:59:00-04:00",
+    "roll_boundary_sessions_skipped": 0,
+    "loaded_rows": 145470,
+    "strategy_rows": 28938,
+    "timeframe": "5m",
+    "timeframe_minutes": 5,
+    "source_timeframe": "1m",
+    "prepare_data_duration_seconds": 0.874529,
+    "prepared_data_cache": {
+      "enabled": true,
+      "hit": true,
+      "key": "a0fe88c41376c646f8eeb0ad8d87928428dffbcd24b822168ec7225c0849612c"
+    }
+  },
+  "input_hash": "692eaa307db06856e35b495888a7d687068b948dbfa7069ac0045050ed7889ff",
+  "selected_core_params": {
+    "entry.params.min_trend_gap_ticks": "4",
+    "entry.params.min_orderflow_imbalance": 0.02,
+    "sl.params.stop_offset_ticks": "2",
+    "tp.params.target_r_multiple": 1.0
+  },
+  "selected_core_row": {
+    "run_id": 23,
+    "entry.params.min_trend_gap_ticks": 4,
+    "entry.params.min_orderflow_imbalance": 0.02,
+    "sl.params.stop_offset_ticks": 2,
+    "tp.params.target_r_multiple": 1.0,
+    "signals_generated": 169,
+    "entries_opened": 169,
+    "trades_closed": 169,
+    "entry_rejections_total": 0,
+    "reject_missing_stop": 0,
+    "reject_target_already_reached": 0,
+    "reject_position_sizing": 0,
+    "reject_daily_risk_lockout": 0,
+    "reject_apex_latest_entry_time": 0,
+    "reject_event_no_trade_window": 0,
+    "total_trades": 169,
+    "trades_per_year": 110.24090288974328,
+    "net_profit": 515.0,
+    "profit_factor": 1.070020394289599,
+    "expectancy_r": 0.006316869909476875,
+    "max_drawdown": 1440.0,
+    "max_drawdown_pct": 0.009531689558166474,
+    "cagr": 0.0022382734055395037,
+    "mar": 0.2348244130151948,
+    "win_rate": 0.5384615384615384,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0,
+    "profitable": true,
+    "worst_day": -285.0,
+    "best_day_concentration": 0.5145631067961165,
+    "consecutive_losses": 5,
+    "benchmark_passed": false,
+    "failure_reason": "max_best_day_concentration"
+  },
+  "artifacts": [
+    "backtest-campaigns/nq_ema_pullback_orderflow_continuation/late_morning_signed_short_ema_pullback_1200/NQ/run1/limited_monkey_test/monkey_results.csv",
+    "backtest-campaigns/nq_ema_pullback_orderflow_continuation/late_morning_signed_short_ema_pullback_1200/NQ/run1/limited_monkey_test/monkey_summary.json",
+    "backtest-campaigns/nq_ema_pullback_orderflow_continuation/late_morning_signed_short_ema_pullback_1200/NQ/run1/limited_monkey_test/trade_path_stress_results.csv",
+    "backtest-campaigns/nq_ema_pullback_orderflow_continuation/late_morning_signed_short_ema_pullback_1200/NQ/run1/limited_monkey_test/trade_path_stress_summary.json"
+  ]
+}

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_trend_orderflow_prior_day_stop_reclaim",
+  "variant_id": "midday_large10_two_sided_trend_absorption_1400",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/midday_large10_two_sided_trend_absorption_1400/variant.yaml",
+    "hash": "729b0be3932142f90358c26e050ee434b4053d7e2349d8b74d689ce684833062",
+    "mechanic": {
+      "entry_module": "trend_orderflow_pdh_pdl_sweep_reclaim",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_trend_orderflow_prior_day_stop_reclaim/rescue_attempts/parameter_space_rescue_1/midday_large10_two_sided_trend_absorption_1400/config.yaml",
+  "effective_config": "backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/midday_large10_two_sided_trend_absorption_1400/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/midday_large10_two_sided_trend_absorption_1400/ES/rescue1/source_config.yaml",
+  "config_hash": "e8cad0cb317dce1607a76a51c572d3d5eda2eeec381b5cb7fba3232a2378e214",
+  "source_config_hash": "a03436c5490fed3dc1a71d9eefea347491d446ffa27820e68ca2da7d721eecf5",
+  "source_results_index": "campaigns/es_trend_orderflow_prior_day_stop_reclaim/results_index.yaml",
+  "created_at": "2026-06-19T02:35:24",
+  "updated_at": "2026-06-19T02:35:24",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

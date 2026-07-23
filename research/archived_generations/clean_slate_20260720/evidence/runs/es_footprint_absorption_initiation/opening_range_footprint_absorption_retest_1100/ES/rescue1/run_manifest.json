@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_footprint_absorption_initiation",
+  "variant_id": "opening_range_footprint_absorption_retest_1100",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_imbalance_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_imbalance_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_footprint_absorption_initiation/campaign.yaml",
+    "hash": "a2686505422e9afae4e42ed9df5755442730b58dd0b8e8ac0e7a95e108eecaec"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_footprint_absorption_initiation/opening_range_footprint_absorption_retest_1100/variant.yaml",
+    "hash": "58edb3ce75063845599294f6ce420ae197a3a35a54c1bfffb3acbfa7eee71864",
+    "mechanic": {
+      "entry_module": "footprint_absorption_initiation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "13:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_footprint_absorption_initiation/rescue_attempts/parameter_space_rescue_1/opening_range_footprint_absorption_retest_1100/config.yaml",
+  "effective_config": "backtest-campaigns/es_footprint_absorption_initiation/opening_range_footprint_absorption_retest_1100/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_footprint_absorption_initiation/opening_range_footprint_absorption_retest_1100/ES/rescue1/source_config.yaml",
+  "config_hash": "df8aeaf4390156a6227b5e6e4570fdf88f06935a59998b18b3846523346c6f57",
+  "source_config_hash": "612917376ae3d610ec47658a345be4a42d7a828c2c745b4ed3ddcddde4c733a1",
+  "source_results_index": "campaigns/es_footprint_absorption_initiation/results_index.yaml",
+  "created_at": "2026-06-19T07:09:53",
+  "updated_at": "2026-06-19T07:09:53",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

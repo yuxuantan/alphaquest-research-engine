@@ -27,7 +27,9 @@ class MetricValueV2(BaseModel):
 
     model_config = ConfigDict(extra="forbid", strict=True)
 
-    value: float | int | bool | str | None
+    # Keep bool first so Pydantic's JSON-mode union serializer does not turn
+    # compliance booleans into 1.0/0.0 in the strict public artifact.
+    value: bool | int | float | str | None
     reason: str | None = None
 
     @field_validator("value", mode="before")
@@ -770,15 +772,24 @@ def _prop_outcome(trades: pd.DataFrame, explicit: str | None) -> MetricValueV2:
         if verdict not in STRICT_VERDICTS:
             raise ValueError(f"prop_rule_outcome must be one of {sorted(STRICT_VERDICTS)}")
         return MetricValueV2(value=verdict)
+    if trades.empty:
+        return MetricValueV2(value=None, reason="no trades are available for prop-rule simulation")
     if "apex_rule_violation" in trades.columns:
-        violations = trades["apex_rule_violation"].fillna(False).astype(bool)
-        return MetricValueV2(value="FAIL" if bool(violations.any()) else "PASS")
+        violations = trades["apex_rule_violation"].map(_strict_bool_or_none)
+        if bool(violations.isna().any()):
+            return MetricValueV2(
+                value=None,
+                reason="apex_rule_violation contains missing or ambiguous values",
+            )
+        return MetricValueV2(value="FAIL" if bool(violations.astype(bool).any()) else "PASS")
     return MetricValueV2(value=None, reason="prop-rule simulation outcome was not supplied")
 
 
 def _flatten_compliance(trades: pd.DataFrame, explicit: bool | None) -> MetricValueV2:
     if explicit is not None:
         return MetricValueV2(value=bool(explicit))
+    if trades.empty:
+        return MetricValueV2(value=None, reason="no trades are available for forced-flatten review")
     if "position_flat_before_deadline" not in trades.columns:
         return MetricValueV2(
             value=None,

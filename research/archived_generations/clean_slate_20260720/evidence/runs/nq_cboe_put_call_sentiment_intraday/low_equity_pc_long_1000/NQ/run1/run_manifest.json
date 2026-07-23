@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_cboe_put_call_sentiment_intraday",
+  "variant_id": "low_equity_pc_long_1000",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_cboe_put_call_sentiment_intraday/low_equity_pc_long_1000/variant.yaml",
+    "hash": "8119f9db206d10d2b6ef0f52752c7aeabcac04e3bbe51b092b0af3bcaa465b8b",
+    "mechanic": {
+      "entry_module": "cboe_put_call_sentiment",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_cboe_put_call_sentiment_intraday/variants/low_equity_pc_long_1000/config.yaml",
+  "effective_config": "backtest-campaigns/nq_cboe_put_call_sentiment_intraday/low_equity_pc_long_1000/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_cboe_put_call_sentiment_intraday/low_equity_pc_long_1000/NQ/run1/source_config.yaml",
+  "config_hash": "729fa1bdde7f301b2c818527a2e9ab5733b5ac812de8ab3ad55fcd2a727b0bf9",
+  "source_config_hash": "0f524f7bb77ef24ba1cb4b90a30986252e888824dfc5d209aba442b7c4abacef",
+  "source_results_index": "campaigns/nq_cboe_put_call_sentiment_intraday/results_index.yaml",
+  "created_at": "2026-06-22T22:16:04",
+  "updated_at": "2026-06-22T22:16:04",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

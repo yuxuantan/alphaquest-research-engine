@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_footprint_absorption_initiation",
+  "variant_id": "rolling_range_footprint_absorption_sweep_1500",
+  "test_run_id": "tp_min_rr_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_imbalance_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_imbalance_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_footprint_absorption_initiation/campaign.yaml",
+    "hash": "a2686505422e9afae4e42ed9df5755442730b58dd0b8e8ac0e7a95e108eecaec"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_footprint_absorption_initiation/rolling_range_footprint_absorption_sweep_1500/variant.yaml",
+    "hash": "470c67c39c81ad65f75789c5ffb8ed4d6d93a552883cde0413dee032b65dacbb",
+    "mechanic": {
+      "entry_module": "footprint_absorption_initiation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:45:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_footprint_absorption_initiation/rescue_attempts/tp_min_rr_floor_rescue_1/rolling_range_footprint_absorption_sweep_1500/config.yaml",
+  "effective_config": "backtest-campaigns/es_footprint_absorption_initiation/rolling_range_footprint_absorption_sweep_1500/ES/tp_min_rr_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_footprint_absorption_initiation/rolling_range_footprint_absorption_sweep_1500/ES/tp_min_rr_rescue1/source_config.yaml",
+  "config_hash": "77999e9590506bf83e7d1f23735f09f108b53c7287faa05310ccb7efbedd3543",
+  "source_config_hash": "df8c0c7a83a376093fd4fff8a7463bf5c859870b9089f8b34b6b991eafa16815",
+  "source_results_index": "campaigns/es_footprint_absorption_initiation/results_index.yaml",
+  "created_at": "2026-06-19T21:44:01",
+  "updated_at": "2026-06-19T21:44:01",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -402,12 +402,38 @@ source-quality audit proves that specific archive supports that use. If a
 strategy needs those mechanics, mark the data basis `NEEDS MANUAL REVIEW` or
 use an independently verified tick/depth source.
 
-For configs that explicitly use `data.execution_data.source: sierra_scid_records`,
-the execution loader uses conservative close-only replay: each SCID record's
-`close` is the only traded-price proxy, and the execution `open/high/low/close`
-fields are all set to that close. The raw SCID OHLC values remain available in
-`raw_scid_*` columns for audit, but raw SCID high/low are not used for sweeps,
-TP/SL first touches, or intra-record price path decisions.
+For configs that explicitly use `data.execution_data.source:
+sierra_scid_records`, the generic canonical-event runner reconstructs one
+ordered trade event from each ordinary SCID trade record and collapses each
+valid `FIRST`/`LAST` unbundled group into its reconstructed trade events.
+Execution still uses only the reconstructed traded price; raw SCID high/low are
+never inferred as an intra-record price path. Publication requires a raw-file
+hash manifest, a per-session capability manifest, completed-session
+prior-RTH/ETH levels, an independently generated concordance report, and an
+explicit blackout policy for ineligible sessions.
+
+The governed full-session audit command is:
+
+```bash
+PYTHONPATH=src python3 tools/audit_sierra_vs_databento_full_sessions.py
+```
+
+It compares every overlap session across ETH (16:00 through 09:30 ET) and RTH
+(09:30 through 16:00 ET), including ordered price/size/side payloads, timestamp
+tolerance, minute OHLC and side volumes, 1-tick and 4-tick profiles,
+60/180/300-second volume-delta buckets, large-10/large-20 aggregates, and the
+`>200` contracts / 100 ms large-trade sequence. Its artifacts live under:
+
+```text
+data/reports/data_quality/ES/databento_sierra_full_session_orderflow_20250714_20260610/
+```
+
+The current broad verdict is `NEEDS MANUAL REVIEW`: completed ETH/RTH OHLC is
+exact for all 468 comparable segments, but the audit records 19 non-equivalent
+sessions and one timestamp-ordering error. Do not convert that result into a
+blanket full-session event-data PASS. A strategy may use a narrower governed
+capability only when its exact causal inputs pass a source-output concordance
+check and every excluded session remains an explicit calendar blackout.
 
 The 2026-06-16 ES Databento-vs-Sierra audit is the current data-source
 checkpoint for this rule:
@@ -444,7 +470,7 @@ A campaign keeps authored edge research and the planned variant list here:
 campaigns/{campaign_id}/campaign.yaml
 ```
 
-Use `campaign.yaml` for the academic source, thesis, intended market, caveats, economic-edge fingerprint, duplicate-edge review, and planned trade-mechanics variants. Governance-v2 campaigns require exactly five initial variants. Additional post-failure definitions are not variants; at most one explicitly authorized rescue per failed variant may be recorded with parent lineage. The backtest runner does not use `campaign.yaml` as the executable strategy config, but run summaries and manifests record its path and hash when it exists.
+Use `campaign.yaml` for the academic source, thesis, intended market, caveats, economic-edge fingerprint, duplicate-edge review, and current trade-mechanics variants. Governance-v3 campaigns start with one variant and can add at most four more. Each addition requires a hash-bound manual mechanics approval and terminal `FAIL` for its predecessor plus a recorded failure analysis. Published predecessor configs remain immutable. The backtest runner does not use `campaign.yaml` as the executable strategy config, but run summaries and manifests record its path and hash when it exists.
 
 A variant is one concrete strategy shape under that campaign. Its authored source config lives here:
 
@@ -1708,9 +1734,12 @@ wfa:
     sl.params.stop_offset_ticks: [1, 2]
 ```
 
-WFA uses `wfa.parameters` for its train-window optimization. This is separate
-from `core_grid.parameters`, so core grid sweeps and walk-forward optimization
-can use different parameter spaces.
+WFA uses `wfa.parameters` for its train-window selection. This is separate from
+`core_grid.parameters`, so core grid sweeps and walk-forward selection can use
+different predeclared parameter spaces. An explicit empty mapping,
+`parameters: {}`, is valid and means one fixed configuration: WFA performs no
+parameter optimization and evaluates the frozen defaults in every chronological
+out-of-sample window. Mechanics approval is still mandatory before WFA starts.
 
 `objective` supports `MAR`, `net_profit`, and `profit_factor`. `MAR` selects
 the parameter set with the highest in-sample CAGR divided by max drawdown
@@ -2334,12 +2363,12 @@ machine learning
 broker reconciliation
 ```
 
-Sierra Chart data is supported only after conversion into validated aggregate
-bar/orderflow caches. Reconstructed Sierra minute OHLCV is acceptable for
-completed-bar research after validation, but raw Sierra `.scid` files and
-SCID-derived bars must not be used directly for print-level features,
-tick-replay fills, intra-minute stop/target ordering, or trade-sequence
-assumptions unless a separate source-quality audit proves that specific archive
-is clean.
+Sierra Chart data is supported only through a governed aggregate-cache or
+certified SCID-event lane. Reconstructed Sierra minute OHLCV is acceptable for
+completed-bar research after validation. Print-level features, tick-replay
+fills, intra-minute stop/target ordering, and trade-sequence assumptions require
+an explicit source-quality capability for the exact feature, session, and time
+window; passing one strategy or window does not certify all Sierra order-flow
+uses.
 
 The first trust checkpoint is always manual data and trade validation against your charting platform.

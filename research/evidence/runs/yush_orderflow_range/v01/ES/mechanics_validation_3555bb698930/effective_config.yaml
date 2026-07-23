@@ -1,0 +1,310 @@
+campaign_id: yush_orderflow_range
+variant_id: v01
+attempt_id: original
+attempt_kind: original
+attempt_provenance: authored
+strategy_name: yush_orderflow_range
+symbol: ES
+dataset_id: es_databento_trade_events_20250714_20260610_0930_1100_ny
+timeframe: 1m
+research_metadata:
+  authoring_contract: alphaquest.campaign-draft/v1
+  mechanic_signature: 40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  mechanics_review:
+    mechanic_expresses_edge: Build a causal AOI around developing VAL or VAH plus the strongest available market, local-delta,
+      and large-trade categories; reset eligibility whenever the exact AOI price envelope or selected confluence identity
+      changes, then require a prior reversal, a fresh directed tap, and a new post-tap trigger.
+    entry_logic_rationale: A two-tick stop entry beyond the AOI demands observable movement away from the tested boundary,
+      while neither the tap nor its post-tap trigger can be the event that created or materially changed the exact AOI; a
+      tapped AOI is frozen until its developing-value anchor leaves the box.
+    stop_loss_rationale: The stop sits two ticks beyond the opposite AOI edge but is widened to at least two points so tiny
+      confluence envelopes do not create suffocating risk; entries above five points are rejected.
+    target_exit_rationale: The developing value midpoint is the first objective; after it trades, the stop protects 1.25 points
+      and the opposite developing value edge becomes the final target, with an 11:00 hard flatten.
+    profitability_rationale: Repeated rejection at a developing value boundary suggests passive liquidity is absorbing aggressive
+      flow; a fresh delta or large-trade event after the tap supplies causal confirmation for reversion. Build a causal AOI
+      around developing VAL or VAH plus the strongest available market, local-delta, and large-trade categories; reset eligibility
+      whenever the exact AOI price envelope or selected confluence identity changes, then require a prior reversal, a fresh
+      directed tap, and a new post-tap trigger.
+    known_failure_modes: Moving developing-value anchors can invalidate pending AOIs, and local delta prominence can be sensitive
+      to neighboring buckets when activity is sparse or distributed across nearby prices. Gap-through stop orders receive
+      adverse event-price fills plus one tick, so actual risk may exceed the planned structural distance and cause otherwise
+      attractive signals to be rejected.
+    pre_test_decision: approve_for_testing
+  timeframe_rationale: Trade messages are replayed in causal order from 09:30 to 11:00 New York; the three-minute delta bubble
+    clock and 100 millisecond large-trade aggregation match the frozen chart interpretation.
+  validation_gate:
+    required: true
+    lane: event_replay
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 0
+    data_subset:
+      start_date: '2025-07-14'
+      end_date: '2025-07-28'
+    evidence_dir: research/evidence/runs/yush_orderflow_range/v01/ES/mechanics_validation/validation_runs/core
+    approval_path: research_artifacts/validation_approvals/yush_orderflow_range/v01/approval.json
+data:
+  dataset_id: es_databento_trade_events_20250714_20260610_0930_1100_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_databento_trades_1m_20250714_20260610_0930_1100_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  source_timezone: America/New_York
+  exchange_timezone: America/New_York
+  timestamp_semantics: bar_open
+  source_timestamp_semantics: bar_open
+  source_sha256: d6df4a528173cdf6627224cfe225c1f9cb551d675472cc12223a605a1fa7ed76
+  canonical_sha256: d6df4a528173cdf6627224cfe225c1f9cb551d675472cc12223a605a1fa7ed76
+  roll_policy: MotiveWave/Rithmic predeclared active-contract calendar; no back adjustment
+  continuous_contract: explicit_roll_calendar
+  contract_column: contract_symbol
+  contract_count: 4
+  certified_features: []
+  rth_start: 09:30:00
+  rth_end: '16:00:00'
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+  roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+  execution_data:
+    source: databento_zip_trades
+    archive: data/raw/ES/GLBX-20260713-S6XF67C8UA.zip
+    archive_sha256: 144daa86f98f22dae2eada9f86b345bc7e4a92038c058c395630357585298fa1
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+    root_symbol: ES
+    aggregation_ms: 100
+    overnight_start: '16:00:00'
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    reset_previous_levels_on_roll: true
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  force_flatten_enabled: true
+  force_flatten_time: '11:00:00'
+  latest_flat_time: '11:00:00'
+  latest_entry_time: '10:59:59'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: yush_orderflow_range
+    params:
+      mechanics:
+        tick_size: 0.25
+        point_value: 50.0
+        contracts: 1
+        commission_per_contract: 2.5
+        max_trades_per_day: 3
+        max_aoi_width_points: 3.0
+        entry_offset_ticks: 2
+        stop_offset_ticks: 2
+        max_stop_points: 5.0
+        value_area_fraction: 0.7
+        range_expansion_fraction: 0.2
+        delta_profile_min_abs: 300
+        delta_bubble_threshold: 300
+        big_trade_threshold: 200
+        big_trade_window_ms: 100
+        breakeven_offset_points: 1.25
+        opening_range_seconds: 32
+        bar_seconds: 180
+        breakout_probe_ticks: 2
+        initial_balance: 50000.0
+        minimum_stop_points: 2.0
+        slippage_ticks: 1
+        delta_neighbour_multiple: 2.0
+        aoi_lineage_mode: exact_fingerprint
+  sl:
+    module: event_aoi_structural_stop
+    params: {}
+  tp:
+    module: event_value_area_management
+    params: {}
+  flatten_time: '11:00:00'
+  event:
+    module: yush_orderflow_range
+    params:
+      tick_size: 0.25
+      point_value: 50.0
+      contracts: 1
+      commission_per_contract: 2.5
+      max_trades_per_day: 3
+      max_aoi_width_points: 3.0
+      entry_offset_ticks: 2
+      stop_offset_ticks: 2
+      max_stop_points: 5.0
+      value_area_fraction: 0.7
+      range_expansion_fraction: 0.2
+      delta_profile_min_abs: 300
+      delta_bubble_threshold: 300
+      big_trade_threshold: 200
+      big_trade_window_ms: 100
+      breakeven_offset_points: 1.25
+      opening_range_seconds: 32
+      bar_seconds: 180
+      breakout_probe_ticks: 2
+      initial_balance: 50000.0
+      minimum_stop_points: 2.0
+      slippage_ticks: 1
+      delta_neighbour_multiple: 2.0
+      aoi_lineage_mode: exact_fingerprint
+core:
+  data_subset:
+    start_date: '2025-07-14'
+    end_date: '2026-06-10'
+    session_labels:
+    - RTH
+  initial_balance: 50000.0
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  flatten_time: '11:00:00'
+  max_trades_per_day: 3
+  contracts: 1
+  entry_start: 09:30:00
+  latest_entry_time: '10:59:59'
+  event_stop_market_fill_policy: trade_event_price_on_gap
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2025-07-14'
+    end_date: '2026-06-10'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parameters: {}
+monkey:
+  data_subset:
+    start_date: '2025-07-14'
+    end_date: '2026-06-10'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+wfa:
+  data_subset:
+    start_date: '2025-07-14'
+    end_date: '2026-06-10'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parameters: {}
+campaign_tests:
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    enabled: true
+  limited_monkey_test:
+    enabled: true
+  walk_forward_analysis:
+    enabled: true
+  wfa_oos_monkey_test:
+    enabled: true
+  wfa_oos_monte_carlo:
+    enabled: true
+  simulated_incubation_core:
+    enabled: true
+  simulated_incubation_monkey:
+    enabled: true
+  acceptance_oos_test:
+    enabled: true
+    train_months: 24
+    test_months: 6
+prop_rules:
+  schema: alphaquest.prop-profile/v1
+  profile: configured_local_profile
+  profile_fully_specified: true
+  starting_balance: 50000.0
+  daily_loss_limit: 2000.0
+  trailing_drawdown: 2000.0
+  max_contracts: 1
+  max_best_day_profit_percentage: 0.4
+  min_trading_days: 2
+  payout_threshold: 1000.0
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.04
+  profit_target_amount: 3000.0
+  drawdown_limit_amount: 2000.0
+  account_lifecycle_enabled: true
+  challenge_fee: 98.0
+  challenge_profit_target_amount: 3000.0
+  challenge_consistency_limit: 0.5
+  trailing_drawdown_lock_balance: 52100.0
+  trailing_drawdown_locked_floor: 50100.0
+  funded_starting_balance: 50000.0
+  funded_initial_drawdown_floor: 48000.0
+  funded_payout_min_profit_day: 150.0
+  funded_payout_required_profit_days: 5
+  funded_payout_profit_fraction: 0.5
+  funded_payout_profit_share: 0.9
+  funded_payout_max_amount: 2000.0
+  max_payouts_per_account: 5
+  no_overnight_positions: true
+  force_flatten_time: '11:00:00'
+  profile_sha256: a8a04012620f4edd87bc8766fbed0c47f27311b0f231c5807babbf921a3f7ada
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+test_run_id: run1
+engine_lane: canonical_event_replay

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import timedelta
+import sqlite3
 
 import pytest
 from pydantic import ValidationError
@@ -226,3 +227,70 @@ def test_stale_cancel_request_finishes_cancelled_without_replay(tmp_path):
     assert recovered[0].state == OperationalState.CANCELLED
     assert recovered[0].research_verdict is None
     assert "cancellation_reason" in recovered[0].result
+
+
+def test_job_progress_is_durable_monotonic_and_separate_from_heartbeat(tmp_path):
+    database = tmp_path / "jobs.sqlite"
+    queue = SQLiteJobQueue(database)
+    job = queue.submit(
+        job_type="mechanics_validation_run",
+        payload={},
+        idempotency_key="progress",
+        hash_locks={},
+    )
+    queue.claim_next(worker_id="worker-1", observed_hashes={})
+
+    updated = queue.update_progress(
+        job.job_id,
+        worker_id="worker-1",
+        phase="event_replay",
+        message="Replaying market sessions",
+        percent=50.0,
+        completed=5,
+        total=10,
+        unit="sessions",
+    )
+
+    assert updated.progress.phase == "event_replay"
+    assert updated.progress.completed == 5
+    assert updated.progress.total == 10
+    assert updated.progress.percent == 50.0
+    assert updated.heartbeat_at == updated.progress.updated_at
+    reloaded = SQLiteJobQueue(database).get(job.job_id)
+    assert reloaded.progress == updated.progress
+    with pytest.raises(ValueError, match="cannot move backwards"):
+        queue.update_progress(
+            job.job_id,
+            worker_id="worker-1",
+            phase="event_replay",
+            message="Replaying market sessions",
+            percent=49.0,
+        )
+
+
+def test_version_one_job_database_migrates_without_losing_jobs(tmp_path):
+    database = tmp_path / "legacy.sqlite"
+    with sqlite3.connect(database) as connection:
+        connection.execute(
+            """
+            CREATE TABLE studio_jobs (
+                job_id TEXT PRIMARY KEY, schema_name TEXT NOT NULL, job_type TEXT NOT NULL,
+                campaign_id TEXT, idempotency_key TEXT NOT NULL UNIQUE,
+                submission_sha256 TEXT NOT NULL, payload_json TEXT NOT NULL,
+                payload_sha256 TEXT NOT NULL, hash_locks_json TEXT NOT NULL,
+                state TEXT NOT NULL, worker_id TEXT, attempt_reserved INTEGER NOT NULL DEFAULT 0,
+                research_verdict TEXT, result_json TEXT, blocked_reason TEXT, error TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL, started_at TEXT,
+                heartbeat_at TEXT, cancellation_requested_at TEXT, finished_at TEXT
+            )
+            """
+        )
+        connection.execute("PRAGMA user_version = 1")
+
+    SQLiteJobQueue(database)
+
+    with sqlite3.connect(database) as connection:
+        columns = {row[1] for row in connection.execute("PRAGMA table_info(studio_jobs)")}
+        version = connection.execute("PRAGMA user_version").fetchone()[0]
+    assert "progress_json" in columns
+    assert version == 2

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_overnight_range_compression_orderflow_breakout",
+  "variant_id": "afternoon_large20_two_sided_breakout_1500",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_overnight_range_compression_orderflow_breakout/afternoon_large20_two_sided_breakout_1500/variant.yaml",
+    "hash": "390667119a8397a8782f304aba46ee257e1edec753f108ca572541251f63fde6",
+    "mechanic": {
+      "entry_module": "overnight_range_orderflow_breakout",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:45:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_overnight_range_compression_orderflow_breakout/variants/afternoon_large20_two_sided_breakout_1500/config.yaml",
+  "effective_config": "backtest-campaigns/nq_overnight_range_compression_orderflow_breakout/afternoon_large20_two_sided_breakout_1500/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_overnight_range_compression_orderflow_breakout/afternoon_large20_two_sided_breakout_1500/NQ/run1/source_config.yaml",
+  "config_hash": "c782119fe8edd769cba80036798c0d4be889daf9b1973a8a65231030ed7fbea1",
+  "source_config_hash": "d774415d810f2aab652f6872441659798792e63bbc0fe8843d552b675c02540a",
+  "source_results_index": "campaigns/nq_overnight_range_compression_orderflow_breakout/results_index.yaml",
+  "created_at": "2026-06-30T18:19:04",
+  "updated_at": "2026-06-30T18:19:04",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

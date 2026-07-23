@@ -1,12 +1,13 @@
 """Draft persistence and validation for Research Studio.
 
 Drafts deliberately live outside campaign discovery.  This module accepts
-incomplete mappings so Streamlit can autosave every wizard step, while the
+incomplete mappings so a presentation layer can save every wizard step, while the
 strict authoring model remains the only path to compilation and publication.
 """
 
 from __future__ import annotations
 
+import csv
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -21,6 +22,7 @@ from alphaquest.research.storage import load_storage_layout
 
 
 _IDENTIFIER = re.compile(r"^[a-z0-9][a-z0-9_]*$")
+CLOSED_BEFORE_PNL_SCHEMA = "alphaquest.studio-draft-closure/v1"
 
 
 class DraftStore:
@@ -33,14 +35,29 @@ class DraftStore:
         rows: list[dict[str, Any]] = []
         if not self.root.is_dir():
             return rows
+        ledger_closed = _ledger_duplicate_closures(self.project_root)
+        layout = load_storage_layout(self.project_root)
+        published_ids = {
+            path.parent.name
+            for campaign_root in layout.campaign_roots
+            if campaign_root.is_dir()
+            for path in campaign_root.glob("*/campaign.yaml")
+        }
         for path in sorted(self.root.glob("*/draft.json")):
             document = _read_json(path)
             if not document:
                 continue
             payload = document.get("draft") if isinstance(document.get("draft"), dict) else document
+            campaign_id = str(payload.get("campaign_id") or path.parent.name)
+            if (
+                _has_closed_before_pnl_marker(document)
+                or campaign_id in ledger_closed
+                or campaign_id in published_ids
+            ):
+                continue
             rows.append(
                 {
-                    "campaign_id": payload.get("campaign_id") or path.parent.name,
+                    "campaign_id": campaign_id,
                     "title": payload.get("title") or "Untitled research idea",
                     "instrument": payload.get("instrument"),
                     "wizard_step": int(document.get("wizard_step") or 1),
@@ -63,6 +80,10 @@ class DraftStore:
             raise ValueError("draft campaign_id does not match its storage key")
         normalized_draft = {**draft, "campaign_id": campaign_id}
         existing = _read_json(path)
+        if _has_closed_before_pnl_marker(existing) or campaign_id in _ledger_duplicate_closures(self.project_root):
+            raise ValueError(
+                "the research draft was closed before PnL as a duplicate FAIL and is immutable"
+            )
         existing_draft = existing.get("draft") if isinstance(existing.get("draft"), dict) else {}
         if existing_draft.get("frozen"):
             _verify_frozen_document(existing, campaign_id)
@@ -87,6 +108,10 @@ class DraftStore:
 
     def save_state(self, campaign_id: str, state: dict[str, Any]) -> Path:
         document = _read_json(self.path_for(campaign_id))
+        if self.is_closed_before_pnl(campaign_id, document=document):
+            raise ValueError(
+                "the research draft was closed before PnL as a duplicate FAIL and is immutable"
+            )
         draft = document.get("draft") if isinstance(document.get("draft"), dict) else {}
         if draft.get("frozen"):
             raise ValueError("wizard state is immutable after the research protocol is frozen")
@@ -97,10 +122,36 @@ class DraftStore:
 
     def validate(self, campaign_id: str) -> CampaignDraftV1:
         document = self.load(campaign_id)
+        if self.is_closed_before_pnl(campaign_id, document=document):
+            raise ValueError("a duplicate FAIL closed before PnL cannot be frozen or published")
         payload = document.get("draft") if isinstance(document.get("draft"), dict) else document
         if payload.get("frozen"):
             _verify_frozen_document(document, campaign_id)
         return CampaignDraftV1.model_validate(payload)
+
+    def replace_frozen_sequence(self, campaign_id: str, draft: CampaignDraftV1) -> Path:
+        """Atomically advance a published frozen draft by one governed variant."""
+
+        if draft.campaign_id != campaign_id or not draft.frozen:
+            raise ValueError("sequential replacement requires the same frozen campaign identity")
+        path = self.path_for(campaign_id)
+        existing = self.load(campaign_id)
+        _verify_frozen_document(existing, campaign_id)
+        previous = existing.get("draft") if isinstance(existing.get("draft"), dict) else {}
+        old_ids = [str(item.get("variant_id") or "") for item in previous.get("variants") or []]
+        new_payload = draft.model_dump(mode="json", by_alias=True)
+        new_ids = [str(item.get("variant_id") or "") for item in new_payload.get("variants") or []]
+        if new_ids[:-1] != old_ids or len(new_ids) != len(old_ids) + 1:
+            raise ValueError("a sequential replacement may append exactly one variant and may not edit prior variants")
+        payload = {
+            **existing,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+            "wizard_step": 7,
+            "draft": new_payload,
+            "frozen_draft_sha256": _sha256_json(new_payload),
+        }
+        _atomic_json(path, payload)
+        return path
 
     def validation_report(self, campaign_id: str) -> dict[str, Any]:
         try:
@@ -126,6 +177,50 @@ class DraftStore:
             "errors": [],
         }
 
+    def close_before_pnl(
+        self,
+        campaign_id: str,
+        *,
+        ledger_path: str | Path,
+        reason: str,
+    ) -> dict[str, Any]:
+        """Atomically install the terminal duplicate-closure marker."""
+
+        path = self.path_for(campaign_id)
+        document = self.load(campaign_id)
+        existing = document.get("closed_before_pnl")
+        if isinstance(existing, dict) and existing.get("status") == "CLOSED":
+            return dict(existing)
+        payload = document.get("draft") if isinstance(document.get("draft"), dict) else document
+        if payload.get("frozen"):
+            raise ValueError("a frozen research protocol cannot be closed through duplicate review")
+        reason_value = reason.strip()
+        if len(reason_value) < 80:
+            raise ValueError("duplicate closure requires a substantive reason of at least 80 characters")
+        marker = {
+            "schema": CLOSED_BEFORE_PNL_SCHEMA,
+            "status": "CLOSED",
+            "research_verdict": "FAIL",
+            "stage": "duplicate_review",
+            "closed_at": datetime.now(timezone.utc).isoformat(),
+            "ledger_path": str(Path(ledger_path)),
+            "reason": reason_value,
+            "draft_sha256": _sha256_json(payload),
+        }
+        _atomic_json(path, {**document, "closed_before_pnl": marker})
+        return marker
+
+    def is_closed_before_pnl(
+        self,
+        campaign_id: str,
+        *,
+        document: dict[str, Any] | None = None,
+    ) -> bool:
+        value = document if document is not None else _read_json(self.path_for(campaign_id))
+        return _has_closed_before_pnl_marker(value) or campaign_id in _ledger_duplicate_closures(
+            self.project_root
+        )
+
     def create_revision(
         self,
         campaign_id: str,
@@ -139,6 +234,8 @@ class DraftStore:
         if len(reason_value) < 20:
             raise ValueError("revision reason must explain the publication blocker")
         original = self.load(campaign_id)
+        if self.is_closed_before_pnl(campaign_id, document=original):
+            raise ValueError("a duplicate FAIL closed before PnL cannot be revised or reopened")
         _verify_frozen_document(original, campaign_id)
         payload = original.get("draft") if isinstance(original.get("draft"), dict) else {}
         if not payload.get("frozen"):
@@ -205,4 +302,32 @@ def _verify_frozen_document(document: dict[str, Any], campaign_id: str) -> None:
         )
 
 
-__all__ = ["DraftStore"]
+def _has_closed_before_pnl_marker(document: dict[str, Any]) -> bool:
+    marker = document.get("closed_before_pnl")
+    if not isinstance(marker, dict):
+        return bool(marker)
+    # A malformed or partial marker fails closed rather than reopening work.
+    return bool(marker)
+
+
+def _ledger_duplicate_closures(project_root: Path) -> set[str]:
+    path = project_root / "research_ledger.csv"
+    if not path.is_file():
+        return set()
+    try:
+        with path.open(newline="", encoding="utf-8") as handle:
+            reader = csv.DictReader(handle)
+            return {
+                str(row.get("campaign_id") or "").strip()
+                for row in reader
+                if str(row.get("stage") or "").strip() == "duplicate_review"
+                and str(row.get("result") or "").strip().upper() == "FAIL"
+                and str(row.get("campaign_id") or "").strip()
+            }
+    except (OSError, UnicodeError, csv.Error):
+        # Marker checks remain available; governed mutations that depend on the
+        # ledger will fail separately in the ledger service.
+        return set()
+
+
+__all__ = ["CLOSED_BEFORE_PNL_SCHEMA", "DraftStore"]

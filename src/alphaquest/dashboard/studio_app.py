@@ -1,4 +1,9 @@
-"""No-code AlphaQuest Research Studio."""
+"""Legacy Streamlit compatibility shell for AlphaQuest Research Studio.
+
+The novice launcher now serves the React/FastAPI workspace.  This module stays
+available temporarily for parity checks and expert fallback; governed workflow
+logic belongs in :mod:`alphaquest.studio.workflow`.
+"""
 
 from __future__ import annotations
 
@@ -17,7 +22,7 @@ WIZARD_STEPS = (
     "3 · Dataset",
     "4 · Execution rules",
     "5 · Mechanics lane",
-    "6 · Five variants",
+    "6 · First variant",
     "7 · Protocol and freeze",
 )
 
@@ -66,7 +71,7 @@ def _render_home(st: Any, root: Path) -> None:
     from alphaquest.studio.workspace import list_published_campaigns, list_review_queue, refresh_generated_indexes_if_stale
 
     st.title("AlphaQuest Research Studio")
-    st.write("Turn a researched futures idea into a governed five-variant backtest—without editing code or YAML.")
+    st.write("Turn a researched futures idea into a governed sequential backtest—without editing code or YAML.")
     try:
         refresh = refresh_generated_indexes_if_stale(root)
     except Exception as exc:  # pragma: no cover - defensive workstation guard
@@ -112,6 +117,8 @@ def _render_home(st: Any, root: Path) -> None:
                         "created_at": date.today().isoformat(),
                         "instrument": instrument,
                         "timeframe": "1m",
+                        "variant_protocol": "sequential_failure_informed",
+                        "sequential_variant_history": [],
                         "frozen": False,
                     },
                     wizard_step=1,
@@ -131,7 +138,7 @@ def _render_home(st: Any, root: Path) -> None:
     st.subheader("How promotion works")
     st.markdown(
         "Research brief → duplicate review → governed data → execution rules → mechanics lane → "
-        "five confirmed variants → mechanics approval → staged testing → separate candidate review."
+        "one initial variant → mechanics approval → staged testing → optional next variant after FAIL → separate candidate review."
     )
     st.warning("A good-looking backtest is not a trading approval. Scientific failures stop each variant at its first failed gate.")
 
@@ -161,12 +168,14 @@ def _render_campaigns(st: Any, root: Path) -> None:
             active = [
                 row
                 for row in campaigns
-                if row["lifecycle"] == "active" and row.get("studio_managed") is True
+                if row.get("authored_lifecycle", row["lifecycle"]) == "active"
+                and row.get("studio_managed") is True
             ]
             developer_managed = [
                 row
                 for row in campaigns
-                if row["lifecycle"] == "active" and row.get("studio_managed") is not True
+                if row.get("authored_lifecycle", row["lifecycle"]) == "active"
+                and row.get("studio_managed") is not True
             ]
             if developer_managed:
                 st.warning(
@@ -282,8 +291,8 @@ def _wizard_prerequisite_error(
     if step_number <= 6:
         return None
     variants = draft.get("variants") or []
-    if len(variants) != 5 or not all(item.get("confirmed") for item in variants):
-        return "Individually review and confirm all five variant cards in step 6 before protocol freeze."
+    if len(variants) != 1 or not all(item.get("confirmed") for item in variants):
+        return "Review and confirm the initial variant card in step 6 before protocol freeze."
     return None
 
 
@@ -747,7 +756,7 @@ def _wizard_lane(st: Any, root: Path, store: Any, campaign_id: str, draft: dict[
             "Opening-range breakout",
         )
         recipe_label = st.selectbox(
-            "One economic edge recipe for all five variants",
+            "One economic edge recipe for the campaign's sequential variants",
             tuple(recipe_labels),
             index=_index(tuple(recipe_labels), selected_label),
             help="The entry edge stays fixed. The five cards vary certified risk and exit mechanics only.",
@@ -1065,7 +1074,7 @@ def _wizard_variants(st: Any, store: Any, campaign_id: str, draft: dict[str, Any
                         "confirmed": confirmed,
                     }
                 )
-        saved = st.form_submit_button("Save all five variant cards", type="primary")
+        saved = st.form_submit_button("Save the initial variant card", type="primary")
     if saved:
         if parameter_errors:
             st.error("Variant settings are not ready:\n- " + "\n- ".join(parameter_errors))
@@ -1084,7 +1093,7 @@ def _wizard_variants(st: Any, store: Any, campaign_id: str, draft: dict[str, Any
             7 if all(item["confirmed"] for item in edited) else 6,
         )
         if all(item["confirmed"] for item in edited):
-            st.success("All five mechanics were individually confirmed before PnL.")
+            st.success("The initial mechanic was confirmed before PnL.")
         else:
             st.warning("Every card must be confirmed before protocol freeze.")
         st.rerun()
@@ -1099,7 +1108,7 @@ def _wizard_protocol(st: Any, root: Path, store: Any, campaign_id: str, draft: d
     variants = draft.get("variants") or []
     st.markdown(
         f"This campaign tests **{draft.get('hypothesis', 'an undeclared hypothesis')}** on "
-        f"**{draft.get('instrument')} {draft.get('timeframe')}** using five frozen mechanics. "
+        f"**{draft.get('instrument')} {draft.get('timeframe')}** using one initial frozen mechanic. "
         "Signals are decided after completed bars and legal entries occur no earlier than the next bar open. "
         "Each variant stops at its first failed scientific gate; later variants continue."
     )
@@ -1112,8 +1121,8 @@ def _wizard_protocol(st: Any, root: Path, store: Any, campaign_id: str, draft: d
             draft.get("authoring_lane") == "visual_completed_bar_rule"
             or bool(draft.get("certified_recipe"))
         ),
-        "five_variants": len(variants) == 5,
-        "all_variants_confirmed": len(variants) == 5 and all(item.get("confirmed") for item in variants),
+        "initial_variant": len(variants) == 1,
+        "initial_variant_confirmed": len(variants) == 1 and all(item.get("confirmed") for item in variants),
     }
     st.dataframe([{"gate": key.replace("_", " "), "ready": value} for key, value in checklist.items()], hide_index=True, use_container_width=True)
     confirmation = st.checkbox("Freeze this protocol. Any later mechanics or data change requires a new governed attempt.")
@@ -1147,7 +1156,7 @@ def _wizard_protocol(st: Any, root: Path, store: Any, campaign_id: str, draft: d
         else:
             store.save(campaign_id, candidate, wizard_step=7)
             st.success(
-                f"Protocol is immutable after full five-variant publication preflight: "
+                f"Protocol is immutable after publication preflight: "
                 f"{preflight['preflight_verdict']}."
             )
             st.rerun()
@@ -1157,7 +1166,7 @@ def _render_published_actions(st: Any, root: Path, campaign_id: str) -> None:
     st.subheader("Governed actions")
     _render_results_matrix(st, root, campaign_id)
     st.info(
-        "First generate mechanics evidence, inspect every required sample, and approve all five frozen "
+        "First generate mechanics evidence, inspect every required sample, and approve the current frozen "
         "variants. Performance testing remains locked until those approvals are current."
     )
     from alphaquest.studio.followups import FollowUpAttemptService
@@ -1216,7 +1225,7 @@ def _render_published_actions(st: Any, root: Path, campaign_id: str) -> None:
         st.dataframe(gate_rows, use_container_width=True, hide_index=True)
     if unresolved_configs:
         if st.button(
-            "Generate mechanics evidence · queue all five frozen variants",
+            "Generate mechanics evidence · current variant",
             type="primary",
             key=f"mechanics_{campaign_id}_{selected_attempt}",
         ):
@@ -1238,9 +1247,9 @@ def _render_published_actions(st: Any, root: Path, campaign_id: str) -> None:
         st.warning(f"Mechanics approval gate: {exc}")
         approvals = None
     if approvals:
-        st.success("All five mechanics approvals are current. Queue submission is available.")
+        st.success("The current mechanics approval is valid. Queue submission is available.")
         if st.button(
-            "Run campaign · queue all five variants",
+            "Run full test suite · current variant",
             type="primary",
             key=f"run_{campaign_id}_{selected_attempt}",
         ):
@@ -1271,6 +1280,7 @@ def _render_follow_up_creator(
         "data_refresh": "Data refresh · same mechanics, new governed dataset",
         "methodology_rerun": "Methodology rerun · same mechanics/data under current full stages",
         "pre_pnl_mechanics_correction": "Pre-PnL mechanics correction · explicit scalar correction",
+        "pre_pnl_parameter_declaration": "Pre-PnL parameter declaration · freeze tunable names and grids",
         "rescue": "Authorized rescue · one permitted change after a FAIL",
     }
     with st.expander("Create an explicit governed follow-up", expanded=False):
@@ -1303,6 +1313,7 @@ def _render_follow_up_creator(
         target_variant = None
         authorized_by = None
         patches: list[dict[str, Any]] = []
+        parameter_grid: dict[str, list[Any]] = {}
         if kind == "data_refresh":
             datasets = [
                 row
@@ -1367,6 +1378,26 @@ def _render_follow_up_creator(
                     help="The campaign must permit rescue and the parent target must have an immutable FAIL.",
                     key=f"follow_authorizer_{campaign_id}",
                 )
+        if kind == "pre_pnl_parameter_declaration":
+            target_variant = st.selectbox(
+                "Variant whose pre-PnL parameter space is declared",
+                [path.parent.name for path in parent_paths],
+                key=f"follow_grid_variant_{campaign_id}",
+            )
+            raw_grid = st.text_area(
+                "Certified event parameter grid · JSON object",
+                value='{"max_aoi_width_points": [3, 4, 5, 6], "entry_offset_ticks": [0, 1, 2, 3, 4], "stop_offset_ticks": [0, 1, 2, 3, 4]}',
+                help="Use certified parameter names only. Every grid must include its reviewed default.",
+                key=f"follow_grid_{campaign_id}",
+            )
+            try:
+                decoded = __import__("json").loads(raw_grid)
+                if isinstance(decoded, dict):
+                    parameter_grid = decoded
+                else:
+                    st.error("The parameter grid must be a JSON object.")
+            except ValueError as exc:
+                st.error(f"Parameter grid JSON is invalid: {exc}")
         confirmed = st.checkbox(
             "Create a new immutable attempt; do not alter or replay the parent.",
             key=f"follow_confirm_{campaign_id}",
@@ -1377,6 +1408,7 @@ def _render_follow_up_creator(
             or len(reason.strip()) < 80
             or (kind == "data_refresh" and not dataset_id)
             or (kind in {"pre_pnl_mechanics_correction", "rescue"} and not patches)
+            or (kind == "pre_pnl_parameter_declaration" and not parameter_grid)
             or (kind == "rescue" and not str(authorized_by or "").strip())
         )
         if st.button(
@@ -1397,6 +1429,7 @@ def _render_follow_up_creator(
                         "target_variant_id": target_variant,
                         "authorized_by": authorized_by,
                         "mechanic_patches": patches,
+                        "parameter_grid": parameter_grid,
                     }
                 )
                 result = service.create(request)
@@ -1703,7 +1736,7 @@ def _resolve_result_config(
     attempt_id = str(cfg.get("attempt_id") or "")
     governed = FollowUpAttemptService(root).config_paths(campaign_id, attempt_id)
     if config_path not in governed:
-        raise ValueError("finalized source config is not part of its governed five-variant attempt")
+        raise ValueError("finalized source config is not part of its governed sequential attempt")
     bound = inspect_finalized_result(result_bundle_path, config_path=config_path)
     if not bound["valid"]:
         raise ValueError("finalized source binding is invalid: " + "; ".join(bound["errors"]))
@@ -1830,7 +1863,7 @@ def _render_tutorial(st: Any, root: Path) -> None:
             )
         matrix = result.get("stage_matrix")
         if isinstance(matrix, list):
-            st.markdown("**Five-variant stage matrix · first failed gate leads**")
+            st.markdown("**Sequential variant stage matrix · first failed gate leads**")
             st.dataframe(matrix, use_container_width=True, hide_index=True)
         if result.get("research_verdict") == "FAIL":
             st.error("Final research verdict: FAIL — promising core PnL did not beat randomized entries.")
@@ -2021,7 +2054,7 @@ def _publish_draft(root: Path, draft: Any) -> Any:
 
 def _render_results_matrix(st: Any, root: Path, campaign_id: str) -> None:
     rows, latest = _results_matrix_state(root, campaign_id)
-    st.markdown("**Five-variant stage matrix**")
+    st.markdown("**Sequential variant stage matrix**")
     st.dataframe(rows, use_container_width=True, hide_index=True)
     if latest:
         selected = st.selectbox("Inspect one variant's governed result", sorted(latest), key=f"result_variant_{campaign_id}")
@@ -2106,7 +2139,7 @@ def _results_matrix_state(
     root: Path,
     campaign_id: str,
 ) -> tuple[list[dict[str, Any]], dict[str, dict[str, Any]]]:
-    """Join the five declared variants to finalized evidence and operational jobs."""
+    """Join the currently declared sequential variants to evidence and jobs."""
 
     import yaml
 
@@ -2121,11 +2154,11 @@ def _results_matrix_state(
         definition = loaded if isinstance(loaded, dict) else {}
     declared = definition.get("variants")
     variants = [str(item) for item in declared] if isinstance(declared, list) else []
-    if len(variants) != 5 or len(set(variants)) != 5:
+    if not 1 <= len(variants) <= 5 or len(set(variants)) != len(variants):
         discovered = sorted(
             path.parent.name for path in (campaign_root / "variants").glob("*/config.yaml")
         )
-        variants = discovered if len(discovered) == 5 else [f"v{index:02d}" for index in range(1, 6)]
+        variants = discovered if 1 <= len(discovered) <= 5 else []
 
     value: dict[str, Any] = {}
     results_path = campaign_root / "results_index.yaml"
@@ -2196,17 +2229,12 @@ def _suggest_variants_for_lane(
     state: dict[str, Any],
     suggester: Any,
 ) -> list[dict[str, Any]]:
-    cards = list(suggester(draft))
+    cards = list(suggester(draft))[:1]
     if draft.get("authoring_lane") != "visual_completed_bar_rule" and state.get("lane") != "Visual completed-bar rule":
         return cards
     rule = state.get("safe_bar_rule")
     if not isinstance(rule, dict):
         return cards
-    # Keep five value-independent structures when the entry rule is shared:
-    # points/fixed-R, percent/fixed-R, dollars/cost-R, points/cost-R,
-    # and percent/cost-R.
-    if len(cards) == 5:
-        cards[4]["target"] = json.loads(json.dumps(cards[3]["target"]))
     for index, card in enumerate(cards, start=1):
         card["entry"] = {
             "module": "safe_bar_rule",

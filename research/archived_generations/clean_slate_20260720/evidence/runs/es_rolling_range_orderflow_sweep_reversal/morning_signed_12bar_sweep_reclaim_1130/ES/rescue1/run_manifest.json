@@ -1,0 +1,60 @@
+{
+  "campaign_id": "es_rolling_range_orderflow_sweep_reversal",
+  "variant_id": "morning_signed_12bar_sweep_reclaim_1130",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_rolling_range_orderflow_sweep_reversal/morning_signed_12bar_sweep_reclaim_1130/variant.yaml",
+    "hash": "e928c47ba44588d00ae8d071000a3a9ea8d6ed2823c76f7274dc55f0e365cd25",
+    "mechanic": {
+      "entry_module": "rolling_range_orderflow_sweep_reversal",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_rolling_range_orderflow_sweep_reversal/rescue_attempts/parameter_space_rescue_1/morning_signed_12bar_sweep_reclaim_1130/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_rolling_range_orderflow_sweep_reversal/morning_signed_12bar_sweep_reclaim_1130/ES/rescue1/source_config.yaml",
+  "config_hash": "fbe7de78de7fbcf6a023b36672c356cd40788dab06601307c44d4613298d2cdd",
+  "source_config_hash": "26135d67a6e39420a5d66f18b5d100dea6c915ab1c649f6c15c1f559a5abc0a8",
+  "created_at": "2026-06-17T23:52:21",
+  "updated_at": "2026-06-17T23:52:21",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_rolling_range_orderflow_sweep_reversal/morning_signed_12bar_sweep_reclaim_1130/ES/rescue1/effective_config.yaml"
+}

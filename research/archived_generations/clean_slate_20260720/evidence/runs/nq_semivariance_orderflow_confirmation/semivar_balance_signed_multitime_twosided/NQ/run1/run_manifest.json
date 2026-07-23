@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_semivariance_orderflow_confirmation",
+  "variant_id": "semivar_balance_signed_multitime_twosided",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_semivariance_orderflow_confirmation/semivar_balance_signed_multitime_twosided/variant.yaml",
+    "hash": "c59bffec6d91568a1545f02b19c61c2144e85fa8852f1c0f27dff782a1a87ddf",
+    "mechanic": {
+      "entry_module": "realized_semivariance_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_semivariance_orderflow_confirmation/variants/semivar_balance_signed_multitime_twosided/config.yaml",
+  "effective_config": "backtest-campaigns/nq_semivariance_orderflow_confirmation/semivar_balance_signed_multitime_twosided/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_semivariance_orderflow_confirmation/semivar_balance_signed_multitime_twosided/NQ/run1/source_config.yaml",
+  "config_hash": "2f855bdb9c555972b2b6d5f9e25bbb5b90e9838fa217e98f1ab2aae68b68dada",
+  "source_config_hash": "2c1d0ffb586d0f67e16d86a9406197b4f6e0ffc0202be20d0ba41149c58bc44b",
+  "source_results_index": "campaigns/nq_semivariance_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-23T05:16:03",
+  "updated_at": "2026-06-23T05:16:03",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

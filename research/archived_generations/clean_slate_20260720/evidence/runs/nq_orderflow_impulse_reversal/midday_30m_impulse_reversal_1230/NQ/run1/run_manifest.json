@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_orderflow_impulse_reversal",
+  "variant_id": "midday_30m_impulse_reversal_1230",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_orderflow_impulse_reversal/midday_30m_impulse_reversal_1230/variant.yaml",
+    "hash": "8c07d7c73bea1bffc85a901e9c80ee8a7a1cd7ab8618e17b3c3627df4d2561c7",
+    "mechanic": {
+      "entry_module": "orderflow_regime",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "14:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_orderflow_impulse_reversal/variants/midday_30m_impulse_reversal_1230/config.yaml",
+  "effective_config": "backtest-campaigns/nq_orderflow_impulse_reversal/midday_30m_impulse_reversal_1230/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_orderflow_impulse_reversal/midday_30m_impulse_reversal_1230/NQ/run1/source_config.yaml",
+  "config_hash": "4118bf86c6b73a60e2e86dfc5c37c9e9ea0a4cc40ce7834dde56186737127f35",
+  "source_config_hash": "f27247c91421d2b8d523f47423419f33b6fa43f9bc74fb7467e2691dac364273",
+  "source_results_index": "campaigns/nq_orderflow_impulse_reversal/results_index.yaml",
+  "created_at": "2026-06-30T16:19:57",
+  "updated_at": "2026-06-30T16:19:57",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

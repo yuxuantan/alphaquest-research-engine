@@ -242,6 +242,7 @@ class StudioPublicationService:
 
     def _compiler(self) -> CampaignCompiler:
         return CampaignCompiler(
+            project_root=self.project_root,
             evidence_root=display_path(self.layout.evidence_roots[0], self.project_root),
             research_artifact_root=display_path(
                 self.layout.research_artifact_root,

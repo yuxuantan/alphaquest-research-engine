@@ -1,0 +1,65 @@
+{
+  "campaign_id": "es_cboe_implied_correlation_intraday",
+  "variant_id": "high_short_term_correlation_short_1330",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_cboe_implied_correlation_intraday/high_short_term_correlation_short_1330/variant.yaml",
+    "hash": "06c8cd9b9664d9ad9352e029b047942db8879ec1f51e71b55d0b0ecb5ab865a5",
+    "mechanic": {
+      "entry_module": "cboe_implied_correlation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_cboe_implied_correlation_intraday/rescue_attempts/stop_distance_rescue_1/high_short_term_correlation_short_1330/config.yaml",
+  "effective_config": "backtest-campaigns/es_cboe_implied_correlation_intraday/high_short_term_correlation_short_1330/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_cboe_implied_correlation_intraday/high_short_term_correlation_short_1330/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "c8936f3726912014d8624bc758fdcf4349fdcb9a27fa52491abbd10005936a77",
+  "source_config_hash": "bdd9f643964b0e803764d4d96176ca1f541532e92dbe5c3d7160b0b970b847a8",
+  "source_results_index": "campaigns/es_cboe_implied_correlation_intraday/results_index.yaml",
+  "created_at": "2026-06-19T08:51:44",
+  "updated_at": "2026-06-21T12:49:22",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:49:22"
+  }
+}

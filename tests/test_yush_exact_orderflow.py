@@ -11,11 +11,11 @@ from alphaquest.backtest.event_replay import (
     EventPositionView,
     EventReplaySessionView,
 )
-from alphaquest.backtest.yush_exact_orderflow import (
+from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_modules.event.yush_orderflow_primitives import (
     AoiCandidate,
     AoiLineage,
     ConfluencePoint,
-    ExactYushRangeBacktester,
     ExactYushRangeConfig,
     ExactYushRangeEventStrategy,
     PendingOrder,
@@ -81,7 +81,27 @@ def _replay(session=None):
 
 
 def test_exact_backtester_routes_through_backtestengine_canonical_event_lane():
-    result = ExactYushRangeBacktester().run([_session()])
+    config = {
+        "strategy_name": "exact_yush_primitive_test",
+        "engine_lane": "canonical_event_replay",
+        "timezone": "America/New_York",
+        "core": {
+            "initial_balance": 50_000.0,
+            "tick_size": 0.25,
+            "point_value": 50.0,
+            "contracts": 1,
+            "commission_per_contract": 2.5,
+            "slippage_ticks": 0,
+            "max_trades_per_day": 3,
+            "entry_start": "09:30:00",
+            "latest_entry_time": "10:59:59",
+            "flatten_time": "11:00:00",
+            "event_stop_market_fill_policy": "exact_requested_price",
+        },
+    }
+    result = BacktestEngine(config).run_event_replay(
+        [_session()], ExactYushRangeEventStrategy(ExactYushRangeConfig())
+    )
 
     assert result["reproducibility"]["engine_lane"] == "canonical_event_replay"
     execution = result["reproducibility"]["execution_assumptions"]

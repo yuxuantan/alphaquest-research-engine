@@ -1,10 +1,10 @@
 """Fail-closed mechanics-validation promotion gate.
 
 The gate reads completed validation artifacts and a human approval decision.  It
-never calls strategy code, changes a fill, or calculates PnL.  New campaign
-definitions opt into the contract with ``research_metadata.validation_gate``.
-Legacy definitions remain inspectable and are classified separately by the
-repository coverage audit.
+never calls strategy code, changes a fill, or calculates PnL.  Every performance
+campaign must declare ``research_metadata.validation_gate`` and pass it before
+the staged runner is allowed to calculate PnL.  Legacy definitions remain
+inspectable, but an absent or disabled gate cannot authorize testing.
 """
 
 from __future__ import annotations
@@ -35,10 +35,13 @@ from alphaquest.validation.schema import (
     VALIDATION_CHECKS_FILENAME,
     VALIDATION_SCHEMA_VERSION,
 )
+from alphaquest.strategy_certification import StrategyCertificationError, strategy_identity_for_config
 
 
 APPROVAL_SCHEMA = "alphaquest.validation-approval/v1"
 APPROVAL_FILENAME = "approval.json"
+FIXED_MANUAL_RANDOM_SAMPLE_SIZE = 5
+FIXED_MANUAL_RANDOM_SEED = 0
 SUPPORTED_VALIDATION_LANES = {"bar", "event_replay"}
 REQUIRED_SAMPLE_CATEGORIES = (
     "first_trade",
@@ -83,27 +86,27 @@ def inspect_validation_gate(
     config_path: str | Path,
     *,
     compute_input_hash: bool = True,
+    precomputed_input_hash: str | None = None,
 ) -> dict[str, Any]:
     """Return evidence-backed gate status without mutating repository state."""
 
     source_path = Path(config_path)
     gate = validation_gate_config(cfg)
     report: dict[str, Any] = {
-        "required": bool(gate and gate.get("required")),
-        "status": "NOT_REQUIRED",
+        "required": True,
+        "status": "BLOCKED",
         "verdict": "NEEDS MANUAL REVIEW",
         "errors": [],
         "warnings": [],
         "config_path": str(source_path),
     }
     if not gate:
-        report["warnings"].append("research_metadata.validation_gate is absent")
+        report["errors"].append("research_metadata.validation_gate is required before performance testing")
         return report
     if not gate.get("required"):
-        report["warnings"].append("research_metadata.validation_gate.required is not true")
+        report["errors"].append("research_metadata.validation_gate.required must be true")
         return report
 
-    report["status"] = "BLOCKED"
     lane = str(gate.get("lane") or "").strip().lower()
     report["lane"] = lane
     if lane not in SUPPORTED_VALIDATION_LANES:
@@ -121,7 +124,9 @@ def inspect_validation_gate(
     source_hash = _file_sha256(source_path)
     report["config_hash"] = source_hash or None
     input_hash = None
-    if compute_input_hash:
+    if precomputed_input_hash is not None:
+        input_hash = str(precomputed_input_hash or "") or None
+    elif compute_input_hash:
         try:
             subset = gate.get("data_subset") if isinstance(gate.get("data_subset"), dict) else None
             project_root = _storage_project_root(source_path)
@@ -135,6 +140,23 @@ def inspect_validation_gate(
         input_hash = str(gate.get("input_data_hash") or "") or None
     report["input_data_hash"] = input_hash
 
+    certification = None
+    try:
+        certification = strategy_identity_for_config(
+            cfg, _storage_project_root(source_path), require_declared_match=True
+        )
+    except StrategyCertificationError as exc:
+        report["errors"].append(f"strategy implementation certification failed: {exc}")
+    report["strategy_implementation_version"] = (
+        certification.implementation_version if certification else None
+    )
+    report["strategy_implementation_sha256"] = (
+        certification.implementation_sha256 if certification else None
+    )
+    report["strategy_certification_manifest_sha256"] = (
+        certification.manifest_sha256 if certification else None
+    )
+
     metadata = _read_json(evidence_dir / METADATA_FILENAME) if evidence_dir else {}
     approval = _read_json(approval_path) if approval_path else {}
     report["validation_schema_version"] = metadata.get("schema_version")
@@ -145,8 +167,17 @@ def inspect_validation_gate(
     if evidence_dir and evidence_dir.is_dir():
         _validate_lane_artifacts(evidence_dir, lane, metadata, report["errors"])
         _validate_automated_checks(evidence_dir, report["errors"])
-    _validate_metadata(metadata, lane, source_hash, input_hash, report["errors"])
-    _validate_approval(approval, lane, source_hash, input_hash, metadata, report["errors"])
+    _validate_metadata(metadata, lane, source_hash, input_hash, certification, report["errors"])
+    _validate_approval(approval, lane, source_hash, input_hash, metadata, certification, report["errors"])
+    if gate.get("manual_review_random_sample_size") is not None:
+        expected_size = int(gate.get("manual_review_random_sample_size"))
+        expected_seed = int(gate.get("manual_review_seed", FIXED_MANUAL_RANDOM_SEED))
+        if approval.get("fixed_random_sample_size") != expected_size:
+            report["errors"].append(f"manual approval must use the fixed {expected_size}-trade random sample")
+        if approval.get("fixed_random_seed") != expected_seed:
+            report["errors"].append(f"manual approval must use fixed random seed {expected_seed}")
+        if approval.get("parameter_mode") != str(gate.get("parameter_mode") or "declared_defaults"):
+            report["errors"].append("manual approval must use the variant's declared default parameters")
 
     if not report["errors"]:
         report["status"] = "APPROVED_FOR_TESTING"
@@ -158,17 +189,17 @@ def inspect_validation_gate(
 
 
 def require_validation_approval(cfg: dict[str, Any], config_path: str | Path) -> dict[str, Any]:
-    """Raise before performance testing when an opted-in gate is unresolved."""
+    """Require a current, hash-bound manual mechanics approval before PnL tests."""
 
     report = inspect_validation_gate(cfg, config_path)
-    if report["required"] and report["status"] != "APPROVED_FOR_TESTING":
+    if report["status"] != "APPROVED_FOR_TESTING":
         details = "\n- ".join(report["errors"] or report["warnings"] or ["approval is unresolved"])
         raise ValueError(f"Mechanics validation promotion gate failed:\n- {details}")
     return report
 
 
 def require_prior_variant_approvals(cfg: dict[str, Any], config_path: str | Path) -> None:
-    """Serialize v2 campaign mechanics review in declared variant order."""
+    """Require approved mechanics and a hash-bound FAIL before a later variant runs."""
 
     path = Path(config_path).resolve()
     project_root = _storage_project_root(path)
@@ -183,7 +214,8 @@ def require_prior_variant_approvals(cfg: dict[str, Any], config_path: str | Path
         campaign = yaml.safe_load(campaign_path.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError):
         return
-    if int(campaign.get("governance_contract_version") or 0) < 2:
+    contract_version = int(campaign.get("governance_contract_version") or 0)
+    if contract_version < 2:
         return
     variants = [str(item) for item in campaign.get("variants") or []]
     current = str(cfg.get("variant_id") or "")
@@ -211,6 +243,33 @@ def require_prior_variant_approvals(cfg: dict[str, Any], config_path: str | Path
         report = inspect_validation_gate(prior_cfg, prior_path)
         if report["status"] != "APPROVED_FOR_TESTING":
             unresolved.append(f"{prior_variant}: {report['status']}")
+    if contract_version >= 3 and variants.index(current) > 0:
+        history = campaign.get("sequential_variant_history")
+        expected = variants.index(current)
+        if not isinstance(history, list) or len(history) < expected:
+            unresolved.append("failure-informed sequential lineage is missing")
+        else:
+            lineage = history[expected - 1]
+            if not isinstance(lineage, dict):
+                unresolved.append("failure-informed sequential lineage is invalid")
+            elif (
+                str(lineage.get("variant_id") or "") != current
+                or str(lineage.get("predecessor_variant_id") or "") != variants[expected - 1]
+                or str(lineage.get("predecessor_verdict") or "") != "FAIL"
+            ):
+                unresolved.append("failure-informed sequential lineage does not match campaign order")
+            else:
+                result_path = _resolve_path(lineage.get("predecessor_result_path"), path)
+                expected_hash = str(lineage.get("predecessor_result_sha256") or "")
+                actual_hash = _file_sha256(result_path) if result_path else None
+                result = _read_json(result_path) if result_path else {}
+                verdict = str(result.get("verdict") or result.get("research_verdict") or result.get("decision") or "")
+                if not result_path or not result_path.is_file():
+                    unresolved.append("predecessor FAIL result artifact is missing")
+                elif actual_hash != expected_hash:
+                    unresolved.append("predecessor FAIL result artifact hash has drifted")
+                elif verdict != "FAIL":
+                    unresolved.append(f"predecessor terminal verdict is {verdict or 'unresolved'}, not FAIL")
     if unresolved:
         raise ValueError(
             "Campaign sequencing gate failed; prior variants require completed mechanics approval:\n- "
@@ -280,6 +339,7 @@ def _validate_metadata(
     lane: str,
     config_hash: str,
     input_hash: str | None,
+    certification: Any,
     errors: list[str],
 ) -> None:
     if not metadata:
@@ -292,6 +352,16 @@ def _validate_metadata(
         errors.append("validation metadata config hash does not match the authored config")
     if not input_hash or str(metadata.get("input_data_hash") or "") != input_hash:
         errors.append("validation metadata input-data hash does not match the declared data")
+    if certification is not None:
+        if metadata.get("strategy_implementation_version") != certification.implementation_version:
+            errors.append("validation metadata strategy implementation version is stale or mismatched")
+        if str(metadata.get("strategy_implementation_sha256") or "") != certification.implementation_sha256:
+            errors.append("validation metadata strategy implementation hash is stale or mismatched")
+        if (
+            str(metadata.get("strategy_certification_manifest_sha256") or "")
+            != certification.manifest_sha256
+        ):
+            errors.append("validation metadata strategy certification manifest hash is stale or mismatched")
 
 
 def _validate_approval(
@@ -300,6 +370,7 @@ def _validate_approval(
     config_hash: str,
     input_hash: str | None,
     metadata: dict[str, Any],
+    certification: Any,
     errors: list[str],
 ) -> None:
     if not approval:
@@ -323,6 +394,16 @@ def _validate_approval(
     schema_version = str(metadata.get("schema_version") or "")
     if str(approval.get("validation_schema_version") or "") != schema_version:
         errors.append("manual approval validation schema version is stale or mismatched")
+    if certification is not None:
+        if approval.get("strategy_implementation_version") != certification.implementation_version:
+            errors.append("manual approval strategy implementation version is stale or mismatched")
+        if str(approval.get("strategy_implementation_sha256") or "") != certification.implementation_sha256:
+            errors.append("manual approval strategy implementation hash is stale or mismatched")
+        if (
+            str(approval.get("strategy_certification_manifest_sha256") or "")
+            != certification.manifest_sha256
+        ):
+            errors.append("manual approval strategy certification manifest hash is stale or mismatched")
     trade_ids = approval.get("sampled_trade_ids")
     if not isinstance(trade_ids, list) or not trade_ids:
         errors.append("manual approval must list sampled_trade_ids")
@@ -408,6 +489,9 @@ def _resolved_data_config(data_config: dict[str, Any], project_root: Path) -> di
         "archive",
         "contract_manifest",
         "quality_manifest",
+        "raw_manifest",
+        "session_levels",
+        "concordance_report",
     }
 
     def visit(value: Any) -> None:

@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_orderflow_absorption_exhaustion_reversal",
+  "variant_id": "late_morning_15m_absorption_fade_1130",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/campaign.yaml",
+    "hash": "80f1cae607611ee3b23cdadd01fd08e16c8f2b9fe6140bd5ec232867b204d9fe"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/late_morning_15m_absorption_fade_1130/variant.yaml",
+    "hash": "22a2a9353062f2feade605034d69b57ba8806ea00f4f012e3d309e50cbb929f4",
+    "mechanic": {
+      "entry_module": "orderflow_regime",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_orderflow_absorption_exhaustion_reversal/rescue_attempts/stop_distance_rescue_1/late_morning_15m_absorption_fade_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/late_morning_15m_absorption_fade_1130/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/late_morning_15m_absorption_fade_1130/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "a675b56034656af59c96677b25b417639ecce712bdf94513b3c58f203e376a99",
+  "source_config_hash": "747a8a3ca2059c40ca38380e56be3dcea71521d99c3ad968785acb3964070fe5",
+  "source_results_index": "campaigns/es_orderflow_absorption_exhaustion_reversal/results_index.yaml",
+  "created_at": "2026-06-19T15:23:36",
+  "updated_at": "2026-06-19T15:23:36",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

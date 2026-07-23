@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_prior_session_breakout_orderflow_confirmation",
+  "variant_id": "first_half_signed_no_buffer_break_two_sided",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_prior_session_breakout_orderflow_confirmation/first_half_signed_no_buffer_break_two_sided/variant.yaml",
+    "hash": "241b7f1b326525b7c501f052c23ee97bbc8d0be31e19fbd0a1f8be6f57142112",
+    "mechanic": {
+      "entry_module": "pdh_pdl_orderflow_breakout_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_prior_session_breakout_orderflow_confirmation/variants/first_half_signed_no_buffer_break_two_sided/config.yaml",
+  "effective_config": "backtest-campaigns/nq_prior_session_breakout_orderflow_confirmation/first_half_signed_no_buffer_break_two_sided/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_prior_session_breakout_orderflow_confirmation/first_half_signed_no_buffer_break_two_sided/NQ/run1/source_config.yaml",
+  "config_hash": "19814bafb45feaf0f9efdcf61a241bc97071ec22aee36280e473d63d2040368d",
+  "source_config_hash": "b3b1587e453073a8ceb31d46e0d344f152cca1b75da140e4fc4357af2ba2a275",
+  "source_results_index": "campaigns/nq_prior_session_breakout_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-22T17:16:04",
+  "updated_at": "2026-06-22T17:16:04",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -13,6 +13,14 @@ from pydantic import ValidationError
 
 from alphaquest.authoring.catalog import CERTIFIED_MODULE_CATALOG, CertifiedModuleCatalog
 from alphaquest.authoring.models import CampaignDraftV1, ModuleBindingV1, VariantDraftV1
+from alphaquest.prop.profiles import resolve_prop_profile
+from alphaquest.strategy_certification import (
+    StrategyCertification,
+    StrategyCertificationError,
+    get_strategy_certification,
+    normalize_certified_event_params,
+    validate_certified_event_parameter_grid,
+)
 
 
 AUTHORING_MANIFEST_SCHEMA = "alphaquest.authoring-manifest/v1"
@@ -50,10 +58,12 @@ class CampaignCompiler:
         self,
         catalog: CertifiedModuleCatalog | None = None,
         *,
+        project_root: str | Path | None = None,
         evidence_root: str | Path = "research/evidence/runs",
         research_artifact_root: str | Path = "research_artifacts",
     ) -> None:
         self.catalog = catalog or CERTIFIED_MODULE_CATALOG
+        self.project_root = Path(project_root).resolve() if project_root is not None else None
         self.evidence_root = Path(evidence_root).as_posix().rstrip("/")
         self.research_artifact_root = Path(research_artifact_root).as_posix().rstrip("/")
 
@@ -63,6 +73,7 @@ class CampaignCompiler:
         except (ValidationError, TypeError, ValueError) as exc:
             raise CampaignCompilationError(f"campaign draft is invalid: {exc}") from exc
         self._validate_publishable(parsed)
+        certification = self._event_certification(parsed)
 
         normalized: list[tuple[VariantDraftV1, ModuleBindingV1, ModuleBindingV1, ModuleBindingV1]] = []
         for variant in parsed.variants:
@@ -75,16 +86,28 @@ class CampaignCompiler:
                 target = self.catalog.validate_binding("tp", target_input, dataset=parsed.dataset)
             except ValueError as exc:
                 raise CampaignCompilationError(f"variant {variant.variant_id}: {exc}") from exc
+            if certification is not None:
+                try:
+                    normalize_certified_event_params(
+                        certification, dict(entry.params.get("mechanics") or {})
+                    )
+                    validate_certified_event_parameter_grid(
+                        certification,
+                        dict(entry.params.get("mechanics") or {}),
+                        variant.event_parameter_grid,
+                    )
+                except StrategyCertificationError as exc:
+                    raise CampaignCompilationError(f"variant {variant.variant_id}: {exc}") from exc
             normalized.append((variant, entry, stop, target))
 
         draft_document = parsed.model_dump(mode="json", by_alias=True)
         draft_sha256 = _object_sha256(draft_document)
         campaign = self._campaign_document(parsed, normalized)
         variant_configs = {
-            variant.variant_id: self._variant_config(parsed, variant, entry, stop, target)
+            variant.variant_id: self._variant_config(parsed, variant, entry, stop, target, certification)
             for variant, entry, stop, target in normalized
         }
-        strategy_spec = self._strategy_spec(parsed, normalized, draft_sha256)
+        strategy_spec = self._strategy_spec(parsed, normalized, draft_sha256, certification)
         manifest = self._authoring_manifest(
             parsed,
             normalized,
@@ -92,6 +115,7 @@ class CampaignCompiler:
             campaign=campaign,
             variant_configs=variant_configs,
             strategy_spec=strategy_spec,
+            certification=certification,
         )
         return CompiledCampaign(
             draft=parsed.model_copy(deep=True),
@@ -128,12 +152,14 @@ class CampaignCompiler:
             )
         if draft.dataset.continuous_contract == "explicit_roll_calendar" and not draft.dataset.roll_calendar:
             raise CampaignCompilationError("explicit_roll_calendar requires a governed roll calendar")
+        if draft.authoring_lane == "certified_event_replay" and draft.dataset.event_source is None:
+            raise CampaignCompilationError("certified event replay requires a governed event source")
         if not draft.timeframe.endswith("m"):
             raise CampaignCompilationError("Studio v1 executable campaigns require intraday minute bars")
         if draft.duplicate_review.conclusion != "distinct":
             raise CampaignCompilationError("duplicate review must conclude distinct before executable publication")
         if not all(variant.confirmed for variant in draft.variants):
-            raise CampaignCompilationError("all five variant mechanics must be individually confirmed")
+            raise CampaignCompilationError("every currently declared variant mechanic must be individually confirmed")
         substantive = {
             "duplicate distinction": draft.duplicate_review.substantive_distinction,
             **{
@@ -176,6 +202,27 @@ class CampaignCompiler:
         ]
         if any(len(value.strip()) < 20 for value in fingerprint_values):
             raise CampaignCompilationError("every economic edge fingerprint field must contain at least 20 characters")
+
+    def _event_certification(self, draft: CampaignDraftV1) -> StrategyCertification | None:
+        if draft.authoring_lane != "certified_event_replay":
+            return None
+        try:
+            certification = get_strategy_certification(
+                str(draft.event_strategy or ""), self.project_root, require_current=True
+            )
+        except StrategyCertificationError as exc:
+            raise CampaignCompilationError(f"event strategy cannot be published: {exc}") from exc
+        for variant in draft.variants:
+            if (
+                variant.entry.module != certification.entry_module
+                or variant.stop.module != certification.stop_module
+                or variant.target.module != certification.target_module
+            ):
+                raise CampaignCompilationError(
+                    f"variant {variant.variant_id} modules do not match certified strategy "
+                    f"{certification.strategy_id} version {certification.implementation_version}"
+                )
+        return certification
 
     def _bind_context(self, draft: CampaignDraftV1, binding: ModuleBindingV1) -> ModuleBindingV1:
         params = deepcopy(binding.params)
@@ -233,9 +280,12 @@ class CampaignCompiler:
             "created_at": draft.created_at,
             "instrument": draft.instrument,
             "timeframe": draft.timeframe,
-            "governance_contract_version": 2,
+            "governance_contract_version": 3 if draft.variant_protocol == "sequential_failure_informed" else 2,
+            "variant_protocol": draft.variant_protocol,
+            "max_variants": 5,
             "authoring_lane": draft.authoring_lane,
             "certified_recipe": draft.certified_recipe,
+            "event_strategy": draft.event_strategy,
             "edge_family": draft.edge_family,
             "hypothesis": draft.hypothesis,
             "economic_edge_fingerprint": {
@@ -263,6 +313,9 @@ class CampaignCompiler:
                 for source in draft.sources
             ],
             "variants": [variant.variant_id for variant, *_ in variants],
+            "sequential_variant_history": [
+                item.model_dump(mode="json", by_alias=True) for item in draft.sequential_variant_history
+            ],
             "variant_distinctions": {
                 variant.variant_id: {
                     "mechanic": variant.mechanic_rationale,
@@ -281,6 +334,7 @@ class CampaignCompiler:
         entry: ModuleBindingV1,
         stop: ModuleBindingV1,
         target: ModuleBindingV1,
+        certification: StrategyCertification | None,
     ) -> dict[str, Any]:
         data_key = "raw_parquet" if draft.dataset.source == "parquet" else "raw_csv"
         full_subset = {
@@ -293,7 +347,27 @@ class CampaignCompiler:
             draft.dataset.coverage_end,
             entry=entry,
         )
-        grid = _parameter_grid(entry, stop, target)
+        if certification is None:
+            grid = _parameter_grid(entry, stop, target)
+            event_params: dict[str, Any] | None = None
+        else:
+            try:
+                event_params = normalize_certified_event_params(
+                    certification, dict(entry.params.get("mechanics") or {})
+                )
+                grid = validate_certified_event_parameter_grid(
+                    certification,
+                    event_params,
+                    variant.event_parameter_grid,
+                )
+            except StrategyCertificationError as exc:
+                raise CampaignCompilationError(f"variant {variant.variant_id}: {exc}") from exc
+        prop_rules = resolve_prop_profile(
+            draft.execution.prop_profile,
+            starting_balance=draft.execution.initial_balance,
+            max_contracts=draft.execution.contracts,
+            force_flatten_time=draft.execution.flatten_time,
+        )
         profitability = f"{draft.expected_mechanism} {variant.mechanic_rationale}".strip()
         failures = " ".join(variant.known_failure_modes)
         config: dict[str, Any] = {
@@ -324,6 +398,9 @@ class CampaignCompiler:
                 "validation_gate": {
                     "required": True,
                     "lane": "bar",
+                    "parameter_mode": "declared_defaults",
+                    "manual_review_random_sample_size": 5,
+                    "manual_review_seed": 0,
                     "data_subset": validation_subset,
                     "evidence_dir": (
                         f"{self.evidence_root}/{draft.campaign_id}/{variant.variant_id}/"
@@ -443,13 +520,7 @@ class CampaignCompiler:
                 "simulated_incubation_monkey": {"enabled": True},
                 "acceptance_oos_test": {"enabled": True, "train_months": 24, "test_months": 6},
             },
-            "prop_rules": {
-                "profile": draft.execution.prop_profile,
-                "starting_balance": draft.execution.initial_balance,
-                "max_contracts": draft.execution.contracts,
-                "no_overnight_positions": True,
-                "force_flatten_time": draft.execution.flatten_time,
-            },
+            "prop_rules": prop_rules,
             "monte_carlo": {
                 "trade_source": "core",
                 "runs": 300,
@@ -467,6 +538,38 @@ class CampaignCompiler:
         if draft.dataset.roll_calendar:
             config["data"]["roll_calendar"] = draft.dataset.roll_calendar
             config["data"]["roll_calendar_sha256"] = draft.dataset.roll_calendar_sha256
+        if draft.authoring_lane == "certified_event_replay":
+            event_source = draft.dataset.event_source
+            if event_source is None or draft.event_strategy is None:
+                raise CampaignCompilationError("certified event replay is missing its frozen event contract")
+            execution_data = event_source.model_dump(mode="json", exclude_none=True)
+            config["engine_lane"] = "canonical_event_replay"
+            config["strategy_name"] = draft.event_strategy
+            config["data"]["execution_data"] = execution_data
+            config["research_metadata"]["validation_gate"]["lane"] = "event_replay"
+            config["strategy"]["event"] = {
+                "module": draft.event_strategy,
+                "params": deepcopy(event_params or {}),
+            }
+            if certification is None:
+                raise CampaignCompilationError("certified event replay is missing implementation identity")
+            config["strategy_certification"] = {
+                "strategy_id": certification.strategy_id,
+                "implementation_version": certification.implementation_version,
+                "implementation_sha256": certification.implementation_sha256,
+                "manifest_sha256": certification.manifest_sha256,
+            }
+            config["core"].update(
+                {
+                    "contracts": draft.execution.contracts,
+                    "entry_start": draft.execution.session_start,
+                    "latest_entry_time": draft.execution.latest_entry_time,
+                    "max_trades_per_day": int(
+                        (event_params or {}).get("max_trades_per_day", 3)
+                    ),
+                    "event_stop_market_fill_policy": "trade_event_price_on_gap",
+                }
+            )
         return config
 
     def _strategy_spec(
@@ -474,6 +577,7 @@ class CampaignCompiler:
         draft: CampaignDraftV1,
         variants: list[tuple[VariantDraftV1, ModuleBindingV1, ModuleBindingV1, ModuleBindingV1]],
         draft_sha256: str,
+        certification: StrategyCertification | None,
     ) -> dict[str, Any]:
         return {
             "schema": STRATEGY_SPEC_SCHEMA,
@@ -486,6 +590,8 @@ class CampaignCompiler:
             "known_failure_modes": list(draft.known_failure_modes),
             "authoring_lane": draft.authoring_lane,
             "certified_recipe": draft.certified_recipe,
+            "event_strategy": draft.event_strategy,
+            "strategy_certification": certification.public_record() if certification else None,
             "dataset": draft.dataset.model_dump(mode="json", by_alias=True),
             "execution": draft.execution.model_dump(mode="json"),
             "variants": [
@@ -496,6 +602,7 @@ class CampaignCompiler:
                     "entry": entry.model_dump(mode="json"),
                     "stop": stop.model_dump(mode="json"),
                     "target": target.model_dump(mode="json"),
+                    "event_parameter_grid": deepcopy(variant.event_parameter_grid),
                     "rationales": {
                         "mechanic": variant.mechanic_rationale,
                         "entry": variant.entry_rationale,
@@ -517,6 +624,7 @@ class CampaignCompiler:
         campaign: Mapping[str, Any],
         variant_configs: Mapping[str, Mapping[str, Any]],
         strategy_spec: Mapping[str, Any],
+        certification: StrategyCertification | None,
     ) -> dict[str, Any]:
         return {
             "schema": AUTHORING_MANIFEST_SCHEMA,
@@ -527,9 +635,13 @@ class CampaignCompiler:
             "dataset_canonical_sha256": draft.dataset.canonical_sha256,
             "authoring_lane": draft.authoring_lane,
             "certified_recipe": draft.certified_recipe,
+            "event_strategy": draft.event_strategy,
+            "strategy_certification": certification.public_record() if certification else None,
             "compiler": "alphaquest.authoring.CampaignCompiler/v1",
             "created_at": draft.created_at,
-            "variant_count": 5,
+            "variant_count": len(variants),
+            "variant_protocol": draft.variant_protocol,
+            "max_variants": 5,
             "variant_mechanic_signatures": {
                 variant.variant_id: variant.mechanic_signature for variant, *_ in variants
             },

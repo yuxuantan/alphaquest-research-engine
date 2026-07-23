@@ -27,8 +27,16 @@ from alphaquest.research.storage import (  # noqa: E402
     campaign_definition_paths,
     load_storage_layout,
     resolve_campaign_context,
+    resolve_recorded_path,
 )
 from alphaquest.strategy_modules.entry import ENTRY_MODULES, entry_module_metadata  # noqa: E402
+from alphaquest.strategy_certification import (  # noqa: E402
+    StrategyCertificationError,
+    get_strategy_certification,
+    normalize_certified_event_params,
+    strategy_identity_for_config,
+    validate_certified_event_parameter_grid,
+)
 from alphaquest.strategy_modules.sl import SL_MODULES  # noqa: E402
 from alphaquest.strategy_modules.tp import TP_MODULES  # noqa: E402
 from alphaquest.utils.hashing import file_sha256  # noqa: E402
@@ -57,9 +65,10 @@ REQUIRED_MECHANICS_RATIONALE_FIELDS = (
     "known_failure_modes",
 )
 SUPPORTED_CONTINUOUS_CONTRACT_RULES = {"none", "dominant_session_volume", "session_volume", "explicit_roll_calendar"}
-DEFAULT_CAMPAIGN_VARIANT_COUNT = 5
-MAX_CAMPAIGN_VARIANT_COUNT = 8
+DEFAULT_CAMPAIGN_VARIANT_COUNT = 1
+MAX_CAMPAIGN_VARIANT_COUNT = 5
 GOVERNANCE_CONTRACT_VERSION = 2
+SEQUENTIAL_GOVERNANCE_CONTRACT_VERSION = 3
 VARIANT_EXPANSION_RATIONALE_MIN_CHARS = 80
 APPROVED_PRE_TEST_DECISIONS = {
     "approve_for_testing",
@@ -242,6 +251,14 @@ def _load_yaml(path: Path) -> dict:
     return loaded
 
 
+def _load_json(path: Path) -> dict:
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
 def _validate_config(
     cfg: dict,
     path: Path,
@@ -280,7 +297,22 @@ def _validate_config(
         _require_keys(value, ("module", "params"), f"{prefix}: strategy.{section}", failures)
         if not isinstance(value.get("params"), dict):
             failures.append(f"{prefix}: strategy.{section}.params must be a mapping.")
-    _validate_strategy_module_registry(strategy, prefix, failures, warnings)
+    _validate_strategy_module_registry(
+        strategy,
+        prefix,
+        failures,
+        warnings,
+        engine_lane=str(cfg.get("engine_lane") or "bar"),
+    )
+    if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
+        try:
+            strategy_identity_for_config(
+                cfg,
+                _resolved_project_root(project_root),
+                require_declared_match=True,
+            )
+        except StrategyCertificationError as exc:
+            failures.append(f"{prefix}: strategy implementation certification failed: {exc}")
     if not strategy.get("flatten_time"):
         failures.append(f"{prefix}: strategy.flatten_time is required.")
 
@@ -325,6 +357,8 @@ def _validate_strategy_module_registry(
     prefix: str,
     failures: list[str],
     warnings: list[str],
+    *,
+    engine_lane: str = "bar",
 ) -> None:
     entry = strategy.get("entry") if isinstance(strategy.get("entry"), dict) else {}
     tp = strategy.get("tp") if isinstance(strategy.get("tp"), dict) else {}
@@ -332,6 +366,21 @@ def _validate_strategy_module_registry(
     entry_name = entry.get("module")
     tp_name = tp.get("module")
     sl_name = sl.get("module")
+    if engine_lane == "canonical_event_replay":
+        event = strategy.get("event") if isinstance(strategy.get("event"), dict) else {}
+        event_name = event.get("module")
+        try:
+            certification = get_strategy_certification(str(event_name or ""), require_current=True)
+        except StrategyCertificationError as exc:
+            failures.append(f"{prefix}: strategy certification failed: {exc}")
+            return
+        if entry_name != certification.entry_module:
+            failures.append(f"{prefix}: event entry module does not match the strategy certification.")
+        if tp_name != certification.target_module:
+            failures.append(f"{prefix}: event TP module does not match the strategy certification.")
+        if sl_name != certification.stop_module:
+            failures.append(f"{prefix}: event SL module does not match the strategy certification.")
+        return
     if entry_name and entry_name not in ENTRY_MODULES:
         failures.append(f"{prefix}: unknown strategy.entry.module {entry_name!r}.")
     elif entry_name:
@@ -405,6 +454,38 @@ def _validate_parameter_grid(
     project_root: str | Path | None = None,
 ) -> None:
     prefix = str(_display_path(path, project_root=project_root))
+    if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
+        strategy = cfg.get("strategy") if isinstance(cfg.get("strategy"), dict) else {}
+        event = strategy.get("event") if isinstance(strategy.get("event"), dict) else {}
+        try:
+            certification = get_strategy_certification(
+                str(event.get("module") or ""),
+                _resolved_project_root(project_root),
+                require_current=True,
+            )
+            event_params = normalize_certified_event_params(
+                certification,
+                event.get("params") if isinstance(event.get("params"), dict) else {},
+            )
+            if event_params != event.get("params"):
+                failures.append(
+                    f"{prefix}: strategy.event.params must explicitly contain every certified default."
+                )
+            core_params = (cfg.get("core_grid") or {}).get("parameters", {})
+            wfa_params = (cfg.get("wfa") or {}).get("parameters", {})
+            if core_params != wfa_params:
+                failures.append(
+                    f"{prefix}: certified event core_grid.parameters and wfa.parameters must be identical."
+                )
+            validate_certified_event_parameter_grid(
+                certification,
+                event_params,
+                core_params if isinstance(core_params, dict) else {},
+                qualified_keys=True,
+            )
+        except StrategyCertificationError as exc:
+            failures.append(f"{prefix}: certified event parameter declaration failed: {exc}")
+        return
     for section in ("core_grid", "wfa"):
         container = cfg.get(section)
         if not isinstance(container, dict):
@@ -481,11 +562,60 @@ def _validate_campaign_variant_count(
 
     variant_count = len(variants)
     contract_version = int(campaign.get("governance_contract_version") or 0)
-    if contract_version >= GOVERNANCE_CONTRACT_VERSION:
-        if variant_count != DEFAULT_CAMPAIGN_VARIANT_COUNT:
+    if contract_version >= SEQUENTIAL_GOVERNANCE_CONTRACT_VERSION:
+        if not 1 <= variant_count <= MAX_CAMPAIGN_VARIANT_COUNT:
             failures.append(
-                f"{campaign_prefix}: governance contract v{contract_version} requires exactly "
-                f"{DEFAULT_CAMPAIGN_VARIANT_COUNT} initial variants; found {variant_count}."
+                f"{campaign_prefix}: governance contract v{contract_version} requires between 1 and "
+                f"{MAX_CAMPAIGN_VARIANT_COUNT} sequential variants; found {variant_count}."
+            )
+        variant_dirs = {
+            item.parent.name for item in (campaign_root / "variants").glob("*/config.yaml") if item.is_file()
+        }
+        declared = {str(item) for item in variants}
+        if declared != variant_dirs:
+            failures.append(
+                f"{campaign_prefix}: declared variants must exactly match authored variants/*/config.yaml "
+                f"(declared={sorted(declared)}, authored={sorted(variant_dirs)})."
+            )
+        history = campaign.get("sequential_variant_history")
+        if variant_count > 1 and (not isinstance(history, list) or len(history) != variant_count - 1):
+            failures.append(
+                f"{campaign_prefix}: campaigns with {variant_count} variants must include "
+                "failure-informed sequential_variant_history for every added variant."
+            )
+        elif isinstance(history, list):
+            root = _resolved_project_root(project_root)
+            ids = [str(item) for item in variants]
+            for index, item in enumerate(history, start=1):
+                if not isinstance(item, dict):
+                    failures.append(f"{campaign_prefix}: sequential_variant_history[{index - 1}] must be a mapping.")
+                    continue
+                if (
+                    str(item.get("variant_id") or "") != ids[index]
+                    or str(item.get("predecessor_variant_id") or "") != ids[index - 1]
+                    or str(item.get("predecessor_verdict") or "") != "FAIL"
+                ):
+                    failures.append(f"{campaign_prefix}: sequential_variant_history[{index - 1}] breaks variant order.")
+                if len(str(item.get("failure_analysis") or "").strip()) < 80:
+                    failures.append(f"{campaign_prefix}: sequential_variant_history[{index - 1}] needs an 80-character failure analysis.")
+                recorded = str(item.get("predecessor_result_path") or "")
+                result_path = resolve_recorded_path(recorded, project_root=root) if recorded else None
+                expected_hash = str(item.get("predecessor_result_sha256") or "")
+                if result_path is None or not result_path.is_file():
+                    failures.append(f"{campaign_prefix}: predecessor FAIL result is missing for {ids[index]}.")
+                elif file_sha256(result_path) != expected_hash:
+                    failures.append(f"{campaign_prefix}: predecessor FAIL result hash drifted for {ids[index]}.")
+                else:
+                    result = _load_json(result_path)
+                    verdict = str(result.get("verdict") or result.get("research_verdict") or result.get("decision") or "")
+                    if verdict != "FAIL":
+                        failures.append(f"{campaign_prefix}: predecessor result for {ids[index]} is not terminal FAIL.")
+        return
+    if contract_version >= GOVERNANCE_CONTRACT_VERSION:
+        if variant_count != 5:
+            failures.append(
+                f"{campaign_prefix}: governance contract v{contract_version} requires exactly 5 initial variants; "
+                f"found {variant_count}."
             )
         variant_dirs = {
             item.parent.name for item in (campaign_root / "variants").glob("*/config.yaml") if item.is_file()
@@ -501,14 +631,6 @@ def _validate_campaign_variant_count(
         failures.append(
             f"{campaign_prefix}: campaign variant cap is {MAX_CAMPAIGN_VARIANT_COUNT}; found {variant_count} variants."
         )
-    if variant_count > DEFAULT_CAMPAIGN_VARIANT_COUNT:
-        rationale = campaign.get("variant_expansion_rationale")
-        if not isinstance(rationale, str) or len(rationale.strip()) < VARIANT_EXPANSION_RATIONALE_MIN_CHARS:
-            failures.append(
-                f"{campaign_prefix}: campaigns with {variant_count} variants must include "
-                "a detailed pre-test variant_expansion_rationale explaining why variants 6-8 "
-                "are better distinct mechanics within the same edge."
-            )
 
 
 def _validate_campaign_governance(
@@ -573,7 +695,7 @@ def _validate_campaign_governance(
     variants = [str(item) for item in campaign.get("variants") or []]
     distinctions = campaign.get("variant_distinctions")
     if not isinstance(distinctions, dict):
-        failures.append(f"{prefix}: variant_distinctions must document five materially different mechanics.")
+        failures.append(f"{prefix}: variant_distinctions must document every declared mechanic.")
     else:
         mechanics: list[str] = []
         for variant_id in variants:
@@ -731,6 +853,29 @@ def _validate_data(
     _validate_data_paths(data_cfg, path, failures, project_root=project_root)
     if any(item.startswith(f"{prefix}: data path") for item in failures):
         return False
+    if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
+        execution = data_cfg.get("execution_data") if isinstance(data_cfg.get("execution_data"), dict) else {}
+        source = str(execution.get("source") or "")
+        if source not in {"databento_zip_trades", "databento_trades_zip", "sierra_scid_records"}:
+            failures.append(f"{prefix}: canonical event replay requires a certified governed event source.")
+            return False
+        if source == "sierra_scid_records":
+            if execution.get("required_capability") not in {
+                "full_strategy_events",
+                "full_strategy_events_extrapolated",
+            }:
+                failures.append(f"{prefix}: Sierra event replay requires an approved strategy capability.")
+                return False
+            if execution.get("ineligible_session_policy") not in {"error", "blackout"}:
+                failures.append(f"{prefix}: Sierra event replay requires a fail-closed session policy.")
+                return False
+            if (
+                str(execution.get("rth_start") or "") != "09:30:00"
+                or str(execution.get("rth_end") or "") != "11:00:00"
+            ):
+                failures.append(f"{prefix}: Sierra event replay is certified only for 09:30-11:00 ET.")
+                return False
+        return True
     load_cfg = _resolved_data_config(data_cfg, path, project_root=project_root)
     cache_key = _data_validation_cache_key(load_cfg)
     if cache is not None and cache_key in cache:
@@ -847,6 +992,37 @@ def _validate_data_paths(
             failures.append(f"{prefix}: data.roll_calendar_sha256 does not match {roll_calendar}.")
     if not any(data_cfg.get(key) for key in ("raw_csv", "raw_parquet", "raw_dir")):
         failures.append(f"{prefix}: data.raw_csv, data.raw_parquet, or data.raw_dir is required.")
+    execution = data_cfg.get("execution_data") if isinstance(data_cfg.get("execution_data"), dict) else {}
+    for key in (
+        "archive",
+        "roll_calendar",
+        "raw_manifest",
+        "session_levels",
+        "quality_manifest",
+        "concordance_report",
+    ):
+        value = execution.get(key)
+        if value and not _resolve_path(value, config_path, project_root=project_root).is_file():
+            failures.append(f"{prefix}: data path execution_data.{key} does not exist: {value}")
+    raw_dir = execution.get("raw_dir")
+    if raw_dir and not _resolve_path(raw_dir, config_path, project_root=project_root).is_dir():
+        failures.append(f"{prefix}: data path execution_data.raw_dir does not exist: {raw_dir}")
+    for key in (
+        "archive",
+        "roll_calendar",
+        "raw_manifest",
+        "session_levels",
+        "quality_manifest",
+        "concordance_report",
+    ):
+        value = execution.get(key)
+        expected = execution.get(f"{key}_sha256")
+        if value and expected:
+            resolved = _resolve_path(value, config_path, project_root=project_root)
+            if resolved.is_file() and file_sha256(resolved) != str(expected):
+                failures.append(
+                    f"{prefix}: data.execution_data.{key}_sha256 does not match {value}."
+                )
 
 
 def _resolved_data_config(
@@ -859,6 +1035,23 @@ def _resolved_data_config(
     for key in ("raw_csv", "raw_parquet", "raw_dir", "roll_calendar"):
         if out.get(key):
             out[key] = str(_resolve_path(out[key], config_path, project_root=project_root))
+    execution = out.get("execution_data")
+    if isinstance(execution, dict):
+        execution = dict(execution)
+        for key in (
+            "archive",
+            "roll_calendar",
+            "raw_dir",
+            "raw_manifest",
+            "session_levels",
+            "quality_manifest",
+            "concordance_report",
+        ):
+            if execution.get(key):
+                execution[key] = str(
+                    _resolve_path(execution[key], config_path, project_root=project_root)
+                )
+        out["execution_data"] = execution
     return out
 
 

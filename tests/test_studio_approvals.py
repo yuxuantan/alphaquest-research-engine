@@ -164,7 +164,7 @@ def _validation_fixture(tmp_path):
 
 def _approve_all_samples(config_path, evidence):
     service = MechanicsApprovalService()
-    initial = service.plan(config_path, random_sample_size=2)
+    initial = service.plan(config_path)
     for trade_id in initial.sampled_trade_ids:
         save_manual_review_annotation(
             evidence,
@@ -178,8 +178,42 @@ def _approve_all_samples(config_path, evidence):
         reviewer="mechanics-reviewer",
         notes="Reviewed every required deterministic sampling category against exported evidence.",
         reviewed_at="2026-07-15T12:30:00+00:00",
-        random_sample_size=2,
     )
+
+
+def test_review_plan_reuses_precomputed_gate_without_rehashing_input(tmp_path, monkeypatch):
+    config_path, _evidence, _approval = _validation_fixture(tmp_path)
+    service = MechanicsApprovalService()
+    gate = service.inspect(config_path)
+    monkeypatch.setattr(
+        "alphaquest.studio.approvals.inspect_validation_gate",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("gate should be reused")
+        ),
+    )
+
+    plan = service.plan(config_path, _gate_report=gate)
+
+    assert plan.input_data_hash == gate["input_data_hash"]
+
+
+def test_promotion_gate_accepts_request_local_precomputed_input_hash(tmp_path, monkeypatch):
+    config_path, _evidence, _approval = _validation_fixture(tmp_path)
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    monkeypatch.setattr(
+        "alphaquest.validation.promotion_gate.data_source_hash",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("input bytes should not be rehashed")
+        ),
+    )
+
+    report = inspect_validation_gate(
+        cfg,
+        config_path,
+        precomputed_input_hash="request-local-input-hash",
+    )
+
+    assert report["input_data_hash"] == "request-local-input-hash"
 
 
 def _write_complete_finalization(result_dir, config_path):
@@ -239,13 +273,13 @@ def test_mechanics_service_selects_every_category_and_requires_annotations(tmp_p
     config_path, evidence, approval_path = _validation_fixture(tmp_path)
     service = MechanicsApprovalService()
 
-    plan = service.plan(config_path, random_sample_size=2)
+    plan = service.plan(config_path)
 
     assert set(plan.sampling_categories) == set(REQUIRED_SAMPLE_CATEGORIES)
     assert plan.sampled_trade_ids
     assert plan.unreviewed_trade_ids == plan.sampled_trade_ids
     with pytest.raises(ValueError, match="remain unreviewed"):
-        service.approve(config_path, reviewer="reviewer", notes="reviewed", random_sample_size=2)
+        service.approve(config_path, reviewer="reviewer", notes="reviewed")
 
     approval = _approve_all_samples(config_path, evidence)
     report = service.inspect(config_path)
@@ -256,6 +290,27 @@ def test_mechanics_service_selects_every_category_and_requires_annotations(tmp_p
     assert report["status"] == "APPROVED_FOR_TESTING"
     assert report["config_hash"] == approval["config_hash"]
     assert report["input_data_hash"] == approval["input_data_hash"]
+
+
+def test_mechanics_plan_reloads_web_string_trade_id_annotations(tmp_path):
+    config_path, evidence, _ = _validation_fixture(tmp_path)
+    service = MechanicsApprovalService()
+    initial = service.plan(config_path)
+    reviewed_trade = initial.sampled_trade_ids[0]
+
+    save_manual_review_annotation(
+        evidence,
+        str(reviewed_trade),
+        "Needs deeper review",
+        "saved through the web form",
+        reviewed_at="2026-07-15T12:00:00+00:00",
+    )
+    reloaded = service.plan(config_path)
+
+    assert not any("merge on int64 and object" in blocker for blocker in reloaded.blockers)
+    assert reviewed_trade not in reloaded.unreviewed_trade_ids
+    assert reviewed_trade in reloaded.non_correct_trade_ids
+    assert reloaded.sampled_trade_ids == initial.sampled_trade_ids
 
 
 def test_mechanics_approval_becomes_stale_after_config_change(tmp_path):

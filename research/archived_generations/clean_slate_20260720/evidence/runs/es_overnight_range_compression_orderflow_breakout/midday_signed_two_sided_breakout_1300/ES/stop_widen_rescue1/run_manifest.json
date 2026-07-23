@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_overnight_range_compression_orderflow_breakout",
+  "variant_id": "midday_signed_two_sided_breakout_1300",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_overnight_range_compression_orderflow_breakout/campaign.yaml",
+    "hash": "b8274406fbf31c2926754c1ea049b44150cca95425fa7c7867be24682b3f7a74"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_overnight_range_compression_orderflow_breakout/midday_signed_two_sided_breakout_1300/variant.yaml",
+    "hash": "3478c965a1c836da9aeea9a78ab163fed9ddfa9a4531e4926817fb9cd79a3b5a",
+    "mechanic": {
+      "entry_module": "overnight_range_orderflow_breakout",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "14:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_overnight_range_compression_orderflow_breakout/rescue_attempts/stop_distance_rescue_1/midday_signed_two_sided_breakout_1300/config.yaml",
+  "effective_config": "backtest-campaigns/es_overnight_range_compression_orderflow_breakout/midday_signed_two_sided_breakout_1300/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_overnight_range_compression_orderflow_breakout/midday_signed_two_sided_breakout_1300/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "342782aef74369be3b31efd2507882c5dd4239cd3987d8f9291a46efba7a5599",
+  "source_config_hash": "7ee0c39fb3a649b067cb3d315ebbe6dd9ff2b244d36c4a322de128bac7e76ff5",
+  "source_results_index": "campaigns/es_overnight_range_compression_orderflow_breakout/results_index.yaml",
+  "created_at": "2026-06-19T15:33:12",
+  "updated_at": "2026-06-19T15:33:12",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

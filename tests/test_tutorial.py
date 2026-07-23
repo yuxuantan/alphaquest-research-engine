@@ -19,7 +19,7 @@ def test_tutorial_generates_isolated_source_without_execution(tmp_path):
     assert result["synthetic"] is True
     assert result["promotion_eligible"] is False
     assert result["production_ledger_update"] is False
-    assert len(result["configs"]) == 5
+    assert len(result["configs"]) == 1
     assert sum(step["minutes"] for step in result["walkthrough"]) == 15
     assert all(row["limited_core_test"] == "NOT_RUN" for row in result["stage_matrix"])
     manifest = json.loads((output / "tutorial_manifest.json").read_text(encoding="utf-8"))
@@ -28,7 +28,7 @@ def test_tutorial_generates_isolated_source_without_execution(tmp_path):
     services = manifest["governed_services"]
     assert services["dataset_import"]["service"] == "DatasetImporter"
     assert services["publication"]["preflight_verdict"] == "PASS"
-    assert services["publication"]["ledger_rows_appended"] == 6
+    assert services["publication"]["ledger_rows_appended"] == 2
     assert (output / "research/datasets/synthetic_tutorial_es_1m/dataset_manifest.json").is_file()
     assert (output / "research/campaigns/active/tutorial_calendar_bias/authoring_manifest.json").is_file()
     assert (output / "research/campaigns/active/tutorial_calendar_bias/strategy_spec.yaml").is_file()
@@ -38,7 +38,7 @@ def test_tutorial_generates_isolated_source_without_execution(tmp_path):
     assert not (tmp_path / "research/campaigns/active").exists()
 
 
-def test_tutorial_executes_all_variants_and_writes_mixed_stage_matrix(tmp_path):
+def test_tutorial_executes_initial_variant_and_writes_stage_matrix(tmp_path):
     output = tmp_path / "tutorial"
 
     result = run_tutorial(output_root=output, execute=True)
@@ -47,13 +47,13 @@ def test_tutorial_executes_all_variants_and_writes_mixed_stage_matrix(tmp_path):
     assert result["operational_status"] == "PASS"
     assert result["research_verdict"] == "FAIL"
     assert result["lesson_demonstrated"] is True
-    assert len(result["variant_runs"]) == 5
-    assert result["governed_services"]["mechanics_approval"]["approved_variants"] == 5
+    assert len(result["variant_runs"]) == 1
+    assert result["governed_services"]["mechanics_approval"]["approved_variants"] == 1
     assert result["governed_services"]["mechanics_approval"]["profitability_approval"] is False
-    assert result["governed_services"]["results"]["bundle_count"] == 5
+    assert result["governed_services"]["results"]["bundle_count"] == 1
     assert result["total_trades"] > 0
     assert result["apex_rule_violations"] == 0
-    for index in range(1, 6):
+    for index in range(1, 2):
         run_dir = output / "runs" / f"v{index:02d}"
         assert (run_dir / "trade_log.csv").is_file()
         assert (run_dir / "daily_results.csv").is_file()
@@ -62,10 +62,10 @@ def test_tutorial_executes_all_variants_and_writes_mixed_stage_matrix(tmp_path):
         assert (run_dir / "equity_curve.csv").is_file()
 
     matrix = pd.read_csv(output / "stage_matrix.csv", keep_default_na=False)
-    assert matrix["variant_id"].tolist() == ["v01", "v02", "v03", "v04", "v05"]
+    assert matrix["variant_id"].tolist() == ["v01"]
     assert set(matrix["mechanics_approval"]) == {"PASS"}
-    assert set(matrix["limited_core_test"]) == {"PASS", "FAIL"}
-    assert set(matrix["randomized_entry_benchmark"]) == {"FAIL", "NOT_RUN"}
+    assert set(matrix["limited_core_test"]) == {"PASS"}
+    assert set(matrix["randomized_entry_benchmark"]) == {"FAIL"}
     assert set(matrix["research_verdict"]) == {"FAIL"}
     assert matrix.loc[matrix["variant_id"] == "v01", "first_failed_or_unresolved_gate"].item() == (
         "randomized_entry_benchmark"
@@ -85,13 +85,13 @@ def test_profitable_lead_variant_fails_seeded_randomized_entry_benchmark(tmp_pat
     assert result["research_verdict"] == "FAIL"
 
 
-def test_tutorial_configs_are_five_materially_distinct_synthetic_variants(tmp_path):
+def test_tutorial_config_is_one_initial_synthetic_variant(tmp_path):
     output = tmp_path / "tutorial"
     result = run_tutorial(output_root=output, execute=False)
 
     configs = [yaml.safe_load((output / path.relative_to(output)).read_text(encoding="utf-8")) for path in map(type(output), result["configs"])]
     signatures = {config["research_metadata"]["mechanic_signature"] for config in configs}
-    assert len(signatures) == 5
+    assert len(signatures) == 1
     assert {config["strategy"]["entry"]["module"] for config in configs} == {"calendar_session_bias"}
     assert all(config["attempt_id"] == "original" for config in configs)
     assert result["promotion_eligible"] is False
@@ -123,12 +123,12 @@ def test_tutorial_uses_durable_jobs_without_reserving_a_research_attempt(tmp_pat
     queue = SQLiteJobQueue(output / "run-store/studio-runtime/jobs.sqlite3")
     jobs = queue.list_jobs(limit=20)
 
-    assert len(jobs) == 6
+    assert len(jobs) == 2
     assert all(job.state == OperationalState.SUCCEEDED for job in jobs)
     assert all(job.attempt_reserved is False for job in jobs)
     mechanics = [job for job in jobs if job.job_type == "mechanics_validation_run"]
     result_jobs = [job for job in jobs if job.job_type == "synthetic_tutorial_scientific_evaluation"]
-    assert len(mechanics) == 5
+    assert len(mechanics) == 1
     assert all(job.research_verdict == "NEEDS MANUAL REVIEW" for job in mechanics)
     assert len(result_jobs) == 1
     assert result_jobs[0].research_verdict == "FAIL"

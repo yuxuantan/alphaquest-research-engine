@@ -12,7 +12,7 @@ from typing import Any
 
 import pandas as pd
 
-VALIDATION_SCHEMA_VERSION = "1.3"
+VALIDATION_SCHEMA_VERSION = "1.4"
 
 METADATA_FILENAME = "metadata.json"
 TRADES_FILENAME = "trades.parquet"
@@ -42,6 +42,9 @@ class ValidationMetadata:
     source_trade_log: str | None = None
     config_hash: str | None = None
     input_data_hash: str | None = None
+    strategy_implementation_version: int | None = None
+    strategy_implementation_sha256: str | None = None
+    strategy_certification_manifest_sha256: str | None = None
     validation_lane: str | None = None
     source_data_type: str | None = None
     source_data_path: str | None = None

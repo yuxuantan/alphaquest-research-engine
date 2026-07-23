@@ -64,6 +64,7 @@ def _fixture(
         }
         stage = {
             "stage": name,
+            "label": name.replace("_", " ").title(),
             "status": status,
             "passed": status == "passed",
             "criteria": [criterion] if status != "skipped" else [],
@@ -105,6 +106,8 @@ def _fixture(
                 "r_multiple": 2.0,
                 "commission": 5.0,
                 "slippage_cost": 12.5,
+                "apex_rule_violation": False,
+                "position_flat_before_deadline": True,
             },
             {
                 "trade_id": 2,
@@ -115,6 +118,8 @@ def _fixture(
                 "r_multiple": -1.0,
                 "commission": 5.0,
                 "slippage_cost": 12.5,
+                "apex_rule_violation": False,
+                "position_flat_before_deadline": True,
             },
         ]
     )
@@ -230,8 +235,12 @@ def test_finalization_atomically_publishes_strict_bundle_and_idempotent_ledger(t
 
 
 def test_nonfinite_runner_criterion_becomes_null_with_reason_in_strict_bundle(tmp_path):
-    config_path, _run_dir, summary = _fixture(tmp_path)
+    config_path, run_dir, summary = _fixture(tmp_path)
     summary["stages"][0]["criteria"][0]["actual"] = float("inf")
+    stage_path = run_dir / DEFAULT_STAGE_ORDER[0] / "stage_result.json"
+    persisted = json.loads(stage_path.read_text(encoding="utf-8"))
+    persisted["criteria"][0]["actual"] = None
+    _write_json(stage_path, persisted)
 
     result = RunFinalizer(
         tmp_path,
@@ -240,12 +249,32 @@ def test_nonfinite_runner_criterion_becomes_null_with_reason_in_strict_bundle(tm
     ).finalize(job_id="job-nonfinite-summary", config_path=config_path, summary=summary)
 
     bundle = load_result_bundle(result.result_bundle_path)
+    assert bundle.verdict == "FAIL"
     criterion = bundle.stage_criteria[0]
     assert criterion.actual.value is None
     assert criterion.actual.reason == "criterion actual value is undefined"
     raw = result.result_bundle_path.read_text(encoding="utf-8")
     assert "Infinity" not in raw
     assert "NaN" not in raw
+
+
+def test_persisted_stage_contradiction_downgrades_fail_to_manual_review(tmp_path):
+    config_path, run_dir, summary = _fixture(tmp_path)
+    stage_path = run_dir / DEFAULT_STAGE_ORDER[0] / "stage_result.json"
+    persisted = json.loads(stage_path.read_text(encoding="utf-8"))
+    persisted["criteria"][0]["actual"] = 999.0
+    _write_json(stage_path, persisted)
+
+    result = RunFinalizer(
+        tmp_path,
+        registry_refresher=lambda _root: {},
+        source_index_refresher=lambda *_args: None,
+    ).finalize(job_id="job-fail-stage-contradiction", config_path=config_path, summary=summary)
+
+    bundle = load_result_bundle(result.result_bundle_path)
+    reason = "persisted stage result contradicts the completed runner summary"
+    assert bundle.verdict == "NEEDS MANUAL REVIEW"
+    assert any(reason in item.reason for item in bundle.stage_criteria)
 
 
 def test_missing_acceptance_trade_downgrades_pass_and_suppresses_candidate_package(tmp_path):
@@ -324,6 +353,8 @@ def test_complete_pass_retains_candidate_only_verdict_and_hashes_all_reporting_i
     manifest = json.loads((result.reporting_dir / "finalization_manifest.json").read_text(encoding="utf-8"))
     assert bundle.verdict == "PASS"
     assert "candidate strategy only" in bundle.verdict_message
+    assert bundle.metrics.prop_rule_outcome.value == "PASS"
+    assert bundle.metrics.forced_flatten_compliance.value is True
     assert bundle.metrics.trades_per_year.value == pytest.approx(2 / (31 / 365.25))
     assert bundle.metrics.daily_sharpe.value is not None
     assert {
@@ -335,6 +366,102 @@ def test_complete_pass_retains_candidate_only_verdict_and_hashes_all_reporting_i
         "walk_forward_analysis/wfa_oos_trade_log.csv",
         "wfa_oos_monte_carlo/wfa_oos_monte_carlo_summary.json",
     } <= set(manifest["evidence_artifact_sha256"])
+
+
+@pytest.mark.parametrize(
+    ("missing_column", "reason_fragment"),
+    [
+        ("apex_rule_violation", "prop-rule simulation outcome"),
+        ("position_flat_before_deadline", "forced-flatten compliance"),
+    ],
+)
+def test_pass_requires_defined_prop_and_flatten_reporting_evidence(
+    tmp_path,
+    missing_column,
+    reason_fragment,
+):
+    config_path, run_dir, summary = _fixture(
+        tmp_path,
+        verdict="PASS",
+        include_acceptance_trade=True,
+        include_supplemental=True,
+    )
+    acceptance_path = run_dir / "acceptance_oos_test/trade_log.csv"
+    acceptance = pd.read_csv(acceptance_path).drop(columns=[missing_column])
+    acceptance.to_csv(acceptance_path, index=False)
+
+    result = RunFinalizer(
+        tmp_path,
+        registry_refresher=lambda _root: {},
+        source_index_refresher=lambda *_args: None,
+    ).finalize(
+        job_id=f"job-pass-missing-{missing_column}",
+        config_path=config_path,
+        summary=summary,
+    )
+
+    bundle = load_result_bundle(result.result_bundle_path)
+    manifest = json.loads(result.finalization_manifest_path.read_text(encoding="utf-8"))
+    assert bundle.verdict == "NEEDS MANUAL REVIEW"
+    assert any(reason_fragment in item.reason for item in bundle.stage_criteria)
+    assert any(reason_fragment in issue for issue in manifest["evidence_issues"])
+
+
+def test_empty_pass_acceptance_log_is_needs_manual_review(tmp_path):
+    config_path, run_dir, summary = _fixture(
+        tmp_path,
+        verdict="PASS",
+        include_acceptance_trade=True,
+        include_supplemental=True,
+    )
+    acceptance_path = run_dir / "acceptance_oos_test/trade_log.csv"
+    pd.read_csv(acceptance_path).iloc[0:0].to_csv(acceptance_path, index=False)
+
+    result = RunFinalizer(
+        tmp_path,
+        registry_refresher=lambda _root: {},
+        source_index_refresher=lambda *_args: None,
+    ).finalize(job_id="job-pass-empty-acceptance", config_path=config_path, summary=summary)
+
+    bundle = load_result_bundle(result.result_bundle_path)
+    assert bundle.verdict == "NEEDS MANUAL REVIEW"
+    assert any("acceptance OOS trade log contains no trades" in item.reason for item in bundle.stage_criteria)
+
+
+@pytest.mark.parametrize("contradiction", ["status", "criterion"])
+def test_persisted_stage_result_must_match_pass_summary(tmp_path, contradiction):
+    config_path, run_dir, summary = _fixture(
+        tmp_path,
+        verdict="PASS",
+        include_acceptance_trade=True,
+        include_supplemental=True,
+    )
+    stage_path = run_dir / DEFAULT_STAGE_ORDER[0] / "stage_result.json"
+    persisted = json.loads(stage_path.read_text(encoding="utf-8"))
+    if contradiction == "status":
+        persisted["status"] = "failed"
+        persisted["passed"] = False
+        persisted["criteria"][0]["passed"] = False
+    else:
+        persisted["criteria"][0]["actual"] = 999.0
+    _write_json(stage_path, persisted)
+
+    result = RunFinalizer(
+        tmp_path,
+        registry_refresher=lambda _root: {},
+        source_index_refresher=lambda *_args: None,
+    ).finalize(
+        job_id=f"job-stage-contradiction-{contradiction}",
+        config_path=config_path,
+        summary=summary,
+    )
+
+    bundle = load_result_bundle(result.result_bundle_path)
+    manifest = json.loads(result.finalization_manifest_path.read_text(encoding="utf-8"))
+    reason = "persisted stage result contradicts the completed runner summary"
+    assert bundle.verdict == "NEEDS MANUAL REVIEW"
+    assert any(reason in item.reason for item in bundle.stage_criteria)
+    assert any(reason in issue for issue in manifest["evidence_issues"])
 
 
 def test_nonempty_but_wrong_supplemental_schemas_downgrade_pass(tmp_path):

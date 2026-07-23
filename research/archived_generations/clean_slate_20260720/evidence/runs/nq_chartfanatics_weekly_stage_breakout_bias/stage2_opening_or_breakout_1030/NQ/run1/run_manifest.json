@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_chartfanatics_weekly_stage_breakout_bias",
+  "variant_id": "stage2_opening_or_breakout_1030",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_chartfanatics_weekly_stage_breakout_bias/stage2_opening_or_breakout_1030/variant.yaml",
+    "hash": "525a5ac4c0a9e1e9980c3149da15bcf6500013fe0f051a78a280587b25b622bb",
+    "mechanic": {
+      "entry_module": "weekly_stage_analysis",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_chartfanatics_weekly_stage_breakout_bias/variants/stage2_opening_or_breakout_1030/config.yaml",
+  "effective_config": "backtest-campaigns/nq_chartfanatics_weekly_stage_breakout_bias/stage2_opening_or_breakout_1030/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_chartfanatics_weekly_stage_breakout_bias/stage2_opening_or_breakout_1030/NQ/run1/source_config.yaml",
+  "config_hash": "2279f35b582ad22478bb38d45382b3c2b81f70bc2ec2df2abdfc81b158a21cca",
+  "source_config_hash": "6834a03a3ac2feda07b661aa373d642a3a152079fcad1106d84a0c5d74e7e804",
+  "source_results_index": "campaigns/nq_chartfanatics_weekly_stage_breakout_bias/results_index.yaml",
+  "created_at": "2026-07-01T01:46:07",
+  "updated_at": "2026-07-01T01:46:07",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

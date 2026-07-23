@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_pivot_mes_orderflow_confirmation",
+  "variant_id": "morning_notional_large20_first_confirmed_reversal_window_1130",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_pivot_mes_orderflow_confirmation/morning_notional_large20_first_confirmed_reversal_window_1130/variant.yaml",
+    "hash": "023471eefefc8dbd07a32f3b3b3b43954b4d0382aa1b9b0183410ca283857e41",
+    "mechanic": {
+      "entry_module": "nq_pivot_mes_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_pivot_mes_orderflow_confirmation/variants/morning_notional_large20_first_confirmed_reversal_window_1130/config.yaml",
+  "effective_config": "backtest-campaigns/nq_pivot_mes_orderflow_confirmation/morning_notional_large20_first_confirmed_reversal_window_1130/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_pivot_mes_orderflow_confirmation/morning_notional_large20_first_confirmed_reversal_window_1130/NQ/run1/source_config.yaml",
+  "config_hash": "6b781d493204e4601d19279b16c8bf928a33b03bb1425df8fe71ebe787f0bfb9",
+  "source_config_hash": "f52b4787d9af2eb73093883a90b059f78b254efe6553ee0da69084e59a35be20",
+  "source_results_index": "campaigns/nq_pivot_mes_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-23T17:32:54",
+  "updated_at": "2026-06-23T17:32:54",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_high_semivariance_mes_trend_pullback_crowding",
+  "variant_id": "midday60_notional_high_downside_window_1430",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_high_semivariance_mes_trend_pullback_crowding/midday60_notional_high_downside_window_1430/variant.yaml",
+    "hash": "3346af2dc8bc897538ad3c811cebd1f2b4bddd0a00dec7fa82237511efa1680b",
+    "mechanic": {
+      "entry_module": "semivariance_filtered_trend_mes_participation_crowding",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_high_semivariance_mes_trend_pullback_crowding/variants/midday60_notional_high_downside_window_1430/config.yaml",
+  "effective_config": "backtest-campaigns/nq_high_semivariance_mes_trend_pullback_crowding/midday60_notional_high_downside_window_1430/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_high_semivariance_mes_trend_pullback_crowding/midday60_notional_high_downside_window_1430/NQ/run1/source_config.yaml",
+  "config_hash": "7cd64eacd5ba864b1995208b5d93bd98d2f02395d7f6aed640a4799c41dd7bec",
+  "source_config_hash": "9f1ea10c246240e2d269f49729915e61b07307cc641f4aa4adf5256748856887",
+  "source_results_index": "campaigns/nq_high_semivariance_mes_trend_pullback_crowding/results_index.yaml",
+  "created_at": "2026-06-23T04:52:15",
+  "updated_at": "2026-06-23T04:52:15",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

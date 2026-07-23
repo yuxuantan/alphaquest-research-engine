@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_corporate_equity_supply_state",
+  "variant_id": "high_equity_share_short_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_corporate_equity_supply_state/high_equity_share_short_1200/variant.yaml",
+    "hash": "10c66bd28479df79d915883843071694b8d214d38d47afbc089d47b7f28a7969",
+    "mechanic": {
+      "entry_module": "corporate_equity_supply_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_corporate_equity_supply_state/variants/high_equity_share_short_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_corporate_equity_supply_state/high_equity_share_short_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_corporate_equity_supply_state/high_equity_share_short_1200/NQ/run1/source_config.yaml",
+  "config_hash": "af78b04b7fb8342a59eec099eef4fc1a5c0430a41dfd1ba8edf3bf00f66508ef",
+  "source_config_hash": "4cd8ef0263fc7c7e70fe2c53512793940f929ef72b8b950bb3651e476d48171e",
+  "source_results_index": "campaigns/nq_corporate_equity_supply_state/results_index.yaml",
+  "created_at": "2026-07-01T09:14:31",
+  "updated_at": "2026-07-01T09:14:31",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

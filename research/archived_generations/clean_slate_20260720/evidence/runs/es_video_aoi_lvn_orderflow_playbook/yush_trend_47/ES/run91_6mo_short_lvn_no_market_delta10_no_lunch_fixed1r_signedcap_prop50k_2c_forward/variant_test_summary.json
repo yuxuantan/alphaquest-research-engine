@@ -1,0 +1,124 @@
+{
+  "campaign_id": "es_video_aoi_lvn_orderflow_playbook",
+  "variant_id": "yush_trend_47",
+  "test_run_id": "run91_6mo_short_lvn_no_market_delta10_no_lunch_fixed1r_signedcap_prop50k_2c_forward",
+  "strategy_name": "yush_trend_47",
+  "symbol": "ES",
+  "dataset_id": "es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_trend_47_no_market_delta10_no_lunch_fixed1r_signedcap_prop50k_2c_202509_202602",
+  "timeframe": "3m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet",
+  "raw_dir": null,
+  "config_source": "campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_yush_trend_47_short_lvn_no_market_delta10_no_lunch_fixed1r_signedcap_prop50k_2c_run91/yush_trend_47/config.yaml",
+  "config_hash": "eb136d6db821b4a99926189d3557a49ed916966f23f8f25798aff18773d4c475",
+  "input_data_hash": "eb69ec2431af024bf997afefbd239f966d7b8409c76c4e9bdef681d6f2121692",
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_47/variant.yaml",
+    "hash": "c4dbb4a76e268c6330e4b5832ad7f1408ba3dc4c69d883b49122cea3585e633b",
+    "mechanic": {
+      "entry_module": "yush_trend_47",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:53:00",
+      "target_r_multiple": 1.0,
+      "max_directional_signed_volume": 800.0,
+      "contracts": 2,
+      "prop_consistency_target": {
+        "account_size": 50000,
+        "min_winning_days": 5,
+        "min_winning_day_net_pnl": 250,
+        "max_best_day_profit_share": 0.5
+      }
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "updated_at": "2026-07-14T12:51:47",
+  "sections": {
+    "core": {
+      "total_trades": 67,
+      "trades_per_year": 138.26971594431262,
+      "net_profit": -3720.0,
+      "profit_factor": 0.6524988323213452,
+      "expectancy_r": -0.24483735584481855,
+      "max_drawdown": 4495.0,
+      "max_drawdown_pct": 0.08916881571116841,
+      "cagr": -0.1474753423728975,
+      "mar": -1.6538892122397695,
+      "worst_day": -485.0,
+      "best_day": 565.0,
+      "best_day_concentration": 0.0,
+      "max_consecutive_losses": 7,
+      "positive_month_rate": 0.0,
+      "win_rate": 0.43283582089552236,
+      "average_trade": -55.52238805970149,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0,
+      "data_subset": {
+        "start_date": "2025-09-01",
+        "end_date": "2026-02-28",
+        "session_labels": [
+          "RTH"
+        ]
+      },
+      "equity_curve_csv": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_47/ES/run91_6mo_short_lvn_no_market_delta10_no_lunch_fixed1r_signedcap_prop50k_2c_forward/core/equity_curve.csv",
+      "equity_curve_html": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_47/ES/run91_6mo_short_lvn_no_market_delta10_no_lunch_fixed1r_signedcap_prop50k_2c_forward/core/equity_curve.html",
+      "equity_curve_points": 68,
+      "validation_artifacts": {
+        "output_dir": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_47/ES/run91_6mo_short_lvn_no_market_delta10_no_lunch_fixed1r_signedcap_prop50k_2c_forward/validation_runs/core",
+        "record_counts": {
+          "trades": 67,
+          "condition_snapshots": 67,
+          "bar_windows": 310,
+          "tick_windows": 1014280,
+          "exit_audits": 67,
+          "validation_checks": 1400
+        },
+        "artifact_files": {
+          "trades": "trades.parquet",
+          "condition_snapshots": "condition_snapshots.parquet",
+          "bar_windows": "bar_windows.parquet",
+          "tick_windows": "tick_windows.parquet",
+          "exit_audits": "exit_audits.parquet",
+          "validation_checks": "validation_checks.parquet"
+        }
+      }
+    }
+  },
+  "research_policy": {
+    "version": "2026-07-11.1",
+    "path": "config/research_settings.yaml",
+    "hash": "3285c4ca078a03d255cd03cc7944eaf31ea42bdb91ad15f337c9ebeb3ca0f0f2",
+    "stage_order": [
+      "limited_core_grid_test",
+      "limited_monkey_test",
+      "walk_forward_analysis",
+      "wfa_oos_monkey_test",
+      "wfa_oos_monte_carlo",
+      "simulated_incubation_core",
+      "simulated_incubation_monkey",
+      "acceptance_oos_test"
+    ],
+    "acceptance_stage": "acceptance_oos_test"
+  },
+  "engine_contract_version": "2026.07.11.1"
+}

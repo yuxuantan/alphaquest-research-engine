@@ -256,7 +256,7 @@ def _system_prompt() -> str:
         "You structure a futures researcher's notes before any PnL is inspected. "
         "Do not claim profitability or trade readiness. Identify causal timing and lookahead risks. "
         "Return only a research-brief suggestion; do not suggest strategy variants, modules, parameters, or code. "
-        "AlphaQuest creates five mechanics later from the human-confirmed brief and certified local catalog."
+        "AlphaQuest creates the first mechanic later from the human-confirmed brief and certified local catalog."
     )
 
 

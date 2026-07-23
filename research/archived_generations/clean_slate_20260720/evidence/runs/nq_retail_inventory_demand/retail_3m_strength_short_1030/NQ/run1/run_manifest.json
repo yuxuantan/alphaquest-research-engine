@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_retail_inventory_demand",
+  "variant_id": "retail_3m_strength_short_1030",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_retail_inventory_demand/retail_3m_strength_short_1030/variant.yaml",
+    "hash": "f2be2a2be10bb8d3f329afb8e385ae371a1e7000efa120c78bf98b1ee4633675",
+    "mechanic": {
+      "entry_module": "nq_retail_inventory_demand",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_retail_inventory_demand/variants/retail_3m_strength_short_1030/config.yaml",
+  "effective_config": "backtest-campaigns/nq_retail_inventory_demand/retail_3m_strength_short_1030/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_retail_inventory_demand/retail_3m_strength_short_1030/NQ/run1/source_config.yaml",
+  "config_hash": "5ad17f0ed59773997a18f936a07f97ae1d9e48b02eb2a6086a07739bf6901825",
+  "source_config_hash": "df8a31de3bbe48a283412ce03afa8c409aa49c197b06b36075293397f1c65dea",
+  "source_results_index": "campaigns/nq_retail_inventory_demand/results_index.yaml",
+  "created_at": "2026-07-01T05:27:13",
+  "updated_at": "2026-07-01T05:27:13",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

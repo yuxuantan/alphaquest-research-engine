@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_vix_pressure_orderflow_confirmation",
+  "variant_id": "vix_pressure_1200_large20_weakness_short",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_vix_pressure_orderflow_confirmation/vix_pressure_1200_large20_weakness_short/variant.yaml",
+    "hash": "95309cbdfebaa2295bf7364412151fd4fe3860450689ea8a90a6cc58d33b5e8f",
+    "mechanic": {
+      "entry_module": "cboe_vix_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:15:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_vix_pressure_orderflow_confirmation/variants/vix_pressure_1200_large20_weakness_short/config.yaml",
+  "effective_config": "backtest-campaigns/nq_vix_pressure_orderflow_confirmation/vix_pressure_1200_large20_weakness_short/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_vix_pressure_orderflow_confirmation/vix_pressure_1200_large20_weakness_short/NQ/run1/source_config.yaml",
+  "config_hash": "400c69b71273eee168bb53901747f0372ac5f9fcadfa0be5da585c940276c555",
+  "source_config_hash": "280a394e93e7aa2542e5c7b7e57a9a96bbf68f4b827ecc7e469c0fd7d565d5fe",
+  "source_results_index": "campaigns/nq_vix_pressure_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-23T12:23:21",
+  "updated_at": "2026-06-23T12:23:21",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

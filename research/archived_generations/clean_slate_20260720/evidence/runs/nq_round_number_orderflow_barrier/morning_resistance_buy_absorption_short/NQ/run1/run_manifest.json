@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_round_number_orderflow_barrier",
+  "variant_id": "morning_resistance_buy_absorption_short",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_round_number_orderflow_barrier/morning_resistance_buy_absorption_short/variant.yaml",
+    "hash": "7eb208eeeeed699d33f9a0542bc6259c2cb536611051f3e2960d64f470fa58e1",
+    "mechanic": {
+      "entry_module": "round_number_orderflow_barrier",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_round_number_orderflow_barrier/variants/morning_resistance_buy_absorption_short/config.yaml",
+  "effective_config": "backtest-campaigns/nq_round_number_orderflow_barrier/morning_resistance_buy_absorption_short/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_round_number_orderflow_barrier/morning_resistance_buy_absorption_short/NQ/run1/source_config.yaml",
+  "config_hash": "0f85558b84a87165cdb6d6dd809f58cee31aac9c899c449d2f07ec9ff2babab0",
+  "source_config_hash": "c50910aa543b1cde6d5b13f4a80d9009e769586e9c4aef4a2f0655735a740176",
+  "source_results_index": "campaigns/nq_round_number_orderflow_barrier/results_index.yaml",
+  "created_at": "2026-06-30T20:24:42",
+  "updated_at": "2026-06-30T20:24:42",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

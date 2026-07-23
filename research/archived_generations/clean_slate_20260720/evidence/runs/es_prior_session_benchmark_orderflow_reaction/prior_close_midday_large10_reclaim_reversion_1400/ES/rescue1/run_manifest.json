@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_prior_session_benchmark_orderflow_reaction",
+  "variant_id": "prior_close_midday_large10_reclaim_reversion_1400",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_prior_session_benchmark_orderflow_reaction/prior_close_midday_large10_reclaim_reversion_1400/variant.yaml",
+    "hash": "5564d42b197074f2134734e5fb9080e0e1c8581f76fcc139fd3ccb1eeec64895",
+    "mechanic": {
+      "entry_module": "prior_session_benchmark_orderflow_reaction",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_prior_session_benchmark_orderflow_reaction/rescue_attempts/parameter_space_rescue_1/prior_close_midday_large10_reclaim_reversion_1400/config.yaml",
+  "effective_config": "backtest-campaigns/es_prior_session_benchmark_orderflow_reaction/prior_close_midday_large10_reclaim_reversion_1400/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_prior_session_benchmark_orderflow_reaction/prior_close_midday_large10_reclaim_reversion_1400/ES/rescue1/source_config.yaml",
+  "config_hash": "215db1204ea259841ccb99276f8887f45cf2f4b077b008a57c919997c9aa811e",
+  "source_config_hash": "b33e98e75f20c1d3c5b5f1832b2341eb89371624546b98300878c5982c82cff4",
+  "source_results_index": "campaigns/es_prior_session_benchmark_orderflow_reaction/results_index.yaml",
+  "created_at": "2026-06-18T18:10:45",
+  "updated_at": "2026-06-18T18:10:45",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,79 @@
+{
+  "run_uid": "20a79d20-354b-4875-9543-54898e6f03c7",
+  "campaign_id": "es_tpo_value_edge_auction_rejection",
+  "variant_id": "tpo_value_edge_two_sided_rejection",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_price_only_tpo_1m_20110815_20260609_0930_1100_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/price_only/es_sierra_price_only_tpo_1m_20110815_20260609_0930_1100_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_tpo_value_edge_auction_rejection/tpo_value_edge_two_sided_rejection/variant.yaml",
+    "hash": "cb0119bf61c3f5dbb9985780da2c0abd0ffdd2e2c674f92e1593b13f83c2c803",
+    "mechanic": {
+      "entry_module": "tpo_value_edge_auction_rejection",
+      "take_profit_module": "signal_price",
+      "stop_loss_module": "opening_range_retest_boundary",
+      "flatten_time": "11:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "research_policy": {
+    "version": "2026-07-11.1",
+    "path": "config/research_settings.yaml",
+    "hash": "3285c4ca078a03d255cd03cc7944eaf31ea42bdb91ad15f337c9ebeb3ca0f0f2",
+    "stage_order": [
+      "limited_core_grid_test",
+      "limited_monkey_test",
+      "walk_forward_analysis",
+      "wfa_oos_monkey_test",
+      "wfa_oos_monte_carlo",
+      "simulated_incubation_core",
+      "simulated_incubation_monkey",
+      "acceptance_oos_test"
+    ],
+    "acceptance_stage": "acceptance_oos_test"
+  },
+  "engine_contract_version": "2026.07.11.1",
+  "config_source": "campaigns/es_tpo_value_edge_auction_rejection/variants/tpo_value_edge_two_sided_rejection/config.yaml",
+  "effective_config": "backtest-campaigns/es_tpo_value_edge_auction_rejection/tpo_value_edge_two_sided_rejection/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_tpo_value_edge_auction_rejection/tpo_value_edge_two_sided_rejection/ES/run1/source_config.yaml",
+  "config_hash": "df78149784daa712c533c83ff91c53acba28abda75f2f69529b31d5d9f6f56c6",
+  "source_config_hash": "150ec04cb1d90e7b8968f776de3b5474cf5e5b1bf62591b2b3dfc4d9c73164d9",
+  "source_results_index": "campaigns/es_tpo_value_edge_auction_rejection/results_index.yaml",
+  "created_at": "2026-07-14T17:37:19",
+  "updated_at": "2026-07-14T17:37:19",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

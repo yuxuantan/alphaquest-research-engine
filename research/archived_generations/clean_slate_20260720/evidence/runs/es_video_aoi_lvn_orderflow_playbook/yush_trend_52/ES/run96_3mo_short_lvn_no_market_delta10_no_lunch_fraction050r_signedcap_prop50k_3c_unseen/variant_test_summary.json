@@ -1,0 +1,126 @@
+{
+  "campaign_id": "es_video_aoi_lvn_orderflow_playbook",
+  "variant_id": "yush_trend_52",
+  "test_run_id": "run96_3mo_short_lvn_no_market_delta10_no_lunch_fraction050r_signedcap_prop50k_3c_unseen",
+  "strategy_name": "yush_trend_52",
+  "symbol": "ES",
+  "dataset_id": "es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny_scid_execution_yush_trend_52_no_market_delta10_no_lunch_fraction050r_signedcap_prop50k_3c_202603_202605",
+  "timeframe": "3m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet",
+  "raw_dir": null,
+  "config_source": "campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_yush_trend_52_short_lvn_no_market_delta10_no_lunch_fraction050r_signedcap_prop50k_3c_unseen_run96/yush_trend_52/config.yaml",
+  "config_hash": "92fb85b828123a14502a9b5ed87c23ec70c5f784d7e8837fbae97227133e7bad",
+  "input_data_hash": "87a605da1daa381b4832cfea2d236d0c5dbcf498cb33a05c03b01e65fbb63e59",
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_52/variant.yaml",
+    "hash": "61d45ffd17def2d953f8836ff8b1b194959dbe19e9107e380eb017bbf7917143",
+    "mechanic": {
+      "entry_module": "yush_trend_52",
+      "take_profit_module": "prop_fixed_fraction_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:53:00",
+      "target_r_fraction": 0.5,
+      "target_round_to_tick": true,
+      "max_directional_signed_volume": 800.0,
+      "contracts": 3,
+      "data_window": "2026-03-01 to 2026-05-29",
+      "prop_consistency_target": {
+        "account_size": 50000,
+        "min_winning_days": 5,
+        "min_winning_day_net_pnl": 250,
+        "max_best_day_profit_share": 0.5
+      }
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "updated_at": "2026-07-14T12:39:18",
+  "sections": {
+    "core": {
+      "total_trades": 31,
+      "trades_per_year": 130.1747408913247,
+      "net_profit": -2190.0,
+      "profit_factor": 0.6464891041162227,
+      "expectancy_r": -0.2071278605434203,
+      "max_drawdown": 3517.5,
+      "max_drawdown_pct": 0.06853051483123082,
+      "cagr": -0.17144650347427393,
+      "mar": -2.501754202438037,
+      "worst_day": -690.0,
+      "best_day": 360.0,
+      "best_day_concentration": 0.0,
+      "max_consecutive_losses": 4,
+      "positive_month_rate": 0.3333333333333333,
+      "win_rate": 0.5806451612903226,
+      "average_trade": -70.64516129032258,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0,
+      "data_subset": {
+        "start_date": "2026-03-01",
+        "end_date": "2026-05-29",
+        "session_labels": [
+          "RTH"
+        ]
+      },
+      "equity_curve_csv": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_52/ES/run96_3mo_short_lvn_no_market_delta10_no_lunch_fraction050r_signedcap_prop50k_3c_unseen/core/equity_curve.csv",
+      "equity_curve_html": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_52/ES/run96_3mo_short_lvn_no_market_delta10_no_lunch_fraction050r_signedcap_prop50k_3c_unseen/core/equity_curve.html",
+      "equity_curve_points": 32,
+      "validation_artifacts": {
+        "output_dir": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/yush_trend_52/ES/run96_3mo_short_lvn_no_market_delta10_no_lunch_fraction050r_signedcap_prop50k_3c_unseen/validation_runs/core",
+        "record_counts": {
+          "trades": 31,
+          "condition_snapshots": 31,
+          "bar_windows": 961,
+          "tick_windows": 3780361,
+          "exit_audits": 31,
+          "validation_checks": 756
+        },
+        "artifact_files": {
+          "trades": "trades.parquet",
+          "condition_snapshots": "condition_snapshots.parquet",
+          "bar_windows": "bar_windows.parquet",
+          "tick_windows": "tick_windows.parquet",
+          "exit_audits": "exit_audits.parquet",
+          "validation_checks": "validation_checks.parquet"
+        }
+      }
+    }
+  },
+  "research_policy": {
+    "version": "2026-07-11.1",
+    "path": "config/research_settings.yaml",
+    "hash": "3285c4ca078a03d255cd03cc7944eaf31ea42bdb91ad15f337c9ebeb3ca0f0f2",
+    "stage_order": [
+      "limited_core_grid_test",
+      "limited_monkey_test",
+      "walk_forward_analysis",
+      "wfa_oos_monkey_test",
+      "wfa_oos_monte_carlo",
+      "simulated_incubation_core",
+      "simulated_incubation_monkey",
+      "acceptance_oos_test"
+    ],
+    "acceptance_stage": "acceptance_oos_test"
+  },
+  "engine_contract_version": "2026.07.11.1"
+}

@@ -1,0 +1,103 @@
+{
+  "campaign_id": "nq_preholiday_effect",
+  "title": "NQ Pre-Holiday Effect",
+  "decision": "FAIL",
+  "terminal_stage": "pre_pnl_density_screen",
+  "completed_at": "2026-06-30T15:07:18+08:00",
+  "density_audit": {
+    "artifact": "research_artifacts/nq_preholiday_effect_density_audit_20260630.md",
+    "csv": "research_artifacts/nq_preholiday_effect_density_audit_20260630.csv",
+    "declared_entry_rows": 9,
+    "density_pass_rows": 3,
+    "density_fail_rows": 6,
+    "min_full_signals_per_year": 0.388771,
+    "min_limited_signals_per_year": 0.0,
+    "min_latest_252_signals": 0
+  },
+  "failure_reason": "Rejected before staged NQ PnL: 6/9 declared entry rows failed the sparse-event pre-PnL density gate. The unconditional 10:00, 12:00, and 15:00 variants were dense enough, but all low-range rows and all momentum-confirmed rows failed at least one density window; minimum full-history density was 0.39 signals/year, minimum limited-core density was 0.00, and minimum latest-window count was 0. Dropping the filtered variants or retaining only the unconditional rows after this screen would be post-result narrowing of the declared five-variant edge. No NQ PnL was inspected.",
+  "staged_pnl_run": false,
+  "monkey_reached": 0,
+  "wfa_reached": 0,
+  "monte_carlo_reached": 0,
+  "simulated_incubation_reached": 0,
+  "acceptance_oos_reached": 0,
+  "candidate_strategy_report_created": false,
+  "variant_density_summary": [
+    {
+      "variant_id": "preholiday_late_long_1500",
+      "rows": 1,
+      "pass_rows": 1,
+      "fail_rows": 0,
+      "min_full_signals_per_year": 9.200905,
+      "min_limited_signals_per_year": 7.78508,
+      "min_latest_252_signals": 10,
+      "failed_entry_values": [],
+      "decision": "PASS_DENSITY_ONLY"
+    },
+    {
+      "variant_id": "preholiday_low_range_midday_long_1200",
+      "rows": 3,
+      "pass_rows": 0,
+      "fail_rows": 3,
+      "min_full_signals_per_year": 0.388771,
+      "min_limited_signals_per_year": 0.0,
+      "min_latest_252_signals": 0,
+      "failed_entry_values": [
+        "35.0",
+        "55.0",
+        "75.0"
+      ],
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "preholiday_midday_long_1200",
+      "rows": 1,
+      "pass_rows": 1,
+      "fail_rows": 0,
+      "min_full_signals_per_year": 9.200905,
+      "min_limited_signals_per_year": 7.78508,
+      "min_latest_252_signals": 10,
+      "failed_entry_values": [],
+      "decision": "PASS_DENSITY_ONLY"
+    },
+    {
+      "variant_id": "preholiday_momentum_confirmed_midday_long_1200",
+      "rows": 3,
+      "pass_rows": 0,
+      "fail_rows": 3,
+      "min_full_signals_per_year": 3.693321,
+      "min_limited_signals_per_year": 3.243783,
+      "min_latest_252_signals": 7,
+      "failed_entry_values": [
+        "0.0",
+        "10.0",
+        "20.0"
+      ],
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "preholiday_open_long_1000",
+      "rows": 1,
+      "pass_rows": 1,
+      "fail_rows": 0,
+      "min_full_signals_per_year": 9.200905,
+      "min_limited_signals_per_year": 7.78508,
+      "min_latest_252_signals": 10,
+      "failed_entry_values": [],
+      "decision": "PASS_DENSITY_ONLY"
+    }
+  ],
+  "artifacts": {
+    "campaign_yaml": "campaigns/nq_preholiday_effect/campaign.yaml",
+    "campaign_summary_json": "backtest-campaigns/nq_preholiday_effect/campaign_test_summary.json",
+    "campaign_summary_md": "backtest-campaigns/nq_preholiday_effect/campaign_test_summary.md",
+    "campaign_results_csv": "backtest-campaigns/nq_preholiday_effect/campaign_results.csv",
+    "density_audit_md": "research_artifacts/nq_preholiday_effect_density_audit_20260630.md",
+    "density_audit_csv": "research_artifacts/nq_preholiday_effect_density_audit_20260630.csv",
+    "methodology_audit": "campaigns/nq_preholiday_effect/methodology_audit.md",
+    "trade_logs_manifest": "backtest-campaigns/nq_preholiday_effect/trade_logs_manifest.csv",
+    "equity_curves_manifest": "backtest-campaigns/nq_preholiday_effect/equity_curves_manifest.csv",
+    "wfa_table": "backtest-campaigns/nq_preholiday_effect/wfa_table.csv",
+    "monte_carlo_summary": "backtest-campaigns/nq_preholiday_effect/monte_carlo_summary.json"
+  }
+}

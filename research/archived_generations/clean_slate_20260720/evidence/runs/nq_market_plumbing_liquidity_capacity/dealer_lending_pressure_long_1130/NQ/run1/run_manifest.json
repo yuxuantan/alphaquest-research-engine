@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_market_plumbing_liquidity_capacity",
+  "variant_id": "dealer_lending_pressure_long_1130",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_market_plumbing_liquidity_capacity/dealer_lending_pressure_long_1130/variant.yaml",
+    "hash": "549482e33537d9ce5a5a2a7d6c6e87908286f24fceb993ad1770930ed2009782",
+    "mechanic": {
+      "entry_module": "market_plumbing_priority",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_market_plumbing_liquidity_capacity/variants/dealer_lending_pressure_long_1130/config.yaml",
+  "effective_config": "backtest-campaigns/nq_market_plumbing_liquidity_capacity/dealer_lending_pressure_long_1130/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_market_plumbing_liquidity_capacity/dealer_lending_pressure_long_1130/NQ/run1/source_config.yaml",
+  "config_hash": "748e257742039d1e4e62535d1429251e03c6c30a9c1494a336fce76e9cf38be0",
+  "source_config_hash": "00d96fa779287390f6cb7fafab4cce359cc758120cf97b48c8af0d3e0b78bf1b",
+  "source_results_index": "campaigns/nq_market_plumbing_liquidity_capacity/results_index.yaml",
+  "created_at": "2026-06-23T05:52:23",
+  "updated_at": "2026-06-23T05:52:23",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

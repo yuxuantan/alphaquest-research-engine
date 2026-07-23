@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_overnight_drift_european_open",
+  "variant_id": "london_open_prior_down_long_0300",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/databento/nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_overnight_drift_european_open/london_open_prior_down_long_0300/variant.yaml",
+    "hash": "a1df04f26856249fccff405d47fc5af7dc5bb3dc9fdf01e1865a96566ecbcb6d",
+    "mechanic": {
+      "entry_module": "overnight_drift",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "04:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_overnight_drift_european_open/variants/london_open_prior_down_long_0300/config.yaml",
+  "effective_config": "backtest-campaigns/nq_overnight_drift_european_open/london_open_prior_down_long_0300/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_overnight_drift_european_open/london_open_prior_down_long_0300/NQ/run1/source_config.yaml",
+  "config_hash": "d6c3531d62a04a2ea3a0f0cad0b298b464571a2333b08126df7ad6765f9fa917",
+  "source_config_hash": "3c73a9579ee339fe2571d9ae393f9e562b11b792bd34e16096e1c3a29116fe35",
+  "source_results_index": "campaigns/nq_overnight_drift_european_open/results_index.yaml",
+  "created_at": "2026-06-23T18:41:48",
+  "updated_at": "2026-06-23T18:41:48",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

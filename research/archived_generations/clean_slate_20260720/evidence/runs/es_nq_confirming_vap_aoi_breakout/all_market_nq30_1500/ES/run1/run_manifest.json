@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_nq_confirming_vap_aoi_breakout",
+  "variant_id": "all_market_nq30_1500",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_vap_overnight_aoi_nq_leadlag_1m_20110103_20260529_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_nq_leadlag_1m_20110103_20260529_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_nq_confirming_vap_aoi_breakout/all_market_nq30_1500/variant.yaml",
+    "hash": "f657fd6af0bcd3a81a63f9409683d92388836aa40cb45fa480a3a476594fddec",
+    "mechanic": {
+      "entry_module": "nq_confirming_vap_aoi_breakout",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_nq_confirming_vap_aoi_breakout/variants/all_market_nq30_1500/config.yaml",
+  "effective_config": "backtest-campaigns/es_nq_confirming_vap_aoi_breakout/all_market_nq30_1500/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_nq_confirming_vap_aoi_breakout/all_market_nq30_1500/ES/run1/source_config.yaml",
+  "config_hash": "5fc744179c87623712428e0b1ed8db66d6466c73e2c9e73d36ab4d67b1af7726",
+  "source_config_hash": "6b8818728e1cb8ccfcabca74376e05b869b182063a0e8e65131f6fa700df0034",
+  "source_results_index": "campaigns/es_nq_confirming_vap_aoi_breakout/results_index.yaml",
+  "created_at": "2026-06-23T01:44:56",
+  "updated_at": "2026-06-23T01:44:56",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

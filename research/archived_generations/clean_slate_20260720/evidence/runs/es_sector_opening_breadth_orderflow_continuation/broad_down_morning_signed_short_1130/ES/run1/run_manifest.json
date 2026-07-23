@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_sector_opening_breadth_orderflow_continuation",
+  "variant_id": "broad_down_morning_signed_short_1130",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_down_morning_signed_short_1130/variant.yaml",
+    "hash": "e25fb4578d1e07871b98d9ad4402cc0875b32bc9f71f5dc9b81e05d6189bf346",
+    "mechanic": {
+      "entry_module": "sector_opening_breadth_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_sector_opening_breadth_orderflow_continuation/variants/broad_down_morning_signed_short_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_down_morning_signed_short_1130/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_down_morning_signed_short_1130/ES/run1/source_config.yaml",
+  "config_hash": "1c94b10fb900551acd957a951783099db4b9f44b52408b2f695012000d01d74e",
+  "source_config_hash": "ed2a9ff80947ab0dd2b7aa9fb424200bf1506214712e80521c5d215bbf0ad85d",
+  "source_results_index": "campaigns/es_sector_opening_breadth_orderflow_continuation/results_index.yaml",
+  "created_at": "2026-06-20T04:41:16",
+  "updated_at": "2026-06-20T04:41:16",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

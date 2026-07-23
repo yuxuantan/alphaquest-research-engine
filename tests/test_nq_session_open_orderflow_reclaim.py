@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 
-CAMPAIGN_ROOT = Path("research/campaigns/archive/nq_session_open_orderflow_reclaim")
+CAMPAIGN_ROOT = Path("research/archived_generations/clean_slate_20260720/campaigns/archive/nq_session_open_orderflow_reclaim")
 
 
 def test_nq_session_open_campaign_is_distinct_and_scaled_before_pnl():

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_chicagofed_cfnai_activity_pullback",
+  "variant_id": "production_income_weak_pullback_long_1100",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_chicagofed_cfnai_activity_pullback/production_income_weak_pullback_long_1100/variant.yaml",
+    "hash": "acec86dc55a8f9a1a587c098f3afc246445ce6f6f9e79b7ef3384add3b475148",
+    "mechanic": {
+      "entry_module": "chicagofed_cfnai_activity_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_chicagofed_cfnai_activity_pullback/variants/production_income_weak_pullback_long_1100/config.yaml",
+  "effective_config": "backtest-campaigns/nq_chicagofed_cfnai_activity_pullback/production_income_weak_pullback_long_1100/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_chicagofed_cfnai_activity_pullback/production_income_weak_pullback_long_1100/NQ/run1/source_config.yaml",
+  "config_hash": "717684df353a21625b63bd1cf782d93fcdcac20cd457319701172785d7ea7ed2",
+  "source_config_hash": "f50854e8925623c14e7a6f06be5c1f88540cb7087640869057274ce426eca01e",
+  "source_results_index": "campaigns/nq_chicagofed_cfnai_activity_pullback/results_index.yaml",
+  "created_at": "2026-06-30T08:21:37",
+  "updated_at": "2026-06-30T08:21:37",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

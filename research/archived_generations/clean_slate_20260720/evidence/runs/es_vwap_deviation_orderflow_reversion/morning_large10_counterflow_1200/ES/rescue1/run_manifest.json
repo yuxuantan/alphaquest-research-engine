@@ -1,0 +1,60 @@
+{
+  "campaign_id": "es_vwap_deviation_orderflow_reversion",
+  "variant_id": "morning_large10_counterflow_1200",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_vwap_deviation_orderflow_reversion/morning_large10_counterflow_1200/variant.yaml",
+    "hash": "9473f5ffc682906766a311a0dc935c5728d57549878da4c8b5358de554a8f40f",
+    "mechanic": {
+      "entry_module": "vwap_deviation_orderflow_reversion",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_vwap_deviation_orderflow_reversion/rescue_attempts/parameter_space_rescue_1/morning_large10_counterflow_1200/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_vwap_deviation_orderflow_reversion/morning_large10_counterflow_1200/ES/rescue1/source_config.yaml",
+  "config_hash": "2b1755226306473af6b3841a8ebba8fbdc6964eb2f0136a45aa59ba6a57e80a3",
+  "source_config_hash": "26bb0f6f288168ecc840366dee4d80d18f73a5ec5407f7d21353c246eb49fe8d",
+  "created_at": "2026-06-18T05:21:01",
+  "updated_at": "2026-06-18T05:21:01",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_vwap_deviation_orderflow_reversion/morning_large10_counterflow_1200/ES/rescue1/effective_config.yaml"
+}

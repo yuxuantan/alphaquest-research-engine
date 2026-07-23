@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_treasury_auction_pressure",
+  "variant_id": "note_only_post_auction_short_1305",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_treasury_auction_pressure/note_only_post_auction_short_1305/variant.yaml",
+    "hash": "f87a144298fcc8b2a9a49036d94aa0c148ea18f2b0680600d6486ea57d6d41f8",
+    "mechanic": {
+      "entry_module": "treasury_auction_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_treasury_auction_pressure/variants/note_only_post_auction_short_1305/config.yaml",
+  "effective_config": "backtest-campaigns/nq_treasury_auction_pressure/note_only_post_auction_short_1305/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_treasury_auction_pressure/note_only_post_auction_short_1305/NQ/run1/source_config.yaml",
+  "config_hash": "056c04a63a21871e67eb5410488538c26fafb83403a76f7b99549061136422dd",
+  "source_config_hash": "21f848bc851864e5eba219f85cfc1581757ca1cdbe95fcfb84dcb97c1f073321",
+  "source_results_index": "campaigns/nq_treasury_auction_pressure/results_index.yaml",
+  "created_at": "2026-07-02T00:41:24",
+  "updated_at": "2026-07-02T00:41:24",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

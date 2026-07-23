@@ -1,4 +1,255 @@
 {
+  "$defs": {
+    "EventExecutionSourceV1": {
+      "additionalProperties": false,
+      "description": "Governed event source paired atomically with one completed-bar dataset.",
+      "properties": {
+        "aggregation_ms": {
+          "const": 100,
+          "default": 100,
+          "enum": [
+            100
+          ],
+          "title": "Aggregation Ms",
+          "type": "integer"
+        },
+        "archive": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Archive"
+        },
+        "archive_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Archive Sha256"
+        },
+        "concordance_report": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Concordance Report"
+        },
+        "concordance_report_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Concordance Report Sha256"
+        },
+        "ineligible_session_policy": {
+          "default": "error",
+          "enum": [
+            "error",
+            "blackout"
+          ],
+          "title": "Ineligible Session Policy",
+          "type": "string"
+        },
+        "overnight_start": {
+          "const": "16:00:00",
+          "default": "16:00:00",
+          "enum": [
+            "16:00:00"
+          ],
+          "title": "Overnight Start",
+          "type": "string"
+        },
+        "quality_manifest": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quality Manifest"
+        },
+        "quality_manifest_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Quality Manifest Sha256"
+        },
+        "raw_dir": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Dir"
+        },
+        "raw_manifest": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Manifest"
+        },
+        "raw_manifest_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Raw Manifest Sha256"
+        },
+        "required_capability": {
+          "anyOf": [
+            {
+              "enum": [
+                "full_strategy_events",
+                "full_strategy_events_extrapolated"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Required Capability"
+        },
+        "reset_previous_levels_on_roll": {
+          "default": true,
+          "title": "Reset Previous Levels On Roll",
+          "type": "boolean"
+        },
+        "roll_calendar": {
+          "minLength": 1,
+          "title": "Roll Calendar",
+          "type": "string"
+        },
+        "roll_calendar_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Roll Calendar Sha256",
+          "type": "string"
+        },
+        "root_symbol": {
+          "enum": [
+            "ES",
+            "NQ"
+          ],
+          "title": "Root Symbol",
+          "type": "string"
+        },
+        "rth_end": {
+          "default": "16:00:00",
+          "enum": [
+            "11:00:00",
+            "16:00:00"
+          ],
+          "title": "Rth End",
+          "type": "string"
+        },
+        "rth_start": {
+          "const": "09:30:00",
+          "default": "09:30:00",
+          "enum": [
+            "09:30:00"
+          ],
+          "title": "Rth Start",
+          "type": "string"
+        },
+        "session_levels": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Levels"
+        },
+        "session_levels_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Session Levels Sha256"
+        },
+        "source": {
+          "default": "databento_zip_trades",
+          "enum": [
+            "databento_zip_trades",
+            "sierra_scid_records"
+          ],
+          "title": "Source",
+          "type": "string"
+        }
+      },
+      "required": [
+        "roll_calendar",
+        "roll_calendar_sha256",
+        "root_symbol"
+      ],
+      "title": "EventExecutionSourceV1",
+      "type": "object"
+    }
+  },
   "$id": "https://alphaquest.local/schemas/dataset-manifest-v1.schema.json",
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "additionalProperties": false,
@@ -80,6 +331,17 @@
       "minimum": 0,
       "title": "Duplicate Count",
       "type": "integer"
+    },
+    "event_source": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/EventExecutionSourceV1"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "exchange_timezone": {
       "minLength": 1,

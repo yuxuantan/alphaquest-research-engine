@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_opening_gap_orderflow_continuation",
+  "variant_id": "late_morning_large20_gap_hold_continuation_1100",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_opening_gap_orderflow_continuation/late_morning_large20_gap_hold_continuation_1100/variant.yaml",
+    "hash": "14c0efda6e7554cf697f1968aaa1b2028867a04c157067da2b7b13beb7dc49f8",
+    "mechanic": {
+      "entry_module": "opening_gap_orderflow_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "opening_gap_boundary",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_opening_gap_orderflow_continuation/variants/late_morning_large20_gap_hold_continuation_1100/config.yaml",
+  "effective_config": "backtest-campaigns/nq_opening_gap_orderflow_continuation/late_morning_large20_gap_hold_continuation_1100/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_opening_gap_orderflow_continuation/late_morning_large20_gap_hold_continuation_1100/NQ/run1/source_config.yaml",
+  "config_hash": "7eb4c2b7d4f214c2bd32d77b4484980dbec201be2e45c59bc75a50efa83604f2",
+  "source_config_hash": "c6e5b78159eaaada7fa4e08072dfbcc0beba311b611bb5fbe09d9d76d47bd88f",
+  "source_results_index": "campaigns/nq_opening_gap_orderflow_continuation/results_index.yaml",
+  "created_at": "2026-06-22T16:24:41",
+  "updated_at": "2026-06-22T16:24:41",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

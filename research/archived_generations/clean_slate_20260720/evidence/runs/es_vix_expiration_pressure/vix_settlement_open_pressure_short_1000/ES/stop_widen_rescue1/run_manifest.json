@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_vix_expiration_pressure",
+  "variant_id": "vix_settlement_open_pressure_short_1000",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_vix_expiration_pressure/campaign.yaml",
+    "hash": "df5ec496aa7d6cb70e0dcdef136b0d3b38cd48bc84faa09554bd03fd4fc93e0b"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_vix_expiration_pressure/vix_settlement_open_pressure_short_1000/variant.yaml",
+    "hash": "6aaca1043a2763b34c3aa8f40b1624d317714c7918f2fdcfbb7ad5301b9c89d2",
+    "mechanic": {
+      "entry_module": "vix_expiration_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_vix_expiration_pressure/rescue_attempts/stop_distance_rescue_1/vix_settlement_open_pressure_short_1000/config.yaml",
+  "effective_config": "backtest-campaigns/es_vix_expiration_pressure/vix_settlement_open_pressure_short_1000/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_vix_expiration_pressure/vix_settlement_open_pressure_short_1000/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "60f24e0a799cf65d38135960725f1874fa6ecfdc398194d29f4d5d940818281a",
+  "source_config_hash": "80103fd6f83f27e0ee92df3b3931948eb27bf60f971df749d16eee0f9a7183ec",
+  "source_results_index": "campaigns/es_vix_expiration_pressure/results_index.yaml",
+  "created_at": "2026-06-19T18:23:37",
+  "updated_at": "2026-06-19T18:23:37",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

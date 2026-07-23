@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_pivot_mes_orderflow_confirmation",
+  "variant_id": "late_morning_trade_large20_first_confirmed_reversal_window_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_pivot_mes_orderflow_confirmation/late_morning_trade_large20_first_confirmed_reversal_window_1200/variant.yaml",
+    "hash": "b0a9271409a842696f456e9333211f28c620954ae9746c6c452ffb037eb69bb7",
+    "mechanic": {
+      "entry_module": "nq_pivot_mes_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "13:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_pivot_mes_orderflow_confirmation/variants/late_morning_trade_large20_first_confirmed_reversal_window_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_pivot_mes_orderflow_confirmation/late_morning_trade_large20_first_confirmed_reversal_window_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_pivot_mes_orderflow_confirmation/late_morning_trade_large20_first_confirmed_reversal_window_1200/NQ/run1/source_config.yaml",
+  "config_hash": "b51f78fba573fdfea260753ca19f90c5e014a9f3f61587cfd5b1d4a20850b80c",
+  "source_config_hash": "bb46b119087937a57025b55c1603b47832ec96157ed60d98136776d806eb8a5e",
+  "source_results_index": "campaigns/nq_pivot_mes_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-23T17:21:41",
+  "updated_at": "2026-06-23T17:21:41",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

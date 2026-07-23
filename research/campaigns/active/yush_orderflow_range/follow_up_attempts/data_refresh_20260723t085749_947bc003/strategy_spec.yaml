@@ -1,0 +1,120 @@
+schema: alphaquest.follow-up-strategy-spec/v1
+campaign_id: yush_orderflow_range
+attempt_id: data_refresh_20260723t085749_947bc003
+attempt_kind: data_refresh
+parent_attempt_id: pre_pnl_parameter_declaration_20260722t073725_983024c1
+reason: Replace the one-year Databento event source atomically with the governed Sierra 09:30-11:00 event history and corrected
+  Databento completed-OHLC market levels after full-session source audit and fixed-default concordance.
+created_by: Tan Yu Xuan
+authorized_by: null
+created_at: '2026-07-23T08:57:50.681919+00:00'
+frozen: true
+changes:
+- variant_id: v01
+  scope: dataset
+  field: dataset_id
+  old: es_databento_trade_events_20250714_20260610_0930_1100_ny
+  new: es_sierra_yush_events_20110815_20260529_0930_1100_ny
+  reviewed: true
+- variant_id: v01
+  scope: data.execution_data
+  field: source
+  old: databento_zip_trades
+  new: sierra_scid_records
+  reviewed: true
+variants:
+- variant_id: v01
+  mechanic_signature: 40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1
+  strategy:
+    entry:
+      module: yush_orderflow_range
+      params:
+        mechanics:
+          tick_size: 0.25
+          point_value: 50.0
+          contracts: 1
+          commission_per_contract: 2.5
+          max_trades_per_day: 3
+          max_aoi_width_points: 3.0
+          entry_offset_ticks: 2
+          stop_offset_ticks: 2
+          max_stop_points: 5.0
+          value_area_fraction: 0.7
+          range_expansion_fraction: 0.2
+          delta_profile_min_abs: 300
+          delta_bubble_threshold: 300
+          big_trade_threshold: 200
+          big_trade_window_ms: 100
+          breakeven_offset_points: 1.25
+          opening_range_seconds: 32
+          bar_seconds: 180
+          breakout_probe_ticks: 2
+          initial_balance: 50000.0
+          minimum_stop_points: 2.0
+          slippage_ticks: 1
+          delta_neighbour_multiple: 2.0
+          aoi_lineage_mode: exact_fingerprint
+    sl:
+      module: event_aoi_structural_stop
+      params: {}
+    tp:
+      module: event_value_area_management
+      params: {}
+    flatten_time: '11:00:00'
+    event:
+      module: yush_orderflow_range
+      params:
+        tick_size: 0.25
+        point_value: 50.0
+        contracts: 1
+        commission_per_contract: 2.5
+        max_trades_per_day: 3
+        max_aoi_width_points: 3.0
+        entry_offset_ticks: 2
+        stop_offset_ticks: 2
+        max_stop_points: 5.0
+        value_area_fraction: 0.7
+        range_expansion_fraction: 0.2
+        delta_profile_min_abs: 300
+        delta_bubble_threshold: 300
+        big_trade_threshold: 200
+        big_trade_window_ms: 100
+        breakeven_offset_points: 1.25
+        opening_range_seconds: 32
+        bar_seconds: 180
+        breakout_probe_ticks: 2
+        initial_balance: 50000.0
+        minimum_stop_points: 2.0
+        slippage_ticks: 1
+        delta_neighbour_multiple: 2.0
+        aoi_lineage_mode: exact_fingerprint
+  parameter_grid:
+    event.params.max_aoi_width_points:
+    - 3
+    - 4
+    - 5
+    - 6
+    event.params.entry_offset_ticks:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    event.params.stop_offset_ticks:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+  dataset_id: es_sierra_yush_events_20110815_20260529_0930_1100_ny
+  validation_gate:
+    required: true
+    lane: event_replay
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 0
+    data_subset:
+      start_date: '2011-08-15'
+      end_date: '2011-08-29'
+    evidence_dir: /Users/yx/Desktop/alphaquest-research-engine/research/evidence/runs/yush_orderflow_range/v01/ES/mechanics_validation_data_refresh_20260723t085749_947bc003/validation_runs/core
+    approval_path: /Users/yx/Desktop/alphaquest-research-engine/research_artifacts/validation_approvals/yush_orderflow_range/data_refresh_20260723t085749_947bc003/v01/approval.json

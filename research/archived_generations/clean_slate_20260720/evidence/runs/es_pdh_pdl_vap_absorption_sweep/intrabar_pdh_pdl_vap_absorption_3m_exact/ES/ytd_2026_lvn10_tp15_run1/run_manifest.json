@@ -1,0 +1,48 @@
+{
+  "campaign_id": "es_pdh_pdl_vap_absorption_sweep",
+  "variant_id": "intrabar_pdh_pdl_vap_absorption_3m_exact",
+  "test_run_id": "ytd_2026_lvn10_tp15_run1",
+  "strategy_name": "pdh_pdl_vap_absorption_sweep",
+  "symbol": "ES",
+  "dataset_id": "es_pdh_pdl_vap_absorption_sweep_lvn10_1m_source_3m_features_20260102_20260609_rth_ny",
+  "timeframe": "3m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_pdh_pdl_vap_absorption_sweep_lvn10_1m_source_3m_features_20260102_20260609_rth_ny.parquet",
+  "raw_dir": null,
+  "config_source": "campaigns/es_pdh_pdl_vap_absorption_sweep/variants/intrabar_pdh_pdl_vap_absorption_3m_exact/config.yaml",
+  "config_hash": "0b8c09c65e7615324013180dce2d8e8b016ac1d2c818fc78cafe0e55fb020937",
+  "input_data_hash": "15cce4150d0fb8d83aad40c0a423bd76eca73f8881c880dadf18b4dc9e7d8cfe",
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_pdh_pdl_vap_absorption_sweep/intrabar_pdh_pdl_vap_absorption_3m_exact/variant.yaml",
+    "hash": "c55d30d8a7f0392e3d2af503bee11d54941a4c0d9d77bf47611a276d809faa2b",
+    "mechanic": {
+      "entry_module": "pdh_pdl_vap_absorption_sweep",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "updated_at": "2026-06-26T20:59:13",
+  "layout": "campaign_variant_symbol_run"
+}

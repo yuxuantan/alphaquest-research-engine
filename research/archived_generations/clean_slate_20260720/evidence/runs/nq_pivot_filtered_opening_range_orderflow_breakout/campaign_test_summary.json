@@ -1,0 +1,88 @@
+{
+  "campaign_id": "nq_pivot_filtered_opening_range_orderflow_breakout",
+  "symbol": "NQ",
+  "decision": "FAIL",
+  "status": "completed",
+  "completed_at": "2026-06-30T13:33:30+08:00",
+  "passed": false,
+  "halted": true,
+  "terminal_stage": "pre_pnl_density_screen",
+  "results_csv": "backtest-campaigns/nq_pivot_filtered_opening_range_orderflow_breakout/campaign_results.csv",
+  "density_audit": "research_artifacts/nq_pivot_filtered_opening_range_orderflow_breakout_density_audit_20260630.md",
+  "density_audit_csv": "research_artifacts/nq_pivot_filtered_opening_range_orderflow_breakout_density_audit_20260630.csv",
+  "methodology_audit": "campaigns/nq_pivot_filtered_opening_range_orderflow_breakout/methodology_audit.md",
+  "summary": "Rejected before staged NQ PnL: 21/45 declared entry-grid rows failed at least one 50 signals/year density gate. The OR15 large10 and OR15 signed variants cleared full-history, limited-core, and latest-252-session density, but OR30 large20 and OR60 signed failed every entry row and OR30 signed failed three limited-core rows. Dropping the sparse variants, widening the entry windows, or removing the pivot/orderflow requirements would change the declared five-variant edge and duplicate broader ORB families. No NQ PnL was inspected.",
+  "density_rows": 45,
+  "density_fail_rows": 21,
+  "density_passing_variants": [
+    "or15_large10_pivot_flow_breakout_1030",
+    "or15_signed_pivot_flow_breakout_1030"
+  ],
+  "density_failed_variants": [
+    "or30_large20_pivot_flow_breakout_1100",
+    "or30_signed_pivot_flow_breakout_1100",
+    "or60_signed_pivot_flow_breakout_1200"
+  ],
+  "variant_summary": [
+    {
+      "variant_id": "or15_large10_pivot_flow_breakout_1030",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 59.191223,
+      "min_limited_core_signals_per_year": 58.932181,
+      "min_latest_252_signals": 54,
+      "full_failures": 0,
+      "limited_core_failures": 0,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "or15_signed_pivot_flow_breakout_1030",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 60.356915,
+      "min_limited_core_signals_per_year": 63.465426,
+      "min_latest_252_signals": 57,
+      "full_failures": 0,
+      "limited_core_failures": 0,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "or30_large20_pivot_flow_breakout_1100",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 40.151596,
+      "min_limited_core_signals_per_year": 36.265957,
+      "min_latest_252_signals": 35,
+      "full_failures": 9,
+      "limited_core_failures": 9,
+      "latest_failures": 9
+    },
+    {
+      "variant_id": "or30_signed_pivot_flow_breakout_1100",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 53.233245,
+      "min_limited_core_signals_per_year": 48.570479,
+      "min_latest_252_signals": 58,
+      "full_failures": 0,
+      "limited_core_failures": 3,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "or60_signed_pivot_flow_breakout_1200",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 31.732713,
+      "min_limited_core_signals_per_year": 29.789894,
+      "min_latest_252_signals": 34,
+      "full_failures": 9,
+      "limited_core_failures": 9,
+      "latest_failures": 9
+    }
+  ],
+  "stages_not_run": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ]
+}

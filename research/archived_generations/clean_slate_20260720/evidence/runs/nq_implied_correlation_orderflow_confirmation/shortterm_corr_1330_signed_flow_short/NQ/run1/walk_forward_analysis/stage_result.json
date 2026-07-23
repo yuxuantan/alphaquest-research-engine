@@ -1,0 +1,314 @@
+{
+  "stage": "walk_forward_analysis",
+  "label": "Walk Forward Analysis (WFA)",
+  "status": "failed",
+  "passed": false,
+  "started_at": "2026-06-23T13:44:48",
+  "completed_at": "2026-06-23T15:20:55",
+  "duration_seconds": 5767.178633,
+  "criteria": [
+    {
+      "metric": "summary.early_exit",
+      "actual": false,
+      "expected": {
+        "equals": false
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.profit_factor",
+      "actual": 0.8877429905309524,
+      "expected": {
+        "min": 1.2
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.mar",
+      "actual": -0.062208940108462375,
+      "expected": {
+        "min": 0.4
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.trades_per_year",
+      "actual": 53.0317629084109,
+      "expected": {
+        "min": 50
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "windows": 10,
+    "objective": "MAR",
+    "window_mode": "unanchored",
+    "train_months": 48,
+    "test_months": 12,
+    "step_months": 12,
+    "parallel": {
+      "enabled": true,
+      "scope": "window_grid",
+      "workers": 3
+    },
+    "selection_filter": {
+      "exclusive_min_trades_per_year": 50
+    },
+    "early_exit_min_train_profit_factor": 1.0,
+    "early_exit_require_train_profitable": false,
+    "early_exit": false,
+    "passing_windows": 0,
+    "profitable_windows": 6,
+    "profitable_window_rate": 0.6,
+    "meets_profitable_window_benchmark": false,
+    "median_test_net_profit": 150.0,
+    "median_test_mar": 0.044276771028915196,
+    "median_test_cagr": 0.0011764629295882845,
+    "median_test_max_drawdown_pct": 0.031364664661683306,
+    "train_grid_reports_retained": true,
+    "train_grid_report_files": [
+      "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_001_train_grid.csv",
+      "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_002_train_grid.csv",
+      "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_003_train_grid.csv",
+      "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_004_train_grid.csv",
+      "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_005_train_grid.csv",
+      "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_006_train_grid.csv",
+      "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_007_train_grid.csv",
+      "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_008_train_grid.csv",
+      "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_009_train_grid.csv",
+      "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_010_train_grid.csv"
+    ],
+    "reuse_existing_train_grids_requested": false,
+    "reused_existing_train_grids": false,
+    "reused_train_grid_count": 0,
+    "strict_train_grid_reuse": true,
+    "phase_timings_seconds": {
+      "slice_windows": 1.429329,
+      "train_grid_compute": 5727.797987,
+      "train_grid_write": 0.045908,
+      "oos_backtest": 34.319141,
+      "annotate_oos_trades": 0.011911,
+      "stitch_oos_trades": 0.004876
+    },
+    "window_timings_seconds": [
+      {
+        "window_id": 1.0,
+        "slice_seconds": 0.075509,
+        "train_grid_seconds": 504.009554,
+        "train_grid_write_seconds": 0.005336,
+        "oos_backtest_seconds": 3.131413,
+        "total_seconds": 507.224039,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 2.0,
+        "slice_seconds": 0.129088,
+        "train_grid_seconds": 570.957882,
+        "train_grid_write_seconds": 0.006258,
+        "oos_backtest_seconds": 4.349253,
+        "total_seconds": 575.44783,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 3.0,
+        "slice_seconds": 0.189831,
+        "train_grid_seconds": 632.284874,
+        "train_grid_write_seconds": 0.004812,
+        "oos_backtest_seconds": 3.753007,
+        "total_seconds": 636.235049,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 4.0,
+        "slice_seconds": 0.174104,
+        "train_grid_seconds": 575.51996,
+        "train_grid_write_seconds": 0.004273,
+        "oos_backtest_seconds": 3.167789,
+        "total_seconds": 578.868498,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 5.0,
+        "slice_seconds": 0.135519,
+        "train_grid_seconds": 577.944607,
+        "train_grid_write_seconds": 0.004361,
+        "oos_backtest_seconds": 3.385495,
+        "total_seconds": 581.472267,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 6.0,
+        "slice_seconds": 0.139622,
+        "train_grid_seconds": 583.587574,
+        "train_grid_write_seconds": 0.004464,
+        "oos_backtest_seconds": 3.348576,
+        "total_seconds": 587.084956,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 7.0,
+        "slice_seconds": 0.165438,
+        "train_grid_seconds": 561.197088,
+        "train_grid_write_seconds": 0.003707,
+        "oos_backtest_seconds": 3.207197,
+        "total_seconds": 564.575664,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 8.0,
+        "slice_seconds": 0.137723,
+        "train_grid_seconds": 588.350209,
+        "train_grid_write_seconds": 0.00412,
+        "oos_backtest_seconds": 3.528479,
+        "total_seconds": 592.022753,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 9.0,
+        "slice_seconds": 0.129342,
+        "train_grid_seconds": 560.42626,
+        "train_grid_write_seconds": 0.004326,
+        "oos_backtest_seconds": 3.336971,
+        "total_seconds": 563.899347,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 10.0,
+        "slice_seconds": 0.153153,
+        "train_grid_seconds": 573.519978,
+        "train_grid_write_seconds": 0.004251,
+        "oos_backtest_seconds": 3.110961,
+        "total_seconds": 576.790493,
+        "reused_train_grid": false
+      }
+    ],
+    "stitched_oos_trades": 523,
+    "stitched_oos_metrics": {
+      "total_trades": 523,
+      "trades_per_year": 53.0317629084109,
+      "net_profit": -21280.0,
+      "profit_factor": 0.8877429905309524,
+      "expectancy_r": 0.012687135585872353,
+      "max_drawdown": 42300.0,
+      "max_drawdown_pct": 0.24745524745524747,
+      "cagr": -0.015393928668468226,
+      "mar": -0.062208940108462375,
+      "worst_day": -2490.0,
+      "best_day": 4600.0,
+      "best_day_concentration": 0.0,
+      "max_consecutive_losses": 9,
+      "positive_month_rate": 0.4659090909090909,
+      "win_rate": 0.44550669216061184,
+      "average_trade": -40.68833652007648,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0
+    },
+    "oos_evaluation_years": 10.001368925393566,
+    "required_oos_mar": 0.6593718606573377,
+    "incubation_selected_params": {
+      "entry.params.term_spread_rank_min": 0.55,
+      "entry.params.min_orderflow_imbalance": 0.0025,
+      "sl.params.stop_pct": 0.0025,
+      "tp.params.target_r_multiple": 2.0
+    },
+    "configured_data_subset": {},
+    "resolved_data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2024-11-25",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2024-11-25",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "actual_data_period": {
+      "first_timestamp": "2011-01-03 09:30:00-05:00",
+      "last_timestamp": "2024-11-25 15:59:00-05:00",
+      "rows": 1338480,
+      "strategy_rows": 1338480,
+      "timeframe": "1m",
+      "source_timeframe": "1m"
+    },
+    "equity_curve_csv": "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/equity_curve.csv",
+    "equity_curve_html": "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/equity_curve.html",
+    "equity_curve_points": 524
+  },
+  "stitched_oos_metrics": {
+    "total_trades": 523,
+    "trades_per_year": 53.0317629084109,
+    "net_profit": -21280.0,
+    "profit_factor": 0.8877429905309524,
+    "expectancy_r": 0.012687135585872353,
+    "max_drawdown": 42300.0,
+    "max_drawdown_pct": 0.24745524745524747,
+    "cagr": -0.015393928668468226,
+    "mar": -0.062208940108462375,
+    "worst_day": -2490.0,
+    "best_day": 4600.0,
+    "best_day_concentration": 0.0,
+    "max_consecutive_losses": 9,
+    "positive_month_rate": 0.4659090909090909,
+    "win_rate": 0.44550669216061184,
+    "average_trade": -40.68833652007648,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "incubation_selected_params": {
+    "entry.params.term_spread_rank_min": 0.55,
+    "entry.params.min_orderflow_imbalance": 0.0025,
+    "sl.params.stop_pct": 0.0025,
+    "tp.params.target_r_multiple": 2.0
+  },
+  "data_quality": {
+    "rows": 1338480,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 0,
+    "first_timestamp": "2011-01-03 09:30:00-05:00",
+    "last_timestamp": "2024-11-25 15:59:00-05:00",
+    "roll_boundary_sessions_skipped": 0,
+    "loaded_rows": 1338480,
+    "strategy_rows": 1338480,
+    "timeframe": "1m",
+    "timeframe_minutes": 1,
+    "source_timeframe": "1m",
+    "prepare_data_duration_seconds": 3.179726,
+    "prepared_data_cache": {
+      "enabled": true,
+      "hit": false,
+      "key": "1d576fee135826833d001c1fc5e153d4ebf64b5700a11829ca703ad27fcf661e"
+    }
+  },
+  "input_hash": "692eaa307db06856e35b495888a7d687068b948dbfa7069ac0045050ed7889ff",
+  "artifacts": [
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/equity_curve.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/equity_curve.html",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/wfa_oos_trade_log.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/wfa_results.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/wfa_summary.json",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_001_train_grid.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_002_train_grid.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_003_train_grid.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_004_train_grid.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_005_train_grid.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_006_train_grid.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_007_train_grid.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_008_train_grid.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_009_train_grid.csv",
+    "backtest-campaigns/nq_implied_correlation_orderflow_confirmation/shortterm_corr_1330_signed_flow_short/NQ/run1/walk_forward_analysis/window_010_train_grid.csv"
+  ]
+}

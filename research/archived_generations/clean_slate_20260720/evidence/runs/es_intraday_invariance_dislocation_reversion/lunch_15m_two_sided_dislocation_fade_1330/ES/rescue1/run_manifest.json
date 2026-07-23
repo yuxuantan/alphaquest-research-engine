@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_intraday_invariance_dislocation_reversion",
+  "variant_id": "lunch_15m_two_sided_dislocation_fade_1330",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_intraday_invariance_dislocation_reversion/lunch_15m_two_sided_dislocation_fade_1330/variant.yaml",
+    "hash": "ccd58ebb49da35dabdb68b224a24eb9f40af8222406426404d446199309785c1",
+    "mechanic": {
+      "entry_module": "intraday_invariance_dislocation_reversion",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "14:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_intraday_invariance_dislocation_reversion/rescue_attempts/parameter_space_rescue_1/lunch_15m_two_sided_dislocation_fade_1330/config.yaml",
+  "effective_config": "backtest-campaigns/es_intraday_invariance_dislocation_reversion/lunch_15m_two_sided_dislocation_fade_1330/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_intraday_invariance_dislocation_reversion/lunch_15m_two_sided_dislocation_fade_1330/ES/rescue1/source_config.yaml",
+  "config_hash": "ea7f1c298390576e346d5e8b8e392d14ba29951cc60a75fcec441ed6490d838c",
+  "source_config_hash": "ed198042e9585a71be36f6cde31fb9e02c9a1bbeb8a851715d875e607e93da92",
+  "source_results_index": "campaigns/es_intraday_invariance_dislocation_reversion/results_index.yaml",
+  "created_at": "2026-06-20T03:55:07",
+  "updated_at": "2026-06-20T03:55:07",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

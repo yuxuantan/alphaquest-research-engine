@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_rolling_stat_envelope_orderflow_reversion",
+  "variant_id": "late_morning_5m_large10_12bar_reversion_1230",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/late_morning_5m_large10_12bar_reversion_1230/variant.yaml",
+    "hash": "814853235cbe3909ecb4d83735b00e45c3c016a35976aad4f12fdf6ec56f9a4f",
+    "mechanic": {
+      "entry_module": "rolling_stat_envelope_orderflow_reversion",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "13:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_rolling_stat_envelope_orderflow_reversion/variants/late_morning_5m_large10_12bar_reversion_1230/config.yaml",
+  "effective_config": "backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/late_morning_5m_large10_12bar_reversion_1230/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/late_morning_5m_large10_12bar_reversion_1230/ES/run1/source_config.yaml",
+  "config_hash": "12f5c8f4a2b3629c3e2f0d8d94e55d327dade88809c2cee4e4b8e7bd684078dc",
+  "source_config_hash": "269c9402a1aafe031c04abd16ad7ef7372b5da8f714d9e53296a67fc8b6ce11b",
+  "source_results_index": "campaigns/es_rolling_stat_envelope_orderflow_reversion/results_index.yaml",
+  "created_at": "2026-06-19T01:18:34",
+  "updated_at": "2026-06-19T01:18:34",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

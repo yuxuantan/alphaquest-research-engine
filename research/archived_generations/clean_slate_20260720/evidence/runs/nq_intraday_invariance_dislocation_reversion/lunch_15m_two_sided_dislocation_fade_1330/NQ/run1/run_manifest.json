@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_intraday_invariance_dislocation_reversion",
+  "variant_id": "lunch_15m_two_sided_dislocation_fade_1330",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_intraday_invariance_dislocation_reversion/lunch_15m_two_sided_dislocation_fade_1330/variant.yaml",
+    "hash": "9974095fd4d5fba2372ef48b9ae385bee5e0afa6d41fee319a3f39fe02c85618",
+    "mechanic": {
+      "entry_module": "intraday_invariance_dislocation_reversion",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "14:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_intraday_invariance_dislocation_reversion/variants/lunch_15m_two_sided_dislocation_fade_1330/config.yaml",
+  "effective_config": "backtest-campaigns/nq_intraday_invariance_dislocation_reversion/lunch_15m_two_sided_dislocation_fade_1330/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_intraday_invariance_dislocation_reversion/lunch_15m_two_sided_dislocation_fade_1330/NQ/run1/source_config.yaml",
+  "config_hash": "c79b0a5fb3d7713b0c998d1db69030dd9e4155f7db4571b8e3eba32318604a4b",
+  "source_config_hash": "4e605c5ac207874c19a81aaf6d04113b17fec9d5854d6de624fd93e9a1048fcb",
+  "source_results_index": "campaigns/nq_intraday_invariance_dislocation_reversion/results_index.yaml",
+  "created_at": "2026-06-23T11:21:36",
+  "updated_at": "2026-06-23T11:21:36",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

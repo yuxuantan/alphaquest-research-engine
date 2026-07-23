@@ -1,0 +1,63 @@
+{
+  "campaign_id": "es_trend_filtered_mes_participation_crowding",
+  "variant_id": "morning_trade_trend_pullback_reversal_1030",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/variant.yaml",
+    "hash": "bae1fc1a2cbc7cbc85ffa0e85930296443033611819b5c8cd98eaf4ca9d599a5",
+    "mechanic": {
+      "entry_module": "trend_filtered_mes_participation_crowding",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_trend_filtered_mes_participation_crowding/variants/morning_trade_trend_pullback_reversal_1030/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/run1/source_config.yaml",
+  "config_hash": "4eaa9d7d7e1b59d518913c58b424ff0d94b0420e564eaeba33d9ef335e0a5fa0",
+  "source_config_hash": "354771439ba4fd8a31561d8215dd6a7323e3d055d79bedebb9c2cf395f2a907d",
+  "created_at": "2026-06-18T08:07:26",
+  "updated_at": "2026-06-21T12:54:00",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/run1/effective_config.yaml",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:54:00"
+  }
+}

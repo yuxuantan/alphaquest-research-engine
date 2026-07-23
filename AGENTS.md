@@ -45,7 +45,10 @@ Core principles:
 
 5. Campaign structure
 - One campaign = one potential edge.
-- One campaign must generate exactly 5 distinct strategy variants expressing the edge through different mechanics.
+- A campaign starts with exactly one manually specified variant and may contain at most 5 variants.
+- Do not design later variants at campaign creation. A later variant may be proposed only after the immediately prior variant has passed manual mechanics review and received a terminal scientific `FAIL`.
+- A later variant may use the prior failure evidence to express the same economic edge through different mechanics. Record the predecessor result path and hash, the failure analysis, author, and timestamp. Never edit prior frozen variants.
+- A mechanics-review rejection is an implementation correction to the same variant, not a new variant.
 - Each variant must have:
   - entry module
   - stop-loss module
@@ -53,7 +56,7 @@ Core principles:
   - config YAML
   - rationale for mechanics
   - rationale for timeframe/session choice if timeframe is used
-- Parameter space must be declared before testing.
+- Parameter space must be declared before testing. An empty parameter mapping is valid and means the frozen default config is the single tested combination; it is not a separate assessment lane and must not block WFA, incubation, or acceptance.
 - Tunable parameters are capped at:
   - maximum 2 entry parameters
   - maximum 1 take-profit parameter
@@ -61,13 +64,34 @@ Core principles:
 - Total parameter combinations should normally be between 8 and 120. If there are no tunable parameters, the strategy has exactly 1 combination.
 - Use the same config set for all tests in the campaign unless a single rescue attempt is explicitly invoked.
 
+5A. Custom strategy certification and publication
+- Never place arbitrary Python entered in Studio directly into an executable campaign.
+- If the idea cannot use an existing certified module, first create a durable engineering handoff. The handoff is `NEEDS MANUAL REVIEW` and cannot be published or performance-tested.
+- Implement custom strategy logic as a repository module using the generic engine and runner. Do not create a strategy-specific copy of the backtest engine.
+- Add or update a versioned manifest under `src/alphaquest/strategy_certifications/`. It must declare the stable strategy ID, implementation version, generic execution lane, importable factory, entry/stop/target bindings, every execution-affecting source file, required test categories, and executable pytest paths or node IDs.
+- The certification manifest must also declare every accepted event parameter with its type, reviewed default, methodology category (`entry`, `sl`, or `tp`), bounds/choices, whether Studio may edit the fixed value, and whether the parameter is eligible for predeclared tuning.
+- Required certification coverage includes session logic, entry timing, stop/target ordering, forced flatten, no lookahead, and registry/runner integration.
+- Run `alphaquest strategy certify <strategy_id> --project-root .` only after the required tests pass. Certification binds the manifest to the exact tested source bytes.
+- Expose only currently certified manifests in Studio as selectable strategy packages. `developer_only`, missing, stale, or hash-drifted implementations remain unavailable for publication.
+- Publication must embed the strategy ID, implementation version, implementation SHA-256, and certification-manifest SHA-256 in the compiled config, strategy spec, and authoring manifest.
+- Preflight and runtime must fail closed if the selected strategy is unregistered, uncertified, has source drift, has a non-importable factory, or does not match the config's declared certification identity.
+- Any execution-affecting source change requires a version review, required test rerun, recertification, regenerated validation evidence, and fresh manual mechanics approval. Never carry an approval across an implementation hash change.
+- Certified event optimization must use `strategy.event.params` as the sole executable parameter path. Never place an event grid under `strategy.entry.params` or maintain a second independently editable runtime copy.
+- Studio must write the identical certified event grid to `core_grid.parameters` and `wfa.parameters`, require the reviewed default in every tunable dimension, enforce semantic entry/SL/TP budgets, and reject undeclared or certification-fixed parameters.
+- If a published variant has no performance evidence yet, a parameter-space declaration must create an immutable `pre_pnl_parameter_declaration` attempt with fresh hashes and mechanics approval. Never edit the original config in place or declare a grid after PnL has been generated.
+
 6. Testing discipline
+- Before any performance test or optimization stage, cross-check a fixed deterministic sample of 5 random backtest entries (or all entries if fewer than 5 exist) plus required risk cases at the variant's declared default parameters against charting software. Record every sampled trade, reviewer annotation, config hash, input-data hash, and approval. All sampled entries and automated checks must pass.
+- For a certified custom strategy, validation evidence and approval must also record and match the implementation version, implementation SHA-256, and certification-manifest SHA-256.
+- Mechanics approval gates every PnL-bearing stage, including a one-combination fixed config, optimization, walk-forward analysis, Monte Carlo, incubation, and acceptance.
+- A variant without current manual mechanics approval cannot receive `PASS` or `FAIL`; classify it `NEEDS MANUAL REVIEW`.
 - Use contiguous or purged time-series splits. Do not randomly sample individual bars.
 - Keep the latest locked holdout untouched until the strategy is frozen.
 - Do not use the final holdout to tune strategy mechanics, parameters, timeframe, or filters.
 - Walk-forward selection must choose parameters using only the in-sample window.
 - Out-of-sample results must be stitched from unseen windows.
 - After a strategy reaches OOS, allow only rejection or promotion. No silent tweaking.
+- Do not create a later variant after `PASS` or `NEEDS MANUAL REVIEW`; only a reviewed `FAIL` unlocks the next variant.
 
 7. Robustness requirements
 For every strategy candidate, report:

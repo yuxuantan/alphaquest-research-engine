@@ -1,0 +1,88 @@
+{
+  "campaign_id": "nq_signed_orderflow_persistence",
+  "title": "NQ Signed Orderflow Persistence",
+  "decision": "FAIL",
+  "terminal_stage": "pre_pnl_density_screen",
+  "completed_at": "2026-06-30T17:05:00+08:00",
+  "source_campaign": "es_signed_orderflow_persistence",
+  "preflight": {
+    "passed": true,
+    "configs_checked": 5,
+    "tests_ran": true
+  },
+  "unit_tests": {
+    "command": "python3 -m pytest -q tests/test_nq_signed_orderflow_persistence.py",
+    "passed": true,
+    "tests": 2
+  },
+  "density_audit": {
+    "artifact": "research_artifacts/nq_signed_orderflow_persistence_density_audit_20260630.md",
+    "csv": "research_artifacts/nq_signed_orderflow_persistence_density_audit_20260630.csv",
+    "declared_entry_rows": 45,
+    "density_pass_rows": 20,
+    "density_fail_rows": 25,
+    "min_full_signals_per_year": 32.774694,
+    "min_limited_signals_per_year": 38.276643,
+    "min_latest_signal_sessions": 7
+  },
+  "failure_reason": "Rejected before staged NQ PnL: only 20/45 declared signed-flow entry-grid rows passed the pre-PnL density screen. The weakest declared corners produced 32.77 full-history signals/year, 38.28 limited-core proxy signals/year, and 7 latest-window signals. Narrowing the grid to the passing rows after this density screen would change the declared five-variant edge after observing signal availability, so no staged PnL was run.",
+  "staged_pnl_run": false,
+  "monkey_reached": 0,
+  "wfa_reached": 0,
+  "monte_carlo_reached": 0,
+  "simulated_incubation_reached": 0,
+  "acceptance_oos_reached": 0,
+  "candidate_strategy_report_created": false,
+  "variant_density_summary": [
+    {
+      "variant_id": "afternoon_60m_signed_flow_continuation_1400",
+      "rows": 9,
+      "pass_rows": 3,
+      "fail_rows": 6,
+      "min_full_signals_per_year": 32.774694,
+      "min_limited_signals_per_year": 62.280639,
+      "min_latest_signal_sessions": 7,
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "early_5m_signed_flow_continuation_1000",
+      "rows": 9,
+      "pass_rows": 6,
+      "fail_rows": 3,
+      "min_full_signals_per_year": 60.950567,
+      "min_limited_signals_per_year": 66.173179,
+      "min_latest_signal_sessions": 40,
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "late_large20_30m_flow_continuation_1500",
+      "rows": 9,
+      "pass_rows": 5,
+      "fail_rows": 4,
+      "min_full_signals_per_year": 63.411908,
+      "min_limited_signals_per_year": 38.276643,
+      "min_latest_signal_sessions": 87,
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "late_morning_15m_signed_flow_continuation_1130",
+      "rows": 9,
+      "pass_rows": 3,
+      "fail_rows": 6,
+      "min_full_signals_per_year": 37.114426,
+      "min_limited_signals_per_year": 46.061723,
+      "min_latest_signal_sessions": 14,
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "midday_30m_signed_flow_continuation_1230",
+      "rows": 9,
+      "pass_rows": 3,
+      "fail_rows": 6,
+      "min_full_signals_per_year": 34.847402,
+      "min_limited_signals_per_year": 48.65675,
+      "min_latest_signal_sessions": 8,
+      "decision": "FAIL"
+    }
+  ]
+}

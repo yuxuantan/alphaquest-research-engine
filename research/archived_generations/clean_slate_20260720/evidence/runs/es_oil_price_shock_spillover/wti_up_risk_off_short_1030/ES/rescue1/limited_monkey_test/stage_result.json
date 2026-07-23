@@ -1,0 +1,267 @@
+{
+  "stage": "limited_monkey_test",
+  "label": "Limited Monkey Test",
+  "status": "failed",
+  "passed": false,
+  "started_at": "2026-06-20T19:05:25",
+  "completed_at": "2026-06-20T19:11:53",
+  "duration_seconds": 387.713871,
+  "criteria": [
+    {
+      "metric": "summary.core_beats_monkey_net_profit_rate",
+      "actual": 0.836125,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": false
+    },
+    {
+      "metric": "summary.core_beats_monkey_max_drawdown_rate",
+      "actual": 0.425125,
+      "expected": {
+        "min": 0.9
+      },
+      "passed": false
+    },
+    {
+      "metric": "summary.core_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "number_of_runs": 8000,
+    "core_metrics": {
+      "total_trades": 123,
+      "long_trades": 0,
+      "short_trades": 123,
+      "long_ratio": 0.0,
+      "average_bars_in_trade": 266.8943089430894,
+      "max_bars_in_trade": 326,
+      "net_profit": -846.25,
+      "max_drawdown": 7858.75,
+      "max_drawdown_pct": 0.05011798093173049,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0
+    },
+    "beat_threshold": 0.9,
+    "core_beats_monkey_net_profit_rate": 0.836125,
+    "core_beats_monkey_max_drawdown_rate": 0.425125,
+    "meets_monkey_goal": false,
+    "number_passing_benchmark": 112,
+    "percentage_passing_benchmark": 0.014,
+    "profitable_iterations": 931,
+    "percentage_profitable": 0.116375,
+    "median_net_profit": -4865.0,
+    "p5_net_profit": -11630.0,
+    "p95_net_profit": 1932.5,
+    "median_max_drawdown": 7298.75,
+    "p5_max_drawdown": 3552.5,
+    "p95_max_drawdown": 12935.0,
+    "median_average_bars_in_trade": 266.8943089430894,
+    "median_long_ratio": 0.025423728813559324,
+    "representative_profitable_run": {
+      "run_id": 5356,
+      "total_trades": 118,
+      "long_trades": 1,
+      "short_trades": 117,
+      "long_ratio": 0.00847457627118644,
+      "average_bars_in_trade": 270.59322033898303,
+      "trade_count_delta": -5,
+      "long_ratio_delta": 0.00847457627118644,
+      "average_bars_delta": 3.6989113958936173,
+      "net_profit": 1610.0,
+      "max_drawdown": 3447.5,
+      "max_drawdown_pct": 0.022280027143180278,
+      "profit_factor": 1.0931712962962963,
+      "expectancy_r": 0.046932112335288816,
+      "win_rate": 0.4406779661016949,
+      "apex_rule_violations": 0,
+      "profitable": true,
+      "core_net_profit_gt_monkey": false,
+      "core_max_drawdown_lt_monkey": false,
+      "benchmark_passed": false,
+      "failure_reason": "min_profit_factor;min_mar;max_best_day_concentration;min_positive_month_rate",
+      "profitable_median_net_profit": 1610.0
+    },
+    "constraints": {
+      "trade_count_tolerance_pct": 0.05,
+      "trade_count_tolerance": 0,
+      "long_short_ratio_tolerance": 0.05,
+      "average_bars_tolerance_pct": 0.1,
+      "duration_sampling": "core_distribution",
+      "duration_shape": 0.7,
+      "max_duration_bars": 326,
+      "max_feasible_duration_bars": 386,
+      "rth_only": true,
+      "enforce_non_overlapping": true,
+      "enforce_max_trades_per_day": false
+    },
+    "iteration_reports_retained": false,
+    "iteration_report_files": [],
+    "data_subset": {
+      "start_date": "2011-02-22",
+      "end_date": "2012-09-06",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "parallel": {
+      "enabled": true,
+      "workers": 8,
+      "scope": "runs"
+    },
+    "trade_path_stress": {
+      "enabled": false,
+      "skipped": true,
+      "skip_reason": "trade-path stress is globally disabled for campaign stages; monkey gates use random-entry core-beat rates",
+      "configured_data_subset": {
+        "start_date": "2011-01-03",
+        "end_date": "2026-06-09",
+        "session_labels": [
+          "RTH"
+        ]
+      },
+      "resolved_data_subset": {
+        "start_date": "2011-02-22",
+        "end_date": "2012-09-06",
+        "session_labels": [
+          "RTH"
+        ]
+      },
+      "data_subset": {
+        "start_date": "2011-02-22",
+        "end_date": "2012-09-06",
+        "session_labels": [
+          "RTH"
+        ]
+      },
+      "actual_data_period": {
+        "first_timestamp": "2011-02-22 09:30:00-05:00",
+        "last_timestamp": "2012-09-06 15:59:00-04:00",
+        "rows": 145860,
+        "strategy_rows": 145860,
+        "timeframe": "1m",
+        "source_timeframe": "1m"
+      }
+    },
+    "selected_core_params": {
+      "entry.params.oil_return_rank_min": 0.65,
+      "sl.params.stop_pct": 0.006,
+      "tp.params.target_r_multiple": 2.5
+    },
+    "selected_core_row": {
+      "run_id": 9,
+      "entry.params.oil_return_rank_min": 0.65,
+      "sl.params.stop_pct": 0.006,
+      "tp.params.target_r_multiple": 2.5,
+      "total_trades": 105,
+      "trades_per_year": 84.99349764915009,
+      "net_profit": 893.75,
+      "profit_factor": 1.0491071428571428,
+      "expectancy_r": 0.0505410608305748,
+      "max_drawdown": 5911.25,
+      "max_drawdown_pct": 0.0376980963617231,
+      "cagr": 0.0048203123926169,
+      "mar": 0.1278662016873416,
+      "win_rate": 0.4285714285714285,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0,
+      "profitable": true,
+      "worst_day": -442.5,
+      "best_day_concentration": 1.1342657342657343,
+      "consecutive_losses": 10,
+      "benchmark_passed": false,
+      "failure_reason": "min_profit_factor;min_mar;max_consecutive_losses;max_best_day_concentration"
+    },
+    "configured_data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2026-06-09",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "resolved_data_subset": {
+      "start_date": "2011-02-22",
+      "end_date": "2012-09-06",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "actual_data_period": {
+      "first_timestamp": "2011-02-22 09:30:00-05:00",
+      "last_timestamp": "2012-09-06 15:59:00-04:00",
+      "rows": 145860,
+      "strategy_rows": 145860,
+      "timeframe": "1m",
+      "source_timeframe": "1m"
+    }
+  },
+  "data_quality": {
+    "rows": 145860,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 0,
+    "first_timestamp": "2011-02-22 09:30:00-05:00",
+    "last_timestamp": "2012-09-06 15:59:00-04:00",
+    "roll_boundary_sessions_skipped": 0,
+    "loaded_rows": 145860,
+    "strategy_rows": 145860,
+    "timeframe": "1m",
+    "timeframe_minutes": 1,
+    "source_timeframe": "1m",
+    "prepare_data_duration_seconds": 1.161328,
+    "prepared_data_cache": {
+      "enabled": true,
+      "hit": false,
+      "key": "77cce00287e99bdf9f39c80ecc241785882ad73a6dd7debcc29fe5b3ebb9a992"
+    }
+  },
+  "input_hash": "4b878ec634d7bfad334902d112b9507cb60074e6f445dcd016ab18478d180c33",
+  "selected_core_params": {
+    "entry.params.oil_return_rank_min": 0.65,
+    "sl.params.stop_pct": 0.006,
+    "tp.params.target_r_multiple": 2.5
+  },
+  "selected_core_row": {
+    "run_id": 9,
+    "entry.params.oil_return_rank_min": 0.65,
+    "sl.params.stop_pct": 0.006,
+    "tp.params.target_r_multiple": 2.5,
+    "total_trades": 105,
+    "trades_per_year": 84.99349764915009,
+    "net_profit": 893.75,
+    "profit_factor": 1.0491071428571428,
+    "expectancy_r": 0.0505410608305748,
+    "max_drawdown": 5911.25,
+    "max_drawdown_pct": 0.0376980963617231,
+    "cagr": 0.0048203123926169,
+    "mar": 0.1278662016873416,
+    "win_rate": 0.4285714285714285,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0,
+    "profitable": true,
+    "worst_day": -442.5,
+    "best_day_concentration": 1.1342657342657343,
+    "consecutive_losses": 10,
+    "benchmark_passed": false,
+    "failure_reason": "min_profit_factor;min_mar;max_consecutive_losses;max_best_day_concentration"
+  },
+  "artifacts": [
+    "backtest-campaigns/es_oil_price_shock_spillover/wti_up_risk_off_short_1030/ES/rescue1/limited_monkey_test/monkey_results.csv",
+    "backtest-campaigns/es_oil_price_shock_spillover/wti_up_risk_off_short_1030/ES/rescue1/limited_monkey_test/monkey_summary.json",
+    "backtest-campaigns/es_oil_price_shock_spillover/wti_up_risk_off_short_1030/ES/rescue1/limited_monkey_test/stage_result.json",
+    "backtest-campaigns/es_oil_price_shock_spillover/wti_up_risk_off_short_1030/ES/rescue1/limited_monkey_test/trade_path_stress_results.csv",
+    "backtest-campaigns/es_oil_price_shock_spillover/wti_up_risk_off_short_1030/ES/rescue1/limited_monkey_test/trade_path_stress_summary.json"
+  ],
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:52:01",
+    "monkey_runs": 8000,
+    "trade_path_stress": "skipped_by_global_disable",
+    "random_monkey": "preserved_existing_artifacts"
+  }
+}

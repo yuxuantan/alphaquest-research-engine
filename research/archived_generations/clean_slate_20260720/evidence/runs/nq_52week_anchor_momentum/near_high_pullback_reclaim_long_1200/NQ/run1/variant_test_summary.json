@@ -1,0 +1,147 @@
+{
+  "campaign_id": "nq_52week_anchor_momentum",
+  "variant_id": "near_high_pullback_reclaim_long_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_52week_anchor_momentum/near_high_pullback_reclaim_long_1200/variant.yaml",
+    "hash": "791258ca3e02fc13f3440f3bdb5e7d9a77e73e728ca3f791f6a8bf4679de4449",
+    "mechanic": {
+      "entry_module": "fifty_two_week_anchor_momentum",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_path": "backtest-campaigns/nq_52week_anchor_momentum/near_high_pullback_reclaim_long_1200/NQ/run1/effective_config.yaml",
+  "effective_config_path": "backtest-campaigns/nq_52week_anchor_momentum/near_high_pullback_reclaim_long_1200/NQ/run1/effective_config.yaml",
+  "source_config_path": "campaigns/nq_52week_anchor_momentum/variants/near_high_pullback_reclaim_long_1200/config.yaml",
+  "source_config_snapshot_path": "backtest-campaigns/nq_52week_anchor_momentum/near_high_pullback_reclaim_long_1200/NQ/run1/source_config.yaml",
+  "config_hash": "9e14b4bea65009aee5e65f563d5fa0f91dc02d43d840cdf2a5ee751f506d9399",
+  "source_config_hash": "85398fc3f15f295a39223ef07c5426e3bdf7edb5840f9f4b49c67ca11f4229ba",
+  "output_dir": "backtest-campaigns/nq_52week_anchor_momentum/near_high_pullback_reclaim_long_1200/NQ/run1",
+  "created_at": "2026-07-01T02:15:13",
+  "updated_at": "2026-07-01T02:15:13",
+  "skip_validation": false,
+  "fast_runtime_defaults": false,
+  "passed": false,
+  "halted": true,
+  "stages": [
+    {
+      "stage": "limited_core_grid_test",
+      "label": "Limited Core Grid Test",
+      "status": "error",
+      "passed": false,
+      "error": "Unsupported data.feature_set: completed_intraday_bars_plus_internal_prior_252_session_anchor. Expected one of ['full', 'intraday_capitulation_mr', 'none', 'opening_range', 'pdh_pdl_sweep'].",
+      "criteria": [
+        {
+          "metric": "summary.total_combinations_tested",
+          "actual": null,
+          "expected": {
+            "valid_parameter_combination_count": "1 fixed combo or 8-120 tunable combos"
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.percentage_profitable_iterations",
+          "actual": null,
+          "expected": {
+            "min": 0.7
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.apex_rule_violating_iterations",
+          "actual": null,
+          "expected": {
+            "max": 0
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "stage": "limited_monkey_test",
+      "label": "Limited Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "walk_forward_analysis",
+      "label": "Walk Forward Analysis (WFA)",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monkey_test",
+      "label": "WFA OOS Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monte_carlo",
+      "label": "WFA OOS Monte Carlo",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_core",
+      "label": "Simulated Incubation (OOS) Core",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_monkey",
+      "label": "Simulated Incubation (OOS) Monkey",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "acceptance_oos_test",
+      "label": "Acceptance OOS Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    }
+  ],
+  "source_results_index_path": "campaigns/nq_52week_anchor_momentum/results_index.yaml"
+}

@@ -212,6 +212,7 @@ class PositionDirective:
     stop_exit_reason: str | None = None
     flatten_reason: str | None = None
     flatten_tick: int | None = None
+    immediate_target_tick: int | None = None
     report_fields: Mapping[str, Any] = field(default_factory=dict)
     allow_inverted_oco: bool = False
     allow_marketable_bracket: bool = False
@@ -408,6 +409,7 @@ class CanonicalEventReplay:
         self._current_session: CanonicalEventSession | None = None
         self._current_session_view: EventReplaySessionView | None = None
         self._current_entry_start_ns: int | None = None
+        self._current_latest_entry_ns: int | None = None
         self._phase = "engine"
         self.stop_market_fill_policy = str(self.core.get("event_stop_market_fill_policy") or "")
         if self.stop_market_fill_policy not in {"exact_requested_price", "trade_event_price_on_gap"}:
@@ -473,6 +475,7 @@ class CanonicalEventReplay:
         self._current_session = None
         self._current_session_view = None
         self._current_entry_start_ns = None
+        self._current_latest_entry_ns = None
         self._phase = "engine"
         self._risk = DailyRisk(self.core)
         self._trades = []
@@ -499,6 +502,7 @@ class CanonicalEventReplay:
             "forced_flattens": 0,
             "events_at_or_after_cutoff_skipped": 0,
             "entry_events_blocked_before_start": 0,
+            "entry_events_blocked_after_latest_entry": 0,
         }
 
     @contextmanager
@@ -545,6 +549,7 @@ class CanonicalEventReplay:
         last_processed_event: CanonicalEvent | None = None
         cutoff_ns = self._session_cutoff_ns(session)
         self._current_entry_start_ns = self._session_entry_start_ns(session)
+        self._current_latest_entry_ns = self._session_latest_entry_ns(session)
         processed_events = 0
 
         for index in range(len(events)):
@@ -592,6 +597,7 @@ class CanonicalEventReplay:
         self._current_session = None
         self._current_session_view = None
         self._current_entry_start_ns = None
+        self._current_latest_entry_ns = None
 
     def _process_event(self, event: CanonicalEvent) -> None:
         strategy = self._strategy
@@ -625,7 +631,13 @@ class CanonicalEventReplay:
         )
         if before_entry_start:
             self._diagnostics["entry_events_blocked_before_start"] += 1
-        entries_blocked = pre.block_entries or before_entry_start
+        after_latest_entry = bool(
+            self._current_latest_entry_ns is not None and event.timestamp_ns > self._current_latest_entry_ns
+        )
+        if after_latest_entry:
+            self._diagnostics["entry_events_blocked_after_latest_entry"] += 1
+            self._cancel_all_orders("latest_entry_time", notify=True)
+        entries_blocked = pre.block_entries or before_entry_start or after_latest_entry
         if not entries_blocked and not closed and self._position is None:
             opened = self._evaluate_entry_orders(event)
 
@@ -637,6 +649,8 @@ class CanonicalEventReplay:
                 opened_this_event=opened,
                 entries_blocked=entries_blocked,
             )
+        if after_latest_entry:
+            self._cancel_all_orders("latest_entry_time", notify=True)
         _assert_event_unchanged(event, event_identity)
 
     def _evaluate_position(self, event: CanonicalEvent) -> bool:
@@ -680,6 +694,31 @@ class CanonicalEventReplay:
             directive = self._strategy.position_directive(event, self._position_view(), self._broker)
         _assert_event_unchanged(event, event_identity)
         _validate_report_fields(directive.report_fields)
+        if directive.immediate_target_tick is not None:
+            target_tick = int(directive.immediate_target_tick)
+            target_crossed = (
+                event.price_tick >= target_tick
+                if position.direction == "long"
+                else event.price_tick <= target_tick
+            )
+            valid_target = (
+                target_tick > position.entry_reference_tick
+                if position.direction == "long"
+                else target_tick < position.entry_reference_tick
+            )
+            if not valid_target or not target_crossed:
+                raise ValueError(
+                    "An immediate target fill must be favorable to the entry and crossed by the current event."
+                )
+            position.target_tick = target_tick
+            position.report_fields.update(copy.deepcopy(dict(directive.report_fields)))
+            self._close_position(
+                exit_tick=target_tick,
+                exit_timestamp=event.timestamp,
+                exit_event_index=event.event_index,
+                exit_reason="target",
+            )
+            return True
         if directive.flatten_reason is not None:
             _validate_flatten_tick(directive.flatten_tick, event)
             position.report_fields.update(copy.deepcopy(dict(directive.report_fields)))
@@ -1022,6 +1061,11 @@ class CanonicalEventReplay:
         entry_start = parse_time(self.core.get("entry_start", "00:00:00"))
         timezone = ZoneInfo(str(self.config.get("timezone") or self.core.get("timezone") or "America/New_York"))
         return int(pd.Timestamp.combine(pd.Timestamp(session.session_date), entry_start).tz_localize(timezone).value)
+
+    def _session_latest_entry_ns(self, session: CanonicalEventSession) -> int:
+        latest_entry = parse_time(self.core.get("latest_entry_time", self.core.get("flatten_time", "16:00:00")))
+        timezone = ZoneInfo(str(self.config.get("timezone") or self.core.get("timezone") or "America/New_York"))
+        return int(pd.Timestamp.combine(pd.Timestamp(session.session_date), latest_entry).tz_localize(timezone).value)
 
     def _entry_fill_reference_tick(self, order: EventEntryOrder, event: CanonicalEvent) -> int:
         if self.stop_market_fill_policy == "exact_requested_price":

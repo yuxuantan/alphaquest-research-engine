@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_spx_0dte_expiration_pressure",
+  "variant_id": "full_week_late_move_continuation_1430",
+  "test_run_id": "methodology_fix_rerun1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_spx_0dte_expiration_pressure/full_week_late_move_continuation_1430/variant.yaml",
+    "hash": "49374b81cffe65ac1f649fbda313f413586f14c534d5c4ac164c4b4725f5c482",
+    "mechanic": {
+      "entry_module": "spx_0dte_expiration_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "/tmp/zshXPP88R",
+  "source_config_snapshot": "backtest-campaigns/es_spx_0dte_expiration_pressure/full_week_late_move_continuation_1430/ES/methodology_fix_rerun1/source_config.yaml",
+  "config_hash": "034090caa99a63219cea82021e00c5aee8155e1052f5cf94a61331c7d5abd2a9",
+  "source_config_hash": "a57d0aab08aef29368289ac660bb12c82ecf3d0337f3ee9822046b01d1d924a2",
+  "created_at": "2026-06-17T09:57:07",
+  "updated_at": "2026-06-21T17:57:29",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_spx_0dte_expiration_pressure/full_week_late_move_continuation_1430/ES/methodology_fix_rerun1/effective_config.yaml",
+  "rerun_override": {
+    "monkey_runs": 8000,
+    "updated_at": "2026-06-21T17:57:29"
+  }
+}

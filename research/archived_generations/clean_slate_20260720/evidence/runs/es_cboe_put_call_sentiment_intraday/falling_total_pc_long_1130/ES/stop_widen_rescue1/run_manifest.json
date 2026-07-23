@@ -1,0 +1,65 @@
+{
+  "campaign_id": "es_cboe_put_call_sentiment_intraday",
+  "variant_id": "falling_total_pc_long_1130",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_cboe_put_call_sentiment_intraday/falling_total_pc_long_1130/variant.yaml",
+    "hash": "616501ff9a82422d1cedd16d7afb5a380ca7a6fcf1d97cbaa4e3992a8a9f2dc0",
+    "mechanic": {
+      "entry_module": "cboe_put_call_sentiment",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_cboe_put_call_sentiment_intraday/rescue_attempts/stop_distance_rescue_1/falling_total_pc_long_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_cboe_put_call_sentiment_intraday/falling_total_pc_long_1130/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_cboe_put_call_sentiment_intraday/falling_total_pc_long_1130/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "79c8672ec7f62055f4c5679a6f5ae6df89a203e6eb08c80f1f02b7bd825ca1fe",
+  "source_config_hash": "98ddeb4d4a9c93d5427801b0c0d0d73cb9723233a73162d648f7b872359f15ab",
+  "source_results_index": "campaigns/es_cboe_put_call_sentiment_intraday/results_index.yaml",
+  "created_at": "2026-06-19T08:59:25",
+  "updated_at": "2026-06-21T12:49:29",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:49:29"
+  }
+}

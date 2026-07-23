@@ -1,0 +1,88 @@
+{
+  "campaign_id": "nq_low_toxicity_orderflow_extension_fade",
+  "symbol": "NQ",
+  "decision": "FAIL",
+  "status": "completed",
+  "completed_at": "2026-06-30T13:44:09+08:00",
+  "passed": false,
+  "halted": true,
+  "terminal_stage": "pre_pnl_density_screen",
+  "results_csv": "backtest-campaigns/nq_low_toxicity_orderflow_extension_fade/campaign_results.csv",
+  "density_audit": "research_artifacts/nq_low_toxicity_orderflow_extension_fade_density_audit_20260630.md",
+  "density_audit_csv": "research_artifacts/nq_low_toxicity_orderflow_extension_fade_density_audit_20260630.csv",
+  "methodology_audit": "campaigns/nq_low_toxicity_orderflow_extension_fade/methodology_audit.md",
+  "summary": "Rejected before staged NQ PnL: 2/45 declared entry-grid rows failed the 50 signals/year limited-core density gate. The three-slot long, three-slot short, and two-slot late balanced variants cleared full-history, limited-core, and latest-252-session density, but the two-slot midday and two-slot morning variants each had the rank_threshold=0.25/min_return_ticks=6 corner below 50 signals/year in the limited-core window. Dropping those sparse corners or variants after this screen would be post-result narrowing of the declared five-variant edge. No NQ PnL was inspected.",
+  "density_rows": 45,
+  "density_fail_rows": 2,
+  "density_passing_variants": [
+    "three_slot_down_extension_fade_long",
+    "three_slot_up_extension_fade_short",
+    "two_slot_late_balanced_extension_fade"
+  ],
+  "density_failed_variants": [
+    "two_slot_midday_balanced_extension_fade",
+    "two_slot_morning_balanced_extension_fade"
+  ],
+  "variant_summary": [
+    {
+      "variant_id": "three_slot_down_extension_fade_long",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 67.675846,
+      "min_limited_core_signals_per_year": 66.566038,
+      "min_latest_252_signals": 71,
+      "full_failures": 0,
+      "limited_core_failures": 0,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "three_slot_up_extension_fade_short",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 90.212431,
+      "min_limited_core_signals_per_year": 76.754717,
+      "min_latest_252_signals": 98,
+      "full_failures": 0,
+      "limited_core_failures": 0,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "two_slot_late_balanced_extension_fade",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 55.779701,
+      "min_limited_core_signals_per_year": 53.660377,
+      "min_latest_252_signals": 59,
+      "full_failures": 0,
+      "limited_core_failures": 0,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "two_slot_midday_balanced_extension_fade",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 50.624705,
+      "min_limited_core_signals_per_year": 44.150943,
+      "min_latest_252_signals": 54,
+      "full_failures": 0,
+      "limited_core_failures": 1,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "two_slot_morning_balanced_extension_fade",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 53.664831,
+      "min_limited_core_signals_per_year": 47.54717,
+      "min_latest_252_signals": 53,
+      "full_failures": 0,
+      "limited_core_failures": 1,
+      "latest_failures": 0
+    }
+  ],
+  "stages_not_run": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ]
+}

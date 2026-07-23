@@ -1,0 +1,60 @@
+{
+  "campaign_id": "es_round_number_orderflow_barrier",
+  "variant_id": "round_number_upside_flow_breakout_long",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_round_number_orderflow_barrier/round_number_upside_flow_breakout_long/variant.yaml",
+    "hash": "9a3d25895802b9f9ca1691c938612ff919b3da5a4658d46e69e686358d27e671",
+    "mechanic": {
+      "entry_module": "round_number_orderflow_barrier",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_round_number_orderflow_barrier/variants/round_number_upside_flow_breakout_long/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_round_number_orderflow_barrier/round_number_upside_flow_breakout_long/ES/run1/source_config.yaml",
+  "config_hash": "e6cad92751b34ca1ec5afe6041ac29f8d1af1b71715b6f5d7595dd9c7dd94e95",
+  "source_config_hash": "1000cc22bff7e07c6b68abad08fc6120ec81f4390ce9225ced753373147beabd",
+  "created_at": "2026-06-17T21:43:47",
+  "updated_at": "2026-06-17T21:43:47",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_round_number_orderflow_barrier/round_number_upside_flow_breakout_long/ES/run1/effective_config.yaml"
+}

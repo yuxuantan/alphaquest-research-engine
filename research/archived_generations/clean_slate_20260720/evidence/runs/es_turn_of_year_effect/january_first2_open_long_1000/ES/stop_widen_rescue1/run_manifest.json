@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_turn_of_year_effect",
+  "variant_id": "january_first2_open_long_1000",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_turn_of_year_effect/campaign.yaml",
+    "hash": "5e4c9af642fb93238d0de54ad9388e4bf1ff612f4c005bbd6fe169641e5529bf"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_turn_of_year_effect/january_first2_open_long_1000/variant.yaml",
+    "hash": "4e5fe013fd4c6337d61a9531e2d2de8b82540f20a201381c7a850702196e8e73",
+    "mechanic": {
+      "entry_module": "turn_of_year_effect",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_turn_of_year_effect/rescue_attempts/stop_distance_rescue_1/january_first2_open_long_1000/config.yaml",
+  "effective_config": "backtest-campaigns/es_turn_of_year_effect/january_first2_open_long_1000/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_turn_of_year_effect/january_first2_open_long_1000/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "2997ec76d9da593ae1158b595307da4e257327247f483343f2f384b33dc4720a",
+  "source_config_hash": "98d5f0bdd1365bb1c6eb5bb18f87013041fb86a04e51a003affd928840a08e99",
+  "source_results_index": "campaigns/es_turn_of_year_effect/results_index.yaml",
+  "created_at": "2026-06-19T18:15:52",
+  "updated_at": "2026-06-19T18:15:52",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -145,6 +145,41 @@ def test_continuous_contract_selects_explicit_roll_calendar(tmp_path):
     assert filtered["contract_symbol"].tolist() == ["ESH4", "ESM4"]
 
 
+def test_explicit_roll_calendar_matches_two_digit_cache_symbols_to_one_digit_calendar(tmp_path):
+    calendar = tmp_path / "roll_calendar.csv"
+    calendar.write_text(
+        "start_timestamp,contract_symbol\n2025-06-17 00:00:00-04:00,ESU5\n",
+        encoding="utf-8",
+    )
+    timestamp = pd.Timestamp("2025-07-14 09:30:00", tz="America/New_York")
+    frame = pd.DataFrame(
+        {
+            "timestamp": [timestamp],
+            "session_date": ["2025-07-14"],
+            "symbol": ["ES"],
+            "contract_symbol": ["ESU25"],
+            "open": [6300.0],
+            "high": [6300.0],
+            "low": [6300.0],
+            "close": [6300.0],
+            "volume": [1],
+        }
+    )
+
+    filtered = apply_continuous_contract(
+        frame,
+        {
+            "source": "parquet",
+            "symbol": "ES",
+            "timezone": "America/New_York",
+            "continuous_contract": "explicit_roll_calendar",
+            "roll_calendar": str(calendar),
+        },
+    )
+
+    assert filtered["contract_symbol"].tolist() == ["ESU25"]
+
+
 def test_roll_calendar_handles_mixed_dst_offsets(tmp_path):
     calendar = tmp_path / "roll_calendar.csv"
     calendar.write_text(

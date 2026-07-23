@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_overnight_drift_european_open",
+  "variant_id": "eu_open_prior_down_long_0230",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/databento/es_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_overnight_drift_european_open/eu_open_prior_down_long_0230/variant.yaml",
+    "hash": "9521c529a1a13d0b9e87902c7783708f7c8e71dea305dc7098d3a1dfb18cb075",
+    "mechanic": {
+      "entry_module": "overnight_drift",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "03:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_overnight_drift_european_open/rescue_attempts/parameter_space_rescue_1/eu_open_prior_down_long_0230/config.yaml",
+  "effective_config": "backtest-campaigns/es_overnight_drift_european_open/eu_open_prior_down_long_0230/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_overnight_drift_european_open/eu_open_prior_down_long_0230/ES/rescue1/source_config.yaml",
+  "config_hash": "b96c4bf8576d68e2adee88eef247e3b101e3eb23d3de14f5e8a750ef54b828d1",
+  "source_config_hash": "6027a47812f212ee3341c2f58bb6d3db003a86846d12d480a8278c11e2c8e9e7",
+  "source_results_index": "campaigns/es_overnight_drift_european_open/results_index.yaml",
+  "created_at": "2026-06-19T23:06:43",
+  "updated_at": "2026-06-19T23:06:43",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

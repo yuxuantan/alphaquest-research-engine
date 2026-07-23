@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_morning_orderflow_momentum_continuation",
+  "variant_id": "broad_large_alignment_1030_flatten_1515",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_morning_orderflow_momentum_continuation/broad_large_alignment_1030_flatten_1515/variant.yaml",
+    "hash": "fcccb56adfde7fca5dc4e37d9a04d92da7abbc0140fbf384a127a0ede52fe586",
+    "mechanic": {
+      "entry_module": "morning_orderflow_momentum",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:15:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_morning_orderflow_momentum_continuation/variants/broad_large_alignment_1030_flatten_1515/config.yaml",
+  "effective_config": "backtest-campaigns/nq_morning_orderflow_momentum_continuation/broad_large_alignment_1030_flatten_1515/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_morning_orderflow_momentum_continuation/broad_large_alignment_1030_flatten_1515/NQ/run1/source_config.yaml",
+  "config_hash": "bc930f2dffdb95a9b6f407bdac62a3ad63b15aa8aa3f1387fe44dc472df6f1cb",
+  "source_config_hash": "fe8ddb5f32dcfb4e4137db28ada1e107a7ea52c794848d821d21e7decbf2ce9f",
+  "source_results_index": "campaigns/nq_morning_orderflow_momentum_continuation/results_index.yaml",
+  "created_at": "2026-06-22T13:55:41",
+  "updated_at": "2026-06-22T13:55:41",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

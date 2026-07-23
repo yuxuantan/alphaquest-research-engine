@@ -111,10 +111,87 @@ class ModuleManifestV1(StrictAuthoringModel):
     @model_validator(mode="after")
     def certified_modules_are_causal(self) -> "ModuleManifestV1":
         if self.certification_status == "certified" and self.module_type == "entry":
-            if self.decision_timing != "completed_bar_close" or not self.next_bar_entry:
-                raise ValueError("certified entry modules must decide at completed-bar close for next-bar entry")
-            if self.required_detail_granularity not in (None, "bars"):
-                raise ValueError("Studio v1 entry modules may require completed bars only")
+            completed_bar = self.decision_timing == "completed_bar_close" and self.next_bar_entry
+            event_replay = (
+                self.decision_timing == "intrabar_or_event"
+                and not self.next_bar_entry
+                and self.required_detail_granularity == "trade_events"
+            )
+            if not (completed_bar or event_replay):
+                raise ValueError(
+                    "certified entries must be next-bar completed-bar modules or certified trade-event modules"
+                )
+        return self
+
+
+class EventExecutionSourceV1(StrictAuthoringModel):
+    """Governed event source paired atomically with one completed-bar dataset."""
+
+    source: Literal["databento_zip_trades", "sierra_scid_records"] = "databento_zip_trades"
+    archive: Annotated[str, Field(min_length=1)] | None = None
+    archive_sha256: Sha256 | None = None
+    raw_dir: Annotated[str, Field(min_length=1)] | None = None
+    raw_manifest: Annotated[str, Field(min_length=1)] | None = None
+    raw_manifest_sha256: Sha256 | None = None
+    session_levels: Annotated[str, Field(min_length=1)] | None = None
+    session_levels_sha256: Sha256 | None = None
+    quality_manifest: Annotated[str, Field(min_length=1)] | None = None
+    quality_manifest_sha256: Sha256 | None = None
+    concordance_report: Annotated[str, Field(min_length=1)] | None = None
+    concordance_report_sha256: Sha256 | None = None
+    required_capability: Literal["full_strategy_events", "full_strategy_events_extrapolated"] | None = None
+    ineligible_session_policy: Literal["error", "blackout"] = "error"
+    roll_calendar: Annotated[str, Field(min_length=1)]
+    roll_calendar_sha256: Sha256
+    root_symbol: Literal["ES", "NQ"]
+    aggregation_ms: Literal[100] = 100
+    overnight_start: Literal["16:00:00"] = "16:00:00"
+    rth_start: Literal["09:30:00"] = "09:30:00"
+    rth_end: Literal["11:00:00", "16:00:00"] = "16:00:00"
+    reset_previous_levels_on_roll: bool = True
+
+    @model_validator(mode="after")
+    def source_contract(self) -> "EventExecutionSourceV1":
+        if self.source == "databento_zip_trades":
+            if not self.archive or not self.archive_sha256:
+                raise ValueError("Databento event execution requires archive and archive_sha256")
+            sierra_fields = (
+                self.raw_dir,
+                self.raw_manifest,
+                self.raw_manifest_sha256,
+                self.session_levels,
+                self.session_levels_sha256,
+                self.quality_manifest,
+                self.quality_manifest_sha256,
+                self.concordance_report,
+                self.concordance_report_sha256,
+                self.required_capability,
+            )
+            if any(value is not None for value in sierra_fields):
+                raise ValueError("Databento event execution cannot declare Sierra source artifacts")
+            if self.rth_end != "16:00:00":
+                raise ValueError("Databento event execution must retain the reviewed 16:00 RTH boundary")
+            return self
+
+        required = {
+            "raw_dir": self.raw_dir,
+            "raw_manifest": self.raw_manifest,
+            "raw_manifest_sha256": self.raw_manifest_sha256,
+            "session_levels": self.session_levels,
+            "session_levels_sha256": self.session_levels_sha256,
+            "quality_manifest": self.quality_manifest,
+            "quality_manifest_sha256": self.quality_manifest_sha256,
+            "concordance_report": self.concordance_report,
+            "concordance_report_sha256": self.concordance_report_sha256,
+            "required_capability": self.required_capability,
+        }
+        missing = sorted(name for name, value in required.items() if value is None)
+        if missing:
+            raise ValueError("Sierra event execution is missing governed artifacts: " + ", ".join(missing))
+        if self.archive is not None or self.archive_sha256 is not None:
+            raise ValueError("Sierra event execution cannot declare a Databento archive")
+        if self.rth_end != "11:00:00":
+            raise ValueError("Sierra event replay is certified only for the 09:30-11:00 entry window")
         return self
 
 
@@ -158,6 +235,7 @@ class DatasetManifestV1(StrictAuthoringModel):
     certified_features: list[str] = Field(default_factory=list)
     quality_verdict: Literal["PASS", "FAIL", "NEEDS MANUAL REVIEW"]
     quality_notes: list[str] = Field(default_factory=list)
+    event_source: EventExecutionSourceV1 | None = None
 
     @field_validator("certified_features")
     @classmethod
@@ -375,6 +453,9 @@ class VariantDraftV1(StrictAuthoringModel):
     entry: ModuleBindingV1
     stop: ModuleBindingV1
     target: ModuleBindingV1
+    event_parameter_grid: dict[str, Annotated[list[Scalar], Field(min_length=2, max_length=20)]] = Field(
+        default_factory=dict
+    )
     mechanic_rationale: Annotated[str, Field(min_length=1)]
     entry_rationale: Annotated[str, Field(min_length=1)]
     stop_rationale: Annotated[str, Field(min_length=1)]
@@ -386,6 +467,13 @@ class VariantDraftV1(StrictAuthoringModel):
 
     @model_validator(mode="after")
     def enforce_parameter_budget(self) -> "VariantDraftV1":
+        if self.event_parameter_grid and any(
+            binding.parameter_grid for binding in (self.entry, self.stop, self.target)
+        ):
+            raise ValueError("event_parameter_grid cannot be combined with bar-module parameter grids")
+        for name, values in self.event_parameter_grid.items():
+            if len({_canonical_scalar(item) for item in values}) != len(values):
+                raise ValueError(f"event parameter grid {name!r} contains duplicate values")
         budgets = (("entry", self.entry, 2), ("stop", self.stop, 1), ("target", self.target, 1))
         for label, binding, maximum in budgets:
             if len(binding.parameter_grid) > maximum:
@@ -398,6 +486,10 @@ class VariantDraftV1(StrictAuthoringModel):
     @property
     def parameter_combinations(self) -> int:
         product = 1
+        if self.event_parameter_grid:
+            for values in self.event_parameter_grid.values():
+                product *= len(values)
+            return product
         for binding in (self.entry, self.stop, self.target):
             for values in binding.parameter_grid.values():
                 product *= len(values)
@@ -412,6 +504,22 @@ class VariantDraftV1(StrictAuthoringModel):
         }
         encoded = json.dumps(structural, sort_keys=True, separators=(",", ":"), default=str)
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+class SequentialVariantLineageV1(StrictAuthoringModel):
+    """Audit record authorizing one failure-informed variant expansion."""
+
+    schema_version: Literal["alphaquest.sequential-variant-lineage/v1"] = Field(
+        default="alphaquest.sequential-variant-lineage/v1", alias="schema"
+    )
+    variant_id: Identifier
+    predecessor_variant_id: Identifier
+    predecessor_verdict: Literal["FAIL"] = "FAIL"
+    predecessor_result_path: Annotated[str, Field(min_length=1)]
+    predecessor_result_sha256: Sha256
+    failure_analysis: Annotated[str, Field(min_length=80)]
+    created_by: Annotated[str, Field(min_length=1)]
+    created_at: Annotated[str, Field(min_length=1)]
 
 
 class ExecutionSettingsV1(StrictAuthoringModel):
@@ -439,8 +547,17 @@ class ExecutionSettingsV1(StrictAuthoringModel):
 
     @model_validator(mode="after")
     def validate_timeline(self) -> "ExecutionSettingsV1":
-        if not (self.session_start < self.latest_entry_time < self.flatten_time <= self.latest_flat_time):
+        if not (
+            self.session_start
+            < self.latest_entry_time
+            < self.flatten_time
+            <= self.latest_flat_time
+            <= self.session_end
+        ):
             raise ValueError("session/entry/flatten times are not in causal order")
+        expected_tick_value = self.tick_size * self.point_value
+        if not math.isclose(self.tick_value, expected_tick_value, rel_tol=1e-9, abs_tol=1e-9):
+            raise ValueError("tick_value must equal tick_size multiplied by point_value")
         return self
 
 
@@ -463,10 +580,13 @@ class CampaignDraftV1(StrictAuthoringModel):
     duplicate_review: DuplicateReviewV1
     dataset: DatasetManifestV1
     execution: ExecutionSettingsV1
-    variants: Annotated[list[VariantDraftV1], Field(min_length=5, max_length=5)]
+    variants: Annotated[list[VariantDraftV1], Field(min_length=1, max_length=5)]
+    variant_protocol: Literal["legacy_predeclared", "sequential_failure_informed"] = "legacy_predeclared"
+    sequential_variant_history: list[SequentialVariantLineageV1] = Field(default_factory=list)
     authoring_lane: Literal[
         "certified_recipe",
         "visual_completed_bar_rule",
+        "certified_event_replay",
         "engineering_handoff",
     ] = "certified_recipe"
     certified_recipe: Literal[
@@ -476,6 +596,7 @@ class CampaignDraftV1(StrictAuthoringModel):
         "daily_tsm_volatility_normalized",
         "daily_tsm_short_term_alignment",
     ] | None = None
+    event_strategy: Identifier | None = None
     engineering_handoff_path: str | None = None
     confirmation_context_sha256: Sha256 | None = None
     frozen: bool = False
@@ -487,11 +608,20 @@ class CampaignDraftV1(StrictAuthoringModel):
         if self.dataset.timeframe != self.timeframe:
             raise ValueError("dataset timeframe must match campaign timeframe")
         ids = [variant.variant_id for variant in self.variants]
-        if len(set(ids)) != 5:
-            raise ValueError("campaign must contain exactly five unique variant IDs")
+        if len(set(ids)) != len(ids):
+            raise ValueError("campaign must contain unique variant IDs")
         signatures = [variant.mechanic_signature for variant in self.variants]
-        if len(set(signatures)) != 5:
-            raise ValueError("all five variants must have materially distinct, value-independent mechanics")
+        if len(set(signatures)) != len(signatures):
+            raise ValueError("campaign variants must have materially distinct, value-independent mechanics")
+        if self.variant_protocol == "sequential_failure_informed" and len(self.sequential_variant_history) != max(0, len(ids) - 1):
+            raise ValueError(
+                "every variant after v01 requires one failure-informed sequential lineage record"
+            )
+        if self.variant_protocol == "legacy_predeclared" and self.sequential_variant_history:
+            raise ValueError("legacy predeclared campaigns cannot contain sequential variant lineage")
+        for index, lineage in enumerate(self.sequential_variant_history, start=1):
+            if lineage.variant_id != ids[index] or lineage.predecessor_variant_id != ids[index - 1]:
+                raise ValueError("sequential variant lineage must match declared variant order")
         if self.authoring_lane == "engineering_handoff":
             if not self.engineering_handoff_path:
                 raise ValueError("engineering-handoff drafts must record their durable handoff path")
@@ -507,19 +637,31 @@ class CampaignDraftV1(StrictAuthoringModel):
                 for variant in self.variants:
                     if variant.entry.module != entry_module:
                         raise ValueError(
-                            "all five certified-recipe variants must express one edge through the selected entry recipe"
+                            "all certified-recipe variants must express one edge through the selected entry recipe"
                         )
                     if setup_mode is not None and variant.entry.params.get("setup_mode") != setup_mode:
                         raise ValueError(
-                            "all five certified-recipe variants must use the selected frozen trend mechanic"
+                            "all certified-recipe variants must use the selected frozen trend mechanic"
                         )
             elif self.authoring_lane == "visual_completed_bar_rule":
                 if self.certified_recipe is not None:
                     raise ValueError("visual-rule campaigns cannot also declare a certified recipe")
                 if any(variant.entry.module != "safe_bar_rule" for variant in self.variants):
-                    raise ValueError("all five visual-rule variants must use the same reviewed safe_bar_rule edge")
+                    raise ValueError("all visual-rule variants must use the same reviewed safe_bar_rule edge")
+            elif self.authoring_lane == "certified_event_replay":
+                if self.certified_recipe is not None:
+                    raise ValueError("event-replay campaigns cannot also declare a completed-bar recipe")
+                if not self.event_strategy or self.dataset.event_source is None:
+                    raise ValueError("certified event replay requires event_strategy and dataset.event_source")
+                for variant in self.variants:
+                    if variant.entry.module != self.event_strategy:
+                        raise ValueError("event-replay entry module must match the certified event strategy")
+                    if variant.stop.module != "event_aoi_structural_stop":
+                        raise ValueError("event-replay variants require the certified structural AOI stop")
+                    if variant.target.module != "event_value_area_management":
+                        raise ValueError("event-replay variants require certified value-area management")
             if not all(variant.confirmed for variant in self.variants):
-                raise ValueError("a frozen campaign requires all five variants to be explicitly confirmed")
+                raise ValueError("a frozen campaign requires every currently declared variant to be explicitly confirmed")
             expected = campaign_confirmation_context_sha256(self)
             if self.confirmation_context_sha256 != expected:
                 raise ValueError(
@@ -627,6 +769,7 @@ __all__ = [
     "DatasetManifestV1",
     "DuplicateReviewV1",
     "EconomicEdgeFingerprintV1",
+    "EventExecutionSourceV1",
     "ExecutionSettingsV1",
     "FeatureValueV1",
     "ModuleBindingV1",

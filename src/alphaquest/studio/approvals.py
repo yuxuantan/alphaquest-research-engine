@@ -13,7 +13,7 @@ import json
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 
 import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field
@@ -24,6 +24,7 @@ from alphaquest.dashboard.validation_app import (
     build_review_queue,
     load_manual_reviews,
     prepare_trade_table,
+    trade_id_key,
 )
 from alphaquest.validation import load_validation_run
 from alphaquest.validation.promotion_gate import (
@@ -36,11 +37,13 @@ from alphaquest.validation.promotion_gate import (
 
 
 APPROVAL_REVIEW_SCOPE = "implementation_matches_frozen_specification"
+FIXED_RANDOM_SAMPLE_SIZE = 5
+FIXED_RANDOM_SEED = 0
 
 _CATEGORY_MODES: tuple[tuple[str, str, int | None], ...] = (
     ("first_trade", "First 20 trades chronologically", 1),
     ("last_trade", "Last 20 trades chronologically", 1),
-    ("random_trades", "Random 20 trades", None),
+    ("random_trades", "Fixed random sample", None),
     ("best_trade", "Best 20 trades by R", 1),
     ("worst_trade", "Worst 20 trades by R", 1),
     ("forced_flattens", "All forced-flatten trades", None),
@@ -62,6 +65,9 @@ class MechanicsReviewPlan(BaseModel):
     config_hash: str | None
     input_data_hash: str | None
     validation_schema_version: str | None
+    strategy_implementation_version: int | None = None
+    strategy_implementation_sha256: str | None = None
+    strategy_certification_manifest_sha256: str | None = None
     sampled_trade_ids: list[str | int] = Field(default_factory=list)
     sampling_categories: dict[str, list[str | int]] = Field(default_factory=dict)
     unreviewed_trade_ids: list[str | int] = Field(default_factory=list)
@@ -80,12 +86,27 @@ class MechanicsApprovalService:
         self,
         config_path: str | Path,
         *,
-        random_sample_size: int = 5,
-        random_seed: int = 0,
+        random_sample_size: int = FIXED_RANDOM_SAMPLE_SIZE,
+        random_seed: int = FIXED_RANDOM_SEED,
+        _gate_report: Mapping[str, Any] | None = None,
     ) -> MechanicsReviewPlan:
         path = Path(config_path).resolve()
         cfg = _load_yaml_mapping(path)
-        gate = inspect_validation_gate(cfg, path)
+        gate = (
+            dict(_gate_report)
+            if _gate_report is not None
+            else inspect_validation_gate(cfg, path)
+        )
+        reported_path = gate.get("config_path")
+        if reported_path and Path(str(reported_path)).resolve() != path:
+            raise ValueError("precomputed mechanics gate belongs to a different config path")
+        gate_cfg = ((cfg.get("research_metadata") or {}).get("validation_gate") or {})
+        required_size = int(gate_cfg.get("manual_review_random_sample_size", FIXED_RANDOM_SAMPLE_SIZE))
+        required_seed = int(gate_cfg.get("manual_review_seed", FIXED_RANDOM_SEED))
+        if random_sample_size != required_size or random_seed != required_seed:
+            raise ValueError(
+                f"mechanics review sampling is frozen at {required_size} random trades with seed {required_seed}"
+            )
         evidence_value = gate.get("evidence_dir")
         approval_value = gate.get("approval_path")
         blockers = _gate_evidence_blockers(gate)
@@ -120,11 +141,12 @@ class MechanicsApprovalService:
                 if not sampled:
                     blockers.append("risk-based mechanics sample contains no trades")
                 status_by_id = _review_status_by_trade(reviews)
-                unreviewed = [trade_id for trade_id in sampled if str(trade_id) not in status_by_id]
+                unreviewed = [trade_id for trade_id in sampled if trade_id_key(trade_id) not in status_by_id]
                 non_correct = [
                     trade_id
                     for trade_id in sampled
-                    if str(trade_id) in status_by_id and status_by_id[str(trade_id)].casefold() != "correct"
+                    if trade_id_key(trade_id) in status_by_id
+                    and status_by_id[trade_id_key(trade_id)].casefold() != "correct"
                 ]
                 blockers.extend(_automated_check_blockers(run.validation_checks))
             except (OSError, ValueError, KeyError, TypeError) as exc:
@@ -137,6 +159,11 @@ class MechanicsApprovalService:
             lane=gate.get("lane"),
             config_hash=gate.get("config_hash"),
             input_data_hash=gate.get("input_data_hash"),
+            strategy_implementation_version=gate.get("strategy_implementation_version"),
+            strategy_implementation_sha256=gate.get("strategy_implementation_sha256"),
+            strategy_certification_manifest_sha256=gate.get(
+                "strategy_certification_manifest_sha256"
+            ),
             validation_schema_version=gate.get("validation_schema_version"),
             sampled_trade_ids=sampled,
             sampling_categories=categories,
@@ -152,8 +179,8 @@ class MechanicsApprovalService:
         reviewer: str,
         notes: str,
         reviewed_at: datetime | str | None = None,
-        random_sample_size: int = 5,
-        random_seed: int = 0,
+        random_sample_size: int = FIXED_RANDOM_SAMPLE_SIZE,
+        random_seed: int = FIXED_RANDOM_SEED,
     ) -> dict[str, Any]:
         """Write a hash-bound approval only after every selected trade is correct."""
 
@@ -190,8 +217,8 @@ class MechanicsApprovalService:
         reviewer: str,
         notes: str,
         reviewed_at: datetime | str | None = None,
-        random_sample_size: int = 5,
-        random_seed: int = 0,
+        random_sample_size: int = FIXED_RANDOM_SAMPLE_SIZE,
+        random_seed: int = FIXED_RANDOM_SEED,
     ) -> dict[str, Any]:
         """Persist an evidence-bound mechanics rejection without running PnL."""
 
@@ -212,9 +239,18 @@ class MechanicsApprovalService:
             verify_pass=False,
         )
 
-    def inspect(self, config_path: str | Path) -> dict[str, Any]:
+    def inspect(
+        self,
+        config_path: str | Path,
+        *,
+        precomputed_input_hash: str | None = None,
+    ) -> dict[str, Any]:
         path = Path(config_path).resolve()
-        return inspect_validation_gate(_load_yaml_mapping(path), path)
+        return inspect_validation_gate(
+            _load_yaml_mapping(path),
+            path,
+            precomputed_input_hash=precomputed_input_hash,
+        )
 
     def _write_decision(
         self,
@@ -254,7 +290,25 @@ class MechanicsApprovalService:
             "validation_schema_version": plan.validation_schema_version,
             "sampled_trade_ids": plan.sampled_trade_ids,
             "sampling_categories": plan.sampling_categories,
+            "fixed_random_sample_size": FIXED_RANDOM_SAMPLE_SIZE,
+            "fixed_random_seed": FIXED_RANDOM_SEED,
+            "parameter_mode": "declared_defaults",
         }
+        if plan.strategy_implementation_sha256:
+            if (
+                plan.strategy_implementation_version is None
+                or not plan.strategy_certification_manifest_sha256
+            ):
+                raise ValueError("certified strategy identity is incomplete")
+            payload.update(
+                {
+                    "strategy_implementation_version": plan.strategy_implementation_version,
+                    "strategy_implementation_sha256": plan.strategy_implementation_sha256,
+                    "strategy_certification_manifest_sha256": (
+                        plan.strategy_certification_manifest_sha256
+                    ),
+                }
+            )
         approval_path = Path(plan.approval_path)
         previous = approval_path.read_bytes() if approval_path.is_file() else None
         _atomic_write_json(approval_path, payload)
@@ -355,7 +409,7 @@ def _review_status_by_trade(reviews: pd.DataFrame) -> dict[str, str]:
     for _, row in reviews.iterrows():
         status = str(row.get("reviewer_status") or "").strip()
         if status:
-            result[str(row.get("trade_id"))] = status
+            result[trade_id_key(row.get("trade_id"))] = status
     return result
 
 

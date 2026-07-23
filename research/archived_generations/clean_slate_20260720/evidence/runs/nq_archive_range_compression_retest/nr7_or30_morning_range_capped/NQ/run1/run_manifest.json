@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_archive_range_compression_retest",
+  "variant_id": "nr7_or30_morning_range_capped",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_archive_range_compression_retest/nr7_or30_morning_range_capped/variant.yaml",
+    "hash": "fb875fb92537430dac04a74b24d72702d373059375b82718873af14c2e77a1d4",
+    "mechanic": {
+      "entry_module": "range_compression_breakout",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:59:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_archive_range_compression_retest/variants/nr7_or30_morning_range_capped/config.yaml",
+  "effective_config": "backtest-campaigns/nq_archive_range_compression_retest/nr7_or30_morning_range_capped/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_archive_range_compression_retest/nr7_or30_morning_range_capped/NQ/run1/source_config.yaml",
+  "config_hash": "f6b540bafb7a005395340122ed6f091281096fbf9796bf1065c0f0f30569d7c0",
+  "source_config_hash": "7581d254bee3e1fcce135d95577d5ff67a15407a93f655aa9d6855a19ec758a9",
+  "source_results_index": "campaigns/nq_archive_range_compression_retest/results_index.yaml",
+  "created_at": "2026-06-21T15:28:52",
+  "updated_at": "2026-06-21T15:28:52",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

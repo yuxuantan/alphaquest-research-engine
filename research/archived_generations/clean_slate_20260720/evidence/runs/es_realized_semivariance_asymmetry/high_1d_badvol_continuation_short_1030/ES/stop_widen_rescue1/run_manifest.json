@@ -1,0 +1,65 @@
+{
+  "campaign_id": "es_realized_semivariance_asymmetry",
+  "variant_id": "high_1d_badvol_continuation_short_1030",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_realized_semivariance_asymmetry/high_1d_badvol_continuation_short_1030/variant.yaml",
+    "hash": "d3f4adcd15c91671e5a85ce086e22d63bdc86f079c6a547abd389bef3a587cb3",
+    "mechanic": {
+      "entry_module": "realized_semivariance_asymmetry",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_realized_semivariance_asymmetry/rescue_attempts/stop_distance_rescue_1/high_1d_badvol_continuation_short_1030/config.yaml",
+  "effective_config": "backtest-campaigns/es_realized_semivariance_asymmetry/high_1d_badvol_continuation_short_1030/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_realized_semivariance_asymmetry/high_1d_badvol_continuation_short_1030/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "e6831bd136abd14fdfdfbc3affff25eaa68dac396c56944f2e7b6411fde6d30b",
+  "source_config_hash": "1119d04a6ee65c3996bbfba90f76092aa086383d1790810ac65dd3b51234b473",
+  "source_results_index": "campaigns/es_realized_semivariance_asymmetry/results_index.yaml",
+  "created_at": "2026-06-19T16:04:48",
+  "updated_at": "2026-06-21T12:53:14",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:53:14"
+  }
+}

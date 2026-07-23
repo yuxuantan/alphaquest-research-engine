@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_morning_trend_lunch_reversal_orderflow",
+  "variant_id": "late_morning_signed_up_extension_short_1130",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_morning_trend_lunch_reversal_orderflow/late_morning_signed_up_extension_short_1130/variant.yaml",
+    "hash": "0ad74106defcb65e3d08224147ebe07007be29bdd19f69af512ec3b46ebc824d",
+    "mechanic": {
+      "entry_module": "morning_trend_lunch_reversal_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "13:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_morning_trend_lunch_reversal_orderflow/variants/late_morning_signed_up_extension_short_1130/config.yaml",
+  "effective_config": "backtest-campaigns/nq_morning_trend_lunch_reversal_orderflow/late_morning_signed_up_extension_short_1130/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_morning_trend_lunch_reversal_orderflow/late_morning_signed_up_extension_short_1130/NQ/run1/source_config.yaml",
+  "config_hash": "81c8545e29444e7a9b8c2e0ad49b73c93070a6b3b2166d7103291bedc161c6d1",
+  "source_config_hash": "d6834a4ef9c106b52e983ffa36dd21c902b1ed333eb832ec2ae143192a3b1800",
+  "source_results_index": "campaigns/nq_morning_trend_lunch_reversal_orderflow/results_index.yaml",
+  "created_at": "2026-06-30T15:13:27",
+  "updated_at": "2026-06-30T15:13:27",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

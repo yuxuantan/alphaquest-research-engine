@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_fomc_pre_announcement_drift",
+  "variant_id": "decision_day_late_morning_long_1130",
+  "test_run_id": "tp_min_rr_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_fomc_pre_announcement_drift/campaign.yaml",
+    "hash": "68cd8a83d28dc62179cc5386c28b3880e6c4d7004681969f67dc57a6400441a4"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_fomc_pre_announcement_drift/decision_day_late_morning_long_1130/variant.yaml",
+    "hash": "e27201e6e6d5e22c26f4d0ee758510e8ce31670caaed13610e08189d1fb5346f",
+    "mechanic": {
+      "entry_module": "fomc_pre_announcement_drift",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_fomc_pre_announcement_drift/rescue_attempts/tp_min_rr_floor_rescue_1/decision_day_late_morning_long_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_fomc_pre_announcement_drift/decision_day_late_morning_long_1130/ES/tp_min_rr_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_fomc_pre_announcement_drift/decision_day_late_morning_long_1130/ES/tp_min_rr_rescue1/source_config.yaml",
+  "config_hash": "943ad1d75bcb81b10cf3a843b7863077dc749f639cd810b39636e6806925ec19",
+  "source_config_hash": "1c59c4c57a88d7405094a27d5d710f0e215b45365374d69532588bc4526578da",
+  "source_results_index": "campaigns/es_fomc_pre_announcement_drift/results_index.yaml",
+  "created_at": "2026-06-19T21:39:04",
+  "updated_at": "2026-06-19T21:39:04",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

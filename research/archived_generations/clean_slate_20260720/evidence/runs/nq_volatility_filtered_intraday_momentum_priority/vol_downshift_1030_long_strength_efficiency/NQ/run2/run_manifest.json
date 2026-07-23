@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_volatility_filtered_intraday_momentum_priority",
+  "variant_id": "vol_downshift_1030_long_strength_efficiency",
+  "test_run_id": "run2",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_volatility_filtered_intraday_momentum_priority/vol_downshift_1030_long_strength_efficiency/variant.yaml",
+    "hash": "c9f11661ce62988bbae6928e24c660c31bd3aa56506296867f657e55ed34e796",
+    "mechanic": {
+      "entry_module": "volatility_filtered_intraday_momentum_priority",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:59:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_volatility_filtered_intraday_momentum_priority/variants/vol_downshift_1030_long_strength_efficiency/config.yaml",
+  "effective_config": "backtest-campaigns/nq_volatility_filtered_intraday_momentum_priority/vol_downshift_1030_long_strength_efficiency/NQ/run2/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_volatility_filtered_intraday_momentum_priority/vol_downshift_1030_long_strength_efficiency/NQ/run2/source_config.yaml",
+  "config_hash": "be75eb8aeae74255f3d06c12ac48cd0e530b28ba810b9b2871bcb690b7ca921d",
+  "source_config_hash": "817c7263e6f27a5277c8eb524a80d767a036445f37f785a52721d118fdada0a1",
+  "source_results_index": "campaigns/nq_volatility_filtered_intraday_momentum_priority/results_index.yaml",
+  "created_at": "2026-06-22T14:24:29",
+  "updated_at": "2026-06-22T14:24:29",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

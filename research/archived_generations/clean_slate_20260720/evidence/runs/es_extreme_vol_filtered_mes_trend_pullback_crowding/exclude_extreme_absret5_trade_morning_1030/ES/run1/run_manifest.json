@@ -1,0 +1,65 @@
+{
+  "campaign_id": "es_extreme_vol_filtered_mes_trend_pullback_crowding",
+  "variant_id": "exclude_extreme_absret5_trade_morning_1030",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_extreme_vol_filtered_mes_trend_pullback_crowding/exclude_extreme_absret5_trade_morning_1030/variant.yaml",
+    "hash": "bfcb1a369aac8dc88faca6587dc75d09cbdc49432ca16764a2d8b31a1c3f82b1",
+    "mechanic": {
+      "entry_module": "volatility_filtered_trend_mes_participation_crowding",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_extreme_vol_filtered_mes_trend_pullback_crowding/variants/exclude_extreme_absret5_trade_morning_1030/config.yaml",
+  "effective_config": "backtest-campaigns/es_extreme_vol_filtered_mes_trend_pullback_crowding/exclude_extreme_absret5_trade_morning_1030/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_extreme_vol_filtered_mes_trend_pullback_crowding/exclude_extreme_absret5_trade_morning_1030/ES/run1/source_config.yaml",
+  "config_hash": "e6f4c69253707e6d223df8faae93e9ace604f64540a07e5748ceaa5627e34546",
+  "source_config_hash": "429c894d54dc928a2b9790eccde3bb0d5301bddaf56044531c284189faf370b2",
+  "source_results_index": "campaigns/es_extreme_vol_filtered_mes_trend_pullback_crowding/results_index.yaml",
+  "created_at": "2026-06-20T13:16:00",
+  "updated_at": "2026-06-21T12:50:04",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:50:04"
+  }
+}

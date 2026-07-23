@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_intraday_capitulation_mean_reversion",
+  "variant_id": "midday_15m_vwap_flush_reclaim_long_1430",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_intraday_capitulation_mean_reversion/midday_15m_vwap_flush_reclaim_long_1430/variant.yaml",
+    "hash": "4c2b3daa2e4c9482bbc931767ad481c1130efb7700bb063fda7e509e5e89ec00",
+    "mechanic": {
+      "entry_module": "intraday_capitulation_mr",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_intraday_capitulation_mean_reversion/variants/midday_15m_vwap_flush_reclaim_long_1430/config.yaml",
+  "effective_config": "backtest-campaigns/nq_intraday_capitulation_mean_reversion/midday_15m_vwap_flush_reclaim_long_1430/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_intraday_capitulation_mean_reversion/midday_15m_vwap_flush_reclaim_long_1430/NQ/run1/source_config.yaml",
+  "config_hash": "12a65408e90005bae64e1dca0b85911fc7c7465041a499844ff298f683bb4e3c",
+  "source_config_hash": "85f4da93244444a43e082e31e713132dc86d6db7a873017757fc9e9d1136d731",
+  "source_results_index": "campaigns/nq_intraday_capitulation_mean_reversion/results_index.yaml",
+  "created_at": "2026-06-23T10:54:06",
+  "updated_at": "2026-06-23T10:54:06",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

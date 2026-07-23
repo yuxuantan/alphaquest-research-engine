@@ -1,0 +1,59 @@
+{
+  "campaign_id": "es_ema_pullback_orderflow_continuation",
+  "variant_id": "afternoon_large10_two_sided_ema_pullback_1430",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_ema_pullback_orderflow_continuation/afternoon_large10_two_sided_ema_pullback_1430/variant.yaml",
+    "hash": "0587f98a21a3c3250a1fe6aae1051d0307a6ae7b6d964816ea8627b7ef4b6b0e",
+    "mechanic": {
+      "entry_module": "ema_pullback_orderflow_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_ema_pullback_orderflow_continuation/variants/afternoon_large10_two_sided_ema_pullback_1430/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_ema_pullback_orderflow_continuation/afternoon_large10_two_sided_ema_pullback_1430/ES/run1/source_config.yaml",
+  "config_hash": "616d0eb4f7e1d9689466404629433684f9b06a562e969a61c1ea025c250c649d",
+  "source_config_hash": "69d6d5f87399fb4845f6a6b0a14047cda7e933fb78339156f43d287d41b15e18",
+  "created_at": "2026-06-18T12:35:04",
+  "updated_at": "2026-06-18T12:35:04",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_ema_pullback_orderflow_continuation/afternoon_large10_two_sided_ema_pullback_1430/ES/run1/effective_config.yaml"
+}

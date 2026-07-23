@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_semivariance_orderflow_confirmation",
+  "variant_id": "low_badvol_signed_multitime_long",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_semivariance_orderflow_confirmation/low_badvol_signed_multitime_long/variant.yaml",
+    "hash": "37eb345966ffd3b61c5b532db291c3627d06539ecbe4fe5d84b724ed4b3cf41b",
+    "mechanic": {
+      "entry_module": "realized_semivariance_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_semivariance_orderflow_confirmation/variants/low_badvol_signed_multitime_long/config.yaml",
+  "effective_config": "backtest-campaigns/nq_semivariance_orderflow_confirmation/low_badvol_signed_multitime_long/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_semivariance_orderflow_confirmation/low_badvol_signed_multitime_long/NQ/run1/source_config.yaml",
+  "config_hash": "fec150cb7732c4a45f4776805a0088648e89c505eff55617de70ce1a1991467b",
+  "source_config_hash": "7a44d66f0240c30da9924a299702a778aec61ffd6d2ee52bc594238a868aeea8",
+  "source_results_index": "campaigns/nq_semivariance_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-23T05:15:42",
+  "updated_at": "2026-06-23T05:15:42",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_mes_micro_flow_divergence_reversion",
+  "variant_id": "morning_mes_sell_pressure_reversion_long",
+  "test_run_id": "run2",
+  "symbol": "NQ",
+  "dataset_id": "nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_mes_micro_flow_divergence_reversion/morning_mes_sell_pressure_reversion_long/variant.yaml",
+    "hash": "a5331bf2b47afb355282563244a8d11073e9c9ca3b7d5687ec000c723186d696",
+    "mechanic": {
+      "entry_module": "trade_orderflow_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "11:31:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_mes_micro_flow_divergence_reversion/variants/morning_mes_sell_pressure_reversion_long/config.yaml",
+  "effective_config": "backtest-campaigns/nq_mes_micro_flow_divergence_reversion/morning_mes_sell_pressure_reversion_long/NQ/run2/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_mes_micro_flow_divergence_reversion/morning_mes_sell_pressure_reversion_long/NQ/run2/source_config.yaml",
+  "config_hash": "b6a6b58805f26c23a902fe7263b3cc4dcea692a421da549ea8a214c00d24f2df",
+  "source_config_hash": "5a72d3673c9f486417b9e9f961ea946ad92d979407517e40faa9e08d7bbcaf12",
+  "source_results_index": "campaigns/nq_mes_micro_flow_divergence_reversion/results_index.yaml",
+  "created_at": "2026-06-23T07:53:56",
+  "updated_at": "2026-06-23T07:53:56",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

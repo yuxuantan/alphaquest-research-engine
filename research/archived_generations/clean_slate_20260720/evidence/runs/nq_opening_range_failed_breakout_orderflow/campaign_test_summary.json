@@ -1,0 +1,73 @@
+{
+  "campaign_id": "nq_opening_range_failed_breakout_orderflow",
+  "title": "NQ Opening-Range Failed Breakout Reclaim With Aggregate Orderflow",
+  "decision": "FAIL",
+  "terminal_stage": "pre_pnl_density_screen",
+  "completed_at": "2026-06-30T15:05:00+08:00",
+  "density_audit": {
+    "artifact": "research_artifacts/nq_opening_range_failed_breakout_orderflow_density_audit_20260630.md",
+    "csv": "research_artifacts/nq_opening_range_failed_breakout_orderflow_density_audit_20260630.csv",
+    "declared_entry_rows": 29,
+    "density_pass_rows": 27,
+    "density_fail_rows": 2
+  },
+  "failure_reason": "Rejected before staged NQ PnL: 2/29 declared entry-grid rows failed the pre-PnL density gate. The sparse rows were in or60_signed_failed_reclaim_1200 at min_reclaim_orderflow_imbalance=0.10 with max_reclaim_bars 3 and 4; latest-252-session signal counts were 24 and 25, and the 3-bar row also fell below 50 signals/year over full history. Dropping the strict 0.10 imbalance tier or the OR60 variant after this screen would be post-result narrowing of the declared five-variant edge. No NQ PnL was inspected.",
+  "staged_pnl_run": false,
+  "monkey_reached": 0,
+  "wfa_reached": 0,
+  "monte_carlo_reached": 0,
+  "candidate_strategy_report_created": false,
+  "variant_density_summary": [
+    {
+      "variant_id": "or15_large10_failed_reclaim_1030",
+      "rows": 6,
+      "pass_rows": 6,
+      "min_full": 64.503541,
+      "min_limited": 57.056604,
+      "min_latest": 89,
+      "decision": "NEEDS MANUAL REVIEW"
+    },
+    {
+      "variant_id": "or15_signed_failed_reclaim_1030",
+      "rows": 4,
+      "pass_rows": 4,
+      "min_full": 66.618411,
+      "min_limited": 66.566038,
+      "min_latest": 57,
+      "decision": "NEEDS MANUAL REVIEW"
+    },
+    {
+      "variant_id": "or30_large20_failed_reclaim_1130",
+      "rows": 9,
+      "pass_rows": 9,
+      "min_full": 57.431943,
+      "min_limited": 67.924528,
+      "min_latest": 58,
+      "decision": "NEEDS MANUAL REVIEW"
+    },
+    {
+      "variant_id": "or30_signed_failed_reclaim_1100",
+      "rows": 4,
+      "pass_rows": 4,
+      "min_full": 70.914241,
+      "min_limited": 73.358491,
+      "min_latest": 56,
+      "decision": "NEEDS MANUAL REVIEW"
+    },
+    {
+      "variant_id": "or60_signed_failed_reclaim_1200",
+      "rows": 6,
+      "pass_rows": 4,
+      "min_full": 49.699449,
+      "min_limited": 61.132075,
+      "min_latest": 24,
+      "decision": "FAIL"
+    }
+  ],
+  "artifacts": {
+    "campaign_results_csv": "backtest-campaigns/nq_opening_range_failed_breakout_orderflow/campaign_results.csv",
+    "density_audit_md": "research_artifacts/nq_opening_range_failed_breakout_orderflow_density_audit_20260630.md",
+    "density_audit_csv": "research_artifacts/nq_opening_range_failed_breakout_orderflow_density_audit_20260630.csv",
+    "methodology_audit": "campaigns/nq_opening_range_failed_breakout_orderflow/methodology_audit.md"
+  }
+}

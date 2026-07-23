@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_morning_trend_lunch_reversal_orderflow",
+  "variant_id": "late_morning_signed_up_extension_short_1130",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/campaign.yaml",
+    "hash": "c2d7f57f30f0333887f8199c1bd8da3ee3c6051a9a9c7bad4fee723f316d2c75"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/late_morning_signed_up_extension_short_1130/variant.yaml",
+    "hash": "e8a54cb2b34b82c101d641f8eb2ce9e394e18aa8421a7e5931ab4532dd393368",
+    "mechanic": {
+      "entry_module": "morning_trend_lunch_reversal_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "13:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_morning_trend_lunch_reversal_orderflow/rescue_attempts/stop_distance_rescue_1/late_morning_signed_up_extension_short_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/late_morning_signed_up_extension_short_1130/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/late_morning_signed_up_extension_short_1130/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "6e0dcdc1c8c87ea2be7a9bc961bb3172d3eef4e3ebd32da9d9a22f07a30c9eaa",
+  "source_config_hash": "324bbbb066e359efb08f3471ac05e8d98b91afcca2494060d0c7b5b2a04b2a9d",
+  "source_results_index": "campaigns/es_morning_trend_lunch_reversal_orderflow/results_index.yaml",
+  "created_at": "2026-06-19T10:33:41",
+  "updated_at": "2026-06-19T10:33:41",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

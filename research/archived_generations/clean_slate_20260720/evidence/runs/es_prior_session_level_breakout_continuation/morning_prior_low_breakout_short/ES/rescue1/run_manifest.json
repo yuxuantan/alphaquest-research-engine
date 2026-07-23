@@ -1,0 +1,62 @@
+{
+  "campaign_id": "es_prior_session_level_breakout_continuation",
+  "variant_id": "morning_prior_low_breakout_short",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_prior_session_level_breakout_continuation/morning_prior_low_breakout_short/variant.yaml",
+    "hash": "5878da7fc6cc193721243458e361dca43bb3b3167272544b2cb1eaa23efb22dc",
+    "mechanic": {
+      "entry_module": "pdh_pdl_breakout_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_prior_session_level_breakout_continuation/rescue_attempts/parameter_space_rescue_1/morning_prior_low_breakout_short/config.yaml",
+  "config_hash": "80cdd7e434b88da1bf3aac10464197762cb3e5066c7400ae1fd3cf026d3680d2",
+  "created_at": "2026-06-16T00:58:13",
+  "updated_at": "2026-06-21T12:52:41",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_prior_session_level_breakout_continuation/morning_prior_low_breakout_short/ES/rescue1/effective_config.yaml",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:52:41"
+  }
+}

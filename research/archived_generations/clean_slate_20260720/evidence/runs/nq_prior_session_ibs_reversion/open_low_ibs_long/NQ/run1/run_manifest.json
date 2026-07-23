@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_prior_session_ibs_reversion",
+  "variant_id": "open_low_ibs_long",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_prior_session_ibs_reversion/open_low_ibs_long/variant.yaml",
+    "hash": "17d1316c89db8caed8b1a064e4e6d62b7109ab995897a7b9d22fe3b6b21407ee",
+    "mechanic": {
+      "entry_module": "prior_session_ibs_reversion",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_prior_session_ibs_reversion/variants/open_low_ibs_long/config.yaml",
+  "effective_config": "backtest-campaigns/nq_prior_session_ibs_reversion/open_low_ibs_long/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_prior_session_ibs_reversion/open_low_ibs_long/NQ/run1/source_config.yaml",
+  "config_hash": "34636825b19da8dcb0e21d1b47af7c6a17eabf321f8ea07d69be1712d54f7ff3",
+  "source_config_hash": "24b4c3d323075b1359ec5a67115c59079a7f298563a9f13f9cdbe9d67cc252f0",
+  "source_results_index": "campaigns/nq_prior_session_ibs_reversion/results_index.yaml",
+  "created_at": "2026-06-30T11:32:33",
+  "updated_at": "2026-06-30T11:32:33",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

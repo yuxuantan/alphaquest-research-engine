@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_mes_flow_price_extension_reversion",
+  "variant_id": "late_morning30_mes_sell_nq_down_extension_long_1100",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_mes_flow_price_extension_reversion/late_morning30_mes_sell_nq_down_extension_long_1100/variant.yaml",
+    "hash": "10c3a62fa4bbb5fdde00eb6e19ae4ed4412c17c01135d8de7e8d2fd4dd84c0b9",
+    "mechanic": {
+      "entry_module": "trade_orderflow_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:31:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_mes_flow_price_extension_reversion/variants/late_morning30_mes_sell_nq_down_extension_long_1100/config.yaml",
+  "effective_config": "backtest-campaigns/nq_mes_flow_price_extension_reversion/late_morning30_mes_sell_nq_down_extension_long_1100/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_mes_flow_price_extension_reversion/late_morning30_mes_sell_nq_down_extension_long_1100/NQ/run1/source_config.yaml",
+  "config_hash": "6aa6da9fa9c34ab3f74c620c2bf9c38fb39c1308e0176d3e353e63a79ed70b11",
+  "source_config_hash": "f696e5d8ab74aca34871869265f3920d652be3c76a0d6977d160b3ca577d5b52",
+  "source_results_index": "campaigns/nq_mes_flow_price_extension_reversion/results_index.yaml",
+  "created_at": "2026-06-23T18:13:49",
+  "updated_at": "2026-06-23T18:13:49",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -53,3 +53,39 @@ def test_explicit_roll_calendar_is_bound_into_bar_source_hash(tmp_path):
     calendar.write_text("start_timestamp,contract_symbol\n2026-01-01T00:00:00Z,ESM26\n")
 
     assert data_source_hash(config, {}) != before
+
+
+def test_databento_execution_hash_is_independent_of_relative_path_spelling(tmp_path, monkeypatch):
+    bars = tmp_path / "bars.parquet"
+    archive = tmp_path / "events.zip"
+    calendar = tmp_path / "roll.csv"
+    manifest = tmp_path / "contracts.csv"
+    bars.write_bytes(b"bars")
+    archive.write_bytes(b"events")
+    calendar.write_bytes(b"roll")
+    manifest.write_bytes(b"manifest")
+    monkeypatch.chdir(tmp_path)
+    relative = {
+        "source": "parquet",
+        "raw_parquet": "bars.parquet",
+        "execution_data": {
+            "source": "databento_zip_trades",
+            "archive": "events.zip",
+            "roll_calendar": "roll.csv",
+            "contract_manifest": "contracts.csv",
+            "root_symbol": "ES",
+        },
+    }
+    absolute = {
+        "source": "parquet",
+        "raw_parquet": str(bars),
+        "execution_data": {
+            "source": "databento_zip_trades",
+            "archive": str(archive),
+            "roll_calendar": str(calendar),
+            "contract_manifest": str(manifest),
+            "root_symbol": "ES",
+        },
+    }
+
+    assert data_source_hash(relative, {}) == data_source_hash(absolute, {})

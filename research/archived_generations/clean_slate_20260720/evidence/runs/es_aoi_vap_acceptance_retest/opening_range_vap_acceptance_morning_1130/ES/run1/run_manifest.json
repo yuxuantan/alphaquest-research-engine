@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_aoi_vap_acceptance_retest",
+  "variant_id": "opening_range_vap_acceptance_morning_1130",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_aoi_vap_acceptance_retest/opening_range_vap_acceptance_morning_1130/variant.yaml",
+    "hash": "1019a7494f9db4d870d91ecd435c8bf3dad069a5fa4ef2501b10c23f8fafbfd7",
+    "mechanic": {
+      "entry_module": "aoi_vap_acceptance_retest",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "opening_range_retest_boundary",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_aoi_vap_acceptance_retest/variants/opening_range_vap_acceptance_morning_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_aoi_vap_acceptance_retest/opening_range_vap_acceptance_morning_1130/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_aoi_vap_acceptance_retest/opening_range_vap_acceptance_morning_1130/ES/run1/source_config.yaml",
+  "config_hash": "3f1726c8c1af7c059b81bb4405ce8ce4196bfd1b0d599aee8ff9c5f2f7816f87",
+  "source_config_hash": "f84be889803ffdfd343577ba3ae9818810a95ccd6e2a6c230e27b310dda98787",
+  "source_results_index": "campaigns/es_aoi_vap_acceptance_retest/results_index.yaml",
+  "created_at": "2026-06-22T13:30:46",
+  "updated_at": "2026-06-22T13:30:46",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

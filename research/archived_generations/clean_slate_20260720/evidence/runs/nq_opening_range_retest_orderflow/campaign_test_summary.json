@@ -1,0 +1,87 @@
+{
+  "campaign_id": "nq_opening_range_retest_orderflow",
+  "symbol": "NQ",
+  "decision": "FAIL",
+  "verdict": "FAIL",
+  "status": "completed",
+  "completed_at": "2026-06-30",
+  "passed": false,
+  "halted": true,
+  "terminal_stage": "pre_pnl_density_screen",
+  "results_csv": "backtest-campaigns/nq_opening_range_retest_orderflow/campaign_results.csv",
+  "density_audit": "research_artifacts/nq_opening_range_retest_orderflow_density_audit_20260630.md",
+  "density_audit_csv": "research_artifacts/nq_opening_range_retest_orderflow_density_audit_20260630.csv",
+  "density_summary_csv": "research_artifacts/nq_opening_range_retest_orderflow_density_summary_20260630.csv",
+  "methodology_audit": "campaigns/nq_opening_range_retest_orderflow/methodology_audit.md",
+  "summary": "Rejected before staged NQ PnL: 16/45 declared entry-grid rows and 1/5 variants passed all density gates. The OR30 large10 absorption retest variant cleared density, but the declared five-variant opening-range retest campaign failed; dropping sparse variants after seeing this screen would be post-result narrowing. No NQ PnL was inspected.",
+  "density_rows": 45,
+  "density_pass_rows": 16,
+  "density_fail_rows": 29,
+  "density_passing_variants": [
+    "or30_large10_absorption_retest_1130"
+  ],
+  "density_failed_variants": [
+    "or15_signed_absorption_retest_1030",
+    "or15_signed_aligned_retest_1030",
+    "or30_signed_absorption_retest_1100",
+    "or60_large20_aligned_retest_1230"
+  ],
+  "variant_summary": [
+    {
+      "variant_id": "or15_signed_absorption_retest_1030",
+      "entry_rows": 9,
+      "passing_rows": 3,
+      "density_gate_pass": false,
+      "min_full_signals_per_year": 38.92804575279305,
+      "min_limited_core_signals_per_year": 54.4955595026643,
+      "min_latest_252_signals": 28
+    },
+    {
+      "variant_id": "or15_signed_aligned_retest_1030",
+      "entry_rows": 9,
+      "passing_rows": 4,
+      "density_gate_pass": false,
+      "min_full_signals_per_year": 42.94391736123426,
+      "min_limited_core_signals_per_year": 62.280639431616336,
+      "min_latest_252_signals": 29
+    },
+    {
+      "variant_id": "or30_large10_absorption_retest_1130",
+      "entry_rows": 9,
+      "passing_rows": 9,
+      "density_gate_pass": true,
+      "min_full_signals_per_year": 63.41190813974109,
+      "min_limited_core_signals_per_year": 76.55328596802842,
+      "min_latest_252_signals": 51
+    },
+    {
+      "variant_id": "or30_signed_absorption_retest_1100",
+      "entry_rows": 9,
+      "passing_rows": 0,
+      "density_gate_pass": false,
+      "min_full_signals_per_year": 40.80643731158007,
+      "min_limited_core_signals_per_year": 53.84680284191829,
+      "min_latest_252_signals": 22
+    },
+    {
+      "variant_id": "or60_large20_aligned_retest_1230",
+      "entry_rows": 9,
+      "passing_rows": 0,
+      "density_gate_pass": false,
+      "min_full_signals_per_year": 49.356357510196844,
+      "min_limited_core_signals_per_year": 66.82193605683837,
+      "min_latest_252_signals": 43
+    }
+  ],
+  "stages_not_run": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "staged_pnl_started": false
+}

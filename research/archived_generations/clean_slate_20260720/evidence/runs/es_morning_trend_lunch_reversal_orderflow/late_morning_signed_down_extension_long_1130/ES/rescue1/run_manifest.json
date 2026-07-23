@@ -1,0 +1,59 @@
+{
+  "campaign_id": "es_morning_trend_lunch_reversal_orderflow",
+  "variant_id": "late_morning_signed_down_extension_long_1130",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/late_morning_signed_down_extension_long_1130/variant.yaml",
+    "hash": "ba3184031a35c84bdafaae1923e84bb7e90abedc7ad125e662d382785a5ace12",
+    "mechanic": {
+      "entry_module": "morning_trend_lunch_reversal_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "13:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_morning_trend_lunch_reversal_orderflow/rescue_attempts/parameter_space_rescue_1/late_morning_signed_down_extension_long_1130/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/late_morning_signed_down_extension_long_1130/ES/rescue1/source_config.yaml",
+  "config_hash": "aed1a3b0999948ce5c6863453700f9c2f11bd5b2509b66d2a79446589438b60a",
+  "source_config_hash": "4f095cd35b0afcb1db1fc5892c531a0049747d205f6be12e948dc1f32fe247a7",
+  "created_at": "2026-06-18T11:24:49",
+  "updated_at": "2026-06-18T11:24:49",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_morning_trend_lunch_reversal_orderflow/late_morning_signed_down_extension_long_1130/ES/rescue1/effective_config.yaml"
+}

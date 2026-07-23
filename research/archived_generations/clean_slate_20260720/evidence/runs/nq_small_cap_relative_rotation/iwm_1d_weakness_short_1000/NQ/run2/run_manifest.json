@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_small_cap_relative_rotation",
+  "variant_id": "iwm_1d_weakness_short_1000",
+  "test_run_id": "run2",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_small_cap_relative_rotation/iwm_1d_weakness_short_1000/variant.yaml",
+    "hash": "7dae62f6ab36d73d36119d1e56068a262ccc07fc063b13a980c0cf03a50335c3",
+    "mechanic": {
+      "entry_module": "nq_small_cap_relative_rotation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_small_cap_relative_rotation/variants/iwm_1d_weakness_short_1000/config.yaml",
+  "effective_config": "backtest-campaigns/nq_small_cap_relative_rotation/iwm_1d_weakness_short_1000/NQ/run2/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_small_cap_relative_rotation/iwm_1d_weakness_short_1000/NQ/run2/source_config.yaml",
+  "config_hash": "d1a7ca394cc088510b4c6ab9d63b91783fccd608c920931bb3021f5ae36d3cb0",
+  "source_config_hash": "6e441d1b1598f4e93935eca11afe49e3d626edda0ae565527a812a19671083c5",
+  "source_results_index": "campaigns/nq_small_cap_relative_rotation/results_index.yaml",
+  "created_at": "2026-07-01T03:46:30",
+  "updated_at": "2026-07-01T03:46:30",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

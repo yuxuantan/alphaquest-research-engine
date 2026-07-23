@@ -133,7 +133,7 @@ def test_out_of_order_variant_navigation_fails_soft_with_prerequisite_guidance(
     app.text_input[1].set_value("Early navigation fixture")
     app.button[0].click().run()
     app.radio[0].set_value("Campaigns").run()
-    app.selectbox[1].set_value("6 · Five variants").run()
+    app.selectbox[1].set_value("6 · First variant").run()
 
     assert not app.exception
     assert any("Complete and save step 1" in item.value for item in app.warning)
@@ -164,7 +164,7 @@ def test_fresh_workspace_completes_seven_checkpoint_tutorial_entirely_in_streaml
     assert not (tmp_path / "research/campaigns/active").exists()
 
 
-def test_no_code_wizard_reaches_atomic_five_variant_publication_in_fresh_workspace(
+def test_no_code_wizard_reaches_atomic_initial_variant_publication_in_fresh_workspace(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
@@ -291,10 +291,10 @@ def test_no_code_wizard_reaches_atomic_five_variant_publication_in_fresh_workspa
         for item in app.checkbox
         if item.label == "I confirm this mechanic before performance testing"
     ]
-    assert len(confirmations) == 5
+    assert len(confirmations) == 1
     for checkbox in confirmations:
         checkbox.set_value(True)
-    next(item for item in app.button if item.label == "Save all five variant cards").click().run()
+    next(item for item in app.button if item.label == "Save the initial variant card").click().run()
     assert not app.exception
     app = reopen_campaigns()
 
@@ -312,7 +312,7 @@ def test_no_code_wizard_reaches_atomic_five_variant_publication_in_fresh_workspa
     campaign = tmp_path / "research/campaigns/active/no_code_publication"
     assert (campaign / "campaign.yaml").is_file()
     assert (campaign / "authoring_manifest.json").is_file()
-    assert len(list((campaign / "variants").glob("*/config.yaml"))) == 5
+    assert len(list((campaign / "variants").glob("*/config.yaml"))) == 1
     assert any("Published no_code_publication" in item.value for item in app.success)
     published = next(
         row for row in list_published_campaigns(tmp_path) if row["campaign_id"] == "no_code_publication"
@@ -323,18 +323,12 @@ def test_no_code_wizard_reaches_atomic_five_variant_publication_in_fresh_workspa
     next(
         item
         for item in app.button
-        if item.label == "Generate mechanics evidence · queue all five frozen variants"
+        if item.label == "Generate mechanics evidence · current variant"
     ).click().run(timeout=30)
     queue = SQLiteJobQueue(tmp_path / "run-store/studio-runtime/jobs.sqlite3")
     jobs = queue.list_jobs(limit=10)
-    assert len(jobs) == 5
-    assert [job.payload["variant_id"] for job in reversed(jobs)] == [
-        "v01",
-        "v02",
-        "v03",
-        "v04",
-        "v05",
-    ]
+    assert len(jobs) == 1
+    assert [job.payload["variant_id"] for job in reversed(jobs)] == ["v01"]
     assert {job.state for job in jobs} == {OperationalState.QUEUED}
 
     handled = StudioWorker(
@@ -343,14 +337,14 @@ def test_no_code_wizard_reaches_atomic_five_variant_publication_in_fresh_workspa
         worker_id="e2e-mechanics-worker",
     ).run_forever(
         poll_interval=0,
-        max_jobs=5,
+        max_jobs=1,
         recover_stale_after=None,
     )
-    assert handled == 5
+    assert handled == 1
     mechanics_jobs = [
         job for job in queue.list_jobs(limit=20) if job.job_type == MECHANICS_VALIDATION_RUN
     ]
-    assert len(mechanics_jobs) == 5
+    assert len(mechanics_jobs) == 1
     assert {job.state for job in mechanics_jobs} == {OperationalState.SUCCEEDED}
     assert {job.research_verdict for job in mechanics_jobs} == {"NEEDS MANUAL REVIEW"}
     assert {job.attempt_reserved for job in mechanics_jobs} == {False}
@@ -406,24 +400,18 @@ def test_no_code_wizard_reaches_atomic_five_variant_publication_in_fresh_workspa
     ).click().run(timeout=30)
     assert not review_app.exception
     assert any("Hash-, data-, lane-" in item.value for item in review_app.success)
-    assert len(require_all_variant_mechanics_approved(config_paths)) == 5
+    assert len(require_all_variant_mechanics_approved(config_paths)) == 1
 
     app = reopen_campaigns()
     next(
-        item for item in app.button if item.label == "Run campaign · queue all five variants"
+        item for item in app.button if item.label == "Run full test suite · current variant"
     ).click().run(timeout=30)
     assert not app.exception
     performance_jobs = [
         job for job in queue.list_jobs(limit=20) if job.job_type == CAMPAIGN_VARIANT_RUN
     ]
-    assert len(performance_jobs) == 5
-    assert [job.payload["variant_id"] for job in reversed(performance_jobs)] == [
-        "v01",
-        "v02",
-        "v03",
-        "v04",
-        "v05",
-    ]
+    assert len(performance_jobs) == 1
+    assert [job.payload["variant_id"] for job in reversed(performance_jobs)] == ["v01"]
 
     handled = StudioWorker(
         queue,
@@ -431,10 +419,10 @@ def test_no_code_wizard_reaches_atomic_five_variant_publication_in_fresh_workspa
         worker_id="e2e-performance-worker",
     ).run_forever(
         poll_interval=0,
-        max_jobs=5,
+        max_jobs=1,
         recover_stale_after=None,
     )
-    assert handled == 5
+    assert handled == 1
     performance_jobs = [
         job for job in queue.list_jobs(limit=20) if job.job_type == CAMPAIGN_VARIANT_RUN
     ]
@@ -448,11 +436,11 @@ def test_no_code_wizard_reaches_atomic_five_variant_publication_in_fresh_workspa
 
     app = reopen_campaigns()
     rows, latest = _results_matrix_state(tmp_path, "no_code_publication")
-    assert len(rows) == 5
+    assert len(rows) == 1
     assert {row["research verdict"] for row in rows} == {"FAIL"}
     assert all(row["first failed or unresolved gate"] != "none" for row in rows)
-    assert set(latest) == {"v01", "v02", "v03", "v04", "v05"}
-    assert any("Five-variant stage matrix" in item.value for item in app.markdown)
+    assert set(latest) == {"v01"}
+    assert any("Sequential variant stage matrix" in item.value for item in app.markdown)
     assert any("Stage criteria · actual versus required" in item.value for item in app.markdown)
     assert any("Required metrics" in item.value for item in app.markdown)
     assert app.error

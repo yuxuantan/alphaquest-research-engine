@@ -1,0 +1,222 @@
+{
+  "stage": "walk_forward_analysis",
+  "label": "Walk Forward Analysis (WFA)",
+  "status": "failed",
+  "passed": false,
+  "started_at": "2026-06-20T04:46:56",
+  "completed_at": "2026-06-20T04:51:11",
+  "duration_seconds": 255.026827,
+  "criteria": [
+    {
+      "metric": "summary.early_exit",
+      "actual": true,
+      "expected": {
+        "equals": false
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.profit_factor",
+      "actual": 0.9644457723334329,
+      "expected": {
+        "min": 1.2
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.mar",
+      "actual": -0.09285370075346508,
+      "expected": {
+        "min": 0.4
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.trades_per_year",
+      "actual": 42.94343950778083,
+      "expected": {
+        "min": 50
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "windows": 2,
+    "objective": "MAR",
+    "window_mode": "unanchored",
+    "train_months": 48,
+    "test_months": 12,
+    "step_months": 12,
+    "parallel": {
+      "enabled": true,
+      "scope": "window_grid",
+      "workers": 3
+    },
+    "selection_filter": {
+      "exclusive_min_trades_per_year": 50
+    },
+    "early_exit_min_train_profit_factor": 1.0,
+    "early_exit_require_train_profitable": false,
+    "early_exit": true,
+    "passing_windows": 0,
+    "profitable_windows": 0,
+    "profitable_window_rate": 0.0,
+    "meets_profitable_window_benchmark": false,
+    "median_test_net_profit": -148.75,
+    "median_test_mar": -0.04642685037673254,
+    "median_test_cagr": -0.0010139197208711703,
+    "median_test_max_drawdown_pct": 0.010919540229885057,
+    "train_grid_reports_retained": true,
+    "train_grid_report_files": [
+      "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/walk_forward_analysis/window_001_train_grid.csv"
+    ],
+    "reuse_existing_train_grids_requested": false,
+    "reused_existing_train_grids": false,
+    "reused_train_grid_count": 0,
+    "strict_train_grid_reuse": true,
+    "phase_timings_seconds": {
+      "slice_windows": 0.187501,
+      "train_grid_compute": 226.702661,
+      "train_grid_write": 0.005936,
+      "oos_backtest": 0.952686,
+      "annotate_oos_trades": 0.001236,
+      "stitch_oos_trades": 0.001427
+    },
+    "window_timings_seconds": [
+      {
+        "window_id": 1.0,
+        "slice_seconds": 0.090409,
+        "train_grid_seconds": 114.842011,
+        "train_grid_write_seconds": 0.005936,
+        "oos_backtest_seconds": 0.952686,
+        "total_seconds": 115.894113,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 2.0,
+        "slice_seconds": 0.097092,
+        "train_grid_seconds": 111.86065,
+        "total_seconds": 111.958242,
+        "early_exit": true
+      }
+    ],
+    "stitched_oos_trades": 42,
+    "stitched_oos_metrics": {
+      "total_trades": 42,
+      "trades_per_year": 42.94343950778083,
+      "net_profit": -297.5,
+      "profit_factor": 0.9644457723334329,
+      "expectancy_r": -0.009165035760149603,
+      "max_drawdown": 3325.0,
+      "max_drawdown_pct": 0.021839080459770115,
+      "cagr": -0.0020278394417423407,
+      "mar": -0.09285370075346508,
+      "worst_day": -442.5,
+      "best_day": 832.5,
+      "best_day_concentration": 0.0,
+      "max_consecutive_losses": 7,
+      "positive_month_rate": 0.45454545454545453,
+      "win_rate": 0.5,
+      "average_trade": -7.083333333333333,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0
+    },
+    "oos_evaluation_years": 2.001368925393566,
+    "required_oos_mar": 1.5,
+    "incubation_selected_params": {
+      "entry.params.min_sector_count": 5,
+      "entry.params.min_orderflow_imbalance": 0.01,
+      "sl.params.stop_pct": 0.004,
+      "tp.params.target_r_multiple": 2.0
+    },
+    "configured_data_subset": {},
+    "resolved_data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2024-11-22",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2024-11-22",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "actual_data_period": {
+      "first_timestamp": "2011-01-03 09:30:00-05:00",
+      "last_timestamp": "2024-11-22 15:59:00-05:00",
+      "rows": 1340820,
+      "strategy_rows": 268164,
+      "timeframe": "5m",
+      "source_timeframe": "1m"
+    },
+    "equity_curve_csv": "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/walk_forward_analysis/equity_curve.csv",
+    "equity_curve_html": "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/walk_forward_analysis/equity_curve.html",
+    "equity_curve_points": 43
+  },
+  "stitched_oos_metrics": {
+    "total_trades": 42,
+    "trades_per_year": 42.94343950778083,
+    "net_profit": -297.5,
+    "profit_factor": 0.9644457723334329,
+    "expectancy_r": -0.009165035760149603,
+    "max_drawdown": 3325.0,
+    "max_drawdown_pct": 0.021839080459770115,
+    "cagr": -0.0020278394417423407,
+    "mar": -0.09285370075346508,
+    "worst_day": -442.5,
+    "best_day": 832.5,
+    "best_day_concentration": 0.0,
+    "max_consecutive_losses": 7,
+    "positive_month_rate": 0.45454545454545453,
+    "win_rate": 0.5,
+    "average_trade": -7.083333333333333,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "incubation_selected_params": {
+    "entry.params.min_sector_count": 5,
+    "entry.params.min_orderflow_imbalance": 0.01,
+    "sl.params.stop_pct": 0.004,
+    "tp.params.target_r_multiple": 2.0
+  },
+  "data_quality": {
+    "rows": 1340820,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 0,
+    "first_timestamp": "2011-01-03 09:30:00-05:00",
+    "last_timestamp": "2024-11-22 15:59:00-05:00",
+    "roll_boundary_sessions_skipped": 0,
+    "loaded_rows": 1341600,
+    "strategy_rows": 268164,
+    "timeframe": "5m",
+    "timeframe_minutes": 5,
+    "source_timeframe": "1m",
+    "prepare_data_duration_seconds": 26.92952,
+    "prepared_data_cache": {
+      "enabled": true,
+      "hit": false,
+      "key": "78e108bb9bebe4b9c114dd14d8ab98b39b8b571ae79f2a9c4a9ef67929e4387b"
+    }
+  },
+  "input_hash": "4b878ec634d7bfad334902d112b9507cb60074e6f445dcd016ab18478d180c33",
+  "artifacts": [
+    "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/walk_forward_analysis/equity_curve.csv",
+    "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/walk_forward_analysis/equity_curve.html",
+    "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/walk_forward_analysis/wfa_oos_trade_log.csv",
+    "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/walk_forward_analysis/wfa_results.csv",
+    "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/walk_forward_analysis/wfa_summary.json",
+    "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/walk_forward_analysis/window_001_train_grid.csv"
+  ]
+}

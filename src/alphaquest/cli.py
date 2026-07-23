@@ -42,6 +42,27 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--version", action="version", version="alphaquest 0.1.0")
     commands = parser.add_subparsers(dest="command")
 
+    strategy = commands.add_parser("strategy", help="Audit and certify custom strategy implementations.")
+    strategy_commands = strategy.add_subparsers(dest="strategy_command")
+    strategy_list = strategy_commands.add_parser("list", help="List versioned strategy certifications.")
+    strategy_list.add_argument("--project-root", default=".")
+    strategy_list.add_argument("--json", action="store_true")
+    strategy_list.set_defaults(handler=_strategy_list)
+    strategy_audit = strategy_commands.add_parser(
+        "audit", help="Verify source hashes, factories, and required certification coverage."
+    )
+    strategy_audit.add_argument("strategy_id", nargs="?")
+    strategy_audit.add_argument("--project-root", default=".")
+    strategy_audit.add_argument("--json", action="store_true")
+    strategy_audit.set_defaults(handler=_strategy_audit)
+    strategy_certify = strategy_commands.add_parser(
+        "certify", help="Run declared tests and bind a strategy manifest to the tested source bytes."
+    )
+    strategy_certify.add_argument("strategy_id")
+    strategy_certify.add_argument("--project-root", default=".")
+    strategy_certify.add_argument("--json", action="store_true")
+    strategy_certify.set_defaults(handler=_strategy_certify)
+
     workspace = commands.add_parser("workspace", help="Build generated indexes and views.")
     workspace_commands = workspace.add_subparsers(dest="workspace_command")
     workspace_build = workspace_commands.add_parser("build", help="Rebuild the registry, views, and run-store index.")
@@ -189,6 +210,11 @@ def _parser() -> argparse.ArgumentParser:
     studio_start.add_argument("--address", default="127.0.0.1")
     studio_start.add_argument("--background", action="store_true")
     studio_start.add_argument("--no-browser", action="store_true")
+    studio_start.add_argument(
+        "--legacy-streamlit",
+        action="store_true",
+        help="Use the retired Streamlit interface temporarily for compatibility.",
+    )
     studio_start.add_argument("--json", action="store_true")
     studio_start.set_defaults(handler=_studio_start)
     studio_status = studio_commands.add_parser("status", help="Show Research Studio process status.")
@@ -211,7 +237,7 @@ def _parser() -> argparse.ArgumentParser:
     studio_attempt_commands = studio_attempt.add_subparsers(dest="studio_attempt_command")
     attempt_create = studio_attempt_commands.add_parser(
         "create",
-        help="Clone all five frozen definitions into a new auditable attempt identity.",
+        help="Clone every currently declared frozen definition into a new auditable attempt identity.",
     )
     attempt_create.add_argument("campaign_id")
     attempt_create.add_argument(
@@ -222,6 +248,7 @@ def _parser() -> argparse.ArgumentParser:
             "data_refresh",
             "methodology_rerun",
             "pre_pnl_mechanics_correction",
+            "pre_pnl_parameter_declaration",
             "rescue",
         ),
     )
@@ -233,6 +260,10 @@ def _parser() -> argparse.ArgumentParser:
     attempt_create.add_argument("--component", choices=("entry", "sl", "tp"))
     attempt_create.add_argument("--parameter")
     attempt_create.add_argument("--value", help="JSON scalar for an explicit mechanics correction.")
+    attempt_create.add_argument(
+        "--parameter-grid-json",
+        help="JSON object of certified event parameter names to predeclared value lists.",
+    )
     attempt_create.add_argument("--authorized-by")
     attempt_create.add_argument("--project-root", default=".")
     attempt_create.add_argument("--json", action="store_true")
@@ -244,7 +275,7 @@ def _parser() -> argparse.ArgumentParser:
     attempt_list.set_defaults(handler=_studio_attempt_list)
     attempt_mechanics = studio_attempt_commands.add_parser(
         "queue-mechanics",
-        help="Queue fresh mechanics evidence for all five configs in one attempt.",
+        help="Queue fresh mechanics evidence for the current sequential variant.",
     )
     attempt_mechanics.add_argument("campaign_id")
     attempt_mechanics.add_argument("attempt_id")
@@ -253,7 +284,7 @@ def _parser() -> argparse.ArgumentParser:
     attempt_mechanics.set_defaults(handler=_studio_attempt_queue_mechanics)
     attempt_run = studio_attempt_commands.add_parser(
         "queue-run",
-        help="Queue all five approved configs in one explicit attempt.",
+        help="Queue the approved current sequential variant in one explicit attempt.",
     )
     attempt_run.add_argument("campaign_id")
     attempt_run.add_argument("attempt_id")
@@ -267,6 +298,66 @@ def _database_argument(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--database", default=str(DEFAULT_DATABASE))
 
 
+def _strategy_list(args: argparse.Namespace) -> int:
+    from alphaquest.strategy_certification import load_strategy_certifications
+
+    records = [
+        item.public_record()
+        for item in load_strategy_certifications(args.project_root, require_current=False).values()
+    ]
+    if args.json:
+        print(json.dumps(records, indent=2))
+    else:
+        for record in records:
+            print(
+                f"{record['strategy_id']} v{record['implementation_version']} "
+                f"{record['certification_status']} {record['implementation_sha256']}"
+            )
+    return 0
+
+
+def _strategy_audit(args: argparse.Namespace) -> int:
+    from alphaquest.strategy_certification import (
+        audit_strategy_certification,
+        load_strategy_certifications,
+    )
+
+    certifications = load_strategy_certifications(args.project_root, require_current=False)
+    if args.strategy_id:
+        if args.strategy_id not in certifications:
+            raise ValueError(f"strategy {args.strategy_id!r} has no certification manifest")
+        certifications = {args.strategy_id: certifications[args.strategy_id]}
+    records = []
+    failed = False
+    for item in certifications.values():
+        errors = audit_strategy_certification(item, args.project_root)
+        failed = failed or bool(errors)
+        records.append({**item.public_record(), "verdict": "FAIL" if errors else "PASS", "errors": errors})
+    if args.json:
+        print(json.dumps(records, indent=2))
+    else:
+        for record in records:
+            print(f"{record['strategy_id']}: {record['verdict']}")
+            for error in record["errors"]:
+                print(f"- {error}")
+    return 2 if failed else 0
+
+
+def _strategy_certify(args: argparse.Namespace) -> int:
+    from alphaquest.strategy_certification import certify_strategy
+
+    result = certify_strategy(args.strategy_id, args.project_root)
+    payload = {**result.public_record(), "verdict": "PASS"}
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        print(
+            f"{result.strategy_id} v{result.implementation_version}: PASS "
+            f"({result.implementation_sha256})"
+        )
+    return 0
+
+
 def _studio_start(args: argparse.Namespace) -> int:
     from alphaquest.studio.launcher import start_studio
 
@@ -276,6 +367,7 @@ def _studio_start(args: argparse.Namespace) -> int:
         address=args.address,
         background=args.background,
         open_browser=not args.no_browser,
+        legacy_streamlit=args.legacy_streamlit,
     )
     if args.json:
         print(json.dumps(payload, indent=2))
@@ -326,9 +418,9 @@ def _studio_attempt_create(args: argparse.Namespace) -> int:
     from alphaquest.studio.followups import FollowUpAttemptRequestV1, FollowUpAttemptService
 
     patches = []
-    patch_values = (args.target_variant, args.component, args.parameter, args.value)
+    patch_values = (args.component, args.parameter, args.value)
     if any(value is not None for value in patch_values):
-        if not all(value is not None for value in patch_values):
+        if args.target_variant is None or not all(value is not None for value in patch_values):
             raise ValueError(
                 "mechanics changes require --target-variant, --component, --parameter, and --value together"
             )
@@ -346,6 +438,11 @@ def _studio_attempt_create(args: argparse.Namespace) -> int:
                 "value": scalar,
             }
         )
+    parameter_grid = {}
+    if args.parameter_grid_json is not None:
+        parameter_grid = json.loads(args.parameter_grid_json)
+        if not isinstance(parameter_grid, dict):
+            raise ValueError("--parameter-grid-json must decode to an object")
     request = FollowUpAttemptRequestV1.model_validate(
         {
             "campaign_id": args.campaign_id,
@@ -357,6 +454,7 @@ def _studio_attempt_create(args: argparse.Namespace) -> int:
             "target_variant_id": args.target_variant,
             "authorized_by": args.authorized_by,
             "mechanic_patches": patches,
+            "parameter_grid": parameter_grid,
         }
     )
     result = FollowUpAttemptService(args.project_root).create(request)
@@ -813,7 +911,7 @@ def _validation_approval_template(args: argparse.Namespace, variant_id: str) -> 
         "lane": "bar",
         "config_hash": "",
         "input_data_hash": "",
-        "validation_schema_version": "1.3",
+        "validation_schema_version": "1.4",
         "sampled_trade_ids": [],
         "sampling_categories": {
             "first_trade": [],

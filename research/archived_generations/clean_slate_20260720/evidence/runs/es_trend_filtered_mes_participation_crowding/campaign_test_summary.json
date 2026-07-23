@@ -1,0 +1,838 @@
+{
+  "campaign_id": "es_trend_filtered_mes_participation_crowding",
+  "decision": "FAIL",
+  "reason": "Best rescue passed limited core, limited monkey, WFA, and WFA OOS monkey, but still failed corrected WFA OOS Monte Carlo benchmark-sheet gate.",
+  "source_campaign_yaml": "campaigns/es_trend_filtered_mes_participation_crowding/campaign.yaml",
+  "original_runs": 5,
+  "rescue_runs": 5,
+  "wfa_reached": 1,
+  "wfa_oos_monkey_reached": 1,
+  "monte_carlo_reached": 1,
+  "candidate_strategy_report_created": false,
+  "best_run": {
+    "variant_id": "morning_trade_trend_pullback_reversal_1030",
+    "run_id": "rescue1",
+    "terminal_stage": "wfa_oos_monte_carlo",
+    "core_profitable_combo_rate": 1.0,
+    "wfa_stitched_oos_metrics": {
+      "total_trades": 158,
+      "trades_per_year": 77.87399848190942,
+      "net_profit": 17410.0,
+      "profit_factor": 1.449261337978195,
+      "expectancy_r": 0.12401929161005902,
+      "max_drawdown": 5240.0,
+      "max_drawdown_pct": 0.032063637754321556,
+      "cagr": 0.05561414375447593,
+      "mar": 1.7344926418082498,
+      "worst_day": -1217.5,
+      "best_day": 1895.0,
+      "best_day_concentration": 0.10884549109707065,
+      "max_consecutive_losses": 4,
+      "positive_month_rate": 0.5,
+      "win_rate": 0.569620253164557,
+      "average_trade": 110.18987341772151,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0
+    },
+    "wfa_oos_monkey": {
+      "net_beat_rate": 0.9733333333333334,
+      "drawdown_beat_rate": 0.9633333333333334,
+      "one_tick_worse": {
+        "net_profit": 13352.5,
+        "profit_factor": 1.3361445024859966,
+        "expectancy_r": 0.09651374641634164,
+        "max_drawdown": 6015.0,
+        "total_trades": 157,
+        "profitable": true,
+        "benchmark_passed": false,
+        "apex_rule_violations": 0,
+        "fill_order_conflicts": 0
+      }
+    },
+    "wfa_oos_monte_carlo": {
+      "number_of_runs": 300,
+      "median_ending_balance": 139660.0,
+      "p5_ending_balance": 139162.375,
+      "p95_drawdown": 10837.625,
+      "probability_account_breach": 1.0,
+      "probability_payout_eligible": 0.0,
+      "probability_profit_before_drawdown": 0.0,
+      "probability_net_profit_gt_0": 0.0,
+      "parallel": {
+        "enabled": true,
+        "workers": 6,
+        "scope": "runs"
+      },
+      "meets_prop_pass_chance_benchmark": false,
+      "prop_rules_used": {
+        "starting_balance": 150000,
+        "max_contracts": 10,
+        "max_best_day_profit_percentage": 0.5,
+        "min_trading_days": 10,
+        "payout_threshold": 188.9,
+        "profit_target_amount": 50000.0,
+        "drawdown_limit_amount": 10000.0,
+        "daily_loss_limit": 10000.0,
+        "trailing_drawdown": 10000.0
+      }
+    },
+    "methodology_gate_rerun": {
+      "updated_at": "2026-06-19T00:37:29",
+      "reason": "Corrected WFA OOS Monte Carlo default rule assembly so top-level daily_loss_limit/trailing_drawdown do not tighten the benchmark-sheet 50k-before-10k gate unless explicitly overridden for MC/stage.",
+      "variant_summary": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/campaign_test_summary.json",
+      "stage_result": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/wfa_oos_monte_carlo/stage_result.json"
+    }
+  },
+  "artifacts": {
+    "campaign_results": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/campaign_results.csv",
+    "wfa_table": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/wfa_table.csv",
+    "monte_carlo_summary": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/monte_carlo_summary.json",
+    "trade_logs_manifest": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/trade_logs_manifest.csv",
+    "equity_curves_manifest": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/equity_curves_manifest.csv",
+    "density_audit": "research_artifacts/es_trend_filtered_mes_participation_crowding_density_audit_20260618.md",
+    "rescue_density_audit": "research_artifacts/es_trend_filtered_mes_participation_crowding_rescue_attempt_1_density_audit_20260618.md"
+  },
+  "runs": [
+    {
+      "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/afternoon_notional_trend_pullback_reversal_1400/ES/run1/campaign_test_summary.json",
+      "summary": {
+        "campaign_id": "es_trend_filtered_mes_participation_crowding",
+        "variant_id": "afternoon_notional_trend_pullback_reversal_1400",
+        "run_id": "run1",
+        "passed": false,
+        "halted": true,
+        "terminal_stage": "limited_core_grid_test",
+        "terminal_status": "failed",
+        "criteria_failures": "summary.percentage_profitable_iterations=0.1111111111111111",
+        "profitable_combo_rate": 0.1111111111111111,
+        "benchmark_pass_combos": 0,
+        "core_profitable_combos": 9,
+        "core_combos": 81,
+        "apex_rule_violations": 0,
+        "top_net_profit": 1295.0,
+        "top_profit_factor": 1.086003652664785,
+        "top_mar": 0.5680437423924275,
+        "top_expectancy_r": 0.03335331989778475,
+        "top_trades": 46,
+        "top_trades_per_year": 76.0110336854143,
+        "best_day_concentration": 1.0868725868725868,
+        "top_failure_reason": "max_best_day_concentration",
+        "wfa_pf": null,
+        "wfa_mar": null,
+        "wfa_trades_per_year": null,
+        "wfa_net_profit": null,
+        "wfa_oos_monkey_net_beat_rate": null,
+        "wfa_oos_monkey_dd_beat_rate": null,
+        "mc_profit_before_drawdown": null,
+        "mc_account_breach": null,
+        "source_config_path": "campaigns/es_trend_filtered_mes_participation_crowding/variants/afternoon_notional_trend_pullback_reversal_1400/config.yaml",
+        "report_path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/afternoon_notional_trend_pullback_reversal_1400/ES/run1/campaign_test_summary.json",
+        "rescue_attempt": "none"
+      },
+      "stages": [
+        {
+          "stage": "limited_core_grid_test",
+          "status": "failed",
+          "passed": false
+        },
+        {
+          "stage": "limited_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "walk_forward_analysis",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monte_carlo",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_core",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_monkey",
+          "status": "skipped",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/afternoon_notional_trend_pullback_reversal_1400/ES/rescue1/campaign_test_summary.json",
+      "summary": {
+        "campaign_id": "es_trend_filtered_mes_participation_crowding",
+        "variant_id": "afternoon_notional_trend_pullback_reversal_1400",
+        "run_id": "rescue1",
+        "passed": false,
+        "halted": true,
+        "terminal_stage": "limited_core_grid_test",
+        "terminal_status": "failed",
+        "criteria_failures": "summary.percentage_profitable_iterations=0.06172839506172839",
+        "profitable_combo_rate": 0.06172839506172839,
+        "benchmark_pass_combos": 0,
+        "core_profitable_combos": 5,
+        "core_combos": 81,
+        "apex_rule_violations": 0,
+        "top_net_profit": 1197.5,
+        "top_profit_factor": 1.083217512161223,
+        "top_mar": 0.5248352069446643,
+        "top_expectancy_r": 0.03159027208676773,
+        "top_trades": 43,
+        "top_trades_per_year": 71.05379235810467,
+        "best_day_concentration": 1.1753653444676408,
+        "top_failure_reason": "max_best_day_concentration",
+        "wfa_pf": null,
+        "wfa_mar": null,
+        "wfa_trades_per_year": null,
+        "wfa_net_profit": null,
+        "wfa_oos_monkey_net_beat_rate": null,
+        "wfa_oos_monkey_dd_beat_rate": null,
+        "mc_profit_before_drawdown": null,
+        "mc_account_breach": null,
+        "source_config_path": "campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/parameter_space_rescue_1/afternoon_notional_trend_pullback_reversal_1400/config.yaml",
+        "report_path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/afternoon_notional_trend_pullback_reversal_1400/ES/rescue1/campaign_test_summary.json",
+        "rescue_attempt": "parameter_space_only"
+      },
+      "stages": [
+        {
+          "stage": "limited_core_grid_test",
+          "status": "failed",
+          "passed": false
+        },
+        {
+          "stage": "limited_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "walk_forward_analysis",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monte_carlo",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_core",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_monkey",
+          "status": "skipped",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/early_afternoon_notional_trend_pullback_reversal_1300/ES/run1/campaign_test_summary.json",
+      "summary": {
+        "campaign_id": "es_trend_filtered_mes_participation_crowding",
+        "variant_id": "early_afternoon_notional_trend_pullback_reversal_1300",
+        "run_id": "run1",
+        "passed": false,
+        "halted": true,
+        "terminal_stage": "limited_core_grid_test",
+        "terminal_status": "failed",
+        "criteria_failures": "summary.percentage_profitable_iterations=0.08641975308641975",
+        "profitable_combo_rate": 0.08641975308641975,
+        "benchmark_pass_combos": 0,
+        "core_profitable_combos": 7,
+        "core_combos": 81,
+        "apex_rule_violations": 0,
+        "top_net_profit": 1145.0,
+        "top_profit_factor": 1.0798187521784595,
+        "top_mar": 0.3650960971231602,
+        "top_expectancy_r": 0.03457288315139532,
+        "top_trades": 51,
+        "top_trades_per_year": 72.46115445292072,
+        "best_day_concentration": 0.8144104803493449,
+        "top_failure_reason": "max_best_day_concentration",
+        "wfa_pf": null,
+        "wfa_mar": null,
+        "wfa_trades_per_year": null,
+        "wfa_net_profit": null,
+        "wfa_oos_monkey_net_beat_rate": null,
+        "wfa_oos_monkey_dd_beat_rate": null,
+        "mc_profit_before_drawdown": null,
+        "mc_account_breach": null,
+        "source_config_path": "campaigns/es_trend_filtered_mes_participation_crowding/variants/early_afternoon_notional_trend_pullback_reversal_1300/config.yaml",
+        "report_path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/early_afternoon_notional_trend_pullback_reversal_1300/ES/run1/campaign_test_summary.json",
+        "rescue_attempt": "none"
+      },
+      "stages": [
+        {
+          "stage": "limited_core_grid_test",
+          "status": "failed",
+          "passed": false
+        },
+        {
+          "stage": "limited_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "walk_forward_analysis",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monte_carlo",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_core",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_monkey",
+          "status": "skipped",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/early_afternoon_notional_trend_pullback_reversal_1300/ES/rescue1/campaign_test_summary.json",
+      "summary": {
+        "campaign_id": "es_trend_filtered_mes_participation_crowding",
+        "variant_id": "early_afternoon_notional_trend_pullback_reversal_1300",
+        "run_id": "rescue1",
+        "passed": false,
+        "halted": true,
+        "terminal_stage": "limited_core_grid_test",
+        "terminal_status": "failed",
+        "criteria_failures": "summary.percentage_profitable_iterations=0.04938271604938271",
+        "profitable_combo_rate": 0.04938271604938271,
+        "benchmark_pass_combos": 0,
+        "core_profitable_combos": 4,
+        "core_combos": 81,
+        "apex_rule_violations": 0,
+        "top_net_profit": 457.5,
+        "top_profit_factor": 1.0358612580834803,
+        "top_mar": 0.15474791396403337,
+        "top_expectancy_r": 0.022125853455022586,
+        "top_trades": 41,
+        "top_trades_per_year": 62.11935104740396,
+        "best_day_concentration": 2.0382513661202184,
+        "top_failure_reason": "max_best_day_concentration",
+        "wfa_pf": null,
+        "wfa_mar": null,
+        "wfa_trades_per_year": null,
+        "wfa_net_profit": null,
+        "wfa_oos_monkey_net_beat_rate": null,
+        "wfa_oos_monkey_dd_beat_rate": null,
+        "mc_profit_before_drawdown": null,
+        "mc_account_breach": null,
+        "source_config_path": "campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/parameter_space_rescue_1/early_afternoon_notional_trend_pullback_reversal_1300/config.yaml",
+        "report_path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/early_afternoon_notional_trend_pullback_reversal_1300/ES/rescue1/campaign_test_summary.json",
+        "rescue_attempt": "parameter_space_only"
+      },
+      "stages": [
+        {
+          "stage": "limited_core_grid_test",
+          "status": "failed",
+          "passed": false
+        },
+        {
+          "stage": "limited_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "walk_forward_analysis",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monte_carlo",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_core",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_monkey",
+          "status": "skipped",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/midday_notional_trend_pullback_reversal_1200/ES/run1/campaign_test_summary.json",
+      "summary": {
+        "campaign_id": "es_trend_filtered_mes_participation_crowding",
+        "variant_id": "midday_notional_trend_pullback_reversal_1200",
+        "run_id": "run1",
+        "passed": false,
+        "halted": true,
+        "terminal_stage": "limited_core_grid_test",
+        "terminal_status": "failed",
+        "criteria_failures": "summary.percentage_profitable_iterations=0.24691358024691357",
+        "profitable_combo_rate": 0.24691358024691357,
+        "benchmark_pass_combos": 0,
+        "core_profitable_combos": 20,
+        "core_combos": 81,
+        "apex_rule_violations": 0,
+        "top_net_profit": 3932.5,
+        "top_profit_factor": 1.2826086956521738,
+        "top_mar": 1.2184506463466647,
+        "top_expectancy_r": 0.0981719570753687,
+        "top_trades": 46,
+        "top_trades_per_year": 75.9962306822465,
+        "best_day_concentration": 0.47870311506675145,
+        "top_failure_reason": "max_best_day_concentration",
+        "wfa_pf": null,
+        "wfa_mar": null,
+        "wfa_trades_per_year": null,
+        "wfa_net_profit": null,
+        "wfa_oos_monkey_net_beat_rate": null,
+        "wfa_oos_monkey_dd_beat_rate": null,
+        "mc_profit_before_drawdown": null,
+        "mc_account_breach": null,
+        "source_config_path": "campaigns/es_trend_filtered_mes_participation_crowding/variants/midday_notional_trend_pullback_reversal_1200/config.yaml",
+        "report_path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/midday_notional_trend_pullback_reversal_1200/ES/run1/campaign_test_summary.json",
+        "rescue_attempt": "none"
+      },
+      "stages": [
+        {
+          "stage": "limited_core_grid_test",
+          "status": "failed",
+          "passed": false
+        },
+        {
+          "stage": "limited_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "walk_forward_analysis",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monte_carlo",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_core",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_monkey",
+          "status": "skipped",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/midday_notional_trend_pullback_reversal_1200/ES/rescue1/campaign_test_summary.json",
+      "summary": {
+        "campaign_id": "es_trend_filtered_mes_participation_crowding",
+        "variant_id": "midday_notional_trend_pullback_reversal_1200",
+        "run_id": "rescue1",
+        "passed": false,
+        "halted": true,
+        "terminal_stage": "limited_core_grid_test",
+        "terminal_status": "failed",
+        "criteria_failures": "summary.percentage_profitable_iterations=0.2345679012345679",
+        "profitable_combo_rate": 0.2345679012345679,
+        "benchmark_pass_combos": 0,
+        "core_profitable_combos": 19,
+        "core_combos": 81,
+        "apex_rule_violations": 0,
+        "top_net_profit": 3800.0,
+        "top_profit_factor": 1.2422310756972113,
+        "top_mar": 1.2627737134191543,
+        "top_expectancy_r": 0.08527572605476864,
+        "top_trades": 50,
+        "top_trades_per_year": 82.60459856765925,
+        "best_day_concentration": 0.4953947368421053,
+        "top_failure_reason": "max_best_day_concentration",
+        "wfa_pf": null,
+        "wfa_mar": null,
+        "wfa_trades_per_year": null,
+        "wfa_net_profit": null,
+        "wfa_oos_monkey_net_beat_rate": null,
+        "wfa_oos_monkey_dd_beat_rate": null,
+        "mc_profit_before_drawdown": null,
+        "mc_account_breach": null,
+        "source_config_path": "campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/parameter_space_rescue_1/midday_notional_trend_pullback_reversal_1200/config.yaml",
+        "report_path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/midday_notional_trend_pullback_reversal_1200/ES/rescue1/campaign_test_summary.json",
+        "rescue_attempt": "parameter_space_only"
+      },
+      "stages": [
+        {
+          "stage": "limited_core_grid_test",
+          "status": "failed",
+          "passed": false
+        },
+        {
+          "stage": "limited_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "walk_forward_analysis",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monte_carlo",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_core",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_monkey",
+          "status": "skipped",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_notional_trend_pullback_reversal_1030/ES/run1/campaign_test_summary.json",
+      "summary": {
+        "campaign_id": "es_trend_filtered_mes_participation_crowding",
+        "variant_id": "morning_notional_trend_pullback_reversal_1030",
+        "run_id": "run1",
+        "passed": false,
+        "halted": true,
+        "terminal_stage": "limited_monkey_test",
+        "terminal_status": "failed",
+        "criteria_failures": "summary.core_beats_monkey_net_profit_rate=0.8933333333333333;summary.core_beats_monkey_max_drawdown_rate=0.89",
+        "profitable_combo_rate": 0.7530864197530864,
+        "benchmark_pass_combos": 47,
+        "core_profitable_combos": 61,
+        "core_combos": 81,
+        "apex_rule_violations": 0,
+        "top_net_profit": 9272.5,
+        "top_profit_factor": 1.5976474379632613,
+        "top_mar": 3.756920613404301,
+        "top_expectancy_r": 0.18114832102062012,
+        "top_trades": 58,
+        "top_trades_per_year": 90.89621882542237,
+        "best_day_concentration": 0.18684281477487194,
+        "top_failure_reason": "",
+        "wfa_pf": null,
+        "wfa_mar": null,
+        "wfa_trades_per_year": null,
+        "wfa_net_profit": null,
+        "wfa_oos_monkey_net_beat_rate": null,
+        "wfa_oos_monkey_dd_beat_rate": null,
+        "mc_profit_before_drawdown": null,
+        "mc_account_breach": null,
+        "source_config_path": "campaigns/es_trend_filtered_mes_participation_crowding/variants/morning_notional_trend_pullback_reversal_1030/config.yaml",
+        "report_path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_notional_trend_pullback_reversal_1030/ES/run1/campaign_test_summary.json",
+        "rescue_attempt": "none"
+      },
+      "stages": [
+        {
+          "stage": "limited_core_grid_test",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "stage": "limited_monkey_test",
+          "status": "failed",
+          "passed": false
+        },
+        {
+          "stage": "walk_forward_analysis",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monte_carlo",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_core",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_monkey",
+          "status": "skipped",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_notional_trend_pullback_reversal_1030/ES/rescue1/campaign_test_summary.json",
+      "summary": {
+        "campaign_id": "es_trend_filtered_mes_participation_crowding",
+        "variant_id": "morning_notional_trend_pullback_reversal_1030",
+        "run_id": "rescue1",
+        "passed": false,
+        "halted": true,
+        "terminal_stage": "limited_monkey_test",
+        "terminal_status": "failed",
+        "criteria_failures": "summary.core_beats_monkey_net_profit_rate=0.84;summary.core_beats_monkey_max_drawdown_rate=0.7433333333333333",
+        "profitable_combo_rate": 0.9876543209876543,
+        "benchmark_pass_combos": 64,
+        "core_profitable_combos": 80,
+        "core_combos": 81,
+        "apex_rule_violations": 0,
+        "top_net_profit": 11090.0,
+        "top_profit_factor": 1.6374479091823537,
+        "top_mar": 4.248850510309119,
+        "top_expectancy_r": 0.18755951335171278,
+        "top_trades": 67,
+        "top_trades_per_year": 98.65154950869237,
+        "best_day_concentration": 0.16298467087466187,
+        "top_failure_reason": "",
+        "wfa_pf": null,
+        "wfa_mar": null,
+        "wfa_trades_per_year": null,
+        "wfa_net_profit": null,
+        "wfa_oos_monkey_net_beat_rate": null,
+        "wfa_oos_monkey_dd_beat_rate": null,
+        "mc_profit_before_drawdown": null,
+        "mc_account_breach": null,
+        "source_config_path": "campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/parameter_space_rescue_1/morning_notional_trend_pullback_reversal_1030/config.yaml",
+        "report_path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_notional_trend_pullback_reversal_1030/ES/rescue1/campaign_test_summary.json",
+        "rescue_attempt": "parameter_space_only"
+      },
+      "stages": [
+        {
+          "stage": "limited_core_grid_test",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "stage": "limited_monkey_test",
+          "status": "failed",
+          "passed": false
+        },
+        {
+          "stage": "walk_forward_analysis",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monte_carlo",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_core",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_monkey",
+          "status": "skipped",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/run1/campaign_test_summary.json",
+      "summary": {
+        "campaign_id": "es_trend_filtered_mes_participation_crowding",
+        "variant_id": "morning_trade_trend_pullback_reversal_1030",
+        "run_id": "run1",
+        "passed": false,
+        "halted": true,
+        "terminal_stage": "limited_monkey_test",
+        "terminal_status": "failed",
+        "criteria_failures": "summary.core_beats_monkey_max_drawdown_rate=0.8233333333333334",
+        "profitable_combo_rate": 0.8888888888888888,
+        "benchmark_pass_combos": 56,
+        "core_profitable_combos": 72,
+        "core_combos": 81,
+        "apex_rule_violations": 0,
+        "top_net_profit": 12120.0,
+        "top_profit_factor": 1.7054714784633294,
+        "top_mar": 4.602278378132614,
+        "top_expectancy_r": 0.19439583659591556,
+        "top_trades": 71,
+        "top_trades_per_year": 102.8822216712125,
+        "best_day_concentration": 0.14913366336633663,
+        "top_failure_reason": "",
+        "wfa_pf": null,
+        "wfa_mar": null,
+        "wfa_trades_per_year": null,
+        "wfa_net_profit": null,
+        "wfa_oos_monkey_net_beat_rate": null,
+        "wfa_oos_monkey_dd_beat_rate": null,
+        "mc_profit_before_drawdown": null,
+        "mc_account_breach": null,
+        "source_config_path": "campaigns/es_trend_filtered_mes_participation_crowding/variants/morning_trade_trend_pullback_reversal_1030/config.yaml",
+        "report_path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/run1/campaign_test_summary.json",
+        "rescue_attempt": "none"
+      },
+      "stages": [
+        {
+          "stage": "limited_core_grid_test",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "stage": "limited_monkey_test",
+          "status": "failed",
+          "passed": false
+        },
+        {
+          "stage": "walk_forward_analysis",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monkey_test",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "wfa_oos_monte_carlo",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_core",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_monkey",
+          "status": "skipped",
+          "passed": false
+        }
+      ]
+    },
+    {
+      "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/campaign_test_summary.json",
+      "summary": {
+        "campaign_id": "es_trend_filtered_mes_participation_crowding",
+        "variant_id": "morning_trade_trend_pullback_reversal_1030",
+        "run_id": "rescue1",
+        "passed": false,
+        "halted": true,
+        "terminal_stage": "wfa_oos_monte_carlo",
+        "terminal_status": "failed",
+        "criteria_failures": "summary.probability_profit_before_drawdown=0.0",
+        "profitable_combo_rate": 1.0,
+        "benchmark_pass_combos": 79,
+        "core_profitable_combos": 81,
+        "core_combos": 81,
+        "apex_rule_violations": 0,
+        "top_net_profit": 13172.5,
+        "top_profit_factor": 1.763180764774044,
+        "top_mar": 5.006947802214337,
+        "top_expectancy_r": 0.20524191717624055,
+        "top_trades": 73,
+        "top_trades_per_year": 105.78031242251427,
+        "best_day_concentration": 0.13721768836591383,
+        "top_failure_reason": "",
+        "wfa_pf": 1.449261337978195,
+        "wfa_mar": 1.7344926418082498,
+        "wfa_trades_per_year": 77.87399848190942,
+        "wfa_net_profit": 17410.0,
+        "wfa_oos_monkey_net_beat_rate": 0.9733333333333334,
+        "wfa_oos_monkey_dd_beat_rate": 0.9633333333333334,
+        "mc_profit_before_drawdown": 0.0,
+        "mc_account_breach": 1.0,
+        "source_config_path": "campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/parameter_space_rescue_1/morning_trade_trend_pullback_reversal_1030/config.yaml",
+        "report_path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/campaign_test_summary.json",
+        "rescue_attempt": "parameter_space_only"
+      },
+      "stages": [
+        {
+          "stage": "limited_core_grid_test",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "stage": "limited_monkey_test",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "stage": "walk_forward_analysis",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "stage": "wfa_oos_monkey_test",
+          "status": "passed",
+          "passed": true
+        },
+        {
+          "stage": "wfa_oos_monte_carlo",
+          "status": "failed",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_core",
+          "status": "skipped",
+          "passed": false
+        },
+        {
+          "stage": "simulated_incubation_monkey",
+          "status": "skipped",
+          "passed": false
+        }
+      ]
+    }
+  ],
+  "updated_at": "2026-06-19T00:37:29"
+}

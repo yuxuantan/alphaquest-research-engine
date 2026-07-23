@@ -1,0 +1,58 @@
+{
+  "campaign_id": "es_treasury_rate_shock_intraday",
+  "variant_id": "bull_flattening_long_1130",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_treasury_rate_shock_intraday/bull_flattening_long_1130/variant.yaml",
+    "hash": "8f06318d1a060970d0e1e8c103f27957313cf10e2f7e061db48f78adeb060ad2",
+    "mechanic": {
+      "entry_module": "treasury_rate_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_treasury_rate_shock_intraday/variants/bull_flattening_long_1130/config.yaml",
+  "config_hash": "709ea7126474c87fe342f0fcc33fdfe0a9b854cce6dd7fd8ae822d4e6f5d2750",
+  "created_at": "2026-06-16T21:21:09",
+  "updated_at": "2026-06-16T21:21:09",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_treasury_rate_shock_intraday/bull_flattening_long_1130/ES/run1/effective_config.yaml"
+}

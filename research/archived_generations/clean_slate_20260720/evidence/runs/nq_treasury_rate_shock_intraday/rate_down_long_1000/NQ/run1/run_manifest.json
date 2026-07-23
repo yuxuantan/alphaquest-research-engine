@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_treasury_rate_shock_intraday",
+  "variant_id": "rate_down_long_1000",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_treasury_rate_shock_intraday/rate_down_long_1000/variant.yaml",
+    "hash": "98cb2cba89b280120659649436df495c1adc6589206ae13455943c5d25ea4bcd",
+    "mechanic": {
+      "entry_module": "treasury_rate_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_treasury_rate_shock_intraday/variants/rate_down_long_1000/config.yaml",
+  "effective_config": "backtest-campaigns/nq_treasury_rate_shock_intraday/rate_down_long_1000/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_treasury_rate_shock_intraday/rate_down_long_1000/NQ/run1/source_config.yaml",
+  "config_hash": "cf6a535e12821469fcf55a573c1918fd1d6b7e55aea33c9bd638124b9c022ec3",
+  "source_config_hash": "78e7f64b881ba2cbba8d19c16fce2efc8b41ffc47004809f20ac99d188fb1bed",
+  "source_results_index": "campaigns/nq_treasury_rate_shock_intraday/results_index.yaml",
+  "created_at": "2026-06-30T10:25:20",
+  "updated_at": "2026-06-30T10:25:20",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

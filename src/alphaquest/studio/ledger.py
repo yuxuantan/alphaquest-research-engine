@@ -138,8 +138,8 @@ def append_planned_publication(
         {
             **base,
             "variant_id": "",
-            "variant_mechanic": "Studio campaign published with five frozen, predeclared mechanics",
-            "parameter_space": "declared in five immutable variant configs",
+            "variant_mechanic": "Studio campaign published with one frozen initial mechanic",
+            "parameter_space": "declared in the current immutable variant config",
             "config_path": display_path(campaign_root / "campaign.yaml", root),
         }
     ]

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_opening_range_nq_orderflow_breakout",
+  "variant_id": "or30_nq30_signed_breakout_1130",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_nq_lead_lag_1m_20110103_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_nq_lead_lag_1m_20110103_20260609_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_opening_range_nq_orderflow_breakout/or30_nq30_signed_breakout_1130/variant.yaml",
+    "hash": "7cd1ecb5ea3b419950d0509865989348a3da0d0c31087ce14c7f74fec941fb8a",
+    "mechanic": {
+      "entry_module": "opening_range_nq_orderflow_breakout",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "opening_range_edge",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_opening_range_nq_orderflow_breakout/rescue_attempts/parameter_space_rescue_1/or30_nq30_signed_breakout_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_opening_range_nq_orderflow_breakout/or30_nq30_signed_breakout_1130/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_opening_range_nq_orderflow_breakout/or30_nq30_signed_breakout_1130/ES/rescue1/source_config.yaml",
+  "config_hash": "a3b91ff2f0e9cf291a4673f60d0c2771fd416660d4ac1b071ec9e8d72cd1942d",
+  "source_config_hash": "e7730ac6867a37b81a602981190301b0df8c0208dfb4ea5ce1b100778be6d7f6",
+  "source_results_index": "campaigns/es_opening_range_nq_orderflow_breakout/results_index.yaml",
+  "created_at": "2026-06-19T08:15:38",
+  "updated_at": "2026-06-19T08:15:38",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

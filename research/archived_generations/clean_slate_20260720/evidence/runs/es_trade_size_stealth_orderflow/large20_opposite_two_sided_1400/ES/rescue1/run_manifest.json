@@ -1,0 +1,62 @@
+{
+  "campaign_id": "es_trade_size_stealth_orderflow",
+  "variant_id": "large20_opposite_two_sided_1400",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_trade_size_stealth_orderflow/large20_opposite_two_sided_1400/variant.yaml",
+    "hash": "158b8c6b97b1b696046176ab64cc9a797ad9d4f53ea3e2c30a25f74ed71bd456",
+    "mechanic": {
+      "entry_module": "trade_size_segment_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:15:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_trade_size_stealth_orderflow/rescue_attempts/parameter_space_rescue_1/large20_opposite_two_sided_1400/config.yaml",
+  "config_hash": "40a970fcdb1ef06d52102fea854f871b488d870faf00c845fd229edf284d3b61",
+  "created_at": "2026-06-17T02:21:54",
+  "updated_at": "2026-06-21T17:58:28",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_trade_size_stealth_orderflow/large20_opposite_two_sided_1400/ES/rescue1/effective_config.yaml",
+  "rerun_override": {
+    "monkey_runs": 8000,
+    "updated_at": "2026-06-21T17:58:28"
+  }
+}

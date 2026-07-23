@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_vwap_pullback_continuation",
+  "variant_id": "morning_trend_reclaim_two_sided",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_vwap_pullback_continuation/campaign.yaml",
+    "hash": "f28663b105c2baf38d8c23d657d133dde9b3e4ac8dffc79c7c66c69e615da890"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_vwap_pullback_continuation/morning_trend_reclaim_two_sided/variant.yaml",
+    "hash": "3f1e168ba597bee5bf5553c22d4961377e54982b969827917c50e753b08002b1",
+    "mechanic": {
+      "entry_module": "vwap_pullback_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_vwap_pullback_continuation/variants/morning_trend_reclaim_two_sided/config.yaml",
+  "config_hash": "8470c878fe475ce7d2825b1b19af04b5de9d6e0d7490f974fa8fdf1469ade6e3",
+  "created_at": "2026-06-15T23:33:26",
+  "updated_at": "2026-06-15T23:33:26",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_vwap_pullback_continuation/morning_trend_reclaim_two_sided/ES/run1/effective_config.yaml"
+}

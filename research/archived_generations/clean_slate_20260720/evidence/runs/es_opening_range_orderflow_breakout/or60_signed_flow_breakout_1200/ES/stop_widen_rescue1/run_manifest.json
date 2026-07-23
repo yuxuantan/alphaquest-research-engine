@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_opening_range_orderflow_breakout",
+  "variant_id": "or60_signed_flow_breakout_1200",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_opening_range_orderflow_breakout/or60_signed_flow_breakout_1200/variant.yaml",
+    "hash": "89c3b55a9bf0d972263cefed8425b7d74e4f88c1102f4bd09e4245053ccf012b",
+    "mechanic": {
+      "entry_module": "opening_range_orderflow_breakout",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "opening_range_edge",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_opening_range_orderflow_breakout/rescue_attempts/stop_distance_rescue_1/or60_signed_flow_breakout_1200/config.yaml",
+  "effective_config": "backtest-campaigns/es_opening_range_orderflow_breakout/or60_signed_flow_breakout_1200/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_opening_range_orderflow_breakout/or60_signed_flow_breakout_1200/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "9e8bbc0d120915bad6e13d864842e67f4892697db0b192cbeda95b6a32fd3a35",
+  "source_config_hash": "70fda9e96644d2d81ced0810b5c835053bb4cf5f5d2cc60ef8b2fc57aa5ee3cd",
+  "source_results_index": "campaigns/es_opening_range_orderflow_breakout/results_index.yaml",
+  "created_at": "2026-06-19T15:18:14",
+  "updated_at": "2026-06-19T15:18:14",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,46 @@
+{
+  "campaign_id": "es_pdh_pdl_vap_absorption_sweep",
+  "decision": "FAIL",
+  "tested_at": "2026-06-26T19:32:00",
+  "test_scope": "available_2026_ytd_lvn10_tp15_sweep_any_core_backtest",
+  "full_staged_validation_completed": false,
+  "reason_full_staged_validation_not_completed": "The LVN10/1.5R/sweep-any core backtest still failed core quality on profit factor, expectancy, MAR, and drawdown despite a positive nominal net profit.",
+  "variants_tested": 1,
+  "variants_passed": 0,
+  "variant_results": [
+    {
+      "variant_id": "intrabar_pdh_pdl_vap_absorption_3m_exact",
+      "run_id": "ytd_2026_lvn10_tp15_run1",
+      "stage": "core",
+      "metrics_path": "backtest-campaigns/es_pdh_pdl_vap_absorption_sweep/intrabar_pdh_pdl_vap_absorption_3m_exact/ES/ytd_2026_lvn10_tp15_run1/core/metrics.json",
+      "trade_log_path": "backtest-campaigns/es_pdh_pdl_vap_absorption_sweep/intrabar_pdh_pdl_vap_absorption_3m_exact/ES/ytd_2026_lvn10_tp15_run1/core/trade_log.csv",
+      "diagnostics_path": "backtest-campaigns/es_pdh_pdl_vap_absorption_sweep/intrabar_pdh_pdl_vap_absorption_3m_exact/ES/ytd_2026_lvn10_tp15_run1/core/diagnostics.json",
+      "total_trades": 33,
+      "trades_per_year": 77.77996050124229,
+      "net_profit": 147.5,
+      "profit_factor": 1.0170372509384926,
+      "expectancy_r": -0.0521583699307101,
+      "max_drawdown": 6152.5,
+      "mar": 0.05812074997395544,
+      "win_rate": 0.42424242424242425,
+      "apex_rule_violations": 0,
+      "decision": "FAIL",
+      "failure_reason": "2026 YTD LVN10/1.5R/sweep-any core backtest has PF below 1.2, negative expectancy R, weak MAR, and large drawdown relative to net profit."
+    }
+  ],
+  "feature_cache": {
+    "path": "data/cache/orderflow/es_pdh_pdl_vap_absorption_sweep_lvn10_1m_source_3m_features_20260102_20260609_rth_ny.parquet",
+    "validation_report": "data/cache/orderflow/es_pdh_pdl_vap_absorption_sweep_lvn10_1m_source_3m_features_20260102_20260609_rth_ny.validation.json",
+    "rows": 42510,
+    "short_release_bars": 4298,
+    "long_release_bars": 4305,
+    "lvn_poc_fraction": 0.1,
+    "lvn_operator": "<="
+  },
+  "gate_audit": {
+    "path": "research_artifacts/es_pdh_pdl_vap_absorption_sweep_lvn10_tp15_ytd_2026_gate_audit_20260626.csv",
+    "short_final_side_event_count_before_daily_cap": 60,
+    "long_final_side_event_count_before_daily_cap": 35,
+    "engine_signals_generated_after_daily_cap": 33
+  }
+}

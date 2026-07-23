@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_bankruptcy_distress_regime_reversion",
+  "variant_id": "business_ch11_share_prior_down_long_1330",
+  "test_run_id": "run2",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_bankruptcy_distress_regime_reversion/campaign.yaml",
+    "hash": "684a9851a19bc797eea8af7811c8f9eb852d01426e1dbb5ce524bd88a1b7615c"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_bankruptcy_distress_regime_reversion/business_ch11_share_prior_down_long_1330/variant.yaml",
+    "hash": "870a8b8351f87b9cc9cfff3d8b04d0f979cc22ea8b91ff8c44c486a4103d5685",
+    "mechanic": {
+      "entry_module": "bankruptcy_distress_reversion",
+      "stop_loss_module": "percent_from_entry",
+      "take_profit_module": "fixed_r",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_bankruptcy_distress_regime_reversion/variants/business_ch11_share_prior_down_long_1330/config.yaml",
+  "config_hash": "11d251db22347fee2d69936af0495a4cf5fa2de22dd0f7d1fe3ffec81d5fd877",
+  "created_at": "2026-06-16T00:35:51",
+  "updated_at": "2026-06-16T00:35:51",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_bankruptcy_distress_regime_reversion/business_ch11_share_prior_down_long_1330/ES/run2/effective_config.yaml"
+}

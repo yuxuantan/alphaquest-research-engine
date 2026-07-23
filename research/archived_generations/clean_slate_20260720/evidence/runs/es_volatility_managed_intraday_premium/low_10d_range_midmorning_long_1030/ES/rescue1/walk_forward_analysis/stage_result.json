@@ -1,0 +1,199 @@
+{
+  "stage": "walk_forward_analysis",
+  "label": "Walk Forward Analysis (WFA)",
+  "status": "failed",
+  "passed": false,
+  "started_at": "2026-06-21T08:43:06",
+  "completed_at": "2026-06-21T08:46:15",
+  "duration_seconds": 189.438642,
+  "criteria": [
+    {
+      "metric": "summary.early_exit",
+      "actual": true,
+      "expected": {
+        "equals": false
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.profit_factor",
+      "actual": 0.0,
+      "expected": {
+        "min": 1.2
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.mar",
+      "actual": 0.0,
+      "expected": {
+        "min": 0.4
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.trades_per_year",
+      "actual": 0.0,
+      "expected": {
+        "min": 50
+      },
+      "passed": false
+    },
+    {
+      "metric": "stitched_oos_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "windows": 1,
+    "objective": "MAR",
+    "window_mode": "unanchored",
+    "train_months": 48,
+    "test_months": 12,
+    "step_months": 12,
+    "parallel": {
+      "enabled": true,
+      "scope": "window_grid",
+      "workers": 6
+    },
+    "selection_filter": {
+      "exclusive_min_trades_per_year": 50
+    },
+    "early_exit_min_train_profit_factor": 1.0,
+    "early_exit_require_train_profitable": false,
+    "early_exit": true,
+    "passing_windows": 0,
+    "profitable_windows": 0,
+    "profitable_window_rate": 0.0,
+    "meets_profitable_window_benchmark": false,
+    "median_test_net_profit": 0.0,
+    "median_test_mar": 0.0,
+    "median_test_cagr": 0.0,
+    "median_test_max_drawdown_pct": 0.0,
+    "train_grid_reports_retained": true,
+    "train_grid_report_files": [],
+    "reuse_existing_train_grids_requested": false,
+    "reused_existing_train_grids": false,
+    "reused_train_grid_count": 0,
+    "strict_train_grid_reuse": true,
+    "phase_timings_seconds": {
+      "slice_windows": 0.079129,
+      "train_grid_compute": 185.682496,
+      "stitch_oos_trades": 0.00062
+    },
+    "window_timings_seconds": [
+      {
+        "window_id": 1.0,
+        "slice_seconds": 0.079129,
+        "train_grid_seconds": 185.682496,
+        "total_seconds": 185.765558,
+        "early_exit": true
+      }
+    ],
+    "stitched_oos_trades": 0,
+    "stitched_oos_metrics": {
+      "total_trades": 0,
+      "trades_per_year": 0.0,
+      "net_profit": 0.0,
+      "profit_factor": 0.0,
+      "expectancy_r": 0.0,
+      "max_drawdown": 0.0,
+      "max_drawdown_pct": 0.0,
+      "cagr": 0.0,
+      "mar": 0.0,
+      "worst_day": 0.0,
+      "best_day": 0.0,
+      "best_day_concentration": 0.0,
+      "max_consecutive_losses": 0,
+      "positive_month_rate": 0.0,
+      "win_rate": 0.0,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0
+    },
+    "oos_evaluation_years": 0.999315537303217,
+    "required_oos_mar": 1.5,
+    "incubation_selected_params": {},
+    "configured_data_subset": {},
+    "resolved_data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2024-11-22",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2024-11-22",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "actual_data_period": {
+      "first_timestamp": "2011-01-03 09:30:00-05:00",
+      "last_timestamp": "2024-11-22 15:59:00-05:00",
+      "rows": 1340820,
+      "strategy_rows": 1340820,
+      "timeframe": "1m",
+      "source_timeframe": "1m"
+    },
+    "equity_curve_csv": "backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/rescue1/walk_forward_analysis/equity_curve.csv",
+    "equity_curve_html": "backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/rescue1/walk_forward_analysis/equity_curve.html",
+    "equity_curve_points": 1
+  },
+  "stitched_oos_metrics": {
+    "total_trades": 0,
+    "trades_per_year": 0.0,
+    "net_profit": 0.0,
+    "profit_factor": 0.0,
+    "expectancy_r": 0.0,
+    "max_drawdown": 0.0,
+    "max_drawdown_pct": 0.0,
+    "cagr": 0.0,
+    "mar": 0.0,
+    "worst_day": 0.0,
+    "best_day": 0.0,
+    "best_day_concentration": 0.0,
+    "max_consecutive_losses": 0,
+    "positive_month_rate": 0.0,
+    "win_rate": 0.0,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "incubation_selected_params": {},
+  "data_quality": {
+    "rows": 1340820,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 0,
+    "first_timestamp": "2011-01-03 09:30:00-05:00",
+    "last_timestamp": "2024-11-22 15:59:00-05:00",
+    "roll_boundary_sessions_skipped": 0,
+    "loaded_rows": 1340820,
+    "strategy_rows": 1340820,
+    "timeframe": "1m",
+    "timeframe_minutes": 1,
+    "source_timeframe": "1m",
+    "prepare_data_duration_seconds": 3.587228,
+    "prepared_data_cache": {
+      "enabled": true,
+      "hit": false,
+      "key": "cbfb8bbe115322fe3edbd164a44e269dccbe8a9d3c6f09e8aa4d4eeadb5a09fe"
+    }
+  },
+  "input_hash": "4b878ec634d7bfad334902d112b9507cb60074e6f445dcd016ab18478d180c33",
+  "artifacts": [
+    "backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/rescue1/walk_forward_analysis/equity_curve.csv",
+    "backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/rescue1/walk_forward_analysis/equity_curve.html",
+    "backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/rescue1/walk_forward_analysis/wfa_oos_trade_log.csv",
+    "backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/rescue1/walk_forward_analysis/wfa_results.csv",
+    "backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/rescue1/walk_forward_analysis/wfa_summary.json"
+  ],
+  "rerun_override": {
+    "trigger": "limited_monkey_test_failed_to_passed_8000_continuation",
+    "updated_at": "2026-06-21T08:46:15"
+  }
+}

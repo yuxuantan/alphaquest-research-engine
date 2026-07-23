@@ -31,6 +31,8 @@ Active authored definitions live under `research/campaigns/active/`; closed defi
 
 After an administrator completes [installation](docs/getting-started/installation.md), a researcher can double-click **`AlphaQuest Studio.command`**. No terminal, Python, or YAML editing is required inside the research workflow.
 
+Studio's novice interface is a committed React application served by a local FastAPI process. It binds only to the workstation, works without Node.js or a frontend build at runtime, and uses the separate durable Python worker for long research jobs. Except for explicitly enabled optional AI drafting, the Studio workflow does not require an external web service.
+
 Administrator setup:
 
 ```bash
@@ -65,6 +67,8 @@ make qualify
 | Path | Purpose |
 | --- | --- |
 | `src/alphaquest/` | Engine and reusable library code |
+| `src/alphaquest/studio/web_assets/` | Committed, runtime-ready Research Studio web bundle |
+| `studio-ui/` | React/TypeScript source used only when developers rebuild the web bundle |
 | `research/campaigns/active/` | Active authored research definitions |
 | `research/drafts/` | Incomplete Studio drafts outside active discovery |
 | `research/datasets/` | Governed Studio dataset manifests and canonical bars |
@@ -76,7 +80,7 @@ make qualify
 | `catalogs/` | Rebuildable SQLite registry and exports |
 | `views/` | Generated human-facing research navigation |
 | `research_artifacts/` | Durable audits and decisions |
-| `apps/` | Interactive applications |
+| `apps/` | Legacy/expert interactive launch surfaces; the novice Studio runs through `alphaquest studio` |
 | `execution_system/` | Separate execution bridge with its own README |
 | `tools/` | Compatibility scripts; prefer the `alphaquest` CLI |
 

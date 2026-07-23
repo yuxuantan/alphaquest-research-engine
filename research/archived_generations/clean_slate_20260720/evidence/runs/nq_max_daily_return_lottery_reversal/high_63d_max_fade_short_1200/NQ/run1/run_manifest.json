@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_max_daily_return_lottery_reversal",
+  "variant_id": "high_63d_max_fade_short_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_max_daily_return_lottery_reversal/high_63d_max_fade_short_1200/variant.yaml",
+    "hash": "34896d845c1d7912657146f392144bdeb515063ea80b81d54f01f093ced3bddf",
+    "mechanic": {
+      "entry_module": "max_daily_return_lottery_reversal",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_max_daily_return_lottery_reversal/variants/high_63d_max_fade_short_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_max_daily_return_lottery_reversal/high_63d_max_fade_short_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_max_daily_return_lottery_reversal/high_63d_max_fade_short_1200/NQ/run1/source_config.yaml",
+  "config_hash": "95e0589fc972753f9dec1f6296aa1d7da498b145076f53c78b7bddff1883fced",
+  "source_config_hash": "ecb33ee0346e28dcebcf4cddc30df7d53d59fb9cfe5995df481c180055a2e291",
+  "source_results_index": "campaigns/nq_max_daily_return_lottery_reversal/results_index.yaml",
+  "created_at": "2026-07-01T02:31:04",
+  "updated_at": "2026-07-01T02:31:04",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

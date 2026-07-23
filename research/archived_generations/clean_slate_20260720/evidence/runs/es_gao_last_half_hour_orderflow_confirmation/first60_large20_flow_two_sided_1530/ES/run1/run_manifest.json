@@ -1,0 +1,60 @@
+{
+  "campaign_id": "es_gao_last_half_hour_orderflow_confirmation",
+  "variant_id": "first60_large20_flow_two_sided_1530",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/first60_large20_flow_two_sided_1530/variant.yaml",
+    "hash": "d40dc308835065fa90c15441872c88fb733beddfd1338411aaa11c2e73ae70d3",
+    "mechanic": {
+      "entry_module": "gao_last_half_hour_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_gao_last_half_hour_orderflow_confirmation/variants/first60_large20_flow_two_sided_1530/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/first60_large20_flow_two_sided_1530/ES/run1/source_config.yaml",
+  "config_hash": "d261af42ec1d65c6c73bfe20e0718860db4c267791b235d44f42b2b35bfbb5b6",
+  "source_config_hash": "a16db36f66d100dc4c58b1d746ecff4c7545d3ba53a3af7d350656cf7bcdf3f8",
+  "created_at": "2026-06-17T19:29:10",
+  "updated_at": "2026-06-17T19:29:10",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/first60_large20_flow_two_sided_1530/ES/run1/effective_config.yaml"
+}

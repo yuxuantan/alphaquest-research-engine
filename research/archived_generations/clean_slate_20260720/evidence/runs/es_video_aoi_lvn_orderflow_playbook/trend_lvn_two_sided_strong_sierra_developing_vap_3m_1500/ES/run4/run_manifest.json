@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_video_aoi_lvn_orderflow_playbook",
+  "variant_id": "trend_lvn_two_sided_strong_sierra_developing_vap_3m_1500",
+  "test_run_id": "run4",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_developing_vap_3m_20101214_20260610_full_rth_ny",
+  "timeframe": "3m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_developing_vap_3m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/trend_lvn_two_sided_strong_sierra_developing_vap_3m_1500/variant.yaml",
+    "hash": "2884c5c265a34f7fda537a498f246dcfd47adbcbd7c2776f84049c808d2a7994",
+    "mechanic": {
+      "entry_module": "video_aoi_orderflow_playbook",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_3m_sierra_developing_vap_run4/trend_lvn_two_sided_strong_sierra_developing_vap_3m_1500/config.yaml",
+  "effective_config": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/trend_lvn_two_sided_strong_sierra_developing_vap_3m_1500/ES/run4/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/trend_lvn_two_sided_strong_sierra_developing_vap_3m_1500/ES/run4/source_config.yaml",
+  "config_hash": "a28fcebd6c514712a48ef55b4fd171ef95ae9a7cd45b8055d9bb0c5b525e65f5",
+  "source_config_hash": "afc283939ded9b857ef19a2ceef87ba9b0ecf5e2530833ba9d538b50da39b2d1",
+  "source_results_index": "campaigns/es_video_aoi_lvn_orderflow_playbook/results_index.yaml",
+  "created_at": "2026-06-24T15:01:59",
+  "updated_at": "2026-06-24T15:01:59",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

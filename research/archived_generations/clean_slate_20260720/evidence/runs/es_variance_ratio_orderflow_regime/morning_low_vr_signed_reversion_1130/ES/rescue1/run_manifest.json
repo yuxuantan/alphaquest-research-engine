@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_variance_ratio_orderflow_regime",
+  "variant_id": "morning_low_vr_signed_reversion_1130",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_variance_ratio_orderflow_regime/morning_low_vr_signed_reversion_1130/variant.yaml",
+    "hash": "8097e3925d6247075c3fdf7b640d313a2f7ffe3b113ad1504dbf37a733fb78a3",
+    "mechanic": {
+      "entry_module": "variance_ratio_orderflow_regime",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_variance_ratio_orderflow_regime/rescue_attempts/parameter_space_rescue_1/morning_low_vr_signed_reversion_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_variance_ratio_orderflow_regime/morning_low_vr_signed_reversion_1130/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_variance_ratio_orderflow_regime/morning_low_vr_signed_reversion_1130/ES/rescue1/source_config.yaml",
+  "config_hash": "18d016ab4fae2b57107eb753279852b338aa8f26dc33d99439210069047416dc",
+  "source_config_hash": "05ae5efff981a6a7a3626eb5c1ad02b2ab2a87c02486115e576f8e8f1dbe2454",
+  "source_results_index": "campaigns/es_variance_ratio_orderflow_regime/results_index.yaml",
+  "created_at": "2026-06-19T21:03:44",
+  "updated_at": "2026-06-19T21:03:44",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

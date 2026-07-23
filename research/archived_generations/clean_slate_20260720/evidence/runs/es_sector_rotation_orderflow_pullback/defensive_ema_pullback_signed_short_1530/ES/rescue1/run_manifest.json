@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_sector_rotation_orderflow_pullback",
+  "variant_id": "defensive_ema_pullback_signed_short_1530",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_sector_rotation_orderflow_pullback/defensive_ema_pullback_signed_short_1530/variant.yaml",
+    "hash": "919dd21d4a765aee52621750d531fdb9ef37e2a18e72f9e1ca85ee0160da406a",
+    "mechanic": {
+      "entry_module": "sector_rotation_orderflow_pullback",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_sector_rotation_orderflow_pullback/rescue_attempts/parameter_space_rescue_1/defensive_ema_pullback_signed_short_1530/config.yaml",
+  "effective_config": "backtest-campaigns/es_sector_rotation_orderflow_pullback/defensive_ema_pullback_signed_short_1530/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_sector_rotation_orderflow_pullback/defensive_ema_pullback_signed_short_1530/ES/rescue1/source_config.yaml",
+  "config_hash": "79434bdc363bb1261228935dfe4b7343e82b594f9f8fec2c7608c7ecf74b265a",
+  "source_config_hash": "07c002ef82478ec7578c957ca3b7a0004f1b223f813fbff55d071a0f034248f5",
+  "source_results_index": "campaigns/es_sector_rotation_orderflow_pullback/results_index.yaml",
+  "created_at": "2026-06-20T01:16:09",
+  "updated_at": "2026-06-20T01:16:09",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

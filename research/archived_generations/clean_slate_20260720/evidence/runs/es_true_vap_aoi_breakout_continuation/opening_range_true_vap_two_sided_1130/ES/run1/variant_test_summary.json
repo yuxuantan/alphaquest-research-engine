@@ -1,0 +1,147 @@
+{
+  "campaign_id": "es_true_vap_aoi_breakout_continuation",
+  "variant_id": "opening_range_true_vap_two_sided_1130",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_vap_profile_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_vap_profile_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_true_vap_aoi_breakout_continuation/opening_range_true_vap_two_sided_1130/variant.yaml",
+    "hash": "191d015d6635169f32deec2e361cbb3e38e4355c18aa1052990067e421ac2f01",
+    "mechanic": {
+      "entry_module": "true_vap_aoi_breakout_continuation",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_path": "backtest-campaigns/es_true_vap_aoi_breakout_continuation/opening_range_true_vap_two_sided_1130/ES/run1/effective_config.yaml",
+  "effective_config_path": "backtest-campaigns/es_true_vap_aoi_breakout_continuation/opening_range_true_vap_two_sided_1130/ES/run1/effective_config.yaml",
+  "source_config_path": "campaigns/es_true_vap_aoi_breakout_continuation/variants/opening_range_true_vap_two_sided_1130/config.yaml",
+  "source_config_snapshot_path": "backtest-campaigns/es_true_vap_aoi_breakout_continuation/opening_range_true_vap_two_sided_1130/ES/run1/source_config.yaml",
+  "config_hash": "f75f1cf80e3a002360d52671df98d4da407675d358c27d5870f8e08b235253d4",
+  "source_config_hash": "d4bf0648a0d84a0208e537c3c786f99f49ed4cb8003d6e2f6a3c84652d48800d",
+  "output_dir": "backtest-campaigns/es_true_vap_aoi_breakout_continuation/opening_range_true_vap_two_sided_1130/ES/run1",
+  "created_at": "2026-06-22T08:34:31",
+  "updated_at": "2026-06-22T08:34:31",
+  "skip_validation": true,
+  "fast_runtime_defaults": true,
+  "passed": false,
+  "halted": true,
+  "stages": [
+    {
+      "stage": "limited_core_grid_test",
+      "label": "Limited Core Grid Test",
+      "status": "error",
+      "passed": false,
+      "error": "'int' object has no attribute 'split'",
+      "criteria": [
+        {
+          "metric": "summary.total_combinations_tested",
+          "actual": null,
+          "expected": {
+            "valid_parameter_combination_count": "1 fixed combo or 8-120 tunable combos"
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.percentage_profitable_iterations",
+          "actual": null,
+          "expected": {
+            "min": 0.7
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.apex_rule_violating_iterations",
+          "actual": null,
+          "expected": {
+            "max": 0
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "stage": "limited_monkey_test",
+      "label": "Limited Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "walk_forward_analysis",
+      "label": "Walk Forward Analysis (WFA)",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monkey_test",
+      "label": "WFA OOS Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monte_carlo",
+      "label": "WFA OOS Monte Carlo",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_core",
+      "label": "Simulated Incubation (OOS) Core",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_monkey",
+      "label": "Simulated Incubation (OOS) Monkey",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "acceptance_oos_test",
+      "label": "Acceptance OOS Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    }
+  ],
+  "source_results_index_path": "campaigns/es_true_vap_aoi_breakout_continuation/results_index.yaml"
+}

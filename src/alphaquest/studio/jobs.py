@@ -22,7 +22,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 JOB_SCHEMA = "alphaquest.studio-job/v1"
-DATABASE_SCHEMA_VERSION = 1
+JOB_PROGRESS_SCHEMA = "alphaquest.studio-job-progress/v1"
+DATABASE_SCHEMA_VERSION = 2
 STRICT_VERDICTS = {"PASS", "FAIL", "NEEDS MANUAL REVIEW"}
 
 
@@ -75,6 +76,7 @@ class JobRecordV1(BaseModel):
     heartbeat_at: datetime | None = None
     cancellation_requested_at: datetime | None = None
     finished_at: datetime | None = None
+    progress: JobProgressV1 | None = None
 
     @field_validator("job_id", "job_type", "idempotency_key")
     @classmethod
@@ -95,6 +97,48 @@ class JobRecordV1(BaseModel):
     def _timezone_aware(cls, value: datetime | None) -> datetime | None:
         if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise ValueError("job timestamps must be timezone-aware")
+        return value
+
+
+class JobProgressV1(BaseModel):
+    """Durable operational progress, kept separate from research evidence."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    schema_name: Literal["alphaquest.studio-job-progress/v1"] = Field(
+        default=JOB_PROGRESS_SCHEMA,
+        alias="schema",
+        serialization_alias="schema",
+    )
+    phase: str
+    message: str
+    percent: float = Field(ge=0.0, le=100.0)
+    completed: int | None = Field(default=None, ge=0)
+    total: int | None = Field(default=None, ge=0)
+    unit: str | None = None
+    phase_started_at: datetime
+    updated_at: datetime
+
+    @field_validator("phase", "message")
+    @classmethod
+    def _progress_nonblank(cls, value: str) -> str:
+        if not value.strip():
+            raise ValueError("progress phase and message must be non-empty")
+        return value.strip()
+
+    @field_validator("unit")
+    @classmethod
+    def _progress_unit(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("phase_started_at", "updated_at")
+    @classmethod
+    def _progress_timezone_aware(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("progress timestamps must be timezone-aware")
         return value
 
 
@@ -349,6 +393,75 @@ class SQLiteJobQueue:
             raise InvalidJobTransitionError("heartbeat requires ownership of an active job")
         return self.get(job_id)
 
+    def update_progress(
+        self,
+        job_id: str,
+        *,
+        worker_id: str,
+        phase: str,
+        message: str,
+        percent: float,
+        completed: int | None = None,
+        total: int | None = None,
+        unit: str | None = None,
+    ) -> JobRecordV1:
+        """Persist monotonic operational progress for an active owned job."""
+
+        now = datetime.now(UTC)
+        with self._connect() as connection:
+            connection.execute("BEGIN IMMEDIATE")
+            row = connection.execute("SELECT * FROM studio_jobs WHERE job_id = ?", (job_id,)).fetchone()
+            if row is None:
+                raise KeyError(f"unknown Studio job: {job_id}")
+            record = _record(row)
+            if record.worker_id != worker_id or record.state not in ACTIVE_STATES:
+                raise InvalidJobTransitionError("progress updates require ownership of an active job")
+            if completed is not None and total is not None and completed > total:
+                raise ValueError("progress completed count cannot exceed total")
+            normalized_percent = float(percent)
+            if record.progress is not None and normalized_percent < record.progress.percent:
+                raise ValueError("job progress percentage cannot move backwards")
+            normalized_phase = str(phase).strip()
+            phase_started_at = (
+                record.progress.phase_started_at
+                if record.progress is not None and record.progress.phase == normalized_phase
+                else now
+            )
+            progress = JobProgressV1.model_validate(
+                {
+                    "schema": JOB_PROGRESS_SCHEMA,
+                    "phase": normalized_phase,
+                    "message": str(message),
+                    "percent": normalized_percent,
+                    "completed": completed,
+                    "total": total,
+                    "unit": unit,
+                    "phase_started_at": phase_started_at,
+                    "updated_at": now,
+                }
+            )
+            timestamp = now.isoformat()
+            changed = connection.execute(
+                """
+                UPDATE studio_jobs
+                SET progress_json = ?, heartbeat_at = ?, updated_at = ?
+                WHERE job_id = ? AND worker_id = ? AND state IN (?, ?)
+                """,
+                (
+                    _canonical_json(progress.model_dump(mode="json", by_alias=True)),
+                    timestamp,
+                    timestamp,
+                    job_id,
+                    worker_id,
+                    OperationalState.RUNNING.value,
+                    OperationalState.CANCEL_REQUESTED.value,
+                ),
+            ).rowcount
+            connection.commit()
+        if not changed:
+            raise InvalidJobTransitionError("progress update lost ownership of the active job")
+        return self.get(job_id)
+
     def mark_attempt_reserved(self, job_id: str, *, worker_id: str) -> JobRecordV1:
         """Record the irreversible evidence-reservation boundary exactly once."""
 
@@ -569,7 +682,7 @@ class SQLiteJobQueue:
     def _initialize(self) -> None:
         with self._connect() as connection:
             current = int(connection.execute("PRAGMA user_version").fetchone()[0])
-            if current not in {0, DATABASE_SCHEMA_VERSION}:
+            if current not in {0, 1, DATABASE_SCHEMA_VERSION}:
                 raise RuntimeError(
                     f"Studio job database schema {current} is unsupported; expected {DATABASE_SCHEMA_VERSION}"
                 )
@@ -599,10 +712,17 @@ class SQLiteJobQueue:
                     started_at TEXT,
                     heartbeat_at TEXT,
                     cancellation_requested_at TEXT,
-                    finished_at TEXT
+                    finished_at TEXT,
+                    progress_json TEXT
                 )
                 """
             )
+            columns = {
+                str(row[1])
+                for row in connection.execute("PRAGMA table_info(studio_jobs)").fetchall()
+            }
+            if "progress_json" not in columns:
+                connection.execute("ALTER TABLE studio_jobs ADD COLUMN progress_json TEXT")
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS studio_jobs_state_order ON studio_jobs(state, created_at)"
             )
@@ -631,6 +751,27 @@ class JobExecutionContext:
 
     def heartbeat(self) -> JobRecordV1:
         return self.queue.heartbeat(self.job_id, worker_id=self.worker_id)
+
+    def report_progress(
+        self,
+        *,
+        phase: str,
+        message: str,
+        percent: float,
+        completed: int | None = None,
+        total: int | None = None,
+        unit: str | None = None,
+    ) -> JobRecordV1:
+        return self.queue.update_progress(
+            self.job_id,
+            worker_id=self.worker_id,
+            phase=phase,
+            message=message,
+            percent=percent,
+            completed=completed,
+            total=total,
+            unit=unit,
+        )
 
     def cancellation_requested(self) -> bool:
         return self.queue.cancellation_requested(self.job_id)
@@ -682,6 +823,7 @@ def _record(row: sqlite3.Row) -> JobRecordV1:
             "heartbeat_at": _database_datetime(row["heartbeat_at"]),
             "cancellation_requested_at": _database_datetime(row["cancellation_requested_at"]),
             "finished_at": _database_datetime(row["finished_at"]),
+            "progress": _progress_record(row["progress_json"]),
         }
     )
 
@@ -696,6 +838,15 @@ def _database_datetime(value: str | None) -> datetime | None:
     if parsed.tzinfo is None or parsed.utcoffset() is None:
         raise ValueError(f"naive timestamp persisted in Studio job database: {value!r}")
     return parsed
+
+
+def _progress_record(value: str | None) -> JobProgressV1 | None:
+    if not value:
+        return None
+    payload = json.loads(value)
+    payload["phase_started_at"] = _database_datetime(payload.get("phase_started_at"))
+    payload["updated_at"] = _database_datetime(payload.get("updated_at"))
+    return JobProgressV1.model_validate(payload)
 
 
 def _json_mapping(value: Mapping[str, Any], *, label: str) -> dict[str, Any]:

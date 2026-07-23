@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta
+from functools import lru_cache
+import hashlib
+import json
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -74,6 +77,30 @@ def load_scid_record_execution_data(
     Unbundled FIRST/LAST component rows are collapsed before replay.
     """
 
+    parts = [part for _, part in iter_scid_record_execution_sessions(config, date_bounds=date_bounds)]
+    if not parts:
+        out = pd.DataFrame(columns=_SCID_EXECUTION_COLUMNS)
+    else:
+        out = pd.concat(parts, ignore_index=True)
+        out = out.sort_values(["timestamp", "source_ordinal"], kind="mergesort").reset_index(drop=True)
+    out.attrs["detail_granularity"] = "normalized_trade_event"
+    out.attrs["price_path_semantics"] = SCID_RECORD_PRICE_PATH_SEMANTICS
+    out.attrs["source_quality_label"] = (
+        "Databento-compared Sierra trade-event replay after FIRST/LAST unbundled-trade "
+        "reconstruction; source order retained; not exchange MBO sequencing."
+    )
+    out.attrs["required_capability"] = str(config.get("required_capability", "full_strategy_events"))
+    out.attrs["timestamp_precision_ns"] = SIERRA_TIMESTAMP_PRECISION_NS
+    return out
+
+
+def iter_scid_record_execution_sessions(
+    config: dict,
+    *,
+    date_bounds: dict | None = None,
+):
+    """Yield one governed Sierra event frame at a time to bound replay memory."""
+
     raw_dir = Path(config.get("raw_dir", "data/raw/ES/sierra-es-trades"))
     roll_calendar = Path(
         config.get("roll_calendar", "data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv")
@@ -97,6 +124,8 @@ def load_scid_record_execution_data(
     required_capability = str(config.get("required_capability", "full_strategy_events"))
     ineligible_policy = str(config.get("ineligible_session_policy", "error")).lower()
     allow_unverified_for_tests = bool(config.get("allow_unverified_for_tests", False))
+    raw_manifest_path = Path(str(config.get("raw_manifest") or ""))
+    raw_manifest = _load_raw_manifest(raw_manifest_path, raw_dir, allow_unverified_for_tests)
 
     files = {path.stem.replace("-CME", ""): path for path in raw_dir.glob("*.parquet")}
     if not files:
@@ -118,12 +147,12 @@ def load_scid_record_execution_data(
             f"({sample}). Set ineligible_session_policy=blackout only for explicit session exclusion."
         )
     eligible = requested.loc[requested[required_capability].map(_as_bool)].copy()
-    parts = []
     period_by_symbol = {period["symbol"]: period for period in periods}
     for row in eligible.itertuples(index=False):
         period = period_by_symbol.get(str(row.contract))
         if period is None:
             continue
+        _verify_raw_contract_file(period["path"], raw_manifest)
         part = _load_session_events(
             period["path"],
             session_date=str(row.session_date),
@@ -134,24 +163,55 @@ def load_scid_record_execution_data(
             required_capability=required_capability,
         )
         if not part.empty:
-            parts.append(part)
+            yield str(row.session_date), part
 
-    if not parts:
-        out = pd.DataFrame(columns=_SCID_EXECUTION_COLUMNS)
-    else:
-        out = pd.concat(parts, ignore_index=True)
-        out = out.sort_values(["timestamp", "source_ordinal"], kind="mergesort").reset_index(drop=True)
-    out.attrs["detail_granularity"] = "normalized_trade_event"
-    out.attrs["price_path_semantics"] = SCID_RECORD_PRICE_PATH_SEMANTICS
-    out.attrs["source_quality_label"] = (
-        "Databento-compared Sierra trade-event replay after FIRST/LAST unbundled-trade "
-        "reconstruction; source order retained; not exchange MBO sequencing."
-    )
-    out.attrs["required_capability"] = required_capability
-    out.attrs["eligible_session_dates"] = eligible["session_date"].astype(str).tolist()
-    out.attrs["blackout_session_dates"] = ineligible["session_date"].astype(str).tolist()
-    out.attrs["timestamp_precision_ns"] = SIERRA_TIMESTAMP_PRECISION_NS
-    return out
+
+def _load_raw_manifest(path: Path, raw_dir: Path, allow_unverified_for_tests: bool) -> dict[str, dict]:
+    if allow_unverified_for_tests:
+        return {}
+    if not path.is_file():
+        raise ValueError(f"Sierra raw-file manifest not found: {path}")
+    try:
+        document = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Sierra raw-file manifest is invalid: {path}: {exc}") from exc
+    if document.get("schema") != "alphaquest.sierra-raw-manifest/v1":
+        raise ValueError("Sierra raw-file manifest schema is missing or unsupported")
+    if Path(str(document.get("raw_dir") or "")).resolve() != raw_dir.resolve():
+        raise ValueError("Sierra raw-file manifest does not bind the configured raw_dir")
+    files = document.get("files")
+    if not isinstance(files, list) or not files:
+        raise ValueError("Sierra raw-file manifest contains no files")
+    records: dict[str, dict] = {}
+    for item in files:
+        if not isinstance(item, dict) or not item.get("name") or not item.get("sha256"):
+            raise ValueError("Sierra raw-file manifest contains an invalid file record")
+        records[str(item["name"])] = item
+    return records
+
+
+def _verify_raw_contract_file(path: Path, manifest: dict[str, dict]) -> None:
+    if not manifest:
+        return
+    record = manifest.get(path.name)
+    if record is None:
+        raise ValueError(f"Sierra raw-file manifest does not declare {path.name}")
+    stat = path.stat()
+    if int(record.get("size") or -1) != stat.st_size:
+        raise ValueError(f"Sierra raw contract file size drift: {path}")
+    actual = _cached_file_sha256(str(path.resolve()), stat.st_size, stat.st_mtime_ns)
+    if actual != str(record.get("sha256") or ""):
+        raise ValueError(f"Sierra raw contract file hash drift: {path}")
+
+
+@lru_cache(maxsize=128)
+def _cached_file_sha256(path: str, size: int, mtime_ns: int) -> str:
+    del size, mtime_ns
+    digest = hashlib.sha256()
+    with Path(path).open("rb") as handle:
+        for block in iter(lambda: handle.read(4 * 1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
 
 
 def _load_session_events(

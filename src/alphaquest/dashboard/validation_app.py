@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import Any
 
@@ -189,6 +190,43 @@ def run_summary(metadata: dict[str, Any], trades: pd.DataFrame) -> dict[str, Any
     }
 
 
+def trade_id_key(value: Any) -> str:
+    """Return one stable identity for numeric trade IDs loaded with different dtypes."""
+
+    if _is_missing(value):
+        return ""
+    if isinstance(value, bool):
+        return str(value)
+    text = str(value).strip()
+    try:
+        numeric = Decimal(text)
+    except (InvalidOperation, ValueError):
+        return text
+    if numeric.is_finite() and numeric == numeric.to_integral_value():
+        return format(numeric.quantize(Decimal("1")), "f")
+    return text
+
+
+def merge_by_trade_id(left: pd.DataFrame, right: pd.DataFrame) -> pd.DataFrame:
+    """Left-join trade evidence without requiring identical pandas ID dtypes."""
+
+    if left.empty or right.empty or "trade_id" not in left.columns or "trade_id" not in right.columns:
+        return left.copy()
+    merge_key = "__alphaquest_trade_id_key"
+    while merge_key in left.columns or merge_key in right.columns:
+        merge_key = f"_{merge_key}"
+    left_keyed = left.copy()
+    right_keyed = right.copy()
+    left_keyed[merge_key] = left_keyed["trade_id"].map(trade_id_key)
+    right_keyed[merge_key] = right_keyed["trade_id"].map(trade_id_key)
+    right_keyed = (
+        right_keyed[right_keyed[merge_key].ne("")]
+        .drop(columns=["trade_id"])
+        .drop_duplicates(subset=[merge_key], keep="last")
+    )
+    return left_keyed.merge(right_keyed, on=merge_key, how="left", validate="m:1").drop(columns=[merge_key])
+
+
 def prepare_trade_table(
     trades: pd.DataFrame,
     exit_audits: pd.DataFrame | None = None,
@@ -209,10 +247,10 @@ def prepare_trade_table(
             if column in exit_audits.columns
         ]
         if len(audit_cols) > 1:
-            table = table.merge(exit_audits[audit_cols], on="trade_id", how="left")
+            table = merge_by_trade_id(table, exit_audits[audit_cols])
     check_summary = validation_checks_by_trade(validation_checks)
     if not check_summary.empty and "trade_id" in table.columns:
-        table = table.merge(check_summary, on="trade_id", how="left")
+        table = merge_by_trade_id(table, check_summary)
     for column in ("entry_time", "exit_time"):
         if column in table.columns:
             table[column] = pd.to_datetime(table[column], errors="coerce")
@@ -309,7 +347,8 @@ def save_manual_review_annotation(
         dashboard_version=dashboard_version,
     ).to_record()
     if "trade_id" in reviews.columns and not reviews.empty:
-        reviews = reviews[reviews["trade_id"].astype(str) != str(trade_id)]
+        saved_key = trade_id_key(trade_id)
+        reviews = reviews[reviews["trade_id"].map(trade_id_key) != saved_key]
     updated = pd.concat([reviews, pd.DataFrame([record])], ignore_index=True)
     write_manual_reviews(run_dir, updated)
     return updated
@@ -323,7 +362,7 @@ def add_review_annotations(table: pd.DataFrame, reviews: pd.DataFrame | None) ->
     if reviews is not None and not reviews.empty and "trade_id" in annotated.columns:
         review_cols = [column for column in MANUAL_REVIEW_COLUMNS if column in reviews.columns]
         if "trade_id" in review_cols and len(review_cols) > 1:
-            annotated = annotated.merge(reviews[review_cols], on="trade_id", how="left")
+            annotated = merge_by_trade_id(annotated, reviews[review_cols])
     for column in MANUAL_REVIEW_COLUMNS:
         if column not in annotated.columns:
             annotated[column] = pd.NA
@@ -460,18 +499,16 @@ def has_suspicious_debug_flags(row: pd.Series) -> bool:
 def row_for_trade(frame: pd.DataFrame, trade_id: Any) -> pd.Series | None:
     if frame.empty or "trade_id" not in frame.columns:
         return None
-    rows = frame[frame["trade_id"] == trade_id]
-    if rows.empty:
-        rows = frame[frame["trade_id"].astype(str) == str(trade_id)]
+    selected_key = trade_id_key(trade_id)
+    rows = frame[frame["trade_id"].map(trade_id_key) == selected_key]
     return None if rows.empty else rows.iloc[0]
 
 
 def rows_for_trade(frame: pd.DataFrame, trade_id: Any) -> pd.DataFrame:
     if frame.empty or "trade_id" not in frame.columns:
         return frame.iloc[0:0]
-    rows = frame[frame["trade_id"] == trade_id]
-    if rows.empty:
-        rows = frame[frame["trade_id"].astype(str) == str(trade_id)]
+    selected_key = trade_id_key(trade_id)
+    rows = frame[frame["trade_id"].map(trade_id_key) == selected_key]
     return rows.copy()
 
 
@@ -1736,8 +1773,9 @@ def _select_trade_id(st, label: str, trade_ids: list[Any], *, key: str) -> Any:
 def _index_for_trade_id(trade_ids: list[Any], value: Any) -> int | None:
     if value is None:
         return None
+    selected_key = trade_id_key(value)
     for idx, trade_id in enumerate(trade_ids):
-        if trade_id == value or str(trade_id) == str(value):
+        if trade_id_key(trade_id) == selected_key:
             return idx
     return None
 

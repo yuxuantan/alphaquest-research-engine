@@ -26,7 +26,7 @@ from alphaquest.studio.followups import FollowUpAttemptService
 from alphaquest.studio.jobs import OperationalState, SQLiteJobQueue
 from alphaquest.studio.publishing import StudioPublicationService
 from alphaquest.studio.results import ResultBundleBuilder
-from alphaquest.studio.variants import suggest_variant_cards
+from alphaquest.studio.variants import suggest_variant_card
 from alphaquest.studio.worker import StudioWorker
 
 
@@ -93,10 +93,7 @@ def _run_tutorial_workspace(root: Path, *, execute: bool) -> dict[str, Any]:
     publisher = StudioPublicationService(root)
     publication_preflight = publisher.preflight_draft(draft)
     publication = publisher.publish(draft)
-    configs = [
-        publication.destination / "variants" / f"v{index:02d}" / "config.yaml"
-        for index in range(1, 6)
-    ]
+    configs = [publication.destination / "variants" / "v01" / "config.yaml"]
     data_path = imported.canonical_path
 
     payload: dict[str, Any] = {
@@ -242,16 +239,12 @@ def _tutorial_draft(dataset: Any) -> CampaignDraftV1:
         },
         "authoring_lane": "certified_recipe",
         "certified_recipe": "calendar_session_bias",
+        "variant_protocol": "sequential_failure_informed",
+        "sequential_variant_history": [],
         "frozen": False,
     }
-    variants = suggest_variant_cards(document)
-    # Keep the entry edge fixed.  Predeclared risk structures create mixed
-    # limited-core outcomes on the synthetic path without consulting PnL.
+    variants = [suggest_variant_card(document, index=0)]
     variants[0]["stop"]["params"]["stop_points"] = 10.0
-    variants[1]["stop"]["params"]["stop_pct"] = 0.00005
-    variants[2]["stop"]["params"]["dollars_per_contract"] = 12.5
-    variants[3]["stop"]["params"]["stop_points"] = 0.25
-    variants[4]["stop"]["params"]["dollars_per_contract"] = 250.0
     for variant in variants:
         variant["confirmed"] = True
     document["variants"] = variants
@@ -276,12 +269,12 @@ def _execute_governed_tutorial(
     completed_mechanics = [worker.run_once() for _ in mechanics_jobs]
     if any(job is None or job.state != OperationalState.SUCCEEDED for job in completed_mechanics):
         states = [None if job is None else job.state.value for job in completed_mechanics]
-        raise RuntimeError(f"isolated mechanics worker did not complete all five jobs: {states}")
+        raise RuntimeError(f"isolated mechanics worker did not complete the current job: {states}")
 
     approval_service = MechanicsApprovalService()
     approval_reports: list[dict[str, Any]] = []
     for config_path in configs:
-        plan = approval_service.plan(config_path, random_sample_size=2, random_seed=TUTORIAL_RANDOM_SEED)
+        plan = approval_service.plan(config_path)
         if plan.blockers:
             raise RuntimeError(
                 f"isolated mechanics review is blocked for {config_path.parent.name}: " + "; ".join(plan.blockers)
@@ -304,8 +297,6 @@ def _execute_governed_tutorial(
                 "confirms implementation fidelity only and is not profitability or candidate approval."
             ),
             reviewed_at="2026-01-20T12:30:00+00:00",
-            random_sample_size=2,
-            random_seed=TUTORIAL_RANDOM_SEED,
         )
         approval_reports.append(approval_service.inspect(config_path))
 
@@ -761,7 +752,7 @@ def _walkthrough_steps() -> list[dict[str, Any]]:
         {"step": 3, "minutes": 2, "title": "Data intake", "action": "Inspect timezone, bar semantics, quality checks, and synthetic warning."},
         {"step": 4, "minutes": 2, "title": "Execution assumptions", "action": "Confirm costs, session, cutoff, flattening, and no overnight exposure."},
         {"step": 5, "minutes": 2, "title": "Mechanics review", "action": "Confirm completed-bar signals enter on the next bar."},
-        {"step": 6, "minutes": 2, "title": "Five variants", "action": "Compare five value-independent mechanic signatures before PnL."},
+        {"step": 6, "minutes": 2, "title": "First variant", "action": "Confirm one mechanic before PnL and add no later mechanic unless this one fails."},
         {"step": 7, "minutes": 4, "title": "Staged results", "action": "Read the first failed gate and reject profitable but non-distinct timing."},
     ]
 
@@ -783,7 +774,7 @@ def _planned_stage_matrix(
             "first_failed_or_unresolved_gate": "mechanics_approval",
             "research_verdict": "FAIL",
         }
-        for index in range(1, 6)
+        for index in range(1, 2)
     ]
 
 

@@ -2,8 +2,9 @@ VALIDATION_DASHBOARD_PORT ?= 8502
 VALIDATION_DASHBOARD_SEARCH_ROOT ?= research/evidence/runs
 SAMPLE_VALIDATION_RUN_DIR ?= examples/validation_runs/sample_core
 STUDIO_PORT ?= 8501
+NPM ?= npm
 
-.PHONY: help setup studio-setup studio studio-status studio-stop smoke tutorial docs-check test lint quality qualify cleanup-generated research-audit remediation-review preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit storage-migration-verify research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
+.PHONY: help setup studio-setup studio studio-status studio-stop studio-ui-check studio-ui-build smoke tutorial docs-check test lint quality qualify cleanup-generated research-audit remediation-review preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit storage-migration-verify research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
 
 help:
 	@printf '%s\n' \
@@ -12,6 +13,8 @@ help:
 	  'studio                Launch the local Research Studio in the browser' \
 	  'studio-status         Show the local Research Studio process status' \
 	  'studio-stop           Stop the background Research Studio process' \
+	  'studio-ui-check       Type-check and test the React UI (developer; requires Node.js)' \
+	  'studio-ui-build       Build committed React UI assets (developer; requires Node.js)' \
 	  'smoke                 Run fast CLI, registry, preflight, and engine tests' \
 	  'tutorial              Generate and execute the isolated synthetic tutorial' \
 	  'docs-check            Validate local links in onboarding documentation' \
@@ -40,6 +43,13 @@ studio-status:
 
 studio-stop:
 	PYTHONPATH=src python3 -m alphaquest.cli studio stop
+
+studio-ui-check:
+	$(NPM) --prefix studio-ui run check
+	$(NPM) --prefix studio-ui run test
+
+studio-ui-build:
+	$(NPM) --prefix studio-ui run build
 
 smoke:
 	PYTHONPATH=src python3 -m pytest -q tests/test_cli.py tests/test_preflight.py tests/test_research_registry.py tests/test_backtest_contracts.py

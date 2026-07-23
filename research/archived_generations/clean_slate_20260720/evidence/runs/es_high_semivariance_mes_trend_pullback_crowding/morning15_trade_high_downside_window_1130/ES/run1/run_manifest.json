@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_high_semivariance_mes_trend_pullback_crowding",
+  "variant_id": "morning15_trade_high_downside_window_1130",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/morning15_trade_high_downside_window_1130/variant.yaml",
+    "hash": "8d730fbcd4539ce6d7dcedf8dfc2f512a8bdcbcddd3ecc0bbcd44ab377d89945",
+    "mechanic": {
+      "entry_module": "semivariance_filtered_trend_mes_participation_crowding",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_high_semivariance_mes_trend_pullback_crowding/variants/morning15_trade_high_downside_window_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/morning15_trade_high_downside_window_1130/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/morning15_trade_high_downside_window_1130/ES/run1/source_config.yaml",
+  "config_hash": "5b3a3ba2a7320cf091dfdca5ba7b5fcff359a0c0dff161d00ebd4c0737a20c1a",
+  "source_config_hash": "14eb8c50ed15e719ec1dec392a3459c93f4993cf2e24e8db6e37fdd6d3b0c0e2",
+  "source_results_index": "campaigns/es_high_semivariance_mes_trend_pullback_crowding/results_index.yaml",
+  "created_at": "2026-06-20T11:43:28",
+  "updated_at": "2026-06-20T11:43:28",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

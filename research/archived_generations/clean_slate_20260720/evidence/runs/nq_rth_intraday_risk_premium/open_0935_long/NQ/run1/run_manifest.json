@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_rth_intraday_risk_premium",
+  "variant_id": "open_0935_long",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_rth_intraday_risk_premium/open_0935_long/variant.yaml",
+    "hash": "1df4bfb99a1f1ad3d488e19a85486a3faa98d654cfa34c5d088722153a00dadd",
+    "mechanic": {
+      "entry_module": "calendar_session_bias",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_rth_intraday_risk_premium/variants/open_0935_long/config.yaml",
+  "effective_config": "backtest-campaigns/nq_rth_intraday_risk_premium/open_0935_long/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_rth_intraday_risk_premium/open_0935_long/NQ/run1/source_config.yaml",
+  "config_hash": "73a8a09a9b2439dd2e93fe77d02ee18c83ee828f5d090777b39a40ec42537fbe",
+  "source_config_hash": "62c9a07bbd839d72f1dfe78263beb7a79b6a1f08e0fc5a8eeb7d0e8b4f9d4b04",
+  "source_results_index": "campaigns/nq_rth_intraday_risk_premium/results_index.yaml",
+  "created_at": "2026-06-30T14:46:09",
+  "updated_at": "2026-06-30T14:46:09",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

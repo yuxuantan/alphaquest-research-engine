@@ -1,0 +1,58 @@
+{
+  "campaign_id": "es_signed_orderflow_persistence",
+  "variant_id": "late_morning_15m_signed_flow_continuation_1130",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_signed_orderflow_persistence/late_morning_15m_signed_flow_continuation_1130/variant.yaml",
+    "hash": "2225f9815efe9a048185eeca2d6a30004307fbe274edf56841838a02d5b82044",
+    "mechanic": {
+      "entry_module": "trade_orderflow_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "13:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_signed_orderflow_persistence/variants/late_morning_15m_signed_flow_continuation_1130/config.yaml",
+  "config_hash": "ec938c5343110641012976d231215bcd2f26305d4ce4dd69aaa9a683a478bea0",
+  "created_at": "2026-06-15T20:33:25",
+  "updated_at": "2026-06-15T20:33:25",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_signed_orderflow_persistence/late_morning_15m_signed_flow_continuation_1130/ES/run1/effective_config.yaml"
+}

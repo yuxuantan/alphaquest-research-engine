@@ -1,0 +1,59 @@
+{
+  "campaign_id": "es_ema_pullback_orderflow_continuation",
+  "variant_id": "lunch_signed_two_sided_ema_pullback_1300",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_ema_pullback_orderflow_continuation/lunch_signed_two_sided_ema_pullback_1300/variant.yaml",
+    "hash": "d937399e4fed237bb9331d9d04e9d10246dedf53cecbe812e0ceac7094b6ce93",
+    "mechanic": {
+      "entry_module": "ema_pullback_orderflow_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "14:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_ema_pullback_orderflow_continuation/variants/lunch_signed_two_sided_ema_pullback_1300/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_ema_pullback_orderflow_continuation/lunch_signed_two_sided_ema_pullback_1300/ES/run1/source_config.yaml",
+  "config_hash": "bd90ce6c098d02dfb43fcd6443276546c92ef18d55861349ac6548014408db1f",
+  "source_config_hash": "4d72c63b27ddee3ec675371cd2684c3d35d3ef3a01eb39ef037689f1f5440419",
+  "created_at": "2026-06-18T12:37:22",
+  "updated_at": "2026-06-18T12:37:22",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_ema_pullback_orderflow_continuation/lunch_signed_two_sided_ema_pullback_1300/ES/run1/effective_config.yaml"
+}

@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_session_extreme_delta_divergence",
+  "variant_id": "afternoon_low_delta_divergence_long",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_session_extreme_delta_divergence/campaign.yaml",
+    "hash": "275959264319123e850025992a6ec842ad8c373d52501e23495c3e57faf44c8b"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_session_extreme_delta_divergence/afternoon_low_delta_divergence_long/variant.yaml",
+    "hash": "a1d1818a559f01c1e3a7e12fb43b8ba4c46b1132904cc1775512d8f22cb55c66",
+    "mechanic": {
+      "entry_module": "session_extreme_delta_divergence",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_session_extreme_delta_divergence/rescue_attempts/stop_distance_rescue_1/afternoon_low_delta_divergence_long/config.yaml",
+  "effective_config": "backtest-campaigns/es_session_extreme_delta_divergence/afternoon_low_delta_divergence_long/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_session_extreme_delta_divergence/afternoon_low_delta_divergence_long/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "e4879380f1a703cad707ec7c8ad968d3d459f2bbb2903e42ffc7cc92861d3a35",
+  "source_config_hash": "d00273ea48ac6970b655ab94d2201299d8822b3c7942de1fdf533c6a9fb9186f",
+  "source_results_index": "campaigns/es_session_extreme_delta_divergence/results_index.yaml",
+  "created_at": "2026-06-19T16:15:52",
+  "updated_at": "2026-06-19T16:15:52",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

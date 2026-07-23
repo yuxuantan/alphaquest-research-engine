@@ -1,0 +1,68 @@
+{
+  "campaign_id": "es_monthly_opex_pressure",
+  "variant_id": "nonquarterly_opex_thursday_positioning_short_1330",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_monthly_opex_pressure/campaign.yaml",
+    "hash": "a4b0cc66e2e87f04dc1b20fd0b9c315b025133958de0a68a57d0a076f574e172"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_monthly_opex_pressure/nonquarterly_opex_thursday_positioning_short_1330/variant.yaml",
+    "hash": "4972a59db7198eddda64c0c32e781539126c4a9bd831f71ba1f69915d30430a8",
+    "mechanic": {
+      "entry_module": "monthly_opex_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_monthly_opex_pressure/rescue_attempts/stop_distance_rescue_1/nonquarterly_opex_thursday_positioning_short_1330/config.yaml",
+  "effective_config": "backtest-campaigns/es_monthly_opex_pressure/nonquarterly_opex_thursday_positioning_short_1330/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_monthly_opex_pressure/nonquarterly_opex_thursday_positioning_short_1330/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "ea42ebc843217ba6b3905ce4619362cc2610c591a810a1e53e9353dab28f01f0",
+  "source_config_hash": "653dc7176a0446851d64658f2fedf4f0a2b3878c21c74afbaeeef907972bd871",
+  "source_results_index": "campaigns/es_monthly_opex_pressure/results_index.yaml",
+  "created_at": "2026-06-19T10:33:14",
+  "updated_at": "2026-06-21T12:51:42",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:51:42"
+  }
+}

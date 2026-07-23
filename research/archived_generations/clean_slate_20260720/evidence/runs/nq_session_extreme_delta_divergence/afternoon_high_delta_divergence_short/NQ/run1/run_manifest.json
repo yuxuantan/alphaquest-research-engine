@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_session_extreme_delta_divergence",
+  "variant_id": "afternoon_high_delta_divergence_short",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_session_extreme_delta_divergence/afternoon_high_delta_divergence_short/variant.yaml",
+    "hash": "1a228f7b752df7777799e47dbff357cd43991fcd02a1442df2ae3c7f7f88cd40",
+    "mechanic": {
+      "entry_module": "session_extreme_delta_divergence",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_session_extreme_delta_divergence/variants/afternoon_high_delta_divergence_short/config.yaml",
+  "effective_config": "backtest-campaigns/nq_session_extreme_delta_divergence/afternoon_high_delta_divergence_short/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_session_extreme_delta_divergence/afternoon_high_delta_divergence_short/NQ/run1/source_config.yaml",
+  "config_hash": "f1eb620d50adf628336815df5b77fdfd6844c8c0441eab1be4b7b29df5d230fb",
+  "source_config_hash": "7bbe266908559b41349a20cc19325d2166c50de2477c14810312868c0a241400",
+  "source_results_index": "campaigns/nq_session_extreme_delta_divergence/results_index.yaml",
+  "created_at": "2026-06-30T14:11:02",
+  "updated_at": "2026-06-30T14:11:02",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

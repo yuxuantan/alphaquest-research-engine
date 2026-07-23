@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
+import re
 
 import numpy as np
 import pandas as pd
@@ -84,10 +85,25 @@ def apply_continuous_contract(df: pd.DataFrame, config: dict) -> pd.DataFrame:
         )
         out = out.merge(active, on="session_date", how="left")
 
-    out = out[out["contract_symbol"] == out["active_contract_symbol"]].copy()
+    contract_key = out["contract_symbol"].map(_contract_comparison_key)
+    active_key = out["active_contract_symbol"].map(_contract_comparison_key)
+    out = out[contract_key == active_key].copy()
     out = out.drop(columns=["active_contract_symbol"])
     out["symbol"] = config.get("symbol", out["symbol"].iloc[0] if len(out) else "UNKNOWN")
     return out.sort_values("timestamp").reset_index(drop=True)
+
+
+_OUTRIGHT_CONTRACT_RE = re.compile(r"^(?P<root>[A-Z0-9]+?)(?P<month>[FGHJKMNQUVXZ])(?P<year>\d{1,4})$")
+
+
+def _contract_comparison_key(value: object) -> str:
+    """Match equivalent one-, two-, or four-digit futures year symbols."""
+
+    normalized = str(value).strip().upper()
+    match = _OUTRIGHT_CONTRACT_RE.fullmatch(normalized)
+    if match is None:
+        return normalized
+    return f"{match.group('root')}{match.group('month')}{int(match.group('year')) % 10}"
 
 
 def _assign_explicit_roll_contract(df: pd.DataFrame, config: dict) -> pd.DataFrame:

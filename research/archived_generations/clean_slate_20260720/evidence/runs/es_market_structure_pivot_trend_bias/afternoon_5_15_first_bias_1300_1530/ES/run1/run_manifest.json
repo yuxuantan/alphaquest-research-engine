@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_market_structure_pivot_trend_bias",
+  "variant_id": "afternoon_5_15_first_bias_1300_1530",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_market_structure_pivot_trend_bias/afternoon_5_15_first_bias_1300_1530/variant.yaml",
+    "hash": "ca8438c46ad3903c4e2c2c78706dd0212861fcf3e718059633704e706f37b125",
+    "mechanic": {
+      "entry_module": "market_structure_pivot_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_market_structure_pivot_trend_bias/variants/afternoon_5_15_first_bias_1300_1530/config.yaml",
+  "effective_config": "backtest-campaigns/es_market_structure_pivot_trend_bias/afternoon_5_15_first_bias_1300_1530/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_market_structure_pivot_trend_bias/afternoon_5_15_first_bias_1300_1530/ES/run1/source_config.yaml",
+  "config_hash": "ab08a9d710de296e61eea8ec42f8eee42ec2c1bbb43b79901b87de276f760236",
+  "source_config_hash": "e2c0db4e9840fbd7f5a0d34ff2d0faad5d5b91f48ddc68fb6600629ac2127128",
+  "source_results_index": "campaigns/es_market_structure_pivot_trend_bias/results_index.yaml",
+  "created_at": "2026-06-20T08:49:19",
+  "updated_at": "2026-06-20T08:49:19",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_overnight_vap_orderflow_breakout_continuation",
+  "variant_id": "overnight_vap_two_sided_breakout_1530",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_overnight_vap_orderflow_breakout_continuation/overnight_vap_two_sided_breakout_1530/variant.yaml",
+    "hash": "174b08df1512fc2ffd3cbc6beb149f63ca5a57c5b9c55be562b265d1722d451f",
+    "mechanic": {
+      "entry_module": "true_vap_aoi_breakout_continuation",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_overnight_vap_orderflow_breakout_continuation/variants/overnight_vap_two_sided_breakout_1530/config.yaml",
+  "effective_config": "backtest-campaigns/es_overnight_vap_orderflow_breakout_continuation/overnight_vap_two_sided_breakout_1530/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_overnight_vap_orderflow_breakout_continuation/overnight_vap_two_sided_breakout_1530/ES/run1/source_config.yaml",
+  "config_hash": "1273466e2bda5ab2abbbd885ac0d6fd77192354865206c47dba382ca254f8c16",
+  "source_config_hash": "69f6abc891901b9e4959faab038128c1f7066988e936cd657c98df960ce7c584",
+  "source_results_index": "campaigns/es_overnight_vap_orderflow_breakout_continuation/results_index.yaml",
+  "created_at": "2026-06-22T11:09:55",
+  "updated_at": "2026-06-22T11:09:55",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

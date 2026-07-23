@@ -23,6 +23,7 @@ from alphaquest.data.pipeline import prepare_data
 from alphaquest.data.source import data_source_hash
 from alphaquest.prop.rules import PropRules
 from alphaquest.research.core_grid import run_core_grid
+from alphaquest.research.execution import run_research_backtest
 from alphaquest.research.monkey import run_monkey
 from alphaquest.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
 from alphaquest.research.policy import active_research_policy_metadata, load_research_policy
@@ -116,6 +117,20 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
     out["research_policy"] = policy_metadata
     out.setdefault("monkey", {})["runs"] = DEFAULT_MONKEY_RUNS
     campaign_tests = copy.deepcopy(out.get("campaign_tests") or {})
+    incubation_declared = campaign_tests.get("simulated_incubation_core") or {}
+    acceptance_declared = campaign_tests.get(ACCEPTANCE_STAGE) or {}
+    incubation_test_months = int(
+        incubation_declared.get(
+            "test_months",
+            _RESEARCH_POLICY.simulated_incubation.get("test_months", 12),
+        )
+    )
+    acceptance_test_months = int(
+        acceptance_declared.get(
+            "test_months",
+            _RESEARCH_POLICY.acceptance_oos.get("test_months", 6),
+        )
+    )
     stage_order = DEFAULT_STAGE_ORDER if include_acceptance else PRE_ACCEPTANCE_STAGE_ORDER
     campaign_tests["stage_order"] = list(stage_order)
     campaign_tests["research_policy"] = policy_metadata
@@ -131,9 +146,17 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
         if stage_name == "walk_forward_analysis":
             stage_cfg.pop("data_subset", None)
             stage_cfg["data_window"] = copy.deepcopy(DEFAULT_WFA_DATA_WINDOW)
+            if stage_cfg["data_window"].get("mode") == "before_sequential_holdouts":
+                stage_cfg["data_window"].update(
+                    {
+                        "incubation_test_months": incubation_test_months,
+                        "acceptance_test_months": acceptance_test_months,
+                    }
+                )
         if stage_name == "simulated_incubation_core":
             stage_cfg.setdefault("train_months", int(_RESEARCH_POLICY.simulated_incubation.get("train_months", 48)))
             stage_cfg.setdefault("test_months", int(_RESEARCH_POLICY.simulated_incubation.get("test_months", 12)))
+            stage_cfg["holdout_after_test_months"] = acceptance_test_months
         if stage_name == ACCEPTANCE_STAGE:
             stage_cfg.setdefault("train_months", int(_RESEARCH_POLICY.acceptance_oos.get("train_months", 24)))
             stage_cfg.setdefault("test_months", int(_RESEARCH_POLICY.acceptance_oos.get("test_months", 6)))
@@ -142,6 +165,229 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
         campaign_tests[stage_name] = stage_cfg
     out["campaign_tests"] = campaign_tests
     return out
+
+
+def campaign_test_data_window_plan(cfg: dict) -> list[dict[str, Any]]:
+    """Return the pre-PnL stage windows that Studio can present for review."""
+
+    canonical = canonicalize_campaign_config(cfg)
+    campaign_tests = canonical.get("campaign_tests") or {}
+    rows: list[dict[str, Any]] = []
+    gate = ((canonical.get("research_metadata") or {}).get("validation_gate") or {})
+    mechanics_subset = gate.get("data_subset") if isinstance(gate.get("data_subset"), dict) else {}
+    rows.append(
+        _planned_window_row(
+            "mechanics_validation",
+            "Mechanics Validation",
+            mechanics_subset,
+            input_kind="market_sessions",
+            detail="Frozen defaults; manually reconciled sample before every PnL-bearing stage.",
+        )
+    )
+
+    limited_core = _stage_subset(
+        canonical,
+        campaign_tests.get("limited_core_grid_test") or {},
+        "core_grid",
+    )
+    rows.append(
+        _planned_window_row(
+            "limited_core_grid_test",
+            STAGE_LABELS["limited_core_grid_test"],
+            limited_core,
+            input_kind="market_sessions",
+            detail="Deterministic shortlist slice selected before performance testing.",
+        )
+    )
+    rows.append(
+        _planned_window_row(
+            "limited_monkey_test",
+            STAGE_LABELS["limited_monkey_test"],
+            limited_core,
+            input_kind="market_sessions",
+            inherited_from="limited_core_grid_test",
+            detail="Uses the same shortlist market slice as limited core.",
+        )
+    )
+
+    wfa_cfg = canonical.get("wfa") or {}
+    wfa_subset = _stage_subset(
+        canonical,
+        campaign_tests.get("walk_forward_analysis") or {},
+        "wfa",
+    )
+    wfa_detail = (
+        f"Rolling {int(wfa_cfg.get('train_months', 48))}-month train / "
+        f"{int(wfa_cfg.get('test_months', 12))}-month test / "
+        f"{int(wfa_cfg.get('step_months', wfa_cfg.get('test_months', 12)))}-month step."
+    )
+    rows.append(
+        _planned_window_row(
+            "walk_forward_analysis",
+            STAGE_LABELS["walk_forward_analysis"],
+            wfa_subset,
+            input_kind="rolling_market_windows",
+            detail=wfa_detail,
+        )
+    )
+    for stage_name in ("wfa_oos_monkey_test", "wfa_oos_monte_carlo"):
+        rows.append(
+            _planned_window_row(
+                stage_name,
+                STAGE_LABELS[stage_name],
+                wfa_subset,
+                input_kind="derived_trades",
+                inherited_from="walk_forward_analysis",
+                detail="Consumes only the stitched walk-forward out-of-sample trades.",
+            )
+        )
+
+    incubation_cfg = campaign_tests.get("simulated_incubation_core") or {}
+    incubation_base = _acceptance_base_subset(canonical, incubation_cfg)
+    try:
+        incubation_subset, incubation_window = _planned_acceptance_subset(
+            incubation_base,
+            int(incubation_cfg.get("train_months", 48)),
+            int(incubation_cfg.get("test_months", 12)),
+            stage_label="simulated_incubation_core",
+            holdout_months=int(incubation_cfg.get("holdout_after_test_months", 0)),
+        )
+        rows.append(
+            _planned_window_row(
+                "simulated_incubation_core",
+                STAGE_LABELS["simulated_incubation_core"],
+                incubation_subset,
+                input_kind="train_test_market_window",
+                window=incubation_window,
+                detail="Incubation OOS ends before the locked acceptance holdout begins.",
+            )
+        )
+        rows.append(
+            _planned_window_row(
+                "simulated_incubation_monkey",
+                STAGE_LABELS["simulated_incubation_monkey"],
+                incubation_subset,
+                input_kind="derived_trades",
+                inherited_from="simulated_incubation_core",
+                window=incubation_window,
+                detail="Consumes only simulated-incubation OOS trades.",
+            )
+        )
+    except ValueError as exc:
+        rows.append(
+            _unavailable_window_row(
+                "simulated_incubation_core",
+                STAGE_LABELS["simulated_incubation_core"],
+                incubation_base,
+                input_kind="train_test_market_window",
+                detail=str(exc),
+            )
+        )
+        rows.append(
+            _unavailable_window_row(
+                "simulated_incubation_monkey",
+                STAGE_LABELS["simulated_incubation_monkey"],
+                incubation_base,
+                input_kind="derived_trades",
+                inherited_from="simulated_incubation_core",
+                detail=f"Inherited incubation window is unavailable: {exc}",
+            )
+        )
+
+    acceptance_cfg = campaign_tests.get(ACCEPTANCE_STAGE) or {}
+    acceptance_base = _acceptance_base_subset(canonical, acceptance_cfg)
+    try:
+        acceptance_subset, acceptance_window = _planned_acceptance_subset(
+            acceptance_base,
+            int(acceptance_cfg.get("train_months", 24)),
+            int(acceptance_cfg.get("test_months", 6)),
+            stage_label=ACCEPTANCE_STAGE,
+        )
+        rows.append(
+            _planned_window_row(
+                ACCEPTANCE_STAGE,
+                STAGE_LABELS[ACCEPTANCE_STAGE],
+                acceptance_subset,
+                input_kind="train_test_market_window",
+                window=acceptance_window,
+                detail="Final locked holdout; excluded from WFA and incubation OOS.",
+            )
+        )
+    except ValueError as exc:
+        rows.append(
+            _unavailable_window_row(
+                ACCEPTANCE_STAGE,
+                STAGE_LABELS[ACCEPTANCE_STAGE],
+                acceptance_base,
+                input_kind="train_test_market_window",
+                detail=str(exc),
+            )
+        )
+    return rows
+
+
+def _planned_window_row(
+    stage: str,
+    label: str,
+    subset: dict | None,
+    *,
+    input_kind: str,
+    detail: str,
+    inherited_from: str | None = None,
+    window: dict | None = None,
+) -> dict[str, Any]:
+    subset = dict(subset or {})
+    window = window or {}
+    row = {
+        "stage": stage,
+        "label": label,
+        "input_kind": input_kind,
+        "inherited_from": inherited_from,
+        "planned_start": subset.get("start_date") or subset.get("start_timestamp"),
+        "planned_end": subset.get("end_date") or subset.get("end_timestamp"),
+        "train_start": _planned_timestamp_date(window.get("train_start")),
+        "train_end": _planned_timestamp_date(window.get("train_end")),
+        "test_start": _planned_timestamp_date(window.get("test_start")),
+        "test_end": _planned_timestamp_date(window.get("test_end")),
+        "detail": detail,
+        "status": "planned",
+    }
+    start = _subset_start_date(subset)
+    end = _subset_end_date(subset)
+    if start is not None and end is not None and start > end:
+        row["status"] = "unavailable"
+        row["detail"] = (
+            f"{detail} The planned end {end.date().isoformat()} precedes the "
+            f"available start {start.date().isoformat()}."
+        )
+    return row
+
+
+def _unavailable_window_row(
+    stage: str,
+    label: str,
+    subset: dict | None,
+    *,
+    input_kind: str,
+    detail: str,
+    inherited_from: str | None = None,
+) -> dict[str, Any]:
+    row = _planned_window_row(
+        stage,
+        label,
+        subset,
+        input_kind=input_kind,
+        inherited_from=inherited_from,
+        detail=detail,
+    )
+    row["status"] = "unavailable"
+    return row
+
+
+def _planned_timestamp_date(value: Any) -> str | None:
+    if value is None:
+        return None
+    return pd.Timestamp(value).date().isoformat()
 
 
 def apply_fast_runtime_defaults(cfg: dict, workers: int | None = None) -> dict:
@@ -902,7 +1148,7 @@ def _write_fixed_config_core_artifacts(
     monkey-selected, WFA-selected, or rescue-derived parameters.
     """
 
-    result = BacktestEngine(cfg).run(market, detail_data=detail)
+    result = run_research_backtest(cfg, market, detail_data=detail, bar_engine_cls=BacktestEngine)
     trades = result.get("trades", pd.DataFrame())
     daily = result.get("daily", pd.DataFrame())
     report_timezone = market_timezone(cfg)
@@ -1055,7 +1301,7 @@ def _run_limited_monkey(
         context.get("limited_core_grid_parameters") or {},
     )
     test_cfg = apply_dotted_params(cfg, selected_params) if selected_params else copy.deepcopy(cfg)
-    core_result = BacktestEngine(test_cfg).run(market, detail_data=detail)
+    core_result = run_research_backtest(test_cfg, market, detail_data=detail, bar_engine_cls=BacktestEngine)
     core_trades = core_result["trades"]
     report_dir = stage_dir if monkey_cfg.get("retain_iteration_reports", True) else None
     results, summary = run_monkey(
@@ -1225,6 +1471,31 @@ def _run_wfa_oos_monte_carlo(cfg: dict, stage_cfg: dict, stage_dir: Path, contex
 
 def _wfa_oos_monte_carlo_rules_config(cfg: dict, stage_cfg: dict) -> dict:
     top_rules = copy.deepcopy(cfg.get("prop_rules") or {})
+    monte_carlo_rules = (cfg.get("monte_carlo") or {}).get("prop_rules")
+    stage_rules = stage_cfg.get("prop_rules")
+    if top_rules.get("profile_fully_specified") is True:
+        declared_hash = str(top_rules.pop("profile_sha256", ""))
+        encoded = json.dumps(
+            top_rules,
+            sort_keys=True,
+            separators=(",", ":"),
+            allow_nan=False,
+        ).encode("utf-8")
+        if not declared_hash or hashlib.sha256(encoded).hexdigest() != declared_hash:
+            raise ValueError("fully specified prop-profile hash is missing or stale")
+        if isinstance(monte_carlo_rules, dict) or isinstance(stage_rules, dict):
+            raise ValueError(
+                "a fully specified Studio prop profile cannot be silently overridden by stage settings"
+            )
+        required = set(PropRules.__dataclass_fields__)
+        missing = sorted(required - set(top_rules))
+        if missing:
+            raise ValueError(
+                "fully specified prop profile is missing executable rules: "
+                + ", ".join(missing)
+            )
+        return {key: copy.deepcopy(top_rules[key]) for key in PropRules.__dataclass_fields__}
+
     rules_cfg = {
         key: top_rules[key]
         for key in (
@@ -1256,10 +1527,8 @@ def _wfa_oos_monte_carlo_rules_config(cfg: dict, stage_cfg: dict) -> dict:
             "drawdown_limit_amount": 2000.0,
         }
     )
-    monte_carlo_rules = (cfg.get("monte_carlo") or {}).get("prop_rules")
     if isinstance(monte_carlo_rules, dict):
         _deep_update(rules_cfg, copy.deepcopy(monte_carlo_rules))
-    stage_rules = stage_cfg.get("prop_rules")
     if isinstance(stage_rules, dict):
         _deep_update(rules_cfg, copy.deepcopy(stage_rules))
     drawdown_budget = float(rules_cfg["drawdown_limit_amount"])
@@ -1277,8 +1546,12 @@ def _run_incubation_core(
 ) -> dict:
     train_months = int(stage_cfg.get("train_months", 48))
     test_months = int(stage_cfg.get("test_months", 12))
-    if train_months <= 0 or test_months <= 0:
-        raise ValueError("simulated_incubation_core train_months and test_months must be greater than zero.")
+    holdout_after_test_months = int(stage_cfg.get("holdout_after_test_months", 0))
+    if train_months <= 0 or test_months <= 0 or holdout_after_test_months < 0:
+        raise ValueError(
+            "simulated_incubation_core train_months/test_months must be positive and "
+            "holdout_after_test_months must be non-negative."
+        )
 
     base_subset = _acceptance_base_subset(cfg, stage_cfg)
     bounded_subset, planned_window = _planned_acceptance_subset(
@@ -1286,6 +1559,7 @@ def _run_incubation_core(
         train_months,
         test_months,
         stage_label="simulated_incubation_core",
+        holdout_months=holdout_after_test_months,
     )
     market, detail, quality, input_hash = _prepare_stage_data_cached(
         cfg,
@@ -1321,15 +1595,12 @@ def _run_incubation_core(
             f"test={_format_acceptance_period(window, 'test')}."
         )
 
-    parameters = (
-        stage_cfg.get("parameters")
-        or (stage_cfg.get("train_selection") or {}).get("parameters")
-        or (cfg.get("wfa") or {}).get("parameters")
-        or (cfg.get("core_grid") or {}).get("parameters")
-        or {}
+    parameters = _declared_parameter_grid(
+        stage_cfg,
+        stage_cfg.get("train_selection"),
+        cfg.get("wfa"),
+        cfg.get("core_grid"),
     )
-    if not parameters:
-        raise ValueError("simulated_incubation_core requires a parameter grid.")
 
     selection_cfg = _acceptance_selection_config(cfg, stage_cfg, parameters)
     selection_cfg["data_subset"] = _window_subset(base_subset, window["train_start"], window["train_end_exclusive"])
@@ -1346,7 +1617,7 @@ def _run_incubation_core(
         result_prefix="incubation",
     )
     test_cfg = apply_dotted_params(cfg, selected_params) if selected_params else copy.deepcopy(cfg)
-    result = BacktestEngine(test_cfg).run(test, detail_data=test_detail)
+    result = run_research_backtest(test_cfg, test, detail_data=test_detail, bar_engine_cls=BacktestEngine)
     trades = result["trades"]
     report_timezone = market_timezone(test_cfg)
     write_report_csv(trades, stage_dir / "trade_log.csv", report_timezone, index=False)
@@ -1429,14 +1700,11 @@ def _run_acceptance_oos(
             f"test={_format_acceptance_period(window, 'test')}."
         )
 
-    parameters = (
-        stage_cfg.get("parameters")
-        or (cfg.get("wfa") or {}).get("parameters")
-        or (cfg.get("core_grid") or {}).get("parameters")
-        or {}
+    parameters = _declared_parameter_grid(
+        stage_cfg,
+        cfg.get("wfa"),
+        cfg.get("core_grid"),
     )
-    if not parameters:
-        raise ValueError("acceptance_oos_test requires a parameter grid.")
 
     selection_cfg = _acceptance_selection_config(cfg, stage_cfg, parameters)
     selection_cfg["data_subset"] = _window_subset(base_subset, window["train_start"], window["train_end_exclusive"])
@@ -1454,7 +1722,7 @@ def _run_acceptance_oos(
         result_prefix="acceptance",
     )
     test_cfg = apply_dotted_params(cfg, selected_params) if selected_params else copy.deepcopy(cfg)
-    result = BacktestEngine(test_cfg).run(test, detail_data=test_detail)
+    result = run_research_backtest(test_cfg, test, detail_data=test_detail, bar_engine_cls=BacktestEngine)
     trades = result["trades"]
     report_timezone = market_timezone(test_cfg)
     write_report_csv(trades, stage_dir / "trade_log.csv", report_timezone, index=False)
@@ -1720,11 +1988,18 @@ def _planned_acceptance_subset(
     test_months: int,
     *,
     stage_label: str = "acceptance_oos_test",
+    holdout_months: int = 0,
 ) -> tuple[dict | None, dict | None]:
     end = _subset_end_date(base_subset)
     if end is None:
         return (dict(base_subset) if base_subset else None), None
-    window = _acceptance_window_from_end(end, train_months, test_months)
+    if holdout_months < 0:
+        raise ValueError(f"{stage_label} holdout_months must be non-negative.")
+    window_end = end
+    if holdout_months:
+        reserved_holdout_start = (end - pd.DateOffset(months=holdout_months)).normalize()
+        window_end = reserved_holdout_start - pd.Timedelta(days=1)
+    window = _acceptance_window_from_end(window_end, train_months, test_months)
     start = _subset_start_date(base_subset)
     if start is not None and start > window["train_start"]:
         raise ValueError(
@@ -1997,6 +2272,20 @@ def _subset_from_window(base_subset: dict, window: dict) -> dict:
         chosen = random.Random(int(window.get("seed", 1))).choice(list(candidates))
         out["start_date"] = chosen.date().isoformat()
         out["end_date"] = (chosen + pd.Timedelta(days=selected_days - 1)).date().isoformat()
+    elif mode == "before_sequential_holdouts" and end is not None:
+        incubation_months = int(window.get("incubation_test_months", 12))
+        acceptance_months = int(window.get("acceptance_test_months", 6))
+        if incubation_months <= 0 or acceptance_months <= 0:
+            raise ValueError(
+                "before_sequential_holdouts requires positive incubation_test_months "
+                "and acceptance_test_months."
+            )
+        acceptance_start = (end - pd.DateOffset(months=acceptance_months)).normalize()
+        incubation_end = acceptance_start - pd.Timedelta(days=1)
+        incubation_start = (
+            incubation_end - pd.DateOffset(months=incubation_months)
+        ).normalize()
+        out["end_date"] = (incubation_start - pd.Timedelta(days=1)).date().isoformat()
     return out
 
 
@@ -2111,14 +2400,11 @@ def _run_train_selection_grid(
     train_subset = selection_cfg.get("data_subset") or {}
     grid_cfg = copy.deepcopy(cfg.get("core_grid", {}))
     _deep_update(grid_cfg, {key: value for key, value in selection_cfg.items() if key != "data_subset"})
-    parameters = (
-        selection_cfg.get("parameters")
-        or (cfg.get("wfa") or {}).get("parameters")
-        or (cfg.get("core_grid") or {}).get("parameters")
-        or {}
+    parameters = _declared_parameter_grid(
+        selection_cfg,
+        cfg.get("wfa"),
+        cfg.get("core_grid"),
     )
-    if not parameters:
-        raise ValueError("incubation train selection requires a parameter grid.")
     grid_cfg["parameters"] = copy.deepcopy(parameters)
     grid_cfg["data_subset"] = dict(train_subset)
     grid_cfg.setdefault("retain_iteration_reports", False)
@@ -2150,6 +2436,19 @@ def _run_train_selection_grid(
         "input_hash": input_hash,
         "artifacts": _stage_artifacts(train_dir),
     }
+
+
+def _declared_parameter_grid(*containers: object) -> dict:
+    """Resolve the first explicitly declared grid, preserving an empty fixed grid."""
+
+    for container in containers:
+        if not isinstance(container, dict) or "parameters" not in container:
+            continue
+        parameters = container["parameters"]
+        if not isinstance(parameters, dict):
+            raise ValueError("declared parameters must be a mapping; use {} for one fixed configuration.")
+        return copy.deepcopy(parameters)
+    return {}
 
 
 def _select_core_grid_params(results: pd.DataFrame, parameters: dict, selection_cfg: dict) -> dict:

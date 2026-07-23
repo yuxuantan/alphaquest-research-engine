@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_impulse_pause_orderflow_continuation",
+  "variant_id": "afternoon_large10_two_sided_impulse_pause_breakout_1530",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_impulse_pause_orderflow_continuation/afternoon_large10_two_sided_impulse_pause_breakout_1530/variant.yaml",
+    "hash": "ead793bde37e4a75556c7c2c67aed48ad14dd1a8c662e69875c9a13a5188168f",
+    "mechanic": {
+      "entry_module": "impulse_pause_orderflow_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_impulse_pause_orderflow_continuation/variants/afternoon_large10_two_sided_impulse_pause_breakout_1530/config.yaml",
+  "effective_config": "backtest-campaigns/nq_impulse_pause_orderflow_continuation/afternoon_large10_two_sided_impulse_pause_breakout_1530/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_impulse_pause_orderflow_continuation/afternoon_large10_two_sided_impulse_pause_breakout_1530/NQ/run1/source_config.yaml",
+  "config_hash": "658b892f5c958710fb98fb17eca16bf785f6b2b9b7d355b1b87bb7a69e2cfa67",
+  "source_config_hash": "a0bbb99fb3ca6f6e0f43372f181589e45feb926d08ce4ee19b583723148cbb30",
+  "source_results_index": "campaigns/nq_impulse_pause_orderflow_continuation/results_index.yaml",
+  "created_at": "2026-06-30T15:45:31",
+  "updated_at": "2026-06-30T15:45:31",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

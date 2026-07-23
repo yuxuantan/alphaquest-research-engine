@@ -1,0 +1,247 @@
+schema: alphaquest.strategy-certification/v1
+strategy_id: yush_orderflow_range
+implementation_version: 4
+certification_status: certified
+lane: canonical_event_replay
+factory: alphaquest.strategy_modules.event.yush_orderflow_range:build_strategy
+entry_module: yush_orderflow_range
+stop_module: event_aoi_structural_stop
+target_module: event_value_area_management
+source_files:
+- src/alphaquest/strategy_certification.py
+- src/alphaquest/backtest/engine.py
+- src/alphaquest/backtest/event_replay.py
+- src/alphaquest/data/databento_session_stream.py
+- src/alphaquest/data/scid_execution.py
+- src/alphaquest/data/sierra_events.py
+- src/alphaquest/data/sierra_session_stream.py
+- src/alphaquest/strategy_modules/event/__init__.py
+- src/alphaquest/strategy_modules/event/runner.py
+- src/alphaquest/strategy_modules/event/yush_orderflow_primitives.py
+- src/alphaquest/strategy_modules/event/yush_orderflow_range.py
+- src/alphaquest/utils/params.py
+implementation_sha256: 482cf171f1727d8fe9cd804db9f225af57a3cb270f4bc08fd8e1162fcb5a7067
+required_test_categories:
+- session_logic
+- entry_timing
+- stop_target_ordering
+- forced_flatten
+- no_lookahead
+- registry_and_runner
+required_tests:
+- tests/test_yush_range_reversal_v2.py
+- tests/test_event_replay.py
+- tests/test_scid_execution.py
+- tests/test_sierra_events.py
+- tests/test_sierra_session_stream.py
+parameters:
+  tick_size:
+    category: entry
+    value_type: number
+    default: 0.25
+    description: ES minimum price increment, bound to the execution contract.
+    tunable: false
+    studio_editable: false
+    minimum: 0.01
+  point_value:
+    category: entry
+    value_type: number
+    default: 50.0
+    description: Dollar value of one ES point, bound to the execution contract.
+    tunable: false
+    studio_editable: false
+    minimum: 0.01
+  contracts:
+    category: entry
+    value_type: integer
+    default: 1
+    description: Fixed position size, bound to the execution contract.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+  commission_per_contract:
+    category: entry
+    value_type: number
+    default: 2.5
+    description: Round-turn commission charged per contract.
+    tunable: false
+    studio_editable: false
+    minimum: 0
+  max_trades_per_day:
+    category: entry
+    value_type: integer
+    default: 3
+    description: Maximum filled entries permitted in one trading day.
+    tunable: false
+    studio_editable: true
+    minimum: 1
+    maximum: 3
+  max_aoi_width_points:
+    category: entry
+    value_type: number
+    default: 3.0
+    description: Widest allowed confluence envelope around developing value.
+    tunable: true
+    studio_editable: true
+    minimum: 0.25
+    maximum: 8.0
+  entry_offset_ticks:
+    category: entry
+    value_type: integer
+    default: 2
+    description: Stop-entry displacement beyond the AOI reversal edge.
+    tunable: true
+    studio_editable: true
+    minimum: 0
+    maximum: 8
+  stop_offset_ticks:
+    category: sl
+    value_type: integer
+    default: 2
+    description: Structural stop displacement beyond the opposite AOI edge.
+    tunable: true
+    studio_editable: true
+    minimum: 0
+    maximum: 12
+  max_stop_points:
+    category: sl
+    value_type: number
+    default: 5.0
+    description: Maximum planned entry-to-stop risk before rejecting an order.
+    tunable: false
+    studio_editable: true
+    minimum: 0.25
+    maximum: 12.0
+  value_area_fraction:
+    category: entry
+    value_type: number
+    default: 0.7
+    description: Developing volume-profile fraction used for value area.
+    tunable: false
+    studio_editable: true
+    minimum: 0.5
+    maximum: 0.9
+  range_expansion_fraction:
+    category: entry
+    value_type: number
+    default: 0.2
+    description: Required excursion beyond a range boundary for breakout probing.
+    tunable: false
+    studio_editable: true
+    minimum: 0.0
+    maximum: 1.0
+  delta_profile_min_abs:
+    category: entry
+    value_type: integer
+    default: 300
+    description: Minimum absolute four-tick delta for an AOI delta confluence.
+    tunable: false
+    studio_editable: true
+    minimum: 1
+  delta_bubble_threshold:
+    category: entry
+    value_type: integer
+    default: 300
+    description: Minimum absolute post-tap four-tick delta trigger.
+    tunable: false
+    studio_editable: true
+    minimum: 1
+  big_trade_threshold:
+    category: entry
+    value_type: integer
+    default: 200
+    description: Aggregated same-price same-side volume required for a large trade.
+    tunable: false
+    studio_editable: true
+    minimum: 1
+  big_trade_window_ms:
+    category: entry
+    value_type: integer
+    default: 100
+    description: Large-trade aggregation interval matching the reviewed chart feed.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+  breakeven_offset_points:
+    category: tp
+    value_type: number
+    default: 1.25
+    description: Locked profit after the developing value midpoint is reached.
+    tunable: false
+    studio_editable: true
+    minimum: 0.25
+    maximum: 5.0
+  opening_range_seconds:
+    category: entry
+    value_type: integer
+    default: 32
+    description: Frozen opening-range observation duration.
+    tunable: false
+    studio_editable: true
+    minimum: 1
+    maximum: 600
+  bar_seconds:
+    category: entry
+    value_type: integer
+    default: 180
+    description: Delta-bubble aggregation bar duration.
+    tunable: false
+    studio_editable: true
+    minimum: 1
+    maximum: 3600
+  breakout_probe_ticks:
+    category: entry
+    value_type: integer
+    default: 2
+    description: Tick excursion used to classify failed range breakouts.
+    tunable: false
+    studio_editable: true
+    minimum: 1
+    maximum: 20
+  initial_balance:
+    category: entry
+    value_type: number
+    default: 50000.0
+    description: Starting balance used for event-replay account accounting.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+  minimum_stop_points:
+    category: sl
+    value_type: number
+    default: 2.0
+    description: Minimum stop breathing room even when the AOI is narrow.
+    tunable: false
+    studio_editable: true
+    minimum: 0.25
+    maximum: 12.0
+  slippage_ticks:
+    category: entry
+    value_type: integer
+    default: 1
+    description: Adverse execution slippage bound to the execution contract.
+    tunable: false
+    studio_editable: false
+    minimum: 0
+  delta_neighbour_multiple:
+    category: entry
+    value_type: number
+    default: 2.0
+    description: Local-prominence multiple over the four surrounding delta buckets.
+    tunable: false
+    studio_editable: true
+    minimum: 1.0
+  aoi_lineage_mode:
+    category: entry
+    value_type: string
+    default: exact_fingerprint
+    description: AOI identity mode; exact envelope and confluences define lineage.
+    tunable: false
+    studio_editable: false
+    choices:
+    - exact_fingerprint
+studio:
+  visible: true
+  label: Yush Orderflow Range Reversal
+  description: Stateful causal AOI and order-flow reversal strategy for canonical
+    trade-event replay.

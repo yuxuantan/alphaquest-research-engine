@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_fomc_pre_announcement_drift",
+  "variant_id": "decision_day_open_long_1000",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_fomc_pre_announcement_drift/campaign.yaml",
+    "hash": "68cd8a83d28dc62179cc5386c28b3880e6c4d7004681969f67dc57a6400441a4"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_fomc_pre_announcement_drift/decision_day_open_long_1000/variant.yaml",
+    "hash": "2193272411a8e1d6ff85936f86550bf7f15b57a0861db4b0644bc8dd6a98df91",
+    "mechanic": {
+      "entry_module": "fomc_pre_announcement_drift",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_fomc_pre_announcement_drift/rescue_attempts/stop_distance_rescue_1/decision_day_open_long_1000/config.yaml",
+  "effective_config": "backtest-campaigns/es_fomc_pre_announcement_drift/decision_day_open_long_1000/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_fomc_pre_announcement_drift/decision_day_open_long_1000/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "ff0f9e857091516d1391575708d24b466a8d99ce5c16cea8027d9e4d9ee0bcfe",
+  "source_config_hash": "283f585f26e6b26d8826abd4a020d183d3c42d98c13cf55eaa01d391fd268d62",
+  "source_results_index": "campaigns/es_fomc_pre_announcement_drift/results_index.yaml",
+  "created_at": "2026-06-19T09:25:40",
+  "updated_at": "2026-06-19T09:25:40",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

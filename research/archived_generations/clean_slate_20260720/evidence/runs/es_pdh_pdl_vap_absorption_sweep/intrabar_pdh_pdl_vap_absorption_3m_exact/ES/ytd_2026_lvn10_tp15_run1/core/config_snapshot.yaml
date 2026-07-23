@@ -1,0 +1,216 @@
+campaign_id: es_pdh_pdl_vap_absorption_sweep
+strategy_name: pdh_pdl_vap_absorption_sweep
+symbol: ES
+dataset_id: es_pdh_pdl_vap_absorption_sweep_lvn10_1m_source_3m_features_20260102_20260609_rth_ny
+timeframe: 3m
+data:
+  dataset_id: es_pdh_pdl_vap_absorption_sweep_lvn10_1m_source_3m_features_20260102_20260609_rth_ny
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: data/cache/orderflow/es_pdh_pdl_vap_absorption_sweep_lvn10_1m_source_3m_features_20260102_20260609_rth_ny.parquet
+  symbol: ES
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  feature_set: pdh_pdl_sweep
+  warmup_days: 0
+  rth_start: 09:30:00
+  rth_end: '16:00:00'
+  eth_start: '17:00:00'
+  eth_end: 09:29:00
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  latest_flat_time: '16:59:59'
+  force_flatten_enabled: true
+  force_flatten_time: '16:58:30'
+  latest_entry_time: '16:45:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+core:
+  data_subset: &smoke_subset
+    start_date: '2026-01-02'
+    end_date: '2026-06-09'
+    session_labels:
+    - RTH
+  initial_balance: 150000
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  daily_loss_limit: 4000
+  daily_profit_stop: 1000000000
+  flatten_time: '15:55:00'
+  max_trades_per_day: 1
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.2
+  min_total_net_profit: 0
+  min_expectancy_r: 0.03
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.4
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.45
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset: *smoke_subset
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: grid
+  parameters: {}
+monkey:
+  data_subset: *smoke_subset
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+    enforce_max_trades_per_day: false
+wfa:
+  data_subset: *smoke_subset
+  mode: unanchored
+  train_months: 1
+  test_months: 1
+  step_months: 1
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parallel:
+    enabled: false
+    workers: 1
+    scope: window_grid
+  parameters: {}
+campaign_tests:
+  stage_order:
+  - limited_core_grid_test
+prop_rules:
+  starting_balance: 150000
+  daily_loss_limit: 4000
+  trailing_drawdown: 4000
+  max_contracts: 10
+  max_best_day_profit_percentage: 0.5
+  min_trading_days: 10
+  payout_threshold: 188.9
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.0267
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+  parallel:
+    enabled: false
+    workers: 1
+    scope: runs
+variant_id: intrabar_pdh_pdl_vap_absorption_3m_exact
+test_run_id: ytd_2026_lvn10_tp15_run1
+research_metadata:
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  academic_source: >-
+    Osler (2000); Kavajecz and Odders-White (2004); Cont, Kukanov, and Stoikov
+    (2014); CME Market Profile educational material
+  edge_thesis: >-
+    Failed sweeps of prior-day RTH extremes can reverse when they occur near
+    the current-session developing value edge and aggressive flow is absorbed instead of
+    accepted beyond the level.
+  mechanic: >-
+    Trade both directions. Short after a PDH sweep fails back below PDH near
+    developing VAH with strong positive four-tick delta absorbed. Long after a PDL sweep
+    fails back above PDL near developing VAL with strong negative four-tick delta absorbed.
+  timeframe_rationale: >-
+    Three-minute bars define structure and pivots, while the Sierra
+    SCID-derived feature builder emits intrabar release price and release timestamp so
+    entry does not wait for the 3-minute bar close.
+  mechanics_review:
+    mechanic_expresses_edge: >-
+      The variant encodes the requested range-trading behavior directly:
+      prior-day RTH extremes define the public sweep level, the same-day developing VAP defines
+      the auction-market context, and the four-tick signed-volume failure defines absorbed
+      breakout pressure before entering the snapback.
+    entry_logic_rationale: >-
+      Entry requires three previously formed one-bar pivots, a same-session
+      range above 0.2 percent of the session open, no LVN inside the developing 70 percent value
+      area where an LVN is defined as a price level with volume less than or equal to 10 percent
+      of POC volume, a sweep and reclaim of PDH or PDL, proximity to VAH or VAL within 0.05 percent of
+      the release-time session open, and a five-second failed delta-zone check from Sierra prints.
+    stop_loss_rationale: >-
+      The stop is placed at the sweep extreme with no optimized dollar value.
+      For shorts this is the release-time session high after the PDH sweep; for longs it is the
+      release-time session low after the PDL sweep. This is the stated invalidation point of the
+      failed-breakout thesis.
+    target_exit_rationale: >-
+      The target is exactly 1R from the entry after the sweep-extreme stop
+      is known. It does not use future value-area levels, final session profile, final daily
+      range, or discretionary target selection after the entry has triggered.
+    profitability_rationale: >-
+      If the breakout pressure was absorbed near the value edge after
+      a meaningful morning range has formed, price should often rotate at least one unit of
+      risk before retesting the sweep extreme. The rule is intentionally strict and may be too
+      sparse after costs.
+    known_failure_modes: >-
+      The exact conjunction can be so sparse that it produces too few trades
+      for validation. Sierra bid/ask volume is not queue-level absorption, the five-second
+      release check may not reproduce discretionary tape reads, and the first-minute fill path
+      is still approximate without tick-level execution replay.
+    pre_test_decision: approve_for_testing
+strategy:
+  entry:
+    module: pdh_pdl_vap_absorption_sweep
+    params:
+      start_time: 09:30:00
+      end_time: '11:30:00'
+      flatten_time: '15:55:00'
+      bar_interval_minutes: 3
+      tick_size: 0.25
+      feature_prefix: intrabar
+      min_pivots: 3
+      min_range_pct: 0.002
+      max_vap_distance_pct: 0.0005
+      min_absorption_delta: 300
+      allow_long: true
+      allow_short: true
+      max_trades_per_day: 1
+  sl:
+    module: sweep_extreme
+    params:
+      stop_offset_ticks: 0
+  tp:
+    module: fixed_r
+    params:
+      target_r_multiple: 1.5
+  flatten_time: '15:55:00'

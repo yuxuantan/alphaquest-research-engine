@@ -18,6 +18,7 @@ from alphaquest.research.storage import campaign_definition_paths, display_path,
 
 def list_published_campaigns(project_root: str | Path = ".") -> list[dict[str, Any]]:
     root = Path(project_root).resolve()
+    registry_states = _registry_campaign_states(root)
     rows: list[dict[str, Any]] = []
     for definition in campaign_definition_paths(project_root=root, include_ledger=False):
         try:
@@ -29,19 +30,39 @@ def list_published_campaigns(project_root: str | Path = ".") -> list[dict[str, A
         context = resolve_campaign_context(definition, project_root=root)
         variants = value.get("variants") if isinstance(value.get("variants"), list) else []
         studio_status = _studio_publication_status(definition.parent, value, variants)
+        campaign_id = str(value.get("campaign_id") or definition.parent.name)
+        authored_lifecycle = context.lifecycle if context else "unknown"
+        registry_state = registry_states.get(campaign_id)
         rows.append(
             {
-                "campaign_id": value.get("campaign_id") or definition.parent.name,
+                "campaign_id": campaign_id,
                 "title": value.get("title") or definition.parent.name,
                 "instrument": value.get("instrument") or value.get("symbol"),
                 "timeframe": value.get("timeframe"),
-                "lifecycle": context.lifecycle if context else "unknown",
+                "lifecycle": registry_state or authored_lifecycle,
+                "authored_lifecycle": authored_lifecycle,
                 "variant_count": len(variants),
                 **studio_status,
                 "path": display_path(definition, root),
             }
         )
     return sorted(rows, key=lambda row: (row["lifecycle"] != "active", row["campaign_id"]))
+
+
+def _registry_campaign_states(root: Path) -> dict[str, str]:
+    database = load_storage_layout(root).catalog_root / "research_registry.sqlite"
+    if not database.is_file():
+        return {}
+    try:
+        with sqlite3.connect(database) as connection:
+            return {
+                str(campaign_id): str(lifecycle)
+                for campaign_id, lifecycle in connection.execute(
+                    "SELECT campaign_id, lifecycle_state FROM campaigns"
+                )
+            }
+    except sqlite3.Error:
+        return {}
 
 
 def _studio_publication_status(
@@ -52,7 +73,7 @@ def _studio_publication_status(
     """Classify novice-safe publications without mutating legacy source trees.
 
     A campaign is Studio-managed only when its frozen specification, manifest,
-    five configs, and all compiled document hashes still agree. Everything else
+    one to five sequential configs, and all compiled document hashes still agree. Everything else
     remains executable through expert interfaces but is blocked in Studio.
     """
 
@@ -79,12 +100,12 @@ def _studio_publication_status(
             for item in variants
         ]
         if (
-            len(variant_ids) != 5
+            not 1 <= len(variant_ids) <= 5
             or any(not item for item in variant_ids)
-            or len(set(variant_ids)) != 5
+            or len(set(variant_ids)) != len(variant_ids)
             or manifest.get("schema") != AUTHORING_MANIFEST_SCHEMA
             or manifest.get("campaign_id") != campaign_id
-            or manifest.get("variant_count") != 5
+            or manifest.get("variant_count") != len(variant_ids)
             or spec.get("schema") != STRATEGY_SPEC_SCHEMA
             or spec.get("campaign_id") != campaign_id
             or spec.get("frozen") is not True
@@ -141,7 +162,7 @@ def list_review_queue(project_root: str | Path = ".") -> list[dict[str, Any]]:
         return []
     query = (
         "SELECT campaign_id, variant_id, run_uid, test_run_id, verdict, failed_stage, updated_at "
-        "FROM runs WHERE verdict IN ('PASS', 'NEEDS MANUAL REVIEW', 'NEEDS_MANUAL_REVIEW') "
+        "FROM runs WHERE archived = 0 AND verdict IN ('PASS', 'NEEDS MANUAL REVIEW', 'NEEDS_MANUAL_REVIEW') "
         "ORDER BY updated_at DESC LIMIT 200"
     )
     try:

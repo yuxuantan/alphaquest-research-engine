@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_prior_poc_orderflow_magnet",
+  "variant_id": "morning_above_poc_signed_magnet_short",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_prior_poc_orderflow_magnet/morning_above_poc_signed_magnet_short/variant.yaml",
+    "hash": "b44c3610791aac26f80daadd9bb092f9be8899ff4393a49a1c9c0217dee969d4",
+    "mechanic": {
+      "entry_module": "prior_poc_orderflow_magnet",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_prior_poc_orderflow_magnet/rescue_attempts/parameter_space_rescue_1/morning_above_poc_signed_magnet_short/config.yaml",
+  "effective_config": "backtest-campaigns/es_prior_poc_orderflow_magnet/morning_above_poc_signed_magnet_short/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_prior_poc_orderflow_magnet/morning_above_poc_signed_magnet_short/ES/rescue1/source_config.yaml",
+  "config_hash": "c4c6c1a905e33749f78a1596198e4375cc4a01fa476b9485de9e5a18180a9c14",
+  "source_config_hash": "32bb53d2431939a89769bd1952d8457764c43bf158f183261ba95157fd4d9a90",
+  "source_results_index": "campaigns/es_prior_poc_orderflow_magnet/results_index.yaml",
+  "created_at": "2026-06-20T02:25:16",
+  "updated_at": "2026-06-20T02:25:16",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

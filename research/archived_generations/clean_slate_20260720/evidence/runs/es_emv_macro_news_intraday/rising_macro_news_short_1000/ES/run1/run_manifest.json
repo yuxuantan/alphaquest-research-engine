@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_emv_macro_news_intraday",
+  "variant_id": "rising_macro_news_short_1000",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_emv_macro_news_intraday/rising_macro_news_short_1000/variant.yaml",
+    "hash": "febef01f67d9a1c4eb106fcc07ff2ad108c4a688f07bdee176548c1f13479bfc",
+    "mechanic": {
+      "entry_module": "emv_macro_news_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_emv_macro_news_intraday/variants/rising_macro_news_short_1000/config.yaml",
+  "effective_config": "backtest-campaigns/es_emv_macro_news_intraday/rising_macro_news_short_1000/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_emv_macro_news_intraday/rising_macro_news_short_1000/ES/run1/source_config.yaml",
+  "config_hash": "fff2df95c458801bd116f428a2ce5948948152f96003dd68ec7a8e72e53fa7a6",
+  "source_config_hash": "528bcbf50fafaa0e76fdc29e258897c0d58c00b0b32fb1cc538df9ca96b33dc5",
+  "source_results_index": "campaigns/es_emv_macro_news_intraday/results_index.yaml",
+  "created_at": "2026-06-29T15:19:28",
+  "updated_at": "2026-06-29T15:19:28",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_true_vap_aoi_breakout_continuation",
+  "variant_id": "opening_range_true_vap_two_sided_1130",
+  "test_run_id": "run2",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_vap_profile_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_vap_profile_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_true_vap_aoi_breakout_continuation/opening_range_true_vap_two_sided_1130/variant.yaml",
+    "hash": "191d015d6635169f32deec2e361cbb3e38e4355c18aa1052990067e421ac2f01",
+    "mechanic": {
+      "entry_module": "true_vap_aoi_breakout_continuation",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_true_vap_aoi_breakout_continuation/variants/opening_range_true_vap_two_sided_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_true_vap_aoi_breakout_continuation/opening_range_true_vap_two_sided_1130/ES/run2/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_true_vap_aoi_breakout_continuation/opening_range_true_vap_two_sided_1130/ES/run2/source_config.yaml",
+  "config_hash": "ca790306d567e0bb45c1f5f6b9539694e3f5cc7af12fa5af7f2137cb1f88e7f6",
+  "source_config_hash": "90be8fbddc8843aa437ce1ecd4e8b4e7aafa52de3cfec23ac06e4e08e15b572d",
+  "source_results_index": "campaigns/es_true_vap_aoi_breakout_continuation/results_index.yaml",
+  "created_at": "2026-06-22T08:42:39",
+  "updated_at": "2026-06-22T08:42:39",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

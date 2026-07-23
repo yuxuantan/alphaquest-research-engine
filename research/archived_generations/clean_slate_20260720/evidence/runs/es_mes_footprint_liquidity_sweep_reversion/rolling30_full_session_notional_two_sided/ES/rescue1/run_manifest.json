@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_mes_footprint_liquidity_sweep_reversion",
+  "variant_id": "rolling30_full_session_notional_two_sided",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_footprint_liquidity_sweep_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_mes_footprint_liquidity_sweep_1m_20190506_20260609_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_mes_footprint_liquidity_sweep_reversion/rolling30_full_session_notional_two_sided/variant.yaml",
+    "hash": "da65a0417fed4440af6e789b8e369ec0f717c987fc36f12e2ea934a6ab334995",
+    "mechanic": {
+      "entry_module": "mes_footprint_liquidity_sweep_reversion",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_mes_footprint_liquidity_sweep_reversion/rescue_attempts/parameter_space_rescue_1/rolling30_full_session_notional_two_sided/config.yaml",
+  "effective_config": "backtest-campaigns/es_mes_footprint_liquidity_sweep_reversion/rolling30_full_session_notional_two_sided/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_mes_footprint_liquidity_sweep_reversion/rolling30_full_session_notional_two_sided/ES/rescue1/source_config.yaml",
+  "config_hash": "578c270ede2d688cbb865558acd46a8e9e14ce7866327254587aec04d00ebc85",
+  "source_config_hash": "f039de341f92ab2a56537e962272f7c3b763e9d359c74ac5dc792869a2a1a3f7",
+  "source_results_index": "campaigns/es_mes_footprint_liquidity_sweep_reversion/results_index.yaml",
+  "created_at": "2026-06-19T23:32:45",
+  "updated_at": "2026-06-19T23:32:45",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

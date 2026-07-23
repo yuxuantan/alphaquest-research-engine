@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_rolling_stat_envelope_orderflow_reversion",
+  "variant_id": "midday_5m_signed_18bar_reversion_1400",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/midday_5m_signed_18bar_reversion_1400/variant.yaml",
+    "hash": "d16ad107544ec2100a91301d19237d3c22a4f15d3d81ad88a5805b4a97e82d8e",
+    "mechanic": {
+      "entry_module": "rolling_stat_envelope_orderflow_reversion",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_rolling_stat_envelope_orderflow_reversion/variants/midday_5m_signed_18bar_reversion_1400/config.yaml",
+  "effective_config": "backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/midday_5m_signed_18bar_reversion_1400/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/midday_5m_signed_18bar_reversion_1400/ES/run1/source_config.yaml",
+  "config_hash": "85ce5811ada930fc535dc8bc595ccbc729b7397b56b86f47cfc98dcc64171f6a",
+  "source_config_hash": "28dabb3005349bb6f8935aad9351e614ebfacc849add7d57ff543a51b3c7b7ac",
+  "source_results_index": "campaigns/es_rolling_stat_envelope_orderflow_reversion/results_index.yaml",
+  "created_at": "2026-06-19T01:18:52",
+  "updated_at": "2026-06-19T01:18:52",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -474,6 +474,11 @@ def test_canonicalized_campaign_forces_monkey_runs_to_8000():
 
 def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        campaign_stages,
+        "require_validation_approval",
+        lambda *args: {"status": "APPROVED_FOR_TESTING"},
+    )
     config_path = tmp_path / "research/evidence/runs/demo_campaign/demo_variant/ES/run2/config.yaml"
     config_path.parent.mkdir(parents=True)
     campaign_metadata = tmp_path / "research/evidence/runs/demo_campaign/campaign.yaml"
@@ -563,6 +568,11 @@ def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, m
 
 def test_staged_campaign_can_write_external_config_to_explicit_run_folder(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        campaign_stages,
+        "require_validation_approval",
+        lambda *args: {"status": "APPROVED_FOR_TESTING"},
+    )
     config_path = tmp_path / "research_artifacts/demo_config.yaml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
@@ -622,6 +632,11 @@ def test_staged_campaign_can_write_external_config_to_explicit_run_folder(tmp_pa
 
 def test_staged_campaign_writes_source_results_index_for_campaign_source_config(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        campaign_stages,
+        "require_validation_approval",
+        lambda *args: {"status": "APPROVED_FOR_TESTING"},
+    )
     config_path = tmp_path / "research/campaigns/active/demo_campaign/variants/demo_variant/config.yaml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
@@ -800,6 +815,11 @@ def test_submission_preflight_and_approval_finish_before_attempt_check(tmp_path,
 
 def test_staged_campaign_rejects_symbol_level_output_dir(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(
+        campaign_stages,
+        "require_validation_approval",
+        lambda *args: {"status": "APPROVED_FOR_TESTING"},
+    )
     config_path = tmp_path / "backtest-campaigns/demo_campaign/demo_variant/ES/run1/config.yaml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
@@ -990,8 +1010,11 @@ def test_canonicalized_stage_windows_match_shortlist_and_wfa_benchmarks():
         ]
 
     assert "data_subset" not in wfa
-    assert wfa["data_window"] == campaign_stages.DEFAULT_WFA_DATA_WINDOW
-    assert wfa["data_window"] == {"mode": "first_fraction", "fraction": 0.90}
+    assert wfa["data_window"] == {
+        **campaign_stages.DEFAULT_WFA_DATA_WINDOW,
+        "incubation_test_months": 12,
+        "acceptance_test_months": 6,
+    }
 
 
 def test_wfa_mar_default_criteria_use_fixed_screenshot_threshold():
@@ -1344,6 +1367,44 @@ def test_default_stage_order_runs_acceptance_last():
     assert campaign_stages._stage_order({})[-1] == campaign_stages.ACCEPTANCE_STAGE
 
 
+def test_train_selection_accepts_empty_grid_as_fixed_config(tmp_path, monkeypatch):
+    seen = {}
+
+    def fake_run_core_grid(
+        data,
+        base_config,
+        grid_config,
+        benchmarks,
+        report_dir=None,
+        parameter_label="core_grid.parameters",
+        detail_data=None,
+    ):
+        seen["parameters"] = grid_config["parameters"]
+        return (
+            pd.DataFrame([{"run_id": 1, "mar": 1.0, "profit_factor": 1.2, "net_profit": 100.0}]),
+            {"parameter_mode": "fixed_config", "expected_combinations": 1},
+        )
+
+    monkeypatch.setattr(campaign_stages, "run_core_grid", fake_run_core_grid)
+    selected, payload = campaign_stages._run_train_selection_grid(
+        {"core_grid": {"parameters": {}}},
+        {"parameters": {}, "data_subset": {"start_date": "2025-01-01", "end_date": "2025-01-31"}},
+        tmp_path,
+        skip_validation=True,
+        train_data=pd.DataFrame({"timestamp": pd.to_datetime(["2025-01-02"], utc=True)}),
+        train_detail=None,
+        data_quality={"rows": 1},
+        input_hash="fixed-input",
+        parameter_label="acceptance_oos_test.parameters",
+        result_prefix="acceptance",
+    )
+
+    assert seen["parameters"] == {}
+    assert selected == {}
+    assert payload["summary"]["parameter_mode"] == "fixed_config"
+    assert payload["summary"]["selected_params"] == {}
+
+
 def test_canonicalize_campaign_config_can_exclude_acceptance():
     cfg = campaign_stages.canonicalize_campaign_config({}, include_acceptance=False)
     campaign_tests = cfg["campaign_tests"]
@@ -1352,9 +1413,14 @@ def test_canonicalize_campaign_config_can_exclude_acceptance():
     assert campaign_tests[campaign_stages.ACCEPTANCE_STAGE]["enabled"] is False
     assert campaign_tests["limited_core_grid_test"]["data_window"] == campaign_stages.DEFAULT_SHORTLIST_DATA_WINDOW
     assert campaign_tests["limited_monkey_test"]["data_window"] == campaign_stages.DEFAULT_SHORTLIST_DATA_WINDOW
-    assert campaign_tests["walk_forward_analysis"]["data_window"] == campaign_stages.DEFAULT_WFA_DATA_WINDOW
+    assert campaign_tests["walk_forward_analysis"]["data_window"] == {
+        **campaign_stages.DEFAULT_WFA_DATA_WINDOW,
+        "incubation_test_months": 12,
+        "acceptance_test_months": 6,
+    }
     assert campaign_tests["simulated_incubation_core"]["train_months"] == 48
     assert campaign_tests["simulated_incubation_core"]["test_months"] == 12
+    assert campaign_tests["simulated_incubation_core"]["holdout_after_test_months"] == 6
     assert campaign_stages._stage_order(campaign_tests) == campaign_stages.PRE_ACCEPTANCE_STAGE_ORDER
 
 
@@ -1427,6 +1493,95 @@ def test_incubation_window_uses_latest_one_year_after_four_year_train():
     assert window["train_end"] == pd.Timestamp("2025-06-08")
     assert window["test_start"] == pd.Timestamp("2025-06-09")
     assert window["test_end"] == pd.Timestamp("2026-06-09")
+
+
+def test_incubation_window_reserves_final_acceptance_holdout():
+    subset, window = campaign_stages._planned_acceptance_subset(
+        {"start_date": "2011-08-15", "end_date": "2026-05-29", "session_labels": ["RTH"]},
+        train_months=48,
+        test_months=12,
+        stage_label="simulated_incubation_core",
+        holdout_months=6,
+    )
+
+    assert subset == {
+        "start_date": "2020-11-28",
+        "end_date": "2025-11-28",
+        "session_labels": ["RTH"],
+    }
+    assert window["train_start"] == pd.Timestamp("2020-11-28")
+    assert window["train_end"] == pd.Timestamp("2024-11-27")
+    assert window["test_start"] == pd.Timestamp("2024-11-28")
+    assert window["test_end"] == pd.Timestamp("2025-11-28")
+
+
+def test_campaign_test_window_plan_has_disjoint_wfa_incubation_and_acceptance_oos():
+    rows = campaign_stages.campaign_test_data_window_plan(
+        {
+            "research_metadata": {
+                "validation_gate": {
+                    "data_subset": {
+                        "start_date": "2011-08-15",
+                        "end_date": "2011-08-29",
+                    }
+                }
+            },
+            "core": {
+                "data_subset": {
+                    "start_date": "2011-08-15",
+                    "end_date": "2026-05-29",
+                    "session_labels": ["RTH"],
+                }
+            },
+            "core_grid": {
+                "data_subset": {
+                    "start_date": "2011-08-15",
+                    "end_date": "2026-05-29",
+                    "session_labels": ["RTH"],
+                }
+            },
+            "monkey": {
+                "data_subset": {
+                    "start_date": "2011-08-15",
+                    "end_date": "2026-05-29",
+                    "session_labels": ["RTH"],
+                }
+            },
+            "wfa": {
+                "data_subset": {
+                    "start_date": "2011-08-15",
+                    "end_date": "2026-05-29",
+                    "session_labels": ["RTH"],
+                },
+                "train_months": 48,
+                "test_months": 12,
+                "step_months": 12,
+            },
+            "campaign_tests": {
+                "simulated_incubation_core": {
+                    "train_months": 48,
+                    "test_months": 12,
+                },
+                "acceptance_oos_test": {
+                    "train_months": 24,
+                    "test_months": 6,
+                },
+            },
+        }
+    )
+    by_stage = {row["stage"]: row for row in rows}
+
+    assert by_stage["mechanics_validation"]["planned_start"] == "2011-08-15"
+    assert by_stage["walk_forward_analysis"]["planned_end"] == "2024-11-27"
+    assert by_stage["simulated_incubation_core"]["test_start"] == "2024-11-28"
+    assert by_stage["simulated_incubation_core"]["test_end"] == "2025-11-28"
+    assert by_stage["acceptance_oos_test"]["test_start"] == "2025-11-29"
+    assert by_stage["acceptance_oos_test"]["test_end"] == "2026-05-29"
+    assert (
+        pd.Timestamp(by_stage["walk_forward_analysis"]["planned_end"])
+        < pd.Timestamp(by_stage["simulated_incubation_core"]["test_start"])
+        < pd.Timestamp(by_stage["acceptance_oos_test"]["test_start"])
+    )
 
 
 def test_acceptance_selection_forces_mar_objective():
@@ -1764,13 +1919,17 @@ def test_first_months_stage_subset_uses_config_start_date():
     assert subset == {"start_date": "2021-01-01", "end_date": "2022-07-01"}
 
 
-def test_first_fraction_stage_subset_uses_first_ninety_percent():
+def test_wfa_stage_subset_ends_before_incubation_and_acceptance_holdouts():
     subset = campaign_stages._subset_from_window(
         {"start_date": "2011-01-03", "end_date": "2026-06-09", "session_labels": ["RTH"]},
-        campaign_stages.DEFAULT_WFA_DATA_WINDOW,
+        {
+            **campaign_stages.DEFAULT_WFA_DATA_WINDOW,
+            "incubation_test_months": 12,
+            "acceptance_test_months": 6,
+        },
     )
 
-    assert subset == {"start_date": "2011-01-03", "end_date": "2024-11-22", "session_labels": ["RTH"]}
+    assert subset == {"start_date": "2011-01-03", "end_date": "2024-12-07", "session_labels": ["RTH"]}
 
 
 def test_random_fraction_stage_subset_uses_seeded_ten_percent_avoiding_covid_and_latest_holdout():

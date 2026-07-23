@@ -1,0 +1,65 @@
+{
+  "campaign_id": "es_sector_opening_breadth_orderflow_continuation",
+  "variant_id": "broad_up_early_signed_long_1000",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/variant.yaml",
+    "hash": "c173fa36c25285b0dcb70f64914107dc3adf8c957c8db88d68f13108fe2d1511",
+    "mechanic": {
+      "entry_module": "sector_opening_breadth_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_sector_opening_breadth_orderflow_continuation/rescue_attempts/parameter_space_rescue_1/broad_up_early_signed_long_1000/config.yaml",
+  "effective_config": "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_sector_opening_breadth_orderflow_continuation/broad_up_early_signed_long_1000/ES/rescue1/source_config.yaml",
+  "config_hash": "22ea8847fe9a0e586b83cc7ef25b5433aad8fe3df95ea08d224d3b06aed78a64",
+  "source_config_hash": "66e0c930ea5a3909929932fb17402467892e3e32116d94c26d7838cacda8d8fc",
+  "source_results_index": "campaigns/es_sector_opening_breadth_orderflow_continuation/results_index.yaml",
+  "created_at": "2026-06-20T04:51:11",
+  "updated_at": "2026-06-21T12:53:17",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:53:17"
+  }
+}

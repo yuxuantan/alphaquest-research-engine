@@ -1,0 +1,62 @@
+{
+  "campaign_id": "es_dollar_risk_appetite_intraday",
+  "variant_id": "five_day_dollar_up_short_1200",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_dollar_risk_appetite_intraday/five_day_dollar_up_short_1200/variant.yaml",
+    "hash": "a4b5fe4d4a219adf78ee57ac145a2efbd92100d5908dbfe859e5072d63b1281f",
+    "mechanic": {
+      "entry_module": "dollar_risk_appetite",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_dollar_risk_appetite_intraday/variants/five_day_dollar_up_short_1200/config.yaml",
+  "config_hash": "b4295295a1f6db8b78c94b80635414a57c2ada1e32835e5eb1ca630b1c4a3320",
+  "created_at": "2026-06-17T01:34:24",
+  "updated_at": "2026-06-21T17:56:13",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_dollar_risk_appetite_intraday/five_day_dollar_up_short_1200/ES/run1/effective_config.yaml",
+  "rerun_override": {
+    "monkey_runs": 8000,
+    "updated_at": "2026-06-21T17:56:13"
+  }
+}

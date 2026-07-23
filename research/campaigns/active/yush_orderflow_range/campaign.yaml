@@ -1,0 +1,70 @@
+campaign_id: yush_orderflow_range
+title: Yush Orderflow Range Reversal
+status: authored_for_testing
+created_at: '2026-07-20'
+instrument: ES
+timeframe: 1m
+governance_contract_version: 3
+variant_protocol: sequential_failure_informed
+max_variants: 5
+authoring_lane: certified_event_replay
+certified_recipe: null
+event_strategy: yush_orderflow_range
+edge_family: orderflow_range_reversal
+hypothesis: During balanced ES morning auctions, a retest of a developing value-area edge that overlaps a prior liquidity
+  reference and then attracts fresh one-sided trade activity may reverse toward fair value.
+economic_edge_fingerprint:
+  market_behavior: Morning ES price repeatedly rejects a developing value-area boundary inside a balanced auction.
+  causal_mechanism: Passive liquidity absorbs one-sided aggressive trading near a known reference and price reverts toward
+    fair value.
+  signal_inputs: causal developing volume profile, prior-session and overnight price references, local four-tick signed-delta
+    prominence, same-price same-side 100 millisecond large-trade aggregation
+  market_context: ES regular trading hours from 09:30 to 11:00 New York after a 16:00-to-09:30 overnight session.
+  holding_period: Minutes to at most the 11:00 New York forced flatten; no overnight exposure.
+duplicate_edge_review:
+  reviewed_campaign_ids: []
+  ledger_queries:
+  - Clean-slate registry query on 2026-07-20 returned zero campaigns, variants, attempts, and runs.
+  - Pre-reset campaigns and evidence were excluded because none had hash-bound manual mechanics approval.
+  conclusion: distinct
+  substantive_distinction: This is the first governed campaign after the user-authorized clean-slate reset; no archived, unverified
+    result is treated as prior evidence or as an economic duplicate decision.
+sources:
+- title: Yush order-flow range-reversal rules and clarifications
+  authors: User-supplied trading specification
+  year: 2026
+  link: research://user-supplied/yush-orderflow-range-specification
+  doi: null
+  relevance: Primary source for the exact mechanics being forward tested and submitted for manual replay validation.
+- title: 'Support for Resistance: Technical Analysis and Intraday Exchange Rates'
+  authors: Carol L. Osler
+  year: 2000
+  link: https://www.newyorkfed.org/medialibrary/media/research/epr/00v06n2/0007osle.pdf
+  doi: null
+  relevance: Documents clustering and predictive behavior around widely observed support and resistance levels.
+- title: Technical Analysis and Liquidity Provision
+  authors: Kenneth A. Kavajecz, Elizabeth R. Odders-White
+  year: 2004
+  link: https://doi.org/10.1016/S1386-4181(03)00041-9
+  doi: 10.1016/S1386-4181(03)00041-9
+  relevance: Connects technical price levels with liquidity provision and limit-order-book behavior.
+- title: The Price Impact of Order Book Events
+  authors: Rama Cont, Arseniy Kukanov, Sasha Stoikov
+  year: 2014
+  link: https://doi.org/10.1017/jfm.2014.86
+  doi: 10.1017/jfm.2014.86
+  relevance: Supports the general microstructure premise that signed order-flow imbalance has short-horizon price impact.
+variants:
+- v01
+sequential_variant_history: []
+variant_distinctions:
+  v01:
+    mechanic: Build a causal AOI around developing VAL or VAH plus the strongest available market, local-delta, and large-trade
+      categories; reset eligibility whenever the exact AOI price envelope or selected confluence identity changes, then require
+      a prior reversal, a fresh directed tap, and a new post-tap trigger.
+    material_difference: As v01 this is the single frozen baseline mechanic; any later variant is prohibited until this implementation
+      passes manual mechanics review and then receives a terminal FAIL in the test suite.
+    mechanic_signature: 40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1
+rescue_policy:
+  allowed: false
+  max_rescues_per_failed_variant: 1

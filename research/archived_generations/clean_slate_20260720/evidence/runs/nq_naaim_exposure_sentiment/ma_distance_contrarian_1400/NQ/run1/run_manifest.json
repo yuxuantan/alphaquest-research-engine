@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_naaim_exposure_sentiment",
+  "variant_id": "ma_distance_contrarian_1400",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_naaim_exposure_sentiment/ma_distance_contrarian_1400/variant.yaml",
+    "hash": "533c8ae98a1f4175a47ac46956ae398c5ee5a2f0a8354eceec9fe3a2a24f4067",
+    "mechanic": {
+      "entry_module": "naaim_exposure_sentiment",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_naaim_exposure_sentiment/variants/ma_distance_contrarian_1400/config.yaml",
+  "effective_config": "backtest-campaigns/nq_naaim_exposure_sentiment/ma_distance_contrarian_1400/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_naaim_exposure_sentiment/ma_distance_contrarian_1400/NQ/run1/source_config.yaml",
+  "config_hash": "6b1078b1f4a44fe7babfcd775f1bb79880d582cb18f0864f7af4accde09f1273",
+  "source_config_hash": "5345921933c00ac7c86131433d3890d6cc9affa610e29b81e7f3211ef1f1e5b6",
+  "source_results_index": "campaigns/nq_naaim_exposure_sentiment/results_index.yaml",
+  "created_at": "2026-06-30T10:19:43",
+  "updated_at": "2026-06-30T10:19:43",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

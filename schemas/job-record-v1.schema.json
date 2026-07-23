@@ -1,5 +1,91 @@
 {
   "$defs": {
+    "JobProgressV1": {
+      "additionalProperties": false,
+      "description": "Durable operational progress, kept separate from research evidence.",
+      "properties": {
+        "completed": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Completed"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "percent": {
+          "maximum": 100.0,
+          "minimum": 0.0,
+          "title": "Percent",
+          "type": "number"
+        },
+        "phase": {
+          "title": "Phase",
+          "type": "string"
+        },
+        "phase_started_at": {
+          "format": "date-time",
+          "title": "Phase Started At",
+          "type": "string"
+        },
+        "schema": {
+          "const": "alphaquest.studio-job-progress/v1",
+          "default": "alphaquest.studio-job-progress/v1",
+          "enum": [
+            "alphaquest.studio-job-progress/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        },
+        "total": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Total"
+        },
+        "unit": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Unit"
+        },
+        "updated_at": {
+          "format": "date-time",
+          "title": "Updated At",
+          "type": "string"
+        }
+      },
+      "required": [
+        "phase",
+        "message",
+        "percent",
+        "phase_started_at",
+        "updated_at"
+      ],
+      "title": "JobProgressV1",
+      "type": "object"
+    },
     "OperationalState": {
       "enum": [
         "QUEUED",
@@ -128,6 +214,17 @@
     "payload_sha256": {
       "title": "Payload Sha256",
       "type": "string"
+    },
+    "progress": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/JobProgressV1"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "research_verdict": {
       "anyOf": [

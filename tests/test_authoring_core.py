@@ -189,6 +189,96 @@ def _reconfirm(document: dict) -> dict:
     return document
 
 
+def _event_draft_document() -> dict:
+    document = _draft_document()
+    document["authoring_lane"] = "certified_event_replay"
+    document["certified_recipe"] = None
+    document["event_strategy"] = "yush_orderflow_range"
+    document["dataset"].update(
+        {
+            "continuous_contract": "explicit_roll_calendar",
+            "contract_column": "contract_symbol",
+            "contract_count": 2,
+            "roll_calendar": "data/reference/ES/roll.csv",
+            "roll_calendar_sha256": "c" * 64,
+            "event_source": {
+                "source": "databento_zip_trades",
+                "archive": "data/raw/ES/trades.zip",
+                "archive_sha256": "d" * 64,
+                "roll_calendar": "data/reference/ES/roll.csv",
+                "roll_calendar_sha256": "c" * 64,
+                "root_symbol": "ES",
+                "aggregation_ms": 100,
+                "overnight_start": "16:00:00",
+                "rth_start": "09:30:00",
+                "rth_end": "16:00:00",
+                "reset_previous_levels_on_roll": True,
+            },
+        }
+    )
+    document["variants"] = [
+        {
+            "schema": "alphaquest.variant-draft/v1",
+            "variant_id": "v01",
+            "title": "Certified event variant",
+            "entry": {"module": "yush_orderflow_range", "params": {"mechanics": {}}},
+            "stop": {"module": "event_aoi_structural_stop", "params": {}},
+            "target": {"module": "event_value_area_management", "params": {}},
+            "mechanic_rationale": LONG_TEXT,
+            "entry_rationale": LONG_TEXT,
+            "stop_rationale": LONG_TEXT,
+            "target_rationale": LONG_TEXT,
+            "timeframe_session_rationale": LONG_TEXT,
+            "known_failure_modes": [LONG_TEXT],
+            "material_difference": LONG_TEXT,
+            "confirmed": True,
+        }
+    ]
+    return _reconfirm(document)
+
+
+def test_event_campaign_compilation_embeds_current_strategy_certification():
+    compiled = CampaignCompiler(project_root=Path(__file__).resolve().parents[1]).compile(
+        CampaignDraftV1.model_validate(_event_draft_document())
+    )
+    config = compiled.variant_configs["v01"]
+    identity = config["strategy_certification"]
+
+    assert identity["strategy_id"] == "yush_orderflow_range"
+    assert identity["implementation_version"] == 4
+    assert len(identity["implementation_sha256"]) == 64
+    assert compiled.strategy_spec["strategy_certification"]["implementation_sha256"] == identity[
+        "implementation_sha256"
+    ]
+    assert compiled.authoring_manifest["strategy_certification"]["manifest_sha256"] == identity[
+        "manifest_sha256"
+    ]
+
+
+def test_event_campaign_compiles_one_canonical_grid_for_core_and_wfa():
+    document = _event_draft_document()
+    document["variants"][0]["event_parameter_grid"] = {
+        "max_aoi_width_points": [3, 4, 5, 6],
+        "entry_offset_ticks": [0, 1, 2, 3, 4],
+        "stop_offset_ticks": [0, 1, 2, 3, 4],
+    }
+    _reconfirm(document)
+
+    compiled = CampaignCompiler(project_root=Path(__file__).resolve().parents[1]).compile(
+        CampaignDraftV1.model_validate(document)
+    )
+    config = compiled.variant_configs["v01"]
+
+    assert config["core_grid"]["parameters"] == config["wfa"]["parameters"]
+    assert config["core_grid"]["parameters"] == {
+        "event.params.max_aoi_width_points": [3, 4, 5, 6],
+        "event.params.entry_offset_ticks": [0, 1, 2, 3, 4],
+        "event.params.stop_offset_ticks": [0, 1, 2, 3, 4],
+    }
+    assert config["strategy"]["event"]["params"]["max_aoi_width_points"] == 3.0
+    assert len(config["strategy"]["event"]["params"]) == 24
+
+
 def _governed_publication_draft(root: Path) -> CampaignDraftV1:
     document = _draft_document()
     dataset = root / "research/datasets/governed_es_1m/bars.csv"
@@ -242,7 +332,7 @@ def _write_ledger(path: Path, rows: list[dict[str, str]]) -> None:
         writer.writerows(rows)
 
 
-def test_campaign_draft_is_strict_and_requires_five_materially_distinct_variants():
+def test_campaign_draft_is_strict_allows_one_to_five_distinct_variants():
     document = _draft_document()
     assert len(CampaignDraftV1.model_validate(document).variants) == 5
 
@@ -251,10 +341,19 @@ def test_campaign_draft_is_strict_and_requires_five_materially_distinct_variants
     with pytest.raises(ValidationError, match="extra_forbidden"):
         CampaignDraftV1.model_validate(extra)
 
-    short = deepcopy(document)
-    short["variants"].pop()
-    with pytest.raises(ValidationError, match="at least 5 items"):
-        CampaignDraftV1.model_validate(short)
+    sequential = deepcopy(document)
+    sequential["variant_protocol"] = "sequential_failure_informed"
+    sequential["variants"] = sequential["variants"][:1]
+    sequential["sequential_variant_history"] = []
+    _reconfirm(sequential)
+    assert len(CampaignDraftV1.model_validate(sequential).variants) == 1
+
+    too_many = deepcopy(document)
+    extra_variant = deepcopy(too_many["variants"][-1])
+    extra_variant["variant_id"] = "v06"
+    too_many["variants"].append(extra_variant)
+    with pytest.raises(ValidationError, match="at most 5 items"):
+        CampaignDraftV1.model_validate(too_many)
 
     duplicate = deepcopy(document)
     duplicate["variants"][1]["entry"] = deepcopy(duplicate["variants"][0]["entry"])
@@ -839,11 +938,14 @@ def test_certified_catalog_contains_only_initial_studio_allowlist_and_rejects_un
         ("entry", "calendar_session_bias"),
         ("entry", "opening_range_breakout"),
         ("entry", "daily_time_series_momentum"),
+        ("entry", "yush_orderflow_range"),
         ("sl", "points_from_entry"),
         ("sl", "percent_from_entry"),
         ("sl", "fixed_dollar_per_contract"),
+        ("sl", "event_aoi_structural_stop"),
         ("tp", "fixed_r"),
         ("tp", "cost_adjusted_fixed_r"),
+        ("tp", "event_value_area_management"),
     }
     safe_manifest = CERTIFIED_MODULE_CATALOG.get("entry", "safe_bar_rule")
     assert safe_manifest.parameters["certified_features"].value_type == "array"

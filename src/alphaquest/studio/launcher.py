@@ -9,11 +9,13 @@ import json
 import os
 from pathlib import Path
 import signal
-import socket
 import subprocess
 import sys
 import time
 from typing import Any
+from urllib.error import HTTPError, URLError
+from urllib.request import Request, urlopen
+import webbrowser
 
 from alphaquest.research.storage import load_storage_layout
 
@@ -21,6 +23,8 @@ from alphaquest.research.storage import load_storage_layout
 STATE_FILENAME = "studio-process.json"
 LOG_FILENAME = "studio.log"
 WORKER_LOG_FILENAME = "worker.log"
+REACT_FASTAPI_RUNTIME = "react-fastapi"
+LEGACY_STREAMLIT_RUNTIME = "legacy-streamlit"
 
 
 def studio_status(*, project_root: str | Path = ".") -> dict[str, Any]:
@@ -28,12 +32,23 @@ def studio_status(*, project_root: str | Path = ".") -> dict[str, Any]:
     state_path, log_path, worker_log_path = _runtime_paths(root)
     state = _read_state(state_path)
     pid = _integer(state.get("pid"))
-    running = bool(pid and _pid_matches_studio(pid, state.get("app_path")))
+    ui_runtime = _state_ui_runtime(state)
+    running = bool(pid and _pid_matches_studio(pid, state.get("app_path"), ui_runtime))
     worker_pid = _integer(state.get("worker_pid"))
     worker_running = bool(worker_pid and _pid_matches_worker(worker_pid))
+    ui_healthy = bool(
+        running
+        and _studio_http_health(
+            state.get("address"),
+            state.get("port"),
+            ui_runtime,
+        )
+    )
     return {
         "running": running,
-        "healthy": running and worker_running,
+        "healthy": ui_healthy and worker_running,
+        "ui_healthy": ui_healthy,
+        "ui_runtime": ui_runtime,
         "pid": pid if running else None,
         "worker_running": worker_running,
         "worker_pid": worker_pid if worker_running else None,
@@ -44,7 +59,7 @@ def studio_status(*, project_root: str | Path = ".") -> dict[str, Any]:
         "state_path": str(state_path),
         "log_path": str(log_path),
         "worker_log_path": str(worker_log_path),
-        "stale_state": bool(state and not (running and worker_running)),
+        "stale_state": bool(state and not (ui_healthy and worker_running)),
     }
 
 
@@ -55,6 +70,7 @@ def start_studio(
     address: str = "127.0.0.1",
     background: bool = False,
     open_browser: bool = True,
+    legacy_streamlit: bool = False,
 ) -> dict[str, Any]:
     root = Path(project_root).resolve()
     with _launcher_lock(root):
@@ -64,6 +80,7 @@ def start_studio(
             address=address,
             background=background,
             open_browser=open_browser,
+            legacy_streamlit=legacy_streamlit,
         )
 
 
@@ -74,38 +91,66 @@ def _start_studio_locked(
     address: str,
     background: bool,
     open_browser: bool,
+    legacy_streamlit: bool,
 ) -> dict[str, Any]:
     root = Path(project_root).resolve()
-    app_path = root / "apps" / "research_studio.py"
-    if not app_path.is_file():
-        raise FileNotFoundError(f"Research Studio app is missing: {app_path}")
-    try:
-        import streamlit  # noqa: F401
-    except ImportError as exc:
-        raise RuntimeError("Research Studio dependencies are missing; an administrator must run `make studio-setup`") from exc
-    current = studio_status(project_root=root)
     if not 1 <= int(port) <= 65535:
         raise ValueError("Studio port must be between 1 and 65535")
     if address not in {"127.0.0.1", "localhost"}:
         raise ValueError("V1 Research Studio binds only to the local workstation")
 
+    if legacy_streamlit:
+        ui_runtime = LEGACY_STREAMLIT_RUNTIME
+        app_path = root / "apps" / "research_studio.py"
+        if not app_path.is_file():
+            raise FileNotFoundError(f"Legacy Research Studio app is missing: {app_path}")
+        try:
+            import streamlit  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                "Legacy Streamlit dependencies are missing; install the 'dashboard' optional dependencies"
+            ) from exc
+        command = [
+            sys.executable,
+            "-m",
+            "streamlit",
+            "run",
+            str(app_path),
+            "--server.address",
+            address,
+            "--server.port",
+            str(int(port)),
+            "--server.headless",
+            "true",
+            "--browser.gatherUsageStats",
+            "false",
+        ]
+    else:
+        ui_runtime = REACT_FASTAPI_RUNTIME
+        app_path = Path(__file__).with_name("web.py").resolve()
+        try:
+            import fastapi  # noqa: F401
+            import uvicorn  # noqa: F401
+        except ImportError as exc:
+            raise RuntimeError(
+                "Research Studio dependencies are missing; an administrator must run `make studio-setup`"
+            ) from exc
+        command = [
+            sys.executable,
+            "-m",
+            "alphaquest.studio.web",
+            "--project-root",
+            str(root),
+            "--host",
+            address,
+            "--port",
+            str(int(port)),
+        ]
+
+    current = studio_status(project_root=root)
+
     state_path, log_path, worker_log_path = _runtime_paths(root)
     state_path.parent.mkdir(parents=True, exist_ok=True)
-    command = [
-        sys.executable,
-        "-m",
-        "streamlit",
-        "run",
-        str(app_path),
-        "--server.address",
-        address,
-        "--server.port",
-        str(int(port)),
-        "--server.headless",
-        "false" if open_browser else "true",
-        "--browser.gatherUsageStats",
-        "false",
-    ]
     environment = dict(os.environ)
     package_source_root = Path(__file__).resolve().parents[2]
     python_paths = [root / "src", package_source_root]
@@ -126,7 +171,15 @@ def _start_studio_locked(
         str(root),
     ]
 
+    if current["running"] and current.get("ui_runtime") != ui_runtime:
+        # Interface migrations are coordinated under the same launcher lock.
+        # Stop the complete old UI/worker pair before starting the requested
+        # runtime so a stale legacy process is never silently revived.
+        _stop_studio_locked(project_root=root, timeout_seconds=5.0)
+        current = studio_status(project_root=root)
     if current["running"] and current["worker_running"]:
+        if current["healthy"] and open_browser and current.get("url"):
+            _open_studio_browser(str(current["url"]))
         return current
     if current["running"] and not current["worker_running"]:
         with worker_log_path.open("a", encoding="utf-8") as worker_log:
@@ -155,23 +208,6 @@ def _start_studio_locked(
             timeout_seconds=5.0,
         )
         state_path.unlink(missing_ok=True)
-
-    if not background:
-        with worker_log_path.open("a", encoding="utf-8") as worker_log:
-            worker = subprocess.Popen(  # noqa: S603 - fixed interpreter/module command
-                worker_command,
-                cwd=root,
-                env=environment,
-                stdin=subprocess.DEVNULL,
-                stdout=worker_log,
-                stderr=subprocess.STDOUT,
-                start_new_session=True,
-            )
-        try:
-            completed = subprocess.run(command, cwd=root, env=environment, check=False)
-        finally:
-            _terminate_process(worker, label="Research Studio worker", timeout_seconds=5.0)
-        return {"running": False, "worker_running": False, "exit_code": completed.returncode, "url": f"http://{address}:{port}"}
 
     with worker_log_path.open("a", encoding="utf-8") as worker_log:
         worker = subprocess.Popen(  # noqa: S603 - fixed interpreter/module command
@@ -204,15 +240,14 @@ def _start_studio_locked(
         "url": f"http://{address}:{int(port)}",
         "started_at": datetime.now(timezone.utc).isoformat(),
         "app_path": str(app_path),
+        "ui_runtime": ui_runtime,
         "worker_pid": worker.pid,
         "worker_started_at": datetime.now(timezone.utc).isoformat(),
     }
     _atomic_write_json(state_path, state)
     try:
-        return _wait_for_background_start(
+        status = _wait_for_background_start(
             project_root=root,
-            address=address,
-            port=int(port),
             ui_process=process,
             worker_process=worker,
         )
@@ -223,6 +258,29 @@ def _start_studio_locked(
             _terminate_process(worker, label="Research Studio worker", timeout_seconds=5.0)
         state_path.unlink(missing_ok=True)
         raise
+
+    if open_browser:
+        _open_studio_browser(str(status["url"]))
+    if background:
+        return status
+
+    try:
+        exit_code = process.wait()
+    finally:
+        if process.poll() is None:
+            _terminate_process(process, label="Research Studio", timeout_seconds=5.0)
+        if worker.poll() is None:
+            _terminate_process(worker, label="Research Studio worker", timeout_seconds=5.0)
+        state_path.unlink(missing_ok=True)
+    return {
+        "running": False,
+        "worker_running": False,
+        "healthy": False,
+        "ui_healthy": False,
+        "ui_runtime": ui_runtime,
+        "exit_code": exit_code,
+        "url": f"http://{address}:{port}",
+    }
 
 
 def stop_studio(*, project_root: str | Path = ".", timeout_seconds: float = 5.0) -> dict[str, Any]:
@@ -238,7 +296,7 @@ def _stop_studio_locked(*, project_root: str | Path, timeout_seconds: float) -> 
     pid = _integer(state.get("pid"))
     worker_pid = _integer(state.get("worker_pid"))
     errors: list[str] = []
-    if pid and _pid_matches_studio(pid, state.get("app_path")):
+    if pid and _pid_matches_studio(pid, state.get("app_path"), _state_ui_runtime(state)):
         try:
             _terminate_pid(pid, label="Research Studio", timeout_seconds=timeout_seconds)
         except RuntimeError as exc:
@@ -273,11 +331,59 @@ def _runtime_paths(root: Path) -> tuple[Path, Path, Path]:
     return Path(runtime) / STATE_FILENAME, Path(runtime) / LOG_FILENAME, Path(runtime) / WORKER_LOG_FILENAME
 
 
+def _state_ui_runtime(state: dict[str, Any]) -> str:
+    runtime = str(state.get("ui_runtime") or "").strip()
+    if runtime in {REACT_FASTAPI_RUNTIME, LEGACY_STREAMLIT_RUNTIME}:
+        return runtime
+    # State files written before the React migration point at the Streamlit
+    # script. Preserve stop/status behavior for an already-running old process.
+    app_path = str(state.get("app_path") or "")
+    if app_path.endswith("research_studio.py"):
+        return LEGACY_STREAMLIT_RUNTIME
+    return REACT_FASTAPI_RUNTIME
+
+
+def _studio_http_health(address: Any, port: Any, ui_runtime: str) -> bool:
+    if address not in {"127.0.0.1", "localhost"}:
+        return False
+    try:
+        port_number = int(port)
+    except (TypeError, ValueError):
+        return False
+    if not 1 <= port_number <= 65535:
+        return False
+    health_path = "/_stcore/health" if ui_runtime == LEGACY_STREAMLIT_RUNTIME else "/healthz"
+    request = Request(
+        f"http://{address}:{port_number}{health_path}",
+        headers={"Accept": "application/json"},
+    )
+    try:
+        with urlopen(request, timeout=0.35) as response:  # noqa: S310 - validated localhost-only URL
+            if response.status != 200:
+                return False
+            if ui_runtime == LEGACY_STREAMLIT_RUNTIME:
+                return True
+            payload = json.loads(response.read().decode("utf-8"))
+    except (HTTPError, URLError, OSError, TimeoutError, json.JSONDecodeError):
+        return False
+    return (
+        isinstance(payload, dict)
+        and payload.get("status") == "ok"
+        and payload.get("ui_runtime") == REACT_FASTAPI_RUNTIME
+        and payload.get("assets_ready") is True
+    )
+
+
+def _open_studio_browser(url: str) -> bool:
+    try:
+        return bool(webbrowser.open(url, new=1))
+    except Exception:  # pragma: no cover - workstation browser integration varies
+        return False
+
+
 def _wait_for_background_start(
     *,
     project_root: Path,
-    address: str,
-    port: int,
     ui_process: subprocess.Popen,
     worker_process: subprocess.Popen,
     timeout_seconds: float = 15.0,
@@ -290,13 +396,13 @@ def _wait_for_background_start(
             raise RuntimeError(f"Research Studio worker exited during startup with code {worker_process.returncode}")
         status = studio_status(project_root=project_root)
         if status["healthy"]:
-            try:
-                with socket.create_connection((address, port), timeout=0.25):
-                    return status
-            except OSError:
-                pass
+            return status
         time.sleep(0.1)
-    raise RuntimeError(f"Research Studio did not become healthy at http://{address}:{port} within {timeout_seconds:g}s")
+    state = studio_status(project_root=project_root)
+    raise RuntimeError(
+        f"Research Studio did not become healthy at {state.get('url') or 'its local URL'} "
+        f"within {timeout_seconds:g}s"
+    )
 
 
 def _read_state(path: Path) -> dict[str, Any]:
@@ -337,7 +443,7 @@ def _pid_exists(pid: int) -> bool:
     return True
 
 
-def _pid_matches_studio(pid: int, app_path: Any) -> bool:
+def _pid_matches_studio(pid: int, app_path: Any, ui_runtime: str) -> bool:
     if not _pid_exists(pid):
         return False
     try:
@@ -350,7 +456,9 @@ def _pid_matches_studio(pid: int, app_path: Any) -> bool:
         ).stdout
     except (OSError, subprocess.SubprocessError):
         return False
-    return "streamlit" in output and (not app_path or str(app_path) in output)
+    if ui_runtime == LEGACY_STREAMLIT_RUNTIME:
+        return "streamlit" in output and (not app_path or str(app_path) in output)
+    return "alphaquest.studio.web" in output
 
 
 def _pid_matches_worker(pid: int) -> bool:

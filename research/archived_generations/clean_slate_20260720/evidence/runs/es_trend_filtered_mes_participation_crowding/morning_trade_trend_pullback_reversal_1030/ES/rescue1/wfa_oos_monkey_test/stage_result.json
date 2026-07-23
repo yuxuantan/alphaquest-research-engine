@@ -1,0 +1,143 @@
+{
+  "stage": "wfa_oos_monkey_test",
+  "label": "WFA OOS Monkey Test",
+  "status": "passed",
+  "passed": true,
+  "started_at": "2026-06-21T00:00:44",
+  "completed_at": "2026-06-21T01:03:04",
+  "duration_seconds": 3739.208867,
+  "criteria": [
+    {
+      "metric": "summary.core_beats_monkey_net_profit_rate",
+      "actual": 0.982,
+      "expected": {
+        "min": 0.8
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.core_beats_monkey_max_drawdown_rate",
+      "actual": 0.979375,
+      "expected": {
+        "min": 0.8
+      },
+      "passed": true
+    },
+    {
+      "metric": "summary.core_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "number_of_runs": 8000,
+    "core_metrics": {
+      "total_trades": 158,
+      "long_trades": 71,
+      "short_trades": 87,
+      "long_ratio": 0.44936708860759494,
+      "average_bars_in_trade": 63.18471337579618,
+      "max_bars_in_trade": 91,
+      "net_profit": 17410.0,
+      "max_drawdown": 5240.0,
+      "max_drawdown_pct": 0.032063637754321556,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0
+    },
+    "beat_threshold": 0.9,
+    "core_beats_monkey_net_profit_rate": 0.982,
+    "core_beats_monkey_max_drawdown_rate": 0.979375,
+    "meets_monkey_goal": true,
+    "number_passing_benchmark": 0,
+    "percentage_passing_benchmark": 0.0,
+    "profitable_iterations": 2555,
+    "percentage_profitable": 0.319375,
+    "median_net_profit": -4965.0,
+    "p5_net_profit": -22735.125,
+    "p95_net_profit": 12604.124999999976,
+    "median_max_drawdown": 13035.0,
+    "p5_max_drawdown": 6079.375000000001,
+    "p95_max_drawdown": 26472.5,
+    "median_average_bars_in_trade": 63.18471337579618,
+    "median_long_ratio": 0.44805194805194803,
+    "representative_profitable_run": {
+      "run_id": 7183,
+      "total_trades": 159,
+      "long_trades": 65,
+      "short_trades": 94,
+      "long_ratio": 0.4088050314465409,
+      "average_bars_in_trade": 64.57861635220125,
+      "trade_count_delta": 1,
+      "long_ratio_delta": -0.040562057161054044,
+      "average_bars_delta": 1.393902976405073,
+      "net_profit": 5905.0,
+      "max_drawdown": 6770.0,
+      "max_drawdown_pct": 0.043214604876803266,
+      "profit_factor": 1.1438664880009746,
+      "expectancy_r": 0.04766680963107302,
+      "win_rate": 0.5345911949685535,
+      "apex_rule_violations": 0,
+      "profitable": true,
+      "core_net_profit_gt_monkey": true,
+      "core_max_drawdown_lt_monkey": true,
+      "benchmark_passed": false,
+      "failure_reason": "min_profit_factor;preferred_min_total_trades;max_best_day_concentration",
+      "profitable_median_net_profit": 5905.0
+    },
+    "constraints": {
+      "trade_count_tolerance_pct": 0.05,
+      "trade_count_tolerance": 0,
+      "long_short_ratio_tolerance": 0.05,
+      "average_bars_tolerance_pct": 0.1,
+      "duration_sampling": "core_distribution",
+      "duration_shape": 0.7,
+      "max_duration_bars": 91,
+      "max_feasible_duration_bars": 151,
+      "rth_only": true,
+      "enforce_non_overlapping": true,
+      "enforce_max_trades_per_day": false
+    },
+    "iteration_reports_retained": false,
+    "iteration_report_files": [],
+    "data_subset": {
+      "start_date": "2019-05-06",
+      "end_date": "2026-06-09",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "parallel": {
+      "enabled": true,
+      "workers": 8,
+      "scope": "runs"
+    },
+    "trade_path_stress": {
+      "enabled": false,
+      "skipped": true,
+      "skip_reason": "trade-path stress is globally disabled for campaign stages; monkey gates use random-entry core-beat rates",
+      "data_subset": {
+        "start_date": "2019-05-06",
+        "end_date": "2026-06-09",
+        "session_labels": [
+          "RTH"
+        ]
+      }
+    }
+  },
+  "artifacts": [
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/wfa_oos_monkey_test/wfa_oos_monkey_results.csv",
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/wfa_oos_monkey_test/wfa_oos_monkey_summary.json",
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/wfa_oos_monkey_test/wfa_oos_trade_path_stress_results.csv",
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/wfa_oos_monkey_test/wfa_oos_trade_path_stress_summary.json"
+  ],
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:54:31",
+    "monkey_runs": 8000,
+    "trade_path_stress": "skipped_by_global_disable",
+    "random_monkey": "preserved_existing_artifacts"
+  }
+}

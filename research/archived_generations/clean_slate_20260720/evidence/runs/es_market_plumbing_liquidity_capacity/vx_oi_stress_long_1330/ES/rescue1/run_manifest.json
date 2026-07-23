@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_market_plumbing_liquidity_capacity",
+  "variant_id": "vx_oi_stress_long_1330",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_market_plumbing_liquidity_capacity/campaign.yaml",
+    "hash": "a412b2987c16a9094e205ad1ea3887d7231d2ce94646230c096820ba78c447fc"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_market_plumbing_liquidity_capacity/vx_oi_stress_long_1330/variant.yaml",
+    "hash": "97c1b6242650df70e9eed6b7b9fc8e150ebb45cfed20208398c37a7e5b17480c",
+    "mechanic": {
+      "entry_module": "market_plumbing_priority",
+      "stop_loss_module": "percent_from_entry",
+      "take_profit_module": "fixed_r",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_market_plumbing_liquidity_capacity/rescue_attempts/parameter_space_rescue_1/vx_oi_stress_long_1330/config.yaml",
+  "config_hash": "6c456b8775d6deccb73d803786dbc6cd2beb38d41b67214b710dbe3331e99d84",
+  "created_at": "2026-06-16T00:21:31",
+  "updated_at": "2026-06-16T00:21:31",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_market_plumbing_liquidity_capacity/vx_oi_stress_long_1330/ES/rescue1/effective_config.yaml"
+}

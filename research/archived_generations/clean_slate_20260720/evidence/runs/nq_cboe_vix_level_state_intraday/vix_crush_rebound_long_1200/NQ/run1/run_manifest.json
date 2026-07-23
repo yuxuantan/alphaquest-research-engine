@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_cboe_vix_level_state_intraday",
+  "variant_id": "vix_crush_rebound_long_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_cboe_vix_level_state_intraday/vix_crush_rebound_long_1200/variant.yaml",
+    "hash": "f0b67e1e0920deb7630ebd5d202062e95244f9cf9ddbb6f8751ac7e668b0b750",
+    "mechanic": {
+      "entry_module": "cboe_vix_level_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_cboe_vix_level_state_intraday/variants/vix_crush_rebound_long_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_cboe_vix_level_state_intraday/vix_crush_rebound_long_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_cboe_vix_level_state_intraday/vix_crush_rebound_long_1200/NQ/run1/source_config.yaml",
+  "config_hash": "586b7e24281a303f48cd4c6be6f732c6cef7d48b98429a0626db27ea6abaa701",
+  "source_config_hash": "169056ec1350886dfe71374bea5dabfdce7b02e31b016e1c2c26355e7da247de",
+  "source_results_index": "campaigns/nq_cboe_vix_level_state_intraday/results_index.yaml",
+  "created_at": "2026-06-23T03:34:44",
+  "updated_at": "2026-06-23T03:34:44",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

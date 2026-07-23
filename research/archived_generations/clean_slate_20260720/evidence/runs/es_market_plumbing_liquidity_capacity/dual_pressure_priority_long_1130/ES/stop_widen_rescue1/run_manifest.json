@@ -1,0 +1,68 @@
+{
+  "campaign_id": "es_market_plumbing_liquidity_capacity",
+  "variant_id": "dual_pressure_priority_long_1130",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_market_plumbing_liquidity_capacity/campaign.yaml",
+    "hash": "0fb1c2fc90e5bea8fb0ace43db6ecfd579c5678c7c729844fcbdea9f4edc1de0"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_market_plumbing_liquidity_capacity/dual_pressure_priority_long_1130/variant.yaml",
+    "hash": "2ab0d82b43b7f028fa80d8e8201f3ec57e820b36af477f53b55b2328d7974fb7",
+    "mechanic": {
+      "entry_module": "market_plumbing_priority",
+      "stop_loss_module": "percent_from_entry",
+      "take_profit_module": "fixed_r",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_market_plumbing_liquidity_capacity/rescue_attempts/stop_distance_rescue_1/dual_pressure_priority_long_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_market_plumbing_liquidity_capacity/dual_pressure_priority_long_1130/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_market_plumbing_liquidity_capacity/dual_pressure_priority_long_1130/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "747ab30513bfbbff8e15c1c5eb621ecb518ae3c13af5f154ad1598bd97b940f9",
+  "source_config_hash": "680c17e25745dd411724f6dbb926a1a3baa0d5a88d51327ccd197e51108a6082",
+  "source_results_index": "campaigns/es_market_plumbing_liquidity_capacity/results_index.yaml",
+  "created_at": "2026-06-19T09:49:02",
+  "updated_at": "2026-06-21T12:50:47",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:50:47"
+  }
+}

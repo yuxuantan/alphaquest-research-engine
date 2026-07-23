@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_term_structure_lead_lag_feedback",
+  "variant_id": "late_morning_two_sided_spread_feedback_1130",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_term_structure_lead_lag_1m_20110311_20260316_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_term_structure_lead_lag_1m_20110311_20260316_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_term_structure_lead_lag_feedback/campaign.yaml",
+    "hash": "a2cd391ab2e1a3a106d09bd8f838c14d6c5be9747b3b725549f64cc820efc3c9"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_term_structure_lead_lag_feedback/late_morning_two_sided_spread_feedback_1130/variant.yaml",
+    "hash": "99759f673d700a326edd127a50780f01d9104ca5ce04d61f1eee5ecbb8457a39",
+    "mechanic": {
+      "entry_module": "es_term_structure_lead_lag",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "13:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_term_structure_lead_lag_feedback/rescue_attempts/stop_distance_rescue_1/late_morning_two_sided_spread_feedback_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_term_structure_lead_lag_feedback/late_morning_two_sided_spread_feedback_1130/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_term_structure_lead_lag_feedback/late_morning_two_sided_spread_feedback_1130/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "9e77ebafacfd4bb77f77124d90d0923b20008b44e0a80def809825503bb1ace3",
+  "source_config_hash": "5bb51dacd04bf5943afd80698ca6caedf3b4081e12552d6a82eb41b01b148010",
+  "source_results_index": "campaigns/es_term_structure_lead_lag_feedback/results_index.yaml",
+  "created_at": "2026-06-19T16:27:16",
+  "updated_at": "2026-06-19T16:27:16",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

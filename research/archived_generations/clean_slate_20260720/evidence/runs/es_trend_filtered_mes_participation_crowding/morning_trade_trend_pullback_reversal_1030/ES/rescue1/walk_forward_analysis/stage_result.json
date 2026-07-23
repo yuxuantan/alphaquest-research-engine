@@ -1,0 +1,241 @@
+{
+  "stage": "walk_forward_analysis",
+  "label": "Walk Forward Analysis (WFA)",
+  "status": "passed",
+  "passed": true,
+  "started_at": "2026-06-20T23:25:19",
+  "completed_at": "2026-06-21T00:00:44",
+  "duration_seconds": 2125.635254,
+  "criteria": [
+    {
+      "metric": "summary.early_exit",
+      "actual": false,
+      "expected": {
+        "equals": false
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.profit_factor",
+      "actual": 1.449261337978195,
+      "expected": {
+        "min": 1.2
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.mar",
+      "actual": 1.7344926418082498,
+      "expected": {
+        "min": 0.4
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.trades_per_year",
+      "actual": 77.87399848190942,
+      "expected": {
+        "min": 50
+      },
+      "passed": true
+    },
+    {
+      "metric": "stitched_oos_metrics.apex_rule_violations",
+      "actual": 0,
+      "expected": {
+        "max": 0
+      },
+      "passed": true
+    }
+  ],
+  "summary": {
+    "windows": 3,
+    "objective": "MAR",
+    "window_mode": "unanchored",
+    "train_months": 48,
+    "test_months": 12,
+    "step_months": 12,
+    "parallel": {
+      "enabled": true,
+      "scope": "window_grid",
+      "workers": 6
+    },
+    "selection_filter": {
+      "exclusive_min_trades_per_year": 50
+    },
+    "early_exit_min_train_profit_factor": 1.0,
+    "early_exit_require_train_profitable": false,
+    "early_exit": false,
+    "passing_windows": 0,
+    "profitable_windows": 3,
+    "profitable_window_rate": 1.0,
+    "meets_profitable_window_benchmark": true,
+    "median_test_net_profit": 6777.5,
+    "median_test_mar": 1.7111932238080902,
+    "median_test_cagr": 0.055701278083921,
+    "median_test_max_drawdown_pct": 0.01870891902183811,
+    "train_grid_reports_retained": true,
+    "train_grid_report_files": [
+      "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/window_001_train_grid.csv",
+      "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/window_002_train_grid.csv",
+      "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/window_003_train_grid.csv"
+    ],
+    "reuse_existing_train_grids_requested": false,
+    "reused_existing_train_grids": false,
+    "reused_train_grid_count": 0,
+    "strict_train_grid_reuse": true,
+    "phase_timings_seconds": {
+      "slice_windows": 4.236387,
+      "train_grid_compute": 2099.521223,
+      "train_grid_write": 0.096696,
+      "oos_backtest": 10.2624,
+      "annotate_oos_trades": 0.004678,
+      "stitch_oos_trades": 0.007999
+    },
+    "window_timings_seconds": [
+      {
+        "window_id": 1.0,
+        "slice_seconds": 0.175647,
+        "train_grid_seconds": 679.935672,
+        "train_grid_write_seconds": 0.047419,
+        "oos_backtest_seconds": 4.717348,
+        "total_seconds": 684.905985,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 2.0,
+        "slice_seconds": 2.057998,
+        "train_grid_seconds": 693.429468,
+        "train_grid_write_seconds": 0.027975,
+        "oos_backtest_seconds": 3.947037,
+        "total_seconds": 699.478089,
+        "reused_train_grid": false
+      },
+      {
+        "window_id": 3.0,
+        "slice_seconds": 2.002742,
+        "train_grid_seconds": 726.156084,
+        "train_grid_write_seconds": 0.021302,
+        "oos_backtest_seconds": 1.598014,
+        "total_seconds": 729.791361,
+        "reused_train_grid": false
+      }
+    ],
+    "stitched_oos_trades": 158,
+    "stitched_oos_metrics": {
+      "total_trades": 158,
+      "trades_per_year": 77.87399848190942,
+      "net_profit": 17410.0,
+      "profit_factor": 1.449261337978195,
+      "expectancy_r": 0.12401929161005902,
+      "max_drawdown": 5240.0,
+      "max_drawdown_pct": 0.032063637754321556,
+      "cagr": 0.05561414375447593,
+      "mar": 1.7344926418082498,
+      "worst_day": -1217.5,
+      "best_day": 1895.0,
+      "best_day_concentration": 0.10884549109707065,
+      "max_consecutive_losses": 4,
+      "positive_month_rate": 0.5,
+      "win_rate": 0.569620253164557,
+      "average_trade": 110.18987341772151,
+      "apex_rule_violations": 0,
+      "apex_forced_flatten_trades": 0
+    },
+    "oos_evaluation_years": 3.0006844626967832,
+    "required_oos_mar": 1.4997664355930547,
+    "incubation_selected_params": {
+      "entry.params.share_rank_min": 0.5,
+      "entry.params.min_abs_return_ticks": 4,
+      "sl.params.stop_pct": 0.004,
+      "tp.params.target_r_multiple": 1.5
+    },
+    "configured_data_subset": {},
+    "resolved_data_subset": {
+      "start_date": "2019-05-06",
+      "end_date": "2025-09-22",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "data_subset": {
+      "start_date": "2019-05-06",
+      "end_date": "2025-09-22",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "actual_data_period": {
+      "first_timestamp": "2019-05-06 09:30:00-04:00",
+      "last_timestamp": "2025-09-22 15:59:00-04:00",
+      "rows": 616200,
+      "strategy_rows": 616200,
+      "timeframe": "1m",
+      "source_timeframe": "1m"
+    },
+    "equity_curve_csv": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/equity_curve.csv",
+    "equity_curve_html": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/equity_curve.html",
+    "equity_curve_points": 159
+  },
+  "stitched_oos_metrics": {
+    "total_trades": 158,
+    "trades_per_year": 77.87399848190942,
+    "net_profit": 17410.0,
+    "profit_factor": 1.449261337978195,
+    "expectancy_r": 0.12401929161005902,
+    "max_drawdown": 5240.0,
+    "max_drawdown_pct": 0.032063637754321556,
+    "cagr": 0.05561414375447593,
+    "mar": 1.7344926418082498,
+    "worst_day": -1217.5,
+    "best_day": 1895.0,
+    "best_day_concentration": 0.10884549109707065,
+    "max_consecutive_losses": 4,
+    "positive_month_rate": 0.5,
+    "win_rate": 0.569620253164557,
+    "average_trade": 110.18987341772151,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "incubation_selected_params": {
+    "entry.params.share_rank_min": 0.5,
+    "entry.params.min_abs_return_ticks": 4,
+    "sl.params.stop_pct": 0.004,
+    "tp.params.target_r_multiple": 1.5
+  },
+  "data_quality": {
+    "rows": 616200,
+    "duplicate_count": 0,
+    "invalid_ohlc_count": 0,
+    "missing_session_segments": 0,
+    "first_timestamp": "2019-05-06 09:30:00-04:00",
+    "last_timestamp": "2025-09-22 15:59:00-04:00",
+    "roll_boundary_sessions_skipped": 0,
+    "loaded_rows": 616200,
+    "strategy_rows": 616200,
+    "timeframe": "1m",
+    "timeframe_minutes": 1,
+    "source_timeframe": "1m",
+    "prepare_data_duration_seconds": 11.225322,
+    "prepared_data_cache": {
+      "enabled": true,
+      "hit": false,
+      "key": "9ea4bee33e21f13a56baf1d86afe1fcc372c6ebc5cb4b96f3f10e84c4fcad068"
+    }
+  },
+  "input_hash": "34cffd2984b7db065a544c8c814160a5f4538a097329ed4f917736524c1c5031",
+  "artifacts": [
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/equity_curve.csv",
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/equity_curve.html",
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/wfa_oos_trade_log.csv",
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/wfa_results.csv",
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/wfa_summary.json",
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/window_001_train_grid.csv",
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/window_002_train_grid.csv",
+    "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/rescue1/walk_forward_analysis/window_003_train_grid.csv"
+  ],
+  "rerun_override": {
+    "trigger": "limited_monkey_test_failed_to_passed_8000_continuation",
+    "updated_at": "2026-06-21T00:00:44"
+  }
+}

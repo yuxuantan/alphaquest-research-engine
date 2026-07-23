@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_key_reversal_orderflow_reversal",
+  "variant_id": "late_morning_large10_down_sweep_reclaim_long_1230",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_key_reversal_orderflow_reversal/late_morning_large10_down_sweep_reclaim_long_1230/variant.yaml",
+    "hash": "8bc8a673a80cb8f48e35efe4f2da8ef90e345ec2d8052e5cad38e48ef5ce3d39",
+    "mechanic": {
+      "entry_module": "key_reversal_orderflow_reversal",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_key_reversal_orderflow_reversal/variants/late_morning_large10_down_sweep_reclaim_long_1230/config.yaml",
+  "effective_config": "backtest-campaigns/es_key_reversal_orderflow_reversal/late_morning_large10_down_sweep_reclaim_long_1230/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_key_reversal_orderflow_reversal/late_morning_large10_down_sweep_reclaim_long_1230/ES/run1/source_config.yaml",
+  "config_hash": "da5fca2816cc6d3c922b08b57a06d689a7df6ba85a3bab0999177aacaa022e33",
+  "source_config_hash": "17ce7837b27ab5db90ce4c90965749e250a5750f8004b1f679eb278fa410a036",
+  "source_results_index": "campaigns/es_key_reversal_orderflow_reversal/results_index.yaml",
+  "created_at": "2026-06-19T03:51:19",
+  "updated_at": "2026-06-19T03:51:19",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

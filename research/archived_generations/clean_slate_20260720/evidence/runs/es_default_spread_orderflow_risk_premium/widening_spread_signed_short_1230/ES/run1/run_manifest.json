@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_default_spread_orderflow_risk_premium",
+  "variant_id": "widening_spread_signed_short_1230",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_default_spread_orderflow_risk_premium/widening_spread_signed_short_1230/variant.yaml",
+    "hash": "1834276acadb1f80dbfe4975e5ba2897a82c1ed825bb35d9c5d68125d2f7128a",
+    "mechanic": {
+      "entry_module": "default_spread_orderflow_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_default_spread_orderflow_risk_premium/variants/widening_spread_signed_short_1230/config.yaml",
+  "effective_config": "backtest-campaigns/es_default_spread_orderflow_risk_premium/widening_spread_signed_short_1230/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_default_spread_orderflow_risk_premium/widening_spread_signed_short_1230/ES/run1/source_config.yaml",
+  "config_hash": "ea70f3c270e1bf97c078e60de58a5d2dffbf4bef21bda7077c375a0553b79103",
+  "source_config_hash": "1a81a10ebfd6f7e86b1fcbee589d2c53e086a9ab9416956b6787e04200ec5e86",
+  "source_results_index": "campaigns/es_default_spread_orderflow_risk_premium/results_index.yaml",
+  "created_at": "2026-06-20T05:10:57",
+  "updated_at": "2026-06-20T05:10:57",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

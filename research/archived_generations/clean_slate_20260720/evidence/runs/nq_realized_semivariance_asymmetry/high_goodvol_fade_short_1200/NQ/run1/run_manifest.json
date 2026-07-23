@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_realized_semivariance_asymmetry",
+  "variant_id": "high_goodvol_fade_short_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_realized_semivariance_asymmetry/high_goodvol_fade_short_1200/variant.yaml",
+    "hash": "ade034225e17f5c9320e5f19152c28c0993041e77c51fe61a4e62798ffc6652e",
+    "mechanic": {
+      "entry_module": "realized_semivariance_asymmetry",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_realized_semivariance_asymmetry/variants/high_goodvol_fade_short_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_realized_semivariance_asymmetry/high_goodvol_fade_short_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_realized_semivariance_asymmetry/high_goodvol_fade_short_1200/NQ/run1/source_config.yaml",
+  "config_hash": "e7074ad63ceea656f22916d25859ac9f5afbe1ff26acbc88c57d694fec2a5f7e",
+  "source_config_hash": "ad5c410b1829a50dc78fb4936cf91b254d5bfe50dcab651bd631d7cbf9f9f611",
+  "source_results_index": "campaigns/nq_realized_semivariance_asymmetry/results_index.yaml",
+  "created_at": "2026-06-22T22:57:40",
+  "updated_at": "2026-06-22T22:57:40",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

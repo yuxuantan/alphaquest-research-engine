@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_mes_aligned_flow_continuation",
+  "variant_id": "midday30_mes_large10_1230",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_mes_aligned_flow_continuation/midday30_mes_large10_1230/variant.yaml",
+    "hash": "bc6ca4234c001fde6a58d8214989bda560249640d4f4d4a2449487a9b69c64ee",
+    "mechanic": {
+      "entry_module": "es_mes_aligned_flow_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_mes_aligned_flow_continuation/variants/midday30_mes_large10_1230/config.yaml",
+  "effective_config": "backtest-campaigns/nq_mes_aligned_flow_continuation/midday30_mes_large10_1230/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_mes_aligned_flow_continuation/midday30_mes_large10_1230/NQ/run1/source_config.yaml",
+  "config_hash": "a9ec90300b9f0b8f2ff9c25e777198fd501ad8245e4c9d66b153c2c7194d3855",
+  "source_config_hash": "a8e1cd8c98dced271532568f4c36ae4bea520af094c45c67be05a2ebdf638d2a",
+  "source_results_index": "campaigns/nq_mes_aligned_flow_continuation/results_index.yaml",
+  "created_at": "2026-06-30T17:55:11",
+  "updated_at": "2026-06-30T17:55:11",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

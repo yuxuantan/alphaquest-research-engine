@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_pivot_filtered_prior_value_area_acceptance",
+  "variant_id": "midday_signed_two_sided_pivot_acceptance",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_pivot_filtered_prior_value_area_acceptance/midday_signed_two_sided_pivot_acceptance/variant.yaml",
+    "hash": "7bc84e9098872cd70354c5f9f46d714f85a71a953cad12dc5abedbd902f4a307",
+    "mechanic": {
+      "entry_module": "market_structure_filtered_entry",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_pivot_filtered_prior_value_area_acceptance/rescue_attempts/stop_widen_rescue_1/midday_signed_two_sided_pivot_acceptance/config.yaml",
+  "effective_config": "backtest-campaigns/es_pivot_filtered_prior_value_area_acceptance/midday_signed_two_sided_pivot_acceptance/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_pivot_filtered_prior_value_area_acceptance/midday_signed_two_sided_pivot_acceptance/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "fa0a3aac29616a2dad68721f7d3c2c5d1a5a8f29d445fcb27d2a8b8de549264e",
+  "source_config_hash": "bf5b981d1358125e8a6150d337d50dfef0ecba5b61a6c6b58adbad6148319da6",
+  "source_results_index": "campaigns/es_pivot_filtered_prior_value_area_acceptance/results_index.yaml",
+  "created_at": "2026-06-20T10:39:12",
+  "updated_at": "2026-06-20T10:39:12",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

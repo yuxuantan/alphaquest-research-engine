@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_52week_anchor_momentum",
+  "variant_id": "near_high_anchor_hold_long_1030",
+  "test_run_id": "run2",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_52week_anchor_momentum/near_high_anchor_hold_long_1030/variant.yaml",
+    "hash": "2fa3e55c53986246cf9a549455ab6c3db763ff90b21f8ba20ea60506bec64c29",
+    "mechanic": {
+      "entry_module": "fifty_two_week_anchor_momentum",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_52week_anchor_momentum/variants/near_high_anchor_hold_long_1030/config.yaml",
+  "effective_config": "backtest-campaigns/nq_52week_anchor_momentum/near_high_anchor_hold_long_1030/NQ/run2/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_52week_anchor_momentum/near_high_anchor_hold_long_1030/NQ/run2/source_config.yaml",
+  "config_hash": "15ce450f3ece09311a73149aa5e2cf11d44984303503a2b60acb95fa3f2f988d",
+  "source_config_hash": "70d3a6abae66354d888f06704c8fca4383791c04d8c303c691b5c763dc79d1bc",
+  "source_results_index": "campaigns/nq_52week_anchor_momentum/results_index.yaml",
+  "created_at": "2026-07-01T02:18:10",
+  "updated_at": "2026-07-01T02:18:10",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

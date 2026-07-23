@@ -1,0 +1,87 @@
+{
+  "campaign_id": "nq_rolling_range_orderflow_sweep_reversal",
+  "symbol": "NQ",
+  "decision": "FAIL",
+  "verdict": "FAIL",
+  "status": "completed",
+  "completed_at": "2026-06-30",
+  "passed": false,
+  "halted": true,
+  "terminal_stage": "pre_pnl_density_screen",
+  "results_csv": "backtest-campaigns/nq_rolling_range_orderflow_sweep_reversal/campaign_results.csv",
+  "density_audit": "research_artifacts/nq_rolling_range_orderflow_sweep_reversal_density_audit_20260630.md",
+  "density_audit_csv": "research_artifacts/nq_rolling_range_orderflow_sweep_reversal_density_audit_20260630.csv",
+  "density_summary_csv": "research_artifacts/nq_rolling_range_orderflow_sweep_reversal_density_summary_20260630.csv",
+  "methodology_audit": "campaigns/nq_rolling_range_orderflow_sweep_reversal/methodology_audit.md",
+  "summary": "Rejected before staged NQ PnL: 41/45 declared entry-grid rows and 3/5 variants passed all density gates. Dropping sparse rows or variants after seeing this screen would be post-result narrowing. No NQ PnL was inspected.",
+  "density_rows": 45,
+  "density_pass_rows": 41,
+  "density_fail_rows": 4,
+  "density_passing_variants": [
+    "afternoon_signed_24bar_sweep_reclaim_1500",
+    "midday_signed_24bar_sweep_reclaim_1400",
+    "morning_large10_12bar_sweep_reclaim_1130"
+  ],
+  "density_failed_variants": [
+    "all_day_large20_36bar_sweep_reclaim_1500",
+    "morning_signed_12bar_sweep_reclaim_1130"
+  ],
+  "variant_summary": [
+    {
+      "variant_id": "afternoon_signed_24bar_sweep_reclaim_1500",
+      "entry_rows": 9,
+      "passing_rows": 9,
+      "density_gate_pass": true,
+      "min_full_signals_per_year": 111.21373470473488,
+      "min_limited_core_signals_per_year": 132.34635879218473,
+      "min_latest_252_signals": 90
+    },
+    {
+      "variant_id": "all_day_large20_36bar_sweep_reclaim_1500",
+      "entry_rows": 9,
+      "passing_rows": 6,
+      "density_gate_pass": false,
+      "min_full_signals_per_year": 53.8904061003724,
+      "min_limited_core_signals_per_year": 51.25177619893428,
+      "min_latest_252_signals": 49
+    },
+    {
+      "variant_id": "midday_signed_24bar_sweep_reclaim_1400",
+      "entry_rows": 9,
+      "passing_rows": 9,
+      "density_gate_pass": true,
+      "min_full_signals_per_year": 76.8197375421174,
+      "min_limited_core_signals_per_year": 95.36722912966252,
+      "min_latest_252_signals": 67
+    },
+    {
+      "variant_id": "morning_large10_12bar_sweep_reclaim_1130",
+      "entry_rows": 9,
+      "passing_rows": 9,
+      "density_gate_pass": true,
+      "min_full_signals_per_year": 76.36633268309984,
+      "min_limited_core_signals_per_year": 63.57815275310835,
+      "min_latest_252_signals": 91
+    },
+    {
+      "variant_id": "morning_signed_12bar_sweep_reclaim_1130",
+      "entry_rows": 9,
+      "passing_rows": 8,
+      "density_gate_pass": false,
+      "min_full_signals_per_year": 44.23935981557013,
+      "min_limited_core_signals_per_year": 57.09058614564831,
+      "min_latest_252_signals": 42
+    }
+  ],
+  "stages_not_run": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "staged_pnl_started": false
+}

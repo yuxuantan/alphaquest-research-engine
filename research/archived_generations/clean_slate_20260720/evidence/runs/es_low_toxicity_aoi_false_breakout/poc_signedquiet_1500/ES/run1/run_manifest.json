@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_low_toxicity_aoi_false_breakout",
+  "variant_id": "poc_signedquiet_1500",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_low_toxicity_aoi_false_breakout/poc_signedquiet_1500/variant.yaml",
+    "hash": "e91321f49fe704dc49928d446e6a0068f97321b60e3fb5a7322c93e52c91af7a",
+    "mechanic": {
+      "entry_module": "low_toxicity_aoi_false_breakout",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_low_toxicity_aoi_false_breakout/variants/poc_signedquiet_1500/config.yaml",
+  "effective_config": "backtest-campaigns/es_low_toxicity_aoi_false_breakout/poc_signedquiet_1500/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_low_toxicity_aoi_false_breakout/poc_signedquiet_1500/ES/run1/source_config.yaml",
+  "config_hash": "1e9acf4f3cdbd7216881c135d00a6e2b570349f6615639187ccb081e572c627f",
+  "source_config_hash": "8c75c9fe67330d926dcdda7e59bc981347069f936f683a5b99e5fc2a510bf7c4",
+  "source_results_index": "campaigns/es_low_toxicity_aoi_false_breakout/results_index.yaml",
+  "created_at": "2026-06-23T01:22:32",
+  "updated_at": "2026-06-23T01:22:32",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

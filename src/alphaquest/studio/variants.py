@@ -30,6 +30,19 @@ def suggest_variant_cards(draft: dict[str, Any]) -> list[dict[str, Any]]:
     are accepted by this function.
     """
 
+    return [suggest_variant_card(draft, index=index) for index in range(len(_RISK_EXPRESSIONS))]
+
+
+def suggest_variant_card(
+    draft: dict[str, Any],
+    *,
+    index: int,
+    failure_context: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Create one mechanic, using the predecessor failure when a slot is unlocked."""
+
+    if not 0 <= index < len(_RISK_EXPRESSIONS):
+        raise ValueError("variant index exceeds the five-variant maximum")
     title = str(draft.get("title") or "Research edge")
     mechanism = str(draft.get("expected_mechanism") or "the frozen economic mechanism")
     execution = draft.get("execution") if isinstance(draft.get("execution"), dict) else {}
@@ -46,19 +59,20 @@ def suggest_variant_cards(draft: dict[str, Any]) -> list[dict[str, Any]]:
     if recipe_name not in CERTIFIED_RECIPE_BINDINGS:
         raise ValueError("select and review one certified edge recipe before generating variants")
     entry, setup_mode = CERTIFIED_RECIPE_BINDINGS[str(recipe_name)]
-    cards: list[dict[str, Any]] = []
-    for index, (stop, target, difference) in enumerate(_RISK_EXPRESSIONS, start=1):
-        cards.append(
-            {
+    expression_index = _select_risk_expression(draft, index=index, failure_context=failure_context)
+    stop, target, difference = _RISK_EXPRESSIONS[expression_index]
+    variant_number = index + 1
+    failure_note = _failure_note(failure_context)
+    return {
                 "schema": "alphaquest.variant-draft/v1",
-                "variant_id": f"v{index:02d}",
+                "variant_id": f"v{variant_number:02d}",
                 "title": f"{title} — {difference}",
                 "entry": {"module": entry, "params": _default_params("entry", entry, execution, setup_mode), "parameter_grid": {}},
                 "stop": {"module": stop, "params": _default_params("sl", stop, execution), "parameter_grid": {}},
                 "target": {"module": target, "params": _default_params("tp", target, execution), "parameter_grid": {}},
                 "mechanic_rationale": (
                     f"Tests the same frozen {recipe_name} edge and {mechanism} through a {difference} "
-                    "without using observed PnL."
+                    f"{failure_note}"
                 ),
                 "entry_rationale": (
                     f"The certified {entry} contract observes only completed information and emits a decision "
@@ -79,12 +93,65 @@ def suggest_variant_cards(draft: dict[str, Any]) -> list[dict[str, Any]]:
                 "known_failure_modes": deepcopy(draft.get("known_failure_modes") or ["The hypothesized behavior may be absent."]),
                 "material_difference": (
                     f"This {difference} keeps the one frozen entry edge fixed while changing a certified "
-                    "risk invalidation or exit structure rather than only a name, session label, or parameter value."
+                    "risk invalidation or exit structure rather than only a name, session label, or parameter value. "
+                    f"{failure_note}"
                 ),
                 "confirmed": False,
             }
+
+
+def _select_risk_expression(
+    draft: dict[str, Any],
+    *,
+    index: int,
+    failure_context: dict[str, Any] | None,
+) -> int:
+    if not failure_context:
+        return index
+    used = {
+        (
+            str(((item.get("stop") or {}).get("module") or "")),
+            str(((item.get("target") or {}).get("module") or "")),
         )
-    return cards
+        for item in draft.get("variants") or []
+        if isinstance(item, dict)
+    }
+    available = [
+        position
+        for position, (stop, target, _) in enumerate(_RISK_EXPRESSIONS)
+        if (stop, target) not in used
+    ]
+    if not available:
+        raise ValueError("no materially distinct certified mechanic remains within the five-variant maximum")
+    text = " ".join(
+        str(failure_context.get(key) or "")
+        for key in ("stage", "metric", "reason", "verdict_message")
+    ).casefold()
+    if any(token in text for token in ("drawdown", "ruin", "prop_rule", "monte_carlo", "monkey")):
+        ranked = (2, 3, 1, 4, 0)
+    elif any(token in text for token in ("profit", "expectancy", "payoff", "transaction_cost", "cost")):
+        ranked = (3, 2, 1, 4, 0)
+    elif any(token in text for token in ("walk_forward", "wfa", "stability", "neighbor", "regime")):
+        ranked = (1, 2, 3, 4, 0)
+    else:
+        ranked = tuple(range(index, len(_RISK_EXPRESSIONS))) + tuple(range(index))
+    return next(position for position in ranked if position in available)
+
+
+def _failure_note(failure_context: dict[str, Any] | None) -> str:
+    if not failure_context:
+        return "The mechanic is frozen before any performance result is observed."
+    stage = str(failure_context.get("stage") or "terminal assessment")
+    metric = str(failure_context.get("metric") or "campaign verdict")
+    actual = failure_context.get("actual")
+    threshold = failure_context.get("threshold")
+    comparison = ""
+    if actual is not None or threshold is not None:
+        comparison = f" (actual {actual!r}; threshold {threshold!r})"
+    return (
+        f"This mechanic was selected from the remaining certified structures after the predecessor failed "
+        f"{stage}/{metric}{comparison}; it is a new predeclared test, not a reinterpretation of that result."
+    )
 
 
 def binding_defaults(module_type: str, module_name: str, execution: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -121,4 +188,4 @@ def _default_params(
     return params
 
 
-__all__ = ["binding_defaults", "suggest_variant_cards"]
+__all__ = ["binding_defaults", "suggest_variant_card", "suggest_variant_cards"]

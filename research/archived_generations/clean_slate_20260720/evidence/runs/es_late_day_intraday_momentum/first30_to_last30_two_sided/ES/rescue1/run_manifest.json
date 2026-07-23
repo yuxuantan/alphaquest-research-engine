@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_late_day_intraday_momentum",
+  "variant_id": "first30_to_last30_two_sided",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_late_day_intraday_momentum/campaign.yaml",
+    "hash": "2da7b3cc992431e4c5bdd0bb0a68155f8d04594c3f062ae4b2b09fe48dfe0cbe"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_late_day_intraday_momentum/first30_to_last30_two_sided/variant.yaml",
+    "hash": "e80efb440076a26997bb988eec509375b282808a8d2be479391c8a6c168f8bdb",
+    "mechanic": {
+      "entry_module": "late_day_intraday_momentum",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_late_day_intraday_momentum/rescue_attempts/parameter_space_rescue_1/first30_to_last30_two_sided/config.yaml",
+  "config_hash": "cd76a915a135d11b9ec7d9dd74d924caf27e1e5a4b54540d5d7dde6465b16fd5",
+  "created_at": "2026-06-15T22:45:24",
+  "updated_at": "2026-06-15T22:45:24",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_late_day_intraday_momentum/first30_to_last30_two_sided/ES/rescue1/effective_config.yaml"
+}

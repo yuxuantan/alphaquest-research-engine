@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_intraday_periodicity_orderflow_confirmation",
+  "variant_id": "afternoon_1330_large20_confirmed_slot",
+  "test_run_id": "tp_min_rr_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_intraday_periodicity_orderflow_confirmation/afternoon_1330_large20_confirmed_slot/variant.yaml",
+    "hash": "5e2a94faf053c593765cd25ff2094e94b3f766cba873e74d92c3fc3031a46cd0",
+    "mechanic": {
+      "entry_module": "intraday_periodicity_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "14:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_intraday_periodicity_orderflow_confirmation/rescue_attempts/tp_min_rr_floor_rescue_1/afternoon_1330_large20_confirmed_slot/config.yaml",
+  "effective_config": "backtest-campaigns/es_intraday_periodicity_orderflow_confirmation/afternoon_1330_large20_confirmed_slot/ES/tp_min_rr_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_intraday_periodicity_orderflow_confirmation/afternoon_1330_large20_confirmed_slot/ES/tp_min_rr_rescue1/source_config.yaml",
+  "config_hash": "d38192fc6aae5edfa743fe045096cb80001f633ba76522395e0de41ca91dabeb",
+  "source_config_hash": "8c80bd25e72ed2a5ebf4a8d36f31e2d61dcd19b968bc0ea51f00568f106ac1d7",
+  "source_results_index": "campaigns/es_intraday_periodicity_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-19T21:47:01",
+  "updated_at": "2026-06-19T21:47:01",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_taiwan_semiconductor_spillover",
+  "variant_id": "tsmc_3d_relative_weakness_short_1030",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_taiwan_semiconductor_spillover/tsmc_3d_relative_weakness_short_1030/variant.yaml",
+    "hash": "985ce1b301ed126cc1a52d205067db4f447033aba7c66e7f1514a8ee9981b731",
+    "mechanic": {
+      "entry_module": "nq_taiwan_semiconductor_spillover",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_taiwan_semiconductor_spillover/variants/tsmc_3d_relative_weakness_short_1030/config.yaml",
+  "effective_config": "backtest-campaigns/nq_taiwan_semiconductor_spillover/tsmc_3d_relative_weakness_short_1030/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_taiwan_semiconductor_spillover/tsmc_3d_relative_weakness_short_1030/NQ/run1/source_config.yaml",
+  "config_hash": "2c762fc890984de05c04742247654251179c7f21d7f38d09be1568103e7e05d5",
+  "source_config_hash": "cce337b2dccf89f5191bde3f3a726a05a3e0d8a316f90f7769c52ea9fc541435",
+  "source_results_index": "campaigns/nq_taiwan_semiconductor_spillover/results_index.yaml",
+  "created_at": "2026-07-01T09:29:18",
+  "updated_at": "2026-07-01T09:29:18",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

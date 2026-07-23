@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_overnight_inventory_sweep_reversion",
+  "variant_id": "morning_low_extreme_reclaim_long_1130",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/databento/nq_databento_ohlcv_1m_20100606_20260531_eth_rth_explicit_roll.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_overnight_inventory_sweep_reversion/morning_low_extreme_reclaim_long_1130/variant.yaml",
+    "hash": "d69cb9304debc055143c78c72d55c6ae8a95ccb42b52f0d7c8098785bc7f817f",
+    "mechanic": {
+      "entry_module": "overnight_inventory_reversion",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_overnight_inventory_sweep_reversion/variants/morning_low_extreme_reclaim_long_1130/config.yaml",
+  "effective_config": "backtest-campaigns/nq_overnight_inventory_sweep_reversion/morning_low_extreme_reclaim_long_1130/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_overnight_inventory_sweep_reversion/morning_low_extreme_reclaim_long_1130/NQ/run1/source_config.yaml",
+  "config_hash": "db8040d42b917c3220b659b23cd2201ea676e5a8f828b2420a77bcd96400e760",
+  "source_config_hash": "ec30885774c361109447ebb862d6e48bbfcc44493bc727e82e535e5d39435292",
+  "source_results_index": "campaigns/nq_overnight_inventory_sweep_reversion/results_index.yaml",
+  "created_at": "2026-06-23T11:50:00",
+  "updated_at": "2026-06-23T11:50:00",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

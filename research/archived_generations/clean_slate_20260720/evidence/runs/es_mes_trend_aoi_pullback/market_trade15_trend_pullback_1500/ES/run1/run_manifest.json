@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_mes_trend_aoi_pullback",
+  "variant_id": "market_trade15_trend_pullback_1500",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_crowding_vap_aoi_1m_20190506_20250529_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_mes_crowding_vap_aoi_1m_20190506_20250529_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_mes_trend_aoi_pullback/market_trade15_trend_pullback_1500/variant.yaml",
+    "hash": "d8ac8111fc59575ac282d99c741193a067abc78edda9a05148ed7c2220067096",
+    "mechanic": {
+      "entry_module": "mes_trend_aoi_pullback",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_mes_trend_aoi_pullback/variants/market_trade15_trend_pullback_1500/config.yaml",
+  "effective_config": "backtest-campaigns/es_mes_trend_aoi_pullback/market_trade15_trend_pullback_1500/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_mes_trend_aoi_pullback/market_trade15_trend_pullback_1500/ES/run1/source_config.yaml",
+  "config_hash": "6023f34080115ac8ea22670fa7b0e23177838a3cfb4961da246e2faa8480d143",
+  "source_config_hash": "c57f6589f8fb429a8816f282c66ce7121bb34f482fc2ef08e37abcdf82010d75",
+  "source_results_index": "campaigns/es_mes_trend_aoi_pullback/results_index.yaml",
+  "created_at": "2026-06-22T18:29:07",
+  "updated_at": "2026-06-22T18:29:07",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

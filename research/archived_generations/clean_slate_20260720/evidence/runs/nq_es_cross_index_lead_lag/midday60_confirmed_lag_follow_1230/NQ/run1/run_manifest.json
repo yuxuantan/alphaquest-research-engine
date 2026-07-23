@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_es_cross_index_lead_lag",
+  "variant_id": "midday60_confirmed_lag_follow_1230",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_es_lead_lag_1m_20110103_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_es_lead_lag_1m_20110103_20260609_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_es_cross_index_lead_lag/midday60_confirmed_lag_follow_1230/variant.yaml",
+    "hash": "7b1044de1d06d82800a2ffdd49785fbe5a6d1186a20bda6effda3e32b6ae29dd",
+    "mechanic": {
+      "entry_module": "nq_es_lead_lag",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "14:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_es_cross_index_lead_lag/variants/midday60_confirmed_lag_follow_1230/config.yaml",
+  "effective_config": "backtest-campaigns/nq_es_cross_index_lead_lag/midday60_confirmed_lag_follow_1230/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_es_cross_index_lead_lag/midday60_confirmed_lag_follow_1230/NQ/run1/source_config.yaml",
+  "config_hash": "c325f928712fbfcdbc90705017d1f7f567d4cd7a403b7f5c45a54ecdc0f49c48",
+  "source_config_hash": "85a9feef1b31ddeaaa50e7c797efa69c5c88b80172c01c89eaa0279e49a0ccec",
+  "source_results_index": "campaigns/nq_es_cross_index_lead_lag/results_index.yaml",
+  "created_at": "2026-06-23T00:02:58",
+  "updated_at": "2026-06-23T00:02:58",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

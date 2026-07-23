@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_daily_reversal_orderflow_confirmation",
+  "variant_id": "afternoon90_1d_flow_confirm_1400",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_daily_reversal_orderflow_confirmation/campaign.yaml",
+    "hash": "5f1d0cd3e4556ae399cc720b15fc39d8e4663419b1681e8b7ead10c9fccde5b1"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_daily_reversal_orderflow_confirmation/afternoon90_1d_flow_confirm_1400/variant.yaml",
+    "hash": "e5752f9dadf646ae8bbb46217205589041ce66deb6300229e2c4c9d229676e51",
+    "mechanic": {
+      "entry_module": "daily_reversal_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_daily_reversal_orderflow_confirmation/rescue_attempts/stop_distance_rescue_1/afternoon90_1d_flow_confirm_1400/config.yaml",
+  "effective_config": "backtest-campaigns/es_daily_reversal_orderflow_confirmation/afternoon90_1d_flow_confirm_1400/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_daily_reversal_orderflow_confirmation/afternoon90_1d_flow_confirm_1400/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "fc144a17e63dac1be1d392de73f96d511b51f751f7b6183df36f67a03c76437b",
+  "source_config_hash": "556d01f8804ee4dbc131e806b3578baffe73cb3f1f4165b33486ce53b28bdc0a",
+  "source_results_index": "campaigns/es_daily_reversal_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-19T09:20:34",
+  "updated_at": "2026-06-19T09:20:34",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

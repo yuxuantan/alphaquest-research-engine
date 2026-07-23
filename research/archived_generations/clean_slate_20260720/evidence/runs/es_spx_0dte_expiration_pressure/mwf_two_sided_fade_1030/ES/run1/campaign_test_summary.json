@@ -1,0 +1,504 @@
+{
+  "campaign_id": "es_spx_0dte_expiration_pressure",
+  "variant_id": "mwf_two_sided_fade_1030",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_spx_0dte_expiration_pressure/mwf_two_sided_fade_1030/variant.yaml",
+    "hash": "e7b7a67dc3016dd38f99aee7e565403cd47f3591bbe0f00d7dbf606233e64648",
+    "mechanic": {
+      "entry_module": "spx_0dte_expiration_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_path": "backtest-campaigns/es_spx_0dte_expiration_pressure/mwf_two_sided_fade_1030/ES/run1/effective_config.yaml",
+  "source_config_path": "campaigns/es_spx_0dte_expiration_pressure/variants/mwf_two_sided_fade_1030/config.yaml",
+  "config_hash": "97d2e195f0bb0d6e753c824f05e097ede1e61d31ca0bc58f56425b4aca903ee1",
+  "output_dir": "backtest-campaigns/es_spx_0dte_expiration_pressure/mwf_two_sided_fade_1030/ES/run1",
+  "created_at": "2026-06-17T05:48:08",
+  "updated_at": "2026-06-21T17:58:28",
+  "skip_validation": true,
+  "fast_runtime_defaults": true,
+  "passed": false,
+  "halted": true,
+  "stages": [
+    {
+      "stage": "limited_core_grid_test",
+      "label": "Limited Core Grid Test",
+      "status": "failed",
+      "passed": false,
+      "started_at": "2026-06-17T05:47:43",
+      "completed_at": "2026-06-17T05:48:08",
+      "duration_seconds": 25.330301,
+      "criteria": [
+        {
+          "metric": "summary.total_combinations_tested",
+          "actual": 27,
+          "expected": {
+            "valid_parameter_combination_count": "1 fixed combo or 8-120 tunable combos"
+          },
+          "passed": true
+        },
+        {
+          "metric": "summary.percentage_profitable_iterations",
+          "actual": 0.14814814814814814,
+          "expected": {
+            "min": 0.7
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.apex_rule_violating_iterations",
+          "actual": 0,
+          "expected": {
+            "max": 0
+          },
+          "passed": true
+        }
+      ],
+      "summary": {
+        "parameter_value_counts": {
+          "entry.params.min_abs_move_ticks": 3,
+          "sl.params.stop_pct": 3,
+          "tp.params.target_r_multiple": 3
+        },
+        "expected_combinations": 27,
+        "total_combinations_tested": 27,
+        "number_passing_benchmark": 0,
+        "percentage_passing_benchmark": 0.0,
+        "profitable_iterations": 4,
+        "percentage_profitable_iterations": 0.14814814814814814,
+        "apex_rule_violating_iterations": 0,
+        "profitable_iteration_threshold": 0.7,
+        "meets_profitable_iteration_threshold": false,
+        "top_10_combinations": [
+          {
+            "run_id": 24,
+            "entry.params.min_abs_move_ticks": 24,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 2.0,
+            "total_trades": 154,
+            "trades_per_year": 102.6237409251587,
+            "net_profit": 6292.5,
+            "profit_factor": 1.127134053944843,
+            "expectancy_r": 0.09098169384333868,
+            "max_drawdown": 5740.0,
+            "max_drawdown_pct": 0.03566324945635291,
+            "cagr": 0.02776291933313413,
+            "mar": 0.7784741927992923,
+            "win_rate": 0.38961038961038963,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": true,
+            "worst_day": -592.5,
+            "best_day_concentration": 0.1799761620977354,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_profit_factor;min_win_rate"
+          },
+          {
+            "run_id": 15,
+            "entry.params.min_abs_move_ticks": 16,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 2.0,
+            "total_trades": 168,
+            "trades_per_year": 111.95317191835494,
+            "net_profit": 3185.0,
+            "profit_factor": 1.0572327044025158,
+            "expectancy_r": 0.051692743729111756,
+            "max_drawdown": 7065.0,
+            "max_drawdown_pct": 0.044387202161245226,
+            "cagr": 0.014099988406483188,
+            "mar": 0.3176588683211483,
+            "win_rate": 0.375,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": true,
+            "worst_day": -605.0,
+            "best_day_concentration": 0.3555729984301413,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_profit_factor;min_mar;min_win_rate"
+          },
+          {
+            "run_id": 23,
+            "entry.params.min_abs_move_ticks": 24,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 1.5,
+            "total_trades": 154,
+            "trades_per_year": 102.63089272251541,
+            "net_profit": 3161.25,
+            "profit_factor": 1.0698348704920748,
+            "expectancy_r": 0.051515604377249224,
+            "max_drawdown": 5821.25,
+            "max_drawdown_pct": 0.03680259206574996,
+            "cagr": 0.013996193388139622,
+            "mar": 0.38030455472089064,
+            "win_rate": 0.44155844155844154,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": true,
+            "worst_day": -592.5,
+            "best_day_concentration": 0.26729932779754845,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_profit_factor;min_mar"
+          },
+          {
+            "run_id": 21,
+            "entry.params.min_abs_move_ticks": 24,
+            "sl.params.stop_pct": 0.0015,
+            "tp.params.target_r_multiple": 2.0,
+            "total_trades": 154,
+            "trades_per_year": 102.63089272251541,
+            "net_profit": 3042.5,
+            "profit_factor": 1.0959627818956001,
+            "expectancy_r": 0.07897190680787512,
+            "max_drawdown": 3572.5,
+            "max_drawdown_pct": 0.022906881682509657,
+            "cagr": 0.013472189389085676,
+            "mar": 0.5881284749190565,
+            "win_rate": 0.37662337662337664,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": true,
+            "worst_day": -367.5,
+            "best_day_concentration": 0.22432210353327856,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_profit_factor;min_win_rate"
+          },
+          {
+            "run_id": 6,
+            "entry.params.min_abs_move_ticks": 8,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 2.0,
+            "total_trades": 191,
+            "trades_per_year": 127.28009426432021,
+            "net_profit": -280.0,
+            "profit_factor": 0.9956838413811707,
+            "expectancy_r": 0.010093380006763348,
+            "max_drawdown": 8417.5,
+            "max_drawdown_pct": 0.05359587405685906,
+            "cagr": -0.0012443117764111555,
+            "mar": -0.02321655907861646,
+            "win_rate": 0.3612565445026178,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -605.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;min_win_rate"
+          },
+          {
+            "run_id": 3,
+            "entry.params.min_abs_move_ticks": 8,
+            "sl.params.stop_pct": 0.0015,
+            "tp.params.target_r_multiple": 2.0,
+            "total_trades": 191,
+            "trades_per_year": 127.28896435065224,
+            "net_profit": -692.5,
+            "profit_factor": 0.9831743910587378,
+            "expectancy_r": 0.003760266636433209,
+            "max_drawdown": 5442.5,
+            "max_drawdown_pct": 0.035319694339438976,
+            "cagr": -0.0030790792122302735,
+            "mar": -0.08717740257429368,
+            "win_rate": 0.3507853403141361,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -367.5,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 9,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;min_win_rate"
+          },
+          {
+            "run_id": 14,
+            "entry.params.min_abs_move_ticks": 16,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 1.5,
+            "total_trades": 168,
+            "trades_per_year": 111.96097387910773,
+            "net_profit": -721.25,
+            "profit_factor": 0.9859740386017793,
+            "expectancy_r": 0.00658692362329165,
+            "max_drawdown": 8078.75,
+            "max_drawdown_pct": 0.051826725686425455,
+            "cagr": -0.0032070138869702003,
+            "mar": -0.06187953887679589,
+            "win_rate": 0.4226190476190476,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -605.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar"
+          },
+          {
+            "run_id": 12,
+            "entry.params.min_abs_move_ticks": 16,
+            "sl.params.stop_pct": 0.0015,
+            "tp.params.target_r_multiple": 2.0,
+            "total_trades": 168,
+            "trades_per_year": 111.96097387910773,
+            "net_profit": -790.0,
+            "profit_factor": 0.9781435883248029,
+            "expectancy_r": 0.0036852364336835827,
+            "max_drawdown": 5110.0,
+            "max_drawdown_pct": 0.03325469779549337,
+            "cagr": -0.003512977961790842,
+            "mar": -0.10563854717293253,
+            "win_rate": 0.35119047619047616,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -367.5,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;min_win_rate"
+          },
+          {
+            "run_id": 25,
+            "entry.params.min_abs_move_ticks": 24,
+            "sl.params.stop_pct": 0.004,
+            "tp.params.target_r_multiple": 1.0,
+            "total_trades": 154,
+            "trades_per_year": 102.63089272251541,
+            "net_profit": -957.5,
+            "profit_factor": 0.9840469843385539,
+            "expectancy_r": 0.0021556074435939037,
+            "max_drawdown": 10032.5,
+            "max_drawdown_pct": 0.06340954698437277,
+            "cagr": -0.004258614631857505,
+            "mar": -0.06716046454183053,
+            "win_rate": 0.5194805194805194,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -930.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar;min_positive_month_rate"
+          },
+          {
+            "run_id": 7,
+            "entry.params.min_abs_move_ticks": 8,
+            "sl.params.stop_pct": 0.004,
+            "tp.params.target_r_multiple": 1.0,
+            "total_trades": 191,
+            "trades_per_year": 127.28896435065224,
+            "net_profit": -1530.0,
+            "profit_factor": 0.9791723386877212,
+            "expectancy_r": 0.00015884756707800531,
+            "max_drawdown": 11945.0,
+            "max_drawdown_pct": 0.07486329379690707,
+            "cagr": -0.006809247329049639,
+            "mar": -0.09095575393091987,
+            "win_rate": 0.518324607329843,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -942.5,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;min_profit_factor;min_expectancy_r;min_cagr;min_mar"
+          }
+        ],
+        "stable_parameter_zones": {
+          "tp.params.target_r_multiple": {
+            "1.0": 0.0,
+            "1.5": 0.0,
+            "2.0": 0.0
+          }
+        },
+        "iteration_reports_retained": false,
+        "iteration_report_files": [],
+        "data_subset": {
+          "start_date": "2022-05-11",
+          "end_date": "2023-11-11",
+          "session_labels": [
+            "RTH"
+          ]
+        },
+        "parallel": {
+          "enabled": true,
+          "workers": 6,
+          "scope": "grid"
+        },
+        "configured_data_subset": {
+          "start_date": "2022-05-11",
+          "end_date": "2026-06-09",
+          "session_labels": [
+            "RTH"
+          ]
+        },
+        "resolved_data_subset": {
+          "start_date": "2022-05-11",
+          "end_date": "2023-11-11",
+          "session_labels": [
+            "RTH"
+          ]
+        },
+        "actual_data_period": {
+          "first_timestamp": "2022-05-11 09:30:00-04:00",
+          "last_timestamp": "2023-11-10 15:59:00-05:00",
+          "rows": 146640,
+          "strategy_rows": 146640,
+          "timeframe": "1m",
+          "source_timeframe": "1m"
+        }
+      },
+      "data_quality": {
+        "rows": 146640,
+        "duplicate_count": 0,
+        "invalid_ohlc_count": 0,
+        "missing_session_segments": 0,
+        "first_timestamp": "2022-05-11 09:30:00-04:00",
+        "last_timestamp": "2023-11-10 15:59:00-05:00",
+        "roll_boundary_sessions_skipped": 0,
+        "loaded_rows": 146640,
+        "strategy_rows": 146640,
+        "timeframe": "1m",
+        "timeframe_minutes": 1,
+        "source_timeframe": "1m",
+        "prepare_data_duration_seconds": 0.657672,
+        "prepared_data_cache": {
+          "enabled": true,
+          "hit": false,
+          "key": "9313c33669532097a8bfc8e5cbb3be92c901149f094c29367c190da2327d8b6d"
+        }
+      },
+      "input_hash": "4b878ec634d7bfad334902d112b9507cb60074e6f445dcd016ab18478d180c33",
+      "artifacts": [
+        "backtest-campaigns/es_spx_0dte_expiration_pressure/mwf_two_sided_fade_1030/ES/run1/limited_core_grid_test/core_grid_results.csv",
+        "backtest-campaigns/es_spx_0dte_expiration_pressure/mwf_two_sided_fade_1030/ES/run1/limited_core_grid_test/core_grid_summary.json"
+      ],
+      "core_grid_parameters": {
+        "entry.params.min_abs_move_ticks": [
+          8,
+          16,
+          24
+        ],
+        "sl.params.stop_pct": [
+          0.0015,
+          0.0025,
+          0.004
+        ],
+        "tp.params.target_r_multiple": [
+          1.0,
+          1.5,
+          2.0
+        ]
+      },
+      "rerun_override": {
+        "trigger": "current_default_benchmark_rerun",
+        "mode": "rescore_existing_stage_payload",
+        "previous_status": "failed",
+        "previous_passed": false,
+        "previous_benchmark_label": "legacy_core_requires_passing_benchmark_combo",
+        "updated_at": "2026-06-21T17:58:28"
+      }
+    },
+    {
+      "stage": "limited_monkey_test",
+      "label": "Limited Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "walk_forward_analysis",
+      "label": "Walk Forward Analysis (WFA)",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monkey_test",
+      "label": "WFA OOS Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monte_carlo",
+      "label": "WFA OOS Monte Carlo",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_core",
+      "label": "Simulated Incubation (OOS) Core",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_monkey",
+      "label": "Simulated Incubation (OOS) Monkey",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "acceptance_oos_test",
+      "label": "Acceptance OOS Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    }
+  ],
+  "effective_config_path": "backtest-campaigns/es_spx_0dte_expiration_pressure/mwf_two_sided_fade_1030/ES/run1/effective_config.yaml",
+  "rerun_override": {
+    "monkey_runs": 8000,
+    "updated_at": "2026-06-21T17:58:28",
+    "stages_rerun": [
+      "limited_core_grid_test"
+    ]
+  }
+}

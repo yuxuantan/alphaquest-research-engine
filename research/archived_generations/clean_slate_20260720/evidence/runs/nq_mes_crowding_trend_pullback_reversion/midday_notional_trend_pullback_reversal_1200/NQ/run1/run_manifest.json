@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_mes_crowding_trend_pullback_reversion",
+  "variant_id": "midday_notional_trend_pullback_reversal_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_mes_crowding_trend_pullback_reversion/midday_notional_trend_pullback_reversal_1200/variant.yaml",
+    "hash": "5ba435c39e7e508fb00c864077599830731df36b0ac3926e1121429ee9bfd59d",
+    "mechanic": {
+      "entry_module": "trend_filtered_mes_participation_crowding",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "14:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_mes_crowding_trend_pullback_reversion/variants/midday_notional_trend_pullback_reversal_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_mes_crowding_trend_pullback_reversion/midday_notional_trend_pullback_reversal_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_mes_crowding_trend_pullback_reversion/midday_notional_trend_pullback_reversal_1200/NQ/run1/source_config.yaml",
+  "config_hash": "7d9ea2cfd32801f034f28839bb1353ba2714a7763bd2aa8d973293a762f100eb",
+  "source_config_hash": "b43a1d522be8a96332002f9c632c009f4a0c306d4139784826c6046f443b1a0f",
+  "source_results_index": "campaigns/nq_mes_crowding_trend_pullback_reversion/results_index.yaml",
+  "created_at": "2026-06-23T01:52:52",
+  "updated_at": "2026-06-23T01:52:52",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

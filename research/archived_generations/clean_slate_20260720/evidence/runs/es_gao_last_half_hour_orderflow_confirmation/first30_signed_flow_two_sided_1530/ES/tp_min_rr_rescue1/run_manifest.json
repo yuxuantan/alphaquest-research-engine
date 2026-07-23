@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_gao_last_half_hour_orderflow_confirmation",
+  "variant_id": "first30_signed_flow_two_sided_1530",
+  "test_run_id": "tp_min_rr_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/campaign.yaml",
+    "hash": "9d59301fee4d1adcb323412f07890eecd85ec1ea46851bf433283ca3ca45be73"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/first30_signed_flow_two_sided_1530/variant.yaml",
+    "hash": "285481f0bc857212da3cf6aa4d46f19b6667303f3274be47cbd46e10a500ed9d",
+    "mechanic": {
+      "entry_module": "gao_last_half_hour_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_gao_last_half_hour_orderflow_confirmation/rescue_attempts/tp_min_rr_floor_rescue_1/first30_signed_flow_two_sided_1530/config.yaml",
+  "effective_config": "backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/first30_signed_flow_two_sided_1530/ES/tp_min_rr_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_gao_last_half_hour_orderflow_confirmation/first30_signed_flow_two_sided_1530/ES/tp_min_rr_rescue1/source_config.yaml",
+  "config_hash": "19338b2228caea6bcb41cd14899436884b25a0e6d36177b67a8341f51cfd54c6",
+  "source_config_hash": "112ba46849ce53ab4aa8d7d0e9a6b988438d4aef01785bf5d2d30628c0df32ff",
+  "source_results_index": "campaigns/es_gao_last_half_hour_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-19T21:44:13",
+  "updated_at": "2026-06-19T21:44:13",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

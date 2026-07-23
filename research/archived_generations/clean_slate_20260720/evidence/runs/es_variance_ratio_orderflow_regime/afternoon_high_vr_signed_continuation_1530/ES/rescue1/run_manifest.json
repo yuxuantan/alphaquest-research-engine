@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_variance_ratio_orderflow_regime",
+  "variant_id": "afternoon_high_vr_signed_continuation_1530",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_variance_ratio_orderflow_regime/afternoon_high_vr_signed_continuation_1530/variant.yaml",
+    "hash": "21fbdfa72fac93cc791a279464830aa3c6b109def6a829c4177f4030cd04f7f6",
+    "mechanic": {
+      "entry_module": "variance_ratio_orderflow_regime",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_variance_ratio_orderflow_regime/rescue_attempts/parameter_space_rescue_1/afternoon_high_vr_signed_continuation_1530/config.yaml",
+  "effective_config": "backtest-campaigns/es_variance_ratio_orderflow_regime/afternoon_high_vr_signed_continuation_1530/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_variance_ratio_orderflow_regime/afternoon_high_vr_signed_continuation_1530/ES/rescue1/source_config.yaml",
+  "config_hash": "63ab09045d489a2964cc4f02cfc492e107fe999f28f153065e5fcfcd7ddf44ac",
+  "source_config_hash": "5b43f32e63bea8b432a84fd0064530a1380fa6a28a1e91dec0e79b4a649d4b99",
+  "source_results_index": "campaigns/es_variance_ratio_orderflow_regime/results_index.yaml",
+  "created_at": "2026-06-19T21:02:54",
+  "updated_at": "2026-06-19T21:02:54",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

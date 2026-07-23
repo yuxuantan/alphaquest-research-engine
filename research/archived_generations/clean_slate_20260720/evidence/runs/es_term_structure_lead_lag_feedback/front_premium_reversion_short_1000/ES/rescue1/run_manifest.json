@@ -1,0 +1,58 @@
+{
+  "campaign_id": "es_term_structure_lead_lag_feedback",
+  "variant_id": "front_premium_reversion_short_1000",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_term_structure_lead_lag_1m_20110311_20260316_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_term_structure_lead_lag_1m_20110311_20260316_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_term_structure_lead_lag_feedback/front_premium_reversion_short_1000/variant.yaml",
+    "hash": "0028586095330bbde377b75b2c45178296057d0b7ee59cc0c5b1a686e420cf6f",
+    "mechanic": {
+      "entry_module": "es_term_structure_lead_lag",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "11:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_term_structure_lead_lag_feedback/rescue_attempts/parameter_space_rescue_1/front_premium_reversion_short_1000/config.yaml",
+  "config_hash": "1f182b7af86092f598882854a2439f92d5570afe2d4b3e0276cc4c6e7a9c3fcd",
+  "created_at": "2026-06-16T15:33:28",
+  "updated_at": "2026-06-16T15:33:28",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_term_structure_lead_lag_feedback/front_premium_reversion_short_1000/ES/rescue1/effective_config.yaml"
+}

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_spy_turnover_orderflow_attention",
+  "variant_id": "spy_1d_volume_attention_continuation_1530",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_spy_turnover_orderflow_attention/spy_1d_volume_attention_continuation_1530/variant.yaml",
+    "hash": "551a74455299bfdc0855f32664a2af76138e59d168a19d664c30d09fe9766887",
+    "mechanic": {
+      "entry_module": "spy_turnover_orderflow_attention",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_spy_turnover_orderflow_attention/rescue_attempts/parameter_space_rescue_1/spy_1d_volume_attention_continuation_1530/config.yaml",
+  "effective_config": "backtest-campaigns/es_spy_turnover_orderflow_attention/spy_1d_volume_attention_continuation_1530/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_spy_turnover_orderflow_attention/spy_1d_volume_attention_continuation_1530/ES/rescue1/source_config.yaml",
+  "config_hash": "ce5b7d82d92d4729a355992bede4b96e5d4e387b62b6e840d9cbaceade9b9f64",
+  "source_config_hash": "78db8d7a05eed9d89c9137ce88c073017aa342bfbf47c21174502464b202570a",
+  "source_results_index": "campaigns/es_spy_turnover_orderflow_attention/results_index.yaml",
+  "created_at": "2026-06-20T06:23:15",
+  "updated_at": "2026-06-20T06:23:15",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,147 @@
+{
+  "campaign_id": "nq_nikkei225_close_spillover",
+  "variant_id": "nikkei_1d_strength_long_1000",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_nikkei225_close_spillover/nikkei_1d_strength_long_1000/variant.yaml",
+    "hash": "76c4596339a525307bd5e3c451116e1e29652bffdbf02da1cab1df73adaa7367",
+    "mechanic": {
+      "entry_module": "nq_nikkei225_close_spillover",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_path": "backtest-campaigns/nq_nikkei225_close_spillover/nikkei_1d_strength_long_1000/NQ/run1/effective_config.yaml",
+  "effective_config_path": "backtest-campaigns/nq_nikkei225_close_spillover/nikkei_1d_strength_long_1000/NQ/run1/effective_config.yaml",
+  "source_config_path": "campaigns/nq_nikkei225_close_spillover/variants/nikkei_1d_strength_long_1000/config.yaml",
+  "source_config_snapshot_path": "backtest-campaigns/nq_nikkei225_close_spillover/nikkei_1d_strength_long_1000/NQ/run1/source_config.yaml",
+  "config_hash": "020816a83cde93126d3f2e23236c7863e4fcf1431b867dabf6a9cde8fe6bcfbd",
+  "source_config_hash": "b4e80e8841dc7df588c309e12df3085141363fdafd5415fc77f9b234ae29dc6f",
+  "output_dir": "backtest-campaigns/nq_nikkei225_close_spillover/nikkei_1d_strength_long_1000/NQ/run1",
+  "created_at": "2026-07-01T03:09:19",
+  "updated_at": "2026-07-01T03:09:19",
+  "skip_validation": false,
+  "fast_runtime_defaults": false,
+  "passed": false,
+  "halted": true,
+  "stages": [
+    {
+      "stage": "limited_core_grid_test",
+      "label": "Limited Core Grid Test",
+      "status": "error",
+      "passed": false,
+      "error": "Unsupported data.feature_set: data/external/nq_nikkei225_spillover_features_20110103_20260612.csv. Expected one of ['full', 'intraday_capitulation_mr', 'none', 'opening_range', 'pdh_pdl_sweep'].",
+      "criteria": [
+        {
+          "metric": "summary.total_combinations_tested",
+          "actual": null,
+          "expected": {
+            "valid_parameter_combination_count": "1 fixed combo or 8-120 tunable combos"
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.percentage_profitable_iterations",
+          "actual": null,
+          "expected": {
+            "min": 0.7
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.apex_rule_violating_iterations",
+          "actual": null,
+          "expected": {
+            "max": 0
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "stage": "limited_monkey_test",
+      "label": "Limited Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "walk_forward_analysis",
+      "label": "Walk Forward Analysis (WFA)",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monkey_test",
+      "label": "WFA OOS Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monte_carlo",
+      "label": "WFA OOS Monte Carlo",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_core",
+      "label": "Simulated Incubation (OOS) Core",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_monkey",
+      "label": "Simulated Incubation (OOS) Monkey",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "acceptance_oos_test",
+      "label": "Acceptance OOS Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    }
+  ],
+  "source_results_index_path": "campaigns/nq_nikkei225_close_spillover/results_index.yaml"
+}

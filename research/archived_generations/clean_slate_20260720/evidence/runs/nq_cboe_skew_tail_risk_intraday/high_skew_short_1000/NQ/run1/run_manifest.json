@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_cboe_skew_tail_risk_intraday",
+  "variant_id": "high_skew_short_1000",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_cboe_skew_tail_risk_intraday/high_skew_short_1000/variant.yaml",
+    "hash": "a84ac9a9fe88e1321c310e2ffce34dcdfc408894e3e56873e2c0736f86c61d3b",
+    "mechanic": {
+      "entry_module": "cboe_skew_tail_risk",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_cboe_skew_tail_risk_intraday/variants/high_skew_short_1000/config.yaml",
+  "effective_config": "backtest-campaigns/nq_cboe_skew_tail_risk_intraday/high_skew_short_1000/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_cboe_skew_tail_risk_intraday/high_skew_short_1000/NQ/run1/source_config.yaml",
+  "config_hash": "ca3d65a0d0dac02f8f5734d80ee90b134409819a6e8ba791145f0206146fddae",
+  "source_config_hash": "07336df2b95cf35cdf379db759da12fe83481185ffa180d20fbc1ca45aa1ca6b",
+  "source_results_index": "campaigns/nq_cboe_skew_tail_risk_intraday/results_index.yaml",
+  "created_at": "2026-06-30T09:42:34",
+  "updated_at": "2026-06-30T09:42:34",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

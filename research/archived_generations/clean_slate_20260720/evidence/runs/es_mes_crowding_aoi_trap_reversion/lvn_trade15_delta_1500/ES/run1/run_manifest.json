@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_mes_crowding_aoi_trap_reversion",
+  "variant_id": "lvn_trade15_delta_1500",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_crowding_vap_aoi_1m_20190506_20250529_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_mes_crowding_vap_aoi_1m_20190506_20250529_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_mes_crowding_aoi_trap_reversion/lvn_trade15_delta_1500/variant.yaml",
+    "hash": "9e0ed0ba93aecefb3b341f75ca30bb69aed3ee5606ed0380771d642ff0ce507d",
+    "mechanic": {
+      "entry_module": "mes_crowding_aoi_trap",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_mes_crowding_aoi_trap_reversion/variants/lvn_trade15_delta_1500/config.yaml",
+  "effective_config": "backtest-campaigns/es_mes_crowding_aoi_trap_reversion/lvn_trade15_delta_1500/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_mes_crowding_aoi_trap_reversion/lvn_trade15_delta_1500/ES/run1/source_config.yaml",
+  "config_hash": "0e7198224cb5a5e18576f2af2999df68e05f4b1f224ebcbc50283681b5972e54",
+  "source_config_hash": "dbdfdb310985884f3f3a0ce75fb8de85cbe2f34b9adca32dcfdd1e7216227251",
+  "source_results_index": "campaigns/es_mes_crowding_aoi_trap_reversion/results_index.yaml",
+  "created_at": "2026-06-22T17:57:06",
+  "updated_at": "2026-06-22T17:57:06",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

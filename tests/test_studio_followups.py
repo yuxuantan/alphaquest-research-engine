@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import UTC, date, datetime
 import hashlib
 import json
@@ -14,8 +15,13 @@ from alphaquest.studio.followups import (
     FollowUpAttemptRequestV1,
     FollowUpAttemptService,
     MechanicParameterPatchV1,
+    _apply_dataset_refresh,
+    _apply_parameter_declaration,
+    _attempt_test_data_windows,
     _config_mechanic_signature,
 )
+from alphaquest.authoring.models import DatasetManifestV1, EventExecutionSourceV1
+from alphaquest.strategy_certification import get_strategy_certification
 from alphaquest.studio.jobs import SQLiteJobQueue
 
 
@@ -322,6 +328,23 @@ def test_replication_is_a_new_complete_immutable_identity_and_never_edits_origin
     assert f"follow_up_attempt/{second.attempt_id}" in ledger
 
 
+def test_attempt_listing_can_skip_expensive_dataset_bindings(tmp_path, monkeypatch):
+    _workspace(tmp_path)
+    service = _service(tmp_path, monkeypatch)
+    monkeypatch.setattr(
+        service,
+        "_attempt_dataset_bindings",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("dataset bindings should not be loaded")
+        ),
+    )
+
+    attempts = service.list_attempts("demo", include_dataset_bindings=False)
+
+    assert [item["attempt_id"] for item in attempts] == ["original"]
+    assert "dataset_bindings" not in attempts[0]
+
+
 def test_failed_preflight_leaves_no_follow_up_definition(tmp_path, monkeypatch):
     campaign_root = _workspace(tmp_path)
     monkeypatch.setattr(
@@ -374,9 +397,236 @@ def test_data_refresh_requires_pass_governed_manifest_and_changes_only_declared_
         assert cfg["data"]["raw_csv"] == "research/datasets/bars_v2/bars.csv"
         assert cfg["strategy"]["entry"]["params"]["signal_time"] == "09:35:00"
 
+    attempts = service.list_attempts("demo")
+    original = next(item for item in attempts if item["attempt_id"] == "original")
+    refreshed = next(item for item in attempts if item["attempt_id"] == result.attempt_id)
+    assert len(original["dataset_bindings"]) == len(VARIANTS)
+    assert len(refreshed["dataset_bindings"]) == len(VARIANTS)
+    assert {
+        (
+            item["dataset_id"],
+            item["source_type"],
+            item["quality_verdict"],
+            item["dataset_change"],
+        )
+        for item in original["dataset_bindings"]
+    } == {("bars_v1", "csv", "PASS", "original")}
+    assert {
+        (
+            item["dataset_id"],
+            item["parent_dataset_id"],
+            item["dataset_change"],
+        )
+        for item in refreshed["dataset_bindings"]
+    } == {("bars_v2", "bars_v1", "changed")}
+    assert all(
+        len(str(item["input_data_hash"])) == 64
+        for item in refreshed["dataset_bindings"]
+    )
+    assert all(
+        item["coverage_start"] == "2021-01-01T09:30:00-04:00"
+        for item in refreshed["dataset_bindings"]
+    )
+    assert all(
+        len(item["test_data_windows"]) == 9
+        for item in original["dataset_bindings"]
+    ), [item["test_data_windows"] for item in original["dataset_bindings"]]
+    for item in original["dataset_bindings"]:
+        windows = {row["stage"]: row for row in item["test_data_windows"]}
+        assert windows["mechanics_validation"]["planned_start"] == "2020-01-01"
+        assert (
+            date.fromisoformat(windows["walk_forward_analysis"]["planned_end"])
+            < date.fromisoformat(windows["simulated_incubation_core"]["test_start"])
+            < date.fromisoformat(windows["acceptance_oos_test"]["test_start"])
+        )
+        assert windows["simulated_incubation_core"]["test_end"] == "2025-06-29"
+        assert windows["acceptance_oos_test"]["test_start"] == "2025-06-30"
+    assert all(
+        len(item["test_data_windows"]) == 9
+        for item in refreshed["dataset_bindings"]
+    )
+    for item in refreshed["dataset_bindings"]:
+        windows = {row["stage"]: row for row in item["test_data_windows"]}
+        assert windows["mechanics_validation"]["planned_start"] == "2021-01-01"
+        assert windows["simulated_incubation_core"]["status"] == "unavailable"
+        assert windows["simulated_incubation_monkey"]["status"] == "unavailable"
+        assert windows["acceptance_oos_test"]["status"] == "planned"
+
     _dataset(tmp_path, "bars_bad", quality="NEEDS MANUAL REVIEW", start="2022-01-01")
     with pytest.raises(ValueError, match="quality verdict PASS"):
         service.create(_request("data_refresh", dataset_id="bars_bad"))
+
+
+def test_attempt_test_windows_merge_resolved_and_actual_evidence(tmp_path):
+    campaign_root = _workspace(tmp_path)
+    config = yaml.safe_load(
+        (campaign_root / "variants/v01/config.yaml").read_text(encoding="utf-8")
+    )
+    validation_dir = Path(
+        config["research_metadata"]["validation_gate"]["evidence_dir"]
+    )
+    source_run = tmp_path / "mechanics-source"
+    validation_dir.mkdir(parents=True)
+    source_run.mkdir()
+    (validation_dir / "metadata.json").write_text(
+        json.dumps({"source_run_dir": str(source_run)}),
+        encoding="utf-8",
+    )
+    (source_run / "metrics.json").write_text(
+        json.dumps(
+            {
+                "data_subset": {
+                    "start_date": "2020-01-01",
+                    "end_date": "2020-01-08",
+                }
+            }
+        ),
+        encoding="utf-8",
+    )
+    (source_run / "session_audits.csv").write_text(
+        "session_date,trades\n2020-01-02,1\n2020-01-07,2\n",
+        encoding="utf-8",
+    )
+
+    evidence_root = tmp_path / "research/evidence/runs"
+    run_root = evidence_root / "demo/v01/ES/run1"
+    core_dir = run_root / "limited_core_grid_test"
+    core_dir.mkdir(parents=True)
+    (core_dir / "core_grid_summary.json").write_text(
+        json.dumps(
+            {
+                "resolved_data_subset": {
+                    "start_date": "2020-02-03",
+                    "end_date": "2021-07-30",
+                },
+                "actual_data_period": {
+                    "first_timestamp": "2020-02-03T09:30:00-05:00",
+                    "last_timestamp": "2021-07-30T10:59:00-04:00",
+                    "strategy_rows": 25000,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    wfa_dir = run_root / "walk_forward_analysis"
+    wfa_dir.mkdir(parents=True)
+    (wfa_dir / "wfa_results.csv").write_text(
+        "test_start,test_end\n2021-01-01,2021-12-31\n2022-01-01,2022-12-30\n",
+        encoding="utf-8",
+    )
+
+    windows = _attempt_test_data_windows(
+        config,
+        project_root=tmp_path,
+        evidence_root=evidence_root,
+    )
+    by_stage = {row["stage"]: row for row in windows}
+
+    assert by_stage["mechanics_validation"]["resolved_start"] == "2020-01-01"
+    assert by_stage["mechanics_validation"]["actual_start"] == "2020-01-02"
+    assert by_stage["mechanics_validation"]["actual_end"] == "2020-01-07"
+    assert by_stage["mechanics_validation"]["actual_sessions"] == 2
+    assert by_stage["limited_core_grid_test"]["resolved_start"] == "2020-02-03"
+    assert by_stage["limited_core_grid_test"]["actual_rows"] == 25000
+    assert by_stage["wfa_oos_monkey_test"]["actual_start"] == "2021-01-01"
+    assert by_stage["wfa_oos_monkey_test"]["actual_end"] == "2022-12-30"
+    assert by_stage["wfa_oos_monkey_test"]["actual_windows"] == 2
+
+
+def test_event_data_refresh_replaces_bars_and_event_source_atomically() -> None:
+    project_root = Path(__file__).resolve().parents[1]
+    certification = get_strategy_certification("yush_orderflow_range", project_root)
+    defaults = {name: parameter.default for name, parameter in certification.parameters.items()}
+    event_source = EventExecutionSourceV1(
+        source="sierra_scid_records",
+        raw_dir="/tmp/governed-scid",
+        raw_manifest="research/datasets/sierra/raw_manifest.json",
+        raw_manifest_sha256="a" * 64,
+        session_levels="research/datasets/sierra/session_levels.parquet",
+        session_levels_sha256="b" * 64,
+        quality_manifest="research/datasets/sierra/event_capabilities.csv",
+        quality_manifest_sha256="c" * 64,
+        concordance_report="research/datasets/sierra/concordance.json",
+        concordance_report_sha256="d" * 64,
+        required_capability="full_strategy_events_extrapolated",
+        ineligible_session_policy="blackout",
+        roll_calendar="data/reference/ES/roll.csv",
+        roll_calendar_sha256="e" * 64,
+        root_symbol="ES",
+        rth_end="11:00:00",
+    )
+    manifest = DatasetManifestV1(
+        dataset_id="sierra",
+        source="parquet",
+        path="research/datasets/sierra/bars.parquet",
+        symbol="ES",
+        timeframe="1m",
+        timezone="UTC",
+        exchange_timezone="America/New_York",
+        timestamp_semantics="bar_open",
+        source_timestamp_semantics="bar_open",
+        source_sha256="f" * 64,
+        canonical_sha256="f" * 64,
+        coverage_start="2011-08-15T13:30:00+00:00",
+        coverage_end="2026-05-29T14:59:00+00:00",
+        roll_policy="explicit governed calendar",
+        continuous_contract="explicit_roll_calendar",
+        contract_column="contract_symbol",
+        source_contract_column="contract_symbol",
+        contract_count=60,
+        roll_calendar="data/reference/ES/roll.csv",
+        roll_calendar_sha256="e" * 64,
+        row_count=100,
+        quality_verdict="PASS",
+        event_source=event_source,
+    )
+    cfg = {
+        "campaign_id": "demo",
+        "variant_id": "v01",
+        "symbol": "ES",
+        "timeframe": "1m",
+        "dataset_id": "old",
+        "engine_lane": "canonical_event_replay",
+        "data": {
+            "dataset_id": "old",
+            "source": "parquet",
+            "raw_parquet": "old.parquet",
+            "execution_data": {
+                "source": "databento_zip_trades",
+                "archive": "old.zip",
+            },
+        },
+        "strategy": {
+            "entry": {
+                "module": certification.entry_module,
+                "params": {"mechanics": deepcopy(defaults)},
+            },
+            "event": {
+                "module": certification.strategy_id,
+                "params": deepcopy(defaults),
+            },
+        },
+        "research_metadata": {"validation_gate": {}},
+        "core": {},
+        "core_grid": {},
+        "monkey": {},
+        "wfa": {},
+    }
+
+    changes = _apply_dataset_refresh(
+        cfg,
+        manifest,
+        variant_id="v01",
+        project_root=project_root,
+    )
+
+    assert cfg["dataset_id"] == "sierra"
+    assert cfg["data"]["raw_parquet"] == "research/datasets/sierra/bars.parquet"
+    assert cfg["data"]["execution_data"] == event_source.model_dump(
+        mode="json", exclude_none=True
+    )
+    assert cfg["strategy_certification"]["implementation_version"] == 4
+    assert any(item["scope"] == "data.execution_data" for item in changes)
 
 
 def test_follow_up_paths_honor_configured_evidence_and_artifact_roots(tmp_path, monkeypatch):
@@ -492,6 +742,46 @@ def test_pre_pnl_correction_records_explicit_scalar_diff_and_is_forbidden_after_
                 mechanic_patches=[patch],
             )
         )
+
+
+def test_pre_pnl_event_parameter_declaration_writes_one_core_and_wfa_grid():
+    project_root = Path(__file__).resolve().parents[1]
+    certification = get_strategy_certification("yush_orderflow_range", project_root)
+    defaults = {name: parameter.default for name, parameter in certification.parameters.items()}
+    cfg = {
+        "campaign_id": "demo",
+        "variant_id": "v01",
+        "engine_lane": "canonical_event_replay",
+        "strategy": {
+            "entry": {
+                "module": certification.entry_module,
+                "params": {"mechanics": deepcopy(defaults)},
+            },
+            "event": {"module": certification.strategy_id, "params": deepcopy(defaults)},
+        },
+        "core_grid": {"parameters": {}},
+        "wfa": {"parameters": {}},
+        "research_metadata": {"validation_gate": {"parameter_mode": "declared_defaults"}},
+    }
+
+    changes = _apply_parameter_declaration(
+        cfg,
+        {
+            "max_aoi_width_points": [3, 4, 5, 6],
+            "entry_offset_ticks": [0, 1, 2, 3, 4],
+            "stop_offset_ticks": [0, 1, 2, 3, 4],
+        },
+        project_root=project_root,
+    )
+
+    assert cfg["core_grid"]["parameters"] == cfg["wfa"]["parameters"]
+    assert list(cfg["core_grid"]["parameters"]) == [
+        "event.params.max_aoi_width_points",
+        "event.params.entry_offset_ticks",
+        "event.params.stop_offset_ticks",
+    ]
+    assert cfg["strategy_certification"]["implementation_version"] == 4
+    assert len(changes) == 3
 
 
 def test_pre_pnl_correction_rejects_reserved_job_without_run_files(tmp_path, monkeypatch):
@@ -667,7 +957,8 @@ def test_queueing_one_attempt_is_idempotent_but_different_attempts_are_distinct(
 
     assert [job.job_id for job in first] == [job.job_id for job in repeated]
     assert all(job.payload["attempt_id"] == attempt.attempt_id for job in first)
-    assert len({job.idempotency_key for job in first}) == 5
+    assert len({job.idempotency_key for job in first}) == 1
+    assert first[0].payload["variant_id"] == "v05"
 
 
 def test_original_compiled_hash_drift_blocks_follow_up_before_source_writes(tmp_path, monkeypatch):

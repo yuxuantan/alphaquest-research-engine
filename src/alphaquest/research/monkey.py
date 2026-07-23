@@ -15,6 +15,7 @@ from alphaquest.backtest.engine import BacktestEngine
 from alphaquest.backtest.fills import entry_price, exit_price
 from alphaquest.backtest.metrics import benchmark, calculate_metrics, daily_results
 from alphaquest.backtest.sizing import size_position, tick_value_from_core
+from alphaquest.research.execution import run_research_backtest
 from alphaquest.utils.progress import progress_bar
 from alphaquest.utils.reports import market_timezone, write_report_csv
 from alphaquest.utils.time import parse_time
@@ -55,7 +56,12 @@ def run_monkey(
 
     market = data.sort_values("timestamp").reset_index(drop=True)
     if core_trades is None:
-        core_result = BacktestEngine(base_config).run(market, detail_data=detail_data)
+        core_result = run_research_backtest(
+            base_config,
+            market,
+            detail_data=detail_data,
+            bar_engine_cls=BacktestEngine,
+        )
         core_trades = core_result["trades"]
         core_metrics = core_result["metrics"]
     else:

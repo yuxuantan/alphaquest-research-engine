@@ -97,6 +97,28 @@ def test_wfa_runs():
         {"min_trade_count": 0, "max_drawdown": 99999},
     )
     assert "windows" in summary
+    assert summary["parameter_mode"] == "predeclared_optimization"
+
+
+def test_wfa_runs_fixed_config_when_parameter_grid_is_empty():
+    df, _, _ = clean_data(DATA_CFG)
+    data = build_features(df, DATA_CFG)
+
+    results, summary = run_wfa(
+        data,
+        BASE_CFG,
+        {
+            "train_months": 1,
+            "test_months": 1,
+            "step_months": 1,
+            "parameters": {},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+    )
+
+    assert not results.empty
+    assert summary["parameter_mode"] == "fixed_config"
+    assert all(params == {} for params in results["selected_params"])
 
 
 def test_wfa_uses_own_parameter_space(monkeypatch):
@@ -1010,6 +1032,17 @@ def test_wfa_requires_own_parameter_space():
             {"train_months": 1, "test_months": 1, "step_months": 1},
             {"min_trade_count": 0, "max_drawdown": 99999},
         )
+
+
+def test_wfa_accepts_explicit_empty_parameter_space_as_fixed_config():
+    grid = wfa_module._wfa_grid_config({"parameters": {}, "objective": "MAR"})
+
+    assert grid["parameters"] == {}
+
+
+def test_wfa_rejects_non_mapping_parameter_space():
+    with pytest.raises(ValueError, match="wfa.parameters must be a mapping"):
+        wfa_module._wfa_grid_config({"parameters": []})
 
 
 def test_wfa_rejects_unknown_objective():

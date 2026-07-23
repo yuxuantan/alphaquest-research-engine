@@ -1,0 +1,197 @@
+{
+  "purpose": "fixed_config_mechanics_cross_check",
+  "parameter_source": "strategy section in effective config",
+  "uses_grid_selected_params": false,
+  "trade_log_csv": "backtest-campaigns/es_low_toxicity_orderflow_extension_fade/three_slot_down_extension_fade_long/ES/run1/limited_core_grid_test/fixed_config_core_trade_log.csv",
+  "daily_results_csv": "backtest-campaigns/es_low_toxicity_orderflow_extension_fade/three_slot_down_extension_fade_long/ES/run1/limited_core_grid_test/fixed_config_core_daily_results.csv",
+  "metrics": {
+    "total_trades": 174,
+    "trades_per_year": 113.4672865910359,
+    "net_profit": -9088.75,
+    "profit_factor": 0.5575097370983447,
+    "expectancy_r": -0.18154524070842226,
+    "max_drawdown": 9313.75,
+    "max_drawdown_pct": 0.06209166666666667,
+    "cagr": -0.03994068571814868,
+    "mar": -0.6432535614250223,
+    "worst_day": -802.5,
+    "best_day": 677.5,
+    "best_day_concentration": 0.0,
+    "max_consecutive_losses": 11,
+    "positive_month_rate": 0.2,
+    "win_rate": 0.3793103448275862,
+    "average_trade": -52.23419540229885,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "diagnostics": {
+    "preflight": {
+      "rows": 29172,
+      "timeframe_minutes": 5.0,
+      "warnings": [],
+      "required_columns": [
+        "close",
+        "high",
+        "low",
+        "open",
+        "session_date",
+        "timestamp"
+      ]
+    },
+    "signals_generated": 174,
+    "entries_opened": 174,
+    "trades_closed": 174,
+    "rejects": {
+      "missing_stop": 0,
+      "target_already_reached": 0,
+      "position_sizing": 0,
+      "daily_risk_lockout": 0,
+      "apex_latest_entry_time": 0,
+      "event_no_trade_window": 0
+    },
+    "exits": {
+      "stop": 58,
+      "eod_flatten": 99,
+      "target": 17
+    },
+    "stop_target_conflicts": 0,
+    "detail_conflicts_resolved": 0,
+    "detail_conflicts_unresolved": 0,
+    "apex": {
+      "enabled": true,
+      "timezone": "America/New_York",
+      "latest_flat_time": "16:59:59",
+      "force_flatten_time": "16:58:30",
+      "latest_entry_time": "16:45:00",
+      "pending_orders_cancelled": 0,
+      "pending_order_after_flatten_deadline": 0,
+      "entry_after_latest_entry_time": 0,
+      "exit_after_flatten_deadline": 0,
+      "position_after_flatten_deadline": 0,
+      "overnight_position_violations": 0,
+      "forced_flatten_trades": 0,
+      "rule_violations": 0
+    },
+    "event_filters": {
+      "enabled": false,
+      "timezone": "America/New_York",
+      "windows_configured": 0,
+      "entry_rejections": 0,
+      "pending_orders_cancelled": 0,
+      "flatten_trades": 0,
+      "flatten_trades_by_window": {}
+    }
+  },
+  "strategy": {
+    "entry": {
+      "module": "trade_orderflow_multi_state_rank",
+      "params": {
+        "bar_interval_minutes": 5,
+        "filter_mode": "rank",
+        "threshold_side": "le",
+        "rank_window": 63,
+        "rank_min_periods": 21,
+        "rank_threshold": 0.55,
+        "min_return_ticks": 3,
+        "stop_pct": 0.004,
+        "target_r_multiple": 1.5,
+        "max_trades_per_day": 3,
+        "slots": [
+          {
+            "slot_id": "d1030",
+            "entry_time": "10:30:00",
+            "flatten_time": "12:00:00",
+            "feature_column": "trade_orderflow_abs_imbalance_3",
+            "rank_column": "trade_orderflow_abs_imbalance_3_rank63",
+            "return_column": "trade_orderflow_return_ticks_3",
+            "return_mode": "down",
+            "direction": "long"
+          },
+          {
+            "slot_id": "d1230",
+            "entry_time": "12:30:00",
+            "flatten_time": "14:00:00",
+            "feature_column": "trade_orderflow_abs_imbalance_6",
+            "rank_column": "trade_orderflow_abs_imbalance_6_rank63",
+            "return_column": "trade_orderflow_return_ticks_6",
+            "return_mode": "down",
+            "direction": "long"
+          },
+          {
+            "slot_id": "d1400",
+            "entry_time": "14:00:00",
+            "flatten_time": "15:30:00",
+            "feature_column": "trade_orderflow_abs_imbalance_12",
+            "rank_column": "trade_orderflow_abs_imbalance_12_rank63",
+            "return_column": "trade_orderflow_return_ticks_12",
+            "return_mode": "down",
+            "direction": "long"
+          }
+        ]
+      }
+    },
+    "sl": {
+      "module": "percent_from_entry",
+      "params": {
+        "stop_pct": 0.004,
+        "round_to_tick": true
+      }
+    },
+    "tp": {
+      "module": "fixed_r",
+      "params": {
+        "target_r_multiple": 1.5
+      }
+    },
+    "flatten_time": "15:55:00"
+  },
+  "core": {
+    "data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2026-06-09",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "initial_balance": 150000,
+    "tick_size": 0.25,
+    "point_value": 50.0,
+    "tick_value": 12.5,
+    "commission_per_contract": 2.5,
+    "slippage_ticks": 1,
+    "position_sizing": {
+      "mode": "fixed_contracts",
+      "contracts": 1
+    },
+    "daily_loss_limit": 4000,
+    "daily_profit_stop": 1000000000,
+    "flatten_time": "15:55:00",
+    "max_trades_per_day": 3
+  },
+  "equity_curve_csv": "backtest-campaigns/es_low_toxicity_orderflow_extension_fade/three_slot_down_extension_fade_long/ES/run1/limited_core_grid_test/fixed_config_core_equity_curve.csv",
+  "equity_curve_html": "backtest-campaigns/es_low_toxicity_orderflow_extension_fade/three_slot_down_extension_fade_long/ES/run1/limited_core_grid_test/fixed_config_core_equity_curve.html",
+  "equity_curve_points": 175,
+  "configured_data_subset": {},
+  "resolved_data_subset": {
+    "start_date": "2011-02-22",
+    "end_date": "2012-09-06",
+    "session_labels": [
+      "RTH"
+    ]
+  },
+  "data_subset": {
+    "start_date": "2011-02-22",
+    "end_date": "2012-09-06",
+    "session_labels": [
+      "RTH"
+    ]
+  },
+  "actual_data_period": {
+    "first_timestamp": "2011-02-22 09:30:00-05:00",
+    "last_timestamp": "2012-09-06 15:59:00-04:00",
+    "rows": 145860,
+    "strategy_rows": 29172,
+    "timeframe": "5m",
+    "source_timeframe": "1m"
+  }
+}

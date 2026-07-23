@@ -72,12 +72,13 @@ def write_validation_run(
         ),
         EXIT_AUDITS_FILENAME: records_to_frame(exit_audits, EXIT_AUDIT_COLUMNS),
     }
-    frames[EXIT_AUDITS_FILENAME] = enrich_exit_audits(
-        frames[TRADES_FILENAME],
-        frames[EXIT_AUDITS_FILENAME],
-        frames[TICK_WINDOWS_FILENAME],
-        tick_size=_float_or_none(metadata_record.get("tick_size")),
-    )
+    if str(metadata_record.get("validation_lane") or "bar").lower() != "event_replay":
+        frames[EXIT_AUDITS_FILENAME] = enrich_exit_audits(
+            frames[TRADES_FILENAME],
+            frames[EXIT_AUDITS_FILENAME],
+            frames[TICK_WINDOWS_FILENAME],
+            tick_size=_float_or_none(metadata_record.get("tick_size")),
+        )
     frames[VALIDATION_CHECKS_FILENAME] = run_validation_checks(
         frames[TRADES_FILENAME],
         frames[CONDITION_SNAPSHOTS_FILENAME],
@@ -85,6 +86,7 @@ def write_validation_run(
         frames[TICK_WINDOWS_FILENAME],
         frames[EXIT_AUDITS_FILENAME],
         metadata_record,
+        event_transitions=frames[EVENT_TRANSITIONS_FILENAME],
     )
 
     for filename, frame in frames.items():

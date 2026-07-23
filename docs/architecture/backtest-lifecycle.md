@@ -1,7 +1,7 @@
 # Backtest Lifecycle
 
 1. Author one economic hypothesis and complete a ledger-backed duplicate-edge review.
-2. Predeclare exactly five materially different variants, parameter spaces, and the rescue policy.
+2. Predeclare one initial variant and its parameter space. A campaign may grow to at most five variants, one at a time, only after the prior variant is manually mechanics-reviewed and fails.
 3. Lock config and mechanics, then run fail-closed data-lineage preflight.
 4. Execute a small deterministic mechanics-validation slice without changing fills or PnL logic.
 5. Export bar evidence for bar strategies or canonical event transitions for event-replay strategies.

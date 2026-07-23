@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_prior_lvn_orderflow_rejection",
+  "variant_id": "midday_signed_two_sided_lvn_rejection",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_prior_lvn_orderflow_rejection/midday_signed_two_sided_lvn_rejection/variant.yaml",
+    "hash": "787f18f96a4f2ed3ddc229766bcde8aef49f65689c03dc03cca3eed1a39840bc",
+    "mechanic": {
+      "entry_module": "prior_lvn_orderflow_rejection",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_prior_lvn_orderflow_rejection/variants/midday_signed_two_sided_lvn_rejection/config.yaml",
+  "effective_config": "backtest-campaigns/es_prior_lvn_orderflow_rejection/midday_signed_two_sided_lvn_rejection/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_prior_lvn_orderflow_rejection/midday_signed_two_sided_lvn_rejection/ES/run1/source_config.yaml",
+  "config_hash": "6bc5434527c6482cce8417880985079258bee4fe58dffe9348c10879a3f4dd21",
+  "source_config_hash": "047d87b4affe090606f83905d2f08a7e6bd3c96e0f892846a68155654fba4fe7",
+  "source_results_index": "campaigns/es_prior_lvn_orderflow_rejection/results_index.yaml",
+  "created_at": "2026-06-20T02:49:40",
+  "updated_at": "2026-06-20T02:49:40",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

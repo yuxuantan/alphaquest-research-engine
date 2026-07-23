@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_cboe_vix_term_structure_intraday",
+  "variant_id": "curve_flattening_short_1200",
+  "test_run_id": "benchmark_table_rerun1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_cboe_vix_term_structure_intraday/curve_flattening_short_1200/variant.yaml",
+    "hash": "59068361e363394383c50900b5fbc1616db9a2c86eb3adf718eebf847da4f2ab",
+    "mechanic": {
+      "entry_module": "cboe_vix_term_structure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "research_artifacts/benchmark_table_rerun_configs/es_cboe_vix_term_structure_curve_flattening_short_1200_benchmark_table_rerun1.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_cboe_vix_term_structure_intraday/curve_flattening_short_1200/ES/benchmark_table_rerun1/source_config.yaml",
+  "config_hash": "1dbb08c4ba70c4d951a0657cc3a4a471b7ed42bdc6654bfdb01d9fcd65c0857f",
+  "source_config_hash": "c9cabb9dab0b9a07fccd6e7412d0a48901ec1fa4db4e8905b790ab383e2cb159",
+  "created_at": "2026-06-17T11:13:56",
+  "updated_at": "2026-06-21T12:49:47",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_cboe_vix_term_structure_intraday/curve_flattening_short_1200/ES/benchmark_table_rerun1/effective_config.yaml",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:49:47"
+  }
+}

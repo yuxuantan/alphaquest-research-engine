@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_labor_market_slack_state",
+  "variant_id": "low_participation_slack_short_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_labor_market_slack_state/low_participation_slack_short_1200/variant.yaml",
+    "hash": "3468df9a8c9499b8e634336d6562dae79326b95755f06dab890d4f3bfb52078f",
+    "mechanic": {
+      "entry_module": "nq_labor_market_slack_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_labor_market_slack_state/variants/low_participation_slack_short_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_labor_market_slack_state/low_participation_slack_short_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_labor_market_slack_state/low_participation_slack_short_1200/NQ/run1/source_config.yaml",
+  "config_hash": "18eef06f14391c83aa14923a8c5dd42cae8917d426c371e317e4a9e968e9b600",
+  "source_config_hash": "fc8aeccdfa931ede486a1a0b1c0bb8fcf80e958128837838a927699407c2cad4",
+  "source_results_index": "campaigns/nq_labor_market_slack_state/results_index.yaml",
+  "created_at": "2026-07-02T00:19:28",
+  "updated_at": "2026-07-02T00:19:28",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

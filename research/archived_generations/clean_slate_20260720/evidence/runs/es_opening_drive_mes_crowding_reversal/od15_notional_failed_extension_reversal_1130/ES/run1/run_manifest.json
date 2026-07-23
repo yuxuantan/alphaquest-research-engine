@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_opening_drive_mes_crowding_reversal",
+  "variant_id": "od15_notional_failed_extension_reversal_1130",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_opening_drive_mes_crowding_reversal/od15_notional_failed_extension_reversal_1130/variant.yaml",
+    "hash": "6ae9ceae283daf929b9491e5c963d8b1c3f7bdc074b84d1b15aa9b9e5443c158",
+    "mechanic": {
+      "entry_module": "opening_drive_mes_crowding_reversal",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "12:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_opening_drive_mes_crowding_reversal/variants/od15_notional_failed_extension_reversal_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_opening_drive_mes_crowding_reversal/od15_notional_failed_extension_reversal_1130/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_opening_drive_mes_crowding_reversal/od15_notional_failed_extension_reversal_1130/ES/run1/source_config.yaml",
+  "config_hash": "07edbb9499a260fb57b7004859f99427b94fea97d5f53d0b2c6eb20560fad3a5",
+  "source_config_hash": "d3f3fa2af18e440bc3ce54c5ca4ee8709d3c97bfe03aebbedab204787405fe16",
+  "source_results_index": "campaigns/es_opening_drive_mes_crowding_reversal/results_index.yaml",
+  "created_at": "2026-06-19T06:09:55",
+  "updated_at": "2026-06-19T06:09:55",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

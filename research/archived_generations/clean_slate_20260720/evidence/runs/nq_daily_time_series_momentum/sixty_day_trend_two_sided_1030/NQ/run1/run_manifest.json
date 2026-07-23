@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_daily_time_series_momentum",
+  "variant_id": "sixty_day_trend_two_sided_1030",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_daily_time_series_momentum/sixty_day_trend_two_sided_1030/variant.yaml",
+    "hash": "7515c4d4915e20b31af12622ed57d6bd4bd354d62530aec78029958249976029",
+    "mechanic": {
+      "entry_module": "daily_time_series_momentum",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_daily_time_series_momentum/variants/sixty_day_trend_two_sided_1030/config.yaml",
+  "effective_config": "backtest-campaigns/nq_daily_time_series_momentum/sixty_day_trend_two_sided_1030/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_daily_time_series_momentum/sixty_day_trend_two_sided_1030/NQ/run1/source_config.yaml",
+  "config_hash": "3147c8242319f56362ff5e3200c8ef3d37bbac7f9bdc82be3811d81fad77ef23",
+  "source_config_hash": "e3ab6d8d9cf78b8ce178d2862c70137c2ba3ed1196cec4beb7228a5786580477",
+  "source_results_index": "campaigns/nq_daily_time_series_momentum/results_index.yaml",
+  "created_at": "2026-06-23T04:33:08",
+  "updated_at": "2026-06-23T04:33:08",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -176,12 +176,21 @@ def test_campaign_context_does_not_treat_generated_evidence_as_authored_source(t
 def test_applied_repository_migration_preserves_every_registered_uid_and_path() -> None:
     root = Path(__file__).resolve().parents[1]
     manifest_path = root / "research_artifacts/migrations/research_storage_layout_20260715.json"
+    clean_slate_archive = root / "research/archived_generations/clean_slate_20260720"
+    archived = not manifest_path.is_file()
+    if archived:
+        manifest_path = clean_slate_archive / "research_artifacts/migrations/research_storage_layout_20260715.json"
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["status"] == "APPLIED_VERIFIED"
     verification = manifest["verification"]
     assert verification["failures"] == []
     assert verification["resolved_run_uids"] == verification["expected_run_uids"]
     assert verification["resolved_after_migration"] == verification["previously_resolvable_paths"]
+    if archived:
+        assert (clean_slate_archive / "campaigns/archive").is_dir()
+        assert (clean_slate_archive / "evidence/runs").is_dir()
+        assert (clean_slate_archive / "research_artifacts").is_dir()
+        return
     layout = load_storage_layout(root)
     for item in manifest["resolution_snapshot"]["paths"]:
         if item["existed_before"]:

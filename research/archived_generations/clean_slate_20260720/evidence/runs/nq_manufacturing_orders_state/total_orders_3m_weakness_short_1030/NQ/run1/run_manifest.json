@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_manufacturing_orders_state",
+  "variant_id": "total_orders_3m_weakness_short_1030",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_manufacturing_orders_state/total_orders_3m_weakness_short_1030/variant.yaml",
+    "hash": "d47c604f6b329bf33e9d6fc0f89a89f55f0943554bd24921c2a8a39a935c546b",
+    "mechanic": {
+      "entry_module": "nq_manufacturing_orders_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_manufacturing_orders_state/variants/total_orders_3m_weakness_short_1030/config.yaml",
+  "effective_config": "backtest-campaigns/nq_manufacturing_orders_state/total_orders_3m_weakness_short_1030/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_manufacturing_orders_state/total_orders_3m_weakness_short_1030/NQ/run1/source_config.yaml",
+  "config_hash": "b56bd2c667826bd8c9f64641149aebd716d193b5d7b336beb1b880fb9580bc0b",
+  "source_config_hash": "4e2e2e8604e6d6d32b1fe5bb0d3bed7c92899e2a2c1aa0224597c9bf454797ad",
+  "source_results_index": "campaigns/nq_manufacturing_orders_state/results_index.yaml",
+  "created_at": "2026-07-01T05:44:23",
+  "updated_at": "2026-07-01T05:44:23",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

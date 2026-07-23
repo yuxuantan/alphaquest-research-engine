@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_bank_credit_supply_state",
+  "variant_id": "high_total_assets_growth_long_1330",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_bank_credit_supply_state/high_total_assets_growth_long_1330/variant.yaml",
+    "hash": "937a2b21607a79f4b8fe55e02b396a29706f568cb068d7b3531d95a9a9385260",
+    "mechanic": {
+      "entry_module": "nq_bank_credit_supply_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_bank_credit_supply_state/variants/high_total_assets_growth_long_1330/config.yaml",
+  "effective_config": "backtest-campaigns/nq_bank_credit_supply_state/high_total_assets_growth_long_1330/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_bank_credit_supply_state/high_total_assets_growth_long_1330/NQ/run1/source_config.yaml",
+  "config_hash": "42b3979c11cedc4205ca2c837b7842fcbe912ada3085ff2d1fd2c3695d4a4312",
+  "source_config_hash": "5fb64e55556bd279a5057a77b6b371caf081d911f3b7b7bc88b5baf4771315bf",
+  "source_results_index": "campaigns/nq_bank_credit_supply_state/results_index.yaml",
+  "created_at": "2026-07-01T10:58:44",
+  "updated_at": "2026-07-01T10:58:44",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

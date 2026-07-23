@@ -16,9 +16,47 @@ from alphaquest.studio.worker import (
     MECHANICS_VALIDATION_RUN,
     StudioWorker,
     _campaign_config_paths,
+    _run_declared_bar_mechanics_validation,
     run_forever,
     run_once,
 )
+
+
+def test_declared_mechanics_runner_streams_structured_progress(monkeypatch, tmp_path):
+    class FakeProcess:
+        stdout = iter(
+            [
+                'ALPHAQUEST_PROGRESS {"phase":"event_replay","message":"Replaying market sessions",'
+                '"percent":50.0,"completed":5,"total":10,"unit":"sessions"}\n',
+                "/tmp/generated/core\n",
+            ]
+        )
+        stderr = iter(())
+
+        @staticmethod
+        def wait(timeout=None):
+            return 0
+
+    monkeypatch.setattr("alphaquest.studio.worker.subprocess.Popen", lambda *_args, **_kwargs: FakeProcess())
+    updates = []
+
+    result = _run_declared_bar_mechanics_validation(
+        tmp_path / "config.yaml",
+        tmp_path,
+        progress_callback=updates.append,
+    )
+
+    assert updates == [
+        {
+            "phase": "event_replay",
+            "message": "Replaying market sessions",
+            "percent": 50.0,
+            "completed": 5,
+            "total": 10,
+            "unit": "sessions",
+        }
+    ]
+    assert result["source_run_dir"] == "/tmp/generated/core"
 
 
 def _workspace(tmp_path: Path) -> tuple[Path, dict]:
@@ -309,6 +347,37 @@ def test_current_approval_hash_drift_blocks_before_attempt(tmp_path):
     assert "hash drift" in blocked.blocked_reason
 
 
+def test_worker_observes_hashes_from_explicit_project_root(tmp_path, monkeypatch):
+    campaign, _base = _workspace(tmp_path)
+    queue = SQLiteJobQueue(tmp_path / "runtime/jobs.sqlite3")
+    job = _submit(
+        queue,
+        campaign / "variants/v01/config.yaml",
+        job_type=MECHANICS_VALIDATION_RUN,
+    )
+    observed_working_directories = []
+
+    def gate(cfg, path):
+        observed_working_directories.append(Path.cwd())
+        return _gate(cfg, path)
+
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    monkeypatch.chdir(outside)
+
+    worker = StudioWorker(
+        queue,
+        project_root=tmp_path,
+        worker_id="worker-1",
+        gate_inspector=gate,
+        finalizer=_FakeFinalizer(tmp_path),
+    )
+
+    assert worker._observed_hashes(job)["input_data_hash"] == "data-locked"
+    assert observed_working_directories == [tmp_path.resolve()]
+    assert Path.cwd() == outside
+
+
 def test_bounded_worker_drain_runs_later_variant_after_scientific_failure(tmp_path):
     campaign, _base = _workspace(tmp_path)
     queue = SQLiteJobQueue(tmp_path / "runtime/jobs.sqlite3")
@@ -379,6 +448,9 @@ def test_mechanics_validation_job_generates_review_evidence_without_reserving_at
     assert completed.attempt_reserved is False
     assert completed.result["mechanics_validation_status"] == "READY_FOR_REVIEW"
     assert completed.result["candidate_artifacts_suppressed"] is True
+    assert completed.progress.phase == "ready_for_review"
+    assert completed.progress.message == "Ready for mechanics review"
+    assert completed.progress.percent == 100.0
     assert calls == [(config.resolve(), tmp_path.resolve())]
     assert [event[0] for event in finalizer.events] == [
         "MECHANICS_VALIDATION_STARTED",
@@ -386,26 +458,28 @@ def test_mechanics_validation_job_generates_review_evidence_without_reserving_at
     ]
 
 
-def test_unsupported_event_mechanics_lane_is_nmr_and_never_calls_bar_runner(tmp_path):
+def test_certified_event_mechanics_lane_runs_generic_validation_service(tmp_path):
     campaign, _base = _workspace(tmp_path)
     config = campaign / "variants/v01/config.yaml"
     cfg = yaml.safe_load(config.read_text(encoding="utf-8"))
     cfg["research_metadata"]["validation_gate"]["lane"] = "event_replay"
+    cfg["engine_lane"] = "canonical_event_replay"
     config.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
     queue = SQLiteJobQueue(tmp_path / "runtime/jobs.sqlite3")
     job = _submit(queue, config, job_type=MECHANICS_VALIDATION_RUN)
     runner_called = False
 
-    def bar_runner(*_args):
+    def event_runner(*_args):
         nonlocal runner_called
         runner_called = True
-        raise AssertionError("unsupported event lane must never call generic bar validation")
+        (tmp_path / "validation-evidence").mkdir(parents=True)
+        return {"service": "test-certified-event-runner"}
 
     completed = run_once(
         queue,
         project_root=tmp_path,
         worker_id="worker-1",
-        mechanics_runner=bar_runner,
+        mechanics_runner=event_runner,
         preflight_runner=lambda **_kwargs: {"passed": True, "failures": []},
         gate_inspector=_gate,
         finalizer=_FakeFinalizer(tmp_path),
@@ -415,9 +489,9 @@ def test_unsupported_event_mechanics_lane_is_nmr_and_never_calls_bar_runner(tmp_
     assert completed.state == OperationalState.SUCCEEDED
     assert completed.research_verdict == "NEEDS MANUAL REVIEW"
     assert completed.attempt_reserved is False
-    assert completed.result["unsupported_lane"] is True
     assert completed.result["validation_lane"] == "event_replay"
-    assert runner_called is False
+    assert completed.result["mechanics_validation_status"] == "READY_FOR_REVIEW"
+    assert runner_called is True
 
 
 def test_worker_failure_after_reservation_publishes_incomplete_nmr_without_replay(tmp_path):

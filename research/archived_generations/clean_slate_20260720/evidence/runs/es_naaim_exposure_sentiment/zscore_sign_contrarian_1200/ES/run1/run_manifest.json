@@ -1,0 +1,60 @@
+{
+  "campaign_id": "es_naaim_exposure_sentiment",
+  "variant_id": "zscore_sign_contrarian_1200",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_naaim_exposure_sentiment/zscore_sign_contrarian_1200/variant.yaml",
+    "hash": "8797f1239f7b4a73af5ab535d02f9c419e3938aa8ad7dade5e823480dc5595f8",
+    "mechanic": {
+      "entry_module": "naaim_exposure_sentiment",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_naaim_exposure_sentiment/variants/zscore_sign_contrarian_1200/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_naaim_exposure_sentiment/zscore_sign_contrarian_1200/ES/run1/source_config.yaml",
+  "config_hash": "816b2c559d226ae5794c0001d061749d32a93c95164b04b9a4246d41734edb7f",
+  "source_config_hash": "1850a1af03b9dac3fdeb7574518e45477f87e87f180a05f673fa04295ddda391",
+  "created_at": "2026-06-17T12:10:43",
+  "updated_at": "2026-06-17T12:10:43",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_naaim_exposure_sentiment/zscore_sign_contrarian_1200/ES/run1/effective_config.yaml"
+}

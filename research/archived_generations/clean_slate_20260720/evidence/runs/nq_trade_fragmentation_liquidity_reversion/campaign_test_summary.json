@@ -1,0 +1,73 @@
+{
+  "campaign_id": "nq_trade_fragmentation_liquidity_reversion",
+  "title": "NQ Trade Fragmentation Liquidity Reversion",
+  "decision": "FAIL",
+  "terminal_stage": "pre_pnl_density_screen",
+  "completed_at": "2026-06-30T14:41:00+08:00",
+  "density_audit": {
+    "artifact": "research_artifacts/nq_trade_fragmentation_liquidity_reversion_density_audit_20260630.md",
+    "csv": "research_artifacts/nq_trade_fragmentation_liquidity_reversion_density_audit_20260630.csv",
+    "declared_entry_rows": 45,
+    "density_pass_rows": 43,
+    "density_fail_rows": 2
+  },
+  "failure_reason": "Rejected before staged NQ PnL: 2/45 declared entry-grid rows failed the 50 signals/year limited-core density gate. The sparse rows were in midday_30m_fragmented_up_fade_short at trade_count_rank_threshold=0.65 with avg_trade_size_rank_threshold 0.50 and 0.55. Dropping those strict short-side rows after this screen would be post-result narrowing of the declared five-variant edge. No NQ PnL was inspected.",
+  "staged_pnl_run": false,
+  "monkey_reached": 0,
+  "wfa_reached": 0,
+  "monte_carlo_reached": 0,
+  "candidate_strategy_report_created": false,
+  "variant_density_summary": [
+    {
+      "variant_id": "day_60m_fragmented_two_sided_fade",
+      "rows": 9,
+      "pass_rows": 9,
+      "min_full": 129.866247,
+      "min_limited": 98.490566,
+      "min_latest": 153,
+      "decision": "NEEDS MANUAL REVIEW"
+    },
+    {
+      "variant_id": "midday_30m_fragmented_down_fade_long",
+      "rows": 9,
+      "pass_rows": 9,
+      "min_full": 70.649882,
+      "min_limited": 52.981132,
+      "min_latest": 90,
+      "decision": "NEEDS MANUAL REVIEW"
+    },
+    {
+      "variant_id": "midday_30m_fragmented_up_fade_short",
+      "rows": 9,
+      "pass_rows": 7,
+      "min_full": 60.009441,
+      "min_limited": 41.433962,
+      "min_latest": 64,
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "morning_15m_fragmented_down_fade_long",
+      "rows": 9,
+      "pass_rows": 9,
+      "min_full": 71.244689,
+      "min_limited": 53.660377,
+      "min_latest": 78,
+      "decision": "NEEDS MANUAL REVIEW"
+    },
+    {
+      "variant_id": "morning_15m_fragmented_up_fade_short",
+      "rows": 9,
+      "pass_rows": 9,
+      "min_full": 58.885917,
+      "min_limited": 52.301887,
+      "min_latest": 60,
+      "decision": "NEEDS MANUAL REVIEW"
+    }
+  ],
+  "artifacts": {
+    "campaign_results_csv": "backtest-campaigns/nq_trade_fragmentation_liquidity_reversion/campaign_results.csv",
+    "density_audit_md": "research_artifacts/nq_trade_fragmentation_liquidity_reversion_density_audit_20260630.md",
+    "density_audit_csv": "research_artifacts/nq_trade_fragmentation_liquidity_reversion_density_audit_20260630.csv",
+    "methodology_audit": "campaigns/nq_trade_fragmentation_liquidity_reversion/methodology_audit.md"
+  }
+}

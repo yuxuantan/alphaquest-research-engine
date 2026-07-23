@@ -1,0 +1,68 @@
+{
+  "campaign_id": "es_volatility_managed_intraday_premium",
+  "variant_id": "low_10d_range_midmorning_long_1030",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_volatility_managed_intraday_premium/campaign.yaml",
+    "hash": "3048dd8b1df96866c6b9fe8383c38fb7d0d754c912d989ea1d7e5048090ce29a"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/variant.yaml",
+    "hash": "3ea4fce8bca76120d9509480af2bf8b18ac85ae75ec786ae5000571309e57df6",
+    "mechanic": {
+      "entry_module": "volatility_managed_intraday_premium",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_volatility_managed_intraday_premium/rescue_attempts/stop_distance_rescue_1/low_10d_range_midmorning_long_1030/config.yaml",
+  "effective_config": "backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_volatility_managed_intraday_premium/low_10d_range_midmorning_long_1030/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "da23374b547fdbc7127d4d58357af7191554c24743ef9420d3a34fe837b076e5",
+  "source_config_hash": "31e22e892f9a58e2aaf582ed60d27fd7ec54fba22b553322131c575d8c03fe17",
+  "source_results_index": "campaigns/es_volatility_managed_intraday_premium/results_index.yaml",
+  "created_at": "2026-06-19T18:38:42",
+  "updated_at": "2026-06-21T11:03:13",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "monkey_runs": 8000,
+    "updated_at": "2026-06-21T11:03:13"
+  }
+}

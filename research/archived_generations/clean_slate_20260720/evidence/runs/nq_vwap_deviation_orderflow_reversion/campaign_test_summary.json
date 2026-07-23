@@ -1,0 +1,112 @@
+{
+  "campaign_id": "nq_vwap_deviation_orderflow_reversion",
+  "decision": "FAIL",
+  "status": "completed_failed_density",
+  "completed_at": "2026-06-30T18:00:00+08:00",
+  "symbol": "NQ",
+  "variants_expected": 5,
+  "variants_tested": 5,
+  "preflight": {
+    "status": "PASS",
+    "configs_checked": 5,
+    "tests_ran": true
+  },
+  "pre_pnl_density_audit": {
+    "decision": "FAIL",
+    "artifact_md": "research_artifacts/nq_vwap_deviation_orderflow_reversion_density_audit_20260630.md",
+    "artifact_csv": "research_artifacts/nq_vwap_deviation_orderflow_reversion_density_audit_20260630.csv",
+    "summary_csv": "research_artifacts/nq_vwap_deviation_orderflow_reversion_density_summary_20260630.csv",
+    "declared_entry_rows": 45,
+    "density_pass_rows": 39,
+    "density_fail_rows": 6,
+    "min_full_signals_per_year": 142.8,
+    "min_limited_core_signals_per_year": 29.79,
+    "min_latest252_signals": 235
+  },
+  "terminal_failure_summary": {
+    "pre_pnl_density_screen_failed_variants": 2,
+    "limited_core_grid_test_reached": 0,
+    "limited_monkey_reached": 0,
+    "wfa_reached": 0,
+    "monte_carlo_reached": 0,
+    "acceptance_oos_reached": 0
+  },
+  "failure_reason": "Rejected before staged NQ PnL: 6/45 declared VWAP-deviation entry-grid rows failed the pre-PnL density gate. The sparse rows were in morning_large10_counterflow_1200 and morning_signed_counterflow_1200; the weakest limited-core proxy density was 29.79 signals/year. Dropping morning variants or strict deviation/counterflow corners after this screen would change the declared five-variant edge after observing signal availability. No NQ PnL was inspected.",
+  "variant_results": [
+    {
+      "campaign_id": "nq_vwap_deviation_orderflow_reversion",
+      "variant_id": "afternoon_signed_counterflow_1530",
+      "symbol": "NQ",
+      "terminal_stage": "pre_pnl_density_screen",
+      "stage_status": "not_run_campaign_failed",
+      "entry_combos": 9,
+      "combos_passing_all_windows": 9,
+      "min_full_signals_per_year": 175.76037234042553,
+      "min_limited_core_signals_per_year": 85.48404255319149,
+      "min_latest_252_signals": 248,
+      "density_gate_pass": true,
+      "source_config_path": "campaigns/nq_vwap_deviation_orderflow_reversion/variants/afternoon_signed_counterflow_1530/config.yaml",
+      "campaign_test_summary_path": "backtest-campaigns/nq_vwap_deviation_orderflow_reversion/campaign_test_summary.json"
+    },
+    {
+      "campaign_id": "nq_vwap_deviation_orderflow_reversion",
+      "variant_id": "midday_large20_counterflow_1400",
+      "symbol": "NQ",
+      "terminal_stage": "pre_pnl_density_screen",
+      "stage_status": "not_run_campaign_failed",
+      "entry_combos": 9,
+      "combos_passing_all_windows": 9,
+      "min_full_signals_per_year": 159.05212765957447,
+      "min_limited_core_signals_per_year": 67.99867021276596,
+      "min_latest_252_signals": 240,
+      "density_gate_pass": true,
+      "source_config_path": "campaigns/nq_vwap_deviation_orderflow_reversion/variants/midday_large20_counterflow_1400/config.yaml",
+      "campaign_test_summary_path": "backtest-campaigns/nq_vwap_deviation_orderflow_reversion/campaign_test_summary.json"
+    },
+    {
+      "campaign_id": "nq_vwap_deviation_orderflow_reversion",
+      "variant_id": "midday_signed_counterflow_1400",
+      "symbol": "NQ",
+      "terminal_stage": "pre_pnl_density_screen",
+      "stage_status": "not_run_campaign_failed",
+      "entry_combos": 9,
+      "combos_passing_all_windows": 9,
+      "min_full_signals_per_year": 169.34906914893617,
+      "min_limited_core_signals_per_year": 62.17021276595744,
+      "min_latest_252_signals": 248,
+      "density_gate_pass": true,
+      "source_config_path": "campaigns/nq_vwap_deviation_orderflow_reversion/variants/midday_signed_counterflow_1400/config.yaml",
+      "campaign_test_summary_path": "backtest-campaigns/nq_vwap_deviation_orderflow_reversion/campaign_test_summary.json"
+    },
+    {
+      "campaign_id": "nq_vwap_deviation_orderflow_reversion",
+      "variant_id": "morning_large10_counterflow_1200",
+      "symbol": "NQ",
+      "terminal_stage": "pre_pnl_density_screen",
+      "stage_status": "failed",
+      "entry_combos": 9,
+      "combos_passing_all_windows": 6,
+      "min_full_signals_per_year": 147.84853723404257,
+      "min_limited_core_signals_per_year": 33.67553191489362,
+      "min_latest_252_signals": 248,
+      "density_gate_pass": false,
+      "source_config_path": "campaigns/nq_vwap_deviation_orderflow_reversion/variants/morning_large10_counterflow_1200/config.yaml",
+      "campaign_test_summary_path": "backtest-campaigns/nq_vwap_deviation_orderflow_reversion/campaign_test_summary.json"
+    },
+    {
+      "campaign_id": "nq_vwap_deviation_orderflow_reversion",
+      "variant_id": "morning_signed_counterflow_1200",
+      "symbol": "NQ",
+      "terminal_stage": "pre_pnl_density_screen",
+      "stage_status": "failed",
+      "entry_combos": 9,
+      "combos_passing_all_windows": 6,
+      "min_full_signals_per_year": 142.7972074468085,
+      "min_limited_core_signals_per_year": 29.78989361702128,
+      "min_latest_252_signals": 235,
+      "density_gate_pass": false,
+      "source_config_path": "campaigns/nq_vwap_deviation_orderflow_reversion/variants/morning_signed_counterflow_1200/config.yaml",
+      "campaign_test_summary_path": "backtest-campaigns/nq_vwap_deviation_orderflow_reversion/campaign_test_summary.json"
+    }
+  ]
+}

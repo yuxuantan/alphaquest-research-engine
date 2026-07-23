@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_intraday_periodicity_persistence",
+  "variant_id": "afternoon_1330_slot_persistence",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_intraday_periodicity_persistence/afternoon_1330_slot_persistence/variant.yaml",
+    "hash": "7c1cb969b300d56be79a0b81d76c9735e8000e4fe5e20ce791f5d1a7e5afadbf",
+    "mechanic": {
+      "entry_module": "intraday_periodicity_persistence",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "14:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_intraday_periodicity_persistence/variants/afternoon_1330_slot_persistence/config.yaml",
+  "effective_config": "backtest-campaigns/nq_intraday_periodicity_persistence/afternoon_1330_slot_persistence/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_intraday_periodicity_persistence/afternoon_1330_slot_persistence/NQ/run1/source_config.yaml",
+  "config_hash": "866b4265116c1612002865fbb5344b5ef8e5aa10c9a7013e0e73d197680a2dc5",
+  "source_config_hash": "61f7b0c4b0233aea547cd9f335683a4fa4143713ba474a3d8bf0fa3333fbf7fd",
+  "source_results_index": "campaigns/nq_intraday_periodicity_persistence/results_index.yaml",
+  "created_at": "2026-06-30T17:30:21",
+  "updated_at": "2026-06-30T17:30:21",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

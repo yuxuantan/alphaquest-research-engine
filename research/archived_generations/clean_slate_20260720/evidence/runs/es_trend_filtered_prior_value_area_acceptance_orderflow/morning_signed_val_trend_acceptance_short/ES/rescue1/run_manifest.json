@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_trend_filtered_prior_value_area_acceptance_orderflow",
+  "variant_id": "morning_signed_val_trend_acceptance_short",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/morning_signed_val_trend_acceptance_short/variant.yaml",
+    "hash": "2446b6c71a07edf7380b5ee65b96802e81d1b229788c349ff75613b5e70f9817",
+    "mechanic": {
+      "entry_module": "trend_filtered_prior_value_area_acceptance",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/rescue_attempts/parameter_space_rescue_1/morning_signed_val_trend_acceptance_short/config.yaml",
+  "effective_config": "backtest-campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/morning_signed_val_trend_acceptance_short/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/morning_signed_val_trend_acceptance_short/ES/rescue1/source_config.yaml",
+  "config_hash": "8c37acae0f9d25728c1baec85ebc91cda48927e75f38332b430b01c2efc4f550",
+  "source_config_hash": "d60669496189607e945f48651280a2c1b38fcdf5a2b32e36ead553e31501be34",
+  "source_results_index": "campaigns/es_trend_filtered_prior_value_area_acceptance_orderflow/results_index.yaml",
+  "created_at": "2026-06-18T22:40:19",
+  "updated_at": "2026-06-18T22:40:19",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

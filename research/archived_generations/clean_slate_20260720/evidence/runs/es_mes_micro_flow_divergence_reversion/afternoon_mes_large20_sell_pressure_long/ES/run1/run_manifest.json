@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_mes_micro_flow_divergence_reversion",
+  "variant_id": "afternoon_mes_large20_sell_pressure_long",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/afternoon_mes_large20_sell_pressure_long/variant.yaml",
+    "hash": "7119706603afd00dd457386b4ecb13f3f07d8afa5eb9024bb23e2eb452f68933",
+    "mechanic": {
+      "entry_module": "trade_orderflow_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:31:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/afternoon_mes_large20_sell_pressure_long/ES/run1/effective_config.yaml",
+  "effective_config": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/afternoon_mes_large20_sell_pressure_long/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/afternoon_mes_large20_sell_pressure_long/ES/run1/source_config.yaml",
+  "config_hash": "03bf39067e103b2c2a6f3ef641711db74db072617d5168960bbef113cc3702d1",
+  "source_config_hash": "1c388b6c3c0d1b9836dae575d371bf1b8a725c9720d2359f31b9a80de0f86b83",
+  "source_results_index": null,
+  "created_at": "2026-06-21T13:17:51",
+  "updated_at": "2026-06-21T13:17:51",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

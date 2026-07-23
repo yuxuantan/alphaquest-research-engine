@@ -1,0 +1,58 @@
+{
+  "campaign_id": "es_nq_cross_index_lead_lag",
+  "variant_id": "afternoon_nq_confirmed_follow_1400",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_nq_lead_lag_1m_20110103_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_nq_lead_lag_1m_20110103_20260609_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_nq_cross_index_lead_lag/afternoon_nq_confirmed_follow_1400/variant.yaml",
+    "hash": "47b787974bc39331589148f86ff1d9fd1b5498e469391b60450f3627f257a812",
+    "mechanic": {
+      "entry_module": "es_nq_lead_lag",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:31:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_nq_cross_index_lead_lag/rescue_attempts/parameter_space_rescue_1/afternoon_nq_confirmed_follow_1400/config.yaml",
+  "config_hash": "1c12d04a8912db8e797778869568c69997ead326eaa635584a19bce5be4f524e",
+  "created_at": "2026-06-16T12:23:24",
+  "updated_at": "2026-06-16T12:23:24",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_nq_cross_index_lead_lag/afternoon_nq_confirmed_follow_1400/ES/rescue1/effective_config.yaml"
+}

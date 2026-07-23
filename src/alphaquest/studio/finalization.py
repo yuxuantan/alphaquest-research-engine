@@ -32,6 +32,7 @@ import yaml
 
 from alphaquest.research.campaign_stages import DEFAULT_STAGE_ORDER, update_source_results_index
 from alphaquest.research.registry import build_registry, export_registry_csvs, generate_views
+from alphaquest.research.schemas import validate_stage_result_contract
 from alphaquest.research.storage import display_path, load_storage_layout
 from alphaquest.studio.results import (
     RESULT_BUNDLE_FILENAME,
@@ -495,9 +496,13 @@ class RunFinalizer:
             shutil.rmtree(staging)
         staging.mkdir(parents=True)
         try:
-            evidence_issues, evidence_hashes = _validate_and_hash_runner_evidence(run_dir, run_summary)
-            stage_criteria = _stage_criteria(run_summary)
             original_verdict = _strict_verdict(run_summary.get("research_verdict"))
+            evidence_issues, evidence_hashes = _validate_and_hash_runner_evidence(
+                run_dir,
+                run_summary,
+            )
+            stage_criteria = _stage_criteria(run_summary)
+            stage_criteria.extend(_reporting_criterion(issue) for issue in evidence_issues)
             verdict = _final_verdict(original_verdict, evidence_issues, run_summary)
             trades, trade_path, trade_issue = _load_reporting_trades(run_dir, original_verdict)
             if trade_issue:
@@ -514,29 +519,41 @@ class RunFinalizer:
                 stage_criteria.extend(_reporting_criterion(issue) for issue in supplemental_issues)
             generated_at = _journal_created_at(journal_path)
             try:
-                bundle = ResultBundleBuilder().build_and_write(
-                    trades,
-                    staging,
-                    campaign_id=str(run_summary.get("campaign_id") or cfg.get("campaign_id") or ""),
-                    variant_id=str(run_summary.get("variant_id") or cfg.get("variant_id") or ""),
-                    run_id=str(
-                        run_summary.get("test_run_id")
-                        or run_summary.get("run_uid")
-                        or cfg.get("test_run_id")
-                        or job_id
-                    ),
-                    verdict=verdict,  # type: ignore[arg-type]
-                    stage_criteria=stage_criteria,
-                    initial_balance=float((cfg.get("core") or {}).get("initial_balance") or 0.0),
-                    parameter_neighbors=optional_frames["parameter_neighbors"],
-                    wfa_stitched_oos=optional_frames["wfa_stitched_oos"],
-                    monte_carlo_summary=optional_frames["monte_carlo_summary"],
-                    generated_at=generated_at,
-                    exchange_timezone=_config_exchange_timezone(cfg),
-                    evaluation_start=evaluation["start"],
-                    evaluation_end=evaluation["end"],
-                    trading_dates=evaluation["trading_dates"],
-                )
+                builder = ResultBundleBuilder()
+
+                def build_bundle(bundle_verdict: str) -> ResultBundleV2:
+                    return builder.build_and_write(
+                        trades,
+                        staging,
+                        campaign_id=str(run_summary.get("campaign_id") or cfg.get("campaign_id") or ""),
+                        variant_id=str(run_summary.get("variant_id") or cfg.get("variant_id") or ""),
+                        run_id=str(
+                            run_summary.get("test_run_id")
+                            or run_summary.get("run_uid")
+                            or cfg.get("test_run_id")
+                            or job_id
+                        ),
+                        verdict=bundle_verdict,  # type: ignore[arg-type]
+                        stage_criteria=stage_criteria,
+                        initial_balance=float((cfg.get("core") or {}).get("initial_balance") or 0.0),
+                        parameter_neighbors=optional_frames["parameter_neighbors"],
+                        wfa_stitched_oos=optional_frames["wfa_stitched_oos"],
+                        monte_carlo_summary=optional_frames["monte_carlo_summary"],
+                        generated_at=generated_at,
+                        exchange_timezone=_config_exchange_timezone(cfg),
+                        evaluation_start=evaluation["start"],
+                        evaluation_end=evaluation["end"],
+                        trading_dates=evaluation["trading_dates"],
+                    )
+
+                bundle = build_bundle(verdict)
+                if original_verdict == "PASS":
+                    metric_issues = _required_pass_metric_issues(bundle)
+                    if metric_issues:
+                        evidence_issues.extend(metric_issues)
+                        stage_criteria.extend(_reporting_criterion(issue) for issue in metric_issues)
+                        verdict = "NEEDS MANUAL REVIEW"
+                        bundle = build_bundle(verdict)
             except Exception as exc:
                 # Reporting ambiguity must not preserve a PASS.  Publish a
                 # strict, inspectable NMR bundle when the malformed trade
@@ -913,6 +930,21 @@ def _validate_and_hash_runner_evidence(
                 issues.append(f"stage result is missing for {name}")
             else:
                 paths.append(stage_result)
+                try:
+                    persisted = _read_json_mapping(stage_result)
+                    validate_stage_result_contract(
+                        persisted,
+                        context=f"{name}/stage_result.json",
+                    )
+                except ValueError as exc:
+                    issues.append(f"persisted stage result is invalid for {name}: {exc}")
+                else:
+                    expected = dict(stage)
+                    if persisted != expected:
+                        issues.append(
+                            f"persisted stage result contradicts the completed runner summary for {name}; "
+                            "status, criteria, or other stage evidence differs"
+                        )
 
     # Hash every source artifact that can feed ResultBundleV2, not only the
     # top-level summaries.  Missing inputs are evaluated separately because a
@@ -960,6 +992,32 @@ def _final_verdict(original: str, issues: Sequence[str], summary: Mapping[str, A
     if original == "PASS" and (names != list(DEFAULT_STAGE_ORDER) or statuses != ["passed"] * len(DEFAULT_STAGE_ORDER)):
         return "NEEDS MANUAL REVIEW"
     return original
+
+
+def _required_pass_metric_issues(bundle: ResultBundleV2) -> list[str]:
+    """Require explicit rule-compliance evidence before retaining terminal PASS."""
+
+    issues: list[str] = []
+    prop = bundle.metrics.prop_rule_outcome
+    if prop.value is None:
+        issues.append(
+            "PASS requires a defined prop-rule simulation outcome; "
+            + str(prop.reason or "the reporting source did not provide one")
+        )
+    elif prop.value != "PASS":
+        issues.append(f"PASS contradicts the prop-rule simulation outcome {prop.value!r}")
+
+    flatten = bundle.metrics.forced_flatten_compliance
+    if flatten.value is None:
+        issues.append(
+            "PASS requires defined forced-flatten compliance; "
+            + str(flatten.reason or "the reporting source did not provide it")
+        )
+    elif flatten.value is not True:
+        issues.append(
+            f"PASS contradicts forced-flatten compliance: expected true, observed {flatten.value!r}"
+        )
+    return issues
 
 
 def _stage_criteria(summary: Mapping[str, Any]) -> list[StageCriterionV2]:
@@ -1081,6 +1139,8 @@ def _load_reporting_trades(run_dir: Path, verdict: str) -> tuple[pd.DataFrame, s
             return _empty_trade_frame(), relative, f"trade log could not be read ({relative}): {exc}"
         if "net_pnl" not in trades.columns:
             return trades, relative, f"trade log lacks net_pnl ({relative})"
+        if verdict == "PASS" and relative == candidates[0] and trades.empty:
+            return trades, relative, "PASS acceptance OOS trade log contains no trades"
         return trades, relative, None
     return _empty_trade_frame(), None, "no staged trade log is available for ResultBundleV2"
 

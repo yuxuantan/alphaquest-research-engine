@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_midday_range_orderflow_breakout",
+  "variant_id": "late_lunch_1200_1330_signed_breakout_1500",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_midday_range_orderflow_breakout/late_lunch_1200_1330_signed_breakout_1500/variant.yaml",
+    "hash": "2823d5477c658e6d640540d2928950eb40b5be31dbd2874f6d7e15c06d74e0ea",
+    "mechanic": {
+      "entry_module": "intraday_range_orderflow_breakout",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "opening_range_retest_boundary",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_midday_range_orderflow_breakout/variants/late_lunch_1200_1330_signed_breakout_1500/config.yaml",
+  "effective_config": "backtest-campaigns/nq_midday_range_orderflow_breakout/late_lunch_1200_1330_signed_breakout_1500/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_midday_range_orderflow_breakout/late_lunch_1200_1330_signed_breakout_1500/NQ/run1/source_config.yaml",
+  "config_hash": "a826f25c137fbce107fe48c7067074f8bb5f8ca7139cb43fa413dca18b2e4b3d",
+  "source_config_hash": "f3b0269f8b0a41f5cf9545a197b53f889b81d6c596c98342a381099f143ac514",
+  "source_results_index": "campaigns/nq_midday_range_orderflow_breakout/results_index.yaml",
+  "created_at": "2026-06-30T14:55:36",
+  "updated_at": "2026-06-30T14:55:36",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

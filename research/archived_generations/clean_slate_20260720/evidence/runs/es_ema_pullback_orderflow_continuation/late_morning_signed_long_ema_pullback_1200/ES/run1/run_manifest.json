@@ -1,0 +1,59 @@
+{
+  "campaign_id": "es_ema_pullback_orderflow_continuation",
+  "variant_id": "late_morning_signed_long_ema_pullback_1200",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_ema_pullback_orderflow_continuation/late_morning_signed_long_ema_pullback_1200/variant.yaml",
+    "hash": "98893342161dafe4ae9e30e850f799b41082322f67bdc7f7c095947c43c1e887",
+    "mechanic": {
+      "entry_module": "ema_pullback_orderflow_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "14:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_ema_pullback_orderflow_continuation/variants/late_morning_signed_long_ema_pullback_1200/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_ema_pullback_orderflow_continuation/late_morning_signed_long_ema_pullback_1200/ES/run1/source_config.yaml",
+  "config_hash": "b884de95b7f3ba1a7947e47ef1fabc458fc438af702dcc4c9bb410210b428251",
+  "source_config_hash": "e523801eaf82981befcc0b64aa03ac7938f5321be9f3bd64ef2d167ce19bf595",
+  "created_at": "2026-06-18T12:35:40",
+  "updated_at": "2026-06-18T12:35:40",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_ema_pullback_orderflow_continuation/late_morning_signed_long_ema_pullback_1200/ES/run1/effective_config.yaml"
+}

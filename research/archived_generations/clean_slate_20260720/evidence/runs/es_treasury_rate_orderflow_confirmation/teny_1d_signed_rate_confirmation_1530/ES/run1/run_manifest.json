@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_treasury_rate_orderflow_confirmation",
+  "variant_id": "teny_1d_signed_rate_confirmation_1530",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/teny_1d_signed_rate_confirmation_1530/variant.yaml",
+    "hash": "96329010403ba057d0023b5f479e3706eaecee7fc1907fc27e57bbd6b5fbf440",
+    "mechanic": {
+      "entry_module": "treasury_rate_orderflow_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_treasury_rate_orderflow_confirmation/variants/teny_1d_signed_rate_confirmation_1530/config.yaml",
+  "effective_config": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/teny_1d_signed_rate_confirmation_1530/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/teny_1d_signed_rate_confirmation_1530/ES/run1/source_config.yaml",
+  "config_hash": "a0ededda57181b7dd6eb2bbe3f9ab759caba84d40e06cfaa9a44d0da2e10fcda",
+  "source_config_hash": "1a68e4bd411abe61266e335293463975a3cf5583c051ce0d84dbace84b902dd5",
+  "source_results_index": "campaigns/es_treasury_rate_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-20T06:44:01",
+  "updated_at": "2026-06-20T06:44:01",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

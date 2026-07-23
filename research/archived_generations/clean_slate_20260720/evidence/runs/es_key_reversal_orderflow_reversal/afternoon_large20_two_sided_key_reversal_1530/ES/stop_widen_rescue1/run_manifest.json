@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_key_reversal_orderflow_reversal",
+  "variant_id": "afternoon_large20_two_sided_key_reversal_1530",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_key_reversal_orderflow_reversal/afternoon_large20_two_sided_key_reversal_1530/variant.yaml",
+    "hash": "a18c640a58644a8be410ad0013b4b044ffb6702f0e8698089d467114f765a029",
+    "mechanic": {
+      "entry_module": "key_reversal_orderflow_reversal",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_key_reversal_orderflow_reversal/rescue_attempts/stop_distance_rescue_1/afternoon_large20_two_sided_key_reversal_1530/config.yaml",
+  "effective_config": "backtest-campaigns/es_key_reversal_orderflow_reversal/afternoon_large20_two_sided_key_reversal_1530/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_key_reversal_orderflow_reversal/afternoon_large20_two_sided_key_reversal_1530/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "b3461fa7d306c61ebb1bc7e299b7da86ea625b451726701172f5bf517405ef1f",
+  "source_config_hash": "e231d4fed88f43265e65e562815d00e48ffec82e5c442bd3c414ede8a98351bc",
+  "source_results_index": "campaigns/es_key_reversal_orderflow_reversal/results_index.yaml",
+  "created_at": "2026-06-19T09:45:44",
+  "updated_at": "2026-06-19T09:45:44",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

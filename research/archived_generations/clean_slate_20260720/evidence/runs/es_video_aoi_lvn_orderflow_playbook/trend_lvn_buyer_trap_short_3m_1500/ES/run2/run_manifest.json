@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_video_aoi_lvn_orderflow_playbook",
+  "variant_id": "trend_lvn_buyer_trap_short_3m_1500",
+  "test_run_id": "run2",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_imbalance_3m_20101214_20260610_full_rth_ny",
+  "timeframe": "3m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_imbalance_3m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/trend_lvn_buyer_trap_short_3m_1500/variant.yaml",
+    "hash": "5618c9cd2979a5faccb474b0ba3c5ece5c03824c2c24ffeb0998c562704e9392",
+    "mechanic": {
+      "entry_module": "video_aoi_orderflow_playbook",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_3m_trend_model_run2/trend_lvn_buyer_trap_short_3m_1500/config.yaml",
+  "effective_config": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/trend_lvn_buyer_trap_short_3m_1500/ES/run2/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/trend_lvn_buyer_trap_short_3m_1500/ES/run2/source_config.yaml",
+  "config_hash": "de48488b9699dd418a24671cbb9b95cb16682dd9b1b3e7abbd9d058195d92f35",
+  "source_config_hash": "c530384d6b0d34aef9205e8b3c3e59c0486ef355de852724cc89ca3c82ff9aa1",
+  "source_results_index": "campaigns/es_video_aoi_lvn_orderflow_playbook/results_index.yaml",
+  "created_at": "2026-06-24T13:22:22",
+  "updated_at": "2026-06-24T13:22:22",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

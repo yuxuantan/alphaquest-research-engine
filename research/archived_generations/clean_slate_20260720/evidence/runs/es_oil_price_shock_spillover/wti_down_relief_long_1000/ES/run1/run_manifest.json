@@ -1,0 +1,58 @@
+{
+  "campaign_id": "es_oil_price_shock_spillover",
+  "variant_id": "wti_down_relief_long_1000",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_oil_price_shock_spillover/wti_down_relief_long_1000/variant.yaml",
+    "hash": "3a3303d4e12f91f99422b3cfa7335edae66afafbc13258f40822089d5aefabe1",
+    "mechanic": {
+      "entry_module": "oil_price_shock_spillover",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_oil_price_shock_spillover/variants/wti_down_relief_long_1000/config.yaml",
+  "config_hash": "7c5466ab7b5b32f8f1d13234deed672b91227d0f552bbbd55213654aa207d186",
+  "created_at": "2026-06-17T00:15:56",
+  "updated_at": "2026-06-17T00:15:56",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_oil_price_shock_spillover/wti_down_relief_long_1000/ES/run1/effective_config.yaml"
+}

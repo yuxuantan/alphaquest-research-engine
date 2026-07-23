@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_nq_semivariance_filtered_relative_value_absorption",
+  "variant_id": "morning30_low_badvol_absorption_twosided_1130",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_nq_lead_lag_1m_20110103_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_nq_lead_lag_1m_20110103_20260609_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_nq_semivariance_filtered_relative_value_absorption/morning30_low_badvol_absorption_twosided_1130/variant.yaml",
+    "hash": "20bb5a19ffb81a37f04cc40beb870c10a2d0f6dd3eb90ca2b2fc77999ad5b1b4",
+    "mechanic": {
+      "entry_module": "es_nq_semivariance_filtered_relative_value_absorption",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_nq_semivariance_filtered_relative_value_absorption/rescue_attempts/parameter_space_rescue_1/morning30_low_badvol_absorption_twosided_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_nq_semivariance_filtered_relative_value_absorption/morning30_low_badvol_absorption_twosided_1130/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_nq_semivariance_filtered_relative_value_absorption/morning30_low_badvol_absorption_twosided_1130/ES/rescue1/source_config.yaml",
+  "config_hash": "269741784e4a175310a6a482c448f99228549501487098d7140e0d4169711106",
+  "source_config_hash": "7ad54bda2a71d459abff07c44bdbf9fd21eca2b22d49cc08c286490bcc9e41d4",
+  "source_results_index": "campaigns/es_nq_semivariance_filtered_relative_value_absorption/results_index.yaml",
+  "created_at": "2026-06-20T11:26:34",
+  "updated_at": "2026-06-20T11:26:34",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

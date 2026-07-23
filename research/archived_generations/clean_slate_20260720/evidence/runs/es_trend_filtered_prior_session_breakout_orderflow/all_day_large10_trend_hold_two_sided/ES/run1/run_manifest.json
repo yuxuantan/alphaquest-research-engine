@@ -1,0 +1,60 @@
+{
+  "campaign_id": "es_trend_filtered_prior_session_breakout_orderflow",
+  "variant_id": "all_day_large10_trend_hold_two_sided",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/all_day_large10_trend_hold_two_sided/variant.yaml",
+    "hash": "f4ee05dd5be7bcd1992339cc7d66b3529dbaa3e0ffd27a326726f2d9f1ed12d3",
+    "mechanic": {
+      "entry_module": "pdh_pdl_trend_orderflow_breakout_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_trend_filtered_prior_session_breakout_orderflow/variants/all_day_large10_trend_hold_two_sided/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/all_day_large10_trend_hold_two_sided/ES/run1/source_config.yaml",
+  "config_hash": "2595be8e47405cc719ff96ad3e395c1f4837c664ce768b3ff65fb5d28d363efa",
+  "source_config_hash": "4ea03f4c1fd81d0fcc1218d9d183dcf9adf87d93bca1bf4a2e4b413b44d7a33d",
+  "created_at": "2026-06-18T02:01:27",
+  "updated_at": "2026-06-18T02:01:27",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_trend_filtered_prior_session_breakout_orderflow/all_day_large10_trend_hold_two_sided/ES/run1/effective_config.yaml"
+}

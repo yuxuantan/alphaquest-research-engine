@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_spx_0dte_expiration_pressure",
+  "variant_id": "full_week_down_move_fade_long_1000",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_spx_0dte_expiration_pressure/full_week_down_move_fade_long_1000/variant.yaml",
+    "hash": "ab6beb57b3d43238b2caba3b11350828bda3ff6d6b220c918b9c34f45f2210cd",
+    "mechanic": {
+      "entry_module": "spx_0dte_expiration_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_spx_0dte_expiration_pressure/variants/full_week_down_move_fade_long_1000/config.yaml",
+  "effective_config": "backtest-campaigns/nq_spx_0dte_expiration_pressure/full_week_down_move_fade_long_1000/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_spx_0dte_expiration_pressure/full_week_down_move_fade_long_1000/NQ/run1/source_config.yaml",
+  "config_hash": "6127c16c1c60f65a73ca30c16bd29a39f3005535a50d5f8a2518f5cc736e6bb4",
+  "source_config_hash": "d80b11a722275cbee4ba9ab97963b21b1fba25d73b76b928b006d9939b4a068d",
+  "source_results_index": "campaigns/nq_spx_0dte_expiration_pressure/results_index.yaml",
+  "created_at": "2026-06-23T01:01:03",
+  "updated_at": "2026-06-23T01:01:03",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

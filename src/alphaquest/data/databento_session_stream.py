@@ -54,6 +54,7 @@ def iter_databento_trade_sessions(
     end_date: str | date,
     root_symbol: str = "ES",
     reset_previous_levels_on_roll: bool = True,
+    overnight_start: str = "18:00:00",
 ):
     """Yield active-contract RTH trade sessions from a full-day Databento ZIP.
 
@@ -65,10 +66,12 @@ def iter_databento_trade_sessions(
     archive_path = Path(archive_path)
     start = pd.Timestamp(start_date).date()
     end = pd.Timestamp(end_date).date()
+    warmup_start = start - timedelta(days=7)
     active_contract = _active_contract_lookup(roll_calendar_path)
     overnight: dict[date, list[float]] = {}
     rth: dict[date, RthSummary] = {}
     previous_rth_dates: list[date] = []
+    overnight_start_time = pd.Timestamp(overnight_start).time()
 
     with zipfile.ZipFile(archive_path) as archive:
         metadata = json.loads(archive.read("metadata.json"))
@@ -76,14 +79,14 @@ def iter_databento_trade_sessions(
         members = sorted(name for name in archive.namelist() if name.endswith(".trades.dbn.zst"))
         for member in members:
             utc_date = _member_date(member)
-            if utc_date is None or utc_date < start - timedelta(days=2) or utc_date > end:
+            if utc_date is None or utc_date < warmup_start - timedelta(days=1) or utc_date > end:
                 continue
             frame = _read_member(archive, member)
             if frame.empty:
                 continue
             local_timestamp = pd.to_datetime(frame["ts_event"], utc=True).dt.tz_convert(ET)
             local_date = local_timestamp.dt.date
-            evening = local_timestamp.dt.time >= pd.Timestamp("18:00:00").time()
+            evening = local_timestamp.dt.time >= overnight_start_time
             assigned_session = local_date.where(~evening, (local_timestamp + pd.Timedelta(days=1)).dt.date)
             frame = frame.assign(
                 timestamp=local_timestamp,
@@ -92,7 +95,7 @@ def iter_databento_trade_sessions(
             )
 
             for session_date in sorted(set(frame["session_date"])):
-                if session_date < start or session_date > end:
+                if session_date < warmup_start or session_date > end:
                     continue
                 contract = active_contract(session_date)
                 if contract is None:
@@ -105,7 +108,7 @@ def iter_databento_trade_sessions(
                 if session_rows.empty:
                     continue
                 time_values = session_rows["timestamp"].dt.time
-                overnight_mask = (time_values >= pd.Timestamp("18:00:00").time()) | (
+                overnight_mask = (time_values >= overnight_start_time) | (
                     time_values < pd.Timestamp("09:30:00").time()
                 )
                 if bool(overnight_mask.any()):
@@ -115,7 +118,7 @@ def iter_databento_trade_sessions(
                     bounds[1] = max(bounds[1], float(values.max()))
 
             current_session = utc_date
-            if current_session < start or current_session > end:
+            if current_session < warmup_start or current_session > end:
                 continue
             contract = active_contract(current_session)
             if contract is None:
@@ -143,12 +146,14 @@ def iter_databento_trade_sessions(
             prior = _latest_previous_rth(previous_rth_dates, rth, current_session)
             if reset_previous_levels_on_roll and prior is not None and prior.contract_symbol != contract:
                 prior = None
+            rth[current_session] = summary
+            previous_rth_dates.append(current_session)
+            if current_session < start:
+                continue
             entry_mask = (time_values >= pd.Timestamp("09:30:00").time()) & (
                 time_values < pd.Timestamp("11:00:00").time()
             )
             events = _normalized_events(current.loc[entry_mask], root_symbol, contract)
-            rth[current_session] = summary
-            previous_rth_dates.append(current_session)
             if events.empty:
                 continue
             overnight_bounds = overnight.get(current_session)

@@ -12,9 +12,11 @@ marker.  Mechanics validation never crosses that marker.
 from __future__ import annotations
 
 import copy
+from collections import deque
 from contextlib import contextmanager
 from datetime import timedelta
 import hashlib
+import json
 import os
 from pathlib import Path
 import socket
@@ -33,7 +35,7 @@ from alphaquest.research.campaign_stages import (
 )
 from alphaquest.research.preflight import run_preflight
 from alphaquest.research.storage import resolve_campaign_context
-from alphaquest.run_core import _apply_mechanics_validation_contract
+from alphaquest.run_core import STRUCTURED_PROGRESS_PREFIX, _apply_mechanics_validation_contract
 from alphaquest.studio.approvals import require_all_variant_mechanics_approved
 from alphaquest.studio.finalization import FinalizationResult, RunFinalizer
 from alphaquest.studio.jobs import (
@@ -57,6 +59,7 @@ GateInspector = Callable[[dict[str, Any], Path], dict[str, Any]]
 CampaignApprovalChecker = Callable[[list[Path]], list[dict[str, Any]]]
 AttemptValidator = Callable[..., dict[str, Any]]
 MechanicsRunner = Callable[[Path, Path], Mapping[str, Any]]
+MechanicsProgressCallback = Callable[[Mapping[str, Any]], None]
 
 
 class StopSignal(Protocol):
@@ -89,6 +92,7 @@ class StudioWorker:
         self.campaign_approval_checker = campaign_approval_checker
         self.attempt_validator = attempt_validator
         self.mechanics_runner = mechanics_runner or _run_declared_bar_mechanics_validation
+        self._mechanics_runner_reports_progress = mechanics_runner is None
         self.finalizer = finalizer or RunFinalizer(self.project_root)
 
     def run_once(self) -> JobRecordV1 | None:
@@ -142,6 +146,14 @@ class StudioWorker:
         return handled
 
     def _observed_hashes(self, job: JobRecordV1) -> Mapping[str, str]:
+        # Queue claiming happens before `_execute`, so bind hash observation to
+        # the same explicit project root as execution.  This keeps any legacy
+        # relative-path readers deterministic even when Studio was launched
+        # from a different working directory.
+        with _project_working_directory(self.project_root):
+            return self._observed_hashes_from_project_root(job)
+
+    def _observed_hashes_from_project_root(self, job: JobRecordV1) -> Mapping[str, str]:
         if job.job_type not in {CAMPAIGN_VARIANT_RUN, MECHANICS_VALIDATION_RUN}:
             raise ValueError(f"unsupported Studio job type: {job.job_type}")
         config_path, cfg = self._load_job_config(job)
@@ -234,7 +246,7 @@ class StudioWorker:
         except Exception as exc:
             return {
                 **_manual_review_without_attempt(
-                    f"all five frozen variants require current mechanics approval: {exc}"
+                    f"the current sequential variant requires mechanics approval: {exc}"
                 ),
                 "preflight": _strict_json_mapping(preflight),
             }
@@ -352,6 +364,11 @@ class StudioWorker:
     ) -> dict[str, Any]:
         """Generate deterministic pre-PnL mechanics evidence without an attempt."""
 
+        context.report_progress(
+            phase="validating_specification",
+            message="Validating frozen strategy specification",
+            percent=1.0,
+        )
         config_path, cfg = self._load_job_config(job)
         context.raise_if_cancelled()
         missing_locks = sorted({"config_hash", "input_data_hash"} - set(job.hash_locks))
@@ -370,11 +387,10 @@ class StudioWorker:
                 "mechanics validation is not declared as required by the frozen strategy specification"
             )
         lane = str(gate.get("lane") or "").strip().lower()
-        if lane != "bar":
+        if lane not in {"bar", "event_replay"}:
             return {
                 **_manual_review_without_attempt(
-                    "generic Studio mechanics validation supports only the deterministic bar lane; "
-                    "event, intrabar, order-flow, and custom-feature lanes require a certified engineering runner"
+                    "Studio mechanics validation supports only certified bar and event_replay lanes"
                 ),
                 "validation_lane": lane or None,
                 "unsupported_lane": True,
@@ -386,6 +402,11 @@ class StudioWorker:
         except Exception as exc:
             return _manual_review_without_attempt(f"mechanics-validation contract is invalid: {exc}")
 
+        context.report_progress(
+            phase="preflight",
+            message="Running mechanics-validation preflight",
+            percent=4.0,
+        )
         campaign_paths = _campaign_config_paths(config_path, cfg, project_root=self.project_root)
         preflight = self.preflight_runner(
             config_paths=campaign_paths,
@@ -404,15 +425,43 @@ class StudioWorker:
             "MECHANICS_VALIDATION_STARTED",
             details={
                 "config_path": str(config_path),
-                "validation_lane": "bar",
+                "validation_lane": lane,
                 "attempt_reserved": False,
             },
         )
-        with _heartbeat_pump(context):
-            runner_result = _strict_json_mapping(
-                self.mechanics_runner(config_path, self.project_root)
+        context.report_progress(
+            phase="starting_runner",
+            message="Starting deterministic mechanics replay",
+            percent=8.0,
+        )
+
+        def persist_runner_progress(payload: Mapping[str, Any]) -> None:
+            context.raise_if_cancelled()
+            context.report_progress(
+                phase=str(payload.get("phase") or "mechanics_replay"),
+                message=str(payload.get("message") or "Running mechanics replay"),
+                percent=float(payload.get("percent") or 8.0),
+                completed=_optional_int(payload.get("completed")),
+                total=_optional_int(payload.get("total")),
+                unit=str(payload.get("unit") or "").strip() or None,
             )
+
+        with _heartbeat_pump(context):
+            if self._mechanics_runner_reports_progress:
+                runner_value = _run_declared_bar_mechanics_validation(
+                    config_path,
+                    self.project_root,
+                    progress_callback=persist_runner_progress,
+                )
+            else:
+                runner_value = self.mechanics_runner(config_path, self.project_root)
+            runner_result = _strict_json_mapping(runner_value)
         context.raise_if_cancelled()
+        context.report_progress(
+            phase="finalizing_review_evidence",
+            message="Finalizing mechanics-review evidence",
+            percent=98.0,
+        )
         refreshed_gate = self.gate_inspector(cfg, config_path)
         evidence_dir_value = refreshed_gate.get("evidence_dir") or gate.get("evidence_dir")
         evidence_dir = Path(str(evidence_dir_value)) if evidence_dir_value else None
@@ -431,12 +480,17 @@ class StudioWorker:
             },
             terminal=True,
         )
+        context.report_progress(
+            phase="ready_for_review",
+            message="Ready for mechanics review",
+            percent=100.0,
+        )
         return {
             "research_verdict": "NEEDS MANUAL REVIEW",
             "attempt_reserved": False,
             "candidate_artifacts_suppressed": True,
             "mechanics_validation_status": "READY_FOR_REVIEW",
-            "validation_lane": "bar",
+            "validation_lane": lane,
             "config_path": str(config_path),
             "evidence_dir": str(evidence_dir),
             "config_hash": str(refreshed_gate.get("config_hash") or gate.get("config_hash") or ""),
@@ -549,8 +603,8 @@ def _campaign_config_paths(
     except (OSError, yaml.YAMLError) as exc:
         raise ValueError(f"could not read campaign definition {context.campaign_yaml}: {exc}") from exc
     variants = campaign.get("variants") if isinstance(campaign, dict) else None
-    if not isinstance(variants, list) or len(variants) != 5:
-        raise ValueError("Studio campaigns require exactly five declared variants")
+    if not isinstance(variants, list) or not 1 <= len(variants) <= 5:
+        raise ValueError("Studio campaigns require between one and five declared variants")
     attempt_id = str(cfg.get("attempt_id") or "")
     if not attempt_id:
         raise ValueError("Studio run config does not declare an authored attempt_id")
@@ -571,7 +625,7 @@ def _campaign_config_paths(
         str(item if isinstance(item, str) else (item or {}).get("variant_id") or (item or {}).get("id") or "")
         for item in variants
     )}
-    if "" in by_variant or len(by_variant) != 5:
+    if "" in by_variant or len(by_variant) != len(variants):
         raise ValueError("campaign definition contains an invalid or duplicate variant ID")
     for candidate in context.campaign_root.rglob("config.yaml"):
         try:
@@ -675,6 +729,10 @@ def _strict_json_mapping(value: Mapping[str, Any]) -> dict[str, Any]:
     return json.loads(json.dumps(value, sort_keys=True, default=str, allow_nan=False))
 
 
+def _optional_int(value: Any) -> int | None:
+    return None if value is None else int(value)
+
+
 def _stop_requested(signal: StopSignal | Callable[[], bool] | None) -> bool:
     if signal is None:
         return False
@@ -740,8 +798,10 @@ def _file_sha256(path: Path) -> str:
 def _run_declared_bar_mechanics_validation(
     config_path: Path,
     project_root: Path,
+    *,
+    progress_callback: MechanicsProgressCallback | None = None,
 ) -> Mapping[str, Any]:
-    """Invoke the existing deterministic mechanics-validation service."""
+    """Invoke the generic deterministic bar/event mechanics-validation service."""
 
     command = [
         sys.executable,
@@ -750,27 +810,72 @@ def _run_declared_bar_mechanics_validation(
         "--config",
         str(config_path),
         "--mechanics-validation",
+        "--structured-progress",
     ]
-    completed = subprocess.run(  # noqa: S603 - fixed interpreter/module; config is the governed job input
+    process = subprocess.Popen(  # noqa: S603 - fixed interpreter/module; config is the governed job input
         command,
         cwd=project_root,
-        check=False,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
+        bufsize=1,
     )
-    stdout_lines = [line for line in completed.stdout.splitlines() if line.strip()]
-    stderr_lines = [line for line in completed.stderr.splitlines() if line.strip()]
-    if completed.returncode != 0:
-        detail = "\n".join((stderr_lines or stdout_lines)[-20:])
+    stdout_tail: deque[str] = deque(maxlen=20)
+    stderr_tail: deque[str] = deque(maxlen=20)
+
+    def drain_stderr() -> None:
+        if process.stderr is None:
+            return
+        for raw_line in process.stderr:
+            line = raw_line.strip()
+            if line:
+                stderr_tail.append(line)
+
+    stderr_thread = threading.Thread(
+        target=drain_stderr,
+        name="alphaquest-mechanics-stderr",
+        daemon=True,
+    )
+    stderr_thread.start()
+    try:
+        if process.stdout is not None:
+            for raw_line in process.stdout:
+                line = raw_line.strip()
+                if not line:
+                    continue
+                if line.startswith(STRUCTURED_PROGRESS_PREFIX):
+                    try:
+                        payload = json.loads(line[len(STRUCTURED_PROGRESS_PREFIX) :])
+                    except json.JSONDecodeError as exc:
+                        stderr_tail.append(f"invalid structured progress event: {exc}")
+                        continue
+                    if progress_callback is not None and isinstance(payload, dict):
+                        progress_callback(payload)
+                    continue
+                stdout_tail.append(line)
+    except BaseException:
+        process.terminate()
+        try:
+            process.wait(timeout=5.0)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait(timeout=5.0)
+        stderr_thread.join(timeout=5.0)
+        raise
+    return_code = process.wait()
+    stderr_thread.join(timeout=5.0)
+    if return_code != 0:
+        detail = "\n".join(list(stderr_tail or stdout_tail)[-20:])
         raise RuntimeError(
-            f"declared bar mechanics-validation runner exited {completed.returncode}: {detail}"
+            f"declared mechanics-validation runner exited {return_code}: {detail}"
         )
+    stdout_lines = list(stdout_tail)
     return {
         "service": "alphaquest.run_core --mechanics-validation",
-        "exit_code": completed.returncode,
+        "exit_code": return_code,
         "source_run_dir": stdout_lines[-1] if stdout_lines else None,
-        "stdout_tail": stdout_lines[-20:],
-        "stderr_tail": stderr_lines[-20:],
+        "stdout_tail": stdout_lines,
+        "stderr_tail": list(stderr_tail),
     }
 
 

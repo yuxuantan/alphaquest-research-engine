@@ -1,0 +1,80 @@
+{
+  "campaign_id": "es_orderflow_absorption_exhaustion_reversal",
+  "title": "ES Orderflow Absorption Exhaustion Reversal",
+  "decision": "FAIL",
+  "status": "completed",
+  "passed": false,
+  "halted": true,
+  "created_at": "2026-06-16T03:15:40",
+  "source_campaign_yaml": "campaigns/es_orderflow_absorption_exhaustion_reversal/campaign.yaml",
+  "variants": [
+    "early_5m_absorption_fade_1000",
+    "late_morning_15m_absorption_fade_1130",
+    "midday_30m_absorption_fade_1230",
+    "afternoon_60m_absorption_fade_1400",
+    "late_30m_absorption_fade_1500"
+  ],
+  "original_runs": 5,
+  "rescue_runs": 5,
+  "rescue_policy": {
+    "allowed": true,
+    "scope": "per_failed_variant",
+    "max_rescues_per_failed_variant": 1,
+    "allowed_changes": [
+      "change fixed parameters inside existing strategy modules",
+      "change tunable parameter space inside existing strategy modules"
+    ],
+    "forbidden_changes": [
+      "change entry module",
+      "change stop-loss module",
+      "change take-profit module",
+      "change core economic edge",
+      "change timeframe or data window",
+      "add or remove filters after seeing results",
+      "alter costs, fills, sessions, validation gates, or prop rules"
+    ]
+  },
+  "terminal_stage": "limited_core_grid_test/limited_monkey_test",
+  "wfa_reached": 0,
+  "monte_carlo_reached": 0,
+  "frozen_validation_reached": 0,
+  "failure_reason": "All five originals and all five one-time rescues failed before WFA. One original reached limited_monkey_test and failed robustness; the rest failed limited_core_grid_test.",
+  "best_original": null,
+  "best_rescue": {
+    "campaign_id": "es_orderflow_absorption_exhaustion_reversal",
+    "variant_id": "late_morning_15m_absorption_fade_1130",
+    "run_id": "rescue1",
+    "passed": false,
+    "halted": true,
+    "terminal_stage": "limited_core_grid_test",
+    "terminal_status": "failed",
+    "profitable_combo_rate": 0.6296296296296297,
+    "profitable_monkey_rate": "",
+    "median_net_profit": "",
+    "trade_path_profitable_rate": "",
+    "trade_path_median_net_profit": "",
+    "one_tick_worse_profitable": "",
+    "apex_rule_violations": 0,
+    "best_day_concentration": 0.20388349514563106,
+    "top_net_profit": 772.5,
+    "top_profit_factor": 4.0594059405940595,
+    "top_mar": 2.9522290721744624,
+    "top_expectancy_r": 0.3910538179768949,
+    "top_trades": 13,
+    "top_trades_per_year": 10.390706919661175,
+    "source_config_path": "campaigns/es_orderflow_absorption_exhaustion_reversal/rescue_attempts/parameter_space_rescue_1/late_morning_15m_absorption_fade_1130/config.yaml",
+    "report_path": "backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/late_morning_15m_absorption_fade_1130/ES/rescue1/campaign_test_summary.json",
+    "failure_reason": "min_trades_per_year;preferred_min_total_trades"
+  },
+  "results_csv": "backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/campaign_results.csv",
+  "trade_logs_manifest": "backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/trade_logs_manifest.csv",
+  "equity_curves_manifest": "backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/equity_curves_manifest.csv",
+  "wfa_table": "backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/wfa_table.csv",
+  "monte_carlo_summary": "backtest-campaigns/es_orderflow_absorption_exhaustion_reversal/monte_carlo_summary.json",
+  "invalid_config_cleanup_20260621": {
+    "reason": "Generated run root failed current config/methodology validation; valid authored variants remain.",
+    "updated_at": "2026-06-21T19:21:25",
+    "deleted_generated_run_count": 1,
+    "audit_path": "research_artifacts/invalid_config_run_cleanup_20260621.json"
+  }
+}

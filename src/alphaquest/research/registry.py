@@ -18,7 +18,7 @@ from alphaquest.research.storage import resolve_recorded_path
 from alphaquest.maintenance.code_catalog import generate_code_views
 
 
-SCHEMA_VERSION = "2"
+SCHEMA_VERSION = "3"
 VIEW_STATES = ("active", "review_queue", "candidate", "closed")
 CRITICAL_ARTIFACTS = (
     "campaign_test_summary.json",
@@ -70,6 +70,9 @@ def build_registry(
 
     source_campaigns, source_variants, source_attempts = _source_records_many(root, campaign_paths)
     runs = _run_records_many(root, runs_paths)
+    archive_rows = _classify_unreviewed_verdicts(root, runs)
+    archived_variants = _classify_unreviewed_variants(source_variants, runs)
+    _write_unreviewed_verdict_archive(research_artifacts_path, archive_rows, archived_variants)
     attempts = _reconcile_attempt_records(source_campaigns, source_attempts, runs)
     campaign_records = _campaign_records(
         root, source_campaigns, source_variants, attempts, runs, runs_paths
@@ -86,6 +89,8 @@ def build_registry(
             "variants": len(source_variants),
             "attempts": len(attempts),
             "runs": len(runs),
+            "archived_unreviewed_runs": len(archive_rows),
+            "archived_unreviewed_variants": len(archived_variants),
             "research_artifacts": len(durable_artifacts),
         }
     finally:
@@ -130,7 +135,7 @@ def generate_views(
             """
             SELECT run_uid, campaign_id, variant_id, test_run_id, failed_stage,
                    updated_at, summary_path, output_dir
-            FROM runs WHERE verdict = 'FAIL'
+            FROM runs WHERE verdict = 'FAIL' AND archived = 0
             ORDER BY COALESCE(updated_at, '') DESC, campaign_id, variant_id
             LIMIT ?
             """,
@@ -142,7 +147,7 @@ def generate_views(
             """
             SELECT run_uid, campaign_id, variant_id, test_run_id, failed_stage,
                    updated_at, summary_path, output_dir
-            FROM runs WHERE verdict = 'NEEDS MANUAL REVIEW'
+            FROM runs WHERE verdict = 'NEEDS MANUAL REVIEW' AND archived = 0
             ORDER BY COALESCE(updated_at, '') DESC, campaign_id, variant_id
             """
         ).fetchall()
@@ -365,6 +370,8 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             timeframe TEXT,
             dataset_id TEXT,
             config_hash TEXT NOT NULL,
+            archived INTEGER NOT NULL,
+            archive_reason TEXT,
             PRIMARY KEY (campaign_id, variant_id),
             FOREIGN KEY (campaign_id) REFERENCES campaigns(campaign_id)
         );
@@ -395,6 +402,9 @@ def _create_schema(connection: sqlite3.Connection) -> None:
             timeframe TEXT,
             data_source TEXT,
             verdict TEXT NOT NULL,
+            original_verdict TEXT NOT NULL,
+            archived INTEGER NOT NULL,
+            archive_reason TEXT,
             halted INTEGER,
             failed_stage TEXT,
             stage_count INTEGER NOT NULL,
@@ -453,6 +463,7 @@ def _create_schema(connection: sqlite3.Connection) -> None:
         );
         CREATE INDEX runs_campaign_idx ON runs(campaign_id, variant_id, updated_at);
         CREATE INDEX runs_verdict_idx ON runs(verdict, updated_at);
+        CREATE INDEX runs_archive_idx ON runs(archived, verdict, updated_at);
         CREATE UNIQUE INDEX runs_one_per_attempt_idx ON runs(campaign_id, variant_id, attempt_id);
         CREATE INDEX attempts_campaign_idx ON attempts(campaign_id, attempt_id);
         """
@@ -905,6 +916,128 @@ def _run_records_many(root: Path, run_roots: Iterable[Path]) -> list[dict[str, A
     return sorted(records.values(), key=lambda item: (item["campaign_id"], item["variant_id"], item["run_uid"]))
 
 
+def _classify_unreviewed_verdicts(root: Path, runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Soft-archive terminal verdicts that lack a current mechanics approval."""
+
+    archived: list[dict[str, Any]] = []
+    for run in runs:
+        verdict = str(run.get("verdict") or "")
+        run["original_verdict"] = verdict
+        run["archived"] = 0
+        run["archive_reason"] = None
+        if verdict not in {"PASS", "FAIL"}:
+            continue
+        proven, reason = _mechanics_review_proven(root, run)
+        if proven:
+            continue
+        run["archived"] = 1
+        run["archive_reason"] = reason
+        archived.append(
+            {
+                "run_uid": run["run_uid"],
+                "campaign_id": run["campaign_id"],
+                "variant_id": run["variant_id"],
+                "original_verdict": verdict,
+                "summary_path": run["summary_path"],
+                "source_config_path": run.get("source_config_path"),
+                "reason": reason,
+            }
+        )
+    return archived
+
+
+def _mechanics_review_proven(root: Path, run: dict[str, Any]) -> tuple[bool, str]:
+    source_value = run.get("source_config_path")
+    source = resolve_recorded_path(str(source_value), project_root=root) if source_value else None
+    if source is None or not source.is_file():
+        snapshot = _resolve(root, run.get("output_dir")) / "source_config.yaml"
+        source = snapshot if snapshot.is_file() else None
+    if source is None:
+        return False, "no source config exists to bind a manual mechanics review"
+    cfg = _read_yaml(source)
+    gate = ((cfg.get("research_metadata") or {}).get("validation_gate") or {})
+    if not isinstance(gate, dict) or gate.get("required") is not True:
+        return False, "source config did not require the manual mechanics gate"
+    approval_value = gate.get("approval_path")
+    evidence_value = gate.get("evidence_dir")
+    if not approval_value or not evidence_value:
+        return False, "manual mechanics approval or evidence path is undeclared"
+    approval_path = resolve_recorded_path(str(approval_value), project_root=root)
+    evidence_dir = resolve_recorded_path(str(evidence_value), project_root=root)
+    approval = _read_json(approval_path)
+    metadata = _read_json(evidence_dir / "metadata.json")
+    if approval.get("schema") != "alphaquest.validation-approval/v1":
+        return False, "manual mechanics approval schema is missing or unsupported"
+    if approval.get("status") != "approved_for_testing":
+        return False, "manual mechanics approval is absent or not approved_for_testing"
+    if approval.get("review_scope") != "implementation_matches_frozen_specification":
+        return False, "manual review scope does not prove implementation correctness"
+    if approval.get("config_hash") != _file_hash(source):
+        return False, "manual mechanics approval is not bound to the source config hash"
+    if not metadata or approval.get("input_data_hash") != metadata.get("input_data_hash"):
+        return False, "manual mechanics approval is not bound to validation input data"
+    if approval.get("validation_schema_version") != metadata.get("schema_version"):
+        return False, "manual mechanics approval is not bound to the validation schema"
+    if approval.get("fixed_random_sample_size") != 5 or approval.get("fixed_random_seed") != 0:
+        return False, "manual mechanics approval did not use the fixed five-entry random sample policy"
+    if approval.get("parameter_mode") != "declared_defaults":
+        return False, "manual mechanics approval did not use declared default parameters"
+    return True, ""
+
+
+def _classify_unreviewed_variants(
+    variants: list[dict[str, Any]], runs: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
+    by_variant: dict[tuple[str, str], list[dict[str, Any]]] = {}
+    for run in runs:
+        by_variant.setdefault((run["campaign_id"], run["variant_id"]), []).append(run)
+    archived: list[dict[str, Any]] = []
+    for variant in variants:
+        variant["archived"] = 0
+        variant["archive_reason"] = None
+        records = by_variant.get((variant["campaign_id"], variant["variant_id"]), [])
+        terminal = [run for run in records if run.get("original_verdict") in {"PASS", "FAIL"}]
+        if not terminal or any(not run.get("archived") for run in terminal):
+            continue
+        reason = "all terminal evidence for this variant lacks qualifying manual mechanics review"
+        variant["archived"] = 1
+        variant["archive_reason"] = reason
+        archived.append(
+            {
+                "campaign_id": variant["campaign_id"],
+                "variant_id": variant["variant_id"],
+                "definition_path": variant["definition_path"],
+                "reason": reason,
+                "archived_run_uids": [run["run_uid"] for run in terminal],
+            }
+        )
+    return archived
+
+
+def _write_unreviewed_verdict_archive(
+    artifact_root: Path,
+    rows: list[dict[str, Any]],
+    variants: list[dict[str, Any]],
+) -> None:
+    path = artifact_root / "governance" / "unreviewed_verdict_archive.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "schema": "alphaquest.unreviewed-verdict-archive/v1",
+        "policy": (
+            "PASS and FAIL records without a hash-bound manual mechanics review using declared defaults "
+            "and the fixed sample are excluded from active research surfaces; evidence is not deleted."
+        ),
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "archived_count": len(rows),
+        "archived_variant_count": len(variants),
+        "entries": rows,
+        "variant_entries": variants,
+    }
+    temporary = path.with_suffix(".json.tmp")
+    temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(temporary, path)
+
+
 def _assign_parent_run_uids(records: list[dict[str, Any]]) -> None:
     originals: dict[tuple[str, str], list[dict[str, Any]]] = {}
     for record in records:
@@ -932,7 +1065,8 @@ def _campaign_records(
     result = []
     for source in source_campaigns:
         campaign_id = source["campaign_id"]
-        campaign_runs = runs_by_campaign.get(campaign_id, [])
+        all_campaign_runs = runs_by_campaign.get(campaign_id, [])
+        campaign_runs = [run for run in all_campaign_runs if not run.get("archived")]
         root_summary = {}
         for run_root in run_roots:
             root_summary = _read_json(run_root / campaign_id / "campaign_test_summary.json")
@@ -940,12 +1074,23 @@ def _campaign_records(
                 break
         decision = _scalar_text(root_summary.get("decision") or source.get("authored_decision"))
         status = _scalar_text(root_summary.get("status") or source.get("authored_status"))
-        lifecycle, reason = _campaign_lifecycle(
-            decision,
-            status,
-            campaign_runs,
-            candidate_reviewed=_has_approved_candidate_review(root, campaign_runs),
-        )
+        archived_terminal = any(run.get("archived") for run in all_campaign_runs)
+        active_terminal = any(run.get("verdict") in {"PASS", "FAIL"} for run in campaign_runs)
+        if archived_terminal and not active_terminal:
+            decision = None
+            status = None
+        if not campaign_runs and archived_terminal:
+            lifecycle, reason = (
+                "review_queue",
+                "historical terminal verdicts are soft-archived because mechanics were not manually reviewed",
+            )
+        else:
+            lifecycle, reason = _campaign_lifecycle(
+                decision,
+                status,
+                campaign_runs,
+                candidate_reviewed=_has_approved_candidate_review(root, campaign_runs),
+            )
         result.append(
             {
                 **source,

@@ -1,0 +1,846 @@
+{
+  "campaign_id": "es_treasury_rate_orderflow_confirmation",
+  "variant_id": "twoy_1d_signed_rate_confirmation_1530",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/variant.yaml",
+    "hash": "7ee1e1fd69d2f93b5844b3d8ffb60ef160b474c0e5b86d71e50d997b3dc744df",
+    "mechanic": {
+      "entry_module": "treasury_rate_orderflow_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_path": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/effective_config.yaml",
+  "effective_config_path": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/effective_config.yaml",
+  "source_config_path": "campaigns/es_treasury_rate_orderflow_confirmation/variants/twoy_1d_signed_rate_confirmation_1530/config.yaml",
+  "source_config_snapshot_path": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/source_config.yaml",
+  "config_hash": "ed4812a6adfd7bf84935fae1ddcacd3dda4c1614db2c3705ec5371fb45c4ee08",
+  "source_config_hash": "f79d0ba66fe1911b4161197d2c5d1484b8c4074e6fbfc55c5e1a74753705f541",
+  "output_dir": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1",
+  "created_at": "2026-06-20T06:45:46",
+  "updated_at": "2026-06-20T06:45:46",
+  "skip_validation": true,
+  "fast_runtime_defaults": true,
+  "passed": false,
+  "halted": true,
+  "stages": [
+    {
+      "stage": "limited_core_grid_test",
+      "label": "Limited Core Grid Test",
+      "status": "failed",
+      "passed": false,
+      "started_at": "2026-06-20T06:44:59",
+      "completed_at": "2026-06-20T06:45:46",
+      "duration_seconds": 47.005147,
+      "criteria": [
+        {
+          "metric": "summary.total_combinations_tested",
+          "actual": 81,
+          "expected": {
+            "valid_parameter_combination_count": "1 fixed combo or 8-120 tunable combos"
+          },
+          "passed": true
+        },
+        {
+          "metric": "summary.percentage_profitable_iterations",
+          "actual": 0.0,
+          "expected": {
+            "min": 0.7
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.apex_rule_violating_iterations",
+          "actual": 0,
+          "expected": {
+            "max": 0
+          },
+          "passed": true
+        }
+      ],
+      "summary": {
+        "parameter_value_counts": {
+          "entry.params.rate_rank_threshold": 3,
+          "entry.params.min_orderflow_imbalance": 3,
+          "sl.params.stop_pct": 3,
+          "tp.params.target_r_multiple": 3
+        },
+        "expected_combinations": 81,
+        "total_combinations_tested": 81,
+        "number_passing_benchmark": 0,
+        "percentage_passing_benchmark": 0.0,
+        "profitable_iterations": 0,
+        "percentage_profitable_iterations": 0.0,
+        "apex_rule_violating_iterations": 0,
+        "profitable_iteration_threshold": 0.7,
+        "meets_profitable_iteration_threshold": false,
+        "top_10_combinations": [
+          {
+            "run_id": 58,
+            "entry.params.rate_rank_threshold": 0.75,
+            "entry.params.min_orderflow_imbalance": 0.0,
+            "sl.params.stop_pct": 0.004,
+            "tp.params.target_r_multiple": 1.0,
+            "signals_generated": 87,
+            "entries_opened": 87,
+            "trades_closed": 87,
+            "entry_rejections_total": 0,
+            "reject_missing_stop": 0,
+            "reject_target_already_reached": 0,
+            "reject_position_sizing": 0,
+            "reject_daily_risk_lockout": 0,
+            "reject_apex_latest_entry_time": 0,
+            "reject_event_no_trade_window": 0,
+            "total_trades": 87,
+            "trades_per_year": 61.22442098502789,
+            "net_profit": -1610.0,
+            "profit_factor": 0.8371269600404654,
+            "expectancy_r": -0.04701767556261362,
+            "max_drawdown": 3645.0,
+            "max_drawdown_pct": 0.023974742657940605,
+            "cagr": -0.007565423475575428,
+            "mar": -0.315558068068343,
+            "win_rate": 0.45977011494252873,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -305.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 9,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;max_consecutive_losses"
+          },
+          {
+            "run_id": 55,
+            "entry.params.rate_rank_threshold": 0.75,
+            "entry.params.min_orderflow_imbalance": 0.0,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 1.0,
+            "signals_generated": 87,
+            "entries_opened": 87,
+            "trades_closed": 87,
+            "entry_rejections_total": 0,
+            "reject_missing_stop": 0,
+            "reject_target_already_reached": 0,
+            "reject_position_sizing": 0,
+            "reject_daily_risk_lockout": 0,
+            "reject_apex_latest_entry_time": 0,
+            "reject_event_no_trade_window": 0,
+            "total_trades": 87,
+            "trades_per_year": 61.22605938156469,
+            "net_profit": -1747.5,
+            "profit_factor": 0.7743705616526791,
+            "expectancy_r": -0.07436739505705015,
+            "max_drawdown": 2602.5,
+            "max_drawdown_pct": 0.01725166550661231,
+            "cagr": -0.008212881850361953,
+            "mar": -0.4760631283521046,
+            "win_rate": 0.4942528735632184,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -205.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 9,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;max_consecutive_losses"
+          },
+          {
+            "run_id": 4,
+            "entry.params.rate_rank_threshold": 0.65,
+            "entry.params.min_orderflow_imbalance": 0.0,
+            "sl.params.stop_pct": 0.004,
+            "tp.params.target_r_multiple": 1.0,
+            "signals_generated": 136,
+            "entries_opened": 136,
+            "trades_closed": 136,
+            "entry_rejections_total": 0,
+            "reject_missing_stop": 0,
+            "reject_target_already_reached": 0,
+            "reject_position_sizing": 0,
+            "reject_daily_risk_lockout": 0,
+            "reject_apex_latest_entry_time": 0,
+            "reject_event_no_trade_window": 0,
+            "total_trades": 136,
+            "trades_per_year": 95.70714085015855,
+            "net_profit": -1805.0,
+            "profit_factor": 0.8828872668288726,
+            "expectancy_r": -0.028169787261690594,
+            "max_drawdown": 3840.0,
+            "max_drawdown_pct": 0.025257342059394217,
+            "cagr": -0.008483379505946465,
+            "mar": -0.3358777612465028,
+            "win_rate": 0.4852941176470588,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -305.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 10,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;max_consecutive_losses"
+          },
+          {
+            "run_id": 56,
+            "entry.params.rate_rank_threshold": 0.75,
+            "entry.params.min_orderflow_imbalance": 0.0,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 1.5,
+            "signals_generated": 87,
+            "entries_opened": 87,
+            "trades_closed": 87,
+            "entry_rejections_total": 0,
+            "reject_missing_stop": 0,
+            "reject_target_already_reached": 0,
+            "reject_position_sizing": 0,
+            "reject_daily_risk_lockout": 0,
+            "reject_apex_latest_entry_time": 0,
+            "reject_event_no_trade_window": 0,
+            "total_trades": 87,
+            "trades_per_year": 61.22605938156469,
+            "net_profit": -1897.5,
+            "profit_factor": 0.78957582478514,
+            "expectancy_r": -0.08573533745947529,
+            "max_drawdown": 3353.75,
+            "max_drawdown_pct": 0.02214335823051211,
+            "cagr": -0.00891918292090299,
+            "mar": -0.4027926942270633,
+            "win_rate": 0.41379310344827586,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -205.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 9,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;max_consecutive_losses"
+          },
+          {
+            "run_id": 64,
+            "entry.params.rate_rank_threshold": 0.75,
+            "entry.params.min_orderflow_imbalance": 0.02,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 1.0,
+            "signals_generated": 68,
+            "entries_opened": 68,
+            "trades_closed": 68,
+            "entry_rejections_total": 0,
+            "reject_missing_stop": 0,
+            "reject_target_already_reached": 0,
+            "reject_position_sizing": 0,
+            "reject_daily_risk_lockout": 0,
+            "reject_apex_latest_entry_time": 0,
+            "reject_event_no_trade_window": 0,
+            "total_trades": 68,
+            "trades_per_year": 47.85485101087814,
+            "net_profit": -1965.0,
+            "profit_factor": 0.6946386946386947,
+            "expectancy_r": -0.1306345615169144,
+            "max_drawdown": 2595.0,
+            "max_drawdown_pct": 0.017227643895638318,
+            "cagr": -0.00923708753661634,
+            "mar": -0.5361782256803542,
+            "win_rate": 0.45588235294117646,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -205.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;min_trades_per_year;preferred_min_total_trades"
+          },
+          {
+            "run_id": 31,
+            "entry.params.rate_rank_threshold": 0.7,
+            "entry.params.min_orderflow_imbalance": 0.0,
+            "sl.params.stop_pct": 0.004,
+            "tp.params.target_r_multiple": 1.0,
+            "signals_generated": 118,
+            "entries_opened": 118,
+            "trades_closed": 118,
+            "entry_rejections_total": 0,
+            "reject_missing_stop": 0,
+            "reject_target_already_reached": 0,
+            "reject_position_sizing": 0,
+            "reject_daily_risk_lockout": 0,
+            "reject_apex_latest_entry_time": 0,
+            "reject_event_no_trade_window": 0,
+            "total_trades": 118,
+            "trades_per_year": 83.04001926704933,
+            "net_profit": -1990.0,
+            "profit_factor": 0.8553516263856078,
+            "expectancy_r": -0.04245397498122161,
+            "max_drawdown": 3897.5,
+            "max_drawdown_pct": 0.025657061040435792,
+            "cagr": -0.009354591725111772,
+            "mar": -0.36460106285629673,
+            "win_rate": 0.4576271186440678,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -305.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 10,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;max_consecutive_losses"
+          },
+          {
+            "run_id": 28,
+            "entry.params.rate_rank_threshold": 0.7,
+            "entry.params.min_orderflow_imbalance": 0.0,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 1.0,
+            "signals_generated": 118,
+            "entries_opened": 118,
+            "trades_closed": 118,
+            "entry_rejections_total": 0,
+            "reject_missing_stop": 0,
+            "reject_target_already_reached": 0,
+            "reject_position_sizing": 0,
+            "reject_daily_risk_lockout": 0,
+            "reject_apex_latest_entry_time": 0,
+            "reject_event_no_trade_window": 0,
+            "total_trades": 118,
+            "trades_per_year": 83.04224146005325,
+            "net_profit": -2002.5,
+            "profit_factor": 0.8075906797982224,
+            "expectancy_r": -0.05872601974296884,
+            "max_drawdown": 3030.0,
+            "max_drawdown_pct": 0.02006257138600586,
+            "cagr": -0.00941371976748906,
+            "mar": -0.46921800732160196,
+            "win_rate": 0.5,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -205.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 10,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;max_consecutive_losses"
+          },
+          {
+            "run_id": 1,
+            "entry.params.rate_rank_threshold": 0.65,
+            "entry.params.min_orderflow_imbalance": 0.0,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 1.0,
+            "signals_generated": 136,
+            "entries_opened": 136,
+            "trades_closed": 136,
+            "entry_rejections_total": 0,
+            "reject_missing_stop": 0,
+            "reject_target_already_reached": 0,
+            "reject_position_sizing": 0,
+            "reject_daily_risk_lockout": 0,
+            "reject_apex_latest_entry_time": 0,
+            "reject_event_no_trade_window": 0,
+            "total_trades": 136,
+            "trades_per_year": 95.70970202175629,
+            "net_profit": -2380.0,
+            "profit_factor": 0.8025305953121759,
+            "expectancy_r": -0.06364787173610699,
+            "max_drawdown": 3362.5,
+            "max_drawdown_pct": 0.022270792972695512,
+            "cagr": -0.01119255687198073,
+            "mar": -0.5025666075609905,
+            "win_rate": 0.5,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -205.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 10,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;max_consecutive_losses"
+          },
+          {
+            "run_id": 63,
+            "entry.params.rate_rank_threshold": 0.75,
+            "entry.params.min_orderflow_imbalance": 0.0,
+            "sl.params.stop_pct": 0.006,
+            "tp.params.target_r_multiple": 2.0,
+            "signals_generated": 87,
+            "entries_opened": 87,
+            "trades_closed": 87,
+            "entry_rejections_total": 0,
+            "reject_missing_stop": 0,
+            "reject_target_already_reached": 0,
+            "reject_position_sizing": 0,
+            "reject_daily_risk_lockout": 0,
+            "reject_apex_latest_entry_time": 0,
+            "reject_event_no_trade_window": 0,
+            "total_trades": 87,
+            "trades_per_year": 61.19780932574577,
+            "net_profit": -2397.5,
+            "profit_factor": 0.8072749196141479,
+            "expectancy_r": -0.05666343169559312,
+            "max_drawdown": 3257.5,
+            "max_drawdown_pct": 0.02160217513843297,
+            "cagr": -0.011269879233530955,
+            "mar": -0.5217011324697776,
+            "win_rate": 0.3333333333333333,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -417.5,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 9,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit;max_consecutive_losses"
+          },
+          {
+            "run_id": 37,
+            "entry.params.rate_rank_threshold": 0.7,
+            "entry.params.min_orderflow_imbalance": 0.02,
+            "sl.params.stop_pct": 0.0025,
+            "tp.params.target_r_multiple": 1.0,
+            "signals_generated": 94,
+            "entries_opened": 94,
+            "trades_closed": 94,
+            "entry_rejections_total": 0,
+            "reject_missing_stop": 0,
+            "reject_target_already_reached": 0,
+            "reject_position_sizing": 0,
+            "reject_daily_risk_lockout": 0,
+            "reject_apex_latest_entry_time": 0,
+            "reject_event_no_trade_window": 0,
+            "total_trades": 94,
+            "trades_per_year": 66.1522940444492,
+            "net_profit": -2495.0,
+            "profit_factor": 0.7184767277856136,
+            "expectancy_r": -0.11838905775075977,
+            "max_drawdown": 3247.5,
+            "max_drawdown_pct": 0.021541931311255202,
+            "cagr": -0.011734721963367334,
+            "mar": -0.5447386213341137,
+            "win_rate": 0.46808510638297873,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0,
+            "profitable": false,
+            "worst_day": -205.0,
+            "best_day_concentration": 0.0,
+            "consecutive_losses": 7,
+            "benchmark_passed": false,
+            "failure_reason": "min_total_net_profit"
+          }
+        ],
+        "stable_parameter_zones": {
+          "tp.params.target_r_multiple": {
+            "1.0": 0.0,
+            "1.5": 0.0,
+            "2.0": 0.0
+          }
+        },
+        "signal_density": {
+          "total_combinations": 81,
+          "combinations_with_signals": 81,
+          "percentage_combinations_with_signals": 1.0,
+          "zero_signal_combinations": 0,
+          "all_combinations_zero_signals": false,
+          "max_signals_generated": 136,
+          "median_signals_generated": 87.0,
+          "combinations_with_entries": 81,
+          "max_entries_opened": 136,
+          "median_entries_opened": 87.0,
+          "combinations_with_trades": 81,
+          "percentage_combinations_with_trades": 1.0,
+          "zero_trade_combinations": 0,
+          "all_combinations_zero_trades": false,
+          "max_total_trades": 136,
+          "median_total_trades": 87.0,
+          "max_trades_per_year": 95.70970202175629,
+          "median_trades_per_year": 61.22442098502789,
+          "min_positive_trades_per_year": 31.654039306420227,
+          "combinations_meeting_50_trades_per_year": 45,
+          "percentage_combinations_meeting_50_trades_per_year": 0.5555555555555556
+        },
+        "iteration_reports_retained": false,
+        "iteration_report_files": [],
+        "data_subset": {
+          "start_date": "2011-02-22",
+          "end_date": "2012-09-06",
+          "session_labels": [
+            "RTH"
+          ]
+        },
+        "parallel": {
+          "enabled": true,
+          "workers": 3,
+          "scope": "grid"
+        },
+        "benchmark_thresholds": {
+          "preferred_min_total_trades": 78,
+          "max_drawdown_pct": 0.1,
+          "min_trades_per_year": 50,
+          "max_consecutive_losses": 8,
+          "min_total_net_profit": 0,
+          "max_best_day_concentration": 0.4
+        },
+        "benchmark_threshold_adjustments": {
+          "mode": "limited_core_grid_screen",
+          "stage_years": 1.541409993155373,
+          "configured_full_years": 15.433264887063656,
+          "preferred_min_total_trades": {
+            "original": 80.0,
+            "adjusted": 8
+          },
+          "effective_preferred_min_total_trades": 78,
+          "included_thresholds": [
+            "max_best_day_concentration",
+            "max_consecutive_losses",
+            "max_drawdown_pct",
+            "min_total_net_profit",
+            "min_trades_per_year",
+            "preferred_min_total_trades"
+          ],
+          "excluded_full_stage_thresholds": [
+            "max_daily_loss",
+            "min_cagr",
+            "min_expectancy_r",
+            "min_mar",
+            "min_monte_carlo_prop_pass_chance",
+            "min_positive_month_rate",
+            "min_profit_factor",
+            "min_wfa_profitable_window_rate",
+            "min_win_rate"
+          ]
+        },
+        "fixed_config_core": {
+          "purpose": "fixed_config_mechanics_cross_check",
+          "parameter_source": "strategy section in effective config",
+          "uses_grid_selected_params": false,
+          "trade_log_csv": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/fixed_config_core_trade_log.csv",
+          "daily_results_csv": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/fixed_config_core_daily_results.csv",
+          "metrics": {
+            "total_trades": 94,
+            "trades_per_year": 66.1505238229037,
+            "net_profit": -4795.0,
+            "profit_factor": 0.6362601934382704,
+            "expectancy_r": -0.167606273905266,
+            "max_drawdown": 6043.75,
+            "max_drawdown_pct": 0.03999007485215665,
+            "cagr": -0.02260389551978892,
+            "mar": -0.5652376396732325,
+            "worst_day": -305.0,
+            "best_day": 413.75,
+            "best_day_concentration": 0.0,
+            "max_consecutive_losses": 11,
+            "positive_month_rate": 0.2777777777777778,
+            "win_rate": 0.3191489361702128,
+            "average_trade": -51.01063829787234,
+            "apex_rule_violations": 0,
+            "apex_forced_flatten_trades": 0
+          },
+          "diagnostics": {
+            "preflight": {
+              "rows": 29172,
+              "timeframe_minutes": 5.0,
+              "warnings": [],
+              "required_columns": [
+                "close",
+                "high",
+                "low",
+                "open",
+                "session_date",
+                "timestamp"
+              ]
+            },
+            "signals_generated": 94,
+            "entries_opened": 94,
+            "trades_closed": 94,
+            "rejects": {
+              "missing_stop": 0,
+              "target_already_reached": 0,
+              "position_sizing": 0,
+              "daily_risk_lockout": 0,
+              "apex_latest_entry_time": 0,
+              "event_no_trade_window": 0
+            },
+            "exits": {
+              "eod_flatten": 36,
+              "stop": 38,
+              "target": 20
+            },
+            "stop_target_conflicts": 0,
+            "detail_conflicts_resolved": 0,
+            "detail_conflicts_unresolved": 0,
+            "apex": {
+              "enabled": true,
+              "timezone": "America/New_York",
+              "latest_flat_time": "16:59:59",
+              "force_flatten_time": "16:58:30",
+              "latest_entry_time": "16:45:00",
+              "pending_orders_cancelled": 0,
+              "pending_order_after_flatten_deadline": 0,
+              "entry_after_latest_entry_time": 0,
+              "exit_after_flatten_deadline": 0,
+              "position_after_flatten_deadline": 0,
+              "overnight_position_violations": 0,
+              "forced_flatten_trades": 0,
+              "rule_violations": 0
+            },
+            "event_filters": {
+              "enabled": false,
+              "timezone": "America/New_York",
+              "windows_configured": 0,
+              "entry_rejections": 0,
+              "pending_orders_cancelled": 0,
+              "flatten_trades": 0,
+              "flatten_trades_by_window": {}
+            }
+          },
+          "strategy": {
+            "entry": {
+              "module": "treasury_rate_orderflow_state",
+              "params": {
+                "feature_csv": "data/external/es_treasury_rate_state_features_20110103_20260609.csv",
+                "setup_mode": "rate_two_sided_confirmation",
+                "rank_mode": "dgs2_1d",
+                "flow_mode": "signed_volume",
+                "signal_times": [
+                  "10:00:00",
+                  "10:30:00",
+                  "11:30:00",
+                  "12:30:00",
+                  "14:30:00",
+                  "15:30:00"
+                ],
+                "bar_interval_minutes": 5,
+                "tick_size": 0.25,
+                "rate_rank_threshold": 0.7,
+                "min_es_move_ticks": 2,
+                "min_orderflow_imbalance": 0.02,
+                "max_trades_per_day": 1
+              }
+            },
+            "sl": {
+              "module": "percent_from_entry",
+              "params": {
+                "stop_pct": 0.004,
+                "round_to_tick": true
+              }
+            },
+            "tp": {
+              "module": "fixed_r",
+              "params": {
+                "target_r_multiple": 1.5
+              }
+            },
+            "flatten_time": "15:55:00"
+          },
+          "core": {
+            "data_subset": {
+              "start_date": "2011-01-03",
+              "end_date": "2026-06-09",
+              "session_labels": [
+                "RTH"
+              ]
+            },
+            "initial_balance": 150000,
+            "tick_size": 0.25,
+            "point_value": 50.0,
+            "tick_value": 12.5,
+            "commission_per_contract": 2.5,
+            "slippage_ticks": 1,
+            "position_sizing": {
+              "mode": "fixed_contracts",
+              "contracts": 1
+            },
+            "daily_loss_limit": 4000,
+            "daily_profit_stop": 1000000000,
+            "flatten_time": "15:55:00",
+            "max_trades_per_day": 1
+          },
+          "equity_curve_csv": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/fixed_config_core_equity_curve.csv",
+          "equity_curve_html": "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/fixed_config_core_equity_curve.html",
+          "equity_curve_points": 95,
+          "configured_data_subset": {},
+          "resolved_data_subset": {
+            "start_date": "2011-02-22",
+            "end_date": "2012-09-06",
+            "session_labels": [
+              "RTH"
+            ]
+          },
+          "data_subset": {
+            "start_date": "2011-02-22",
+            "end_date": "2012-09-06",
+            "session_labels": [
+              "RTH"
+            ]
+          },
+          "actual_data_period": {
+            "first_timestamp": "2011-02-22 09:30:00-05:00",
+            "last_timestamp": "2012-09-06 15:59:00-04:00",
+            "rows": 145860,
+            "strategy_rows": 29172,
+            "timeframe": "5m",
+            "source_timeframe": "1m"
+          }
+        },
+        "configured_data_subset": {
+          "start_date": "2011-01-03",
+          "end_date": "2026-06-09",
+          "session_labels": [
+            "RTH"
+          ]
+        },
+        "resolved_data_subset": {
+          "start_date": "2011-02-22",
+          "end_date": "2012-09-06",
+          "session_labels": [
+            "RTH"
+          ]
+        },
+        "actual_data_period": {
+          "first_timestamp": "2011-02-22 09:30:00-05:00",
+          "last_timestamp": "2012-09-06 15:59:00-04:00",
+          "rows": 145860,
+          "strategy_rows": 29172,
+          "timeframe": "5m",
+          "source_timeframe": "1m"
+        }
+      },
+      "data_quality": {
+        "rows": 145860,
+        "duplicate_count": 0,
+        "invalid_ohlc_count": 0,
+        "missing_session_segments": 0,
+        "first_timestamp": "2011-02-22 09:30:00-05:00",
+        "last_timestamp": "2012-09-06 15:59:00-04:00",
+        "roll_boundary_sessions_skipped": 0,
+        "loaded_rows": 153270,
+        "strategy_rows": 29172,
+        "timeframe": "5m",
+        "timeframe_minutes": 5,
+        "source_timeframe": "1m",
+        "prepare_data_duration_seconds": 2.059013,
+        "prepared_data_cache": {
+          "enabled": true,
+          "hit": false,
+          "key": "53f15c64a3765012585afa18411abc3aceaee0c4d8840b1185c3a1853101dc51"
+        }
+      },
+      "input_hash": "4b878ec634d7bfad334902d112b9507cb60074e6f445dcd016ab18478d180c33",
+      "artifacts": [
+        "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/core_grid_results.csv",
+        "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/core_grid_summary.json",
+        "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/fixed_config_core_daily_results.csv",
+        "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/fixed_config_core_equity_curve.csv",
+        "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/fixed_config_core_equity_curve.html",
+        "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/fixed_config_core_metrics.json",
+        "backtest-campaigns/es_treasury_rate_orderflow_confirmation/twoy_1d_signed_rate_confirmation_1530/ES/run1/limited_core_grid_test/fixed_config_core_trade_log.csv"
+      ],
+      "core_grid_parameters": {
+        "entry.params.rate_rank_threshold": [
+          0.65,
+          0.7,
+          0.75
+        ],
+        "entry.params.min_orderflow_imbalance": [
+          0.0,
+          0.02,
+          0.04
+        ],
+        "sl.params.stop_pct": [
+          0.0025,
+          0.004,
+          0.006
+        ],
+        "tp.params.target_r_multiple": [
+          1.0,
+          1.5,
+          2.0
+        ]
+      }
+    },
+    {
+      "stage": "limited_monkey_test",
+      "label": "Limited Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "walk_forward_analysis",
+      "label": "Walk Forward Analysis (WFA)",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monkey_test",
+      "label": "WFA OOS Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monte_carlo",
+      "label": "WFA OOS Monte Carlo",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_core",
+      "label": "Simulated Incubation (OOS) Core",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_monkey",
+      "label": "Simulated Incubation (OOS) Monkey",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "acceptance_oos_test",
+      "label": "Acceptance OOS Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    }
+  ],
+  "source_results_index_path": "campaigns/es_treasury_rate_orderflow_confirmation/results_index.yaml"
+}

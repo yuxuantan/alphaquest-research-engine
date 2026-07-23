@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_mes_micro_flow_divergence_reversion",
+  "variant_id": "midday_mes_price_richness_fade",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/es_mes_flow_divergence_1m_20190506_20260609_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/midday_mes_price_richness_fade/variant.yaml",
+    "hash": "04661117c401a7184abd5040ccbd3d7cc65ec5694854d94b76d0ddbd1a958b14",
+    "mechanic": {
+      "entry_module": "trade_orderflow_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "14:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/midday_mes_price_richness_fade/ES/run1/effective_config.yaml",
+  "effective_config": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/midday_mes_price_richness_fade/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/midday_mes_price_richness_fade/ES/run1/source_config.yaml",
+  "config_hash": "b83586e34575cdf05543cbaa7f73af7b540cb12d29b8d397032d3a4ffaf22790",
+  "source_config_hash": "15247ea932c022644e753602ba4c00372d22ca358f6946b16d2740c80811ae30",
+  "source_results_index": null,
+  "created_at": "2026-06-21T13:21:33",
+  "updated_at": "2026-06-21T13:21:33",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,86 @@
+{
+  "campaign_id": "es_rth_intraday_risk_premium",
+  "symbol": "ES",
+  "timeframe": "5m",
+  "decision": "FAIL",
+  "passed": false,
+  "created_at": "2026-06-15",
+  "data_scope": {
+    "source": "local_sierra_rth_cache",
+    "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+    "start_date": "2011-01-03",
+    "end_date": "2026-06-09",
+    "session_labels": [
+      "RTH"
+    ],
+    "timezone": "America/New_York"
+  },
+  "campaign_config": "campaigns/es_rth_intraday_risk_premium/campaign.yaml",
+  "aggregate_results_csv": "backtest-campaigns/es_rth_intraday_risk_premium/campaign_variant_results.csv",
+  "candidate_strategy_report": null,
+  "no_candidate_strategy_report_reason": "All five fixed long-bias variants lost money in the limited core grid. No variant reached monkey, WFA, Monte Carlo, or frozen acceptance.",
+  "rescue_attempt": {
+    "used": false,
+    "reason": "Flipping the campaign short after seeing all long variants lose money would change the economic thesis after results."
+  },
+  "variants": [
+    {
+      "variant_id": "open_0935_long",
+      "terminal_stage": "limited_core_grid_test",
+      "decision": "FAIL",
+      "total_combinations": 1,
+      "net_profit": -16190.0,
+      "profit_factor": 0.7593370247872459,
+      "total_trades": 363,
+      "expectancy_r": -0.12341172067563005,
+      "report_path": "backtest-campaigns/es_rth_intraday_risk_premium/open_0935_long/ES/run1/campaign_test_summary.json"
+    },
+    {
+      "variant_id": "first_hour_1000_long",
+      "terminal_stage": "limited_core_grid_test",
+      "decision": "FAIL",
+      "total_combinations": 1,
+      "net_profit": -15315.0,
+      "profit_factor": 0.7575589678644926,
+      "total_trades": 363,
+      "expectancy_r": -0.11573397095390234,
+      "report_path": "backtest-campaigns/es_rth_intraday_risk_premium/first_hour_1000_long/ES/run1/campaign_test_summary.json"
+    },
+    {
+      "variant_id": "midmorning_1030_long",
+      "terminal_stage": "limited_core_grid_test",
+      "decision": "FAIL",
+      "total_combinations": 1,
+      "net_profit": -9327.5,
+      "profit_factor": 0.8405555555555555,
+      "total_trades": 363,
+      "expectancy_r": -0.06250703361311283,
+      "report_path": "backtest-campaigns/es_rth_intraday_risk_premium/midmorning_1030_long/ES/run1/campaign_test_summary.json"
+    },
+    {
+      "variant_id": "late_morning_1100_long",
+      "terminal_stage": "limited_core_grid_test",
+      "decision": "FAIL",
+      "total_combinations": 1,
+      "net_profit": -4777.5,
+      "profit_factor": 0.9108841634023503,
+      "total_trades": 363,
+      "expectancy_r": -0.025730858511327788,
+      "report_path": "backtest-campaigns/es_rth_intraday_risk_premium/late_morning_1100_long/ES/run1/campaign_test_summary.json"
+    },
+    {
+      "variant_id": "early_afternoon_1300_long",
+      "terminal_stage": "limited_core_grid_test",
+      "decision": "FAIL",
+      "total_combinations": 1,
+      "net_profit": -10440.0,
+      "profit_factor": 0.7657354426119152,
+      "total_trades": 363,
+      "expectancy_r": -0.0741318210488584,
+      "report_path": "backtest-campaigns/es_rth_intraday_risk_premium/early_afternoon_1300_long/ES/run1/campaign_test_summary.json"
+    }
+  ],
+  "status": "completed",
+  "failure_reason": "All five fixed long-bias variants lost money in the limited core grid. No variant reached monkey, WFA, Monte Carlo, or frozen acceptance.",
+  "updated_at": "2026-06-17T01:12:49"
+}

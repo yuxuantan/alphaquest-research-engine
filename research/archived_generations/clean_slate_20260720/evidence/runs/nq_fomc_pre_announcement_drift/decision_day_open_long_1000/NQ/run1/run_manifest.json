@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_fomc_pre_announcement_drift",
+  "variant_id": "decision_day_open_long_1000",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_fomc_pre_announcement_drift/decision_day_open_long_1000/variant.yaml",
+    "hash": "206d29505deb16dd48d8f7076645e25bcbcac0e2ba26692431e15aa5691b8366",
+    "mechanic": {
+      "entry_module": "fomc_pre_announcement_drift",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_fomc_pre_announcement_drift/variants/decision_day_open_long_1000/config.yaml",
+  "effective_config": "backtest-campaigns/nq_fomc_pre_announcement_drift/decision_day_open_long_1000/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_fomc_pre_announcement_drift/decision_day_open_long_1000/NQ/run1/source_config.yaml",
+  "config_hash": "e922911a519d48e0addc9960b87dd4fd9541987398bb6b0268df13a4e57374da",
+  "source_config_hash": "1f2b1863d6c45491490a7d1577d5b2fe582ad71162c40d4cf73eb790a0cd8d45",
+  "source_results_index": "campaigns/nq_fomc_pre_announcement_drift/results_index.yaml",
+  "created_at": "2026-06-30T09:36:32",
+  "updated_at": "2026-06-30T09:36:32",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

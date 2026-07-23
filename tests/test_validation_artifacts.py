@@ -175,7 +175,7 @@ def test_validation_run_round_trips_sample_records(tmp_path):
 
     loaded = load_validation_run(run_dir)
     assert metadata_record["record_counts"]["trades"] == 1
-    assert loaded.metadata["schema_version"] == "1.3"
+    assert loaded.metadata["schema_version"] == "1.4"
     assert loaded.trades.loc[0, "trade_id"] == 1
     assert loaded.trades.loc[0, "entry_time"] == entry_time
     assert str(loaded.trades.loc[0, "entry_time"].tz) in {eastern, "America/New_York"}
@@ -209,6 +209,145 @@ def test_validation_run_writes_empty_event_transition_artifact_for_legacy_caller
     assert list(transition_frame.columns) == EVENT_TRANSITION_COLUMNS
     assert metadata_record["artifact_files"]["event_transitions"] == EVENT_TRANSITIONS_FILENAME
     assert metadata_record["record_counts"]["event_transitions"] == 0
+
+
+def test_event_replay_checks_use_causal_transitions_instead_of_bar_snapshots(tmp_path):
+    eastern = "America/New_York"
+    submitted_at = pd.Timestamp("2025-07-14 10:00:00", tz=eastern)
+    entry_at = submitted_at + pd.Timedelta(seconds=1)
+    amended_at = entry_at + pd.Timedelta(seconds=30)
+    exit_at = amended_at + pd.Timedelta(seconds=10)
+    output = tmp_path / "event_validation"
+    write_validation_run(
+        output,
+        ValidationMetadata(
+            run_id="event-mechanics",
+            campaign_id="yush_orderflow_range",
+            strategy_id="yush_orderflow_range",
+            variant_id="v01",
+            symbol="ES",
+            timezone=eastern,
+            tick_size=0.25,
+            tick_value=12.5,
+            timeframe="1m",
+            timeframe_minutes=1,
+            config_hash="config-hash",
+            input_data_hash="input-hash",
+            validation_lane="event_replay",
+            source_data_type="databento_zip_trades",
+            source_data_path="events.zip",
+            source_trade_count=1,
+            commission_per_contract=2.5,
+            slippage_ticks=1,
+            point_value=50,
+            forced_flatten_time="11:00:00",
+        ),
+        trades=[
+            TradeSummary(
+                run_id="event-mechanics",
+                campaign_id="yush_orderflow_range",
+                strategy_id="yush_orderflow_range",
+                variant_id="v01",
+                trade_id=1,
+                symbol="ES",
+                contract="ESU5",
+                session_date="2025-07-14",
+                direction="short",
+                entry_time=entry_at,
+                entry_price=99.75,
+                entry_order_type="stop_market",
+                stop_price=98.0,
+                target_price=95.0,
+                exit_time=exit_at,
+                exit_price=98.25,
+                exit_reason="managed_stop",
+            )
+        ],
+        event_transitions=[
+            EventTransition(
+                session_date="2025-07-14",
+                contract="ESU5",
+                order_id="VAH",
+                timestamp=submitted_at,
+                source_ordinal=100,
+                event_index=10,
+                transition="order_submitted",
+                direction="short",
+                price=100.0,
+                active_from_event_index=11,
+                stop_price=102.0,
+                state_json='{"transition":"order_submitted"}',
+                evidence_json='{"event_index":10}',
+            ),
+            EventTransition(
+                trade_id=1,
+                session_date="2025-07-14",
+                contract="ESU5",
+                order_id="VAH",
+                timestamp=entry_at,
+                source_ordinal=101,
+                event_index=12,
+                transition="entry_filled",
+                direction="short",
+                price=100.0,
+                active_from_event_index=12,
+                stop_price=102.0,
+                state_json='{"transition":"entry_filled"}',
+                evidence_json='{"event_index":12}',
+            ),
+            EventTransition(
+                trade_id=1,
+                session_date="2025-07-14",
+                contract="ESU5",
+                order_id="VAH",
+                timestamp=amended_at,
+                source_ordinal=102,
+                event_index=13,
+                transition="bracket_amended",
+                direction="short",
+                price=97.0,
+                active_from_event_index=14,
+                stop_price=98.0,
+                target_price=95.0,
+                state_json='{"transition":"bracket_amended"}',
+                evidence_json='{"event_index":13}',
+            ),
+            EventTransition(
+                trade_id=1,
+                session_date="2025-07-14",
+                contract="ESU5",
+                order_id="VAH",
+                timestamp=exit_at,
+                source_ordinal=103,
+                event_index=14,
+                transition="position_closed",
+                direction="short",
+                price=98.0,
+                active_from_event_index=14,
+                stop_price=98.0,
+                target_price=95.0,
+                reason="managed_stop",
+                state_json='{"transition":"position_closed"}',
+                evidence_json='{"event_index":14}',
+            ),
+        ],
+    )
+
+    checks = pd.read_parquet(output / VALIDATION_CHECKS_FILENAME)
+    exit_audits = pd.read_parquet(output / EXIT_AUDITS_FILENAME)
+    assert not (checks["status"] == "ERROR").any()
+    assert exit_audits.empty
+    assert {
+        "identity",
+        "time_ordering",
+        "price_logic",
+        "filter_logic",
+        "exit_logic",
+        "data_quality",
+        "reconciliation",
+    } <= set(checks["category"])
+    assert "event_managed_bracket_ordered" in set(checks["check_name"])
+    assert "condition_snapshot_present" not in set(checks["check_name"])
 
 
 def test_builders_map_existing_trade_log_columns_without_strategy_logic():

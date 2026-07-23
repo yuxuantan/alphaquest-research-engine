@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_rolling_stat_envelope_orderflow_reversion",
+  "variant_id": "afternoon_5m_large20_24bar_reversion_1500",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/campaign.yaml",
+    "hash": "eaf80052eed80fe40dcfb4689075c6ddf5f7ebe02eb27ce49a08bc946d4ad683"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/afternoon_5m_large20_24bar_reversion_1500/variant.yaml",
+    "hash": "52a32757bb708f8dcd154bbba189cc4dff029f47ceeb99bc0558237bdf9a67ed",
+    "mechanic": {
+      "entry_module": "rolling_stat_envelope_orderflow_reversion",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_rolling_stat_envelope_orderflow_reversion/rescue_attempts/stop_distance_rescue_1/afternoon_5m_large20_24bar_reversion_1500/config.yaml",
+  "effective_config": "backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/afternoon_5m_large20_24bar_reversion_1500/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_rolling_stat_envelope_orderflow_reversion/afternoon_5m_large20_24bar_reversion_1500/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "4b54be7a2fe1406f45b5dd88f95fff9a86ef380f3e72e12676e6937742efc99a",
+  "source_config_hash": "8fb9762e54b0c171087eeaa75454fbb2de73cdf16e09c4bbdaad0574dc2d8255",
+  "source_results_index": "campaigns/es_rolling_stat_envelope_orderflow_reversion/results_index.yaml",
+  "created_at": "2026-06-19T16:09:22",
+  "updated_at": "2026-06-19T16:09:22",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

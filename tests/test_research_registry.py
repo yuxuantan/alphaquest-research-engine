@@ -104,9 +104,17 @@ def test_registry_records_source_lineage_runs_and_stages(tmp_path):
 
     counts = build_registry(project_root=tmp_path, database_path=database)
 
-    assert counts == {"campaigns": 1, "variants": 1, "attempts": 2, "runs": 1, "research_artifacts": 0}
+    assert counts == {
+        "campaigns": 1,
+        "variants": 1,
+        "attempts": 2,
+        "runs": 1,
+        "archived_unreviewed_runs": 1,
+        "archived_unreviewed_variants": 1,
+        "research_artifacts": 1,
+    }
     summary = registry_summary(database)
-    assert summary["campaign_lifecycle"] == {"active": 1}
+    assert summary["campaign_lifecycle"] == {"review_queue": 1}
     assert summary["run_verdicts"] == {"FAIL": 1}
     with sqlite3.connect(database) as connection:
         attempts = connection.execute(
@@ -118,6 +126,8 @@ def test_registry_records_source_lineage_runs_and_stages(tmp_path):
         assert attempts[1][0] == "rescue_01"
         assert attempts[1][1] == "legacy_authored_definition"
         assert connection.execute("SELECT COUNT(DISTINCT attempt_id) FROM runs").fetchone()[0] == 1
+        assert connection.execute("SELECT archived FROM runs").fetchone()[0] == 1
+        assert connection.execute("SELECT archived FROM variants").fetchone()[0] == 1
         assert connection.execute("SELECT stage_name FROM stages").fetchone()[0] == "limited_core_grid_test"
         assert connection.execute("SELECT COUNT(*) FROM artifact_objects").fetchone()[0] >= 1
         assert connection.execute("SELECT MIN(LENGTH(sha256)) FROM artifacts").fetchone()[0] == 64

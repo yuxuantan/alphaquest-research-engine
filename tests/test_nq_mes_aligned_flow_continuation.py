@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 
-CAMPAIGN_ROOT = Path("research/campaigns/archive/nq_mes_aligned_flow_continuation")
+CAMPAIGN_ROOT = Path("research/archived_generations/clean_slate_20260720/campaigns/archive/nq_mes_aligned_flow_continuation")
 NQ_MES_DATASET_ID = "nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny"
 
 

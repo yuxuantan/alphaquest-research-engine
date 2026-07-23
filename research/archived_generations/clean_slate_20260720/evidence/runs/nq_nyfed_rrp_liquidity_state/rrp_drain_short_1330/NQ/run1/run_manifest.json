@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_nyfed_rrp_liquidity_state",
+  "variant_id": "rrp_drain_short_1330",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_nyfed_rrp_liquidity_state/rrp_drain_short_1330/variant.yaml",
+    "hash": "58d630cf3b3b63bc419f2cb77bc07e6289031b7efd721efe5a9c6d3a9a862102",
+    "mechanic": {
+      "entry_module": "market_plumbing_priority",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_nyfed_rrp_liquidity_state/variants/rrp_drain_short_1330/config.yaml",
+  "effective_config": "backtest-campaigns/nq_nyfed_rrp_liquidity_state/rrp_drain_short_1330/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_nyfed_rrp_liquidity_state/rrp_drain_short_1330/NQ/run1/source_config.yaml",
+  "config_hash": "33fcc5edaca5df6084af77e0a9376f313d0e68d0e0b3ea7eb29f10884f5e2f9b",
+  "source_config_hash": "5c05aa8f7b7a63140097f8083cb0d8e1c5e883997a8f0417736473066dc5c9da",
+  "source_results_index": "campaigns/nq_nyfed_rrp_liquidity_state/results_index.yaml",
+  "created_at": "2026-06-23T09:40:01",
+  "updated_at": "2026-06-23T09:40:01",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

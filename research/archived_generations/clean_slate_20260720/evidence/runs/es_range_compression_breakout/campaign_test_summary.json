@@ -1,0 +1,92 @@
+{
+  "campaign_id": "es_range_compression_breakout",
+  "symbol": "ES",
+  "timeframe": "5m",
+  "decision": "FAIL",
+  "passed": false,
+  "created_at": "2026-06-15",
+  "data_scope": {
+    "source": "local_sierra_rth_cache",
+    "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+    "start_date": "2011-01-03",
+    "end_date": "2026-06-09",
+    "session_labels": [
+      "RTH"
+    ],
+    "timezone": "America/New_York"
+  },
+  "campaign_config": "campaigns/es_range_compression_breakout/campaign.yaml",
+  "aggregate_results_csv": "backtest-campaigns/es_range_compression_breakout/campaign_variant_results.csv",
+  "methodology_audit": "methodology_audit.md",
+  "manual_due_diligence_checklist": "manual_due_diligence_checklist.md",
+  "candidate_strategy_report": null,
+  "no_candidate_strategy_report_reason": "No variant passed the staged methodology. Four variants failed limited_core_grid_test; id_nr4_prior_session_breakout passed core but failed limited_monkey_test.",
+  "rescue_attempt": {
+    "used": false,
+    "reason": "The only core-pass variant had 18 trades in the selected core row and failed random-placebo monkey profitability with negative median PnL. Tightening around that pocket would be tuning after results."
+  },
+  "variants": [
+    {
+      "variant_id": "nr4_prior_session_breakout",
+      "terminal_stage": "limited_core_grid_test",
+      "decision": "FAIL",
+      "core_profitable_rate": 0.5802469135802469,
+      "core_profitable_iterations": 47,
+      "total_combinations": 81,
+      "top_net_profit": 2752.5,
+      "top_total_trades": 107,
+      "report_path": "backtest-campaigns/es_range_compression_breakout/nr4_prior_session_breakout/ES/run1/campaign_test_summary.json"
+    },
+    {
+      "variant_id": "id_nr4_prior_session_breakout",
+      "terminal_stage": "limited_monkey_test",
+      "decision": "FAIL",
+      "core_profitable_rate": 1.0,
+      "core_profitable_iterations": 81,
+      "total_combinations": 81,
+      "top_net_profit": 1785.0,
+      "top_total_trades": 18,
+      "monkey_percentage_profitable": 0.3933333333333333,
+      "monkey_median_net_profit": -570.0,
+      "trade_path_stress_percentage_profitable": 0.9533333333333334,
+      "one_tick_worse_net_profit": 1285.0,
+      "report_path": "backtest-campaigns/es_range_compression_breakout/id_nr4_prior_session_breakout/ES/run1/campaign_test_summary.json"
+    },
+    {
+      "variant_id": "nr7_opening_range_30_breakout",
+      "terminal_stage": "limited_core_grid_test",
+      "decision": "FAIL",
+      "core_profitable_rate": 0.037037037037037035,
+      "core_profitable_iterations": 3,
+      "total_combinations": 81,
+      "top_net_profit": 95.0,
+      "top_total_trades": 61,
+      "report_path": "backtest-campaigns/es_range_compression_breakout/nr7_opening_range_30_breakout/ES/run1/campaign_test_summary.json"
+    },
+    {
+      "variant_id": "nr7_opening_range_15_long_breakout",
+      "terminal_stage": "limited_core_grid_test",
+      "decision": "FAIL",
+      "core_profitable_rate": 0.5555555555555556,
+      "core_profitable_iterations": 45,
+      "total_combinations": 81,
+      "top_net_profit": 1382.5,
+      "top_total_trades": 41,
+      "report_path": "backtest-campaigns/es_range_compression_breakout/nr7_opening_range_15_long_breakout/ES/run1/campaign_test_summary.json"
+    },
+    {
+      "variant_id": "nr7_opening_range_15_short_breakout",
+      "terminal_stage": "limited_core_grid_test",
+      "decision": "FAIL",
+      "core_profitable_rate": 0.0,
+      "core_profitable_iterations": 0,
+      "total_combinations": 81,
+      "top_net_profit": -882.5,
+      "top_total_trades": 34,
+      "report_path": "backtest-campaigns/es_range_compression_breakout/nr7_opening_range_15_short_breakout/ES/run1/campaign_test_summary.json"
+    }
+  ],
+  "status": "completed",
+  "failure_reason": "No variant passed the staged methodology. Four variants failed limited_core_grid_test; id_nr4_prior_session_breakout passed core but failed limited_monkey_test.",
+  "updated_at": "2026-06-17T01:12:49"
+}

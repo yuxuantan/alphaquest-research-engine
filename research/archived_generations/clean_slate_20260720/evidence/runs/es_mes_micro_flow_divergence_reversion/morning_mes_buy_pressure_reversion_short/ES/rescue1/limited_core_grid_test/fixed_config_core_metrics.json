@@ -1,0 +1,168 @@
+{
+  "purpose": "fixed_config_mechanics_cross_check",
+  "parameter_source": "strategy section in effective config",
+  "uses_grid_selected_params": false,
+  "trade_log_csv": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/morning_mes_buy_pressure_reversion_short/ES/rescue1/limited_core_grid_test/fixed_config_core_trade_log.csv",
+  "daily_results_csv": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/morning_mes_buy_pressure_reversion_short/ES/rescue1/limited_core_grid_test/fixed_config_core_daily_results.csv",
+  "metrics": {
+    "total_trades": 37,
+    "trades_per_year": 53.61896286173235,
+    "net_profit": 8002.5,
+    "profit_factor": 1.9621280432822363,
+    "expectancy_r": 0.2479607039853183,
+    "max_drawdown": 2922.5,
+    "max_drawdown_pct": 0.019405066232860795,
+    "cagr": 0.07823016954558937,
+    "mar": 4.031430174307437,
+    "worst_day": -955.0,
+    "best_day": 1832.5,
+    "best_day_concentration": 0.2289909403311465,
+    "max_consecutive_losses": 5,
+    "positive_month_rate": 0.75,
+    "win_rate": 0.5675675675675675,
+    "average_trade": 216.28378378378378,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "diagnostics": {
+    "preflight": {
+      "rows": 69420,
+      "timeframe_minutes": 1.0,
+      "warnings": [],
+      "required_columns": [
+        "close",
+        "high",
+        "low",
+        "open",
+        "session_date",
+        "timestamp"
+      ]
+    },
+    "signals_generated": 37,
+    "entries_opened": 37,
+    "trades_closed": 37,
+    "rejects": {
+      "missing_stop": 0,
+      "target_already_reached": 0,
+      "position_sizing": 0,
+      "daily_risk_lockout": 0,
+      "apex_latest_entry_time": 0,
+      "event_no_trade_window": 0
+    },
+    "exits": {
+      "eod_flatten": 28,
+      "target": 5,
+      "stop": 4
+    },
+    "stop_target_conflicts": 0,
+    "detail_conflicts_resolved": 0,
+    "detail_conflicts_unresolved": 0,
+    "apex": {
+      "enabled": true,
+      "timezone": "America/New_York",
+      "latest_flat_time": "16:59:59",
+      "force_flatten_time": "16:58:30",
+      "latest_entry_time": "16:45:00",
+      "pending_orders_cancelled": 0,
+      "pending_order_after_flatten_deadline": 0,
+      "entry_after_latest_entry_time": 0,
+      "exit_after_flatten_deadline": 0,
+      "position_after_flatten_deadline": 0,
+      "overnight_position_violations": 0,
+      "forced_flatten_trades": 0,
+      "rule_violations": 0
+    },
+    "event_filters": {
+      "enabled": false,
+      "timezone": "America/New_York",
+      "windows_configured": 0,
+      "entry_rejections": 0,
+      "pending_orders_cancelled": 0,
+      "flatten_trades": 0,
+      "flatten_trades_by_window": {}
+    }
+  },
+  "strategy": {
+    "entry": {
+      "module": "trade_orderflow_pressure",
+      "params": {
+        "setup_mode": "morning_mes_buy_pressure_reversion_short",
+        "bar_interval_minutes": 1,
+        "entry_time": "10:00:00",
+        "flatten_time": "11:31:00",
+        "flow_column": "mes_minus_es_imbalance_30",
+        "flow_threshold": 0.02,
+        "positive_flow_direction": "short",
+        "allow_long": false,
+        "allow_short": true,
+        "return_confirmation": "none",
+        "max_trades_per_day": 1,
+        "stop_pct": 0.004,
+        "target_r_multiple": 2.0
+      }
+    },
+    "sl": {
+      "module": "percent_from_entry",
+      "params": {
+        "stop_pct": 0.004,
+        "round_to_tick": true
+      }
+    },
+    "tp": {
+      "module": "fixed_r",
+      "params": {
+        "target_r_multiple": 2.0
+      }
+    },
+    "flatten_time": "11:31:00"
+  },
+  "core": {
+    "data_subset": {
+      "start_date": "2019-05-06",
+      "end_date": "2026-06-09",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "initial_balance": 150000,
+    "tick_size": 0.25,
+    "point_value": 50.0,
+    "tick_value": 12.5,
+    "commission_per_contract": 2.5,
+    "slippage_ticks": 1,
+    "position_sizing": {
+      "mode": "fixed_contracts",
+      "contracts": 1
+    },
+    "daily_loss_limit": 3000,
+    "daily_profit_stop": 5000,
+    "flatten_time": "11:31:00",
+    "max_trades_per_day": 1
+  },
+  "equity_curve_csv": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/morning_mes_buy_pressure_reversion_short/ES/rescue1/limited_core_grid_test/fixed_config_core_equity_curve.csv",
+  "equity_curve_html": "backtest-campaigns/es_mes_micro_flow_divergence_reversion/morning_mes_buy_pressure_reversion_short/ES/rescue1/limited_core_grid_test/fixed_config_core_equity_curve.html",
+  "equity_curve_points": 38,
+  "configured_data_subset": {},
+  "resolved_data_subset": {
+    "start_date": "2021-07-13",
+    "end_date": "2022-03-28",
+    "session_labels": [
+      "RTH"
+    ]
+  },
+  "data_subset": {
+    "start_date": "2021-07-13",
+    "end_date": "2022-03-28",
+    "session_labels": [
+      "RTH"
+    ]
+  },
+  "actual_data_period": {
+    "first_timestamp": "2021-07-13 09:30:00-04:00",
+    "last_timestamp": "2022-03-28 15:59:00-04:00",
+    "rows": 69420,
+    "strategy_rows": 69420,
+    "timeframe": "1m",
+    "source_timeframe": "1m"
+  }
+}

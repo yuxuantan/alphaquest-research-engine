@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_europe_equity_close_spillover",
+  "variant_id": "dax_1d_weakness_short_1330",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_europe_equity_close_spillover/dax_1d_weakness_short_1330/variant.yaml",
+    "hash": "1d847c602a93e60f7035f51b3fc35bf1bd6f63124da3ab184f969cb5923f746e",
+    "mechanic": {
+      "entry_module": "nq_europe_equity_close_spillover",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_europe_equity_close_spillover/variants/dax_1d_weakness_short_1330/config.yaml",
+  "effective_config": "backtest-campaigns/nq_europe_equity_close_spillover/dax_1d_weakness_short_1330/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_europe_equity_close_spillover/dax_1d_weakness_short_1330/NQ/run1/source_config.yaml",
+  "config_hash": "f40920d42031e1e3d8d4474b8626d2e0608fcb96bd863095a8b45770ee96799e",
+  "source_config_hash": "35e191b32085e689c51f092233ccbeac20b4f5b61212035b15390a6a646c29ce",
+  "source_results_index": "campaigns/nq_europe_equity_close_spillover/results_index.yaml",
+  "created_at": "2026-07-01T04:00:30",
+  "updated_at": "2026-07-01T04:00:30",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_high_semivariance_mes_trend_pullback_crowding",
+  "variant_id": "late_morning30_notional_high_downside_window_1230",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/late_morning30_notional_high_downside_window_1230/variant.yaml",
+    "hash": "071d299d1af7214731ecea5651236d10563d18b5461adb0c73f33efab3a41f3c",
+    "mechanic": {
+      "entry_module": "semivariance_filtered_trend_mes_participation_crowding",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "13:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_high_semivariance_mes_trend_pullback_crowding/variants/late_morning30_notional_high_downside_window_1230/config.yaml",
+  "effective_config": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/late_morning30_notional_high_downside_window_1230/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/late_morning30_notional_high_downside_window_1230/ES/run1/source_config.yaml",
+  "config_hash": "3ea3cdd006a514de82711eb5b6da125bd340ff640348087f0e0f779de3e0bc61",
+  "source_config_hash": "883b778fbe97e3ab031e056ab9e4f6d8d370aad8fe78cd490999b98706cfcb80",
+  "source_results_index": "campaigns/es_high_semivariance_mes_trend_pullback_crowding/results_index.yaml",
+  "created_at": "2026-06-20T11:45:31",
+  "updated_at": "2026-06-20T11:45:31",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

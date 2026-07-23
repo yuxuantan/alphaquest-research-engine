@@ -11,6 +11,7 @@ import pandas as pd
 from alphaquest.backtest.engine import BacktestEngine
 from alphaquest.backtest.metrics import benchmark
 from alphaquest.research.core_grid import _evaluate_core_grid_combo, parameter_combinations, run_core_grid
+from alphaquest.research.execution import run_research_backtest
 from alphaquest.utils.hashing import object_sha256
 from alphaquest.utils.params import apply_dotted_params
 from alphaquest.utils.progress import progress_bar
@@ -313,7 +314,12 @@ def run_wfa(
             train_objective = _metric_value(best, objective)
             oos_started = time.perf_counter()
             test_cfg = apply_dotted_params(base_config, params)
-            test_result = BacktestEngine(test_cfg).run(test, detail_data=test_detail)
+            test_result = run_research_backtest(
+                test_cfg,
+                test,
+                detail_data=test_detail,
+                bar_engine_cls=BacktestEngine,
+            )
             oos_seconds = _elapsed(oos_started)
             _add_timing(phase_timings, "oos_backtest", oos_seconds)
             test_metrics = test_result["metrics"]
@@ -383,6 +389,7 @@ def run_wfa(
         _add_timing(phase_timings, "stitch_oos_trades", _elapsed(stitch_started))
     summary = {
         "windows": int(len(df)),
+        "parameter_mode": "fixed_config" if not grid_config["parameters"] else "predeclared_optimization",
         "objective": _objective_label(objective),
         "window_mode": _wfa_mode(wfa_config),
         "train_months": int(wfa_config.get("train_months", 3)),
@@ -837,7 +844,11 @@ def _parallel_chunk_size(item_count: int, workers: int) -> int:
 
 def _wfa_grid_config(wfa_config: dict) -> dict:
     if "parameters" not in wfa_config:
-        raise ValueError("wfa.parameters must define the walk-forward optimization parameter space.")
+        raise ValueError(
+            "wfa.parameters must be declared; use an empty mapping for one fixed configuration."
+        )
+    if not isinstance(wfa_config["parameters"], dict):
+        raise ValueError("wfa.parameters must be a mapping.")
     return {
         "objective": _wfa_objective(wfa_config.get("objective", "MAR")),
         "parameters": wfa_config["parameters"],

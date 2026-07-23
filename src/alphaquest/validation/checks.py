@@ -22,6 +22,7 @@ def run_validation_checks(
     tick_windows: pd.DataFrame | None = None,
     exit_audits: pd.DataFrame | None = None,
     metadata: dict[str, Any] | None = None,
+    event_transitions: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     checker = _ValidationChecker(
         trades=trades,
@@ -29,6 +30,7 @@ def run_validation_checks(
         bars=bar_windows,
         ticks=tick_windows if tick_windows is not None else pd.DataFrame(),
         exits=exit_audits if exit_audits is not None else pd.DataFrame(),
+        events=event_transitions if event_transitions is not None else pd.DataFrame(),
         metadata=metadata or {},
     )
     return checker.run()
@@ -56,6 +58,7 @@ class _ValidationChecker:
         bars: pd.DataFrame,
         ticks: pd.DataFrame,
         exits: pd.DataFrame,
+        events: pd.DataFrame,
         metadata: dict[str, Any],
     ) -> None:
         self.trades = trades.copy()
@@ -63,7 +66,9 @@ class _ValidationChecker:
         self.bars = bars.copy()
         self.ticks = ticks.copy()
         self.exits = exits.copy()
+        self.events = events.copy()
         self.metadata = metadata
+        self.event_lane = str(metadata.get("validation_lane") or "").lower() == "event_replay"
         self.rows: list[dict[str, Any]] = []
         self._counter = 0
 
@@ -72,6 +77,15 @@ class _ValidationChecker:
         self._check_trade_ids_unique()
         for _, trade in self.trades.iterrows():
             trade_id = trade.get("trade_id")
+            events = _rows_for_trade(self.events, trade_id)
+            if self.event_lane:
+                self._check_event_trade_identity(trade, events)
+                self._check_event_time_ordering(trade, events)
+                self._check_event_price_logic(trade, events)
+                self._check_event_filters(trade, events)
+                self._check_event_exits(trade, events)
+                self._check_event_data_quality(trade, events)
+                continue
             condition = _row_for_trade(self.conditions, trade_id)
             exit_audit = _row_for_trade(self.exits, trade_id)
             bars = _rows_for_trade(self.bars, trade_id)
@@ -84,6 +98,289 @@ class _ValidationChecker:
             self._check_exits(trade, condition, exit_audit)
             self._check_data_quality(trade, condition, bars, ticks)
         return normalize_columns(pd.DataFrame(self.rows), VALIDATION_CHECK_COLUMNS)
+
+    def _check_event_trade_identity(self, trade: pd.Series, events: pd.DataFrame) -> None:
+        trade_id = trade.get("trade_id")
+        entries = _event_transitions(events, "entry_filled")
+        closes = _event_transitions(events, "position_closed")
+        self._assert(
+            len(entries) == 1,
+            check_name="event_entry_transition_unique",
+            category="identity",
+            description="Every event-replay trade has exactly one matching entry transition.",
+            trade_id=trade_id,
+            expected=1,
+            actual=len(entries),
+        )
+        self._assert(
+            len(closes) == 1,
+            check_name="event_close_transition_unique",
+            category="identity",
+            description="Every event-replay trade has exactly one matching close transition.",
+            trade_id=trade_id,
+            expected=1,
+            actual=len(closes),
+        )
+        for field in ("entry_time", "entry_price", "stop_price", "exit_time", "exit_price", "exit_reason"):
+            self._assert(
+                not _is_missing(trade.get(field)),
+                check_name=f"{field}_present",
+                category="identity",
+                description=f"Event-replay trade has required {field}.",
+                trade_id=trade_id,
+                expected="non-missing",
+                actual=trade.get(field),
+            )
+        amended = not _event_transitions(events, "bracket_amended").empty
+        target_required = amended or _is_target_reason(_normalize_reason(trade.get("exit_reason")))
+        self._assert(
+            not target_required or not _is_missing(trade.get("target_price")),
+            check_name="event_target_activation_consistent",
+            category="identity",
+            description="A target is required only after midpoint bracket activation or for a target exit.",
+            trade_id=trade_id,
+            expected="target present after activation; otherwise optional",
+            actual=trade.get("target_price"),
+        )
+
+    def _check_event_time_ordering(self, trade: pd.Series, events: pd.DataFrame) -> None:
+        trade_id = trade.get("trade_id")
+        entry = _single_event(events, "entry_filled")
+        close = _single_event(events, "position_closed")
+        if entry is None or close is None:
+            return
+        entry_index = _num(entry.get("event_index"))
+        close_index = _num(close.get("event_index"))
+        entry_time = _ts(entry.get("timestamp"))
+        close_time = _ts(close.get("timestamp"))
+        self._assert(
+            entry_index is not None and close_index is not None and entry_index < close_index,
+            check_name="event_entry_before_close",
+            category="time_ordering",
+            description="The causally ordered entry event precedes the close event.",
+            trade_id=trade_id,
+            expected="entry event_index < close event_index",
+            actual=f"{entry_index} < {close_index}",
+        )
+        self._assert(
+            entry_time is not None and close_time is not None and entry_time <= close_time,
+            check_name="event_timestamps_ordered",
+            category="time_ordering",
+            description="Entry and close event timestamps are ordered.",
+            trade_id=trade_id,
+            expected="entry timestamp <= close timestamp",
+            actual=f"{entry_time} <= {close_time}",
+        )
+        self._assert(
+            _timestamps_equal(entry_time, _ts(trade.get("entry_time")))
+            and _timestamps_equal(close_time, _ts(trade.get("exit_time"))),
+            check_name="event_trade_times_reconciled",
+            category="time_ordering",
+            description="Trade timestamps reconcile exactly to their causal transitions.",
+            trade_id=trade_id,
+            expected={"entry": entry_time, "exit": close_time},
+            actual={"entry": trade.get("entry_time"), "exit": trade.get("exit_time")},
+        )
+
+    def _check_event_price_logic(self, trade: pd.Series, events: pd.DataFrame) -> None:
+        trade_id = trade.get("trade_id")
+        entry_event = _single_event(events, "entry_filled")
+        if entry_event is None:
+            return
+        direction = str(trade.get("direction") or "").lower()
+        is_long = direction.startswith("long") or direction in {"buy", "1"}
+        is_short = direction.startswith("short") or direction in {"sell", "-1"}
+        entry = _num(trade.get("entry_price"))
+        reference = _num(entry_event.get("price"))
+        initial_stop = _num(entry_event.get("stop_price"))
+        adverse_stop = (
+            entry is not None
+            and initial_stop is not None
+            and ((is_long and initial_stop < entry) or (is_short and initial_stop > entry))
+        )
+        self._assert(
+            adverse_stop,
+            check_name="event_initial_stop_adverse",
+            category="price_logic",
+            description="The initial structural stop is on the adverse side of the actual entry fill.",
+            trade_id=trade_id,
+            expected="long stop < entry or short stop > entry",
+            actual={"direction": direction, "entry": entry, "initial_stop": initial_stop},
+        )
+        tick_size = _num(self.metadata.get("tick_size")) or 0.0
+        slippage_ticks = _num(self.metadata.get("slippage_ticks")) or 0.0
+        expected_fill = None
+        if reference is not None:
+            expected_fill = reference + (tick_size * slippage_ticks if is_long else -tick_size * slippage_ticks)
+        self._assert(
+            entry is not None and expected_fill is not None and _prices_equal(entry, expected_fill, tick_size),
+            check_name="event_entry_slippage_reconciled",
+            category="price_logic",
+            description="The entry fill applies the declared adverse event-replay slippage.",
+            trade_id=trade_id,
+            expected=expected_fill,
+            actual=entry,
+        )
+        amendments = _event_transitions(events, "bracket_amended")
+        if amendments.empty:
+            self._add(
+                check_name="event_target_inactive_before_midpoint",
+                category="price_logic",
+                status=PASS,
+                description="No managed target is installed before midpoint activation.",
+                trade_id=trade_id,
+                expected="no bracket amendment and target may be absent",
+                actual=trade.get("target_price"),
+            )
+        for _, amendment in amendments.iterrows():
+            managed_stop = _num(amendment.get("stop_price"))
+            target = _num(amendment.get("target_price"))
+            bracket_valid = (
+                entry is not None
+                and managed_stop is not None
+                and target is not None
+                and ((is_long and entry < managed_stop < target) or (is_short and target < managed_stop < entry))
+            )
+            self._assert(
+                bracket_valid,
+                check_name="event_managed_bracket_ordered",
+                category="price_logic",
+                description="After midpoint activation the protected stop and opposite-value target are ordered profitably.",
+                trade_id=trade_id,
+                expected="entry < stop < target for long; target < stop < entry for short",
+                actual={"direction": direction, "entry": entry, "stop": managed_stop, "target": target},
+            )
+
+    def _check_event_filters(self, trade: pd.Series, events: pd.DataFrame) -> None:
+        trade_id = trade.get("trade_id")
+        entry = _single_event(events, "entry_filled")
+        if entry is None:
+            return
+        entry_index = _num(entry.get("event_index"))
+        candidates = self.events.copy()
+        for column in ("session_date", "contract", "order_id"):
+            if column in candidates.columns and not _is_missing(entry.get(column)):
+                candidates = candidates[candidates[column].astype(str) == str(entry.get(column))]
+        indexes = pd.to_numeric(candidates.get("event_index"), errors="coerce")
+        candidates = candidates[(candidates.get("transition").astype(str) == "order_submitted") & (indexes < entry_index)]
+        submitted = None if candidates.empty else candidates.sort_values("event_index").iloc[-1]
+        active_from = _num(submitted.get("active_from_event_index")) if submitted is not None else None
+        submitted_index = _num(submitted.get("event_index")) if submitted is not None else None
+        self._assert(
+            submitted is not None,
+            check_name="event_entry_has_prior_order",
+            category="filter_logic",
+            description="A filled entry is backed by a prior strategy-submitted order for the same session, contract, and side.",
+            trade_id=trade_id,
+            expected="matching order_submitted before entry_filled",
+            actual=submitted_index,
+        )
+        self._assert(
+            submitted_index is not None
+            and active_from is not None
+            and entry_index is not None
+            and submitted_index < active_from <= entry_index,
+            check_name="event_order_activation_causal",
+            category="filter_logic",
+            description="The order becomes active only after submission and no later than its fill event.",
+            trade_id=trade_id,
+            expected="submitted event < active_from_event <= fill event",
+            actual={"submitted": submitted_index, "active_from": active_from, "filled": entry_index},
+        )
+
+    def _check_event_exits(self, trade: pd.Series, events: pd.DataFrame) -> None:
+        trade_id = trade.get("trade_id")
+        close = _single_event(events, "position_closed")
+        if close is None:
+            return
+        trade_reason = _normalize_reason(trade.get("exit_reason"))
+        close_reason = _normalize_reason(close.get("reason"))
+        self._assert(
+            trade_reason == close_reason or _same_exit_family(trade_reason, close_reason),
+            check_name="event_exit_reason_reconciled",
+            category="exit_logic",
+            description="The trade exit reason matches the causal position-close transition.",
+            trade_id=trade_id,
+            expected=trade_reason,
+            actual=close_reason,
+        )
+        reference = _num(close.get("price"))
+        stop = _num(close.get("stop_price"))
+        target = _num(close.get("target_price"))
+        if _is_stop_reason(trade_reason):
+            self._assert(
+                reference is not None and stop is not None and _prices_equal(reference, stop, _num(self.metadata.get("tick_size"))),
+                check_name="event_stop_exit_has_stop_touch",
+                category="exit_logic",
+                description="A stop exit occurs on an event at the active stop price.",
+                trade_id=trade_id,
+                expected=stop,
+                actual=reference,
+            )
+        if _is_target_reason(trade_reason):
+            self._assert(
+                reference is not None and target is not None and _prices_equal(reference, target, _num(self.metadata.get("tick_size"))),
+                check_name="event_target_exit_has_target_touch",
+                category="exit_logic",
+                description="A target exit occurs on an event at the active target price.",
+                trade_id=trade_id,
+                expected=target,
+                actual=reference,
+            )
+        self._assert(
+            not _is_missing(close.get("evidence_json")) and not _is_missing(close.get("state_json")),
+            check_name="event_exit_evidence_present",
+            category="exit_logic",
+            description="The close transition preserves both event-local evidence and resulting state.",
+            trade_id=trade_id,
+            expected="state_json and evidence_json present",
+            actual={"state_json": close.get("state_json"), "evidence_json": close.get("evidence_json")},
+        )
+
+    def _check_event_data_quality(self, trade: pd.Series, events: pd.DataFrame) -> None:
+        trade_id = trade.get("trade_id")
+        timestamps = pd.to_datetime(events.get("timestamp"), errors="coerce", utc=True)
+        ordinals = pd.to_numeric(events.get("source_ordinal"), errors="coerce")
+        indexes = pd.to_numeric(events.get("event_index"), errors="coerce")
+        complete = not events.empty and timestamps.notna().all() and ordinals.notna().all() and indexes.notna().all()
+        self._assert(
+            complete,
+            check_name="event_ordering_fields_present",
+            category="data_quality",
+            description="Causal event transitions include timestamp, source ordinal, and event index.",
+            trade_id=trade_id,
+            expected="all ordering fields present",
+            actual={"rows": len(events), "complete": complete},
+        )
+        ordered = timestamps.is_monotonic_increasing and indexes.is_monotonic_increasing
+        self._assert(
+            ordered,
+            check_name="event_transitions_monotonic",
+            category="data_quality",
+            description="Per-trade transitions remain in causal timestamp and event-index order.",
+            trade_id=trade_id,
+            expected="monotonic timestamps and event indexes",
+            actual=ordered,
+        )
+        duplicated = pd.DataFrame({"timestamp": timestamps, "source_ordinal": ordinals}).duplicated().any()
+        self._assert(
+            not duplicated,
+            check_name="event_transition_keys_unique",
+            category="data_quality",
+            description="Per-trade transitions have unique canonical event keys.",
+            trade_id=trade_id,
+            expected="unique timestamp/source_ordinal",
+            actual="duplicates" if duplicated else "unique",
+        )
+        self._assert(
+            all(not _is_missing(value) for value in events.get("evidence_json", pd.Series(dtype=object))),
+            check_name="event_local_evidence_complete",
+            category="data_quality",
+            description="Every trade-linked transition preserves event-local evidence.",
+            trade_id=trade_id,
+            expected="evidence_json present on every transition",
+            actual=len(events),
+        )
 
     def _check_metadata_contract(self) -> None:
         self._assert(
@@ -722,6 +1019,28 @@ def _rows_for_trade(frame: pd.DataFrame, trade_id: Any) -> pd.DataFrame:
     if rows.empty:
         rows = frame[frame["trade_id"].astype(str) == str(trade_id)]
     return rows.copy()
+
+
+def _event_transitions(events: pd.DataFrame, transition: str) -> pd.DataFrame:
+    if events.empty or "transition" not in events.columns:
+        return events.iloc[0:0]
+    return events[events["transition"].astype(str) == transition].copy()
+
+
+def _single_event(events: pd.DataFrame, transition: str) -> pd.Series | None:
+    rows = _event_transitions(events, transition)
+    return rows.iloc[0] if len(rows) == 1 else None
+
+
+def _timestamps_equal(left: pd.Timestamp | None, right: pd.Timestamp | None) -> bool:
+    if left is None or right is None:
+        return False
+    return left == right
+
+
+def _prices_equal(left: float, right: float, tick_size: float | None) -> bool:
+    tolerance = max(abs(float(tick_size or 0.0)) * 1e-6, 1e-9)
+    return abs(float(left) - float(right)) <= tolerance
 
 
 def _lookup(condition: pd.Series | None, aliases: tuple[str, ...]) -> Any:

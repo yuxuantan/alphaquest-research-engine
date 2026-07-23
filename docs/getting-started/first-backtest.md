@@ -10,7 +10,7 @@ Use the synthetic tutorial first. It does not claim an edge and does not update 
 make tutorial
 ```
 
-Then inspect the five-variant stage matrix:
+Then inspect the sequential variant stage matrix:
 
 ```bash
 cat examples/tutorial_campaign/generated/tutorial_manifest.json

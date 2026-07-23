@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_morning_orderflow_momentum_continuation",
+  "variant_id": "first90_broad_large_alignment_1100",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_morning_orderflow_momentum_continuation/first90_broad_large_alignment_1100/variant.yaml",
+    "hash": "2d791d08cb882965a4f1b058334f44ab1ff4c128e61e67fb1c7ae8b6a5f66518",
+    "mechanic": {
+      "entry_module": "morning_orderflow_momentum",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "14:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_morning_orderflow_momentum_continuation/variants/first90_broad_large_alignment_1100/config.yaml",
+  "effective_config": "backtest-campaigns/es_morning_orderflow_momentum_continuation/first90_broad_large_alignment_1100/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_morning_orderflow_momentum_continuation/first90_broad_large_alignment_1100/ES/run1/source_config.yaml",
+  "config_hash": "b31414a83768ea5a4150c7327e83b7f635bc25f6cecf44ea8e1b1eacec87a83d",
+  "source_config_hash": "153a1d345ce20182b4e6f3142cf1e0bdf9f77d399f5535213891b1ffe7a2407e",
+  "source_results_index": "campaigns/es_morning_orderflow_momentum_continuation/results_index.yaml",
+  "created_at": "2026-06-20T00:07:35",
+  "updated_at": "2026-06-20T00:07:35",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

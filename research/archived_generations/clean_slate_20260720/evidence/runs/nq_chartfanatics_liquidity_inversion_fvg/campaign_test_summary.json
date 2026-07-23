@@ -1,0 +1,88 @@
+{
+  "campaign_id": "nq_chartfanatics_liquidity_inversion_fvg",
+  "symbol": "NQ",
+  "decision": "FAIL",
+  "status": "completed",
+  "completed_at": "2026-06-30T13:52:30+08:00",
+  "passed": false,
+  "halted": true,
+  "terminal_stage": "pre_pnl_density_screen",
+  "results_csv": "backtest-campaigns/nq_chartfanatics_liquidity_inversion_fvg/campaign_results.csv",
+  "density_audit": "research_artifacts/nq_chartfanatics_liquidity_inversion_fvg_density_audit_20260630.md",
+  "density_audit_csv": "research_artifacts/nq_chartfanatics_liquidity_inversion_fvg_density_audit_20260630.csv",
+  "methodology_audit": "campaigns/nq_chartfanatics_liquidity_inversion_fvg/methodology_audit.md",
+  "summary": "Rejected before staged NQ PnL: 9/45 declared entry-grid rows failed at least one 50 signals/year density gate. The prior-session two-sided, session-high short, and session-low long variants cleared all density rows, but the one-sided prior-high short and prior-low long variants had sparse grid corners in the limited-core and/or latest-252 windows. Dropping those sparse one-sided prior-liquidity variants after this screen would be post-result narrowing of the declared five-variant Chart Fanatics FVG-inversion edge. No NQ PnL was inspected.",
+  "density_rows": 45,
+  "density_fail_rows": 9,
+  "density_passing_variants": [
+    "prior_session_two_sided_fvg_inversion_1000",
+    "session_high_buy_side_fvg_inversion_short_1000",
+    "session_low_sell_side_fvg_inversion_long_1000"
+  ],
+  "density_failed_variants": [
+    "prior_high_buy_side_fvg_inversion_short_1000",
+    "prior_low_sell_side_fvg_inversion_long_1000"
+  ],
+  "variant_summary": [
+    {
+      "variant_id": "prior_high_buy_side_fvg_inversion_short_1000",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 40.90952,
+      "min_limited_core_signals_per_year": 19.698113,
+      "min_latest_252_signals": 60,
+      "full_failures": 1,
+      "limited_core_failures": 5,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "prior_low_sell_side_fvg_inversion_long_1000",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 36.67978,
+      "min_limited_core_signals_per_year": 36.0,
+      "min_latest_252_signals": 46,
+      "full_failures": 4,
+      "limited_core_failures": 3,
+      "latest_failures": 3
+    },
+    {
+      "variant_id": "prior_session_two_sided_fvg_inversion_1000",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 109.510622,
+      "min_limited_core_signals_per_year": 67.924528,
+      "min_latest_252_signals": 145,
+      "full_failures": 0,
+      "limited_core_failures": 0,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "session_high_buy_side_fvg_inversion_short_1000",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 103.959087,
+      "min_limited_core_signals_per_year": 61.811321,
+      "min_latest_252_signals": 131,
+      "full_failures": 0,
+      "limited_core_failures": 0,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "session_low_sell_side_fvg_inversion_long_1000",
+      "entry_combos": 9,
+      "min_full_signals_per_year": 107.79229,
+      "min_limited_core_signals_per_year": 76.075472,
+      "min_latest_252_signals": 139,
+      "full_failures": 0,
+      "limited_core_failures": 0,
+      "latest_failures": 0
+    }
+  ],
+  "stages_not_run": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ]
+}

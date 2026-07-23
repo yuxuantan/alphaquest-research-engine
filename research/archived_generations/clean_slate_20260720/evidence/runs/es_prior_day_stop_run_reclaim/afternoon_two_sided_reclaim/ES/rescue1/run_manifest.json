@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_prior_day_stop_run_reclaim",
+  "variant_id": "afternoon_two_sided_reclaim",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_prior_day_stop_run_reclaim/campaign.yaml",
+    "hash": "b5a459c1515bde2475da684c37501d9928252564a3d8c84ad977285c7c898bac"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_prior_day_stop_run_reclaim/afternoon_two_sided_reclaim/variant.yaml",
+    "hash": "31555cae09d2044957f6d1ee4f7fba33134d6d66b59825670db91eb34b494237",
+    "mechanic": {
+      "entry_module": "pdh_pdl_sweep_reclaim",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_prior_day_stop_run_reclaim/rescue_attempts/parameter_space_rescue_1/afternoon_two_sided_reclaim/config.yaml",
+  "config_hash": "178469b5b690193d5a6b8383bba9c2f4c0fe58e8c60add2e3050513c90196656",
+  "created_at": "2026-06-15T23:24:40",
+  "updated_at": "2026-06-15T23:24:40",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_prior_day_stop_run_reclaim/afternoon_two_sided_reclaim/ES/rescue1/effective_config.yaml"
+}

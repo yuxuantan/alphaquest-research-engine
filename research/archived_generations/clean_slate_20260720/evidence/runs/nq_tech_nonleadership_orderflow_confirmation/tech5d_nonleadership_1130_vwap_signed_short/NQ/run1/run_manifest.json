@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_tech_nonleadership_orderflow_confirmation",
+  "variant_id": "tech5d_nonleadership_1130_vwap_signed_short",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_tech_nonleadership_orderflow_confirmation/tech5d_nonleadership_1130_vwap_signed_short/variant.yaml",
+    "hash": "7efaa4fe08c4955b5d849b50e69083f50f26454e4c22cff79328631a4c007025",
+    "mechanic": {
+      "entry_module": "nq_tech_relative_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_tech_nonleadership_orderflow_confirmation/variants/tech5d_nonleadership_1130_vwap_signed_short/config.yaml",
+  "effective_config": "backtest-campaigns/nq_tech_nonleadership_orderflow_confirmation/tech5d_nonleadership_1130_vwap_signed_short/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_tech_nonleadership_orderflow_confirmation/tech5d_nonleadership_1130_vwap_signed_short/NQ/run1/source_config.yaml",
+  "config_hash": "1cca83895c5a6dfa994ee446fe31a3e70f2210e655cf94389677e76e4a5e00cc",
+  "source_config_hash": "e8413c56a93bdefd0c003909e6820122cb54989183b136eb3bd43bc28f3c4f16",
+  "source_results_index": "campaigns/nq_tech_nonleadership_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-23T12:47:16",
+  "updated_at": "2026-06-23T12:47:16",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

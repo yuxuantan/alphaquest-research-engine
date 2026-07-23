@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_halloween_seasonal_premium",
+  "variant_id": "winter_afternoon_long_1330",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_halloween_seasonal_premium/winter_afternoon_long_1330/variant.yaml",
+    "hash": "b96a7395d940cb98a66c893ee08eff50f2d145e22728990985bfc75799003e37",
+    "mechanic": {
+      "entry_module": "halloween_seasonal_premium",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_halloween_seasonal_premium/variants/winter_afternoon_long_1330/config.yaml",
+  "effective_config": "backtest-campaigns/nq_halloween_seasonal_premium/winter_afternoon_long_1330/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_halloween_seasonal_premium/winter_afternoon_long_1330/NQ/run1/source_config.yaml",
+  "config_hash": "8c04fcb57adfd71e6e50caf2874ee8a64139878120375bf30fd411ee8d691cef",
+  "source_config_hash": "8bf9f04dd36a887035b0ab909b1fe6430498670d21788fab3ce2a784694d6fbb",
+  "source_results_index": "campaigns/nq_halloween_seasonal_premium/results_index.yaml",
+  "created_at": "2026-06-23T03:40:36",
+  "updated_at": "2026-06-23T03:40:36",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

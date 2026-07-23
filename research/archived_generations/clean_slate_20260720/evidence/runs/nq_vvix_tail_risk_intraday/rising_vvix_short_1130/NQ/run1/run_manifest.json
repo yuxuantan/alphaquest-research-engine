@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_vvix_tail_risk_intraday",
+  "variant_id": "rising_vvix_short_1130",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_vvix_tail_risk_intraday/rising_vvix_short_1130/variant.yaml",
+    "hash": "19ca929169994c25f1eb78afc4e69eb5816d80ee30ab74900ea1114c024c4086",
+    "mechanic": {
+      "entry_module": "vvix_tail_risk",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_vvix_tail_risk_intraday/variants/rising_vvix_short_1130/config.yaml",
+  "effective_config": "backtest-campaigns/nq_vvix_tail_risk_intraday/rising_vvix_short_1130/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_vvix_tail_risk_intraday/rising_vvix_short_1130/NQ/run1/source_config.yaml",
+  "config_hash": "acbc1c352a3e04af17bd68f97c4b9ef13cf052c8444a304724e874ff09e50d7a",
+  "source_config_hash": "7b0c9265b569315a2fa66a68babc601b9ec7d77d19a0b1f56a03c711e7015749",
+  "source_results_index": "campaigns/nq_vvix_tail_risk_intraday/results_index.yaml",
+  "created_at": "2026-06-23T03:18:39",
+  "updated_at": "2026-06-23T03:18:39",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

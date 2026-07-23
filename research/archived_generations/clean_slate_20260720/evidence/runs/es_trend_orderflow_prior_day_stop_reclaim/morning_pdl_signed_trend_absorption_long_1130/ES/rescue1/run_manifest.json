@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_trend_orderflow_prior_day_stop_reclaim",
+  "variant_id": "morning_pdl_signed_trend_absorption_long_1130",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/morning_pdl_signed_trend_absorption_long_1130/variant.yaml",
+    "hash": "6e5a21db8da59958696e9c390d5ef17dc94eac260ad7508eba35f8892be41716",
+    "mechanic": {
+      "entry_module": "trend_orderflow_pdh_pdl_sweep_reclaim",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_trend_orderflow_prior_day_stop_reclaim/rescue_attempts/parameter_space_rescue_1/morning_pdl_signed_trend_absorption_long_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/morning_pdl_signed_trend_absorption_long_1130/ES/rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_trend_orderflow_prior_day_stop_reclaim/morning_pdl_signed_trend_absorption_long_1130/ES/rescue1/source_config.yaml",
+  "config_hash": "b6426a465bbbb2a78c689c26e35da2134d8fb5e8ab6c239356e51f1b19c35c3d",
+  "source_config_hash": "7a1a8b5e0f928079cd35fa01777c40f8f2daeb025a7e5e28d1ab3d0256683f4a",
+  "source_results_index": "campaigns/es_trend_orderflow_prior_day_stop_reclaim/results_index.yaml",
+  "created_at": "2026-06-19T02:36:08",
+  "updated_at": "2026-06-19T02:36:08",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

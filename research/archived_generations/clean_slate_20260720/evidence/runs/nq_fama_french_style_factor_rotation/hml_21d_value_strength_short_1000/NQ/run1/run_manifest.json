@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_fama_french_style_factor_rotation",
+  "variant_id": "hml_21d_value_strength_short_1000",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_fama_french_style_factor_rotation/hml_21d_value_strength_short_1000/variant.yaml",
+    "hash": "04472f4c408378ee0ec6a35547f35c879baafdf34bbcdc60d0c11bf898ee3f6a",
+    "mechanic": {
+      "entry_module": "fama_french_style_factor_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_fama_french_style_factor_rotation/variants/hml_21d_value_strength_short_1000/config.yaml",
+  "effective_config": "backtest-campaigns/nq_fama_french_style_factor_rotation/hml_21d_value_strength_short_1000/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_fama_french_style_factor_rotation/hml_21d_value_strength_short_1000/NQ/run1/source_config.yaml",
+  "config_hash": "d65bc0249d70c170e263467584327db86194de3175dfa9a39ae5a7fbacfd0c42",
+  "source_config_hash": "59b21221fd64f395e354cb95213a67e401a552740ad24680affaf500e838b9e5",
+  "source_results_index": "campaigns/nq_fama_french_style_factor_rotation/results_index.yaml",
+  "created_at": "2026-07-01T08:00:27",
+  "updated_at": "2026-07-01T08:00:27",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,112 @@
+{
+  "campaign_id": "nq_session_open_orderflow_reclaim",
+  "decision": "FAIL",
+  "status": "completed_failed_density",
+  "completed_at": "2026-06-30T17:10:04+08:00",
+  "symbol": "NQ",
+  "variants_expected": 5,
+  "variants_tested": 5,
+  "preflight": {
+    "status": "PASS",
+    "configs_checked": 5,
+    "tests_ran": true
+  },
+  "pre_pnl_density_audit": {
+    "decision": "FAIL",
+    "artifact_md": "research_artifacts/nq_session_open_orderflow_reclaim_density_audit_20260630.md",
+    "artifact_csv": "research_artifacts/nq_session_open_orderflow_reclaim_density_audit_20260630.csv",
+    "summary_csv": "research_artifacts/nq_session_open_orderflow_reclaim_density_summary_20260630.csv",
+    "declared_entry_rows": 45,
+    "density_pass_rows": 36,
+    "density_fail_rows": 9,
+    "min_full_signals_per_year": 86.78,
+    "min_limited_core_signals_per_year": 39.5,
+    "min_latest252_signals": 112
+  },
+  "terminal_failure_summary": {
+    "pre_pnl_density_screen_failed_variants": 3,
+    "limited_core_grid_test_reached": 0,
+    "limited_monkey_reached": 0,
+    "wfa_reached": 0,
+    "monte_carlo_reached": 0,
+    "acceptance_oos_reached": 0
+  },
+  "failure_reason": "Rejected before staged NQ PnL: 9/45 declared session-open reclaim entry-grid rows failed the pre-PnL density gate. Sparse rows appeared in three variants, with the weakest limited-core proxy density at 39.50 signals/year. Dropping the sparse direction/time-window corners after this screen would change the declared five-variant edge after observing signal availability. No NQ PnL was inspected.",
+  "variant_results": [
+    {
+      "campaign_id": "nq_session_open_orderflow_reclaim",
+      "variant_id": "afternoon_large20_down_open_reclaim_long",
+      "symbol": "NQ",
+      "terminal_stage": "pre_pnl_density_screen",
+      "stage_status": "not_run_campaign_failed",
+      "entry_combos": 9,
+      "combos_passing_all_windows": 9,
+      "min_full_signals_per_year": 102.7751329787234,
+      "min_limited_core_signals_per_year": 60.22739361702128,
+      "min_latest_252_signals": 133,
+      "density_gate_pass": true,
+      "source_config_path": "campaigns/nq_session_open_orderflow_reclaim/variants/afternoon_large20_down_open_reclaim_long/config.yaml",
+      "campaign_test_summary_path": "backtest-campaigns/nq_session_open_orderflow_reclaim/campaign_test_summary.json"
+    },
+    {
+      "campaign_id": "nq_session_open_orderflow_reclaim",
+      "variant_id": "afternoon_large20_up_open_reject_short",
+      "symbol": "NQ",
+      "terminal_stage": "pre_pnl_density_screen",
+      "stage_status": "failed",
+      "entry_combos": 9,
+      "combos_passing_all_windows": 6,
+      "min_full_signals_per_year": 86.77925531914894,
+      "min_limited_core_signals_per_year": 45.98005319148936,
+      "min_latest_252_signals": 112,
+      "density_gate_pass": false,
+      "source_config_path": "campaigns/nq_session_open_orderflow_reclaim/variants/afternoon_large20_up_open_reject_short/config.yaml",
+      "campaign_test_summary_path": "backtest-campaigns/nq_session_open_orderflow_reclaim/campaign_test_summary.json"
+    },
+    {
+      "campaign_id": "nq_session_open_orderflow_reclaim",
+      "variant_id": "midday_large10_two_sided_open_reclaim",
+      "symbol": "NQ",
+      "terminal_stage": "pre_pnl_density_screen",
+      "stage_status": "not_run_campaign_failed",
+      "entry_combos": 9,
+      "combos_passing_all_windows": 9,
+      "min_full_signals_per_year": 161.18922872340426,
+      "min_limited_core_signals_per_year": 96.4933510638298,
+      "min_latest_252_signals": 214,
+      "density_gate_pass": true,
+      "source_config_path": "campaigns/nq_session_open_orderflow_reclaim/variants/midday_large10_two_sided_open_reclaim/config.yaml",
+      "campaign_test_summary_path": "backtest-campaigns/nq_session_open_orderflow_reclaim/campaign_test_summary.json"
+    },
+    {
+      "campaign_id": "nq_session_open_orderflow_reclaim",
+      "variant_id": "morning_down_open_reclaim_long",
+      "symbol": "NQ",
+      "terminal_stage": "pre_pnl_density_screen",
+      "stage_status": "failed",
+      "entry_combos": 9,
+      "combos_passing_all_windows": 6,
+      "min_full_signals_per_year": 116.5691489361702,
+      "min_limited_core_signals_per_year": 44.68484042553192,
+      "min_latest_252_signals": 175,
+      "density_gate_pass": false,
+      "source_config_path": "campaigns/nq_session_open_orderflow_reclaim/variants/morning_down_open_reclaim_long/config.yaml",
+      "campaign_test_summary_path": "backtest-campaigns/nq_session_open_orderflow_reclaim/campaign_test_summary.json"
+    },
+    {
+      "campaign_id": "nq_session_open_orderflow_reclaim",
+      "variant_id": "morning_up_open_reject_short",
+      "symbol": "NQ",
+      "terminal_stage": "pre_pnl_density_screen",
+      "stage_status": "failed",
+      "entry_combos": 9,
+      "combos_passing_all_windows": 6,
+      "min_full_signals_per_year": 110.41688829787236,
+      "min_limited_core_signals_per_year": 39.503989361702125,
+      "min_latest_252_signals": 171,
+      "density_gate_pass": false,
+      "source_config_path": "campaigns/nq_session_open_orderflow_reclaim/variants/morning_up_open_reject_short/config.yaml",
+      "campaign_test_summary_path": "backtest-campaigns/nq_session_open_orderflow_reclaim/campaign_test_summary.json"
+    }
+  ]
+}

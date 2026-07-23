@@ -1,0 +1,50 @@
+{
+  "campaign_id": "es_prior_day_stop_run_reclaim",
+  "variant_id": "full_session_two_sided_reclaim",
+  "test_run_id": "run1",
+  "strategy_name": "prior_day_stop_run_reclaim",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "config_source": "backtest-campaigns/es_prior_day_stop_run_reclaim/full_session_two_sided_reclaim/ES/run1/effective_config.yaml",
+  "config_hash": "5292484d13724703bf068babdaf2d8149e9b921d98e31ba6ffced525736491b0",
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_prior_day_stop_run_reclaim/campaign.yaml",
+    "hash": "716a638a69384763003dca756b16354b9f0f5f4d78d03c3ccb82aafb3983b074"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_prior_day_stop_run_reclaim/full_session_two_sided_reclaim/variant.yaml",
+    "hash": "1c6b52211bb798d8e19cc6a23a81ed5b2e7966ec411fbce8ddc8f980633ae95f",
+    "mechanic": {
+      "entry_module": "pdh_pdl_sweep_reclaim",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "created_at": "2026-06-18T16:18:11",
+  "layout": "campaign_variant_symbol_run"
+}

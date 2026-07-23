@@ -1,0 +1,62 @@
+{
+  "campaign_id": "es_daily_short_term_reversal",
+  "variant_id": "prior_3d_two_sided_reversal_1130",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_daily_short_term_reversal/prior_3d_two_sided_reversal_1130/variant.yaml",
+    "hash": "f5ef667b98c8f430251515cebb327fa98b88041d57e245f7391eca9d24aa6df9",
+    "mechanic": {
+      "entry_module": "daily_short_term_reversal",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_daily_short_term_reversal/rescue_attempts/parameter_space_rescue_1/prior_3d_two_sided_reversal_1130/config.yaml",
+  "config_hash": "95c19d07acfb131381266a964fb7a101559b92e27cbcd6985ae0aa21d6221427",
+  "created_at": "2026-06-17T05:28:33",
+  "updated_at": "2026-06-21T17:56:13",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_daily_short_term_reversal/prior_3d_two_sided_reversal_1130/ES/rescue1/effective_config.yaml",
+  "rerun_override": {
+    "monkey_runs": 8000,
+    "updated_at": "2026-06-21T17:56:13"
+  }
+}

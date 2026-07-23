@@ -1,5 +1,6 @@
 import hashlib
 import json
+from types import SimpleNamespace
 
 import pandas as pd
 import pytest
@@ -101,6 +102,18 @@ def test_hash_bound_manual_approval_passes(tmp_path):
     assert report["errors"] == []
 
 
+def test_missing_validation_gate_cannot_opt_out_of_manual_approval(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("campaign_id: demo\nvariant_id: v01\n", encoding="utf-8")
+
+    report = inspect_validation_gate({}, config_path)
+
+    assert report["required"] is True
+    assert report["status"] == "BLOCKED"
+    with pytest.raises(ValueError, match="validation_gate is required"):
+        require_validation_approval({}, config_path)
+
+
 def test_stale_config_hash_blocks_promotion(tmp_path):
     cfg, config_path, _, approval_path = _fixture(tmp_path)
     approval = json.loads(approval_path.read_text(encoding="utf-8"))
@@ -122,6 +135,50 @@ def test_event_replay_never_accepts_bar_only_validation(tmp_path):
 
     assert report["status"] == "BLOCKED"
     assert any("event_transitions.parquet" in item for item in report["errors"])
+
+
+def test_certified_event_approval_is_bound_to_implementation_identity(tmp_path, monkeypatch):
+    cfg, config_path, evidence, approval_path = _fixture(tmp_path, lane="event_replay")
+    cfg["engine_lane"] = "canonical_event_replay"
+    config_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    config_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    identity = SimpleNamespace(
+        implementation_version=3,
+        implementation_sha256="a" * 64,
+        manifest_sha256="b" * 64,
+    )
+    monkeypatch.setattr(
+        "alphaquest.validation.promotion_gate.strategy_identity_for_config",
+        lambda *_args, **_kwargs: identity,
+    )
+    metadata = json.loads((evidence / "metadata.json").read_text(encoding="utf-8"))
+    metadata["config_hash"] = config_hash
+    (evidence / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval["config_hash"] = config_hash
+    approval_path.write_text(json.dumps(approval), encoding="utf-8")
+
+    blocked = inspect_validation_gate(cfg, config_path)
+    assert blocked["status"] == "BLOCKED"
+    assert any("implementation hash" in item for item in blocked["errors"])
+
+    metadata.update(
+        {
+            "strategy_implementation_version": 3,
+            "strategy_implementation_sha256": "a" * 64,
+            "strategy_certification_manifest_sha256": "b" * 64,
+        }
+    )
+    approval.update(
+        {
+            "strategy_implementation_version": 3,
+            "strategy_implementation_sha256": "a" * 64,
+            "strategy_certification_manifest_sha256": "b" * 64,
+        }
+    )
+    (evidence / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+    approval_path.write_text(json.dumps(approval), encoding="utf-8")
+    assert inspect_validation_gate(cfg, config_path)["status"] == "APPROVED_FOR_TESTING"
 
 
 def test_staged_performance_run_blocks_before_missing_validation_approval(tmp_path, monkeypatch):

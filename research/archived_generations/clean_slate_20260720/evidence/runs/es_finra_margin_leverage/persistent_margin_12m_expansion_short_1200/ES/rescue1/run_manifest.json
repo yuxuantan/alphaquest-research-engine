@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_finra_margin_leverage",
+  "variant_id": "persistent_margin_12m_expansion_short_1200",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_finra_margin_leverage/persistent_margin_12m_expansion_short_1200/variant.yaml",
+    "hash": "b60f195c07c0ec44274f03f54c8b8a6b939d8d94cb6b3fd92ca8240ceca0dded",
+    "mechanic": {
+      "entry_module": "finra_margin_leverage",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_finra_margin_leverage/rescue_attempts/parameter_space_rescue_1/persistent_margin_12m_expansion_short_1200/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_finra_margin_leverage/persistent_margin_12m_expansion_short_1200/ES/rescue1/source_config.yaml",
+  "config_hash": "6fc16bfd46d20325fcfd9310e6cc899c9fde0aff3e9b02071d2ca846d44aab2a",
+  "source_config_hash": "1418aaca73961576655d2d0d528d98ca05cef36e50ddabfaacfa9624b5c5d3a1",
+  "created_at": "2026-06-17T09:43:20",
+  "updated_at": "2026-06-21T17:56:13",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_finra_margin_leverage/persistent_margin_12m_expansion_short_1200/ES/rescue1/effective_config.yaml",
+  "rerun_override": {
+    "monkey_runs": 8000,
+    "updated_at": "2026-06-21T17:56:13"
+  }
+}

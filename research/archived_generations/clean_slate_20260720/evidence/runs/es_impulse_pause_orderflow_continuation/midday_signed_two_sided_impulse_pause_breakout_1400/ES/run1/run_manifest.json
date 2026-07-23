@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_impulse_pause_orderflow_continuation",
+  "variant_id": "midday_signed_two_sided_impulse_pause_breakout_1400",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_impulse_pause_orderflow_continuation/midday_signed_two_sided_impulse_pause_breakout_1400/variant.yaml",
+    "hash": "a1aa70a212e90365ed05870a89e289a8f0dddccfa0f561c7a1ef6afd33d8e411",
+    "mechanic": {
+      "entry_module": "impulse_pause_orderflow_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_impulse_pause_orderflow_continuation/variants/midday_signed_two_sided_impulse_pause_breakout_1400/config.yaml",
+  "effective_config": "backtest-campaigns/es_impulse_pause_orderflow_continuation/midday_signed_two_sided_impulse_pause_breakout_1400/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_impulse_pause_orderflow_continuation/midday_signed_two_sided_impulse_pause_breakout_1400/ES/run1/source_config.yaml",
+  "config_hash": "4bed66fd99e90d848d1cd1c2bf8df9f850610ba8e276aac1ae794d48ad1e0911",
+  "source_config_hash": "8fb8f882bcba254e3c031d82693fbbfe461537064b77c81ac4df8e34ca32c174",
+  "source_results_index": "campaigns/es_impulse_pause_orderflow_continuation/results_index.yaml",
+  "created_at": "2026-06-20T07:19:22",
+  "updated_at": "2026-06-20T07:19:22",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

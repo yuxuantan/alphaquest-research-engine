@@ -1,7 +1,7 @@
 """Governed, immutable follow-up attempts for Research Studio campaigns.
 
-The original five authored definitions are never edited.  Every explicit
-follow-up is installed as a complete five-config source subtree with fresh
+The authored definitions are never edited by a follow-up. Every explicit
+follow-up is installed as a complete current-variant source subtree with fresh
 mechanics-validation, approval, and staged-run identities.  Creating an
 attempt and queueing it are separate operations: the former creates new
 scientific lineage, while repeated queue submission for that identity remains
@@ -11,6 +11,7 @@ idempotent.
 from __future__ import annotations
 
 from copy import deepcopy
+import csv
 from dataclasses import dataclass
 from datetime import UTC, datetime, time
 import hashlib
@@ -34,7 +35,10 @@ from alphaquest.authoring.compiler import (
 )
 from alphaquest.authoring.models import DatasetManifestV1, ModuleBindingV1
 from alphaquest.research.definitions import write_definition_manifests
-from alphaquest.research.campaign_stages import DEFAULT_STAGE_ORDER
+from alphaquest.research.campaign_stages import (
+    DEFAULT_STAGE_ORDER,
+    campaign_test_data_window_plan,
+)
 from alphaquest.research.preflight import run_preflight
 from alphaquest.research.schemas import validate_campaign_config_contract
 from alphaquest.research.storage import load_storage_layout
@@ -44,6 +48,13 @@ from alphaquest.studio.jobs import JobRecordV1, SQLiteJobQueue
 from alphaquest.studio.ledger import append_planned_follow_up
 from alphaquest.studio.results import RESULT_BUNDLE_FILENAME
 from alphaquest.studio.workspace import refresh_generated_indexes_if_stale
+from alphaquest.strategy_certification import (
+    StrategyCertificationError,
+    get_strategy_certification,
+    normalize_certified_event_params,
+    strategy_identity_for_config,
+    validate_certified_event_parameter_grid,
+)
 from alphaquest.validation.promotion_gate import inspect_validation_gate
 
 
@@ -54,6 +65,7 @@ ATTEMPT_KINDS = (
     "data_refresh",
     "methodology_rerun",
     "pre_pnl_mechanics_correction",
+    "pre_pnl_parameter_declaration",
     "rescue",
 )
 AttemptKind = Literal[
@@ -61,6 +73,7 @@ AttemptKind = Literal[
     "data_refresh",
     "methodology_rerun",
     "pre_pnl_mechanics_correction",
+    "pre_pnl_parameter_declaration",
     "rescue",
 ]
 JsonScalar = str | int | float | bool | None
@@ -98,6 +111,7 @@ class FollowUpAttemptRequestV1(BaseModel):
     target_variant_id: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_]*$")
     authorized_by: str | None = None
     mechanic_patches: list[MechanicParameterPatchV1] = Field(default_factory=list)
+    parameter_grid: dict[str, list[JsonScalar]] = Field(default_factory=dict)
 
     @field_validator("reason", "created_by", "authorized_by")
     @classmethod
@@ -111,14 +125,25 @@ class FollowUpAttemptRequestV1(BaseModel):
         if not self.created_by:
             raise ValueError("created_by must identify the researcher")
         mechanics_kind = self.attempt_kind in {"pre_pnl_mechanics_correction", "rescue"}
+        declaration_kind = self.attempt_kind == "pre_pnl_parameter_declaration"
         if self.attempt_kind == "data_refresh" and not self.dataset_id:
             raise ValueError("data_refresh requires a governed dataset_id")
         if self.attempt_kind != "data_refresh" and self.dataset_id is not None:
             raise ValueError("dataset_id is only valid for data_refresh")
         if mechanics_kind and (not self.target_variant_id or not self.mechanic_patches):
             raise ValueError(f"{self.attempt_kind} requires a target variant and an explicit mechanics patch")
-        if not mechanics_kind and (self.target_variant_id is not None or self.mechanic_patches):
-            raise ValueError("target_variant_id and mechanic_patches are only valid for mechanics correction or rescue")
+        if declaration_kind and (not self.target_variant_id or not self.parameter_grid):
+            raise ValueError("pre_pnl_parameter_declaration requires a target variant and parameter grid")
+        if not (mechanics_kind or declaration_kind) and (
+            self.target_variant_id is not None or self.mechanic_patches or self.parameter_grid
+        ):
+            raise ValueError(
+                "target_variant_id, mechanic_patches, and parameter_grid are only valid for governed mechanics changes"
+            )
+        if declaration_kind and self.mechanic_patches:
+            raise ValueError("parameter declaration cannot also patch fixed mechanics")
+        if mechanics_kind and self.parameter_grid:
+            raise ValueError("mechanics correction and rescue cannot also redeclare the parameter grid")
         if self.target_variant_id and any(
             patch.variant_id != self.target_variant_id for patch in self.mechanic_patches
         ):
@@ -127,6 +152,11 @@ class FollowUpAttemptRequestV1(BaseModel):
             raise ValueError("rescue requires an explicitly identified authorizer")
         if self.attempt_kind != "rescue" and self.authorized_by is not None:
             raise ValueError("authorized_by is reserved for the governed rescue lane")
+        for name, values in self.parameter_grid.items():
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
+                raise ValueError(f"invalid certified event parameter name: {name!r}")
+            if not isinstance(values, list) or len(values) < 2:
+                raise ValueError(f"parameter grid {name!r} must contain at least two values")
         return self
 
 
@@ -143,7 +173,7 @@ class FollowUpAttemptResult:
     ledger_rows_appended: int
     indexes_refreshed: bool
     next_action: str = (
-        "Generate fresh mechanics evidence for all five variants, review it, and record new hash-bound approvals."
+        "Generate fresh mechanics evidence for the current sequential variant, review it, and record a new hash-bound approval."
     )
     preflight_verdict: str = "PASS"
 
@@ -203,12 +233,29 @@ class FollowUpAttemptService:
         if parsed.attempt_kind == "data_refresh":
             dataset_manifest = self._load_dataset(str(parsed.dataset_id))
             for variant in variants:
-                changes.extend(_apply_dataset_refresh(configs[variant], dataset_manifest, variant_id=variant))
+                changes.extend(
+                    _apply_dataset_refresh(
+                        configs[variant],
+                        dataset_manifest,
+                        variant_id=variant,
+                        project_root=self.project_root,
+                    )
+                )
         elif parsed.attempt_kind in {"pre_pnl_mechanics_correction", "rescue"}:
             assert parsed.target_variant_id is not None
             target = configs[parsed.target_variant_id]
             for patch in parsed.mechanic_patches:
                 changes.append(_apply_mechanic_patch(target, patch))
+        elif parsed.attempt_kind == "pre_pnl_parameter_declaration":
+            assert parsed.target_variant_id is not None
+            target = configs[parsed.target_variant_id]
+            changes.extend(
+                _apply_parameter_declaration(
+                    target,
+                    parsed.parameter_grid,
+                    project_root=self.project_root,
+                )
+            )
 
         created_at = self._now()
         if created_at.tzinfo is None or created_at.utcoffset() is None:
@@ -348,7 +395,12 @@ class FollowUpAttemptService:
             indexes_refreshed=bool(refresh.get("refreshed")),
         )
 
-    def list_attempts(self, campaign_id: str) -> list[dict[str, Any]]:
+    def list_attempts(
+        self,
+        campaign_id: str,
+        *,
+        include_dataset_bindings: bool = True,
+    ) -> list[dict[str, Any]]:
         campaign_root, _campaign, _variants = self._campaign(campaign_id)
         original = {
             "attempt_id": "original",
@@ -374,7 +426,112 @@ class FollowUpAttemptService:
                         "target_variant_id": value.get("target_variant_id"),
                     }
                 )
-        return [original, *sorted(rows, key=lambda item: (str(item.get("created_at") or ""), str(item["attempt_id"])))]
+        attempts = [
+            original,
+            *sorted(
+                rows,
+                key=lambda item: (
+                    str(item.get("created_at") or ""),
+                    str(item["attempt_id"]),
+                ),
+            ),
+        ]
+        if not include_dataset_bindings:
+            return attempts
+        bindings_by_attempt: dict[str, list[dict[str, Any]]] = {}
+        for attempt in attempts:
+            attempt_id = str(attempt.get("attempt_id") or "")
+            try:
+                bindings = self._attempt_dataset_bindings(campaign_id, attempt_id)
+            except (FileNotFoundError, KeyError, OSError, ValueError) as exc:
+                attempt["dataset_lineage_error"] = str(exc)
+                bindings = []
+            bindings_by_attempt[attempt_id] = bindings
+            attempt["dataset_bindings"] = bindings
+
+        for attempt in attempts:
+            attempt_id = str(attempt.get("attempt_id") or "")
+            parent_id = attempt.get("parent_attempt_id")
+            parent_bindings = {
+                str(item.get("variant_id") or ""): item
+                for item in bindings_by_attempt.get(str(parent_id or ""), [])
+            }
+            for binding in bindings_by_attempt.get(attempt_id, []):
+                if attempt_id == "original":
+                    binding["dataset_change"] = "original"
+                    binding["parent_dataset_id"] = None
+                    continue
+                parent = parent_bindings.get(str(binding.get("variant_id") or ""))
+                if parent is None:
+                    binding["dataset_change"] = "unknown"
+                    binding["parent_dataset_id"] = None
+                    continue
+                binding["parent_dataset_id"] = parent.get("dataset_id")
+                identity = (
+                    binding.get("dataset_id"),
+                    binding.get("source_sha256"),
+                )
+                parent_identity = (
+                    parent.get("dataset_id"),
+                    parent.get("source_sha256"),
+                )
+                binding["dataset_change"] = (
+                    "inherited" if identity == parent_identity else "changed"
+                )
+        return attempts
+
+    def _attempt_dataset_bindings(
+        self,
+        campaign_id: str,
+        attempt_id: str,
+    ) -> list[dict[str, Any]]:
+        bindings: list[dict[str, Any]] = []
+        for config_path in self.config_paths(campaign_id, attempt_id):
+            cfg = _read_yaml(config_path)
+            data = cfg.get("data") if isinstance(cfg.get("data"), Mapping) else {}
+            dataset_id = str(cfg.get("dataset_id") or data.get("dataset_id") or "")
+            if not dataset_id:
+                raise ValueError(f"{config_path.parent.name} does not declare a governed dataset_id")
+            manifest_path = self.layout.dataset_root / dataset_id / "dataset_manifest.json"
+            if not manifest_path.is_file():
+                raise FileNotFoundError(
+                    f"governed dataset manifest is missing for {config_path.parent.name}: "
+                    f"{manifest_path}"
+                )
+            manifest = _read_json(manifest_path)
+            if str(manifest.get("dataset_id") or "") != dataset_id:
+                raise ValueError(f"governed dataset manifest identity mismatch: {manifest_path}")
+            event_source = (
+                manifest.get("event_source")
+                if isinstance(manifest.get("event_source"), Mapping)
+                else {}
+            )
+            gate = inspect_validation_gate(cfg, config_path)
+            input_data_hash = str(gate.get("input_data_hash") or "")
+            binding = {
+                "variant_id": str(cfg.get("variant_id") or config_path.parent.name),
+                "dataset_id": dataset_id,
+                "source_type": str(event_source.get("source") or manifest.get("source") or ""),
+                "bar_source_type": str(manifest.get("source") or ""),
+                "coverage_start": manifest.get("coverage_start"),
+                "coverage_end": manifest.get("coverage_end"),
+                "quality_verdict": manifest.get("quality_verdict"),
+                "source_sha256": manifest.get("source_sha256")
+                or data.get("source_sha256"),
+                "input_data_hash": input_data_hash or None,
+                "manifest_path": str(manifest_path),
+                "test_data_windows": _attempt_test_data_windows(
+                    cfg,
+                    project_root=self.project_root,
+                    evidence_root=self.layout.evidence_roots[0],
+                ),
+            }
+            if not input_data_hash:
+                binding["input_data_hash_error"] = "; ".join(
+                    str(item) for item in gate.get("errors") or []
+                ) or "current input-data hash could not be computed"
+            bindings.append(binding)
+        return bindings
 
     def config_paths(self, campaign_id: str, attempt_id: str = "original") -> tuple[Path, ...]:
         campaign_root, _campaign, variants = self._campaign(campaign_id)
@@ -393,11 +550,11 @@ class FollowUpAttemptService:
                 raise ValueError(f"follow-up manifest identity is invalid: {manifest_path}")
             declared_hashes = manifest.get("config_sha256")
             if not isinstance(declared_hashes, Mapping) or set(declared_hashes) != set(variants):
-                raise ValueError(f"follow-up manifest does not hash exactly five declared configs: {manifest_path}")
+                raise ValueError(f"follow-up manifest does not hash every declared config: {manifest_path}")
             paths = tuple(attempt_root / variant / "config.yaml" for variant in variants)
         missing = [str(path) for path in paths if not path.is_file()]
         if missing:
-            raise FileNotFoundError("attempt does not contain all five frozen configs: " + ", ".join(missing))
+            raise FileNotFoundError("attempt does not contain every frozen config: " + ", ".join(missing))
         for variant, path in zip(variants, paths):
             cfg = _read_yaml(path)
             if cfg.get("campaign_id") != campaign_id or cfg.get("variant_id") != variant:
@@ -418,7 +575,7 @@ class FollowUpAttemptService:
     ) -> list[JobRecordV1]:
         from alphaquest.studio.worker import MECHANICS_VALIDATION_RUN
 
-        paths = self.config_paths(campaign_id, attempt_id)
+        paths = self.config_paths(campaign_id, attempt_id)[-1:]
         queue = SQLiteJobQueue(self.layout.studio_runtime_root / "jobs.sqlite3")
         jobs: list[JobRecordV1] = []
         for config_path in paths:
@@ -449,7 +606,7 @@ class FollowUpAttemptService:
         return jobs
 
     def queue_performance(self, campaign_id: str, attempt_id: str) -> list[JobRecordV1]:
-        paths = self.config_paths(campaign_id, attempt_id)
+        paths = self.config_paths(campaign_id, attempt_id)[-1:]
         approvals = require_all_variant_mechanics_approved(list(paths))
         gates = {Path(str(item["config_path"])).resolve(): item for item in approvals}
         queue = SQLiteJobQueue(self.layout.studio_runtime_root / "jobs.sqlite3")
@@ -493,14 +650,14 @@ class FollowUpAttemptService:
             raise FileNotFoundError(f"active governed campaign is missing: {campaign_path}")
         campaign = _read_yaml(campaign_path)
         declared = campaign.get("variants")
-        if not isinstance(declared, list) or len(declared) != 5:
-            raise ValueError("Studio follow-up attempts require exactly five declared campaign variants")
+        if not isinstance(declared, list) or not 1 <= len(declared) <= 5:
+            raise ValueError("Studio follow-up attempts require one to five declared campaign variants")
         variants = tuple(
             str(item if isinstance(item, str) else (item or {}).get("variant_id") or (item or {}).get("id") or "")
             for item in declared
         )
-        if any(not item for item in variants) or len(set(variants)) != 5:
-            raise ValueError("campaign.yaml must declare five unique variant IDs")
+        if any(not item for item in variants) or len(set(variants)) != len(variants):
+            raise ValueError("campaign.yaml must declare unique variant IDs")
         return campaign_root, campaign, variants
 
     def _require_studio_authored(
@@ -520,7 +677,7 @@ class FollowUpAttemptService:
         campaign_id = str(campaign.get("campaign_id") or "")
         if document.get("schema") != AUTHORING_MANIFEST_SCHEMA:
             raise ValueError("Studio authoring manifest schema is missing or unsupported")
-        if document.get("campaign_id") != campaign_id or document.get("variant_count") != 5:
+        if document.get("campaign_id") != campaign_id or document.get("variant_count") != len(variants):
             raise ValueError("Studio authoring manifest identity does not match the active campaign")
 
         expected_paths = {
@@ -530,7 +687,7 @@ class FollowUpAttemptService:
         }
         hashes = document.get("compiled_document_sha256")
         if not isinstance(hashes, Mapping) or set(hashes) != expected_paths:
-            raise ValueError("Studio authoring manifest must hash the campaign, strategy spec, and five configs")
+            raise ValueError("Studio authoring manifest must hash the campaign, strategy spec, and declared configs")
         for relative in sorted(expected_paths):
             path = campaign_root / relative
             if not path.is_file():
@@ -551,10 +708,10 @@ class FollowUpAttemptService:
             raise ValueError("reviewed strategy_spec.yaml identity is invalid or is not frozen")
         declared_signatures = document.get("variant_mechanic_signatures")
         if not isinstance(declared_signatures, Mapping) or set(declared_signatures) != set(variants):
-            raise ValueError("Studio authoring manifest must bind five variant mechanic signatures")
+            raise ValueError("Studio authoring manifest must bind every variant mechanic signature")
         spec_variants = spec_document.get("variants")
-        if not isinstance(spec_variants, list) or len(spec_variants) != 5:
-            raise ValueError("reviewed strategy_spec.yaml must contain exactly five variants")
+        if not isinstance(spec_variants, list) or len(spec_variants) != len(variants):
+            raise ValueError("reviewed strategy_spec.yaml must contain every declared variant")
         spec_by_variant = {
             str(item.get("variant_id") or ""): item for item in spec_variants if isinstance(item, Mapping)
         }
@@ -590,7 +747,10 @@ class FollowUpAttemptService:
         parent_configs: Mapping[str, Mapping[str, Any]],
         parent_paths: Mapping[str, Path],
     ) -> None:
-        if request.attempt_kind == "pre_pnl_mechanics_correction":
+        if request.attempt_kind in {
+            "pre_pnl_mechanics_correction",
+            "pre_pnl_parameter_declaration",
+        }:
             if _attempt_has_performance_evidence(
                 self.layout.evidence_roots,
                 self.layout.studio_runtime_root,
@@ -601,7 +761,7 @@ class FollowUpAttemptService:
                 parent_paths,
             ):
                 raise ValueError(
-                    "pre-PnL mechanics correction is forbidden after performance evidence exists; "
+                    f"{request.attempt_kind} is forbidden after performance evidence exists; "
                     "use replication, data refresh, methodology rerun, or an authorized rescue"
                 )
         if request.attempt_kind != "rescue":
@@ -670,6 +830,28 @@ class FollowUpAttemptService:
             calendar = calendar if calendar.is_absolute() else self.project_root / calendar
             if not calendar.is_file() or _file_sha256(calendar) != manifest.roll_calendar_sha256:
                 raise ValueError("governed dataset roll calendar is missing or hash-drifted")
+        if manifest.event_source is not None:
+            event = manifest.event_source.model_dump(mode="json", exclude_none=True)
+            for field, hash_field in (
+                ("archive", "archive_sha256"),
+                ("raw_manifest", "raw_manifest_sha256"),
+                ("session_levels", "session_levels_sha256"),
+                ("quality_manifest", "quality_manifest_sha256"),
+                ("concordance_report", "concordance_report_sha256"),
+            ):
+                value = event.get(field)
+                if not value:
+                    continue
+                artifact = Path(str(value))
+                artifact = artifact if artifact.is_absolute() else self.project_root / artifact
+                if not artifact.is_file() or _file_sha256(artifact) != event.get(hash_field):
+                    raise ValueError(f"governed event-source artifact is missing or hash-drifted: {field}")
+            raw_dir = event.get("raw_dir")
+            if raw_dir:
+                directory = Path(str(raw_dir))
+                directory = directory if directory.is_absolute() else self.project_root / directory
+                if not directory.is_dir():
+                    raise ValueError("governed Sierra raw_dir is missing")
         return manifest
 
     def _dataset_for_configs(self, configs: Mapping[str, Mapping[str, Any]]) -> DatasetManifestV1:
@@ -677,7 +859,7 @@ class FollowUpAttemptService:
             str(cfg.get("dataset_id") or (cfg.get("data") or {}).get("dataset_id") or "") for cfg in configs.values()
         }
         if len(ids) != 1 or not next(iter(ids)):
-            raise ValueError("all five parent configs must use one governed dataset")
+            raise ValueError("all parent configs must use one governed dataset")
         return self._load_dataset(next(iter(ids)))
 
     def _validate_certified_mechanics(
@@ -688,6 +870,44 @@ class FollowUpAttemptService:
         if cfg.get("symbol") != dataset.symbol or cfg.get("timeframe") != dataset.timeframe:
             raise ValueError("follow-up dataset symbol and timeframe must match the frozen campaign")
         strategy = cfg.get("strategy") if isinstance(cfg.get("strategy"), dict) else {}
+        if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
+            event = strategy.get("event") if isinstance(strategy.get("event"), dict) else {}
+            try:
+                certification = strategy_identity_for_config(
+                    cfg, self.project_root, require_declared_match=True
+                )
+                if certification is None:
+                    raise StrategyCertificationError("event strategy certification is missing")
+                event_params = normalize_certified_event_params(
+                    certification,
+                    event.get("params") if isinstance(event.get("params"), dict) else {},
+                )
+                if event_params != event.get("params"):
+                    raise StrategyCertificationError(
+                        "strategy.event.params must explicitly contain every certified default"
+                    )
+                entry = strategy.get("entry") if isinstance(strategy.get("entry"), dict) else {}
+                authored = (entry.get("params") or {}).get("mechanics")
+                if authored != event_params:
+                    raise StrategyCertificationError(
+                        "authored event mechanics and canonical strategy.event.params have diverged"
+                    )
+                core_grid = (cfg.get("core_grid") or {}).get("parameters", {})
+                wfa_grid = (cfg.get("wfa") or {}).get("parameters", {})
+                if core_grid != wfa_grid:
+                    raise StrategyCertificationError(
+                        "core and walk-forward event parameter grids must be identical"
+                    )
+                validate_certified_event_parameter_grid(
+                    certification,
+                    event_params,
+                    core_grid,
+                    qualified_keys=True,
+                )
+            except StrategyCertificationError as exc:
+                raise ValueError(f"certified event parameter contract failed: {exc}") from exc
+            _validate_context_bound_module_values(cfg)
+            return
         grid = (cfg.get("core_grid") or {}).get("parameters")
         grid = grid if isinstance(grid, dict) else {}
         prefixes = {"entry": "entry", "sl": "sl", "tp": "tp"}
@@ -867,6 +1087,7 @@ def _apply_dataset_refresh(
     manifest: DatasetManifestV1,
     *,
     variant_id: str,
+    project_root: Path,
 ) -> list[dict[str, Any]]:
     if cfg.get("symbol") != manifest.symbol or cfg.get("timeframe") != manifest.timeframe:
         raise ValueError("data refresh cannot change the frozen campaign symbol or timeframe")
@@ -900,6 +1121,22 @@ def _apply_dataset_refresh(
     if manifest.roll_calendar:
         data["roll_calendar"] = manifest.roll_calendar
         data["roll_calendar_sha256"] = manifest.roll_calendar_sha256
+    old_execution = deepcopy(data.get("execution_data"))
+    if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
+        if manifest.event_source is None:
+            raise ValueError("canonical event data refresh requires a governed event_source")
+        data["execution_data"] = manifest.event_source.model_dump(mode="json", exclude_none=True)
+        strategy = cfg.get("strategy") if isinstance(cfg.get("strategy"), dict) else {}
+        event = strategy.get("event") if isinstance(strategy.get("event"), dict) else {}
+        certification = get_strategy_certification(
+            str(event.get("module") or ""), project_root, require_current=True
+        )
+        cfg["strategy_certification"] = {
+            "strategy_id": certification.strategy_id,
+            "implementation_version": certification.implementation_version,
+            "implementation_sha256": certification.implementation_sha256,
+            "manifest_sha256": certification.manifest_sha256,
+        }
     full = {
         "start_date": manifest.coverage_start[:10],
         "end_date": manifest.coverage_end[:10],
@@ -924,7 +1161,7 @@ def _apply_dataset_refresh(
         manifest.coverage_end,
         entry=entry_binding,
     )
-    return [
+    changes = [
         {
             "variant_id": variant_id,
             "scope": "dataset",
@@ -934,6 +1171,18 @@ def _apply_dataset_refresh(
             "reviewed": True,
         }
     ]
+    if old_execution != data.get("execution_data"):
+        changes.append(
+            {
+                "variant_id": variant_id,
+                "scope": "data.execution_data",
+                "field": "source",
+                "old": (old_execution or {}).get("source") if isinstance(old_execution, dict) else None,
+                "new": (data.get("execution_data") or {}).get("source"),
+                "reviewed": True,
+            }
+        )
+    return changes
 
 
 def _apply_mechanic_patch(
@@ -970,6 +1219,13 @@ def _apply_mechanic_patch(
     if old == patch.value:
         raise ValueError("mechanics patch must materially change the selected parameter")
     parent[leaf] = patch.value
+    strategy = cfg.get("strategy") if isinstance(cfg.get("strategy"), dict) else {}
+    event = strategy.get("event") if isinstance(strategy.get("event"), dict) else None
+    if event is not None and patch.component == "entry" and parts[0] == "mechanics" and len(parts) == 2:
+        event_params = event.get("params") if isinstance(event.get("params"), dict) else None
+        if event_params is None or leaf not in event_params or event_params[leaf] != old:
+            raise ValueError("canonical event parameter is missing or has diverged from authored mechanics")
+        event_params[leaf] = patch.value
     return {
         "variant_id": patch.variant_id,
         "scope": f"strategy.{patch.component}.params",
@@ -978,6 +1234,55 @@ def _apply_mechanic_patch(
         "new": patch.value,
         "reviewed": True,
     }
+
+
+def _apply_parameter_declaration(
+    cfg: dict[str, Any],
+    parameter_grid: Mapping[str, list[JsonScalar]],
+    *,
+    project_root: Path,
+) -> list[dict[str, Any]]:
+    if str(cfg.get("engine_lane") or "") != "canonical_event_replay":
+        raise ValueError("pre-PnL parameter declaration currently supports certified event strategies only")
+    strategy = cfg.get("strategy") if isinstance(cfg.get("strategy"), dict) else {}
+    event = strategy.get("event") if isinstance(strategy.get("event"), dict) else {}
+    certification = get_strategy_certification(
+        str(event.get("module") or ""), project_root, require_current=True
+    )
+    params = normalize_certified_event_params(
+        certification,
+        event.get("params") if isinstance(event.get("params"), dict) else {},
+    )
+    canonical = validate_certified_event_parameter_grid(
+        certification,
+        params,
+        {str(name): list(values) for name, values in parameter_grid.items()},
+    )
+    old_core = deepcopy((cfg.get("core_grid") or {}).get("parameters") or {})
+    old_wfa = deepcopy((cfg.get("wfa") or {}).get("parameters") or {})
+    if old_core == canonical and old_wfa == canonical:
+        raise ValueError("parameter declaration must differ from the parent attempt")
+    cfg.setdefault("core_grid", {})["parameters"] = deepcopy(canonical)
+    cfg.setdefault("wfa", {})["parameters"] = deepcopy(canonical)
+    cfg["strategy_certification"] = {
+        "strategy_id": certification.strategy_id,
+        "implementation_version": certification.implementation_version,
+        "implementation_sha256": certification.implementation_sha256,
+        "manifest_sha256": certification.manifest_sha256,
+    }
+    gate = (cfg.setdefault("research_metadata", {})).setdefault("validation_gate", {})
+    gate["parameter_mode"] = "declared_defaults"
+    return [
+        {
+            "variant_id": str(cfg.get("variant_id") or ""),
+            "scope": "core_grid.parameters,wfa.parameters",
+            "field": name,
+            "old": old_core.get(name),
+            "new": values,
+            "reviewed": True,
+        }
+        for name, values in canonical.items()
+    ]
 
 
 def _attempt_strategy_spec(
@@ -1153,13 +1458,13 @@ def _refresh_and_require_unique_mechanic_signatures(configs: Mapping[str, dict[s
 
 
 def _require_unique_mechanic_signatures(signatures: Mapping[str, str]) -> None:
-    if len(signatures) != 5 or len(set(signatures.values())) != 5:
+    if not 1 <= len(signatures) <= 5 or len(set(signatures.values())) != len(signatures):
         duplicates = sorted(
             variant for variant, signature in signatures.items() if list(signatures.values()).count(signature) > 1
         )
-        detail = ", ".join(duplicates) if duplicates else "fewer than five variants"
+        detail = ", ".join(duplicates) if duplicates else "invalid variant count"
         raise ValueError(
-            "all five follow-up variants must retain materially distinct, value-independent mechanics; "
+            "all follow-up variants must retain materially distinct, value-independent mechanics; "
             f"duplicate signatures: {detail}"
         )
 
@@ -1197,6 +1502,197 @@ def _strip_rule_values(value: Any) -> Any:
         return {"source": "tunable"}
     ignored = {"values", "default", "signal_start_time", "signal_end_time", "bar_interval_minutes"}
     return {key: _strip_rule_values(item) for key, item in sorted(value.items()) if key not in ignored}
+
+
+def _attempt_test_data_windows(
+    cfg: Mapping[str, Any],
+    *,
+    project_root: Path,
+    evidence_root: Path,
+) -> list[dict[str, Any]]:
+    try:
+        rows = campaign_test_data_window_plan(dict(cfg))
+    except (KeyError, TypeError, ValueError) as exc:
+        return [
+            {
+                "stage": "window_plan",
+                "label": "Test data windows",
+                "status": "unavailable",
+                "detail": f"Planned windows could not be resolved: {exc}",
+            }
+        ]
+
+    by_stage = {str(item.get("stage") or ""): item for item in rows}
+    _merge_mechanics_window_evidence(
+        by_stage.get("mechanics_validation"),
+        cfg,
+        project_root=project_root,
+    )
+    run_root = (
+        evidence_root
+        / str(cfg.get("campaign_id") or "")
+        / str(cfg.get("variant_id") or "")
+        / str(cfg.get("symbol") or (cfg.get("data") or {}).get("symbol") or "")
+        / str(cfg.get("test_run_id") or "")
+    )
+    summaries = {
+        "limited_core_grid_test": run_root / "limited_core_grid_test" / "core_grid_summary.json",
+        "limited_monkey_test": run_root / "limited_monkey_test" / "monkey_summary.json",
+        "walk_forward_analysis": run_root / "walk_forward_analysis" / "wfa_summary.json",
+        "simulated_incubation_core": (
+            run_root / "simulated_incubation_core" / "incubation_oos_summary.json"
+        ),
+        "acceptance_oos_test": (
+            run_root / "acceptance_oos_test" / "acceptance_oos_summary.json"
+        ),
+    }
+    loaded: dict[str, dict[str, Any]] = {}
+    for stage, path in summaries.items():
+        if not path.is_file() or stage not in by_stage:
+            continue
+        try:
+            summary = _read_json(path)
+        except ValueError:
+            continue
+        loaded[stage] = summary
+        _merge_stage_window_summary(by_stage[stage], summary, path)
+
+    wfa_results = run_root / "walk_forward_analysis" / "wfa_results.csv"
+    wfa_period = _csv_column_period(wfa_results, "test_start", "test_end")
+    if wfa_period is not None:
+        for stage in ("wfa_oos_monkey_test", "wfa_oos_monte_carlo"):
+            row = by_stage.get(stage)
+            if row is not None:
+                row.update(
+                    {
+                        "actual_start": wfa_period["start"],
+                        "actual_end": wfa_period["end"],
+                        "actual_windows": wfa_period["rows"],
+                        "status": "actual",
+                        "summary_path": str(wfa_results),
+                    }
+                )
+
+    incubation = loaded.get("simulated_incubation_core")
+    if incubation:
+        row = by_stage.get("simulated_incubation_monkey")
+        if row is not None:
+            row.update(
+                {
+                    "actual_start": incubation.get("test_start"),
+                    "actual_end": incubation.get("test_end"),
+                    "status": "actual",
+                    "summary_path": str(summaries["simulated_incubation_core"]),
+                }
+            )
+    return rows
+
+
+def _merge_mechanics_window_evidence(
+    row: dict[str, Any] | None,
+    cfg: Mapping[str, Any],
+    *,
+    project_root: Path,
+) -> None:
+    if row is None:
+        return
+    gate = ((cfg.get("research_metadata") or {}).get("validation_gate") or {})
+    evidence_value = gate.get("evidence_dir")
+    if not evidence_value:
+        return
+    evidence_dir = Path(str(evidence_value))
+    if not evidence_dir.is_absolute():
+        evidence_dir = (project_root / evidence_dir).resolve()
+    metadata_path = evidence_dir / "metadata.json"
+    if not metadata_path.is_file():
+        return
+    try:
+        metadata = _read_json(metadata_path)
+    except ValueError:
+        return
+    source_value = metadata.get("source_run_dir")
+    source_run = Path(str(source_value)) if source_value else None
+    if source_run is not None and not source_run.is_absolute():
+        source_run = (project_root / source_run).resolve()
+    metrics_path = source_run / "metrics.json" if source_run is not None else None
+    if metrics_path is not None and metrics_path.is_file():
+        try:
+            metrics = _read_json(metrics_path)
+        except ValueError:
+            metrics = {}
+        subset = metrics.get("data_subset") if isinstance(metrics.get("data_subset"), Mapping) else {}
+        row["resolved_start"] = subset.get("start_date") or subset.get("start_timestamp")
+        row["resolved_end"] = subset.get("end_date") or subset.get("end_timestamp")
+    audits_path = source_run / "session_audits.csv" if source_run is not None else None
+    if audits_path is not None:
+        period = _csv_column_period(audits_path, "session_date", "session_date")
+        if period is not None:
+            row.update(
+                {
+                    "actual_start": period["start"],
+                    "actual_end": period["end"],
+                    "actual_sessions": period["rows"],
+                    "status": "actual",
+                    "summary_path": str(metadata_path),
+                }
+            )
+
+
+def _merge_stage_window_summary(
+    row: dict[str, Any],
+    summary: Mapping[str, Any],
+    path: Path,
+) -> None:
+    resolved = (
+        summary.get("resolved_data_subset")
+        if isinstance(summary.get("resolved_data_subset"), Mapping)
+        else summary.get("data_subset")
+        if isinstance(summary.get("data_subset"), Mapping)
+        else {}
+    )
+    actual = (
+        summary.get("actual_data_period")
+        if isinstance(summary.get("actual_data_period"), Mapping)
+        else {}
+    )
+    row.update(
+        {
+            "resolved_start": resolved.get("start_date") or resolved.get("start_timestamp"),
+            "resolved_end": resolved.get("end_date") or resolved.get("end_timestamp"),
+            "actual_start": actual.get("first_timestamp"),
+            "actual_end": actual.get("last_timestamp"),
+            "actual_rows": actual.get("strategy_rows") or actual.get("rows"),
+            "status": "actual" if actual.get("first_timestamp") else "resolved",
+            "summary_path": str(path),
+        }
+    )
+    for key in ("train_start", "train_end", "test_start", "test_end"):
+        if summary.get(key) is not None:
+            row[key] = summary.get(key)
+
+
+def _csv_column_period(path: Path, start_column: str, end_column: str) -> dict[str, Any] | None:
+    if not path.is_file():
+        return None
+    starts: list[str] = []
+    ends: list[str] = []
+    try:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            for item in csv.DictReader(handle):
+                start = str(item.get(start_column) or "").strip()
+                end = str(item.get(end_column) or "").strip()
+                if start and end:
+                    starts.append(start)
+                    ends.append(end)
+    except OSError:
+        return None
+    if not starts:
+        return None
+    return {
+        "start": min(starts),
+        "end": max(ends),
+        "rows": len(starts),
+    }
 
 
 def _read_yaml(path: Path) -> dict[str, Any]:

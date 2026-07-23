@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_overnight_intraday_reversal",
+  "variant_id": "high_overnight_first15_short_1000",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_overnight_intraday_reversal/high_overnight_first15_short_1000/variant.yaml",
+    "hash": "1521cfc47ff8a8dc111574a1b299341a0f4fd6f717dfc571f0f454c776934430",
+    "mechanic": {
+      "entry_module": "overnight_intraday_reversal",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_overnight_intraday_reversal/rescue_attempts/stop_distance_rescue_1/high_overnight_first15_short_1000/config.yaml",
+  "effective_config": "backtest-campaigns/es_overnight_intraday_reversal/high_overnight_first15_short_1000/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_overnight_intraday_reversal/high_overnight_first15_short_1000/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "52146da2a240ad6bae70dc7e76bd9575b4150e4708f054f30cf5ac4a78abc108",
+  "source_config_hash": "52d5c28f7140e8ce6cb79acf3481f804854f9bca75c31039d0213e378e6b84e0",
+  "source_results_index": "campaigns/es_overnight_intraday_reversal/results_index.yaml",
+  "created_at": "2026-06-19T15:28:37",
+  "updated_at": "2026-06-19T15:28:37",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

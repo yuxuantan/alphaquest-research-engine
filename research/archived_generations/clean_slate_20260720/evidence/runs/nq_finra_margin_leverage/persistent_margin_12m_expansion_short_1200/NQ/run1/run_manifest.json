@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_finra_margin_leverage",
+  "variant_id": "persistent_margin_12m_expansion_short_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_finra_margin_leverage/persistent_margin_12m_expansion_short_1200/variant.yaml",
+    "hash": "cdf706aee13f69172d88c6d4cb16bb217969972ef241921186d6d19fedfbf446",
+    "mechanic": {
+      "entry_module": "finra_margin_leverage",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_finra_margin_leverage/variants/persistent_margin_12m_expansion_short_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_finra_margin_leverage/persistent_margin_12m_expansion_short_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_finra_margin_leverage/persistent_margin_12m_expansion_short_1200/NQ/run1/source_config.yaml",
+  "config_hash": "cea977efae8d74eee6762dc8e6dc0a31c675affc4892753dec0c10f01b1601f4",
+  "source_config_hash": "f0ba4e76c13190a6a2fc6afd5f91b9bbef110f557b67aadf1dd36baee4e41bc9",
+  "source_results_index": "campaigns/nq_finra_margin_leverage/results_index.yaml",
+  "created_at": "2026-06-30T09:16:07",
+  "updated_at": "2026-06-30T09:16:07",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

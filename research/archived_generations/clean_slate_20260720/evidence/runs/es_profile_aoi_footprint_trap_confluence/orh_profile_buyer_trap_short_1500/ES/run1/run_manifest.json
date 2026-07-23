@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_profile_aoi_footprint_trap_confluence",
+  "variant_id": "orh_profile_buyer_trap_short_1500",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_imbalance_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_imbalance_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_profile_aoi_footprint_trap_confluence/orh_profile_buyer_trap_short_1500/variant.yaml",
+    "hash": "6db8a560aaf8f46b10b099c532bc50aa0e1d546021322982780f8f5b335368f4",
+    "mechanic": {
+      "entry_module": "profile_aoi_footprint_trap",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_profile_aoi_footprint_trap_confluence/variants/orh_profile_buyer_trap_short_1500/config.yaml",
+  "effective_config": "backtest-campaigns/es_profile_aoi_footprint_trap_confluence/orh_profile_buyer_trap_short_1500/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_profile_aoi_footprint_trap_confluence/orh_profile_buyer_trap_short_1500/ES/run1/source_config.yaml",
+  "config_hash": "4d136e45d2120daaaede4f7c352963f5d87a285727c1228eb7417a50e6c872f2",
+  "source_config_hash": "43b5742849569fdf89c64f140d294b943f98bf926809643f6109f2ce4f28c8f3",
+  "source_results_index": "campaigns/es_profile_aoi_footprint_trap_confluence/results_index.yaml",
+  "created_at": "2026-06-21T23:59:37",
+  "updated_at": "2026-06-21T23:59:37",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

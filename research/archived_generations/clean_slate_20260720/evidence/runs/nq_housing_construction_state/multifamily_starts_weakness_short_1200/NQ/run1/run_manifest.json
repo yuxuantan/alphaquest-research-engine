@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_housing_construction_state",
+  "variant_id": "multifamily_starts_weakness_short_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_housing_construction_state/multifamily_starts_weakness_short_1200/variant.yaml",
+    "hash": "28131559c6b73cba04ee9cc257f927617fc681b91347960364739d7af49b6bd4",
+    "mechanic": {
+      "entry_module": "nq_housing_construction_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_housing_construction_state/variants/multifamily_starts_weakness_short_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_housing_construction_state/multifamily_starts_weakness_short_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_housing_construction_state/multifamily_starts_weakness_short_1200/NQ/run1/source_config.yaml",
+  "config_hash": "4d315ed1a22eb72a47b6762816a61125df89b66f3bf8fe9ff3e25086a384c65b",
+  "source_config_hash": "1c352c0dda3cb28a2568ba71413e5be7a90bf9d13d501cb847663d912d140968",
+  "source_results_index": "campaigns/nq_housing_construction_state/results_index.yaml",
+  "created_at": "2026-07-01T06:07:24",
+  "updated_at": "2026-07-01T06:07:24",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

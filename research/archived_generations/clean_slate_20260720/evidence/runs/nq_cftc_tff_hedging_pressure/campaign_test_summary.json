@@ -1,0 +1,114 @@
+{
+  "campaign_id": "nq_cftc_tff_hedging_pressure",
+  "title": "NQ CFTC TFF Hedging Pressure",
+  "decision": "FAIL",
+  "terminal_stage": "pre_pnl_density_screen",
+  "completed_at": "2026-06-30T15:02:42+08:00",
+  "density_audit": {
+    "artifact": "research_artifacts/nq_cftc_tff_hedging_pressure_density_audit_20260630.md",
+    "csv": "research_artifacts/nq_cftc_tff_hedging_pressure_density_audit_20260630.csv",
+    "declared_entry_rows": 15,
+    "density_pass_rows": 1,
+    "density_fail_rows": 14,
+    "min_full_signals_per_year": 11.17,
+    "min_limited_signals_per_year": 0.0,
+    "min_latest_252_signals": 39
+  },
+  "failure_reason": "Rejected before staged NQ PnL: 14/15 declared entry-threshold rows failed the pre-PnL density gate. Only broad_negative_pressure_short_1100 at threshold -25000 cleared all windows. Several positive and extreme negative/positive thresholds had zero signals in the deterministic limited-core proxy, with minimum full-history density 11.17 signals/year and minimum limited-core density 0.00. Dropping the sparse thresholds or retaining the single passing threshold after this screen would be post-result narrowing of the declared five-variant edge. No NQ PnL was inspected.",
+  "staged_pnl_run": false,
+  "monkey_reached": 0,
+  "wfa_reached": 0,
+  "monte_carlo_reached": 0,
+  "simulated_incubation_reached": 0,
+  "acceptance_oos_reached": 0,
+  "candidate_strategy_report_created": false,
+  "variant_density_summary": [
+    {
+      "variant_id": "broad_negative_pressure_short_1100",
+      "rows": 3,
+      "pass_rows": 1,
+      "fail_rows": 2,
+      "min_full_signals_per_year": 26.59,
+      "min_limited_signals_per_year": 0.0,
+      "min_latest_252_signals": 107,
+      "failed_thresholds": [
+        -50000.0,
+        -100000.0
+      ],
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "broad_positive_pressure_long_1100",
+      "rows": 3,
+      "pass_rows": 0,
+      "fail_rows": 3,
+      "min_full_signals_per_year": 30.39,
+      "min_limited_signals_per_year": 3.8,
+      "min_latest_252_signals": 66,
+      "failed_thresholds": [
+        25000.0,
+        47442.0,
+        75000.0
+      ],
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "extreme_negative_pressure_short_1330",
+      "rows": 3,
+      "pass_rows": 0,
+      "fail_rows": 3,
+      "min_full_signals_per_year": 11.17,
+      "min_limited_signals_per_year": 0.0,
+      "min_latest_252_signals": 43,
+      "failed_thresholds": [
+        -75000.0,
+        -150000.0,
+        -250000.0
+      ],
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "extreme_positive_pressure_long_1330",
+      "rows": 3,
+      "pass_rows": 0,
+      "fail_rows": 3,
+      "min_full_signals_per_year": 16.56,
+      "min_limited_signals_per_year": 0.0,
+      "min_latest_252_signals": 39,
+      "failed_thresholds": [
+        125000.0,
+        175000.0,
+        250000.0
+      ],
+      "decision": "FAIL"
+    },
+    {
+      "variant_id": "high_positive_pressure_long_0935",
+      "rows": 3,
+      "pass_rows": 0,
+      "fail_rows": 3,
+      "min_full_signals_per_year": 19.22,
+      "min_limited_signals_per_year": 0.0,
+      "min_latest_252_signals": 51,
+      "failed_thresholds": [
+        75000.0,
+        98748.0,
+        150000.0
+      ],
+      "decision": "FAIL"
+    }
+  ],
+  "artifacts": {
+    "campaign_yaml": "campaigns/nq_cftc_tff_hedging_pressure/campaign.yaml",
+    "campaign_summary_json": "backtest-campaigns/nq_cftc_tff_hedging_pressure/campaign_test_summary.json",
+    "campaign_summary_md": "backtest-campaigns/nq_cftc_tff_hedging_pressure/campaign_test_summary.md",
+    "campaign_results_csv": "backtest-campaigns/nq_cftc_tff_hedging_pressure/campaign_results.csv",
+    "density_audit_md": "research_artifacts/nq_cftc_tff_hedging_pressure_density_audit_20260630.md",
+    "density_audit_csv": "research_artifacts/nq_cftc_tff_hedging_pressure_density_audit_20260630.csv",
+    "methodology_audit": "campaigns/nq_cftc_tff_hedging_pressure/methodology_audit.md",
+    "trade_logs_manifest": "backtest-campaigns/nq_cftc_tff_hedging_pressure/trade_logs_manifest.csv",
+    "equity_curves_manifest": "backtest-campaigns/nq_cftc_tff_hedging_pressure/equity_curves_manifest.csv",
+    "wfa_table": "backtest-campaigns/nq_cftc_tff_hedging_pressure/wfa_table.csv",
+    "monte_carlo_summary": "backtest-campaigns/nq_cftc_tff_hedging_pressure/monte_carlo_summary.json"
+  }
+}

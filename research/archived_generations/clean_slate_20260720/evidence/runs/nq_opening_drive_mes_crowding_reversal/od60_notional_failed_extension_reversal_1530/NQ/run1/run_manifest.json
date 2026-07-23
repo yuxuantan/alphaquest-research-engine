@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_opening_drive_mes_crowding_reversal",
+  "variant_id": "od60_notional_failed_extension_reversal_1530",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/nq_mes_participation_crowding_1m_20190506_20260612_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_opening_drive_mes_crowding_reversal/od60_notional_failed_extension_reversal_1530/variant.yaml",
+    "hash": "a4e5889c3b50478a94d088b2e2f824e7bb3402bac2b4f65b2ec0072c1b5f6a91",
+    "mechanic": {
+      "entry_module": "opening_drive_mes_crowding_reversal",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_opening_drive_mes_crowding_reversal/variants/od60_notional_failed_extension_reversal_1530/config.yaml",
+  "effective_config": "backtest-campaigns/nq_opening_drive_mes_crowding_reversal/od60_notional_failed_extension_reversal_1530/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_opening_drive_mes_crowding_reversal/od60_notional_failed_extension_reversal_1530/NQ/run1/source_config.yaml",
+  "config_hash": "92afe58c6bdbdeae04092ca1144294e2e244c24fdd8f1d65ed0366fbcfa6a2b9",
+  "source_config_hash": "6f25fe0ee9463c0bc0581f4edd17bece52f5dc6586e3eb87a7a853e59cc04912",
+  "source_results_index": "campaigns/nq_opening_drive_mes_crowding_reversal/results_index.yaml",
+  "created_at": "2026-06-30T13:02:19",
+  "updated_at": "2026-06-30T13:02:19",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

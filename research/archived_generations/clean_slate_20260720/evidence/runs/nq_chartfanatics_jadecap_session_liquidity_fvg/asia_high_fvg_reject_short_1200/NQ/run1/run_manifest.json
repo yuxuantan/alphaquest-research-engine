@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_chartfanatics_jadecap_session_liquidity_fvg",
+  "variant_id": "asia_high_fvg_reject_short_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_chartfanatics_jadecap_session_liquidity_fvg/asia_high_fvg_reject_short_1200/variant.yaml",
+    "hash": "fb56ee3c105420e99ec0621d4f68558f30b5c6bf8a36927cb49516a0306bf758",
+    "mechanic": {
+      "entry_module": "session_liquidity_fvg_reversal",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_chartfanatics_jadecap_session_liquidity_fvg/variants/asia_high_fvg_reject_short_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_chartfanatics_jadecap_session_liquidity_fvg/asia_high_fvg_reject_short_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_chartfanatics_jadecap_session_liquidity_fvg/asia_high_fvg_reject_short_1200/NQ/run1/source_config.yaml",
+  "config_hash": "1984d5696218ebabeefff19942790b3b0cf572acbfded9b14a80c40fe4116212",
+  "source_config_hash": "6232e9c43c68c49bfcc1579e756279b578f85295eddace0830853dde4408439b",
+  "source_results_index": "campaigns/nq_chartfanatics_jadecap_session_liquidity_fvg/results_index.yaml",
+  "created_at": "2026-07-01T01:11:30",
+  "updated_at": "2026-07-01T01:11:30",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

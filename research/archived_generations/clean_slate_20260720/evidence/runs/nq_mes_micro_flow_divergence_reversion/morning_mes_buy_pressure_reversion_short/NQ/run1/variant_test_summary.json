@@ -1,0 +1,147 @@
+{
+  "campaign_id": "nq_mes_micro_flow_divergence_reversion",
+  "variant_id": "morning_mes_buy_pressure_reversion_short",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/nq_mes_flow_divergence_1m_20190506_20260612_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_mes_micro_flow_divergence_reversion/morning_mes_buy_pressure_reversion_short/variant.yaml",
+    "hash": "12f778bbe9195f4a382235ee62e808948a6cb7cbf1636fe37b87c600cecbb5a6",
+    "mechanic": {
+      "entry_module": "trade_orderflow_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "11:31:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_path": "backtest-campaigns/nq_mes_micro_flow_divergence_reversion/morning_mes_buy_pressure_reversion_short/NQ/run1/effective_config.yaml",
+  "effective_config_path": "backtest-campaigns/nq_mes_micro_flow_divergence_reversion/morning_mes_buy_pressure_reversion_short/NQ/run1/effective_config.yaml",
+  "source_config_path": "campaigns/nq_mes_micro_flow_divergence_reversion/variants/morning_mes_buy_pressure_reversion_short/config.yaml",
+  "source_config_snapshot_path": "backtest-campaigns/nq_mes_micro_flow_divergence_reversion/morning_mes_buy_pressure_reversion_short/NQ/run1/source_config.yaml",
+  "config_hash": "201ad30374bd76742f87c8abdf6e2bece7504a121cc2ddeb288760a7f9499db8",
+  "source_config_hash": "18e1e71d3b3bcac61e705dfcf912b3f1bd38ab159a63bfe78116152519b17ac1",
+  "output_dir": "backtest-campaigns/nq_mes_micro_flow_divergence_reversion/morning_mes_buy_pressure_reversion_short/NQ/run1",
+  "created_at": "2026-06-23T07:38:29",
+  "updated_at": "2026-06-23T07:38:29",
+  "skip_validation": true,
+  "fast_runtime_defaults": true,
+  "passed": false,
+  "halted": true,
+  "stages": [
+    {
+      "stage": "limited_core_grid_test",
+      "label": "Limited Core Grid Test",
+      "status": "error",
+      "passed": false,
+      "error": "Unsupported data.feature_set: nq_mes_completed_flow_divergence. Expected one of ['full', 'intraday_capitulation_mr', 'none', 'opening_range', 'pdh_pdl_sweep'].",
+      "criteria": [
+        {
+          "metric": "summary.total_combinations_tested",
+          "actual": null,
+          "expected": {
+            "valid_parameter_combination_count": "1 fixed combo or 8-120 tunable combos"
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.percentage_profitable_iterations",
+          "actual": null,
+          "expected": {
+            "min": 0.7
+          },
+          "passed": false
+        },
+        {
+          "metric": "summary.apex_rule_violating_iterations",
+          "actual": null,
+          "expected": {
+            "max": 0
+          },
+          "passed": true
+        }
+      ]
+    },
+    {
+      "stage": "limited_monkey_test",
+      "label": "Limited Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "walk_forward_analysis",
+      "label": "Walk Forward Analysis (WFA)",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monkey_test",
+      "label": "WFA OOS Monkey Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "wfa_oos_monte_carlo",
+      "label": "WFA OOS Monte Carlo",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_core",
+      "label": "Simulated Incubation (OOS) Core",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "simulated_incubation_monkey",
+      "label": "Simulated Incubation (OOS) Monkey",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    },
+    {
+      "stage": "acceptance_oos_test",
+      "label": "Acceptance OOS Test",
+      "status": "skipped",
+      "passed": false,
+      "skip_reason": "prior stage failed",
+      "criteria": []
+    }
+  ],
+  "source_results_index_path": "campaigns/nq_mes_micro_flow_divergence_reversion/results_index.yaml"
+}

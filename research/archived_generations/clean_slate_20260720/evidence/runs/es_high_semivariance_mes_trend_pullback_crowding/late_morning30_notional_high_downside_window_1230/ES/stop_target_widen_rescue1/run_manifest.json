@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_high_semivariance_mes_trend_pullback_crowding",
+  "variant_id": "late_morning30_notional_high_downside_window_1230",
+  "test_run_id": "stop_target_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/late_morning30_notional_high_downside_window_1230/variant.yaml",
+    "hash": "071d299d1af7214731ecea5651236d10563d18b5461adb0c73f33efab3a41f3c",
+    "mechanic": {
+      "entry_module": "semivariance_filtered_trend_mes_participation_crowding",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "13:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_high_semivariance_mes_trend_pullback_crowding/rescue_attempts/stop_target_widen_rescue_1/late_morning30_notional_high_downside_window_1230/config.yaml",
+  "effective_config": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/late_morning30_notional_high_downside_window_1230/ES/stop_target_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/late_morning30_notional_high_downside_window_1230/ES/stop_target_widen_rescue1/source_config.yaml",
+  "config_hash": "bf1cb095e511a87ee055878883f0446ccb226ba147a0e891eed962fbf4f61cac",
+  "source_config_hash": "c9474b06d8ccae8bb5aaa9ad86e25ea8845992e491deac99d382bd14500f8170",
+  "source_results_index": "campaigns/es_high_semivariance_mes_trend_pullback_crowding/results_index.yaml",
+  "created_at": "2026-06-20T11:53:24",
+  "updated_at": "2026-06-20T11:53:24",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

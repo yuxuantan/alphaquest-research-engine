@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_vwap_orderflow_pullback_continuation",
+  "variant_id": "morning_large20_trend_reclaim_two_sided",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_vwap_orderflow_pullback_continuation/campaign.yaml",
+    "hash": "f1a4998ea3ab502a56bad0abbc93008f54fa04d8e259f91879fe88617b1c46fe"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_vwap_orderflow_pullback_continuation/morning_large20_trend_reclaim_two_sided/variant.yaml",
+    "hash": "6808ecaa3ef2616cea644ed62a92f2647d0252a9eeccc6a2bc43c879270b01f8",
+    "mechanic": {
+      "entry_module": "vwap_orderflow_pullback_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_vwap_orderflow_pullback_continuation/rescue_attempts/stop_distance_rescue_1/morning_large20_trend_reclaim_two_sided/config.yaml",
+  "effective_config": "backtest-campaigns/es_vwap_orderflow_pullback_continuation/morning_large20_trend_reclaim_two_sided/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_vwap_orderflow_pullback_continuation/morning_large20_trend_reclaim_two_sided/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "b7afb956542a8d6e9e20d5f596fc19ace2f9f4da430b7b97a35cc80bd156ff35",
+  "source_config_hash": "36f5420f7f746a7e0b7b384a038502bdb4dbe3bd6853114f4a68282a2208223a",
+  "source_results_index": "campaigns/es_vwap_orderflow_pullback_continuation/results_index.yaml",
+  "created_at": "2026-06-19T18:53:09",
+  "updated_at": "2026-06-19T18:53:09",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

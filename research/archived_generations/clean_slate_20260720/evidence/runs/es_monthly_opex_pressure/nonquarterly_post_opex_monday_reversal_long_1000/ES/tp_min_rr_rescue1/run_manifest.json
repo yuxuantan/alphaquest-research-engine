@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_monthly_opex_pressure",
+  "variant_id": "nonquarterly_post_opex_monday_reversal_long_1000",
+  "test_run_id": "tp_min_rr_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_monthly_opex_pressure/campaign.yaml",
+    "hash": "a4b0cc66e2e87f04dc1b20fd0b9c315b025133958de0a68a57d0a076f574e172"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_monthly_opex_pressure/nonquarterly_post_opex_monday_reversal_long_1000/variant.yaml",
+    "hash": "254367fe9c6bcc7283ed6c1a90646999dad58e4454da0108a51ef97412c49456",
+    "mechanic": {
+      "entry_module": "monthly_opex_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_monthly_opex_pressure/rescue_attempts/tp_min_rr_floor_rescue_1/nonquarterly_post_opex_monday_reversal_long_1000/config.yaml",
+  "effective_config": "backtest-campaigns/es_monthly_opex_pressure/nonquarterly_post_opex_monday_reversal_long_1000/ES/tp_min_rr_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_monthly_opex_pressure/nonquarterly_post_opex_monday_reversal_long_1000/ES/tp_min_rr_rescue1/source_config.yaml",
+  "config_hash": "57da15bd1d2b727b555bc8f5612ec773fc8069452897dccb90624cd04fc1dabe",
+  "source_config_hash": "67a9c2ad1c44b7c839cdd95da7a1d1077ad493ffd92308b5f0f181ded091d11a",
+  "source_results_index": "campaigns/es_monthly_opex_pressure/results_index.yaml",
+  "created_at": "2026-06-19T21:54:31",
+  "updated_at": "2026-06-19T21:54:31",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

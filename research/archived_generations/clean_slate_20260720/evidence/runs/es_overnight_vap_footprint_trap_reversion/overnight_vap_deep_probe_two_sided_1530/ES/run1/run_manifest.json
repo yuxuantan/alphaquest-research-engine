@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_overnight_vap_footprint_trap_reversion",
+  "variant_id": "overnight_vap_deep_probe_two_sided_1530",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_footprint_vap_overnight_aoi_1m_20110103_20260529_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_overnight_vap_footprint_trap_reversion/overnight_vap_deep_probe_two_sided_1530/variant.yaml",
+    "hash": "67199bacc00a4b9e29f52e22491a566f78dbffcbef161e84efadf6c47f06053a",
+    "mechanic": {
+      "entry_module": "profile_aoi_footprint_trap",
+      "take_profit_module": "cost_adjusted_fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_overnight_vap_footprint_trap_reversion/variants/overnight_vap_deep_probe_two_sided_1530/config.yaml",
+  "effective_config": "backtest-campaigns/es_overnight_vap_footprint_trap_reversion/overnight_vap_deep_probe_two_sided_1530/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_overnight_vap_footprint_trap_reversion/overnight_vap_deep_probe_two_sided_1530/ES/run1/source_config.yaml",
+  "config_hash": "bb1acbb4a203065bce8640caf20b3e7eba990e8833b4eecaeab7cc046b6af02c",
+  "source_config_hash": "f280a8bc203e5d81be4d75ff0b0eec0cc5c139ee7a9617499c0e94729647200e",
+  "source_results_index": "campaigns/es_overnight_vap_footprint_trap_reversion/results_index.yaml",
+  "created_at": "2026-06-22T10:49:57",
+  "updated_at": "2026-06-22T10:49:57",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

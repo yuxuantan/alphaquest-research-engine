@@ -190,6 +190,28 @@ def test_order_activates_on_next_event_and_equal_timestamp_later_ordinal_can_fil
     assert trade["entry_timestamp"] == session.events.loc[0, "timestamp"]
 
 
+def test_immediate_target_directive_fills_crossed_target_on_current_event():
+    class _ImmediateTargetStrategy(_SubmitOnceStrategy):
+        def position_directive(self, event, position, broker):
+            del position, broker
+            if event.event_index == 2:
+                return PositionDirective(
+                    immediate_target_tick=410,
+                    report_fields={"target_was_already_crossed": True},
+                )
+            return PositionDirective()
+
+    session = _session((100.0, 100.25, 103.0))
+    strategy = _ImmediateTargetStrategy(target_tick=None)
+    result = BacktestEngine(_config()).run_event_replay([session], strategy)
+
+    trade = result["trades"].iloc[0]
+    assert trade["exit_event_index"] == 2
+    assert trade["exit_reason"] == "target"
+    assert trade["exit_price"] == 102.5
+    assert bool(trade["target_was_already_crossed"])
+
+
 def test_entry_start_blocks_prestart_fills_but_allows_the_first_later_event():
     session = _session(
         (100.0, 100.25, 100.25),
@@ -585,17 +607,21 @@ def test_engine_transitions_round_trip_through_validation_schema(tmp_path):
     assert "entry_filled" in set(loaded.event_transitions["transition"])
 
 
-@pytest.mark.parametrize(
-    ("section", "message"),
-    [
-        ({"apex_rules": {"enabled": True}}, "does not yet implement apex_rules"),
-        ({"event_filters": {"enabled": True}}, "does not yet implement generic event_filters"),
-        ({"validation_export": {"enabled": True}}, "validation must be exported"),
-    ],
-)
-def test_event_lane_fails_closed_for_unimplemented_bar_lane_policies(section, message):
+def test_event_lane_fails_closed_for_unimplemented_generic_event_filters():
     config = _config()
-    config.update(section)
+    config["event_filters"] = {"enabled": True}
 
-    with pytest.raises(ValueError, match=message):
+    with pytest.raises(ValueError, match="does not yet implement generic event_filters"):
         BacktestEngine(config).run_event_replay([_session((100.0, 100.25))], _RecordingStrategy())
+
+
+def test_event_lane_accepts_proven_stricter_apex_adapter_and_output_export_declaration():
+    config = _config()
+    config["apex_rules"] = {"enabled": True}
+    config["validation_export"] = {"enabled": True}
+
+    result = BacktestEngine(config).run_event_replay(
+        [_session((100.0, 100.25))], _RecordingStrategy()
+    )
+
+    assert result["reproducibility"]["engine_lane"] == "canonical_event_replay"

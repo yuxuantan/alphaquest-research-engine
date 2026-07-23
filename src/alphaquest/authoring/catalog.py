@@ -223,6 +223,49 @@ def _manifest(
 
 CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
     [
+        ModuleManifestV1(
+            name="yush_orderflow_range",
+            module_type="entry",
+            certification_status="certified",
+            summary="Causal trade-event AOI, tap, reversal, and order-flow trigger state machine.",
+            decision_timing="intrabar_or_event",
+            required_columns=[
+                "timestamp",
+                "price",
+                "size",
+                "side",
+                "signed_size",
+                "contract_symbol",
+            ],
+            required_detail_granularity="trade_events",
+            parameters={
+                "mechanics": _parameter(
+                    "object",
+                    "Complete frozen mechanics mapping for the certified Yush event strategy.",
+                    required=True,
+                )
+            },
+            max_tunable_parameters=0,
+            next_bar_entry=False,
+        ),
+        ModuleManifestV1(
+            name="event_aoi_structural_stop",
+            module_type="sl",
+            certification_status="certified",
+            summary="Use the event strategy's frozen AOI boundary, minimum breathing room, and risk cap.",
+            decision_timing="entry_price",
+            parameters={},
+            max_tunable_parameters=0,
+        ),
+        ModuleManifestV1(
+            name="event_value_area_management",
+            module_type="tp",
+            certification_status="certified",
+            summary="Activate protected profit at the frozen midpoint and target the opposite value edge.",
+            decision_timing="post_entry",
+            parameters={},
+            max_tunable_parameters=0,
+        ),
         _manifest(
             "safe_bar_rule",
             "entry",

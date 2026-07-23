@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_epu_policy_uncertainty_intraday",
+  "variant_id": "rising_epu_short_1130",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_epu_policy_uncertainty_intraday/rising_epu_short_1130/variant.yaml",
+    "hash": "536a9578a3adbacea55b0baec9c92eb3a48a0f93f4fe2743b1f69aa251507bba",
+    "mechanic": {
+      "entry_module": "epu_policy_uncertainty",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_epu_policy_uncertainty_intraday/variants/rising_epu_short_1130/config.yaml",
+  "effective_config": "backtest-campaigns/nq_epu_policy_uncertainty_intraday/rising_epu_short_1130/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_epu_policy_uncertainty_intraday/rising_epu_short_1130/NQ/run1/source_config.yaml",
+  "config_hash": "ae2f81490f0cf2af5dfaa92d77d16e6a6f7052e7ceb0fb59feda9a784fbadeef",
+  "source_config_hash": "4b83972d82c2c1685bc8439371df10c67d4905a142fdfc4fd536d41a48a2a09d",
+  "source_results_index": "campaigns/nq_epu_policy_uncertainty_intraday/results_index.yaml",
+  "created_at": "2026-06-23T09:58:44",
+  "updated_at": "2026-06-23T09:58:44",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

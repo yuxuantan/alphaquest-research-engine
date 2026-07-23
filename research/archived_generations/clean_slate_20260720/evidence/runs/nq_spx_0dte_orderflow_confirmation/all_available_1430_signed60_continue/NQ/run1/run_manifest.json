@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_spx_0dte_orderflow_confirmation",
+  "variant_id": "all_available_1430_signed60_continue",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_spx_0dte_orderflow_confirmation/all_available_1430_signed60_continue/variant.yaml",
+    "hash": "0f8fcb414f452762e4b5b419b9743ed646ab7d809bb259f8a84be33e9f9a038b",
+    "mechanic": {
+      "entry_module": "spx_0dte_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_spx_0dte_orderflow_confirmation/variants/all_available_1430_signed60_continue/config.yaml",
+  "effective_config": "backtest-campaigns/nq_spx_0dte_orderflow_confirmation/all_available_1430_signed60_continue/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_spx_0dte_orderflow_confirmation/all_available_1430_signed60_continue/NQ/run1/source_config.yaml",
+  "config_hash": "cc1c00796df4eeb452fc5f53df6deed451af0f360ec4aa2f382356a1140cfa30",
+  "source_config_hash": "7239b5a88e1a80b087202fceea6d04417658f22bba3aba190c4f83a7979ca334",
+  "source_results_index": "campaigns/nq_spx_0dte_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-23T16:23:29",
+  "updated_at": "2026-06-23T16:23:29",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

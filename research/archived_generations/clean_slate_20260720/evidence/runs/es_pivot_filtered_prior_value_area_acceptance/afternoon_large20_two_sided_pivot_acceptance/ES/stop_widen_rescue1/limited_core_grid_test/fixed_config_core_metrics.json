@@ -1,0 +1,186 @@
+{
+  "purpose": "fixed_config_mechanics_cross_check",
+  "parameter_source": "strategy section in effective config",
+  "uses_grid_selected_params": false,
+  "trade_log_csv": "backtest-campaigns/es_pivot_filtered_prior_value_area_acceptance/afternoon_large20_two_sided_pivot_acceptance/ES/stop_widen_rescue1/limited_core_grid_test/fixed_config_core_trade_log.csv",
+  "daily_results_csv": "backtest-campaigns/es_pivot_filtered_prior_value_area_acceptance/afternoon_large20_two_sided_pivot_acceptance/ES/stop_widen_rescue1/limited_core_grid_test/fixed_config_core_daily_results.csv",
+  "metrics": {
+    "total_trades": 127,
+    "trades_per_year": 82.67508308115033,
+    "net_profit": -4685.0,
+    "profit_factor": 0.681346709743241,
+    "expectancy_r": -0.10334359523849426,
+    "max_drawdown": 4945.0,
+    "max_drawdown_pct": 0.0329096233195794,
+    "cagr": -0.02044483511373607,
+    "mar": -0.6212418451344756,
+    "worst_day": -342.5,
+    "best_day": 307.5,
+    "best_day_concentration": 0.0,
+    "max_consecutive_losses": 6,
+    "positive_month_rate": 0.3,
+    "win_rate": 0.4251968503937008,
+    "average_trade": -36.889763779527556,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "diagnostics": {
+    "preflight": {
+      "rows": 29172,
+      "timeframe_minutes": 5.0,
+      "warnings": [
+        "Entry module market_structure_filtered_entry is missing optional/strategy feature column(s): ['es_return_ticks_30', 'es_return_ticks_60', 'mes_participation_share_30_rank252', 'mes_participation_share_60_rank252', 'mes_trade_share_60_rank252', 'vwap']."
+      ],
+      "required_columns": [
+        "close",
+        "high",
+        "low",
+        "open",
+        "session_date",
+        "timestamp"
+      ]
+    },
+    "signals_generated": 127,
+    "entries_opened": 127,
+    "trades_closed": 127,
+    "rejects": {
+      "missing_stop": 0,
+      "target_already_reached": 0,
+      "position_sizing": 0,
+      "daily_risk_lockout": 0,
+      "apex_latest_entry_time": 0,
+      "event_no_trade_window": 0
+    },
+    "exits": {
+      "stop": 32,
+      "target": 28,
+      "eod_flatten": 67
+    },
+    "stop_target_conflicts": 0,
+    "detail_conflicts_resolved": 0,
+    "detail_conflicts_unresolved": 0,
+    "apex": {
+      "enabled": true,
+      "timezone": "America/New_York",
+      "latest_flat_time": "16:59:59",
+      "force_flatten_time": "16:58:30",
+      "latest_entry_time": "16:45:00",
+      "pending_orders_cancelled": 0,
+      "pending_order_after_flatten_deadline": 0,
+      "entry_after_latest_entry_time": 0,
+      "exit_after_flatten_deadline": 0,
+      "position_after_flatten_deadline": 0,
+      "overnight_position_violations": 0,
+      "forced_flatten_trades": 0,
+      "rule_violations": 0
+    },
+    "event_filters": {
+      "enabled": false,
+      "timezone": "America/New_York",
+      "windows_configured": 0,
+      "entry_rejections": 0,
+      "pending_orders_cancelled": 0,
+      "flatten_trades": 0,
+      "flatten_trades_by_window": {}
+    }
+  },
+  "strategy": {
+    "entry": {
+      "module": "market_structure_filtered_entry",
+      "params": {
+        "base_module": "prior_value_area_orderflow_acceptance",
+        "base_params": {
+          "allow_long": true,
+          "allow_short": true,
+          "bar_interval_minutes": 5,
+          "breakout_buffer_ticks": 1,
+          "end_time": "15:30:00",
+          "flatten_time": "15:55:00",
+          "flow_mode": "large20",
+          "max_trades_per_day": 1,
+          "min_orderflow_imbalance": 0.02,
+          "min_prior_profile_bars": 50,
+          "setup_mode": "two_sided_acceptance",
+          "start_time": "13:00:00",
+          "tick_size": 0.25,
+          "value_area_fraction": 0.7
+        },
+        "rth_start": "09:30:00",
+        "bar_interval_minutes": 5,
+        "tick_size": 0.25,
+        "timeframes_minutes": [
+          5,
+          15
+        ],
+        "min_aligned_timeframes": 1,
+        "pivot_left_bars": 1,
+        "pivot_right_bars": 1,
+        "min_pivot_move_ticks": 0,
+        "carry_pivots_across_sessions": true
+      }
+    },
+    "flatten_time": "15:55:00",
+    "sl": {
+      "module": "percent_from_entry",
+      "params": {
+        "round_to_tick": true,
+        "stop_pct": 0.0045
+      }
+    },
+    "tp": {
+      "module": "fixed_r",
+      "params": {
+        "target_r_multiple": 1.0
+      }
+    }
+  },
+  "core": {
+    "commission_per_contract": 2.5,
+    "daily_loss_limit": 4000,
+    "daily_profit_stop": 1000000000,
+    "data_subset": {
+      "end_date": "2026-06-09",
+      "session_labels": [
+        "RTH"
+      ],
+      "start_date": "2011-01-03"
+    },
+    "flatten_time": "15:55:00",
+    "initial_balance": 150000,
+    "max_trades_per_day": 1,
+    "point_value": 50.0,
+    "position_sizing": {
+      "contracts": 1,
+      "mode": "fixed_contracts"
+    },
+    "slippage_ticks": 1,
+    "tick_size": 0.25,
+    "tick_value": 12.5
+  },
+  "equity_curve_csv": "backtest-campaigns/es_pivot_filtered_prior_value_area_acceptance/afternoon_large20_two_sided_pivot_acceptance/ES/stop_widen_rescue1/limited_core_grid_test/fixed_config_core_equity_curve.csv",
+  "equity_curve_html": "backtest-campaigns/es_pivot_filtered_prior_value_area_acceptance/afternoon_large20_two_sided_pivot_acceptance/ES/stop_widen_rescue1/limited_core_grid_test/fixed_config_core_equity_curve.html",
+  "equity_curve_points": 128,
+  "configured_data_subset": {},
+  "resolved_data_subset": {
+    "end_date": "2012-09-06",
+    "session_labels": [
+      "RTH"
+    ],
+    "start_date": "2011-02-22"
+  },
+  "data_subset": {
+    "end_date": "2012-09-06",
+    "session_labels": [
+      "RTH"
+    ],
+    "start_date": "2011-02-22"
+  },
+  "actual_data_period": {
+    "first_timestamp": "2011-02-22 09:30:00-05:00",
+    "last_timestamp": "2012-09-06 15:59:00-04:00",
+    "rows": 145860,
+    "strategy_rows": 29172,
+    "timeframe": "5m",
+    "source_timeframe": "1m"
+  }
+}

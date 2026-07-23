@@ -1,0 +1,60 @@
+{
+  "campaign_id": "es_daily_reversal_orderflow_confirmation",
+  "variant_id": "afternoon90_1d_flow_confirm_1400",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_daily_reversal_orderflow_confirmation/afternoon90_1d_flow_confirm_1400/variant.yaml",
+    "hash": "e5752f9dadf646ae8bbb46217205589041ce66deb6300229e2c4c9d229676e51",
+    "mechanic": {
+      "entry_module": "daily_reversal_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_daily_reversal_orderflow_confirmation/variants/afternoon90_1d_flow_confirm_1400/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_daily_reversal_orderflow_confirmation/afternoon90_1d_flow_confirm_1400/ES/run1/source_config.yaml",
+  "config_hash": "a1fdf4bd5ee10525cd2322f64d3e3732bd5bbe13962cee38ae25c0573afbd871",
+  "source_config_hash": "17afe02a79ca3606c5b0aa154c9c29810e3d9fe634f7150109e11b118cf1fba5",
+  "created_at": "2026-06-18T00:11:51",
+  "updated_at": "2026-06-18T00:11:51",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_daily_reversal_orderflow_confirmation/afternoon90_1d_flow_confirm_1400/ES/run1/effective_config.yaml"
+}

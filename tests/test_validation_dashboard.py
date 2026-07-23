@@ -105,13 +105,49 @@ def test_manual_review_annotations_persist_and_summarize(tmp_path):
 def test_manual_review_annotation_upserts_by_trade_id(tmp_path):
     run_dir = tmp_path / "validation_runs" / "core"
 
-    save_manual_review_annotation(run_dir, 1, "Needs deeper review", "first", reviewed_at="2026-07-05T00:00:00+00:00")
+    save_manual_review_annotation(run_dir, "1", "Needs deeper review", "first", reviewed_at="2026-07-05T00:00:00+00:00")
     save_manual_review_annotation(run_dir, 1, "Correct", "second", reviewed_at="2026-07-05T00:01:00+00:00")
     loaded = load_manual_reviews(run_dir)
 
     assert len(loaded) == 1
     assert loaded.loc[0, "reviewer_status"] == "Correct"
     assert loaded.loc[0, "reviewer_notes"] == "second"
+
+
+def test_trade_evidence_joins_accept_string_reviews_for_integer_trade_ids(tmp_path):
+    run_dir = tmp_path / "validation_runs" / "core"
+    save_manual_review_annotation(
+        run_dir,
+        "1",
+        "Needs deeper review",
+        "saved from the web API",
+        reviewed_at="2026-07-05T00:00:00+00:00",
+    )
+    trades = pd.DataFrame({"trade_id": pd.Series([1, 2], dtype="int64")})
+    exit_audits = pd.DataFrame(
+        {
+            "trade_id": pd.Series(["1"], dtype="object"),
+            "engine_exit_matches_path": [True],
+        }
+    )
+    validation_checks = pd.DataFrame(
+        {
+            "trade_id": pd.Series(["1"], dtype="object"),
+            "status": ["WARNING"],
+            "category": ["execution"],
+            "check_name": ["example_check"],
+        }
+    )
+
+    prepared = prepare_trade_table(trades, exit_audits, validation_checks)
+    annotated = add_review_annotations(prepared, load_manual_reviews(run_dir))
+
+    assert str(annotated["trade_id"].dtype) == "int64"
+    assert annotated.loc[0, "reviewer_status"] == "Needs deeper review"
+    assert annotated.loc[0, "reviewer_notes"] == "saved from the web API"
+    assert annotated.loc[0, "engine_exit_matches_path"] == True  # noqa: E712
+    assert annotated.loc[0, "check_warning_count"] == 1
+    assert annotated.loc[1, "reviewer_status_display"] == "Unreviewed"
 
 
 def test_build_review_queue_samples_and_filters_unreviewed():

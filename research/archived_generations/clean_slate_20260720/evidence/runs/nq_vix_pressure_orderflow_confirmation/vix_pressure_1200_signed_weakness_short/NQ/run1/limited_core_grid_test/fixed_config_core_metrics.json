@@ -1,0 +1,173 @@
+{
+  "purpose": "fixed_config_mechanics_cross_check",
+  "parameter_source": "strategy section in effective config",
+  "uses_grid_selected_params": false,
+  "trade_log_csv": "backtest-campaigns/nq_vix_pressure_orderflow_confirmation/vix_pressure_1200_signed_weakness_short/NQ/run1/limited_core_grid_test/fixed_config_core_trade_log.csv",
+  "daily_results_csv": "backtest-campaigns/nq_vix_pressure_orderflow_confirmation/vix_pressure_1200_signed_weakness_short/NQ/run1/limited_core_grid_test/fixed_config_core_daily_results.csv",
+  "metrics": {
+    "total_trades": 91,
+    "trades_per_year": 59.87772335754096,
+    "net_profit": 312.5,
+    "profit_factor": 1.0295368620037808,
+    "expectancy_r": 0.030480896892083217,
+    "max_drawdown": 3010.0,
+    "max_drawdown_pct": 0.019883079565346632,
+    "cagr": 0.0013703390930563941,
+    "mar": 0.06891986166190772,
+    "worst_day": -340.0,
+    "best_day": 485.0,
+    "best_day_concentration": 1.552,
+    "max_consecutive_losses": 7,
+    "positive_month_rate": 0.42105263157894735,
+    "win_rate": 0.43956043956043955,
+    "average_trade": 3.434065934065934,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "diagnostics": {
+    "preflight": {
+      "rows": 144690,
+      "timeframe_minutes": 1.0,
+      "warnings": [],
+      "required_columns": [
+        "close",
+        "high",
+        "low",
+        "open",
+        "session_date",
+        "timestamp"
+      ]
+    },
+    "signals_generated": 91,
+    "entries_opened": 91,
+    "trades_closed": 91,
+    "rejects": {
+      "missing_stop": 0,
+      "target_already_reached": 0,
+      "position_sizing": 0,
+      "daily_risk_lockout": 0,
+      "apex_latest_entry_time": 0,
+      "event_no_trade_window": 0
+    },
+    "exits": {
+      "eod_flatten": 54,
+      "target": 15,
+      "stop": 22
+    },
+    "stop_target_conflicts": 0,
+    "detail_conflicts_resolved": 0,
+    "detail_conflicts_unresolved": 0,
+    "apex": {
+      "enabled": true,
+      "timezone": "America/New_York",
+      "latest_flat_time": "16:59:59",
+      "force_flatten_time": "16:58:30",
+      "latest_entry_time": "16:45:00",
+      "pending_orders_cancelled": 0,
+      "pending_order_after_flatten_deadline": 0,
+      "entry_after_latest_entry_time": 0,
+      "exit_after_flatten_deadline": 0,
+      "position_after_flatten_deadline": 0,
+      "overnight_position_violations": 0,
+      "forced_flatten_trades": 0,
+      "rule_violations": 0
+    },
+    "event_filters": {
+      "enabled": false,
+      "timezone": "America/New_York",
+      "windows_configured": 0,
+      "entry_rejections": 0,
+      "pending_orders_cancelled": 0,
+      "flatten_trades": 0,
+      "flatten_trades_by_window": {}
+    }
+  },
+  "strategy": {
+    "entry": {
+      "module": "cboe_vix_orderflow_confirmation",
+      "params": {
+        "feature_csv": "data/external/nq_cboe_vix_level_features_20110103_20260612.csv",
+        "setup_mode": "vix_pressure_1200_signed_weakness_short",
+        "confirmation_mode": "riskoff_continuation",
+        "direction": "short",
+        "flow_mode": "signed_imbalance",
+        "rth_start": "09:30:00",
+        "signal_time": "12:00:00",
+        "flatten_time": "15:15:00",
+        "bar_interval_minutes": 1,
+        "tick_size": 0.25,
+        "max_trades_per_day": 1,
+        "vix_change_rank_min": 0.25,
+        "min_orderflow_imbalance": 0.0025,
+        "min_confirm_return_ticks": 0,
+        "min_vwap_extension_ticks": 0,
+        "stop_pct": 0.006,
+        "target_r_multiple": 1.5,
+        "availability_market": "NQ"
+      }
+    },
+    "sl": {
+      "module": "percent_from_entry",
+      "params": {
+        "stop_pct": 0.006,
+        "round_to_tick": true
+      }
+    },
+    "tp": {
+      "module": "fixed_r",
+      "params": {
+        "target_r_multiple": 1.5
+      }
+    },
+    "flatten_time": "15:15:00"
+  },
+  "core": {
+    "data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2026-06-12",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "initial_balance": 150000,
+    "tick_size": 0.25,
+    "point_value": 20.0,
+    "tick_value": 5.0,
+    "commission_per_contract": 2.5,
+    "slippage_ticks": 1,
+    "position_sizing": {
+      "mode": "fixed_contracts",
+      "contracts": 1
+    },
+    "daily_loss_limit": 4000,
+    "daily_profit_stop": 1000000000,
+    "flatten_time": "15:15:00",
+    "max_trades_per_day": 1
+  },
+  "equity_curve_csv": "backtest-campaigns/nq_vix_pressure_orderflow_confirmation/vix_pressure_1200_signed_weakness_short/NQ/run1/limited_core_grid_test/fixed_config_core_equity_curve.csv",
+  "equity_curve_html": "backtest-campaigns/nq_vix_pressure_orderflow_confirmation/vix_pressure_1200_signed_weakness_short/NQ/run1/limited_core_grid_test/fixed_config_core_equity_curve.html",
+  "equity_curve_points": 92,
+  "configured_data_subset": {},
+  "resolved_data_subset": {
+    "start_date": "2011-02-22",
+    "end_date": "2012-09-07",
+    "session_labels": [
+      "RTH"
+    ]
+  },
+  "data_subset": {
+    "start_date": "2011-02-22",
+    "end_date": "2012-09-07",
+    "session_labels": [
+      "RTH"
+    ]
+  },
+  "actual_data_period": {
+    "first_timestamp": "2011-02-22 09:30:00-05:00",
+    "last_timestamp": "2012-09-07 15:59:00-04:00",
+    "rows": 144690,
+    "strategy_rows": 144690,
+    "timeframe": "1m",
+    "source_timeframe": "1m"
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_calendar_weekday_bias",
+  "variant_id": "thu_fri_lateweek_strength_1030",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_calendar_weekday_bias/thu_fri_lateweek_strength_1030/variant.yaml",
+    "hash": "16ca97f4831aa3fbab91479aade7549096653c969d6230a08257adfbb54dc780",
+    "mechanic": {
+      "entry_module": "calendar_session_bias",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_calendar_weekday_bias/variants/thu_fri_lateweek_strength_1030/config.yaml",
+  "effective_config": "backtest-campaigns/nq_calendar_weekday_bias/thu_fri_lateweek_strength_1030/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_calendar_weekday_bias/thu_fri_lateweek_strength_1030/NQ/run1/source_config.yaml",
+  "config_hash": "e8f62706871bbd8a293f14dfee3176a72cdbed113257bf541bb6279968ff593d",
+  "source_config_hash": "993cffc10b18e2102126b1aaea152333451ce74bc72f9b25a8b6b832b5c55607",
+  "source_results_index": "campaigns/nq_calendar_weekday_bias/results_index.yaml",
+  "created_at": "2026-06-23T04:38:00",
+  "updated_at": "2026-06-23T04:38:00",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

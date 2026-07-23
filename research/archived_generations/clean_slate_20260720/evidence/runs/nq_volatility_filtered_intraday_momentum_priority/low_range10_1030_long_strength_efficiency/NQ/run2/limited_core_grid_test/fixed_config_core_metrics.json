@@ -1,0 +1,181 @@
+{
+  "purpose": "fixed_config_mechanics_cross_check",
+  "parameter_source": "strategy section in effective config",
+  "uses_grid_selected_params": false,
+  "trade_log_csv": "backtest-campaigns/nq_volatility_filtered_intraday_momentum_priority/low_range10_1030_long_strength_efficiency/NQ/run2/limited_core_grid_test/fixed_config_core_trade_log.csv",
+  "daily_results_csv": "backtest-campaigns/nq_volatility_filtered_intraday_momentum_priority/low_range10_1030_long_strength_efficiency/NQ/run2/limited_core_grid_test/fixed_config_core_daily_results.csv",
+  "metrics": {
+    "total_trades": 32,
+    "trades_per_year": 24.85596561960037,
+    "net_profit": 2007.5,
+    "profit_factor": 1.867170626349892,
+    "expectancy_r": 0.37425688576036875,
+    "max_drawdown": 985.0,
+    "max_drawdown_pct": 0.006489762975408081,
+    "cagr": 0.010380043862615151,
+    "mar": 1.5994488399574325,
+    "worst_day": -205.0,
+    "best_day": 465.0,
+    "best_day_concentration": 0.23163138231631383,
+    "max_consecutive_losses": 5,
+    "positive_month_rate": 0.75,
+    "win_rate": 0.53125,
+    "average_trade": 62.734375,
+    "apex_rule_violations": 0,
+    "apex_forced_flatten_trades": 0
+  },
+  "diagnostics": {
+    "preflight": {
+      "rows": 28938,
+      "timeframe_minutes": 5.0,
+      "warnings": [],
+      "required_columns": [
+        "close",
+        "high",
+        "low",
+        "open",
+        "session_date",
+        "timestamp"
+      ]
+    },
+    "signals_generated": 32,
+    "entries_opened": 32,
+    "trades_closed": 32,
+    "rejects": {
+      "missing_stop": 0,
+      "target_already_reached": 0,
+      "position_sizing": 0,
+      "daily_risk_lockout": 0,
+      "apex_latest_entry_time": 0,
+      "event_no_trade_window": 0
+    },
+    "exits": {
+      "eod_flatten": 19,
+      "stop": 11,
+      "target": 2
+    },
+    "stop_target_conflicts": 0,
+    "detail_conflicts_resolved": 0,
+    "detail_conflicts_unresolved": 0,
+    "apex": {
+      "enabled": true,
+      "timezone": "America/New_York",
+      "latest_flat_time": "16:59:59",
+      "force_flatten_time": "16:58:30",
+      "latest_entry_time": "16:45:00",
+      "pending_orders_cancelled": 0,
+      "pending_order_after_flatten_deadline": 0,
+      "entry_after_latest_entry_time": 0,
+      "exit_after_flatten_deadline": 0,
+      "position_after_flatten_deadline": 0,
+      "overnight_position_violations": 0,
+      "forced_flatten_trades": 0,
+      "rule_violations": 0
+    },
+    "event_filters": {
+      "enabled": false,
+      "timezone": "America/New_York",
+      "windows_configured": 0,
+      "entry_rejections": 0,
+      "pending_orders_cancelled": 0,
+      "flatten_trades": 0,
+      "flatten_trades_by_window": {}
+    }
+  },
+  "strategy": {
+    "entry": {
+      "module": "volatility_filtered_intraday_momentum_priority",
+      "params": {
+        "setup_mode": "low_range10_1030_long_strength_efficiency",
+        "feature_csv": "data/external/nq_lagged_volatility_features_20110103_20260612.csv",
+        "volatility_gate_column": "range10_rank_252",
+        "volatility_gate_max": 0.6,
+        "rth_start": "09:30:00",
+        "bar_interval_minutes": 5,
+        "tick_size": 0.25,
+        "max_trades_per_day": 1,
+        "slots": [
+          {
+            "slot_id": "nq_1030_long_strength_efficiency",
+            "param_prefix": "main",
+            "direction": "long",
+            "source_start": "09:30:00",
+            "signal_time": "10:30:00",
+            "min_signal_return_bps": 40,
+            "min_signal_return_ticks": 0,
+            "min_source_efficiency": 0.55,
+            "min_close_location": 0.55,
+            "min_source_range_bps": 0,
+            "max_source_range_bps": 220,
+            "stop_pct": 0.0035,
+            "target_r_multiple": 2.5,
+            "flatten_time": "15:59:00"
+          }
+        ]
+      }
+    },
+    "sl": {
+      "module": "percent_from_entry",
+      "params": {
+        "stop_pct": 0.0035,
+        "round_to_tick": true
+      }
+    },
+    "tp": {
+      "module": "fixed_r",
+      "params": {
+        "target_r_multiple": 2.5
+      }
+    },
+    "flatten_time": "15:59:00"
+  },
+  "core": {
+    "data_subset": {
+      "start_date": "2011-01-03",
+      "end_date": "2026-06-12",
+      "session_labels": [
+        "RTH"
+      ]
+    },
+    "initial_balance": 150000,
+    "tick_size": 0.25,
+    "point_value": 20.0,
+    "tick_value": 5.0,
+    "commission_per_contract": 2.5,
+    "slippage_ticks": 1,
+    "position_sizing": {
+      "mode": "fixed_contracts",
+      "contracts": 1
+    },
+    "daily_loss_limit": 4000,
+    "daily_profit_stop": 1000000000,
+    "flatten_time": "15:59:00",
+    "max_trades_per_day": 1
+  },
+  "equity_curve_csv": "backtest-campaigns/nq_volatility_filtered_intraday_momentum_priority/low_range10_1030_long_strength_efficiency/NQ/run2/limited_core_grid_test/fixed_config_core_equity_curve.csv",
+  "equity_curve_html": "backtest-campaigns/nq_volatility_filtered_intraday_momentum_priority/low_range10_1030_long_strength_efficiency/NQ/run2/limited_core_grid_test/fixed_config_core_equity_curve.html",
+  "equity_curve_points": 33,
+  "configured_data_subset": {},
+  "resolved_data_subset": {
+    "start_date": "2011-02-22",
+    "end_date": "2012-09-07",
+    "session_labels": [
+      "RTH"
+    ]
+  },
+  "data_subset": {
+    "start_date": "2011-02-22",
+    "end_date": "2012-09-07",
+    "session_labels": [
+      "RTH"
+    ]
+  },
+  "actual_data_period": {
+    "first_timestamp": "2011-02-22 09:30:00-05:00",
+    "last_timestamp": "2012-09-07 15:59:00-04:00",
+    "rows": 144690,
+    "strategy_rows": 28938,
+    "timeframe": "5m",
+    "source_timeframe": "1m"
+  }
+}

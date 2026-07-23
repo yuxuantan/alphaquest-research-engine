@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_ema_pullback_orderflow_continuation",
+  "variant_id": "late_morning_signed_short_ema_pullback_1200",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_ema_pullback_orderflow_continuation/late_morning_signed_short_ema_pullback_1200/variant.yaml",
+    "hash": "6e5b381e86622c5e8f47b364dcaf95fba299e8a282ce92bdf639fa5910283d40",
+    "mechanic": {
+      "entry_module": "ema_pullback_orderflow_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "14:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_ema_pullback_orderflow_continuation/variants/late_morning_signed_short_ema_pullback_1200/config.yaml",
+  "effective_config": "backtest-campaigns/nq_ema_pullback_orderflow_continuation/late_morning_signed_short_ema_pullback_1200/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_ema_pullback_orderflow_continuation/late_morning_signed_short_ema_pullback_1200/NQ/run1/source_config.yaml",
+  "config_hash": "b7782238d2e3cf0a87fd53663eb0725e4a32d3bbbe4f7423a6261de0221d222f",
+  "source_config_hash": "607d4b50c195901d0aa8ec69d742d0e77aaa02716eadef5cbe53d20d072fe704",
+  "source_results_index": "campaigns/nq_ema_pullback_orderflow_continuation/results_index.yaml",
+  "created_at": "2026-06-30T16:50:53",
+  "updated_at": "2026-06-30T16:50:53",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

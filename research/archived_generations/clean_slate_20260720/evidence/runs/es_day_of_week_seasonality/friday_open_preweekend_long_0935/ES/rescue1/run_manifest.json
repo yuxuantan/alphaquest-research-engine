@@ -1,0 +1,58 @@
+{
+  "campaign_id": "es_day_of_week_seasonality",
+  "variant_id": "friday_open_preweekend_long_0935",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_day_of_week_seasonality/friday_open_preweekend_long_0935/variant.yaml",
+    "hash": "ce6f33ebf73e9bb2c803e818fc46d6afd3e7e291e49f44c92ea178d447954a55",
+    "mechanic": {
+      "entry_module": "calendar_session_bias",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_day_of_week_seasonality/rescue_attempts/parameter_space_rescue_1/friday_open_preweekend_long_0935/config.yaml",
+  "config_hash": "31cd1a072f59f4369de305cd329c07fd4f7eef41d25636b71eac21cc4d22dd2e",
+  "created_at": "2026-06-16T03:36:55",
+  "updated_at": "2026-06-16T03:36:55",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_day_of_week_seasonality/friday_open_preweekend_long_0935/ES/rescue1/effective_config.yaml"
+}

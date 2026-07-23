@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pandas as pd
 
-from alphaquest.backtest.engine import BacktestEngine
 from alphaquest.backtest.metrics import benchmark
+from alphaquest.research.execution import run_research_backtest
 from alphaquest.utils.params import apply_dotted_params
 from alphaquest.utils.progress import progress_bar
 from alphaquest.utils.reports import market_timezone, write_report_csv
@@ -82,6 +82,7 @@ def run_core_grid(
     profitable_threshold = _profitable_iteration_threshold(grid_config, benchmarks)
     top = df.sort_values(["benchmark_passed", "net_profit"], ascending=[False, False]).head(10)
     summary = {
+        "parameter_mode": "fixed_config" if not parameters else "predeclared_optimization",
         "parameter_value_counts": {key: len(values) for key, values in parameters.items()},
         "expected_combinations": _expected_combination_count(parameters),
         "total_combinations_tested": int(len(df)),
@@ -194,7 +195,7 @@ def _evaluate_core_grid_combo(
     detail_data: pd.DataFrame | None = None,
 ) -> tuple[dict, pd.DataFrame, pd.DataFrame]:
     cfg = apply_dotted_params(base_config, combo)
-    result = BacktestEngine(cfg).run(data, detail_data=detail_data)
+    result = run_research_backtest(cfg, data, detail_data=detail_data)
     metrics = result["metrics"]
     diagnostics = result.get("diagnostics", {})
     rejects = diagnostics.get("rejects", {}) if isinstance(diagnostics, dict) else {}

@@ -7,7 +7,7 @@ from pathlib import Path
 import yaml
 
 
-CAMPAIGN_ROOT = Path("research/campaigns/archive/nq_bankruptcy_distress_regime_reversion")
+CAMPAIGN_ROOT = Path("research/archived_generations/clean_slate_20260720/campaigns/archive/nq_bankruptcy_distress_regime_reversion")
 NQ_DATASET_ID = "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny"
 FEATURE_FILE = "data/external/uscourts_bankruptcy_f2_quarterly_features.csv"
 

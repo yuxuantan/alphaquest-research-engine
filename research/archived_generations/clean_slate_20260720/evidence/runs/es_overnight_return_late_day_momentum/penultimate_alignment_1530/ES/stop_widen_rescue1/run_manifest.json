@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_overnight_return_late_day_momentum",
+  "variant_id": "penultimate_alignment_1530",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_overnight_return_late_day_momentum/campaign.yaml",
+    "hash": "740a4592d2aae2fc9f3ffb5c36b2a045a82cfa87b6ec89db48cc227e42c88bd6"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_overnight_return_late_day_momentum/penultimate_alignment_1530/variant.yaml",
+    "hash": "94b6d2f6aa3e042f3712c01d2a993b123a5cbe3b2d8c207b66a8379179efb4e1",
+    "mechanic": {
+      "entry_module": "overnight_return_late_day_momentum",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_overnight_return_late_day_momentum/rescue_attempts/stop_distance_rescue_1/penultimate_alignment_1530/config.yaml",
+  "effective_config": "backtest-campaigns/es_overnight_return_late_day_momentum/penultimate_alignment_1530/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_overnight_return_late_day_momentum/penultimate_alignment_1530/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "18c288408c5bface7e04f19035e83d069f524ca963ff1f8f558aab758acd97e5",
+  "source_config_hash": "82ab2320ebf08396fd3b8b1e9b8385a10ba3a4f048fce007bb66a8a9368a5b9c",
+  "source_results_index": "campaigns/es_overnight_return_late_day_momentum/results_index.yaml",
+  "created_at": "2026-06-19T15:34:21",
+  "updated_at": "2026-06-19T15:34:21",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

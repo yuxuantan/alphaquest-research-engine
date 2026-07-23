@@ -1,0 +1,60 @@
+{
+  "campaign_id": "es_usdjpy_safe_haven_spillover",
+  "variant_id": "five_day_yen_appreciation_short_1330",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_usdjpy_safe_haven_spillover/five_day_yen_appreciation_short_1330/variant.yaml",
+    "hash": "0a6c55ba987c6c6a28eebdf1ee4d7bf66957ea8e30f9bdb2562b44f2718f3226",
+    "mechanic": {
+      "entry_module": "usdjpy_safe_haven",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_usdjpy_safe_haven_spillover/rescue_attempts/parameter_space_rescue_1/five_day_yen_appreciation_short_1330/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_usdjpy_safe_haven_spillover/five_day_yen_appreciation_short_1330/ES/rescue1/source_config.yaml",
+  "config_hash": "d7bb0a021faceacdb34f72572766611b1179768922dcf545db3bcdb569a64141",
+  "source_config_hash": "70823514218948dff2b6de4fc4a0c95c6429dbb37ab75b82d555a3d3f346aa52",
+  "created_at": "2026-06-17T13:55:31",
+  "updated_at": "2026-06-17T13:55:31",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_usdjpy_safe_haven_spillover/five_day_yen_appreciation_short_1330/ES/rescue1/effective_config.yaml"
+}

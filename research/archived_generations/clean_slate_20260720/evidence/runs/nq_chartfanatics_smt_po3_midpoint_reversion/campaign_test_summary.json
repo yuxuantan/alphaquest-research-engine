@@ -1,0 +1,109 @@
+{
+  "campaign_id": "nq_chartfanatics_smt_po3_midpoint_reversion",
+  "symbol": "NQ",
+  "decision": "FAIL",
+  "status": "completed",
+  "completed_at": "2026-06-30T13:58:40+08:00",
+  "passed": false,
+  "halted": true,
+  "terminal_stage": "pre_pnl_density_screen",
+  "results_csv": "backtest-campaigns/nq_chartfanatics_smt_po3_midpoint_reversion/campaign_results.csv",
+  "density_audit": "research_artifacts/nq_chartfanatics_smt_po3_midpoint_reversion_density_audit_20260630.md",
+  "density_audit_csv": "research_artifacts/nq_chartfanatics_smt_po3_midpoint_reversion_density_audit_20260630.csv",
+  "methodology_audit": "campaigns/nq_chartfanatics_smt_po3_midpoint_reversion/methodology_audit.md",
+  "summary": "Rejected before staged NQ PnL: all 45 declared entry-grid rows failed at least one 50 signals/year density gate. The one-sided prior-high and prior-low SMT variants were sparse across full-history, limited-core, and latest-252 windows; the two-sided 10:00-11:30 variant cleared full-history and latest-252 counts but still failed the limited-core minimum at 38.24 signals/year. No NQ PnL was inspected.",
+  "density_rows": 45,
+  "density_fail_rows": 45,
+  "density_pass_rows": 0,
+  "density_passing_variants": [],
+  "density_failed_variants": [
+    "prior_high_smt_short_1000_1130",
+    "prior_low_smt_long_1000_1130",
+    "prior_two_sided_smt_1000_1130",
+    "prior_high_smt_short_1030_1200",
+    "prior_low_smt_long_1030_1200"
+  ],
+  "variant_summary": [
+    {
+      "variant_id": "prior_high_smt_short_1000_1130",
+      "entry_combos": 9,
+      "density_pass_rows": 0,
+      "min_full_signals_per_year": 32.434988,
+      "min_limited_core_signals_per_year": 21.853659,
+      "min_latest_252_signals": 35,
+      "full_failures": 9,
+      "limited_core_failures": 9,
+      "latest_failures": 9
+    },
+    {
+      "variant_id": "prior_low_smt_long_1000_1130",
+      "entry_combos": 9,
+      "density_pass_rows": 0,
+      "min_full_signals_per_year": 24.756501,
+      "min_limited_core_signals_per_year": 15.707317,
+      "min_latest_252_signals": 28,
+      "full_failures": 9,
+      "limited_core_failures": 9,
+      "latest_failures": 9
+    },
+    {
+      "variant_id": "prior_two_sided_smt_1000_1130",
+      "entry_combos": 9,
+      "density_pass_rows": 0,
+      "min_full_signals_per_year": 57.125296,
+      "min_limited_core_signals_per_year": 38.243902,
+      "min_latest_252_signals": 62,
+      "full_failures": 0,
+      "limited_core_failures": 9,
+      "latest_failures": 0
+    },
+    {
+      "variant_id": "prior_high_smt_short_1030_1200",
+      "entry_combos": 9,
+      "density_pass_rows": 0,
+      "min_full_signals_per_year": 28.330969,
+      "min_limited_core_signals_per_year": 20.487805,
+      "min_latest_252_signals": 34,
+      "full_failures": 9,
+      "limited_core_failures": 9,
+      "latest_failures": 9
+    },
+    {
+      "variant_id": "prior_low_smt_long_1030_1200",
+      "entry_combos": 9,
+      "density_pass_rows": 0,
+      "min_full_signals_per_year": 22.042553,
+      "min_limited_core_signals_per_year": 13.658537,
+      "min_latest_252_signals": 22,
+      "full_failures": 9,
+      "limited_core_failures": 9,
+      "latest_failures": 9
+    }
+  ],
+  "density_window_summary": {
+    "all_rows_density_pass": false,
+    "audit_date": "2026-06-30",
+    "campaign_id": "nq_chartfanatics_smt_po3_midpoint_reversion",
+    "declared_entry_rows": 45,
+    "density_fail_rows": 45,
+    "density_pass_rows": 0,
+    "full_end_date": "2026-06-09",
+    "full_sessions": 3807,
+    "full_start_date": "2011-01-03",
+    "latest_252_end_date": "2026-06-09",
+    "latest_252_start_date": "2025-06-04",
+    "limited_end_date": "2012-09-06",
+    "limited_sessions": 369,
+    "limited_start_date": "2011-02-22"
+  },
+  "stages_not_run": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ]
+}

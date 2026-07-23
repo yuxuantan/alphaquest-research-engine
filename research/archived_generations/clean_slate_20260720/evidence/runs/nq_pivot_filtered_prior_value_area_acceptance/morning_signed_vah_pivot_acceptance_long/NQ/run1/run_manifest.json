@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_pivot_filtered_prior_value_area_acceptance",
+  "variant_id": "morning_signed_vah_pivot_acceptance_long",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_pivot_filtered_prior_value_area_acceptance/morning_signed_vah_pivot_acceptance_long/variant.yaml",
+    "hash": "891506cd8836b0abd40e3c739b448dca01935d91be39a07ba5f9255a138a6f4f",
+    "mechanic": {
+      "entry_module": "market_structure_filtered_entry",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_pivot_filtered_prior_value_area_acceptance/variants/morning_signed_vah_pivot_acceptance_long/config.yaml",
+  "effective_config": "backtest-campaigns/nq_pivot_filtered_prior_value_area_acceptance/morning_signed_vah_pivot_acceptance_long/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_pivot_filtered_prior_value_area_acceptance/morning_signed_vah_pivot_acceptance_long/NQ/run1/source_config.yaml",
+  "config_hash": "87b8372e70a2d28144284ff169c671dd9968d17b63eaeeabb131a9085b3cb1d5",
+  "source_config_hash": "b6b9a470f25f17fa8a8c947caaf1cc4a05ca560b802b520d87b6bc03448da0df",
+  "source_results_index": "campaigns/nq_pivot_filtered_prior_value_area_acceptance/results_index.yaml",
+  "created_at": "2026-06-30T11:54:47",
+  "updated_at": "2026-06-30T11:54:47",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

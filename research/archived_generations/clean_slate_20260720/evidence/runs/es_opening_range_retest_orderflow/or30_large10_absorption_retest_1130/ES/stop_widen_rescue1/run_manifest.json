@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_opening_range_retest_orderflow",
+  "variant_id": "or30_large10_absorption_retest_1130",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_opening_range_retest_orderflow/campaign.yaml",
+    "hash": "d645b826ebe93440184b8ea34c4d4ee67d4a2b43430686249fa8dad43c2205a1"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_opening_range_retest_orderflow/or30_large10_absorption_retest_1130/variant.yaml",
+    "hash": "340c3058ec510e511b9b6dcd9c84db45644bbddb3320d475b5b23c74c268a1be",
+    "mechanic": {
+      "entry_module": "opening_range_retest_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "opening_range_retest_boundary",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_opening_range_retest_orderflow/rescue_attempts/stop_distance_rescue_1/or30_large10_absorption_retest_1130/config.yaml",
+  "effective_config": "backtest-campaigns/es_opening_range_retest_orderflow/or30_large10_absorption_retest_1130/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_opening_range_retest_orderflow/or30_large10_absorption_retest_1130/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "288231ddc2f870741dd991916d5aeae8802040deb641ebfb1c8ee6b5f5b2adcf",
+  "source_config_hash": "3df4d4ebdb564c050c92ad7b3e611421888e0c7d38788a86668e028d81baa830",
+  "source_results_index": "campaigns/es_opening_range_retest_orderflow/results_index.yaml",
+  "created_at": "2026-06-19T15:18:55",
+  "updated_at": "2026-06-19T15:18:55",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,59 @@
+{
+  "campaign_id": "es_orderflow_impulse_reversal",
+  "variant_id": "midday_30m_impulse_reversal_1230",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_orderflow_impulse_reversal/midday_30m_impulse_reversal_1230/variant.yaml",
+    "hash": "25cadbf36772e21405ee98c8c54f7f4b726f898c21c0acc3f5869742836d8f9c",
+    "mechanic": {
+      "entry_module": "orderflow_regime",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "14:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_orderflow_impulse_reversal/variants/midday_30m_impulse_reversal_1230/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_orderflow_impulse_reversal/midday_30m_impulse_reversal_1230/ES/run1/source_config.yaml",
+  "config_hash": "a5e855b7a00c63207d09f10b84b43a1ca6bc42007fd127cb80c51fe36aed3c86",
+  "source_config_hash": "3016d8476079fa2bf63d97cfc4811210b0570e885a98e2a0cadaddd87af1acf7",
+  "created_at": "2026-06-18T10:25:06",
+  "updated_at": "2026-06-18T10:25:06",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_orderflow_impulse_reversal/midday_30m_impulse_reversal_1230/ES/run1/effective_config.yaml"
+}

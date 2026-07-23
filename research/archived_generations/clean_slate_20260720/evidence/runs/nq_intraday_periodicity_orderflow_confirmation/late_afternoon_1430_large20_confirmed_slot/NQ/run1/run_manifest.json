@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_intraday_periodicity_orderflow_confirmation",
+  "variant_id": "late_afternoon_1430_large20_confirmed_slot",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_intraday_periodicity_orderflow_confirmation/late_afternoon_1430_large20_confirmed_slot/variant.yaml",
+    "hash": "98ed00ff9641f0e7112727791aedd58162c7fd7c32ebf4bea34e2ccc4ca660a9",
+    "mechanic": {
+      "entry_module": "intraday_periodicity_orderflow_confirmation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_intraday_periodicity_orderflow_confirmation/variants/late_afternoon_1430_large20_confirmed_slot/config.yaml",
+  "effective_config": "backtest-campaigns/nq_intraday_periodicity_orderflow_confirmation/late_afternoon_1430_large20_confirmed_slot/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_intraday_periodicity_orderflow_confirmation/late_afternoon_1430_large20_confirmed_slot/NQ/run1/source_config.yaml",
+  "config_hash": "b6faa4dcb4282ecdc33839f608e3d483c01e3611aaf027c80b6c79ce95987c2d",
+  "source_config_hash": "7347e3c0cc1e529ab9743ab499ac4f292693dabef28eb5639baf2db2e126b98a",
+  "source_results_index": "campaigns/nq_intraday_periodicity_orderflow_confirmation/results_index.yaml",
+  "created_at": "2026-06-23T18:59:14",
+  "updated_at": "2026-06-23T18:59:14",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

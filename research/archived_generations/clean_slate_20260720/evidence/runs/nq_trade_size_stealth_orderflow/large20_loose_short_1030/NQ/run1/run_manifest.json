@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_trade_size_stealth_orderflow",
+  "variant_id": "large20_loose_short_1030",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_trade_size_stealth_orderflow/large20_loose_short_1030/variant.yaml",
+    "hash": "6f18168bfa8caf4950dab59b7bca5c800e9f97980990ac673f825d4ecc76c328",
+    "mechanic": {
+      "entry_module": "trade_size_segment_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "11:15:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_trade_size_stealth_orderflow/variants/large20_loose_short_1030/config.yaml",
+  "effective_config": "backtest-campaigns/nq_trade_size_stealth_orderflow/large20_loose_short_1030/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_trade_size_stealth_orderflow/large20_loose_short_1030/NQ/run1/source_config.yaml",
+  "config_hash": "b57333711080d94663832fcdaf25d7c84fe80b0bd015a5f30e547b6318debe4c",
+  "source_config_hash": "4f337aec7e315947663d781c5a48b61850620e95636d31d46fba2146fcf7d60e",
+  "source_results_index": "campaigns/nq_trade_size_stealth_orderflow/results_index.yaml",
+  "created_at": "2026-06-30T11:17:08",
+  "updated_at": "2026-06-30T11:17:08",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

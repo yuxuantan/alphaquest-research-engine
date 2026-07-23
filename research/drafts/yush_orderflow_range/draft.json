@@ -1,0 +1,225 @@
+{
+  "draft": {
+    "authoring_lane": "certified_event_replay",
+    "campaign_id": "yush_orderflow_range",
+    "certified_recipe": null,
+    "confirmation_context_sha256": "f5a422f2685228b7f841c25a31e203f5d3b1d82dbe9888cce17c47d32347155d",
+    "created_at": "2026-07-20",
+    "dataset": {
+      "cadence_violation_count": 0,
+      "canonical_sha256": "d6df4a528173cdf6627224cfe225c1f9cb551d675472cc12223a605a1fa7ed76",
+      "certified_features": [],
+      "continuous_contract": "explicit_roll_calendar",
+      "contract_column": "contract_symbol",
+      "contract_count": 4,
+      "coverage_end": "2026-06-10T10:59:59-04:00",
+      "coverage_start": "2025-07-14T09:30:00-04:00",
+      "dataset_id": "es_databento_trade_events_20250714_20260610_0930_1100_ny",
+      "dropped_row_count": 0,
+      "duplicate_count": 0,
+      "event_source": {
+        "aggregation_ms": 100,
+        "archive": "data/raw/ES/GLBX-20260713-S6XF67C8UA.zip",
+        "archive_sha256": "144daa86f98f22dae2eada9f86b345bc7e4a92038c058c395630357585298fa1",
+        "overnight_start": "16:00:00",
+        "reset_previous_levels_on_roll": true,
+        "roll_calendar": "data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv",
+        "roll_calendar_sha256": "4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6",
+        "root_symbol": "ES",
+        "rth_end": "16:00:00",
+        "rth_start": "09:30:00",
+        "source": "databento_zip_trades"
+      },
+      "exchange_timezone": "America/New_York",
+      "gap_count": 0,
+      "invalid_ohlc_count": 0,
+      "out_of_order_count": 0,
+      "path": "data/cache/orderflow/es_databento_trades_1m_20250714_20260610_0930_1100_ny.parquet",
+      "quality_notes": [
+        "All 230 sessions contain exactly 90 one-minute reporting bars with no internal cadence defects.",
+        "The event source is separately hash-bound and is the sole source of strategy decisions and fills."
+      ],
+      "quality_verdict": "PASS",
+      "roll_calendar": "data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv",
+      "roll_calendar_sha256": "4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6",
+      "roll_policy": "MotiveWave/Rithmic predeclared active-contract calendar; no back adjustment",
+      "row_count": 20700,
+      "schema": "alphaquest.dataset-manifest/v1",
+      "source": "parquet",
+      "source_contract_column": null,
+      "source_sha256": "d6df4a528173cdf6627224cfe225c1f9cb551d675472cc12223a605a1fa7ed76",
+      "source_timestamp_semantics": "bar_open",
+      "symbol": "ES",
+      "timeframe": "1m",
+      "timestamp_semantics": "bar_open",
+      "timezone": "America/New_York",
+      "transformations": [
+        "Canonical one-minute bars retained only for dataset provenance and reporting context",
+        "Strategy decisions and fills use causally ordered Databento trade messages"
+      ]
+    },
+    "duplicate_review": {
+      "conclusion": "distinct",
+      "ledger_queries": [
+        "Clean-slate registry query on 2026-07-20 returned zero campaigns, variants, attempts, and runs.",
+        "Pre-reset campaigns and evidence were excluded because none had hash-bound manual mechanics approval."
+      ],
+      "reviewed_campaign_ids": [],
+      "substantive_distinction": "This is the first governed campaign after the user-authorized clean-slate reset; no archived, unverified result is treated as prior evidence or as an economic duplicate decision."
+    },
+    "economic_edge_fingerprint": {
+      "causal_mechanism": "Passive liquidity absorbs one-sided aggressive trading near a known reference and price reverts toward fair value.",
+      "holding_period": "Minutes to at most the 11:00 New York forced flatten; no overnight exposure.",
+      "market_behavior": "Morning ES price repeatedly rejects a developing value-area boundary inside a balanced auction.",
+      "market_context": "ES regular trading hours from 09:30 to 11:00 New York after a 16:00-to-09:30 overnight session.",
+      "signal_inputs": [
+        "causal developing volume profile",
+        "prior-session and overnight price references",
+        "local four-tick signed-delta prominence",
+        "same-price same-side 100 millisecond large-trade aggregation"
+      ]
+    },
+    "edge_family": "orderflow_range_reversal",
+    "engineering_handoff_path": null,
+    "event_strategy": "yush_orderflow_range",
+    "execution": {
+      "commission_per_contract": 2.5,
+      "contracts": 1,
+      "flatten_time": "11:00:00",
+      "initial_balance": 50000.0,
+      "latest_entry_time": "10:59:59",
+      "latest_flat_time": "11:00:00",
+      "overnight_allowed": false,
+      "point_value": 50.0,
+      "prop_profile": "configured_local_profile",
+      "session_end": "16:00:00",
+      "session_start": "09:30:00",
+      "slippage_ticks": 1.0,
+      "tick_size": 0.25,
+      "tick_value": 12.5
+    },
+    "expected_mechanism": "Repeated rejection at a developing value boundary suggests passive liquidity is absorbing aggressive flow; a fresh delta or large-trade event after the tap supplies causal confirmation for reversion.",
+    "frozen": true,
+    "holding_horizon": "Intraday only, from a post-tap stop entry between 09:30 and 10:59:59 New York until 11:00.",
+    "hypothesis": "During balanced ES morning auctions, a retest of a developing value-area edge that overlaps a prior liquidity reference and then attracts fresh one-sided trade activity may reverse toward fair value.",
+    "instrument": "ES",
+    "known_failure_modes": [
+      "A developing profile can move while an order is pending, apparent one-sided delta can be continuation rather than absorption, and sparse trade prints can make a narrow AOI or local prominence unstable.",
+      "Trade-message aggressor classification, contract rolls, gap-through fills, and platform aggregation differences may cause mechanical entries to disagree with a MotiveWave/Rithmic chart."
+    ],
+    "schema": "alphaquest.campaign-draft/v1",
+    "sequential_variant_history": [],
+    "sources": [
+      {
+        "authors": [
+          "User-supplied trading specification"
+        ],
+        "doi": null,
+        "link": "research://user-supplied/yush-orderflow-range-specification",
+        "relevance": "Primary source for the exact mechanics being forward tested and submitted for manual replay validation.",
+        "title": "Yush order-flow range-reversal rules and clarifications",
+        "year": 2026
+      },
+      {
+        "authors": [
+          "Carol L. Osler"
+        ],
+        "doi": null,
+        "link": "https://www.newyorkfed.org/medialibrary/media/research/epr/00v06n2/0007osle.pdf",
+        "relevance": "Documents clustering and predictive behavior around widely observed support and resistance levels.",
+        "title": "Support for Resistance: Technical Analysis and Intraday Exchange Rates",
+        "year": 2000
+      },
+      {
+        "authors": [
+          "Kenneth A. Kavajecz",
+          "Elizabeth R. Odders-White"
+        ],
+        "doi": "10.1016/S1386-4181(03)00041-9",
+        "link": null,
+        "relevance": "Connects technical price levels with liquidity provision and limit-order-book behavior.",
+        "title": "Technical Analysis and Liquidity Provision",
+        "year": 2004
+      },
+      {
+        "authors": [
+          "Rama Cont",
+          "Arseniy Kukanov",
+          "Sasha Stoikov"
+        ],
+        "doi": "10.1017/jfm.2014.86",
+        "link": null,
+        "relevance": "Supports the general microstructure premise that signed order-flow imbalance has short-horizon price impact.",
+        "title": "The Price Impact of Order Book Events",
+        "year": 2014
+      }
+    ],
+    "timeframe": "1m",
+    "title": "Yush Orderflow Range Reversal",
+    "variant_protocol": "sequential_failure_informed",
+    "variants": [
+      {
+        "confirmed": true,
+        "entry": {
+          "module": "yush_orderflow_range",
+          "parameter_grid": {},
+          "params": {
+            "mechanics": {
+              "bar_seconds": 180,
+              "big_trade_threshold": 200,
+              "big_trade_window_ms": 100,
+              "breakeven_offset_points": 1.25,
+              "breakout_probe_ticks": 2,
+              "commission_per_contract": 2.5,
+              "contracts": 1,
+              "aoi_lineage_mode": "exact_fingerprint",
+              "delta_bubble_threshold": 300,
+              "delta_neighbour_multiple": 2.0,
+              "delta_profile_min_abs": 300,
+              "entry_offset_ticks": 2,
+              "initial_balance": 50000.0,
+              "max_aoi_width_points": 3.0,
+              "max_stop_points": 5.0,
+              "max_trades_per_day": 3,
+              "minimum_stop_points": 2.0,
+              "opening_range_seconds": 32,
+              "point_value": 50.0,
+              "range_expansion_fraction": 0.2,
+              "slippage_ticks": 1,
+              "stop_offset_ticks": 2,
+              "tick_size": 0.25,
+              "value_area_fraction": 0.7
+            }
+          }
+        },
+        "entry_rationale": "A two-tick stop entry beyond the AOI demands observable movement away from the tested boundary, while neither the tap nor its post-tap trigger can be the event that created or materially changed the exact AOI; a tapped AOI is frozen until its developing-value anchor leaves the box.",
+        "known_failure_modes": [
+          "Moving developing-value anchors can invalidate pending AOIs, and local delta prominence can be sensitive to neighboring buckets when activity is sparse or distributed across nearby prices.",
+          "Gap-through stop orders receive adverse event-price fills plus one tick, so actual risk may exceed the planned structural distance and cause otherwise attractive signals to be rejected."
+        ],
+        "material_difference": "As v01 this is the single frozen baseline mechanic; any later variant is prohibited until this implementation passes manual mechanics review and then receives a terminal FAIL in the test suite.",
+        "mechanic_rationale": "Build a causal AOI around developing VAL or VAH plus the strongest available market, local-delta, and large-trade categories; reset eligibility whenever the exact AOI price envelope or selected confluence identity changes, then require a prior reversal, a fresh directed tap, and a new post-tap trigger.",
+        "schema": "alphaquest.variant-draft/v1",
+        "stop": {
+          "module": "event_aoi_structural_stop",
+          "parameter_grid": {},
+          "params": {}
+        },
+        "stop_rationale": "The stop sits two ticks beyond the opposite AOI edge but is widened to at least two points so tiny confluence envelopes do not create suffocating risk; entries above five points are rejected.",
+        "target": {
+          "module": "event_value_area_management",
+          "parameter_grid": {},
+          "params": {}
+        },
+        "target_rationale": "The developing value midpoint is the first objective; after it trades, the stop protects 1.25 points and the opposite developing value edge becomes the final target, with an 11:00 hard flatten.",
+        "timeframe_session_rationale": "Trade messages are replayed in causal order from 09:30 to 11:00 New York; the three-minute delta bubble clock and 100 millisecond large-trade aggregation match the frozen chart interpretation.",
+        "title": "Exact forward-tested AOI and post-tap order-flow confirmation",
+        "variant_id": "v01"
+      }
+    ]
+  },
+  "frozen_draft_sha256": "390384581e645015d2e498853b036ddf7e38823900e84fe28ea89aefe0cc495b",
+  "schema": "alphaquest.studio-autosave/v1",
+  "updated_at": "2026-07-20T12:19:42.823937+00:00",
+  "wizard_step": 7
+}

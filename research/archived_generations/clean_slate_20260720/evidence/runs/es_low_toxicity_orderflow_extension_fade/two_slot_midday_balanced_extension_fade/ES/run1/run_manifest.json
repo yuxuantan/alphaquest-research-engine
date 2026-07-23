@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_low_toxicity_orderflow_extension_fade",
+  "variant_id": "two_slot_midday_balanced_extension_fade",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_low_toxicity_orderflow_extension_fade/two_slot_midday_balanced_extension_fade/variant.yaml",
+    "hash": "367df1e29ba8d238eb45d790852cfa51cf6fe7a7f520a11adfc6f69fabd943a3",
+    "mechanic": {
+      "entry_module": "trade_orderflow_multi_state_rank",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_low_toxicity_orderflow_extension_fade/variants/two_slot_midday_balanced_extension_fade/config.yaml",
+  "effective_config": "backtest-campaigns/es_low_toxicity_orderflow_extension_fade/two_slot_midday_balanced_extension_fade/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_low_toxicity_orderflow_extension_fade/two_slot_midday_balanced_extension_fade/ES/run1/source_config.yaml",
+  "config_hash": "4076b3b726e7ff589dc3293075230ec1378a130cf8bb87bd9a344adb43415d36",
+  "source_config_hash": "3dca40a44973494f72a6947d2d88f2fdb5154aa06a4ff697cb66ca4788146b6c",
+  "source_results_index": "campaigns/es_low_toxicity_orderflow_extension_fade/results_index.yaml",
+  "created_at": "2026-06-20T01:30:25",
+  "updated_at": "2026-06-20T01:30:25",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

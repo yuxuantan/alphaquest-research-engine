@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_archive_morning_orderflow_hold_retest",
+  "variant_id": "broad_large_alignment_1030_flatten_1515",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_archive_morning_orderflow_hold_retest/broad_large_alignment_1030_flatten_1515/variant.yaml",
+    "hash": "d938e64147d318119be4d893bee82b816cc20ce585c304d99462dee435c7edec",
+    "mechanic": {
+      "entry_module": "morning_orderflow_momentum",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:15:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_archive_morning_orderflow_hold_retest/variants/broad_large_alignment_1030_flatten_1515/config.yaml",
+  "effective_config": "backtest-campaigns/es_archive_morning_orderflow_hold_retest/broad_large_alignment_1030_flatten_1515/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_archive_morning_orderflow_hold_retest/broad_large_alignment_1030_flatten_1515/ES/run1/source_config.yaml",
+  "config_hash": "6b0ad93e4f8b025311f2ed3b5013e2b97631b5cbf1bf1bc96dcd52804b07c8c4",
+  "source_config_hash": "d465909f2c7c8318842935c40b1afd2b95f42409f093813d692fbc04e3c76d35",
+  "source_results_index": "campaigns/es_archive_morning_orderflow_hold_retest/results_index.yaml",
+  "created_at": "2026-06-21T15:14:16",
+  "updated_at": "2026-06-21T15:14:16",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

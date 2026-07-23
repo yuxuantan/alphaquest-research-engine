@@ -1,0 +1,64 @@
+{
+  "campaign_id": "es_opening_range_retest_orderflow",
+  "variant_id": "or60_large20_aligned_retest_1230",
+  "test_run_id": "tp_min_rr_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_opening_range_retest_orderflow/campaign.yaml",
+    "hash": "d645b826ebe93440184b8ea34c4d4ee67d4a2b43430686249fa8dad43c2205a1"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_opening_range_retest_orderflow/or60_large20_aligned_retest_1230/variant.yaml",
+    "hash": "69a030449089025a50b179089beef0e092ded99a42c4ad099fb127f07afe3bac",
+    "mechanic": {
+      "entry_module": "opening_range_retest_orderflow",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "opening_range_retest_boundary",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_opening_range_retest_orderflow/rescue_attempts/tp_min_rr_floor_rescue_1/or60_large20_aligned_retest_1230/config.yaml",
+  "effective_config": "backtest-campaigns/es_opening_range_retest_orderflow/or60_large20_aligned_retest_1230/ES/tp_min_rr_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_opening_range_retest_orderflow/or60_large20_aligned_retest_1230/ES/tp_min_rr_rescue1/source_config.yaml",
+  "config_hash": "dee3d4059ae6887df4b53f8f9fe4191a58916bd850a4e0ec8e9a9ec29fc79917",
+  "source_config_hash": "3364482fff7c29c49d5bf05d71f003d6f0b4014ad6967e17e06bd61395d9b001",
+  "source_results_index": "campaigns/es_opening_range_retest_orderflow/results_index.yaml",
+  "created_at": "2026-06-19T22:03:55",
+  "updated_at": "2026-06-19T22:03:55",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

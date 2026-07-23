@@ -31,6 +31,10 @@ def test_parameter_combinations_uses_full_cartesian_product():
     }
 
 
+def test_empty_parameter_grid_is_one_fixed_configuration():
+    assert parameter_combinations({}) == [{}]
+
+
 def test_parameter_combinations_requires_lists():
     with pytest.raises(ValueError, match="must be a list"):
         parameter_combinations({"entry.params.reclaim_window_bars": 3})
@@ -57,6 +61,22 @@ def test_core_grid_pass_percentage():
     assert {"signals_generated", "entries_opened", "trades_closed"}.issubset(results.columns)
     assert summary["signal_density"]["total_combinations"] == 2
     assert summary["signal_density"]["combinations_with_trades"] == 2
+
+
+def test_core_grid_labels_empty_grid_as_fixed_config():
+    df, _, _ = clean_data(DATA_CFG)
+    data = build_features(df, DATA_CFG)
+
+    results, summary = run_core_grid(
+        data,
+        BASE_CFG,
+        {"parameters": {}},
+        {"min_trade_count": 0, "max_drawdown": 99999},
+    )
+
+    assert len(results) == 1
+    assert summary["parameter_mode"] == "fixed_config"
+    assert summary["expected_combinations"] == 1
 
 
 def test_core_grid_summary_and_iteration_audit_reports(tmp_path):

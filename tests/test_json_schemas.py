@@ -22,7 +22,7 @@ def test_all_repository_schemas_are_valid_draft_202012():
 def test_campaign_schema_accepts_representative_authored_campaign():
     schema = _schema("campaign.schema.json")
     campaign = yaml.safe_load(
-        Path("research/campaigns/archive/es_amihud_illiquidity_price_impact/campaign.yaml").read_text(
+        Path("research/archived_generations/clean_slate_20260720/campaigns/archive/es_amihud_illiquidity_price_impact/campaign.yaml").read_text(
             encoding="utf-8"
         )
     )
@@ -33,7 +33,7 @@ def test_campaign_schema_accepts_representative_authored_campaign():
 def test_variant_schema_accepts_representative_authored_config():
     schema = _schema("variant-config.schema.json")
     config_path = next(
-        Path("research/campaigns/archive/es_amihud_illiquidity_price_impact/variants").glob(
+        Path("research/archived_generations/clean_slate_20260720/campaigns/archive/es_amihud_illiquidity_price_impact/variants").glob(
             "*/config.yaml"
         )
     )

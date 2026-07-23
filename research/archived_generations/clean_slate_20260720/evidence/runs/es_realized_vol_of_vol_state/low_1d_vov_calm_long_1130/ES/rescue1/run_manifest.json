@@ -1,0 +1,62 @@
+{
+  "campaign_id": "es_realized_vol_of_vol_state",
+  "variant_id": "low_1d_vov_calm_long_1130",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_realized_vol_of_vol_state/low_1d_vov_calm_long_1130/variant.yaml",
+    "hash": "1c3c90cebb3d596a4436949b9a59acba0d7ac27c4f78f22286f9c430f5b86f92",
+    "mechanic": {
+      "entry_module": "realized_vol_of_vol_state",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_realized_vol_of_vol_state/rescue_attempts/parameter_space_rescue_1/low_1d_vov_calm_long_1130/config.yaml",
+  "config_hash": "c9c1148b3ddc99618b7847163b64192e0bbf89ca36de2887e4ff95e440fd7e57",
+  "created_at": "2026-06-17T04:37:45",
+  "updated_at": "2026-06-21T17:57:26",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_realized_vol_of_vol_state/low_1d_vov_calm_long_1130/ES/rescue1/effective_config.yaml",
+  "rerun_override": {
+    "monkey_runs": 8000,
+    "updated_at": "2026-06-21T17:57:26"
+  }
+}

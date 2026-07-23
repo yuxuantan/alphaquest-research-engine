@@ -157,23 +157,40 @@ class BacktestEngine:
         """
 
         if self.apex_rules.enabled:
-            raise ValueError(
-                "canonical event replay does not yet implement apex_rules; disable them or add an event-lane policy adapter."
-            )
+            self._validate_event_apex_policy_adapter()
         if self.event_filters.enabled:
             raise ValueError(
                 "canonical event replay does not yet implement generic event_filters.no_trade_windows; "
                 "use strategy pre_execution controls or disable the generic filter."
             )
-        if self.validation_export.enabled:
-            raise ValueError(
-                "canonical event replay validation must be exported from its returned event evidence with "
-                "write_validation_run; bar-lane validation_export cannot be reused implicitly."
-            )
-
         from alphaquest.backtest.event_replay import CanonicalEventReplay
 
         return CanonicalEventReplay(self.config, self.execution_assumptions).run(sessions, strategy)
+
+    def _validate_event_apex_policy_adapter(self) -> None:
+        """Prove that the stricter event-session cutoff satisfies the Apex time policy."""
+
+        core_timezone = str(self.config.get("timezone") or self.core_config.get("timezone") or "America/New_York")
+        if core_timezone != self.apex_rules.timezone:
+            raise ValueError("canonical event replay and apex_rules must use the same timezone")
+        if not self.apex_rules.no_overnight_positions:
+            raise ValueError("canonical event replay Apex adapter requires no_overnight_positions=true")
+        if not self.apex_rules.cancel_pending_orders_before_flatten:
+            raise ValueError("canonical event replay Apex adapter requires pending-order cancellation at flatten")
+        if not self.apex_rules.force_flatten_enabled:
+            raise ValueError("canonical event replay Apex adapter requires force_flatten_enabled=true")
+        event_flatten = parse_time(self.core_config.get("flatten_time", "11:00:00"))
+        event_latest_entry = parse_time(
+            self.core_config.get("latest_entry_time", self.core_config.get("flatten_time", "11:00:00"))
+        )
+        if event_latest_entry > event_flatten:
+            raise ValueError("canonical event latest_entry_time is later than flatten_time")
+        if event_flatten > self.apex_rules.force_flatten_time:
+            raise ValueError("canonical event flatten_time is later than apex_rules.force_flatten_time")
+        if event_flatten > self.apex_rules.latest_flat_time:
+            raise ValueError("canonical event flatten_time is later than apex_rules.latest_flat_time")
+        if event_latest_entry > self.apex_rules.latest_entry_time:
+            raise ValueError("canonical event latest_entry_time is later than apex_rules.latest_entry_time")
 
     def run(self, data: pd.DataFrame, detail_data: pd.DataFrame | None = None) -> dict:
         data_contract = validate_market_data_contract(

@@ -35,14 +35,14 @@ class EngineeringHandoffV1(BaseModel):
     fill_and_ambiguity_rules: list[str] = Field(min_length=1)
     required_module_contract: list[str] = Field(min_length=1)
     required_tests: list[str] = Field(min_length=1)
-    proposed_variants: list[ProposedEngineeringVariantV1] = Field(min_length=5, max_length=5)
+    proposed_variants: list[ProposedEngineeringVariantV1] = Field(min_length=1, max_length=1)
 
     @model_validator(mode="after")
     def distinct_variants(self) -> "EngineeringHandoffV1":
         ids = [item.variant_id for item in self.proposed_variants]
         mechanics = [item.mechanic.strip().casefold() for item in self.proposed_variants]
-        if len(set(ids)) != 5 or len(set(mechanics)) != 5:
-            raise ValueError("handoff requires five distinct proposed variants")
+        if len(set(ids)) != len(ids) or len(set(mechanics)) != len(mechanics):
+            raise ValueError("handoff proposed variants must be distinct")
         return self
 
 

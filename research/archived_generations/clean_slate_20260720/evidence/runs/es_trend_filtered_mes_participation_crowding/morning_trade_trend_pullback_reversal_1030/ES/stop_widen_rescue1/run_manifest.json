@@ -1,0 +1,68 @@
+{
+  "campaign_id": "es_trend_filtered_mes_participation_crowding",
+  "variant_id": "morning_trade_trend_pullback_reversal_1030",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/campaign.yaml",
+    "hash": "128108c1aadc47708cf2e0a32b2ff718350931264f75aa55f5ed30037d1025d8"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/variant.yaml",
+    "hash": "bae1fc1a2cbc7cbc85ffa0e85930296443033611819b5c8cd98eaf4ca9d599a5",
+    "mechanic": {
+      "entry_module": "trend_filtered_mes_participation_crowding",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:00:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_trend_filtered_mes_participation_crowding/rescue_attempts/stop_distance_rescue_1/morning_trade_trend_pullback_reversal_1030/config.yaml",
+  "effective_config": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_trend_filtered_mes_participation_crowding/morning_trade_trend_pullback_reversal_1030/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "31e85d8b49e20847685f3c5ae993746c40bf21e0de5a208dd23f83be2d93853b",
+  "source_config_hash": "c722d082e46b91504149bd6490d238318492902a490774934c3c294d055fe0be",
+  "source_results_index": "campaigns/es_trend_filtered_mes_participation_crowding/results_index.yaml",
+  "created_at": "2026-06-19T20:30:01",
+  "updated_at": "2026-06-21T12:54:34",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:54:34"
+  }
+}

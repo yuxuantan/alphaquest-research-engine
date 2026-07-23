@@ -1,0 +1,66 @@
+{
+  "run_uid": "a5be3b58-a664-4ed8-8cab-7ef18698ba8d",
+  "campaign_id": "es_video_aoi_lvn_orderflow_playbook",
+  "variant_id": "video_model1_range_midpoint_scid_intrabar_poc_3m_1500",
+  "test_run_id": "run11_poc",
+  "strategy_name": "video_exact_orderflow_playbook_scid_intrabar",
+  "symbol": "ES",
+  "dataset_id": "es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny",
+  "timeframe": "3m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_video_aoi_exact_developing_vap_large200_3m_20120103_20260529_rth_ny.parquet",
+  "raw_dir": null,
+  "config_source": "campaigns/es_video_aoi_lvn_orderflow_playbook/rescue_attempts/user_tick_intrabar_poc_run11/video_model1_range_midpoint_scid_intrabar_poc_3m_1500/config.yaml",
+  "config_hash": "690cc408498ba05e2bcf61eeccbe2b08304dc2e85f1e4322fe0ee713598cebe5",
+  "input_data_hash": "d3077694a6c37a253151472011049c0ce3f2225f920272fb47cd47c12b6a06b8",
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_video_aoi_lvn_orderflow_playbook/video_model1_range_midpoint_scid_intrabar_poc_3m_1500/variant.yaml",
+    "hash": "ca61657af3902b92aaf6c63a6b6a2e3471a22acda01544549a743a26130c83ea",
+    "mechanic": {
+      "entry_module": "video_exact_orderflow_playbook_scid_intrabar",
+      "take_profit_module": "signal_price",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "research_policy": {
+    "version": "2026-07-11.1",
+    "path": "config/research_settings.yaml",
+    "hash": "3285c4ca078a03d255cd03cc7944eaf31ea42bdb91ad15f337c9ebeb3ca0f0f2",
+    "stage_order": [
+      "limited_core_grid_test",
+      "limited_monkey_test",
+      "walk_forward_analysis",
+      "wfa_oos_monkey_test",
+      "wfa_oos_monte_carlo",
+      "simulated_incubation_core",
+      "simulated_incubation_monkey",
+      "acceptance_oos_test"
+    ],
+    "acceptance_stage": "acceptance_oos_test"
+  },
+  "engine_contract_version": "2026.07.11.1",
+  "updated_at": "2026-07-14T13:00:12",
+  "layout": "campaign_variant_symbol_run"
+}

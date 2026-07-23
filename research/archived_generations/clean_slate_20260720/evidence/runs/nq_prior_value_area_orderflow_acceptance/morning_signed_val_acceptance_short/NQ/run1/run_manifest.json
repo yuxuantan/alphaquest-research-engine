@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_prior_value_area_orderflow_acceptance",
+  "variant_id": "morning_signed_val_acceptance_short",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_prior_value_area_orderflow_acceptance/morning_signed_val_acceptance_short/variant.yaml",
+    "hash": "bf95d57f5a59fec1e92d784b7e8d18d0b5f41b175a552bb2bc69748549282438",
+    "mechanic": {
+      "entry_module": "prior_value_area_orderflow_acceptance",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_prior_value_area_orderflow_acceptance/variants/morning_signed_val_acceptance_short/config.yaml",
+  "effective_config": "backtest-campaigns/nq_prior_value_area_orderflow_acceptance/morning_signed_val_acceptance_short/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_prior_value_area_orderflow_acceptance/morning_signed_val_acceptance_short/NQ/run1/source_config.yaml",
+  "config_hash": "fdbf7d45247326eb9dd957eafcb7b56f57eef8d17edd8bf182806c01094966b5",
+  "source_config_hash": "dd6cbf0311a52f6572e22c17e5d3dfe106b6af22a9fd468ef743c13271bd271f",
+  "source_results_index": "campaigns/nq_prior_value_area_orderflow_acceptance/results_index.yaml",
+  "created_at": "2026-06-23T05:40:46",
+  "updated_at": "2026-06-23T05:40:46",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,65 @@
+{
+  "campaign_id": "es_usdjpy_safe_haven_spillover",
+  "variant_id": "weak_yen_long_1200",
+  "test_run_id": "tp_min_rr_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_usdjpy_safe_haven_spillover/weak_yen_long_1200/variant.yaml",
+    "hash": "fcc903231167a27b5d5ff1e40e34ead5b0543c0f41323d4266eb497fe9354157",
+    "mechanic": {
+      "entry_module": "usdjpy_safe_haven",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_usdjpy_safe_haven_spillover/rescue_attempts/tp_min_rr_floor_rescue_1/weak_yen_long_1200/config.yaml",
+  "effective_config": "backtest-campaigns/es_usdjpy_safe_haven_spillover/weak_yen_long_1200/ES/tp_min_rr_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_usdjpy_safe_haven_spillover/weak_yen_long_1200/ES/tp_min_rr_rescue1/source_config.yaml",
+  "config_hash": "38521ed1041e93d5eeca5b8401efbb7494bd9684a096acb1726c4b24c41e8082",
+  "source_config_hash": "20634d457b5e5671b6100fc0e7946687fc2f0003d915ffb567bf18efd8661809",
+  "source_results_index": "campaigns/es_usdjpy_safe_haven_spillover/results_index.yaml",
+  "created_at": "2026-06-19T22:40:13",
+  "updated_at": "2026-06-21T12:54:13",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:54:13"
+  }
+}

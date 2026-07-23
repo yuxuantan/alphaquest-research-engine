@@ -1,0 +1,60 @@
+{
+  "campaign_id": "es_opening_gap_orderflow_continuation",
+  "variant_id": "late_morning_large10_gap_hold_continuation_1100",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "5m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_opening_gap_orderflow_continuation/late_morning_large10_gap_hold_continuation_1100/variant.yaml",
+    "hash": "7c3571c7248af6eb87396e34541d2d204219637b38e0dcfc426372caa8275e90",
+    "mechanic": {
+      "entry_module": "opening_gap_orderflow_continuation",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "opening_gap_boundary",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_opening_gap_orderflow_continuation/rescue_attempts/parameter_space_rescue_1/late_morning_large10_gap_hold_continuation_1100/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_opening_gap_orderflow_continuation/late_morning_large10_gap_hold_continuation_1100/ES/rescue1/source_config.yaml",
+  "config_hash": "c32f8cbe5990af9108f941c6db7cf7c230c6fbd8010dd6c09b22c051b2522ffb",
+  "source_config_hash": "5f06e8b096785bf4d3e231ac6439dd717cfccfb5a43c743e4d971c3611ece02f",
+  "created_at": "2026-06-18T04:07:48",
+  "updated_at": "2026-06-18T04:07:48",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_opening_gap_orderflow_continuation/late_morning_large10_gap_hold_continuation_1100/ES/rescue1/effective_config.yaml"
+}

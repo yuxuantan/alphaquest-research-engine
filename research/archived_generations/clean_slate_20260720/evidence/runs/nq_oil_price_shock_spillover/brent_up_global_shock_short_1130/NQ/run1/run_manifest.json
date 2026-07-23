@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_oil_price_shock_spillover",
+  "variant_id": "brent_up_global_shock_short_1130",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_oil_price_shock_spillover/brent_up_global_shock_short_1130/variant.yaml",
+    "hash": "04ed1df68ba6da890f0bf15abd6b4af43d630c29a8c663d35c1da8337a9b6fb6",
+    "mechanic": {
+      "entry_module": "oil_price_shock_spillover",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_oil_price_shock_spillover/variants/brent_up_global_shock_short_1130/config.yaml",
+  "effective_config": "backtest-campaigns/nq_oil_price_shock_spillover/brent_up_global_shock_short_1130/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_oil_price_shock_spillover/brent_up_global_shock_short_1130/NQ/run1/source_config.yaml",
+  "config_hash": "eb35aca0ce7a14e257d269eb20c1b32b247e21fb6bcd24443f05c76e77e2446d",
+  "source_config_hash": "9b9845bfff3c3726915359218897e9f6a6ab5256e30e86825cd5d80946a7b0cd",
+  "source_results_index": "campaigns/nq_oil_price_shock_spillover/results_index.yaml",
+  "created_at": "2026-06-23T10:14:40",
+  "updated_at": "2026-06-23T10:14:40",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

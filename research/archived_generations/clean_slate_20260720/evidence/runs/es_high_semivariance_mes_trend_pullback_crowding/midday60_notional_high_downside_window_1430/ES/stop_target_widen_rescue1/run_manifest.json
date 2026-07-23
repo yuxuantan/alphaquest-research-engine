@@ -1,0 +1,65 @@
+{
+  "campaign_id": "es_high_semivariance_mes_trend_pullback_crowding",
+  "variant_id": "midday60_notional_high_downside_window_1430",
+  "test_run_id": "stop_target_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "csv",
+  "raw_csv": "data/cache/orderflow/es_mes_participation_crowding_1m_20190506_20260609_full_rth_ny.csv",
+  "raw_parquet": null,
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/midday60_notional_high_downside_window_1430/variant.yaml",
+    "hash": "cf4f82dabdf684d2d4a326df07000390c611a49a399182ea3aff935883a60fce",
+    "mechanic": {
+      "entry_module": "semivariance_filtered_trend_mes_participation_crowding",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_high_semivariance_mes_trend_pullback_crowding/rescue_attempts/stop_target_widen_rescue_1/midday60_notional_high_downside_window_1430/config.yaml",
+  "effective_config": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/midday60_notional_high_downside_window_1430/ES/stop_target_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_high_semivariance_mes_trend_pullback_crowding/midday60_notional_high_downside_window_1430/ES/stop_target_widen_rescue1/source_config.yaml",
+  "config_hash": "76925a8e7a9c7edc01d9b9b94b5cdaab290fe546a047b08eacff28bb321bcb78",
+  "source_config_hash": "3807df1ee3bb1c560a48a248924625210b43733dd1e6666cbe99855399e4bf9b",
+  "source_results_index": "campaigns/es_high_semivariance_mes_trend_pullback_crowding/results_index.yaml",
+  "created_at": "2026-06-20T11:56:53",
+  "updated_at": "2026-06-21T12:50:35",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:50:35"
+  }
+}

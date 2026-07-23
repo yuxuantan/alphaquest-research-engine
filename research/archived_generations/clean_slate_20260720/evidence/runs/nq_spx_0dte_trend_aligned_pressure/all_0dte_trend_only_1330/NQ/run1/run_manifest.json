@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_spx_0dte_trend_aligned_pressure",
+  "variant_id": "all_0dte_trend_only_1330",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_spx_0dte_trend_aligned_pressure/all_0dte_trend_only_1330/variant.yaml",
+    "hash": "78fbec5471ac23284a27ddc14ddadd6b7487deceae4ab8e28d699da26e02e7f9",
+    "mechanic": {
+      "entry_module": "spx_0dte_trend_aligned_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_spx_0dte_trend_aligned_pressure/variants/all_0dte_trend_only_1330/config.yaml",
+  "effective_config": "backtest-campaigns/nq_spx_0dte_trend_aligned_pressure/all_0dte_trend_only_1330/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_spx_0dte_trend_aligned_pressure/all_0dte_trend_only_1330/NQ/run1/source_config.yaml",
+  "config_hash": "65f151ea3e0187fbd9d722172e675ce2c0ffe5676b3c34dcdd58d814ba8b5332",
+  "source_config_hash": "5d3fba4a8421cfa3d01b236dd35652b80aaf2816d5be3fa2cbc66112222dc5af",
+  "source_results_index": "campaigns/nq_spx_0dte_trend_aligned_pressure/results_index.yaml",
+  "created_at": "2026-06-23T08:04:17",
+  "updated_at": "2026-06-23T08:04:17",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

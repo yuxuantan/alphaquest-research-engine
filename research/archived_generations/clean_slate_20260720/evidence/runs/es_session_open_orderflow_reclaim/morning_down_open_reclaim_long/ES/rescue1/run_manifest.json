@@ -1,0 +1,60 @@
+{
+  "campaign_id": "es_session_open_orderflow_reclaim",
+  "variant_id": "morning_down_open_reclaim_long",
+  "test_run_id": "rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_session_open_orderflow_reclaim/morning_down_open_reclaim_long/variant.yaml",
+    "hash": "a03d4fedb8248e4aa476b13d84189c9ec44909e7ebdf6c0d9e3f6d2abb2aada1",
+    "mechanic": {
+      "entry_module": "session_open_orderflow_reclaim",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "12:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_session_open_orderflow_reclaim/rescue_attempts/parameter_space_rescue_1/morning_down_open_reclaim_long/config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_session_open_orderflow_reclaim/morning_down_open_reclaim_long/ES/rescue1/source_config.yaml",
+  "config_hash": "a9fb84c2a91aac7a366f8857d68636306dd6f7e07a2f1033a727bf871b7a6dd4",
+  "source_config_hash": "409f3bfc21c5bcd8c8eb1c2f3659fdc0308fddf1fadeb83034aed8a56ccc4a66",
+  "created_at": "2026-06-18T01:24:24",
+  "updated_at": "2026-06-18T01:24:24",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "effective_config": "backtest-campaigns/es_session_open_orderflow_reclaim/morning_down_open_reclaim_long/ES/rescue1/effective_config.yaml"
+}

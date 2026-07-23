@@ -1,0 +1,68 @@
+{
+  "campaign_id": "es_quarterly_expiration_pressure",
+  "variant_id": "monday_after_expiration_reversal_long_1000",
+  "test_run_id": "stop_widen_rescue1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": {
+    "path": "backtest-campaigns/es_quarterly_expiration_pressure/campaign.yaml",
+    "hash": "1c6dcdef4d2231c786f3404005078b7ed64ef5b202dff8b8379718e1dc496df6"
+  },
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_quarterly_expiration_pressure/monday_after_expiration_reversal_long_1000/variant.yaml",
+    "hash": "9d171453dbaa8c8d9f222e0c83641f7b70adf06d6fc91f5872b54d6cf7ae4508",
+    "mechanic": {
+      "entry_module": "quarterly_expiration_pressure",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_quarterly_expiration_pressure/rescue_attempts/stop_distance_rescue_1/monday_after_expiration_reversal_long_1000/config.yaml",
+  "effective_config": "backtest-campaigns/es_quarterly_expiration_pressure/monday_after_expiration_reversal_long_1000/ES/stop_widen_rescue1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_quarterly_expiration_pressure/monday_after_expiration_reversal_long_1000/ES/stop_widen_rescue1/source_config.yaml",
+  "config_hash": "9ee118f9cb4c30dd8e38e365430dd443aa58ee4d989644d976c153a72fdd73c5",
+  "source_config_hash": "803fc3ede57d8b8b0b421bfa0144aa0bd89b6c633c5d6f6a55e6e2bb46b3ca80",
+  "source_results_index": "campaigns/es_quarterly_expiration_pressure/results_index.yaml",
+  "created_at": "2026-06-19T15:53:02",
+  "updated_at": "2026-06-21T12:52:59",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run",
+  "rerun_override": {
+    "trigger": "legacy_stress_cleanup_fast_revalue",
+    "updated_at": "2026-06-21T12:52:59"
+  }
+}

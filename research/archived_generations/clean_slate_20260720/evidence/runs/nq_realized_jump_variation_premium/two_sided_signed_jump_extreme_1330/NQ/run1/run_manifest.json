@@ -1,0 +1,61 @@
+{
+  "campaign_id": "nq_realized_jump_variation_premium",
+  "variant_id": "two_sided_signed_jump_extreme_1330",
+  "test_run_id": "run1",
+  "symbol": "NQ",
+  "dataset_id": "nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/nq_sierra_trade_orderflow_1m_20110103_20260612_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/nq_realized_jump_variation_premium/two_sided_signed_jump_extreme_1330/variant.yaml",
+    "hash": "475aadab4597a69302fc0556c4fc7b30bbd6ffbb106ddd7f94b16e2fc1bf77db",
+    "mechanic": {
+      "entry_module": "realized_jump_variation_premium",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "percent_from_entry",
+      "flatten_time": "15:55:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/nq_realized_jump_variation_premium/variants/two_sided_signed_jump_extreme_1330/config.yaml",
+  "effective_config": "backtest-campaigns/nq_realized_jump_variation_premium/two_sided_signed_jump_extreme_1330/NQ/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/nq_realized_jump_variation_premium/two_sided_signed_jump_extreme_1330/NQ/run1/source_config.yaml",
+  "config_hash": "63f7e268e5e82e18306849abab64c250620419e5d13cd8b086df2040083ebe3d",
+  "source_config_hash": "30d11d66fe2945633cf25cc0df65860b642218f1cb870ebe71c2499bf22df66e",
+  "source_results_index": "campaigns/nq_realized_jump_variation_premium/results_index.yaml",
+  "created_at": "2026-06-30T08:47:50",
+  "updated_at": "2026-06-30T08:47:50",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -1,0 +1,61 @@
+{
+  "campaign_id": "es_vix_term_structure_orderflow_pullback",
+  "variant_id": "curve_flattening_signed_vwap_reject_short_1500",
+  "test_run_id": "run1",
+  "symbol": "ES",
+  "dataset_id": "es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny",
+  "timeframe": "1m",
+  "data_source": "parquet",
+  "raw_csv": null,
+  "raw_parquet": "data/cache/orderflow/es_sierra_trade_orderflow_1m_20101214_20260610_full_rth_ny.parquet",
+  "raw_dir": null,
+  "campaign_metadata": null,
+  "variant_metadata": {
+    "path": "backtest-campaigns/es_vix_term_structure_orderflow_pullback/curve_flattening_signed_vwap_reject_short_1500/variant.yaml",
+    "hash": "b2928eb6bb5edae1580de61bf409d4ec3a8a9e0c4ef59585bad7480fd3d7fbb0",
+    "mechanic": {
+      "entry_module": "vix_term_structure_orderflow_pullback",
+      "take_profit_module": "fixed_r",
+      "stop_loss_module": "sweep_extreme",
+      "flatten_time": "15:30:00"
+    },
+    "rescue_policy": {
+      "rescue_scope": "failed_variant",
+      "max_rescue_attempts_per_failed_variant": 1,
+      "allowed": [
+        "change fixed parameters inside existing strategy modules",
+        "change tunable parameter space inside existing strategy modules"
+      ],
+      "forbidden": [
+        "rescue the same failed variant more than once",
+        "change entry module",
+        "change take-profit module",
+        "change stop-loss module",
+        "change the economic edge thesis",
+        "change stage criteria",
+        "change data window",
+        "change timeframe",
+        "add or remove filters outside the existing strategy modules"
+      ]
+    }
+  },
+  "config_source": "campaigns/es_vix_term_structure_orderflow_pullback/variants/curve_flattening_signed_vwap_reject_short_1500/config.yaml",
+  "effective_config": "backtest-campaigns/es_vix_term_structure_orderflow_pullback/curve_flattening_signed_vwap_reject_short_1500/ES/run1/effective_config.yaml",
+  "source_config_snapshot": "backtest-campaigns/es_vix_term_structure_orderflow_pullback/curve_flattening_signed_vwap_reject_short_1500/ES/run1/source_config.yaml",
+  "config_hash": "b0f11a258b7c9ea5b3a32136b35fd4a6e879b87c4c991472af8c40bd68147a2d",
+  "source_config_hash": "b6ce2730cbe9afad7139814b7fecb8266668798963200f092bc98dc024557b29",
+  "source_results_index": "campaigns/es_vix_term_structure_orderflow_pullback/results_index.yaml",
+  "created_at": "2026-06-18T20:42:58",
+  "updated_at": "2026-06-18T20:42:58",
+  "stage_order": [
+    "limited_core_grid_test",
+    "limited_monkey_test",
+    "walk_forward_analysis",
+    "wfa_oos_monkey_test",
+    "wfa_oos_monte_carlo",
+    "simulated_incubation_core",
+    "simulated_incubation_monkey",
+    "acceptance_oos_test"
+  ],
+  "layout": "campaign_variant_symbol_run"
+}

@@ -2,6 +2,8 @@
 
 If you are a researcher, double-click **`AlphaQuest Studio.command`** after the one-time administrator install. Studio is the primary interface: no terminal, Python, YAML, hashes, or manual artifact paths are required. Follow its seven gated steps and begin with the isolated 15-minute Tutorial.
 
+The interface is a committed React bundle served only on the local workstation by FastAPI. Researchers do not install Node.js or build frontend assets. Closing the browser does not stop the durable research worker; reopen the launcher or ask an operator to inspect `alphaquest studio status`.
+
 Studio never converts unsupported intrabar, order-flow, event-replay, or custom-feature ideas into an approximate bar test. It writes an engineering handoff and reports `NEEDS MANUAL REVIEW` until a certified implementation exists.
 
 See [the Studio walkthrough](docs/getting-started/research-studio.md). The commands below are for administrators and expert operators.
@@ -16,7 +18,8 @@ Open `alphaquest-research.code-workspace` for the curated VS Code surface. It ex
 
 - `make help`: list supported repository commands.
 - `make studio`: launch Research Studio.
-- `alphaquest studio status`: inspect its local process.
+- `make studio-status`: inspect its local web process and durable worker.
+- `make studio-stop`: stop the managed local process pair.
 - `make tutorial`: execute the isolated synthetic onboarding workflow.
 - `make research-workspace`: rebuild the registry, exports, run store, and generated views.
 - `alphaquest research status`: show lifecycle and run-verdict counts.
@@ -53,10 +56,12 @@ Open `alphaquest-research.code-workspace` for the curated VS Code surface. It ex
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md), [ARCHITECTURE.md](ARCHITECTURE.md), and the [repository tour](docs/getting-started/repository-tour.md) before changing engine or research contracts.
 
+Frontend contributors also use `studio-ui/`. Node.js is a build-time dependency only: `make studio-ui-check` validates the TypeScript application and `make studio-ui-build` refreshes the committed bundle under `src/alphaquest/studio/web_assets/`. The normal Studio launcher never invokes Node.js.
+
 ## One Research Workflow
 
 ```text
-hypothesis -> duplicate-edge review -> exactly five material variants
+hypothesis -> duplicate-edge review -> first material variant -> manual mechanics approval -> staged test -> optional next variant after FAIL
 -> config/mechanics lock -> data-lineage preflight
 -> small deterministic mechanics-validation slice
 -> lane-correct automated evidence checks
