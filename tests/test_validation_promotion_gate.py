@@ -1,3 +1,4 @@
+from copy import deepcopy
 import hashlib
 import json
 from types import SimpleNamespace
@@ -11,9 +12,13 @@ from alphaquest.research import campaign_stages
 from alphaquest import run_core
 from alphaquest.validation.promotion_gate import (
     APPROVAL_SCHEMA,
+    LEGACY_REQUIRED_SAMPLE_CATEGORIES,
     REQUIRED_AUTOMATED_CATEGORIES,
     REQUIRED_AUTOMATED_CHECK_NAMES,
     REQUIRED_SAMPLE_CATEGORIES,
+    SAMPLING_POLICY_SHA256,
+    SAMPLING_POLICY_VERSION,
+    inspect_historical_validation_approval,
     inspect_validation_gate,
     require_prior_variant_approvals,
     require_validation_approval,
@@ -85,6 +90,8 @@ def _fixture(tmp_path, *, lane="bar"):
                 "validation_schema_version": VALIDATION_SCHEMA_VERSION,
                 "sampled_trade_ids": [1],
                 "sampling_categories": {name: [1] for name in REQUIRED_SAMPLE_CATEGORIES},
+                "sampling_policy_version": SAMPLING_POLICY_VERSION,
+                "sampling_policy_sha256": SAMPLING_POLICY_SHA256,
             }
         ),
         encoding="utf-8",
@@ -100,6 +107,31 @@ def test_hash_bound_manual_approval_passes(tmp_path):
     assert report["status"] == "APPROVED_FOR_TESTING"
     assert report["verdict"] == "PASS"
     assert report["errors"] == []
+
+
+def test_legacy_sampling_approval_remains_valid_historical_proof(tmp_path):
+    cfg, config_path, _evidence, approval_path = _fixture(tmp_path)
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval.pop("sampling_policy_version")
+    approval.pop("sampling_policy_sha256")
+    approval["sampling_categories"] = {
+        name: [1] for name in LEGACY_REQUIRED_SAMPLE_CATEGORIES
+    }
+    approval_path.write_text(json.dumps(approval), encoding="utf-8")
+
+    assert inspect_validation_gate(cfg, config_path)["status"] == "APPROVED_FOR_TESTING"
+
+
+def test_current_sampling_approval_is_bound_to_policy_hash(tmp_path):
+    cfg, config_path, _evidence, approval_path = _fixture(tmp_path)
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval["sampling_policy_sha256"] = "0" * 64
+    approval_path.write_text(json.dumps(approval), encoding="utf-8")
+
+    report = inspect_validation_gate(cfg, config_path)
+
+    assert report["status"] == "BLOCKED"
+    assert any("sampling policy hash" in error for error in report["errors"])
 
 
 def test_missing_validation_gate_cannot_opt_out_of_manual_approval(tmp_path):
@@ -179,6 +211,41 @@ def test_certified_event_approval_is_bound_to_implementation_identity(tmp_path, 
     (evidence / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
     approval_path.write_text(json.dumps(approval), encoding="utf-8")
     assert inspect_validation_gate(cfg, config_path)["status"] == "APPROVED_FOR_TESTING"
+
+
+def test_historical_approval_uses_frozen_declared_certification_identity(tmp_path):
+    cfg, config_path, evidence, approval_path = _fixture(
+        tmp_path,
+        lane="event_replay",
+    )
+    cfg["engine_lane"] = "canonical_event_replay"
+    cfg["strategy_certification"] = {
+        "strategy_id": "retired_strategy",
+        "implementation_version": 7,
+        "implementation_sha256": "a" * 64,
+        "manifest_sha256": "b" * 64,
+    }
+    config_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    config_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    metadata = json.loads((evidence / "metadata.json").read_text(encoding="utf-8"))
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    identity = {
+        "strategy_implementation_version": 7,
+        "strategy_implementation_sha256": "a" * 64,
+        "strategy_certification_manifest_sha256": "b" * 64,
+    }
+    metadata.update({"config_hash": config_hash, **identity})
+    approval.update({"config_hash": config_hash, **identity})
+    metadata["schema_version"] = "1.4"
+    approval["validation_schema_version"] = "1.4"
+    (evidence / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+    approval_path.write_text(json.dumps(approval), encoding="utf-8")
+
+    report = inspect_historical_validation_approval(cfg, config_path)
+
+    assert report["status"] == "APPROVED_FOR_TESTING"
+    assert report["historical"] is True
+    assert "older than the current generator" in report["warnings"][0]
 
 
 def test_staged_performance_run_blocks_before_missing_validation_approval(tmp_path, monkeypatch):
@@ -299,6 +366,12 @@ def test_bar_mechanics_command_contract_uses_small_dedicated_generated_run():
             "validation_gate": {
                 "required": True,
                 "lane": "bar",
+                "selection_mode": "latest_eligible_sessions",
+                "session_count": 10,
+                "parameter_mode": "declared_defaults",
+                "manual_review_random_sample_size": 5,
+                "manual_review_seed": 7,
+                "minimum_trade_samples": 5,
                 "data_subset": {"start_date": "2026-07-01", "end_date": "2026-07-10"},
                 "evidence_dir": "backtest-campaigns/demo/v01/ES/mechanics_validation/validation_runs/core",
             }
@@ -314,3 +387,105 @@ def test_bar_mechanics_command_contract_uses_small_dedicated_generated_run():
     assert cfg["core"]["data_subset"] == {"start_date": "2026-07-01", "end_date": "2026-07-10"}
     assert cfg["core"]["validation_export"]["max_trades"] == 30
     assert cfg["core"]["validation_export"]["output_dir"].startswith("backtest-campaigns/")
+
+
+def test_mechanics_command_requires_repository_wide_ten_session_contract():
+    cfg = {
+        "attempt_id": "methodology_rerun_demo",
+        "attempt_kind": "methodology_rerun",
+        "attempt_provenance": "authored",
+        "core": {},
+        "research_metadata": {
+            "validation_gate": {
+                "required": True,
+                "lane": "bar",
+                "selection_mode": "latest_eligible_sessions",
+                "session_count": 10,
+                "parameter_mode": "declared_defaults",
+                "manual_review_random_sample_size": 5,
+                "manual_review_seed": 7,
+                "minimum_trade_samples": 5,
+                "data_subset": {
+                    "start_date": "2026-05-14",
+                    "end_date": "2026-05-29",
+                },
+                "evidence_dir": "evidence/recent",
+            }
+        },
+    }
+
+    run_core._apply_mechanics_validation_contract(cfg)
+
+    assert cfg["core"]["data_subset"] == {
+        "start_date": "2026-05-14",
+        "end_date": "2026-05-29",
+    }
+
+
+def test_event_mechanics_command_preserves_exact_session_allowlist():
+    session_dates = [
+        "2026-05-14",
+        "2026-05-15",
+        "2026-05-19",
+        "2026-05-20",
+        "2026-05-21",
+        "2026-05-22",
+        "2026-05-26",
+        "2026-05-27",
+        "2026-05-28",
+        "2026-05-29",
+    ]
+    cfg = {
+        "engine_lane": "canonical_event_replay",
+        "core": {},
+        "research_metadata": {
+            "validation_gate": {
+                "required": True,
+                "lane": "event_replay",
+                "selection_mode": "latest_eligible_sessions",
+                "session_count": 10,
+                "parameter_mode": "declared_defaults",
+                "manual_review_random_sample_size": 5,
+                "manual_review_seed": 7,
+                "minimum_trade_samples": 5,
+                "data_subset": {
+                    "start_date": session_dates[0],
+                    "end_date": session_dates[-1],
+                    "session_dates": session_dates,
+                },
+                "evidence_dir": "evidence/recent",
+            }
+        },
+    }
+
+    run_core._apply_mechanics_validation_contract(cfg)
+
+    assert cfg["core"]["data_subset"]["session_dates"] == session_dates
+
+    invalid = deepcopy(cfg)
+    invalid["research_metadata"]["validation_gate"]["session_count"] = 200
+    with pytest.raises(ValueError, match="session_count must match repository methodology"):
+        run_core._apply_mechanics_validation_contract(invalid)
+
+    unbounded = {
+        "core": {},
+        "research_metadata": {
+            "validation_gate": {
+                "required": True,
+                "lane": "bar",
+                "selection_mode": "latest_eligible_sessions",
+                "session_count": 10,
+                "parameter_mode": "declared_defaults",
+                "manual_review_random_sample_size": 5,
+                "manual_review_seed": 7,
+                "minimum_trade_samples": 5,
+                "data_subset": {
+                    "start_date": "2019-05-06",
+                    "end_date": "2020-02-24",
+                },
+                "evidence_dir": "evidence/unbounded",
+            }
+        },
+    }
+    with pytest.raises(ValueError, match="60 calendar days"):
+        run_core._apply_mechanics_validation_contract(unbounded)

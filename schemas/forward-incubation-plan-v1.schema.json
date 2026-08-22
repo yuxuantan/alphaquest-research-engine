@@ -1,0 +1,136 @@
+{
+  "$defs": {
+    "ForwardIncubationThresholdsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "abandonment_rules": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Abandonment Rules",
+          "type": "array"
+        },
+        "minimum_calendar_days": {
+          "maximum": 1095,
+          "minimum": 90,
+          "title": "Minimum Calendar Days",
+          "type": "integer"
+        },
+        "minimum_trades": {
+          "minimum": 30,
+          "title": "Minimum Trades",
+          "type": "integer"
+        },
+        "retirement_rules": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Retirement Rules",
+          "type": "array"
+        }
+      },
+      "required": [
+        "minimum_calendar_days",
+        "minimum_trades",
+        "abandonment_rules",
+        "retirement_rules"
+      ],
+      "title": "ForwardIncubationThresholdsV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Frozen source identity and minimum duration/sample contract.",
+  "properties": {
+    "attempt_id": {
+      "title": "Attempt Id",
+      "type": "string"
+    },
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "candidate_review_path": {
+      "title": "Candidate Review Path",
+      "type": "string"
+    },
+    "candidate_review_sha256": {
+      "title": "Candidate Review Sha256",
+      "type": "string"
+    },
+    "config_path": {
+      "title": "Config Path",
+      "type": "string"
+    },
+    "config_sha256": {
+      "title": "Config Sha256",
+      "type": "string"
+    },
+    "created_by": {
+      "title": "Created By",
+      "type": "string"
+    },
+    "governed_config_hash": {
+      "title": "Governed Config Hash",
+      "type": "string"
+    },
+    "research_objectives_sha256": {
+      "title": "Research Objectives Sha256",
+      "type": "string"
+    },
+    "result_bundle_path": {
+      "title": "Result Bundle Path",
+      "type": "string"
+    },
+    "result_bundle_sha256": {
+      "title": "Result Bundle Sha256",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.forward-incubation-plan/v1",
+      "default": "alphaquest.forward-incubation-plan/v1",
+      "enum": [
+        "alphaquest.forward-incubation-plan/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "thresholds": {
+      "$ref": "#/$defs/ForwardIncubationThresholdsV1"
+    },
+    "variant_id": {
+      "title": "Variant Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "variant_id",
+    "attempt_id",
+    "run_id",
+    "started_at",
+    "created_by",
+    "thresholds",
+    "candidate_review_path",
+    "result_bundle_path",
+    "config_path",
+    "candidate_review_sha256",
+    "result_bundle_sha256",
+    "config_sha256",
+    "governed_config_hash",
+    "research_objectives_sha256"
+  ],
+  "title": "ForwardIncubationPlanV1",
+  "type": "object"
+}

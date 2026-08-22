@@ -11,6 +11,7 @@ import {
   formatDate,
 } from "../components/UI";
 import { Icon } from "../components/Icons";
+import { progressPosition } from "../components/ResearchProgress";
 
 export function OverviewPage() {
   const { data, loading } = useStudio();
@@ -20,14 +21,41 @@ export function OverviewPage() {
   const latestDraft = [...data.drafts].sort((a, b) =>
     String(b.updated_at || "").localeCompare(String(a.updated_at || "")),
   )[0];
-  const attention = (
-    data.attention?.length ? data.attention : data.reviews
-  ).slice(0, 4);
+  const attention = (data.attention?.length ? data.attention : data.reviews)
+    .filter(
+      (item: any, index: number, rows: any[]) =>
+        rows.findIndex(
+          (candidate: any) =>
+            (candidate.review_id || candidate.id || candidate.job_id) ===
+            (item.review_id || item.id || item.job_id),
+        ) === index,
+    )
+    .slice(0, 4);
+  const indexedAttentionCount = data.indexed_attention?.length || 0;
   const activeCampaigns = data.campaigns.filter((campaign) =>
     ["active", "candidate", "review_queue"].includes(
       String(campaign.lifecycle || "active"),
     ),
   );
+  const currentCampaign = activeCampaigns.find(
+    (campaign) => campaign.workflow_context?.primary_action,
+  );
+  const currentAction = currentCampaign?.workflow_context?.primary_action;
+  const currentProgress =
+    currentCampaign?.research_progress?.campaign ||
+    currentCampaign?.workflow_context?.progress;
+  const currentActionHref =
+    currentAction?.section === "reviews"
+      ? `/reviews?type=mechanics&campaign=${encodeURIComponent(
+          currentCampaign?.campaign_id || "",
+        )}&attempt=${encodeURIComponent(
+          currentAction?.attempt_id || "",
+        )}&variant=${encodeURIComponent(currentAction?.variant_id || "")}`
+      : `/research/${currentCampaign?.campaign_id}/${
+          currentAction?.section || "overview"
+        }?attempt=${encodeURIComponent(
+          currentAction?.attempt_id || "",
+        )}&variant=${encodeURIComponent(currentAction?.variant_id || "")}`;
   return (
     <div className="page page-overview">
       <PageHeader
@@ -104,6 +132,35 @@ export function OverviewPage() {
                 Continue <Icon name="arrow" />
               </Link>
             </Card>
+          ) : currentCampaign && currentAction ? (
+            <Card className="continue-card">
+              <div className="continue-icon">
+                <Icon name="review" />
+              </div>
+              <div className="continue-content">
+                <div className="card-kicker">
+                  <span>
+                    {currentCampaign.instrument || "Futures"} ·{" "}
+                    {currentCampaign.workflow_context?.target_variant_id}
+                  </span>
+                  <StatusBadge value={progressPosition(currentProgress)} />
+                </div>
+                <h3>{currentCampaign.title || currentCampaign.campaign_id}</h3>
+                <p>
+                  <strong>
+                    {currentProgress?.current_stage_label || "Current workflow"}
+                  </strong>
+                  <br />
+                  Next: {currentProgress?.next_action || currentAction.label}
+                </p>
+                <span className="last-saved">
+                  {currentCampaign.workflow_context?.current_attempt_label}
+                </span>
+              </div>
+              <Link className="button button-primary" to={currentActionHref}>
+                Continue <Icon name="arrow" />
+              </Link>
+            </Card>
           ) : (
             <EmptyState
               icon="spark"
@@ -141,7 +198,15 @@ export function OverviewPage() {
                   to={
                     item.type === "candidate"
                       ? "/reviews?type=candidate"
-                      : "/reviews"
+                      : item.type === "mechanics"
+                        ? `/reviews?type=mechanics&campaign=${encodeURIComponent(
+                            item.campaign_id || "",
+                          )}&attempt=${encodeURIComponent(
+                            item.attempt_id || "original",
+                          )}&variant=${encodeURIComponent(
+                            item.variant_id || "",
+                          )}`
+                        : "/reviews?type=items"
                   }
                   className="attention-row"
                   key={item.id || item.review_id || index}
@@ -160,6 +225,9 @@ export function OverviewPage() {
                     <small>
                       {item.next_action ||
                         item.blocker ||
+                        (item.campaign_id === currentCampaign?.campaign_id
+                          ? currentAction?.label
+                          : undefined) ||
                         "Review the governed evidence."}
                     </small>
                   </span>
@@ -168,6 +236,21 @@ export function OverviewPage() {
                 </Link>
               ))}
             </div>
+          )}
+          {indexedAttentionCount > 0 && (
+            <Link className="indexed-attention-link" to="/reviews?type=items">
+              <span>
+                <Icon name="clock" />
+                <span>
+                  <strong>Historical indexed attention</strong>
+                  <small>
+                    {indexedAttentionCount} catalogue records are retained for
+                    audit; they are not current workflow approvals.
+                  </small>
+                </span>
+              </span>
+              <Icon name="chevron" />
+            </Link>
           )}
         </section>
         <aside className="overview-aside">

@@ -24,6 +24,16 @@ const empty: BootstrapResponse = {
   reviews: [],
   jobs: [],
 };
+const BOOTSTRAP_CACHE_KEY = "alphaquest.studio.bootstrap.last-good.v1";
+
+function cachedBootstrap(): BootstrapResponse {
+  try {
+    const value = window.sessionStorage.getItem(BOOTSTRAP_CACHE_KEY);
+    return value ? normalizeBootstrap(JSON.parse(value)) : empty;
+  } catch {
+    return empty;
+  }
+}
 const Context = createContext<StudioState>({
   data: empty,
   loading: true,
@@ -32,7 +42,7 @@ const Context = createContext<StudioState>({
 });
 
 export function StudioProvider({ children }: { children: ReactNode }) {
-  const [data, setData] = useState<BootstrapResponse>(empty);
+  const [data, setData] = useState<BootstrapResponse>(cachedBootstrap);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const activeJobIds = useRef<Set<string>>(new Set());
@@ -40,11 +50,19 @@ export function StudioProvider({ children }: { children: ReactNode }) {
     try {
       const result = normalizeBootstrap(await api.bootstrap());
       setData(result);
+      try {
+        window.sessionStorage.setItem(
+          BOOTSTRAP_CACHE_KEY,
+          JSON.stringify(result),
+        );
+      } catch {
+        // A storage quota/privacy failure must not block the live workspace.
+      }
       setError(null);
     } catch (reason) {
       setError(
         reason instanceof Error
-          ? reason.message
+          ? `${reason.message} Last known workspace data remains visible.`
           : "The local Studio service is unavailable.",
       );
     } finally {

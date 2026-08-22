@@ -37,6 +37,7 @@ TICK_COMPARISON = Path(
 RAW_DIR = Path("data/raw/ES/sierra-es-trades")
 ROLL_CALENDAR = Path("data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv")
 CANDIDATE_ROOT = Path("data/reports/data_quality/ES/yush_sierra_event_dataset_candidate_v5")
+MAX_GOVERNED_TIMESTAMP_INVERSION_RATE = 0.002
 FULL_SESSION_AUDIT_ROOT = Path(
     "data/reports/data_quality/ES/"
     "databento_sierra_full_session_orderflow_20250714_20260610"
@@ -49,6 +50,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--prepare", action="store_true")
     parser.add_argument("--finalize", action="store_true")
     parser.add_argument("--concordance-report", type=Path)
+    parser.add_argument("--dataset-id", default=DATASET_ID)
+    parser.add_argument("--candidate-root", type=Path, default=CANDIDATE_ROOT)
+    parser.add_argument(
+        "--max-timestamp-inversion-rate",
+        type=float,
+        default=0.0,
+        help=(
+            "Allow inversion-only Sierra sessions up to this record fraction. "
+            "The governed maximum is 0.002 (0.2%%)."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -58,19 +70,40 @@ def main() -> None:
     if args.prepare == args.finalize:
         raise SystemExit("Choose exactly one of --prepare or --finalize")
     if args.prepare:
-        result = prepare(root)
+        result = prepare(
+            root,
+            dataset_id=args.dataset_id,
+            candidate_root=args.candidate_root,
+            max_timestamp_inversion_rate=args.max_timestamp_inversion_rate,
+        )
     else:
         if args.concordance_report is None:
             raise SystemExit("--finalize requires --concordance-report")
-        result = finalize(root, _resolve(root, args.concordance_report))
+        result = finalize(
+            root,
+            _resolve(root, args.concordance_report),
+            dataset_id=args.dataset_id,
+            candidate_root=args.candidate_root,
+            max_timestamp_inversion_rate=args.max_timestamp_inversion_rate,
+        )
     print(json.dumps(result, indent=2, sort_keys=True))
 
 
-def prepare(project_root: Path) -> dict:
+def prepare(
+    project_root: Path,
+    *,
+    dataset_id: str = DATASET_ID,
+    candidate_root: Path = CANDIDATE_ROOT,
+    max_timestamp_inversion_rate: float = 0.0,
+) -> dict:
+    if not 0.0 <= max_timestamp_inversion_rate <= MAX_GOVERNED_TIMESTAMP_INVERSION_RATE:
+        raise ValueError(
+            "max_timestamp_inversion_rate must be between 0 and 0.002"
+        )
     structure_path = project_root / STRUCTURE_AUDIT
     comparison_path = project_root / TICK_COMPARISON
     raw_dir = project_root / RAW_DIR
-    candidate = project_root / CANDIDATE_ROOT
+    candidate = project_root / candidate_root
     if candidate.exists():
         raise FileExistsError(f"candidate directory already exists and will not be overwritten: {candidate}")
     candidate.mkdir(parents=True)
@@ -79,9 +112,22 @@ def prepare(project_root: Path) -> dict:
         structure_path,
         dtype={"session_date": "string", "contract": "string"},
     )
-    structure["eligible"] = (
-        structure["strategy_session_eligible"].map(_as_bool)
-        & structure["raw_structure_pass"].map(_as_bool)
+    structure["timestamp_inversion_rate"] = (
+        pd.to_numeric(
+            structure["timestamp_inversions_in_source_order"], errors="raise"
+        )
+        / pd.to_numeric(structure["row_count"], errors="raise").clip(lower=1)
+    )
+    structure["timestamp_repair_eligible"] = structure.apply(
+        lambda row: _timestamp_repair_eligible(
+            row,
+            max_timestamp_inversion_rate=max_timestamp_inversion_rate,
+        ),
+        axis=1,
+    )
+    structure["eligible"] = structure["strategy_session_eligible"].map(_as_bool) & (
+        structure["raw_structure_pass"].map(_as_bool)
+        | structure["timestamp_repair_eligible"]
     )
     capability = structure[
         [
@@ -89,6 +135,9 @@ def prepare(project_root: Path) -> dict:
             "contract",
             "strategy_session_eligible",
             "raw_structure_pass",
+            "timestamp_inversions_in_source_order",
+            "timestamp_inversion_rate",
+            "timestamp_repair_eligible",
             "status",
             "reason",
         ]
@@ -162,7 +211,7 @@ def prepare(project_root: Path) -> dict:
     )
     preparation = {
         "schema": "alphaquest.sierra-dataset-preparation/v1",
-        "dataset_id": DATASET_ID,
+        "dataset_id": dataset_id,
         "generated_at_utc": datetime.now(UTC).isoformat(),
         "verdict": "NEEDS MANUAL REVIEW",
         "bars": len(entry),
@@ -178,7 +227,7 @@ def prepare(project_root: Path) -> dict:
             str(DATABENTO_BAR_VALIDATION): file_sha256(
                 project_root / DATABENTO_BAR_VALIDATION
             ),
-            str(CANDIDATE_ROOT / "bar_source_manifest.json"): file_sha256(
+            str(candidate_root / "bar_source_manifest.json"): file_sha256(
                 candidate / "bar_source_manifest.json"
             ),
             str(FULL_SESSION_AUDIT_ROOT / "minute_comparison.csv"): file_sha256(
@@ -195,6 +244,16 @@ def prepare(project_root: Path) -> dict:
                 "calendar date 16:00 through session date 09:30 ET"
             ),
             "entry_window": "reconstructed Sierra events 09:30-11:00 ET",
+            "timestamp_inversion": (
+                "reject"
+                if max_timestamp_inversion_rate == 0
+                else (
+                    "preserve stored source order and clamp a backward timestamp to "
+                    "the preceding replay timestamp when the session inversion rate "
+                    f"is <= {max_timestamp_inversion_rate:.6f}"
+                )
+            ),
+            "max_timestamp_inversion_rate": max_timestamp_inversion_rate,
             "overlap": "known non-equivalent dates blacked out",
             "older_history": "intrinsic Sierra structure pass, extrapolated from overlap validation",
         },
@@ -483,8 +542,19 @@ def _canonical_contract(value: str) -> str:
     return f"{prefix}{digits}"
 
 
-def finalize(project_root: Path, concordance_report: Path) -> dict:
-    candidate = project_root / CANDIDATE_ROOT
+def finalize(
+    project_root: Path,
+    concordance_report: Path,
+    *,
+    dataset_id: str = DATASET_ID,
+    candidate_root: Path = CANDIDATE_ROOT,
+    max_timestamp_inversion_rate: float = 0.0,
+) -> dict:
+    if not 0.0 <= max_timestamp_inversion_rate <= MAX_GOVERNED_TIMESTAMP_INVERSION_RATE:
+        raise ValueError(
+            "max_timestamp_inversion_rate must be between 0 and 0.002"
+        )
+    candidate = project_root / candidate_root
     report = json.loads(concordance_report.read_text(encoding="utf-8"))
     if report.get("schema") != "alphaquest.strategy-source-concordance/v1":
         raise ValueError("strategy concordance report schema is missing or unsupported")
@@ -499,7 +569,7 @@ def finalize(project_root: Path, concordance_report: Path) -> dict:
         or (full_audit.get("scope") or {}).get("complete_requested_overlap") is not True
     ):
         raise ValueError("full-session Sierra/Databento audit is missing or incomplete")
-    destination = project_root / "research/datasets" / DATASET_ID
+    destination = project_root / "research/datasets" / dataset_id
     if destination.exists():
         raise FileExistsError(f"governed dataset already exists and will not be overwritten: {destination}")
     destination.mkdir(parents=True)
@@ -536,6 +606,12 @@ def finalize(project_root: Path, concordance_report: Path) -> dict:
         concordance_report_sha256=file_sha256(concordance_path),
         required_capability="full_strategy_events_extrapolated",
         ineligible_session_policy="blackout",
+        timestamp_inversion_policy=(
+            "preserve_source_order_clamp"
+            if max_timestamp_inversion_rate > 0
+            else "reject"
+        ),
+        max_timestamp_inversion_rate=max_timestamp_inversion_rate,
         roll_calendar=str(ROLL_CALENDAR),
         roll_calendar_sha256=file_sha256(roll),
         root_symbol="ES",
@@ -546,7 +622,7 @@ def finalize(project_root: Path, concordance_report: Path) -> dict:
         reset_previous_levels_on_roll=True,
     )
     manifest = DatasetManifestV1(
-        dataset_id=DATASET_ID,
+        dataset_id=dataset_id,
         source="parquet",
         path=str(bars_path.relative_to(project_root)),
         symbol="ES",
@@ -573,6 +649,13 @@ def finalize(project_root: Path, concordance_report: Path) -> dict:
                 "Databento OHLC, with event-derived overlap overrides"
             ),
             "reconstructed entry-window events from Sierra FIRST/LAST unbundled-trade groups",
+            (
+                "preserved stored source order and clamped backward timestamps to the "
+                "preceding replay timestamp for inversion-only sessions at or below "
+                f"{max_timestamp_inversion_rate:.4%}"
+                if max_timestamp_inversion_rate > 0
+                else "rejected every source timestamp inversion"
+            ),
             "blacked out known Databento-overlap event mismatches",
             "audited the full ETH/RTH Databento overlap and retained off-window exceptions separately",
         ],
@@ -594,6 +677,13 @@ def finalize(project_root: Path, concordance_report: Path) -> dict:
             "Pre-overlap event fidelity is extrapolated from the governed Databento overlap and intrinsic structure gates.",
             "Known ineligible sessions are blacked out without compressing calendar time.",
             (
+                "Timestamp inversions alone are not a blackout reason when the session "
+                f"rate is <= {max_timestamp_inversion_rate:.4%}; all other structure "
+                "and session gates remain fail-closed."
+                if max_timestamp_inversion_rate > 0
+                else "Every source timestamp inversion remains fail-closed."
+            ),
+            (
                 "The broader full-session order-flow audit remains "
                 f"{full_audit.get('verdict')}; this PASS is scoped to the Yush 09:30-11:00 "
                 "event lane plus completed-bar PDH/PDL/PDC/ONH/ONL inputs."
@@ -607,7 +697,7 @@ def finalize(project_root: Path, concordance_report: Path) -> dict:
         encoding="utf-8",
     )
     return {
-        "dataset_id": DATASET_ID,
+        "dataset_id": dataset_id,
         "dataset_manifest": str(manifest_path),
         "quality_verdict": manifest.quality_verdict,
         "row_count": manifest.row_count,
@@ -639,6 +729,34 @@ def _as_bool(value) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes"}
     return bool(value)
+
+
+def _timestamp_repair_eligible(
+    row: pd.Series,
+    *,
+    max_timestamp_inversion_rate: float,
+) -> bool:
+    if max_timestamp_inversion_rate <= 0:
+        return False
+    inversion_count = int(row["timestamp_inversions_in_source_order"])
+    inversion_rate = float(row["timestamp_inversion_rate"])
+    if inversion_count <= 0 or inversion_rate > max_timestamp_inversion_rate:
+        return False
+    reasons = {
+        item.strip()
+        for item in str(row.get("reason") or "").split(";")
+        if item.strip() and item.strip().lower() != "nan"
+    }
+    non_blocking = {
+        "source_timestamp_inversion",
+        "minute_ohlcv_mismatch_vs_databento",
+    }
+    return (
+        "source_timestamp_inversion" in reasons
+        and not (reasons - non_blocking)
+        and int(row["side_bad_count"]) == 0
+        and int(row["price_bad_count"]) == 0
+    )
 
 
 def _resolve(root: Path, path: Path) -> Path:

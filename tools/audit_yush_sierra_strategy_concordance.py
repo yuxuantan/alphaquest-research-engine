@@ -43,6 +43,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--project-root", type=Path, default=Path("."))
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--candidate-root", type=Path, default=CANDIDATE)
+    parser.add_argument(
+        "--max-timestamp-inversion-rate",
+        type=float,
+        default=0.0,
+    )
     parser.add_argument(
         "--stratified-session-count",
         type=int,
@@ -60,9 +66,31 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument("--minimum-concordant-trades", type=int, default=5)
     parser.add_argument(
+        "--required-capability",
+        default="full_strategy_events_extrapolated",
+        choices=(
+            "full_strategy_events_extrapolated",
+            "full_rth_strategy_events_extrapolated",
+        ),
+    )
+    parser.add_argument(
+        "--rth-end",
+        default="11:00:00",
+        choices=("11:00:00", "16:00:00"),
+    )
+    parser.add_argument(
         "--resume",
         action="store_true",
         help="Resume only from a hash- and session-bound Databento checkpoint.",
+    )
+    parser.add_argument(
+        "--reuse-databento-checkpoint",
+        type=Path,
+        help=(
+            "Reuse a prior immutable Databento checkpoint when the authored config "
+            "and selected session dates are identical. Sierra capability hashes may "
+            "differ because they cannot affect Databento replay."
+        ),
     )
     return parser.parse_args()
 
@@ -78,19 +106,44 @@ def main() -> None:
     output.mkdir(parents=True, exist_ok=True)
     config_path = _resolve(root, args.config)
     cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
-    certification = get_strategy_certification("yush_orderflow_range", root, require_current=True)
+    strategy_id = str(
+        ((cfg.get("strategy") or {}).get("event") or {}).get("module")
+        or ((cfg.get("strategy") or {}).get("entry") or {}).get("module")
+        or ""
+    )
+    if not strategy_id:
+        raise ValueError("concordance config does not declare an event strategy")
+    certification = get_strategy_certification(
+        strategy_id,
+        root,
+        require_current=True,
+    )
     cfg["strategy_certification"] = {
         "strategy_id": certification.strategy_id,
         "implementation_version": certification.implementation_version,
         "implementation_sha256": certification.implementation_sha256,
         "manifest_sha256": certification.manifest_sha256,
     }
-    capability_path = root / CANDIDATE / "event_capabilities.csv"
-    levels_path = root / CANDIDATE / "session_levels.parquet"
-    raw_manifest_path = root / CANDIDATE / "raw_manifest.json"
+    candidate = _resolve(root, args.candidate_root)
+    capability_path = candidate / "event_capabilities.csv"
+    levels_path = candidate / "session_levels.parquet"
+    raw_manifest_path = candidate / "raw_manifest.json"
     capability = pd.read_csv(capability_path, dtype={"session_date": "string"})
-    compared = capability[capability["reference_tier"].eq("databento_compared")].copy()
-    eligible = compared[compared["full_strategy_events_extrapolated"].map(_as_bool)].copy()
+    compared_tier = (
+        "databento_full_rth_compared"
+        if args.rth_end == "16:00:00"
+        else "databento_compared"
+    )
+    compared = capability[
+        capability["reference_tier"].eq(compared_tier)
+    ].copy()
+    if args.required_capability not in compared:
+        raise ValueError(
+            f"candidate capability is missing {args.required_capability!r}"
+        )
+    eligible = compared[
+        compared[args.required_capability].map(_as_bool)
+    ].copy()
     first_databento_session = str(compared["session_date"].min())
     warmup_excluded = eligible["session_date"].eq(first_databento_session)
     eligible = eligible.loc[~warmup_excluded].copy()
@@ -114,14 +167,20 @@ def main() -> None:
         "raw_manifest": str(raw_manifest_path),
         "session_levels": str(levels_path),
         "quality_manifest": str(capability_path),
-        "required_capability": "full_strategy_events_extrapolated",
+        "required_capability": args.required_capability,
         "ineligible_session_policy": "blackout",
+        "timestamp_inversion_policy": (
+            "preserve_source_order_clamp"
+            if args.max_timestamp_inversion_rate > 0
+            else "reject"
+        ),
+        "max_timestamp_inversion_rate": args.max_timestamp_inversion_rate,
         "roll_calendar": str(root / ROLL_CALENDAR),
         "root_symbol": "ES",
         "rth_start": "09:30:00",
-        "rth_end": "11:00:00",
+        "rth_end": args.rth_end,
         "verified_window_start": "09:30:00",
-        "verified_window_end": "11:00:00",
+        "verified_window_end": args.rth_end,
     }
     sc_sessions = _record_levels(
         (
@@ -140,6 +199,26 @@ def main() -> None:
             config_sha256=config_sha256,
             capability_sha256=capability_sha256,
             session_dates=session_dates,
+            strategy_implementation_sha256=certification.implementation_sha256,
+        )
+    elif args.reuse_databento_checkpoint is not None:
+        checkpoint_source = _resolve(root, args.reuse_databento_checkpoint)
+        db_trades, db_audits, databento_levels = _load_reusable_databento_checkpoint(
+            checkpoint_source,
+            config_sha256=config_sha256,
+            session_dates=session_dates,
+            strategy_implementation_sha256=certification.implementation_sha256,
+        )
+        _write_databento_checkpoint(
+            output,
+            config_sha256=config_sha256,
+            capability_sha256=capability_sha256,
+            session_dates=session_dates,
+            trades=db_trades,
+            session_audits=db_audits,
+            levels=databento_levels,
+            reused_from=checkpoint_source,
+            strategy_implementation_sha256=certification.implementation_sha256,
         )
     else:
         db_sessions = _record_levels(
@@ -153,6 +232,7 @@ def main() -> None:
                     root_symbol="ES",
                     reset_previous_levels_on_roll=True,
                     overnight_start="16:00:00",
+                    rth_end=args.rth_end,
                 )
                 if str(session.session_date) in session_dates
             ),
@@ -171,6 +251,7 @@ def main() -> None:
             trades=db_trades,
             session_audits=db_audits,
             levels=databento_levels,
+            strategy_implementation_sha256=certification.implementation_sha256,
         )
     sc_result = BacktestEngine(cfg, show_progress=True).run_event_replay(
         sc_sessions, build_event_strategy(cfg)
@@ -209,7 +290,7 @@ def main() -> None:
         "schema": "alphaquest.strategy-source-concordance/v1",
         "verdict": verdict,
         "generated_at_utc": datetime.now(UTC).isoformat(),
-        "strategy_id": "yush_orderflow_range",
+        "strategy_id": strategy_id,
         "strategy_certification": {
             "implementation_version": certification.implementation_version,
             "implementation_sha256": certification.implementation_sha256,
@@ -221,6 +302,9 @@ def main() -> None:
         "scope": {
             "start_date": start,
             "end_date": end,
+            "rth_start": "09:30:00",
+            "rth_end": args.rth_end,
+            "required_capability": args.required_capability,
             "databento_compared_sessions": int(len(compared)),
             "eligible_exact_event_sessions": int(len(eligible_session_dates)),
             "output_concordance_sessions": int(len(session_dates)),
@@ -255,9 +339,9 @@ def main() -> None:
         "source_hashes": {
             str(DATABENTO_ARCHIVE): file_sha256(root / DATABENTO_ARCHIVE),
             str(ROLL_CALENDAR): file_sha256(root / ROLL_CALENDAR),
-            str(CANDIDATE / "event_capabilities.csv"): file_sha256(capability_path),
-            str(CANDIDATE / "session_levels.parquet"): file_sha256(levels_path),
-            str(CANDIDATE / "raw_manifest.json"): file_sha256(raw_manifest_path),
+            str(args.candidate_root / "event_capabilities.csv"): file_sha256(capability_path),
+            str(args.candidate_root / "session_levels.parquet"): file_sha256(levels_path),
+            str(args.candidate_root / "raw_manifest.json"): file_sha256(raw_manifest_path),
             str(FULL_SESSION_AUDIT): (
                 file_sha256(root / FULL_SESSION_AUDIT)
                 if (root / FULL_SESSION_AUDIT).is_file()
@@ -266,13 +350,22 @@ def main() -> None:
         },
         "policy": {
             "outside_entry_window": "compare only PDH/PDL/PDC and ONH/ONL completed-bar levels",
-            "entry_window": "use dates with exact reconstructed event equivalence from 09:30-11:00 ET",
+            "entry_window": (
+                "use dates with exact reconstructed event equivalence from "
+                f"09:30-{args.rth_end[:5]} ET"
+            ),
             "output_concordance": (
                 "replay a deterministic stratified sample including predeclared trade-producing "
                 "dates; require exact levels, decisions, orders, risk gates, and trades; retain "
                 "sub-millisecond drift in pre-order exploratory counters as non-passing diagnostics"
             ),
             "known_non_equivalent_dates": "blackout",
+            "timestamp_inversion": (
+                "preserve stored source order and clamp backward timestamps when "
+                f"session inversion rate <= {args.max_timestamp_inversion_rate:.6f}"
+                if args.max_timestamp_inversion_rate > 0
+                else "reject"
+            ),
             "first_overlap_session": (
                 "excluded from strategy-output concordance because the Databento archive "
                 "does not include its previous RTH session"
@@ -337,22 +430,43 @@ def _write_databento_checkpoint(
     trades: pd.DataFrame,
     session_audits: pd.DataFrame,
     levels: list[dict],
+    reused_from: Path | None = None,
+    strategy_implementation_sha256: str,
 ) -> None:
     trades.to_parquet(output / "databento_trades.checkpoint.parquet", index=False)
     session_audits.to_parquet(
         output / "databento_session_audits.checkpoint.parquet", index=False
     )
     pd.DataFrame(levels).to_csv(output / "databento_levels.checkpoint.csv", index=False)
+    reuse_record = None
+    if reused_from is not None:
+        reuse_record = {
+            "path": str(reused_from),
+            "manifest_sha256": file_sha256(
+                reused_from / "databento_checkpoint.json"
+            ),
+            "trades_sha256": file_sha256(
+                reused_from / "databento_trades.checkpoint.parquet"
+            ),
+            "session_audits_sha256": file_sha256(
+                reused_from / "databento_session_audits.checkpoint.parquet"
+            ),
+            "levels_sha256": file_sha256(
+                reused_from / "databento_levels.checkpoint.csv"
+            ),
+        }
     (output / "databento_checkpoint.json").write_text(
         json.dumps(
             {
                 "schema": "alphaquest.strategy-source-concordance-checkpoint/v1",
                 "status": "DATABENTO_REPLAY_COMPLETE",
                 "config_sha256": config_sha256,
+                "strategy_implementation_sha256": strategy_implementation_sha256,
                 "capability_sha256": capability_sha256,
                 "session_dates": sorted(session_dates),
                 "trades": len(trades),
                 "session_audits": len(session_audits),
+                "reused_from": reuse_record,
             },
             indent=2,
             sort_keys=True,
@@ -368,6 +482,7 @@ def _load_databento_checkpoint(
     config_sha256: str,
     capability_sha256: str,
     session_dates: set[str],
+    strategy_implementation_sha256: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame, list[dict]]:
     manifest_path = output / "databento_checkpoint.json"
     if not manifest_path.is_file():
@@ -377,6 +492,7 @@ def _load_databento_checkpoint(
         "schema": "alphaquest.strategy-source-concordance-checkpoint/v1",
         "status": "DATABENTO_REPLAY_COMPLETE",
         "config_sha256": config_sha256,
+        "strategy_implementation_sha256": strategy_implementation_sha256,
         "capability_sha256": capability_sha256,
         "session_dates": sorted(session_dates),
     }
@@ -406,6 +522,60 @@ def _load_databento_checkpoint(
         raise ValueError("Databento session-audit checkpoint row count is stale or corrupted")
     if {str(row["session_date"]) for row in levels} != session_dates:
         raise ValueError("Databento level checkpoint session coverage is stale or corrupted")
+    return trades, session_audits, levels
+
+
+def _load_reusable_databento_checkpoint(
+    source: Path,
+    *,
+    config_sha256: str,
+    session_dates: set[str],
+    strategy_implementation_sha256: str,
+) -> tuple[pd.DataFrame, pd.DataFrame, list[dict]]:
+    manifest_path = source / "databento_checkpoint.json"
+    if not manifest_path.is_file():
+        raise FileNotFoundError(
+            f"reusable Databento checkpoint is missing: {manifest_path}"
+        )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    expected = {
+        "schema": "alphaquest.strategy-source-concordance-checkpoint/v1",
+        "status": "DATABENTO_REPLAY_COMPLETE",
+        "config_sha256": config_sha256,
+        "strategy_implementation_sha256": strategy_implementation_sha256,
+        "session_dates": sorted(session_dates),
+    }
+    mismatched = [
+        key for key, value in expected.items() if manifest.get(key) != value
+    ]
+    if mismatched:
+        raise ValueError(
+            "reusable Databento checkpoint does not match the current config and "
+            f"session scope: {mismatched}"
+        )
+    trades = pd.read_parquet(source / "databento_trades.checkpoint.parquet")
+    session_audits = pd.read_parquet(
+        source / "databento_session_audits.checkpoint.parquet"
+    )
+    levels = pd.read_csv(
+        source / "databento_levels.checkpoint.csv",
+        dtype={
+            "session_date": "string",
+            "previous_rth_session_date": "string",
+            "contract_symbol": "string",
+            "previous_rth_contract_symbol": "string",
+        },
+    ).to_dict(orient="records")
+    if len(trades) != int(manifest.get("trades", -1)):
+        raise ValueError("reusable Databento trade checkpoint row count is corrupted")
+    if len(session_audits) != int(manifest.get("session_audits", -1)):
+        raise ValueError(
+            "reusable Databento session-audit checkpoint row count is corrupted"
+        )
+    if {str(row["session_date"]) for row in levels} != session_dates:
+        raise ValueError(
+            "reusable Databento level checkpoint session coverage is corrupted"
+        )
     return trades, session_audits, levels
 
 

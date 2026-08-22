@@ -1,0 +1,99 @@
+schema: alphaquest.account-rule-profile/v1
+profile_id: apex/eod_50k/evaluation
+version: "2026-03-01"
+name: Apex 50K EOD Evaluation (new products)
+description: >-
+  Reviewed model of the Apex 50K End-of-Day Evaluation introduced for new
+  products from March 1, 2026. Checkout price is intentionally supplied at
+  assessment time because Apex pricing and promotions are dynamic.
+effective_from: 2026-03-01
+effective_until: null
+novice_visible: true
+promotable: true
+identity:
+  provider: Apex Trader Funding
+  program: New EOD Drawdown
+  account_label: 50K EOD Evaluation
+  account_kind: prop_challenge
+  nominal_balance: 50000.0
+  currency: USD
+  timezone: America/New_York
+  session_reset_time: "18:00:00"
+  eod_snapshot_time: "16:59:59"
+  simulated_account: true
+provenance:
+  verification_status: reviewed
+  reviewed_at: "2026-08-14T12:00:00+08:00"
+  reviewer: AlphaQuest engineering review; human re-review required before purchase
+  official_sources:
+    - title: EOD Evaluations
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-evaluations/
+      accessed_at: 2026-08-14
+      supports: [profit_target, drawdown, daily_loss_limit, contract_limit, access_period]
+    - title: EOD Drawdown Explained
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-drawdown-explained/
+      accessed_at: 2026-08-14
+      supports: [eod_calculation, intraday_enforcement, threshold_behavior]
+    - title: Position Sizing - Evaluation
+      url: https://apextraderfunding.com/help-center/additional-helpful-items/position-sizing-evaluation/
+      accessed_at: 2026-08-14
+      supports: [maximum_contracts, rejected_excess_orders]
+    - title: Evaluation Plan Fees and Access Explained
+      url: https://apextraderfunding.com/help-center/billing/evaluation-plan-fees-and-access-explained/
+      accessed_at: 2026-08-14
+      supports: [access_period, dynamic_purchase]
+  notes:
+    - New-product profile; do not apply to legacy Apex accounts.
+    - Tradovate evaluation threshold behavior differs after high profits; this assessment rejects before that distinction can affect a normal 50K pass.
+rules:
+  permitted_instruments: [ES, MES, NQ, MNQ]
+  overnight_positions_allowed: false
+  position_close_deadline: "16:59:00"
+  intraday_equity_required: true
+  eod_drawdown:
+    amount: 2000.0
+    initial_threshold: 48000.0
+    trailing_basis: highest_eod_balance
+    recalculation: end_of_day
+    enforcement: intraday_equity
+    breach_operator: touch_or_below
+    locked_threshold: null
+    never_moves_down: true
+  fixed_maximum_contracts: 6
+  fixed_daily_loss_limit: 1000.0
+  scaling_tiers: []
+  evaluation:
+    profit_target: 3000.0
+    access_period_calendar_days: 30
+    minimum_trading_days: 0
+    consistency_limit: null
+    activation_window_calendar_days: 7
+  payouts: null
+  inactivity: null
+  acquisition:
+    prerequisite_profile_id: null
+    evaluation_price_mode: assessment_input_required
+    activation_fee_mode: not_applicable
+    retry_requires_new_evaluation: true
+  manual_attestations_required:
+    - no_cross_account_hedging_or_rule_circumvention
+evaluation_policy:
+  minimum_horizon_sessions: 60
+  monte_carlo_runs: 8000
+  monte_carlo_horizon_sessions: 21
+  monte_carlo_block_sessions: 5
+  maximum_account_closure_probability: 0.10
+  maximum_daily_loss_lock_probability: 0.10
+  minimum_first_payout_probability: null
+  minimum_two_payout_probability: null
+  minimum_expected_net_payout_after_costs: null
+  minimum_expected_payout_to_cost_ratio: null
+  maximum_p95_drawdown: 1500.0
+  deterministic_require_no_closure: true
+  deterministic_require_no_daily_loss_lock: true
+  deterministic_require_no_position_rejection: true
+  recommended_tests:
+    - Deterministic stitched OOS reaches the 3000 dollar target without EOD closure or a daily loss lock.
+    - 8000 session-block paths estimate pass-before-failure probability and days to pass within the 30-day access period.
+    - Retry-adjusted expected evaluation fees per successful pass use the checkout price observed by the user and the simulated pass probability.
+    - P95 drawdown stays at or below 1500 dollars, preserving at least 500 dollars of modeled EOD buffer.

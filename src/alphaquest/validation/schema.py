@@ -12,7 +12,7 @@ from typing import Any
 
 import pandas as pd
 
-VALIDATION_SCHEMA_VERSION = "1.4"
+VALIDATION_SCHEMA_VERSION = "1.6"
 
 METADATA_FILENAME = "metadata.json"
 TRADES_FILENAME = "trades.parquet"
@@ -49,6 +49,7 @@ class ValidationMetadata:
     source_data_type: str | None = None
     source_data_path: str | None = None
     source_trade_count: int | None = None
+    minimum_trade_samples: int = 1
     commission_per_contract: float | None = None
     slippage_ticks: float | None = None
     point_value: float | None = None
@@ -74,6 +75,7 @@ class TradeSummary:
     direction: str | None = None
     entry_time: Any = None
     entry_price: float | None = None
+    entry_trigger_price: float | None = None
     entry_order_type: str | None = None
     stop_price: float | None = None
     target_price: float | None = None

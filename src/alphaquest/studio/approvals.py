@@ -9,6 +9,7 @@ risk-based review sample from validation artifacts, and writes the exact
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -21,7 +22,6 @@ import yaml
 
 from alphaquest.dashboard.validation_app import (
     add_review_annotations,
-    build_review_queue,
     load_manual_reviews,
     prepare_trade_table,
     trade_id_key,
@@ -32,6 +32,8 @@ from alphaquest.validation.promotion_gate import (
     REQUIRED_AUTOMATED_CATEGORIES,
     REQUIRED_AUTOMATED_CHECK_NAMES,
     REQUIRED_SAMPLE_CATEGORIES,
+    SAMPLING_POLICY_SHA256,
+    SAMPLING_POLICY_VERSION,
     inspect_validation_gate,
 )
 
@@ -39,18 +41,6 @@ from alphaquest.validation.promotion_gate import (
 APPROVAL_REVIEW_SCOPE = "implementation_matches_frozen_specification"
 FIXED_RANDOM_SAMPLE_SIZE = 5
 FIXED_RANDOM_SEED = 0
-
-_CATEGORY_MODES: tuple[tuple[str, str, int | None], ...] = (
-    ("first_trade", "First 20 trades chronologically", 1),
-    ("last_trade", "Last 20 trades chronologically", 1),
-    ("random_trades", "Fixed random sample", None),
-    ("best_trade", "Best 20 trades by R", 1),
-    ("worst_trade", "Worst 20 trades by R", 1),
-    ("forced_flattens", "All forced-flatten trades", None),
-    ("same_bar_ambiguity", "All same-bar ambiguous trades", None),
-    ("warnings", "All trades with mismatch warnings", None),
-    ("strategy_edge_cases", "High-impact edge cases", None),
-)
 
 
 class MechanicsReviewPlan(BaseModel):
@@ -68,8 +58,13 @@ class MechanicsReviewPlan(BaseModel):
     strategy_implementation_version: int | None = None
     strategy_implementation_sha256: str | None = None
     strategy_certification_manifest_sha256: str | None = None
+    fixed_random_sample_size: int = Field(ge=1)
+    fixed_random_seed: int
+    sampling_policy_version: str
+    sampling_policy_sha256: str
     sampled_trade_ids: list[str | int] = Field(default_factory=list)
     sampling_categories: dict[str, list[str | int]] = Field(default_factory=dict)
+    sampling_reasons: dict[str, list[str]] = Field(default_factory=dict)
     unreviewed_trade_ids: list[str | int] = Field(default_factory=list)
     non_correct_trade_ids: list[str | int] = Field(default_factory=list)
     blockers: list[str] = Field(default_factory=list)
@@ -86,8 +81,8 @@ class MechanicsApprovalService:
         self,
         config_path: str | Path,
         *,
-        random_sample_size: int = FIXED_RANDOM_SAMPLE_SIZE,
-        random_seed: int = FIXED_RANDOM_SEED,
+        random_sample_size: int | None = None,
+        random_seed: int | None = None,
         _gate_report: Mapping[str, Any] | None = None,
     ) -> MechanicsReviewPlan:
         path = Path(config_path).resolve()
@@ -103,7 +98,9 @@ class MechanicsApprovalService:
         gate_cfg = ((cfg.get("research_metadata") or {}).get("validation_gate") or {})
         required_size = int(gate_cfg.get("manual_review_random_sample_size", FIXED_RANDOM_SAMPLE_SIZE))
         required_seed = int(gate_cfg.get("manual_review_seed", FIXED_RANDOM_SEED))
-        if random_sample_size != required_size or random_seed != required_seed:
+        effective_size = required_size if random_sample_size is None else random_sample_size
+        effective_seed = required_seed if random_seed is None else random_seed
+        if effective_size != required_size or effective_seed != required_seed:
             raise ValueError(
                 f"mechanics review sampling is frozen at {required_size} random trades with seed {required_seed}"
             )
@@ -111,11 +108,12 @@ class MechanicsApprovalService:
         approval_value = gate.get("approval_path")
         blockers = _gate_evidence_blockers(gate)
         categories = {name: [] for name in REQUIRED_SAMPLE_CATEGORIES}
+        sampling_reasons: dict[str, list[str]] = {}
         sampled: list[str | int] = []
         unreviewed: list[str | int] = []
         non_correct: list[str | int] = []
 
-        if random_sample_size < 1:
+        if effective_size < 1:
             blockers.append("random_sample_size must be at least one")
         evidence_dir = Path(evidence_value) if evidence_value else None
         if evidence_dir is not None and evidence_dir.is_dir():
@@ -124,15 +122,21 @@ class MechanicsApprovalService:
                 reviews = load_manual_reviews(evidence_dir)
                 table = prepare_trade_table(run.trades, run.exit_audits, run.validation_checks)
                 table = add_review_annotations(table, reviews)
-                categories = _sample_categories(
+                categories, sampling_reasons, sampling_blockers = _sample_categories(
                     table,
-                    run.condition_snapshots,
-                    run.exit_audits,
-                    run.bar_windows,
-                    random_sample_size=random_sample_size,
-                    random_seed=random_seed,
-                    tick_size=_float_or_none(run.metadata.get("tick_size")),
+                    run.event_transitions,
+                    random_sample_size=effective_size,
+                    random_seed=effective_seed,
+                    sample_identity="|".join(
+                        str(value or "")
+                        for value in (
+                            gate.get("config_hash"),
+                            gate.get("input_data_hash"),
+                            gate.get("strategy_implementation_sha256"),
+                        )
+                    ),
                 )
+                blockers.extend(sampling_blockers)
                 sampled = _ordered_unique(
                     trade_id
                     for category in REQUIRED_SAMPLE_CATEGORIES
@@ -165,8 +169,13 @@ class MechanicsApprovalService:
                 "strategy_certification_manifest_sha256"
             ),
             validation_schema_version=gate.get("validation_schema_version"),
+            fixed_random_sample_size=effective_size,
+            fixed_random_seed=effective_seed,
+            sampling_policy_version=SAMPLING_POLICY_VERSION,
+            sampling_policy_sha256=SAMPLING_POLICY_SHA256,
             sampled_trade_ids=sampled,
             sampling_categories=categories,
+            sampling_reasons=sampling_reasons,
             unreviewed_trade_ids=unreviewed,
             non_correct_trade_ids=non_correct,
             blockers=_ordered_unique_str(blockers),
@@ -179,8 +188,8 @@ class MechanicsApprovalService:
         reviewer: str,
         notes: str,
         reviewed_at: datetime | str | None = None,
-        random_sample_size: int = FIXED_RANDOM_SAMPLE_SIZE,
-        random_seed: int = FIXED_RANDOM_SEED,
+        random_sample_size: int | None = None,
+        random_seed: int | None = None,
     ) -> dict[str, Any]:
         """Write a hash-bound approval only after every selected trade is correct."""
 
@@ -217,8 +226,8 @@ class MechanicsApprovalService:
         reviewer: str,
         notes: str,
         reviewed_at: datetime | str | None = None,
-        random_sample_size: int = FIXED_RANDOM_SAMPLE_SIZE,
-        random_seed: int = FIXED_RANDOM_SEED,
+        random_sample_size: int | None = None,
+        random_seed: int | None = None,
     ) -> dict[str, Any]:
         """Persist an evidence-bound mechanics rejection without running PnL."""
 
@@ -290,8 +299,11 @@ class MechanicsApprovalService:
             "validation_schema_version": plan.validation_schema_version,
             "sampled_trade_ids": plan.sampled_trade_ids,
             "sampling_categories": plan.sampling_categories,
-            "fixed_random_sample_size": FIXED_RANDOM_SAMPLE_SIZE,
-            "fixed_random_seed": FIXED_RANDOM_SEED,
+            "sampling_reasons": plan.sampling_reasons,
+            "fixed_random_sample_size": plan.fixed_random_sample_size,
+            "fixed_random_seed": plan.fixed_random_seed,
+            "sampling_policy_version": plan.sampling_policy_version,
+            "sampling_policy_sha256": plan.sampling_policy_sha256,
             "parameter_mode": "declared_defaults",
         }
         if plan.strategy_implementation_sha256:
@@ -343,30 +355,331 @@ def require_all_variant_mechanics_approved(config_paths: list[str | Path]) -> li
 
 def _sample_categories(
     trades: pd.DataFrame,
-    conditions: pd.DataFrame,
-    exit_audits: pd.DataFrame,
-    bar_windows: pd.DataFrame,
+    event_transitions: pd.DataFrame,
     *,
     random_sample_size: int,
     random_seed: int,
-    tick_size: float | None,
-) -> dict[str, list[str | int]]:
-    categories: dict[str, list[str | int]] = {}
-    for category, mode, fixed_size in _CATEGORY_MODES:
-        size = fixed_size if fixed_size is not None else random_sample_size
-        queue = build_review_queue(
-            trades,
-            conditions,
-            exit_audits,
-            bar_windows,
-            sample_mode=mode,
-            sample_size=size,
-            random_seed=random_seed,
-            tick_size=tick_size,
+    sample_identity: str,
+) -> tuple[dict[str, list[str | int]], dict[str, list[str]], list[str]]:
+    """Select one strategy-agnostic mechanics sample.
+
+    Five hash-ranked trades form the anti-cherry-picking baseline. Additional
+    trades are chosen only when needed to cover a universal execution
+    lifecycle, one warning code, or one resolved ambiguity. Strategy-specific
+    signal semantics belong in automated checks, not handwritten sampler
+    branches.
+    """
+
+    categories = {name: [] for name in REQUIRED_SAMPLE_CATEGORIES}
+    if trades.empty or "trade_id" not in trades.columns:
+        return categories, {}, ["canonical trade evidence contains no trade identifiers"]
+
+    transitions_by_trade = _transitions_by_trade(event_transitions)
+    records: dict[str, dict[str, Any]] = {}
+    missing_direction: list[str] = []
+    missing_exit_reason: list[str] = []
+    unresolved_ambiguities: list[str] = []
+
+    for _, row in trades.iterrows():
+        trade_id = _json_trade_id(row.get("trade_id"))
+        key = trade_id_key(trade_id)
+        if not key:
+            continue
+        transitions = transitions_by_trade.get(key, set())
+        direction = _canonical_direction(row.get("direction"))
+        entry_order = _canonical_entry_order(row.get("entry_order_type")) or "unspecified"
+        exit_reason = _text_value(row.get("exit_reason"))
+        if direction is None:
+            missing_direction.append(str(trade_id))
+        if exit_reason is None:
+            missing_exit_reason.append(str(trade_id))
+
+        forced_flatten = _is_forced_flatten_trade(row)
+        lifecycle = _canonical_exit_lifecycle(
+            exit_reason,
+            forced_flatten=forced_flatten,
+            partial_exit="position_partially_closed" in transitions,
         )
-        ids = queue.get("trade_id", pd.Series(dtype="object")).tolist()
-        categories[category] = _ordered_unique(_json_trade_id(item) for item in ids)
-    return categories
+        tags = {
+            value
+            for value in (
+                f"direction:{direction}" if direction else None,
+                f"entry_order:{entry_order}" if entry_order else None,
+                f"exit_lifecycle:{lifecycle}" if lifecycle else None,
+                "order_amendment:bracket" if "bracket_amended" in transitions else None,
+                "forced_flatten" if forced_flatten else None,
+            )
+            if value
+        }
+        warning_codes = _warning_codes(row)
+        if _explicit_false(row.get("engine_exit_matches_path")):
+            warning_codes.add("exit_path_mismatch")
+        ambiguous = _truthy_value(row.get("same_bar_ambiguous"))
+        resolution = _text_value(row.get("ambiguity_resolution"))
+        if ambiguous and not resolution:
+            unresolved_ambiguities.append(str(trade_id))
+        records[key] = {
+            "trade_id": trade_id,
+            "tags": tags,
+            "warnings": warning_codes,
+            "ambiguity_resolution": resolution if ambiguous and resolution else None,
+            "rank": _sample_rank(
+                trade_id,
+                random_seed=random_seed,
+                sample_identity=sample_identity,
+            ),
+        }
+
+    ordered = sorted(records, key=lambda key: (records[key]["rank"], key))
+    random_keys = ordered[: min(random_sample_size, len(ordered))]
+    categories["random_trades"] = [records[key]["trade_id"] for key in random_keys]
+    selected = set(random_keys)
+
+    warning_representatives: list[str] = []
+    warning_codes = sorted(
+        {code for record in records.values() for code in record["warnings"]}
+    )
+    for code in warning_codes:
+        candidates = [key for key in ordered if code in records[key]["warnings"]]
+        if candidates:
+            representative = candidates[0]
+            warning_representatives.append(representative)
+            selected.add(representative)
+    categories["warning_representatives"] = _record_ids(
+        records,
+        warning_representatives,
+    )
+
+    ambiguity_representatives: list[str] = []
+    resolutions = sorted(
+        {
+            str(record["ambiguity_resolution"])
+            for record in records.values()
+            if record["ambiguity_resolution"]
+        }
+    )
+    for resolution in resolutions:
+        candidates = [
+            key
+            for key in ordered
+            if records[key]["ambiguity_resolution"] == resolution
+        ]
+        if candidates:
+            representative = candidates[0]
+            ambiguity_representatives.append(representative)
+            selected.add(representative)
+    categories["resolved_ambiguities"] = _record_ids(
+        records,
+        ambiguity_representatives,
+    )
+
+    required_tags = {tag for record in records.values() for tag in record["tags"]}
+    covered_tags = {
+        tag
+        for key in selected
+        for tag in records[key]["tags"]
+    }
+    coverage_additions: list[str] = []
+    while required_tags - covered_tags:
+        uncovered = required_tags - covered_tags
+        candidates = [key for key in ordered if key not in selected]
+        if not candidates:
+            break
+        best = min(
+            candidates,
+            key=lambda key: (
+                -len(records[key]["tags"] & uncovered),
+                records[key]["rank"],
+                key,
+            ),
+        )
+        newly_covered = records[best]["tags"] & uncovered
+        if not newly_covered:
+            break
+        selected.add(best)
+        coverage_additions.append(best)
+        covered_tags.update(records[best]["tags"])
+    categories["universal_coverage"] = _record_ids(records, coverage_additions)
+
+    sampled_keys = _ordered_unique(
+        key
+        for category in REQUIRED_SAMPLE_CATEGORIES
+        for key in (
+            trade_id_key(trade_id)
+            for trade_id in categories.get(category, [])
+        )
+        if key in records
+    )
+    sampling_reasons: dict[str, list[str]] = {}
+    for key in sampled_keys:
+        reasons = []
+        if key in random_keys:
+            reasons.append("deterministic random baseline")
+        reasons.extend(f"warning:{code}" for code in sorted(records[key]["warnings"]))
+        if records[key]["ambiguity_resolution"]:
+            reasons.append(
+                f"resolved ambiguity:{records[key]['ambiguity_resolution']}"
+            )
+        reasons.extend(f"covers {tag}" for tag in sorted(records[key]["tags"]))
+        sampling_reasons[str(records[key]["trade_id"])] = _ordered_unique_str(reasons)
+
+    blockers = []
+    for label, values in (
+        ("direction", missing_direction),
+        ("exit_reason", missing_exit_reason),
+    ):
+        if values:
+            blockers.append(
+                f"canonical mechanics sampling requires {label} for trades: "
+                + ", ".join(values)
+            )
+    if unresolved_ambiguities:
+        blockers.append(
+            "unresolved stop/target ambiguities must be resolved before manual approval: "
+            + ", ".join(unresolved_ambiguities)
+        )
+    return categories, sampling_reasons, blockers
+
+
+def _transitions_by_trade(event_transitions: pd.DataFrame) -> dict[str, set[str]]:
+    result: dict[str, set[str]] = {}
+    if (
+        event_transitions.empty
+        or "trade_id" not in event_transitions.columns
+        or "transition" not in event_transitions.columns
+    ):
+        return result
+    for _, row in event_transitions.dropna(subset=["trade_id"]).iterrows():
+        key = trade_id_key(row.get("trade_id"))
+        transition = _text_value(row.get("transition"))
+        if key and transition:
+            result.setdefault(key, set()).add(transition.lower())
+    return result
+
+
+def _sample_rank(
+    trade_id: str | int,
+    *,
+    random_seed: int,
+    sample_identity: str,
+) -> str:
+    payload = (
+        f"{SAMPLING_POLICY_VERSION}|{SAMPLING_POLICY_SHA256}|"
+        f"{sample_identity}|{random_seed}|{trade_id}"
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _record_ids(records: Mapping[str, Mapping[str, Any]], keys: list[str]) -> list[str | int]:
+    return _ordered_unique(records[key]["trade_id"] for key in keys if key in records)
+
+
+def _canonical_direction(value: Any) -> str | None:
+    text = (_text_value(value) or "").lower()
+    if text in {"long", "buy", "1", "+1"}:
+        return "long"
+    if text in {"short", "sell", "-1"}:
+        return "short"
+    return None
+
+
+def _canonical_entry_order(value: Any) -> str | None:
+    text = (_text_value(value) or "").lower().replace("-", "_")
+    if not text:
+        return None
+    if "stop" in text:
+        return "stop"
+    if "limit" in text:
+        return "limit"
+    if any(token in text for token in ("market", "next_bar", "open", "intrabar")):
+        return "market"
+    return "other"
+
+
+def _canonical_exit_lifecycle(
+    exit_reason: str | None,
+    *,
+    forced_flatten: bool,
+    partial_exit: bool,
+) -> str | None:
+    if exit_reason is None:
+        return None
+    reason = exit_reason.lower()
+    if forced_flatten:
+        base = "forced_flatten"
+    elif "stop" in reason or reason in {"sl", "stop_loss"}:
+        base = "stop"
+    elif "target" in reason or reason in {"tp", "take_profit"}:
+        base = "target"
+    elif any(token in reason for token in ("maximum", "holding", "time_exit", "timeout")):
+        base = "time_exit"
+    else:
+        base = "other"
+    return f"partial_then_{base}" if partial_exit else base
+
+
+def _is_forced_flatten_trade(row: pd.Series) -> bool:
+    if _truthy_value(row.get("was_forced_flatten")):
+        return True
+    reason = " ".join(
+        value.lower()
+        for value in (
+            _text_value(row.get("exit_reason")),
+            _text_value(row.get("forced_flatten_reason")),
+        )
+        if value
+    )
+    return any(
+        token in reason
+        for token in ("flatten", "session_close", "end_of_day", "eod")
+    )
+
+
+def _warning_codes(row: pd.Series) -> set[str]:
+    codes: set[str] = set()
+    for item in (_text_value(row.get("check_flags")) or "").split(";"):
+        text = item.strip()
+        if text.upper().startswith("WARNING:"):
+            codes.add(text.split(":", 1)[1].strip() or "validation_warning")
+    for item in (_text_value(row.get("warning_flags")) or "").replace(",", ";").split(";"):
+        text = item.strip()
+        if text and text.lower() not in {"nan", "none", "<na>"}:
+            codes.add(text)
+    return codes
+
+
+def _text_value(value: Any) -> str | None:
+    if value is None:
+        return None
+    try:
+        if bool(pd.isna(value)):
+            return None
+    except (TypeError, ValueError):
+        pass
+    text = str(value).strip()
+    return text if text and text.lower() not in {"nan", "none", "<na>"} else None
+
+
+def _truthy_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "y"}
+    try:
+        return False if bool(pd.isna(value)) else bool(value)
+    except (TypeError, ValueError):
+        return False
+
+
+def _explicit_false(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return value.strip().lower() in {"0", "false", "no", "n"}
+    try:
+        return False if bool(pd.isna(value)) else not bool(value)
+    except (TypeError, ValueError):
+        return False
 
 
 def _automated_check_blockers(checks: pd.DataFrame) -> list[str]:

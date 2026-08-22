@@ -9,14 +9,31 @@ from tempfile import NamedTemporaryFile
 from typing import Any
 
 from alphaquest.studio.candidate_review import CandidateReviewV1
+from alphaquest.studio.forward_incubation import (
+    ForwardIncubationEventV1,
+    ForwardIncubationPlanV1,
+)
 from alphaquest.studio.jobs import JobRecordV1
-from alphaquest.studio.results import ResultBundleV2
+from alphaquest.studio.portfolio import (
+    DeploymentDecisionV1,
+    DeploymentMonitoringEventV1,
+    PortfolioReviewV1,
+)
+from alphaquest.studio.results import ResultBundleV2, ResultBundleV3
+from alphaquest.accounts.models import AccountRuleProfileV1
 
 
 STUDIO_SCHEMA_MODELS = {
+    "account-rule-profile-v1.schema.json": AccountRuleProfileV1,
     "candidate-review-v1.schema.json": CandidateReviewV1,
+    "deployment-decision-v1.schema.json": DeploymentDecisionV1,
+    "deployment-monitoring-event-v1.schema.json": DeploymentMonitoringEventV1,
+    "forward-incubation-event-v1.schema.json": ForwardIncubationEventV1,
+    "forward-incubation-plan-v1.schema.json": ForwardIncubationPlanV1,
     "job-record-v1.schema.json": JobRecordV1,
+    "portfolio-review-v1.schema.json": PortfolioReviewV1,
     "result-bundle-v2.schema.json": ResultBundleV2,
+    "result-bundle-v3.schema.json": ResultBundleV3,
 }
 
 

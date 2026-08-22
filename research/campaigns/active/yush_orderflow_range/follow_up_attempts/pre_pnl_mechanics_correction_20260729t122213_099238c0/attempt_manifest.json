@@ -1,0 +1,75 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260729t122213_099238c0",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "aeaf00cc89fc6ef61c949f4c05523a9011e19b9119c5f6748148e7d526343f4c",
+        "implementation_version": 12,
+        "manifest_sha256": "da41d87627bde9979d5d26b52b7c15a8b0c1c7383d408bc7f74821d4c87f43a4",
+        "strategy_id": "yush_adaptive_orderflow_range"
+      },
+      "old": {
+        "implementation_sha256": "30b285ed4aca4f6e469ec3780b00cd5b798424ce894315f23eb5b696386d14f2",
+        "implementation_version": 11,
+        "manifest_sha256": "675a5903842135ecee926682c7b5789b9c071fbc6f88f8c1dac73f5e8d093030",
+        "strategy_id": "yush_adaptive_orderflow_range"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v02"
+    },
+    {
+      "field": "aoi_undefined_validity_bars",
+      "new": 3,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v02"
+    }
+  ],
+  "config_sha256": {
+    "v01": "c292a6edc1b9a82be122c27184815579b6a84d309a175d4bc3910bfc4277b24e",
+    "v02": "5fe1a3317b76998a648a071f00b634fe2931dedd2d2207e6fe2e2d51ca6ee72e"
+  },
+  "created_at": "2026-07-29T12:22:14.945745+00:00",
+  "created_by": "Codex on user instruction",
+  "dataset_bindings": {
+    "v01": {
+      "dataset_id": "es_databento_trade_events_20250714_20260610_0930_1100_ny",
+      "dataset_manifest_sha256": "1597cc593bc872576070dc1ccbcfc16aaaca01eee078db35d28cf36411b0393c"
+    },
+    "v02": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260729t122213_099238c0",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260729t114835_01c6f044",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Implement the explicitly authorized pre-PnL frequency correction by freezing a score-three AOI when a completed balanced-regime bar makes it causal, retaining that immutable AOI for at most three immediately subsequent undefined-regime bars, and invalidating it on a direction-aligned breakout trend. No PnL, profitability metric, or holdout result informed this correction.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v01": "5016d784529b6d6cca9ce9e83d5ef45de9d97485e279e06e062286e177561a8e",
+    "v02": "b02900d975eb61200641c47425d3c610cb3846ce4400353560ba996604f7d9ed"
+  },
+  "target_variant_id": "v02",
+  "variant_mechanic_signatures": {
+    "v01": "40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1",
+    "v02": "9ddb0706f57b5dc03fcd0a35abc1ca270cec84e3fdbd48e0e575081e6536fc47"
+  },
+  "variant_order": [
+    "v01",
+    "v02"
+  ]
+}

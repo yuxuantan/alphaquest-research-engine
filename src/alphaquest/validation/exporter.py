@@ -144,6 +144,9 @@ def build_trade_summaries(
                 "direction": direction,
                 "entry_time": _first_value(trade, "entry_time", "entry_timestamp"),
                 "entry_price": entry_price,
+                "entry_trigger_price": _float_or_none(
+                    _first_value(trade, "entry_trigger_price")
+                ),
                 "entry_order_type": _text_or_none(_first_value(trade, "entry_order_type", "entry_mode")),
                 "stop_price": _float_or_none(_first_value(trade, "stop_price")),
                 "target_price": _float_or_none(_first_value(trade, "target_price")),

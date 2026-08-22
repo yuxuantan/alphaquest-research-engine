@@ -20,6 +20,7 @@ _PATH_TRADE_AUDIT_COLUMNS = [
     "path_index",
     "source_trade_id",
     "source_session_date",
+    "simulated_session_index",
     "source_contracts",
     "sim_contracts",
     "source_net_pnl",
@@ -51,6 +52,9 @@ _PATH_TRADE_AUDIT_COLUMNS = [
     "challenge_total_profit",
     "challenge_largest_trade_profit",
     "challenge_consistency_ratio",
+    "challenge_trading_days",
+    "challenge_best_day_profit",
+    "challenge_best_day_profit_ratio",
 ]
 
 _PATH_EVENT_AUDIT_COLUMNS = [
@@ -59,6 +63,7 @@ _PATH_EVENT_AUDIT_COLUMNS = [
     "path_index",
     "source_trade_id",
     "source_session_date",
+    "simulated_session_index",
     "source_contracts",
     "sim_contracts",
     "source_net_pnl",
@@ -91,6 +96,9 @@ _PATH_EVENT_AUDIT_COLUMNS = [
     "challenge_total_profit",
     "challenge_largest_trade_profit",
     "challenge_consistency_ratio",
+    "challenge_trading_days",
+    "challenge_best_day_profit",
+    "challenge_best_day_profit_ratio",
     "payout_request",
     "payout_net",
     "account_breached",
@@ -115,12 +123,29 @@ def _sample_path_with_audit(
     source["_source_row"] = source.index + 1
     source["_source_trade_id"] = source["trade_id"] if "trade_id" in source.columns else source["_source_row"]
     source["_source_net_pnl"] = source["net_pnl"]
+    source["_source_session_key"] = _source_session_keys(source)
 
-    out = source.sample(frac=1, random_state=rng.randint(1, 10**9)).reset_index(drop=True)
+    plan = _session_sampling_plan(source, cfg)
+    session_order = list(dict.fromkeys(source["_source_session_key"].tolist()))
+    rng.shuffle(session_order)
+    selected_sessions = session_order[: plan["target_session_count"]]
+    cluster_losses = bool(cfg.get("cluster_losses", False))
+    session_net_pnl = source.groupby("_source_session_key", sort=False)["net_pnl"].sum().to_dict()
+    if cluster_losses:
+        selected_sessions = [
+            *[key for key in selected_sessions if float(session_net_pnl[key]) < 0],
+            *[key for key in selected_sessions if float(session_net_pnl[key]) >= 0],
+        ]
+    simulated_session_index = {key: index for index, key in enumerate(selected_sessions, start=1)}
+    selected = source[source["_source_session_key"].isin(selected_sessions)].copy()
+    selected["_simulated_session_index"] = selected["_source_session_key"].map(simulated_session_index)
+    out = selected.sort_values(
+        ["_simulated_session_index", "_source_row"],
+        kind="stable",
+    ).reset_index(drop=True)
     out["_sample_index"] = out.index + 1
 
     audit_rows = []
-    kept_source_rows = set()
     keep = []
     for _, row in out.iterrows():
         skip_reason = ""
@@ -132,14 +157,10 @@ def _sample_path_with_audit(
             keep.append(False)
         else:
             keep.append(True)
-            kept_source_rows.add(int(row["_source_row"]))
         if collect_audit:
             audit_rows.append(_path_trade_audit_row(row, was_skipped=bool(skip_reason), skip_reason=skip_reason))
 
     out = out.loc[keep].copy().reset_index(drop=True)
-    cluster_losses = bool(cfg.get("cluster_losses", False))
-    if cluster_losses and not out.empty:
-        out = pd.concat([out[out["net_pnl"] < 0], out[out["net_pnl"] >= 0]], ignore_index=True)
     if not out.empty:
         out["_path_index"] = out.index + 1
 
@@ -147,7 +168,7 @@ def _sample_path_with_audit(
         path_lookup = {
             int(row["_source_row"]): {
                 "path_index": int(row["_path_index"]),
-                "was_loss_clustered": bool(cluster_losses and float(row["_source_net_pnl"]) < 0),
+                "was_loss_clustered": bool(cluster_losses and float(session_net_pnl[row["_source_session_key"]]) < 0),
             }
             for _, row in out.iterrows()
         }
@@ -159,6 +180,75 @@ def _sample_path_with_audit(
             else:
                 audit_row.update({"path_index": None, "was_loss_clustered": False})
     return out, audit_rows
+
+
+def _source_session_keys(trades: pd.DataFrame) -> pd.Series:
+    if "session_date" not in trades.columns:
+        raise ValueError("Monte Carlo session-block sampling requires session_date on every trade.")
+    keys = []
+    for value in trades["session_date"].tolist():
+        if value is None or pd.isna(value):
+            raise ValueError("Monte Carlo session-block sampling requires non-null session_date values.")
+        try:
+            timestamp = pd.Timestamp(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid Monte Carlo session_date: {value!r}") from exc
+        if pd.isna(timestamp):
+            raise ValueError("Monte Carlo session-block sampling requires non-null session_date values.")
+        keys.append(timestamp.date().isoformat())
+    return pd.Series(keys, index=trades.index, dtype="object")
+
+
+def _session_sampling_plan(trades: pd.DataFrame, cfg: dict) -> dict:
+    if trades.empty:
+        return {
+            "sampling_unit": "session_block",
+            "source_session_count": 0,
+            "source_calendar_months": 0,
+            "path_months": None if cfg.get("path_months") is None else int(cfg["path_months"]),
+            "target_session_count": 0,
+            "replacement": False,
+        }
+
+    keys = trades["_source_session_key"] if "_source_session_key" in trades.columns else _source_session_keys(trades)
+    unique_keys = list(dict.fromkeys(keys.tolist()))
+    source_session_count = len(unique_keys)
+    dates = [pd.Timestamp(key) for key in unique_keys]
+    first_month = min(dates).to_period("M")
+    last_month = max(dates).to_period("M")
+    source_calendar_months = int(last_month.ordinal - first_month.ordinal + 1)
+
+    configured_path_months = cfg.get("path_months")
+    if configured_path_months is None:
+        path_months = None
+        target_session_count = source_session_count
+    else:
+        if isinstance(configured_path_months, bool):
+            raise ValueError("monte_carlo.path_months must be a positive integer.")
+        try:
+            path_months = int(configured_path_months)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("monte_carlo.path_months must be a positive integer.") from exc
+        if path_months <= 0 or float(configured_path_months) != float(path_months):
+            raise ValueError("monte_carlo.path_months must be a positive integer.")
+        target_session_count = max(
+            1,
+            math.ceil(source_session_count * path_months / source_calendar_months),
+        )
+        if target_session_count > source_session_count:
+            raise ValueError(
+                "monte_carlo.path_months exceeds the source trade-log horizon; "
+                "session-block sampling is without replacement."
+            )
+
+    return {
+        "sampling_unit": "session_block",
+        "source_session_count": int(source_session_count),
+        "source_calendar_months": int(source_calendar_months),
+        "path_months": path_months,
+        "target_session_count": int(target_session_count),
+        "replacement": False,
+    }
 
 
 def run_monte_carlo(trades: pd.DataFrame, cfg: dict, rules: PropRules) -> tuple[pd.DataFrame, dict]:
@@ -188,6 +278,7 @@ def _run_monte_carlo(
     retain_path_events: bool,
 ) -> tuple[pd.DataFrame, dict, pd.DataFrame, pd.DataFrame]:
     total_runs = int(cfg.get("runs", 1000))
+    sampling_plan = _session_sampling_plan(trades, cfg)
     parallel = _parallel_settings(cfg, total_runs)
     audit_enabled = retain_path_trades or retain_path_events
     path_trade_rows = []
@@ -244,6 +335,7 @@ def _run_monte_carlo(
             "skip_trade_probability": float(cfg.get("skip_trade_probability", 0.0)),
             "skip_winning_trade_probability": float(cfg.get("skip_winning_trade_probability", 0.0)),
             "cluster_losses": bool(cfg.get("cluster_losses", False)),
+            **sampling_plan,
         },
         "parallel": {
             "enabled": parallel["enabled"],
@@ -267,6 +359,12 @@ def _run_monte_carlo(
                 "median_net_payouts": float(df["net_payouts"].median()) if len(df) else 0.0,
             }
         )
+    if "execution_rule_compliant" in df.columns:
+        summary["probability_execution_rule_compliant"] = (
+            float(df["execution_rule_compliant"].mean()) if len(df) else 0.0
+        )
+    if "lifecycle_success" in df.columns:
+        summary["probability_lifecycle_success"] = float(df["lifecycle_success"].mean()) if len(df) else 0.0
     benchmark_metric = str(
         cfg.get(
             "monte_carlo_prop_benchmark_metric",
@@ -457,6 +555,7 @@ def _path_trade_audit_row(row, was_skipped: bool, skip_reason: str) -> dict:
         "path_index": None,
         "source_trade_id": _scalar(row["_source_trade_id"]),
         "source_session_date": _scalar(row.get("session_date")),
+        "simulated_session_index": int(row["_simulated_session_index"]),
         "source_contracts": int(row.get("contracts", 1)),
         "sim_contracts": None,
         "source_net_pnl": float(row["_source_net_pnl"]),
@@ -526,6 +625,9 @@ def _apply_simulation_events_to_path_trades(path_trade_rows: list[dict], event_r
             "challenge_total_profit",
             "challenge_largest_trade_profit",
             "challenge_consistency_ratio",
+            "challenge_trading_days",
+            "challenge_best_day_profit",
+            "challenge_best_day_profit_ratio",
         ]:
             row[key] = event.get(key)
         row["was_applied"] = "trade" in str(event.get("event", "")).split("|")

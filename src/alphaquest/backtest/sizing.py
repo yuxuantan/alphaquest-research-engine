@@ -13,6 +13,7 @@ class PositionSize:
     dollar_risk_per_contract: float | None = None
     unrounded_contracts: float | None = None
     planned_dollar_risk: float | None = None
+    rejection_reason: str | None = None
 
     def report_fields(self) -> dict:
         if self.target_risk_amount is None:
@@ -24,6 +25,7 @@ class PositionSize:
             "dollar_risk_per_contract": self.dollar_risk_per_contract,
             "unrounded_contracts": self.unrounded_contracts,
             "planned_dollar_risk": self.planned_dollar_risk,
+            "position_sizing_rejection_reason": self.rejection_reason,
         }
 
 
@@ -49,6 +51,48 @@ def size_position(
             raise ValueError("core.contracts must be at least 1 for fixed position sizing.")
         return PositionSize(contracts=contracts, mode="fixed_contracts")
 
+    if mode in {"fixed_dollar_risk", "fixed_risk_budget"}:
+        risk_budget = float(sizing.get("risk_budget", 0.0))
+        if risk_budget <= 0:
+            raise ValueError(
+                "core.position_sizing.risk_budget must be greater than 0 "
+                "for fixed-dollar sizing."
+            )
+        cost_allowance = float(
+            sizing.get("cost_allowance_per_contract", 0.0)
+        )
+        if cost_allowance < 0:
+            raise ValueError(
+                "core.position_sizing.cost_allowance_per_contract cannot "
+                "be negative."
+            )
+        price_risk = _dollar_risk_per_contract(
+            risk_points,
+            tick_size,
+            tick_value,
+        )
+        dollar_risk_per_contract = price_risk + cost_allowance
+        unrounded = risk_budget / dollar_risk_per_contract
+        contracts = _round_contracts(
+            unrounded,
+            str(sizing.get("rounding", "floor")).lower(),
+        )
+        max_contracts = sizing.get("max_contracts")
+        if max_contracts is not None:
+            contracts = min(contracts, int(max_contracts))
+        min_contracts = int(sizing.get("min_contracts", 1))
+        if contracts < min_contracts:
+            contracts = 0
+        return PositionSize(
+            contracts=contracts,
+            mode="fixed_dollar_risk",
+            net_liq=net_liq,
+            target_risk_amount=risk_budget,
+            dollar_risk_per_contract=dollar_risk_per_contract,
+            unrounded_contracts=unrounded,
+            planned_dollar_risk=dollar_risk_per_contract * contracts,
+        )
+
     if mode not in {
         "risk_percent_initial_balance",
         "initial_balance_risk",
@@ -64,7 +108,15 @@ def size_position(
         raise ValueError("core.initial_balance must be greater than 0 for risk-percent position sizing.")
 
     risk_pct = _risk_pct(sizing)
-    dollar_risk_per_contract = _dollar_risk_per_contract(risk_points, tick_size, tick_value)
+    cost_allowance = float(sizing.get("cost_allowance_per_contract", 0.0))
+    if cost_allowance < 0:
+        raise ValueError(
+            "core.position_sizing.cost_allowance_per_contract cannot be negative."
+        )
+    dollar_risk_per_contract = (
+        _dollar_risk_per_contract(risk_points, tick_size, tick_value)
+        + cost_allowance
+    )
     risk_base = initial_balance if net_liq is None else float(net_liq)
     if risk_base <= 0:
         return PositionSize(
@@ -75,6 +127,7 @@ def size_position(
             dollar_risk_per_contract=dollar_risk_per_contract,
             unrounded_contracts=0.0,
             planned_dollar_risk=0.0,
+            rejection_reason="non_positive_net_liq",
         )
     target_risk_amount = risk_base * risk_pct
     unrounded = target_risk_amount / dollar_risk_per_contract
@@ -88,6 +141,14 @@ def size_position(
     if contracts < min_contracts:
         contracts = 0
 
+    rejection_reason = None
+    if contracts < 1:
+        rejection_reason = (
+            "stop_too_wide_for_minimum_contract"
+            if dollar_risk_per_contract > target_risk_amount
+            else "below_minimum_contracts"
+        )
+
     return PositionSize(
         contracts=contracts,
         mode="risk_percent_net_liq",
@@ -96,6 +157,7 @@ def size_position(
         dollar_risk_per_contract=dollar_risk_per_contract,
         unrounded_contracts=unrounded,
         planned_dollar_risk=dollar_risk_per_contract * contracts,
+        rejection_reason=rejection_reason,
     )
 
 

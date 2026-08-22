@@ -18,6 +18,7 @@
 ## Research
 
 - [Campaign authoring](research/campaign-authoring.md)
+- [Davey methodology alignment](research/davey-methodology-alignment.md)
 - [Validation stages](research/validation-stages.md)
 - [Verdict semantics](research/verdict-semantics.md)
 

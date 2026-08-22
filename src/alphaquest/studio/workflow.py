@@ -28,16 +28,19 @@ from alphaquest.authoring.models import (
     DatasetManifestV1,
     EconomicEdgeFingerprintV1,
     ExecutionSettingsV1,
+    ResearchObjectivesV1,
     ResearchSourceV1,
     VariantDraftV1,
 )
 from alphaquest.research.storage import campaign_definition_paths, display_path, load_storage_layout
+from alphaquest.research.policy import load_research_policy
 from alphaquest.studio.drafts import DraftStore
 from alphaquest.studio.duplicates import duplicate_matches
 from alphaquest.studio.handoffs import new_handoff, write_engineering_handoff
 from alphaquest.studio.ledger import append_duplicate_closure
 from alphaquest.studio.publishing import StudioPublicationService
 from alphaquest.prop.profiles import resolve_prop_profile
+from alphaquest.accounts.catalog import resolve_account_profile
 from alphaquest.studio.variants import suggest_variant_card
 from alphaquest.studio.workspace import list_dataset_manifests
 
@@ -102,7 +105,7 @@ class StudioWorkflowService:
                 }
                 for number, label in enumerate(
                     (
-                        "Research brief",
+                        "Goals and research brief",
                         "Duplicate review",
                         "Dataset",
                         "Execution rules",
@@ -123,6 +126,10 @@ class StudioWorkflowService:
             raise ValueError("Studio supports completed 1m, 5m, and 15m bars")
         source = ResearchSourceV1.model_validate(value.get("source") or {})
         fingerprint = EconomicEdgeFingerprintV1.model_validate(value.get("economic_edge_fingerprint") or {})
+        objectives = ResearchObjectivesV1.model_validate(value.get("research_objectives") or {})
+        load_research_policy().validate_objectives(objectives.model_dump(mode="json"))
+        if date.fromisoformat(objectives.development_deadline) < date.today():
+            raise ValueError("research development deadline cannot be in the past")
         failures = _nonblank_strings(value.get("known_failure_modes"), "known failure modes")
         updated = {
             "title": _required_text(value.get("title"), "campaign title"),
@@ -134,6 +141,7 @@ class StudioWorkflowService:
             "known_failure_modes": failures,
             "sources": [source.model_dump(mode="json")],
             "economic_edge_fingerprint": fingerprint.model_dump(mode="json"),
+            "research_objectives": objectives.model_dump(mode="json", by_alias=True),
         }
         changed = any(draft.get(key) != item for key, item in updated.items())
         timeframe_changed = draft.get("timeframe") != timeframe
@@ -252,6 +260,12 @@ class StudioWorkflowService:
             max_contracts=parsed_execution.contracts,
             force_flatten_time=parsed_execution.flatten_time,
         )
+        for selection in parsed_execution.target_account_profiles:
+            resolve_account_profile(
+                selection.profile_id,
+                version=selection.version,
+                project_root=self.project_root,
+            )
         execution = parsed_execution.model_dump(mode="json")
         if draft.get("execution") != execution:
             self._reset_mechanics(campaign_id, draft)
@@ -510,8 +524,11 @@ class StudioWorkflowService:
 
 def _step_gates(draft: Mapping[str, Any], state: Mapping[str, Any]) -> list[bool]:
     fingerprint = draft.get("economic_edge_fingerprint")
+    objectives = draft.get("research_objectives")
     brief = bool(
-        draft.get("sources")
+        isinstance(objectives, Mapping)
+        and objectives.get("confirmed") is True
+        and draft.get("sources")
         and draft.get("hypothesis")
         and draft.get("expected_mechanism")
         and draft.get("holding_horizon")
@@ -526,6 +543,7 @@ def _step_gates(draft: Mapping[str, Any], state: Mapping[str, Any]) -> list[bool
     lane = bool(
         (lane_name == "certified_recipe" and draft.get("certified_recipe"))
         or (lane_name == "visual_completed_bar_rule" and isinstance(state.get("safe_bar_rule"), Mapping))
+        or (lane_name == "certified_event_replay" and draft.get("event_strategy"))
         or (lane_name == "engineering_handoff" and draft.get("engineering_handoff_path"))
     )
     variants = draft.get("variants") or []

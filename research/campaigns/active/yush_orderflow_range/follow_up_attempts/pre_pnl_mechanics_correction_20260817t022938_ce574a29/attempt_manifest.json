@@ -1,0 +1,79 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260817t022938_ce574a29",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "6f3ced4878e521c8cb938c03c798a5c9712fb9d3a21e03980a40863b68367871",
+        "implementation_version": 16,
+        "manifest_sha256": "2bc867c8f04ce3765d9ab03d57c4b6dd57abcac91dac4bf348bea2d0560a3fbb",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "d72d6d5a7a92bfaf5575a81423047c773c2bcc9361e1edb5fdd0ef38d0d8251a",
+        "implementation_version": 15,
+        "manifest_sha256": "4ddc97b670a42da4ad07f3090ee9bc39acbf7315fba771efa46416e0b5df9bcd",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "entry_expiry_bars",
+      "new": null,
+      "old": 2,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "event_reclaim_hold_seconds",
+      "new": null,
+      "old": 5,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "64e3d375a928fce04cc729c88d2b20f86efbe9cf20170a93bd76e7e97457c732"
+  },
+  "created_at": "2026-08-17T02:29:38.452429+00:00",
+  "created_by": "codex",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260817t022938_ce574a29",
+  "parent_attempt_id": "replication_20260816t131247_c96d0f13",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Replace the v03 five-second hold and two-bar edge-retest limit with certified implementation v16: the first ordered trade one tick inside confirms the reclaim and submits one next-event-only gap-aware stop-market entry; retain frozen burst, edge and POC state, structural stop, actual-fill ATR and all-in net payoff gates, selected three-bar burst freshness, session controls and exits.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "2648eda4f089c148b2513c72fb07c5c4f66493d9e7d67dad35fbf25d0b1d37d1"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "418113b8e8fa2fe7c841ba0abbda832e213547fc0f36a2fa1bedb68bb6b9d437"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

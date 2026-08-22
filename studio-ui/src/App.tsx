@@ -10,6 +10,8 @@ import { ReviewsPage } from "./pages/ReviewsPage";
 import { LibraryPage } from "./pages/LibraryPage";
 import { TutorialPage } from "./pages/TutorialPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { AnalysisPage } from "./pages/AnalysisPage";
+import { WorkflowPage } from "./pages/WorkflowPage";
 
 export function App() {
   return (
@@ -28,6 +30,8 @@ export function App() {
             element={<CampaignPage />}
           />
           <Route path="reviews" element={<ReviewsPage />} />
+          <Route path="analysis" element={<AnalysisPage />} />
+          <Route path="workflow" element={<WorkflowPage />} />
           <Route path="library/:section" element={<LibraryPage />} />
           <Route path="tutorial" element={<TutorialPage />} />
           <Route path="settings" element={<SettingsPage />} />

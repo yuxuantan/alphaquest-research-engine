@@ -1,5 +1,54 @@
 {
   "$defs": {
+    "AnalysisArtifactsV2": {
+      "additionalProperties": false,
+      "description": "Derived, verdict-neutral views of the exact reporting trade evidence.",
+      "properties": {
+        "duration_distribution": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "losing_streaks": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "mfe_mae": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "monte_carlo_bands": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "parameter_surface": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "performance_statistics": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "pnl_distribution": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "rolling_metrics": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "trade_list": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        },
+        "wfa_windows": {
+          "$ref": "#/$defs/ArtifactStatusV2"
+        }
+      },
+      "required": [
+        "trade_list",
+        "mfe_mae",
+        "pnl_distribution",
+        "duration_distribution",
+        "rolling_metrics",
+        "losing_streaks",
+        "wfa_windows",
+        "monte_carlo_bands",
+        "parameter_surface"
+      ],
+      "title": "AnalysisArtifactsV2",
+      "type": "object"
+    },
     "ArtifactStatusV2": {
       "additionalProperties": false,
       "properties": {
@@ -237,6 +286,22 @@
         "actual": {
           "$ref": "#/$defs/MetricValueV2"
         },
+        "decision_role": {
+          "anyOf": [
+            {
+              "enum": [
+                "scientific_validity",
+                "generic_objective"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Decision Role"
+        },
         "evidence_path": {
           "anyOf": [
             {
@@ -324,6 +389,9 @@
   "additionalProperties": false,
   "description": "Sole strict-JSON source for Studio result presentation.",
   "properties": {
+    "analysis_artifacts": {
+      "$ref": "#/$defs/AnalysisArtifactsV2"
+    },
     "breakdowns": {
       "$ref": "#/$defs/BreakdownArtifactsV2"
     },
@@ -335,6 +403,23 @@
       "format": "date-time",
       "title": "Generated At",
       "type": "string"
+    },
+    "generic_objective_verdict": {
+      "anyOf": [
+        {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NEEDS MANUAL REVIEW"
+          ],
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Generic Objective Verdict"
     },
     "metrics": {
       "$ref": "#/$defs/ScalarMetricsV2"
@@ -350,6 +435,16 @@
         "alphaquest.result-bundle/v2"
       ],
       "title": "Schema",
+      "type": "string"
+    },
+    "scientific_validity_verdict": {
+      "default": "NEEDS MANUAL REVIEW",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Scientific Validity Verdict",
       "type": "string"
     },
     "stage_criteria": {

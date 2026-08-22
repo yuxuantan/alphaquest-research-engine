@@ -1,0 +1,75 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260812t085331_3656c439",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "cb27f968d1b09f40e31d7e65edb2e4824ead7dfaa974bfa4dc33273c774c7b99",
+        "implementation_version": 4,
+        "manifest_sha256": "2adef28dd2aba56bc7c5e19e2da8548aa303155dee18c3970f28a88ddf33a45a",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "713c4295ddd8be7b5b5d09eb4b4f9dc073be0faa15e4b6cec8c80a789dc853d0",
+        "implementation_version": 4,
+        "manifest_sha256": "c94ff972b21993cad8f73b33ae13b8a88745b75a4026ea0ac4758e038468a010",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v01": "99ee65196ab4ef9311df798e3c92d3624a641423f1bbb4b8952f5d199b9f2cc1",
+    "v02": "33ed7482ab2d80faed360b32922e49df17baf5b177187f552994be6c058497f8",
+    "v03": "cf51c7151f906bf109f96e3e7e1801081c8eaaae0acbf2979bcb9c39de35acb0"
+  },
+  "created_at": "2026-08-12T08:53:32.349658+00:00",
+  "created_by": "Codex at user direction",
+  "dataset_bindings": {
+    "v01": {
+      "dataset_id": "es_databento_trade_events_20250714_20260610_0930_1100_ny",
+      "dataset_manifest_sha256": "1597cc593bc872576070dc1ccbcfc16aaaca01eee078db35d28cf36411b0393c"
+    },
+    "v02": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02",
+      "dataset_manifest_sha256": "6541a29ffd5abcf43bf21cccc1b5deaa587b2bcfb885a794541dca6732b267ff"
+    },
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260812t085331_3656c439",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260812t085209_1799aa43",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "The first MES-sizing mechanics run failed closed before replay because current-net-liquidation sizing is chronologically path-dependent and cannot use the session-parallel executor. Refresh the certified v03 implementation so equity-dependent sizing is replayed sequentially in session order, while session-independent sizing retains deterministic parallel execution. No PnL or completed mechanics evidence from the parent is reused.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v01": "1742cc392e36f2add5391c7d911dafb57bb51d13d64b1ffc47257cb598462ebf",
+    "v02": "3b722032863dd8c71ddd80045e3912a98c1c89734ee1cb5f5ef94eb2c224160a",
+    "v03": "383ca613d22bf2683cde08eae76341c65df79a31a05ed8515fb0441cc0651637"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v01": "40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1",
+    "v02": "2595e548d0eb42bfd6ed029f9b88c07bcc1ca3c0f19573d00387f3019db04da1",
+    "v03": "418113b8e8fa2fe7c841ba0abbda832e213547fc0f36a2fa1bedb68bb6b9d437"
+  },
+  "variant_order": [
+    "v01",
+    "v02",
+    "v03"
+  ]
+}

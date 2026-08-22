@@ -1,0 +1,138 @@
+schema: alphaquest.account-rule-profile/v1
+profile_id: apex/eod_50k/funded
+version: "2026-03-01"
+name: Apex 50K EOD Performance Account (Sim Funded)
+description: >-
+  Reviewed account-specific model for the new Apex 50K EOD Performance Account.
+  It evaluates tiered sizing and DLL, intraday enforcement of the EOD threshold,
+  inactivity, payout consistency, payout caps, and acquisition-cost economics.
+effective_from: 2026-03-01
+effective_until: null
+novice_visible: true
+promotable: true
+identity:
+  provider: Apex Trader Funding
+  program: New EOD Drawdown
+  account_label: 50K EOD Performance Account
+  account_kind: prop_funded
+  nominal_balance: 50000.0
+  currency: USD
+  timezone: America/New_York
+  session_reset_time: "18:00:00"
+  eod_snapshot_time: "16:59:59"
+  simulated_account: true
+provenance:
+  verification_status: reviewed
+  reviewed_at: "2026-08-14T12:00:00+08:00"
+  reviewer: AlphaQuest engineering review; human re-review required before trading
+  official_sources:
+    - title: EOD Performance Accounts (PA)
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-performance-accounts-pa/
+      accessed_at: 2026-08-14
+      supports: [sim_funded_identity, eod_drawdown, dll, scaling, contract_limits]
+    - title: EOD Drawdown Explained
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-drawdown-explained/
+      accessed_at: 2026-08-14
+      supports: [eod_calculation, intraday_enforcement, funded_threshold_lock]
+    - title: Scaling Levels (PA) Explained
+      url: https://apextraderfunding.com/help-center/additional-helpful-items/scaling-levels-pa-explained/
+      accessed_at: 2026-08-14
+      supports: [tiered_contract_limits, tiered_daily_loss_limits, eod_tier_changes]
+    - title: EOD Payouts
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-payouts/
+      accessed_at: 2026-08-14
+      supports: [qualifying_days, consistency, safety_net, payout_caps, payout_count]
+    - title: Inactivity Policy on Performance Accounts
+      url: https://apextraderfunding.com/help-center/billing/inactivity-policy-on-performance-accounts-pa/
+      accessed_at: 2026-08-14
+      supports: [rolling_30_day_activity]
+    - title: PA Activation Process and Deadline Explained
+      url: https://apextraderfunding.com/help-center/billing/pa-activation-process-deadline-explained/
+      accessed_at: 2026-08-14
+      supports: [activation_window, activation_cost, replacement_cost]
+  notes:
+    - This is a simulated funded Performance Account, not a live brokerage account.
+    - Dynamic checkout and activation prices must be recorded when the assessment is created.
+    - Prohibited-activity rules requiring intent or cross-account evidence remain a manual review item.
+rules:
+  permitted_instruments: [ES, MES, NQ, MNQ]
+  overnight_positions_allowed: false
+  position_close_deadline: "16:59:00"
+  intraday_equity_required: true
+  eod_drawdown:
+    amount: 2000.0
+    initial_threshold: 48000.0
+    trailing_basis: highest_eod_balance
+    recalculation: end_of_day
+    enforcement: intraday_equity
+    breach_operator: touch_or_below
+    locked_threshold: 50100.0
+    never_moves_down: true
+  fixed_maximum_contracts: null
+  fixed_daily_loss_limit: null
+  scaling_tiers:
+    - minimum_profit: 0.0
+      maximum_profit_exclusive: 1500.0
+      maximum_contracts: 2
+      daily_loss_limit: 1000.0
+    - minimum_profit: 1500.0
+      maximum_profit_exclusive: 3000.0
+      maximum_contracts: 3
+      daily_loss_limit: 1000.0
+    - minimum_profit: 3000.0
+      maximum_profit_exclusive: 6000.0
+      maximum_contracts: 4
+      daily_loss_limit: 2000.0
+    - minimum_profit: 6000.0
+      maximum_profit_exclusive: null
+      maximum_contracts: 4
+      daily_loss_limit: 3000.0
+  evaluation: null
+  payouts:
+    qualifying_profit_days: 5
+    minimum_daily_profit: 250.0
+    consistency_limit: 0.50
+    consistency_operator: strictly_less_than
+    safety_net_balance: 52100.0
+    minimum_request_balance: 52600.0
+    minimum_payout: 500.0
+    maximum_payouts: 6
+    payout_caps: [1500.0, 1500.0, 2000.0, 2500.0, 2500.0, 3000.0]
+    payout_profit_share: 1.0
+    request_policy: maximum_when_eligible
+  inactivity:
+    rolling_calendar_days: 30
+    required_profit_days: 2
+    minimum_daily_profit: 50.0
+    consequence: account_closed
+  acquisition:
+    prerequisite_profile_id: apex/eod_50k/evaluation
+    evaluation_price_mode: assessment_input_required
+    activation_fee_mode: assessment_input_required
+    retry_requires_new_evaluation: true
+  manual_attestations_required:
+    - no_prohibited_trading_activity_or_cross_account_hedging
+evaluation_policy:
+  minimum_horizon_sessions: 126
+  monte_carlo_runs: 8000
+  monte_carlo_horizon_sessions: 126
+  monte_carlo_block_sessions: 5
+  maximum_account_closure_probability: 0.05
+  maximum_daily_loss_lock_probability: 0.10
+  minimum_first_payout_probability: 0.70
+  minimum_two_payout_probability: 0.50
+  minimum_expected_net_payout_after_costs: 0.0
+  minimum_expected_payout_to_cost_ratio: 3.0
+  maximum_p95_drawdown: 1500.0
+  deterministic_require_no_closure: true
+  deterministic_require_no_daily_loss_lock: true
+  deterministic_require_no_position_rejection: true
+  recommended_tests:
+    - Zero EOD account closures, daily loss locks, and tier-size rejections in stitched WFA and acceptance OOS evidence.
+    - 8000 six-month session-block paths with account state, tier changes, payout withdrawals, and EOD threshold updates preserved.
+    - Account-closure probability no greater than 5 percent and any-DLL-lock probability no greater than 10 percent.
+    - First-payout probability at least 70 percent and two-payout probability at least 50 percent over six months.
+    - Expected approved payouts net of evaluation, activation, and replacement costs remain positive with a payout-to-cost ratio of at least 3.
+    - P95 maximum drawdown no greater than 1500 dollars, leaving a 500 dollar buffer to the 2000 dollar closure threshold.
+    - Stress the first 2100 dollars of profit separately because the EOD threshold is still moving toward its 50100 dollar lock.
+    - Review no-trade calendar days so the rolling 30-day two-profit-day inactivity rule is actually testable.

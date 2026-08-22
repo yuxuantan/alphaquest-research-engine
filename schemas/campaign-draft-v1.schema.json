@@ -433,6 +433,13 @@
           "title": "Ineligible Session Policy",
           "type": "string"
         },
+        "max_timestamp_inversion_rate": {
+          "default": 0.0,
+          "maximum": 0.002,
+          "minimum": 0.0,
+          "title": "Max Timestamp Inversion Rate",
+          "type": "number"
+        },
         "overnight_start": {
           "const": "16:00:00",
           "default": "16:00:00",
@@ -512,7 +519,8 @@
             {
               "enum": [
                 "full_strategy_events",
-                "full_strategy_events_extrapolated"
+                "full_strategy_events_extrapolated",
+                "full_rth_strategy_events_extrapolated"
               ],
               "type": "string"
             },
@@ -598,6 +606,15 @@
           ],
           "title": "Source",
           "type": "string"
+        },
+        "timestamp_inversion_policy": {
+          "default": "reject",
+          "enum": [
+            "reject",
+            "preserve_source_order_clamp"
+          ],
+          "title": "Timestamp Inversion Policy",
+          "type": "string"
         }
       },
       "required": [
@@ -677,6 +694,14 @@
           "title": "Slippage Ticks",
           "type": "number"
         },
+        "target_account_profiles": {
+          "items": {
+            "$ref": "#/$defs/TargetAccountProfileSelectionV1"
+          },
+          "maxItems": 8,
+          "title": "Target Account Profiles",
+          "type": "array"
+        },
         "tick_size": {
           "exclusiveMinimum": 0.0,
           "title": "Tick Size",
@@ -741,6 +766,159 @@
         "module"
       ],
       "title": "ModuleBindingV1",
+      "type": "object"
+    },
+    "ResearchObjectivesV1": {
+      "additionalProperties": false,
+      "description": "Pre-PnL success, abandonment, and live-incubation contract.\n\nThese values are deliberately campaign-level.  They describe what would\nmake the research useful before mechanics are selected; they are not an\nalternate path for changing repository-owned stage topology or seeds.",
+      "properties": {
+        "abandonment_rules": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Abandonment Rules",
+          "type": "array"
+        },
+        "confirmed": {
+          "const": true,
+          "enum": [
+            true
+          ],
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "development_deadline": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "title": "Development Deadline",
+          "type": "string"
+        },
+        "development_goal": {
+          "minLength": 20,
+          "title": "Development Goal",
+          "type": "string"
+        },
+        "evaluation_horizon_months": {
+          "maximum": 120,
+          "minimum": 6,
+          "title": "Evaluation Horizon Months",
+          "type": "integer"
+        },
+        "forward_incubation_min_calendar_days": {
+          "maximum": 1095,
+          "minimum": 30,
+          "title": "Forward Incubation Min Calendar Days",
+          "type": "integer"
+        },
+        "forward_incubation_min_trades": {
+          "minimum": 1,
+          "title": "Forward Incubation Min Trades",
+          "type": "integer"
+        },
+        "maximum_account_breach_probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Maximum Account Breach Probability",
+          "type": "number"
+        },
+        "maximum_drawdown_fraction": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Maximum Drawdown Fraction",
+          "type": "number"
+        },
+        "maximum_variants": {
+          "default": 5,
+          "maximum": 5,
+          "minimum": 1,
+          "title": "Maximum Variants",
+          "type": "integer"
+        },
+        "minimum_acceptance_oos_trades": {
+          "minimum": 1,
+          "title": "Minimum Acceptance Oos Trades",
+          "type": "integer"
+        },
+        "minimum_annualized_return_fraction": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 5.0,
+          "title": "Minimum Annualized Return Fraction",
+          "type": "number"
+        },
+        "minimum_complete_wfa_windows": {
+          "maximum": 100,
+          "minimum": 2,
+          "title": "Minimum Complete Wfa Windows",
+          "type": "integer"
+        },
+        "minimum_mar": {
+          "maximum": 20.0,
+          "minimum": 0.0,
+          "title": "Minimum Mar",
+          "type": "number"
+        },
+        "minimum_net_profit_probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Minimum Net Profit Probability",
+          "type": "number"
+        },
+        "minimum_wfa_oos_trades": {
+          "minimum": 1,
+          "title": "Minimum Wfa Oos Trades",
+          "type": "integer"
+        },
+        "monte_carlo_horizon_months": {
+          "maximum": 120,
+          "minimum": 1,
+          "title": "Monte Carlo Horizon Months",
+          "type": "integer"
+        },
+        "monte_carlo_min_runs": {
+          "maximum": 1000000,
+          "minimum": 1000,
+          "title": "Monte Carlo Min Runs",
+          "type": "integer"
+        },
+        "retirement_rules": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Retirement Rules",
+          "type": "array"
+        },
+        "schema": {
+          "const": "alphaquest.research-objectives/v1",
+          "default": "alphaquest.research-objectives/v1",
+          "enum": [
+            "alphaquest.research-objectives/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        }
+      },
+      "required": [
+        "development_goal",
+        "development_deadline",
+        "evaluation_horizon_months",
+        "minimum_annualized_return_fraction",
+        "minimum_mar",
+        "maximum_drawdown_fraction",
+        "minimum_complete_wfa_windows",
+        "minimum_wfa_oos_trades",
+        "minimum_acceptance_oos_trades",
+        "monte_carlo_min_runs",
+        "monte_carlo_horizon_months",
+        "minimum_net_profit_probability",
+        "maximum_account_breach_probability",
+        "forward_incubation_min_calendar_days",
+        "forward_incubation_min_trades",
+        "abandonment_rules",
+        "retirement_rules",
+        "confirmed"
+      ],
+      "title": "ResearchObjectivesV1",
       "type": "object"
     },
     "ResearchSourceV1": {
@@ -872,6 +1050,43 @@
         "created_at"
       ],
       "title": "SequentialVariantLineageV1",
+      "type": "object"
+    },
+    "TargetAccountProfileSelectionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "profile_id": {
+          "minLength": 1,
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "role": {
+          "default": "primary",
+          "enum": [
+            "primary",
+            "comparison"
+          ],
+          "title": "Role",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        }
+      },
+      "required": [
+        "profile_id"
+      ],
+      "title": "TargetAccountProfileSelectionV1",
       "type": "object"
     },
     "VariantDraftV1": {
@@ -1126,6 +1341,17 @@
       "minItems": 1,
       "title": "Known Failure Modes",
       "type": "array"
+    },
+    "research_objectives": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/ResearchObjectivesV1"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
     },
     "schema": {
       "const": "alphaquest.campaign-draft/v1",

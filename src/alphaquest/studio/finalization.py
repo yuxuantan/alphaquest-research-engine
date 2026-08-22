@@ -497,6 +497,9 @@ class RunFinalizer:
         staging.mkdir(parents=True)
         try:
             original_verdict = _strict_verdict(run_summary.get("research_verdict"))
+            scientific_validity_verdict = _strict_verdict(
+                run_summary.get("scientific_validity_verdict")
+            )
             evidence_issues, evidence_hashes = _validate_and_hash_runner_evidence(
                 run_dir,
                 run_summary,
@@ -504,18 +507,29 @@ class RunFinalizer:
             stage_criteria = _stage_criteria(run_summary)
             stage_criteria.extend(_reporting_criterion(issue) for issue in evidence_issues)
             verdict = _final_verdict(original_verdict, evidence_issues, run_summary)
-            trades, trade_path, trade_issue = _load_reporting_trades(run_dir, original_verdict)
+            if evidence_issues or any(item.decision_role is None for item in stage_criteria):
+                scientific_validity_verdict = "NEEDS MANUAL REVIEW"
+            trades, trade_path, trade_issue = _load_reporting_trades(
+                run_dir,
+                require_acceptance=(
+                    original_verdict == "PASS" or scientific_validity_verdict == "PASS"
+                ),
+            )
             if trade_issue:
                 evidence_issues.append(trade_issue)
+                scientific_validity_verdict = "NEEDS MANUAL REVIEW"
                 if original_verdict == "PASS":
                     verdict = "NEEDS MANUAL REVIEW"
                 stage_criteria.append(_reporting_criterion(trade_issue))
             evaluation = _reporting_evaluation_contract(run_dir, trade_path)
 
             optional_frames, supplemental_issues = _supplemental_frames(run_dir)
-            if original_verdict == "PASS" and supplemental_issues:
+            if (
+                original_verdict == "PASS" or scientific_validity_verdict == "PASS"
+            ) and supplemental_issues:
                 evidence_issues.extend(supplemental_issues)
                 verdict = "NEEDS MANUAL REVIEW"
+                scientific_validity_verdict = "NEEDS MANUAL REVIEW"
                 stage_criteria.extend(_reporting_criterion(issue) for issue in supplemental_issues)
             generated_at = _journal_created_at(journal_path)
             try:
@@ -534,6 +548,8 @@ class RunFinalizer:
                             or job_id
                         ),
                         verdict=bundle_verdict,  # type: ignore[arg-type]
+                        scientific_validity_verdict=scientific_validity_verdict,  # type: ignore[arg-type]
+                        generic_objective_verdict=bundle_verdict,  # type: ignore[arg-type]
                         stage_criteria=stage_criteria,
                         initial_balance=float((cfg.get("core") or {}).get("initial_balance") or 0.0),
                         parameter_neighbors=optional_frames["parameter_neighbors"],
@@ -548,11 +564,12 @@ class RunFinalizer:
 
                 bundle = build_bundle(verdict)
                 if original_verdict == "PASS":
-                    metric_issues = _required_pass_metric_issues(bundle)
+                    metric_issues = _required_pass_metric_issues(bundle, run_summary)
                     if metric_issues:
                         evidence_issues.extend(metric_issues)
                         stage_criteria.extend(_reporting_criterion(issue) for issue in metric_issues)
                         verdict = "NEEDS MANUAL REVIEW"
+                        scientific_validity_verdict = "NEEDS MANUAL REVIEW"
                         bundle = build_bundle(verdict)
             except Exception as exc:
                 # Reporting ambiguity must not preserve a PASS.  Publish a
@@ -569,6 +586,8 @@ class RunFinalizer:
                     variant_id=str(run_summary.get("variant_id") or cfg.get("variant_id") or "unknown"),
                     run_id=str(run_summary.get("test_run_id") or run_summary.get("run_uid") or job_id),
                     verdict="NEEDS MANUAL REVIEW",
+                    scientific_validity_verdict="NEEDS MANUAL REVIEW",
+                    generic_objective_verdict="NEEDS MANUAL REVIEW",
                     stage_criteria=[*stage_criteria, _reporting_criterion(evidence_issues[-1])],
                     initial_balance=float((cfg.get("core") or {}).get("initial_balance") or 0.0),
                     parameter_neighbors=_empty_frame(("reason",)),
@@ -994,10 +1013,26 @@ def _final_verdict(original: str, issues: Sequence[str], summary: Mapping[str, A
     return original
 
 
-def _required_pass_metric_issues(bundle: ResultBundleV2) -> list[str]:
-    """Require explicit rule-compliance evidence before retaining terminal PASS."""
+def _required_pass_metric_issues(
+    bundle: ResultBundleV2,
+    summary: Mapping[str, Any],
+) -> list[str]:
+    """Replay terminal gates from corrected reporting metrics before PASS.
+
+    Runner stage metrics are provisional.  ResultBundle recomputes metrics from
+    the immutable acceptance trade log and its governed evaluation bounds; a
+    stale or incorrectly annualized runner PASS must not survive finalization.
+    """
 
     issues: list[str] = []
+    for name in ("trades_per_year", "mar"):
+        metric = getattr(bundle.metrics, name)
+        if metric.value is None:
+            issues.append(
+                f"PASS requires corrected {name} over the governed evaluation period; "
+                + str(metric.reason or "the reporting metric is undefined")
+            )
+
     prop = bundle.metrics.prop_rule_outcome
     if prop.value is None:
         issues.append(
@@ -1017,7 +1052,94 @@ def _required_pass_metric_issues(bundle: ResultBundleV2) -> list[str]:
         issues.append(
             f"PASS contradicts forced-flatten compliance: expected true, observed {flatten.value!r}"
         )
+
+    stages = summary.get("stages") if isinstance(summary.get("stages"), list) else []
+    terminal_name = DEFAULT_STAGE_ORDER[-1]
+    terminal = next(
+        (
+            item
+            for item in stages
+            if isinstance(item, Mapping) and str(item.get("stage") or "") == terminal_name
+        ),
+        None,
+    )
+    terminal_criteria = (
+        terminal.get("criteria")
+        if isinstance(terminal, Mapping) and isinstance(terminal.get("criteria"), list)
+        else []
+    )
+    if not terminal_criteria:
+        issues.append("PASS terminal acceptance criteria are missing and cannot be replayed")
+        return issues
+
+    for item in terminal_criteria:
+        if not isinstance(item, Mapping):
+            issues.append("PASS terminal acceptance contains a malformed criterion")
+            continue
+        metric_name = str(item.get("metric") or "")
+        expected = item.get("expected") if isinstance(item.get("expected"), Mapping) else {}
+        operator, threshold = _criterion_operator_threshold(expected)
+        corrected = _corrected_terminal_metric(bundle, metric_name)
+        if corrected is None:
+            issues.append(
+                f"PASS terminal criterion {metric_name or '<unnamed>'} has no corrected reporting-metric mapping"
+            )
+            continue
+        if corrected.value is None:
+            issues.append(
+                f"PASS terminal criterion {metric_name} cannot be replayed: "
+                + str(corrected.reason or "corrected metric is undefined")
+            )
+            continue
+        if not _criterion_comparison(corrected.value, operator, threshold):
+            issues.append(
+                f"corrected terminal criterion {metric_name}={_display_scalar(corrected.value)} "
+                f"does not meet required {operator} {_display_scalar(threshold)}"
+            )
     return issues
+
+
+def _corrected_terminal_metric(bundle: ResultBundleV2, metric_path: str) -> MetricValueV2 | None:
+    name = metric_path.rsplit(".", 1)[-1]
+    mapped = {
+        "net_profit": bundle.metrics.net_profit_after_costs,
+        "net_profit_after_costs": bundle.metrics.net_profit_after_costs,
+        "profit_factor": bundle.metrics.profit_factor,
+        "expectancy_r": bundle.metrics.expectancy_r,
+        "total_trades": bundle.metrics.total_trades,
+        "trades_per_year": bundle.metrics.trades_per_year,
+        "max_drawdown": bundle.metrics.max_drawdown,
+        "max_drawdown_pct": bundle.metrics.max_drawdown_pct,
+        "mar": bundle.metrics.mar,
+        "win_rate": bundle.metrics.win_rate,
+    }
+    if name in mapped:
+        return mapped[name]
+    if name == "apex_rule_violations":
+        prop = bundle.metrics.prop_rule_outcome
+        if prop.value is None:
+            return MetricValueV2(value=None, reason=prop.reason or "prop-rule outcome is undefined")
+        return MetricValueV2(value=0 if prop.value == "PASS" else 1)
+    if name == "forced_flatten_compliance":
+        return bundle.metrics.forced_flatten_compliance
+    return None
+
+
+def _criterion_comparison(actual: Any, operator: str, threshold: Any) -> bool:
+    try:
+        if operator == ">":
+            return bool(actual > threshold)
+        if operator == ">=":
+            return bool(actual >= threshold)
+        if operator == "<=":
+            return bool(actual <= threshold)
+        if operator == "==":
+            return bool(actual == threshold)
+        if operator == "present":
+            return actual is not None
+    except (TypeError, ValueError):
+        return False
+    return False
 
 
 def _stage_criteria(summary: Mapping[str, Any]) -> list[StageCriterionV2]:
@@ -1042,6 +1164,7 @@ def _stage_criteria(summary: Mapping[str, Any]) -> list[StageCriterionV2]:
                     result=result,  # type: ignore[arg-type]
                     reason=reason,
                     evidence_path=f"{name}/stage_result.json" if status != "skipped" else None,
+                    decision_role="scientific_validity",
                 )
             )
             continue
@@ -1074,6 +1197,11 @@ def _stage_criteria(summary: Mapping[str, Any]) -> list[StageCriterionV2]:
                     result=result,  # type: ignore[arg-type]
                     reason=reason,
                     evidence_path=f"{name}/stage_result.json",
+                    decision_role=(
+                        str(item.get("decision_role"))
+                        if item.get("decision_role") in {"scientific_validity", "generic_objective"}
+                        else None
+                    ),
                 )
             )
     return output
@@ -1115,18 +1243,27 @@ def _reporting_criterion(issue: str) -> StageCriterionV2:
         actual=MetricValueV2(value=None, reason=issue),
         result="NEEDS MANUAL REVIEW",
         reason=issue,
+        decision_role="scientific_validity",
     )
 
 
-def _load_reporting_trades(run_dir: Path, verdict: str) -> tuple[pd.DataFrame, str | None, str | None]:
+def _load_reporting_trades(
+    run_dir: Path,
+    *,
+    require_acceptance: bool,
+) -> tuple[pd.DataFrame, str | None, str | None]:
     candidates = (
         "acceptance_oos_test/trade_log.csv",
         "simulated_incubation_core/trade_log.csv",
         "walk_forward_analysis/wfa_oos_trade_log.csv",
         "limited_core_grid_test/fixed_config_core_trade_log.csv",
     )
-    if verdict == "PASS" and not (run_dir / candidates[0]).is_file():
-        return _empty_trade_frame(), None, "PASS lacks the mandatory acceptance OOS trade log"
+    if require_acceptance and not (run_dir / candidates[0]).is_file():
+        return (
+            _empty_trade_frame(),
+            None,
+            "scientific-validity PASS lacks the mandatory acceptance OOS trade log",
+        )
     for relative in candidates:
         path = run_dir / relative
         if not path.is_file():
@@ -1139,8 +1276,12 @@ def _load_reporting_trades(run_dir: Path, verdict: str) -> tuple[pd.DataFrame, s
             return _empty_trade_frame(), relative, f"trade log could not be read ({relative}): {exc}"
         if "net_pnl" not in trades.columns:
             return trades, relative, f"trade log lacks net_pnl ({relative})"
-        if verdict == "PASS" and relative == candidates[0] and trades.empty:
-            return trades, relative, "PASS acceptance OOS trade log contains no trades"
+        if require_acceptance and relative == candidates[0] and trades.empty:
+            return (
+                trades,
+                relative,
+                "scientific-validity PASS acceptance OOS trade log contains no trades",
+            )
         return trades, relative, None
     return _empty_trade_frame(), None, "no staged trade log is available for ResultBundleV2"
 
@@ -1399,6 +1540,15 @@ def _validate_reporting_directory(staging: Path, bundle: ResultBundleV2) -> None
         "parameter_neighbors.csv",
         "wfa_stitched_oos.csv",
         "monte_carlo_summary.csv",
+        "trade_list.csv",
+        "mfe_mae.csv",
+        "pnl_distribution.csv",
+        "duration_distribution.csv",
+        "rolling_metrics.csv",
+        "losing_streaks.csv",
+        "wfa_windows.csv",
+        "monte_carlo_bands.csv",
+        "parameter_surface.csv",
     }
     missing = sorted(relative for relative in required if not (staging / relative).is_file())
     if missing:
@@ -1756,6 +1906,11 @@ def _suppress_candidate_package(run_dir: Path) -> None:
         path = run_dir / filename
         if path.is_file():
             path.unlink()
+    reporting_dir = run_dir / REPORTING_DIRECTORY
+    if reporting_dir.is_dir():
+        for path in reporting_dir.glob("candidate_review__*.json"):
+            if path.is_file() and not path.is_symlink():
+                path.unlink()
 
 
 def _first_unresolved_reason(bundle: ResultBundleV2) -> str:

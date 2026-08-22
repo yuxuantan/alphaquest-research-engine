@@ -249,12 +249,17 @@ def test_job_progress_is_durable_monotonic_and_separate_from_heartbeat(tmp_path)
         completed=5,
         total=10,
         unit="sessions",
+        active_workers=3,
+        expected_workers=3,
     )
 
     assert updated.progress.phase == "event_replay"
     assert updated.progress.completed == 5
     assert updated.progress.total == 10
     assert updated.progress.percent == 50.0
+    assert updated.progress.active_workers == 3
+    assert updated.progress.expected_workers == 3
+    assert updated.progress.work_started_at is not None
     assert updated.heartbeat_at == updated.progress.updated_at
     reloaded = SQLiteJobQueue(database).get(job.job_id)
     assert reloaded.progress == updated.progress

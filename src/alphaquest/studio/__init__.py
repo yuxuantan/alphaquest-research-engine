@@ -23,19 +23,42 @@ from alphaquest.studio.followups import (
     FollowUpAttemptService,
     MechanicParameterPatchV1,
 )
+from alphaquest.studio.forward_incubation import (
+    ForwardIncubationEventV1,
+    ForwardIncubationPlanV1,
+    ForwardIncubationService,
+)
 from alphaquest.studio.jobs import JobExecutionContext, JobRecordV1, OperationalState, SQLiteJobQueue
+from alphaquest.studio.portfolio import (
+    AccountContractLimitsV1,
+    CandidateEvidencePaths,
+    DeploymentDecisionService,
+    DeploymentDecisionV1,
+    DeploymentMonitoringService,
+    MonitoringThresholdsV1,
+    PortfolioReviewService,
+    PortfolioReviewV1,
+)
 from alphaquest.studio.results import ResultBundleBuilder, ResultBundleV2
 from alphaquest.studio.schemas import stale_studio_schema_documents, studio_schema_documents
 from alphaquest.studio.worker import MECHANICS_VALIDATION_RUN, StudioWorker, run_forever, run_once
 
 __all__ = [
     "AIDraftProvenance",
+    "AccountContractLimitsV1",
+    "CandidateEvidencePaths",
     "CandidateReviewService",
     "CandidateReviewV1",
     "FinalizationResult",
+    "DeploymentDecisionService",
+    "DeploymentDecisionV1",
+    "DeploymentMonitoringService",
     "FollowUpAttemptRequestV1",
     "FollowUpAttemptResult",
     "FollowUpAttemptService",
+    "ForwardIncubationEventV1",
+    "ForwardIncubationPlanV1",
+    "ForwardIncubationService",
     "JobExecutionContext",
     "JobRecordV1",
     "MechanicsApprovalService",
@@ -44,6 +67,9 @@ __all__ = [
     "MECHANICS_VALIDATION_RUN",
     "OpenAIResearchDraftAdapter",
     "OperationalState",
+    "MonitoringThresholdsV1",
+    "PortfolioReviewService",
+    "PortfolioReviewV1",
     "ResearchBriefSuggestion",
     "ResultBundleBuilder",
     "ResultBundleV2",

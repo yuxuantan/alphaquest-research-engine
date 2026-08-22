@@ -117,6 +117,12 @@ def test_result_bundle_writes_strict_metrics_and_stable_breakdowns(tmp_path):
         "side_breakdown.csv",
         "equity_curve.csv",
         "drawdown_curve.csv",
+        "trade_list.csv",
+        "pnl_distribution.csv",
+        "duration_distribution.csv",
+        "rolling_metrics.csv",
+        "losing_streaks.csv",
+        "performance_statistics.csv",
         RESULT_BUNDLE_FILENAME,
     ):
         assert (tmp_path / filename).is_file()
@@ -128,6 +134,12 @@ def test_result_bundle_writes_strict_metrics_and_stable_breakdowns(tmp_path):
     assert "NaN" not in raw
     assert json.loads(raw)["schema"] == "alphaquest.result-bundle/v2"
     assert load_result_bundle(tmp_path / RESULT_BUNDLE_FILENAME) == bundle
+    assert bundle.analysis_artifacts.trade_list.available is True
+    assert bundle.analysis_artifacts.rolling_metrics.available is True
+    statistics = pd.read_csv(tmp_path / "performance_statistics.csv")
+    assert len(statistics) == 49
+    assert {"total", "long", "short"} <= set(statistics.columns)
+    assert bundle.analysis_artifacts.performance_statistics.available is True
 
 
 def test_annualized_metrics_use_governed_period_not_first_and_last_trade(tmp_path):
@@ -308,8 +320,15 @@ def test_committed_studio_schemas_match_owning_models(tmp_path):
     written = write_studio_schema_documents(tmp_path)
 
     assert {path.name for path in written} == {
+        "account-rule-profile-v1.schema.json",
         "candidate-review-v1.schema.json",
+        "deployment-decision-v1.schema.json",
+        "deployment-monitoring-event-v1.schema.json",
+        "forward-incubation-event-v1.schema.json",
+        "forward-incubation-plan-v1.schema.json",
         "job-record-v1.schema.json",
+        "portfolio-review-v1.schema.json",
         "result-bundle-v2.schema.json",
+        "result-bundle-v3.schema.json",
     }
     assert stale_studio_schema_documents(tmp_path) == []

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { api } from "../api";
 import { useStudio } from "../state";
 import type { JobRecord } from "../types";
@@ -15,8 +15,11 @@ const navigation: Array<{
   { to: "/", label: "Overview", icon: "overview", end: true },
   { to: "/research", label: "Research", icon: "research" },
   { to: "/reviews", label: "Reviews", icon: "review" },
+  { to: "/analysis", label: "Analysis", icon: "chart" },
+  { to: "/workflow", label: "Workflow", icon: "overview" },
   { to: "/library/data", label: "Data library", icon: "data" },
   { to: "/library/methods", label: "Method library", icon: "methods" },
+  { to: "/library/accounts", label: "Account rules", icon: "shield" },
   { to: "/tutorial", label: "Tutorial", icon: "tutorial" },
 ];
 
@@ -30,8 +33,17 @@ export function Shell() {
   const menuButton = useRef<HTMLButtonElement>(null);
   const navCloseButton = useRef<HTMLButtonElement>(null);
   const jobsButton = useRef<HTMLButtonElement>(null);
+  const mainContent = useRef<HTMLElement>(null);
+  const hasMounted = useRef(false);
   const location = useLocation();
   useEffect(() => setNavOpen(false), [location.pathname]);
+  useEffect(() => {
+    if (!hasMounted.current) {
+      hasMounted.current = true;
+      return;
+    }
+    mainContent.current?.focus();
+  }, [location.pathname]);
   useEffect(() => {
     if (navOpen) navCloseButton.current?.focus();
   }, [navOpen]);
@@ -181,13 +193,14 @@ export function Shell() {
             </Notice>
           </div>
         )}
-        <main id="main-content" tabIndex={-1}>
+        <main id="main-content" tabIndex={-1} ref={mainContent}>
           <Outlet />
         </main>
       </div>
       {jobsOpen && (
         <JobDrawer
           jobs={data.jobs}
+          campaigns={data.campaigns}
           onClose={() => {
             setJobsOpen(false);
             window.setTimeout(() => jobsButton.current?.focus());
@@ -206,16 +219,42 @@ export function Shell() {
 
 function JobDrawer({
   jobs,
+  campaigns,
   onClose,
   onRefresh,
 }: {
   jobs: JobRecord[];
+  campaigns: Array<{ campaign_id: string; title?: string }>;
   onClose: () => void;
   onRefresh: () => Promise<void>;
 }) {
   const [cancelling, setCancelling] = useState<string | null>(null);
+  const [scope, setScope] = useState<"active" | "history">("active");
   const closeButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => closeButton.current?.focus(), []);
+  const drawer = useRef<HTMLElement>(null);
+  useEffect(() => {
+    closeButton.current?.focus();
+    const trapFocus = (event: KeyboardEvent) => {
+      if (event.key !== "Tab" || !drawer.current) return;
+      const focusable = [
+        ...drawer.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), a[href], select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      ];
+      if (!focusable.length) return;
+      const first = focusable[0];
+      const last = focusable.at(-1) || first;
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    document.addEventListener("keydown", trapFocus);
+    return () => document.removeEventListener("keydown", trapFocus);
+  }, []);
   const sorted = useMemo(
     () =>
       [...jobs].sort((a, b) =>
@@ -223,6 +262,13 @@ function JobDrawer({
       ),
     [jobs],
   );
+  const active = sorted.filter((job) =>
+    ["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(job.state),
+  );
+  const history = sorted.filter(
+    (job) => !["QUEUED", "RUNNING", "CANCEL_REQUESTED"].includes(job.state),
+  );
+  const visible = scope === "active" ? active : history;
   async function cancel(job: JobRecord) {
     if (
       !window.confirm(
@@ -245,11 +291,18 @@ function JobDrawer({
         aria-label="Close job drawer"
         onClick={onClose}
       />
-      <aside className="job-drawer drawer-open" aria-label="Research jobs">
+      <aside
+        ref={drawer}
+        className="job-drawer drawer-open"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="research-jobs-title"
+        tabIndex={-1}
+      >
         <div className="drawer-header">
           <div>
             <p className="eyebrow">Durable local worker</p>
-            <h2>Research jobs</h2>
+            <h2 id="research-jobs-title">Research jobs</h2>
           </div>
           <button
             ref={closeButton}
@@ -264,18 +317,40 @@ function JobDrawer({
           Operational progress is separate from the scientific verdict. Closing
           the browser does not stop this work.
         </p>
+        <div className="drawer-scope" aria-label="Job scope">
+          <button
+            className={scope === "active" ? "selected" : ""}
+            aria-pressed={scope === "active"}
+            onClick={() => setScope("active")}
+          >
+            Active ({active.length})
+          </button>
+          <button
+            className={scope === "history" ? "selected" : ""}
+            aria-pressed={scope === "history"}
+            onClick={() => setScope("history")}
+          >
+            History ({history.length})
+          </button>
+        </div>
         <div className="job-list">
-          {sorted.length === 0 && (
+          {visible.length === 0 && (
             <div className="drawer-empty">
               <Icon name="clock" />
-              <strong>No work queued</strong>
+              <strong>
+                {scope === "active" ? "No active work" : "No job history"}
+              </strong>
               <span>
                 Jobs will appear here after mechanics or performance submission.
               </span>
             </div>
           )}
-          {sorted.map((job) => {
+          {visible.map((job) => {
             const variant = job.variant_id || job.payload?.variant_id;
+            const campaignTitle =
+              campaigns.find(
+                (campaign) => campaign.campaign_id === job.campaign_id,
+              )?.title || job.campaign_id;
             const progress = job.progress_detail;
             const canCancel = [
               "QUEUED",
@@ -288,7 +363,7 @@ function JobDrawer({
                   <div>
                     <strong>{humanize(job.job_type || "Research job")}</strong>
                     <span>
-                      {job.campaign_id}
+                      {campaignTitle}
                       {variant ? ` · ${variant}` : ""}
                     </span>
                   </div>
@@ -300,7 +375,7 @@ function JobDrawer({
                       <strong>
                         {progress?.message || humanize(progress?.phase || "Working")}
                       </strong>
-                      <span>{Math.round(job.progress)}%</span>
+                      <span>{formatJobPercent(job.progress)}</span>
                     </div>
                     <div
                       className="job-progress"
@@ -333,6 +408,38 @@ function JobDrawer({
                         </span>
                       </div>
                     )}
+                    {progress &&
+                      (progress.active_workers != null ||
+                        progress.throughput_per_hour != null ||
+                        progress.estimated_finish_at) && (
+                        <div className="job-progress-metrics">
+                          {progress.active_workers != null && (
+                            <span>
+                              {progress.active_workers} active{" "}
+                              {progress.active_workers === 1 ? "worker" : "workers"}
+                              {progress.expected_workers != null
+                                ? ` / ${progress.expected_workers} expected`
+                                : ""}
+                            </span>
+                          )}
+                          {progress.throughput_per_hour != null && (
+                            <span>
+                              {progress.throughput_per_hour.toFixed(2)}{" "}
+                              {progress.unit || "items"}/hour
+                            </span>
+                          )}
+                          {progress.estimated_finish_at && (
+                            <span>
+                              Estimated finish {formatDate(progress.estimated_finish_at)}
+                            </span>
+                          )}
+                        </div>
+                      )}
+                    {progress?.parallelism_warning && (
+                      <p className="job-progress-warning">
+                        {progress.parallelism_warning}
+                      </p>
+                    )}
                   </div>
                 )}
                 {job.research_verdict && (
@@ -347,8 +454,34 @@ function JobDrawer({
                 {(job.blocked_reason || job.error) && (
                   <p className="job-error">{job.blocked_reason || job.error}</p>
                 )}
+                <details className="job-technical">
+                  <summary>Immutable identifiers</summary>
+                  <dl>
+                    <div>
+                      <dt>Job</dt>
+                      <dd><code>{job.job_id}</code></dd>
+                    </div>
+                    {job.attempt_id && (
+                      <div>
+                        <dt>Attempt</dt>
+                        <dd><code>{job.attempt_id}</code></dd>
+                      </div>
+                    )}
+                  </dl>
+                </details>
                 <div className="job-meta">
                   <span>Updated {formatDate(job.updated_at)}</span>
+                  {job.campaign_id && (
+                    <Link
+                      className="inline-link"
+                      to={`/research/${job.campaign_id}/${
+                        canCancel ? "testing" : "history"
+                      }`}
+                      onClick={onClose}
+                    >
+                      Open campaign
+                    </Link>
+                  )}
                   {canCancel && (
                     <Button
                       variant="ghost"
@@ -376,4 +509,9 @@ export function formatJobDuration(value?: number | null): string {
   const seconds = totalSeconds % 60;
   if (hours > 0) return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
   return `${minutes}:${String(seconds).padStart(2, "0")}`;
+}
+
+export function formatJobPercent(value: number): string {
+  const bounded = Math.max(0, Math.min(100, value));
+  return `${bounded.toFixed(1)}%`;
 }

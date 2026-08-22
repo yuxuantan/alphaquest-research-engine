@@ -14,6 +14,7 @@ export function SettingsPage() {
   const [form, setForm] = useState<StudioSettings>({});
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [aiStatus, setAiStatus] = useState<{
@@ -45,6 +46,7 @@ export function SettingsPage() {
     try {
       const result = await api.saveSettings(form);
       setForm("settings" in result ? result.settings : result);
+      setDirty(false);
       setMessage("Local settings saved.");
     } catch (reason) {
       setError(
@@ -101,7 +103,7 @@ export function SettingsPage() {
       />
       {error && <Notice tone="danger">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
-      <form onSubmit={submit}>
+      <form onSubmit={submit} onChangeCapture={() => setDirty(true)}>
         <Card className="form-section">
           <div className="form-section-heading">
             <span>01</span>
@@ -134,7 +136,10 @@ export function SettingsPage() {
             </div>
           </div>
           <div className="form-grid two">
-            <Field label="Commission per contract">
+            <Field
+              label="Commission (USD per contract, per side)"
+              hint="One-way commission. A round trip applies this value twice."
+            >
               <input
                 type="number"
                 min="0"
@@ -148,7 +153,10 @@ export function SettingsPage() {
                 }
               />
             </Field>
-            <Field label="Slippage ticks">
+            <Field
+              label="Slippage (ticks per fill)"
+              hint="Applied independently to entry and exit fills."
+            >
               <input
                 type="number"
                 min="0"
@@ -162,7 +170,7 @@ export function SettingsPage() {
                 }
               />
             </Field>
-            <Field label="Initial balance">
+            <Field label="Initial account balance (USD)">
               <input
                 type="number"
                 min="1"
@@ -176,7 +184,10 @@ export function SettingsPage() {
                 }
               />
             </Field>
-            <Field label="Forced-flatten time">
+            <Field
+              label="Forced-flatten time"
+              hint="Exchange/session time in America/New_York."
+            >
               <input
                 type="time"
                 step="1"
@@ -191,6 +202,18 @@ export function SettingsPage() {
             </Field>
           </div>
         </Card>
+        <details className="settings-advanced">
+          <summary>
+            <span>
+              <strong>Advanced: optional AI drafting</strong>
+              <small>
+                Credentials, model pinning, and retention declarations
+              </small>
+            </span>
+            <StatusBadge
+              value={aiStatus.configured ? "Configured" : "Optional"}
+            />
+          </summary>
         <Card className="form-section">
           <div className="form-section-heading">
             <span>03</span>
@@ -313,8 +336,12 @@ export function SettingsPage() {
             </div>
           </label>
         </Card>
+        </details>
         <div className="form-footer">
-          <Button type="submit" disabled={busy || loading}>
+          <span className={dirty ? "settings-dirty" : "settings-saved"}>
+            {dirty ? "Unsaved settings changes" : "All settings changes saved"}
+          </span>
+          <Button type="submit" disabled={busy || loading || !dirty}>
             {busy ? "Saving…" : "Save local settings"}
           </Button>
         </div>

@@ -1,0 +1,100 @@
+{
+  "generated_at_utc": "2026-07-23T06:17:55.664505+00:00",
+  "historical_inference": {
+    "directly_validated_period": "2025-07-14 through 2026-06-10",
+    "interpretation": "A full-session overlap PASS validates the modern Sierra extraction and reconstruction semantics. It does not prove older source bytes; older sessions must also pass intrinsic structure, side, marker, timestamp-order, and continuity gates.",
+    "older_sierra_period": "2011 through the day before the Databento overlap",
+    "status": "EXTRAPOLATED_NOT_CROSS_VENDOR_VALIDATED"
+  },
+  "normalization": {
+    "deterministic_derivation_rule": "Exact normalized ordered payloads imply equivalence for deterministic non-boundary-sensitive features computed from price, size, aggressor side, and source order. Time-window features must also respect Sierra's 1 ms timestamp uncertainty and are checked explicitly where supported.",
+    "large_trade_thresholds": [
+      200
+    ],
+    "large_trade_windows_ms": [
+      100
+    ],
+    "minute_features": [
+      "OHLC",
+      "volume",
+      "buy_volume",
+      "sell_volume",
+      "signed_volume",
+      "event_count",
+      "large10 volume/delta",
+      "large20 volume/delta"
+    ],
+    "ordered_payload": "exact (price_ticks, size, aggressor_side) after Sierra FIRST/LAST reconstruction",
+    "profile_bar_seconds": [
+      60,
+      180,
+      300
+    ],
+    "profile_bucket_ticks": [
+      1,
+      4
+    ],
+    "timestamp_tolerance_ns": 1000000
+  },
+  "outcome": {
+    "segment_status_counts": {
+      "('ETH', 'DATABENTO_EQUIVALENT_WITH_REFERENCE_GAPS')": 231,
+      "('ETH', 'NOT_EVENT_EQUIVALENT')": 3,
+      "('RTH', 'DATABENTO_EQUIVALENT_WITH_REFERENCE_GAPS')": 1,
+      "('RTH', 'DATABENTO_EVENT_EQUIVALENT')": 217,
+      "('RTH', 'NOT_EVENT_EQUIVALENT')": 16
+    },
+    "session_segments_market_ohlc_compared": 468,
+    "session_segments_market_ohlc_exact": 468,
+    "session_segments_market_volume_exact": 466,
+    "session_status_counts": {
+      "DATABENTO_EQUIVALENT_WITH_REFERENCE_GAPS": 215,
+      "ERROR": 1,
+      "NOT_EVENT_EQUIVALENT": 19
+    },
+    "sessions_error": 1,
+    "sessions_event_equivalent": 0,
+    "sessions_not_equivalent": 19,
+    "sessions_reference_gap_only": 215
+  },
+  "runtime": {
+    "elapsed_seconds": 6.736939916852862,
+    "processing_mode": "retry_errors",
+    "seconds_per_session": 0.028667829433416434
+  },
+  "schema": "alphaquest.sierra-databento-full-session-audit/v1",
+  "scope": {
+    "complete_requested_overlap": true,
+    "contract_policy": "Sierra/MotiveWave-Rithmic roll-calendar contract compared to the identical Databento contract",
+    "end_date": "2026-06-10",
+    "segments": {
+      "ETH": "prior calendar date 16:00 to session date 09:30 America/New_York",
+      "RTH": "session date 09:30 to 16:00 America/New_York"
+    },
+    "sessions_compared": 235,
+    "start_date": "2025-07-14"
+  },
+  "source": {
+    "databento_archive": "data/raw/ES/GLBX-20260713-S6XF67C8UA.zip",
+    "databento_archive_sha256": "144daa86f98f22dae2eada9f86b345bc7e4a92038c058c395630357585298fa1",
+    "databento_job_id": "GLBX-20260713-S6XF67C8UA",
+    "databento_query": {
+      "compression": "zstd",
+      "dataset": "GLBX.MDP3",
+      "encoding": "dbn",
+      "end": 1783900800000000000,
+      "limit": null,
+      "schema": "trades",
+      "start": 1752364800000000000,
+      "stype_in": "parent",
+      "stype_out": "instrument_id",
+      "symbols": [
+        "ES.FUT"
+      ]
+    },
+    "session_manifest": "data/reports/data_quality/ES/sierra_scid_event_usability_0930_1100_20101214_20260610_by_date.csv",
+    "session_manifest_sha256": "efa50594f0ae304b3e94aa557a7815b44624fa56e29f9703fdcf523f607f970f",
+    "sierra_dir": "data/raw/ES/sierra-es-trades"
+  },
+  "verdict": "NEEDS MANUAL REVIEW"
+}

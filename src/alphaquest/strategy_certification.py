@@ -21,6 +21,7 @@ import yaml
 
 
 CERTIFICATION_SCHEMA = "alphaquest.strategy-certification/v1"
+STRATEGY_PACKAGE_AVAILABILITY_SCHEMA = "alphaquest.strategy-package-availability/v1"
 REQUIRED_TEST_CATEGORIES = frozenset(
     {
         "session_logic",
@@ -35,6 +36,94 @@ REQUIRED_TEST_CATEGORIES = frozenset(
 
 class StrategyCertificationError(ValueError):
     """Raised when executable strategy code is not currently certified."""
+
+
+@dataclass(frozen=True)
+class StrategyPackageAvailabilityPolicy:
+    """Repository-owned active/retired strategy-package classification."""
+
+    policy_version: str
+    active_strategy_ids: frozenset[str]
+    retired_strategy_ids: frozenset[str]
+    historical_evidence_policy: str
+    path: Path
+
+
+def load_strategy_package_availability(
+    project_root: str | Path | None = None,
+) -> StrategyPackageAvailabilityPolicy:
+    """Load the execution/publication allowlist and fail closed on ambiguity."""
+
+    root = project_root_for_certifications(project_root)
+    path = root / "config" / "strategy_packages.yaml"
+    try:
+        document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise StrategyCertificationError(
+            f"strategy package availability policy is unavailable: {exc}"
+        ) from exc
+    if (
+        not isinstance(document, dict)
+        or document.get("schema") != STRATEGY_PACKAGE_AVAILABILITY_SCHEMA
+    ):
+        raise StrategyCertificationError(
+            f"unsupported strategy package availability policy in {path}"
+        )
+    active = document.get("active_strategy_ids")
+    retired = document.get("retired_strategy_ids")
+    if not isinstance(active, list) or not active:
+        raise StrategyCertificationError("active_strategy_ids must be a non-empty list")
+    if not isinstance(retired, dict):
+        raise StrategyCertificationError("retired_strategy_ids must be a mapping")
+    if not all(isinstance(item, str) and item.strip() for item in active):
+        raise StrategyCertificationError(
+            "active_strategy_ids must contain only non-empty strings"
+        )
+    if not all(isinstance(item, str) and item.strip() for item in retired):
+        raise StrategyCertificationError(
+            "retired_strategy_ids keys must be non-empty strings"
+        )
+    active_ids = frozenset(item.strip() for item in active)
+    retired_ids = frozenset(item.strip() for item in retired)
+    if len(active_ids) != len(active):
+        raise StrategyCertificationError("active_strategy_ids must be unique and non-empty")
+    overlap = sorted(active_ids & retired_ids)
+    if overlap:
+        raise StrategyCertificationError(
+            "strategy package IDs cannot be both active and retired: " + ", ".join(overlap)
+        )
+    for strategy_id, retirement in retired.items():
+        if not isinstance(retirement, dict):
+            raise StrategyCertificationError(
+                f"retirement record for {strategy_id!r} must be a mapping"
+            )
+        retired_at = retirement.get("retired_at")
+        reason = retirement.get("reason")
+        if not isinstance(retired_at, str) or not retired_at.strip():
+            raise StrategyCertificationError(
+                f"retirement record for {strategy_id!r} requires string retired_at"
+            )
+        if not isinstance(reason, str) or not reason.strip():
+            raise StrategyCertificationError(
+                f"retirement record for {strategy_id!r} requires string reason"
+            )
+    historical_policy = str(document.get("historical_evidence_policy") or "")
+    if historical_policy != "preserve_read_only":
+        raise StrategyCertificationError(
+            "historical_evidence_policy must be preserve_read_only"
+        )
+    policy_version = document.get("policy_version")
+    if not isinstance(policy_version, str) or not policy_version.strip():
+        raise StrategyCertificationError(
+            "strategy package policy_version must be a non-empty string"
+        )
+    return StrategyPackageAvailabilityPolicy(
+        policy_version=policy_version.strip(),
+        active_strategy_ids=active_ids,
+        retired_strategy_ids=retired_ids,
+        historical_evidence_policy=historical_policy,
+        path=path.resolve(),
+    )
 
 
 @dataclass(frozen=True)
@@ -272,7 +361,15 @@ def load_strategy_certifications(
     project_root: str | Path | None = None,
     *,
     require_current: bool = True,
+    include_retired: bool = False,
 ) -> dict[str, StrategyCertification]:
+    """Load strategy packages allowed by the repository-owned availability policy.
+
+    Retired manifests remain readable only when ``include_retired`` is
+    explicitly requested for historical inspection.  Execution, publication,
+    and authoring callers use the default active-only view.
+    """
+
     root = project_root_for_certifications(project_root)
     manifest_root = certification_manifest_root(root)
     result: dict[str, StrategyCertification] = {}
@@ -282,10 +379,30 @@ def load_strategy_certifications(
             raise StrategyCertificationError(
                 f"duplicate strategy certification for {certification.strategy_id!r}"
             )
-        if require_current:
-            require_current_certification(certification, root)
         result[certification.strategy_id] = certification
-    return result
+
+    policy = load_strategy_package_availability(root)
+    manifest_ids = set(result)
+    classified_ids = set(policy.active_strategy_ids) | set(policy.retired_strategy_ids)
+    missing_manifests = sorted(classified_ids - manifest_ids)
+    if missing_manifests:
+        raise StrategyCertificationError(
+            "strategy package availability policy references missing manifest(s): "
+            + ", ".join(missing_manifests)
+        )
+    unclassified_manifests = sorted(manifest_ids - classified_ids)
+    if unclassified_manifests:
+        raise StrategyCertificationError(
+            "strategy certification manifest(s) are not classified as active or retired: "
+            + ", ".join(unclassified_manifests)
+        )
+
+    selected_ids = manifest_ids if include_retired else set(policy.active_strategy_ids)
+    selected = {strategy_id: result[strategy_id] for strategy_id in sorted(selected_ids)}
+    if require_current:
+        for certification in selected.values():
+            require_current_certification(certification, root)
+    return selected
 
 
 def get_strategy_certification(
@@ -293,12 +410,26 @@ def get_strategy_certification(
     project_root: str | Path | None = None,
     *,
     require_current: bool = True,
+    include_retired: bool = False,
 ) -> StrategyCertification:
-    certifications = load_strategy_certifications(project_root, require_current=require_current)
+    root = project_root_for_certifications(project_root)
+    policy = load_strategy_package_availability(root)
+    if strategy_id in policy.retired_strategy_ids and not include_retired:
+        raise StrategyCertificationError(
+            f"strategy {strategy_id!r} is retired and available only for historical inspection"
+        )
+    certifications = load_strategy_certifications(
+        root,
+        require_current=False,
+        include_retired=True,
+    )
     try:
-        return certifications[strategy_id]
+        certification = certifications[strategy_id]
     except KeyError as exc:
         raise StrategyCertificationError(f"strategy {strategy_id!r} has no certification manifest") from exc
+    if require_current:
+        require_current_certification(certification, root)
+    return certification
 
 
 def require_current_certification(
@@ -523,13 +654,16 @@ def _load_manifest(path: Path) -> StrategyCertification:
 __all__ = [
     "CERTIFICATION_SCHEMA",
     "REQUIRED_TEST_CATEGORIES",
+    "STRATEGY_PACKAGE_AVAILABILITY_SCHEMA",
     "StrategyCertification",
     "CertifiedStrategyParameter",
     "StrategyCertificationError",
+    "StrategyPackageAvailabilityPolicy",
     "audit_strategy_certification",
     "certify_strategy",
     "compute_implementation_sha256",
     "get_strategy_certification",
+    "load_strategy_package_availability",
     "load_strategy_certifications",
     "normalize_certified_event_params",
     "resolve_factory",

@@ -1,0 +1,232 @@
+{
+  "$defs": {
+    "MonitoringDailyObservationV1": {
+      "additionalProperties": false,
+      "properties": {
+        "contract_sides": {
+          "minimum": 1,
+          "title": "Contract Sides",
+          "type": "integer"
+        },
+        "net_pnl": {
+          "title": "Net Pnl",
+          "type": "number"
+        },
+        "session_date": {
+          "format": "date",
+          "title": "Session Date",
+          "type": "string"
+        },
+        "slippage_cost": {
+          "minimum": 0.0,
+          "title": "Slippage Cost",
+          "type": "number"
+        },
+        "trades": {
+          "minimum": 1,
+          "title": "Trades",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "session_date",
+        "net_pnl",
+        "trades",
+        "slippage_cost",
+        "contract_sides"
+      ],
+      "title": "MonitoringDailyObservationV1",
+      "type": "object"
+    },
+    "MonitoringMetricsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "average_slippage_per_contract_side": {
+          "minimum": 0.0,
+          "title": "Average Slippage Per Contract Side",
+          "type": "number"
+        },
+        "cumulative_net_pnl": {
+          "title": "Cumulative Net Pnl",
+          "type": "number"
+        },
+        "current_losing_session_streak": {
+          "minimum": 0,
+          "title": "Current Losing Session Streak",
+          "type": "integer"
+        },
+        "maximum_drawdown": {
+          "minimum": 0.0,
+          "title": "Maximum Drawdown",
+          "type": "number"
+        },
+        "observed_sessions": {
+          "minimum": 1,
+          "title": "Observed Sessions",
+          "type": "integer"
+        },
+        "observed_trades": {
+          "minimum": 1,
+          "title": "Observed Trades",
+          "type": "integer"
+        },
+        "rolling_net_pnl": {
+          "title": "Rolling Net Pnl",
+          "type": "number"
+        },
+        "rolling_trade_count": {
+          "minimum": 1,
+          "title": "Rolling Trade Count",
+          "type": "integer"
+        },
+        "rolling_window_complete": {
+          "title": "Rolling Window Complete",
+          "type": "boolean"
+        },
+        "worst_daily_pnl": {
+          "title": "Worst Daily Pnl",
+          "type": "number"
+        }
+      },
+      "required": [
+        "cumulative_net_pnl",
+        "rolling_net_pnl",
+        "rolling_trade_count",
+        "rolling_window_complete",
+        "maximum_drawdown",
+        "worst_daily_pnl",
+        "current_losing_session_streak",
+        "average_slippage_per_contract_side",
+        "observed_sessions",
+        "observed_trades"
+      ],
+      "title": "MonitoringMetricsV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "One source-bound, append-only monitoring observation.",
+  "properties": {
+    "automatic_retirement_permitted": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Automatic Retirement Permitted",
+      "type": "boolean"
+    },
+    "daily_observations": {
+      "items": {
+        "$ref": "#/$defs/MonitoringDailyObservationV1"
+      },
+      "minItems": 1,
+      "title": "Daily Observations",
+      "type": "array"
+    },
+    "deployment_decision_sha256": {
+      "title": "Deployment Decision Sha256",
+      "type": "string"
+    },
+    "event_sha256": {
+      "title": "Event Sha256",
+      "type": "string"
+    },
+    "metrics": {
+      "$ref": "#/$defs/MonitoringMetricsV1"
+    },
+    "notes": {
+      "title": "Notes",
+      "type": "string"
+    },
+    "order_submission_permitted": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Order Submission Permitted",
+      "type": "boolean"
+    },
+    "period_end": {
+      "format": "date",
+      "title": "Period End",
+      "type": "string"
+    },
+    "period_start": {
+      "format": "date",
+      "title": "Period Start",
+      "type": "string"
+    },
+    "previous_event_sha256": {
+      "title": "Previous Event Sha256",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "recorded_by": {
+      "title": "Recorded By",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.deployment-monitoring-event/v1",
+      "default": "alphaquest.deployment-monitoring-event/v1",
+      "enum": [
+        "alphaquest.deployment-monitoring-event/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "sequence": {
+      "minimum": 1,
+      "title": "Sequence",
+      "type": "integer"
+    },
+    "source_trade_log_path": {
+      "title": "Source Trade Log Path",
+      "type": "string"
+    },
+    "source_trade_log_sha256": {
+      "title": "Source Trade Log Sha256",
+      "type": "string"
+    },
+    "status": {
+      "enum": [
+        "HEALTHY",
+        "ALERT",
+        "RETIREMENT_REVIEW"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "triggered_alerts": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Triggered Alerts",
+      "type": "array"
+    }
+  },
+  "required": [
+    "sequence",
+    "recorded_at",
+    "period_start",
+    "period_end",
+    "recorded_by",
+    "notes",
+    "deployment_decision_sha256",
+    "previous_event_sha256",
+    "event_sha256",
+    "source_trade_log_path",
+    "source_trade_log_sha256",
+    "daily_observations",
+    "metrics",
+    "triggered_alerts",
+    "status"
+  ],
+  "title": "DeploymentMonitoringEventV1",
+  "type": "object"
+}

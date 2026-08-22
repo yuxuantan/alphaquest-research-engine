@@ -1,0 +1,51 @@
+{
+  "attempt_id": "methodology_rerun_20260724t235402_2dcd5ba7",
+  "attempt_kind": "methodology_rerun",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "data_subset",
+      "new": {
+        "end_date": "2026-05-29",
+        "start_date": "2026-05-15"
+      },
+      "old": {
+        "end_date": "2011-08-26",
+        "start_date": "2011-08-12"
+      },
+      "reviewed": true,
+      "scope": "research_metadata.validation_gate",
+      "variant_id": "v01"
+    }
+  ],
+  "config_sha256": {
+    "v01": "0033cb19350919012a9b5307c235fe7bb701ed846fd6304382cd56bde5204e4d"
+  },
+  "created_at": "2026-07-24T23:54:02.971496+00:00",
+  "created_by": "Tan Yu Xuan",
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02",
+  "dataset_manifest_sha256": "6541a29ffd5abcf43bf21cccc1b5deaa587b2bcfb885a794541dca6732b267ff",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/methodology_rerun_20260724t235402_2dcd5ba7",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260724t232708_05b143f0",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Understood. For yush_orderflow_range, use 2026-05-15 through 2026-05-29 for every mechanics-validation run. This is the latest complete permitted 14-day window in the Sierra dataset.\nBecause the v10 certification refresh must use parent data_refresh_20260724t050654_92ca2135, which still contains a 2011 validation window:\nCreate the v10 certification-refresh attempt.\nDo not run mechanics validation on that intermediate attempt.\nCreate a Methodology rerun from the new v10 attempt.\nSet:Start: 2026-05-15\nEnd: 2026-05-29\n\nRun mechanics validation and approve that methodology-rerun attempt.\nThis preserves immutable lineage while ensuring no future mechanics review uses the old 2011 dates. Full-suite performance windows remain unchanged.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v01": "2cc8f8bcd811c749c674a44c3606de57099b3f10209390dad2a4b9a7a53b528f"
+  },
+  "target_variant_id": null,
+  "variant_mechanic_signatures": {
+    "v01": "40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1"
+  },
+  "variant_order": [
+    "v01"
+  ]
+}

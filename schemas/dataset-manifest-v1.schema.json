@@ -74,6 +74,13 @@
           "title": "Ineligible Session Policy",
           "type": "string"
         },
+        "max_timestamp_inversion_rate": {
+          "default": 0.0,
+          "maximum": 0.002,
+          "minimum": 0.0,
+          "title": "Max Timestamp Inversion Rate",
+          "type": "number"
+        },
         "overnight_start": {
           "const": "16:00:00",
           "default": "16:00:00",
@@ -153,7 +160,8 @@
             {
               "enum": [
                 "full_strategy_events",
-                "full_strategy_events_extrapolated"
+                "full_strategy_events_extrapolated",
+                "full_rth_strategy_events_extrapolated"
               ],
               "type": "string"
             },
@@ -238,6 +246,15 @@
             "sierra_scid_records"
           ],
           "title": "Source",
+          "type": "string"
+        },
+        "timestamp_inversion_policy": {
+          "default": "reject",
+          "enum": [
+            "reject",
+            "preserve_source_order_clamp"
+          ],
+          "title": "Timestamp Inversion Policy",
           "type": "string"
         }
       },

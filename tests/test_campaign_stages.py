@@ -110,13 +110,12 @@ def test_limited_monkey_separates_random_placebo_from_trade_path_stress():
     assert criteria_metrics == {
         "summary.core_beats_monkey_net_profit_rate",
         "summary.core_beats_monkey_max_drawdown_rate",
-        "summary.core_metrics.apex_rule_violations",
     }
     assert "summary.trade_path_stress.percentage_profitable" not in criteria_metrics
     assert all(item["passed"] for item in evaluate_criteria(payload, criteria))
 
 
-def test_default_stage_criteria_fail_apex_rule_violations():
+def test_default_stage_criteria_leave_apex_rules_to_destination_profiles():
     criteria = campaign_stages._criteria_for_stage("simulated_incubation_core", {})
     results = evaluate_criteria(
         {
@@ -132,9 +131,7 @@ def test_default_stage_criteria_fail_apex_rule_violations():
         criteria,
     )
 
-    apex = [item for item in results if item["metric"] == "metrics.apex_rule_violations"]
-    assert apex
-    assert apex[0]["passed"] is False
+    assert all(item["metric"] != "metrics.apex_rule_violations" for item in results)
 
 
 def test_length_adjusted_mar_requirement_anchors_and_clamps():
@@ -144,6 +141,50 @@ def test_length_adjusted_mar_requirement_anchors_and_clamps():
     assert round(campaign_stages.length_adjusted_mar_requirement(10.0), 2) == 0.66
     assert campaign_stages.length_adjusted_mar_requirement(15.0) == 0.5
     assert campaign_stages.length_adjusted_mar_requirement(20.0) == 0.5
+
+
+def test_wfa_evaluation_period_uses_union_of_realized_oos_windows():
+    results = pd.DataFrame(
+        [
+            {
+                "test_start": "2025-01-01",
+                "test_end": "2025-02-01",
+                "oos_evaluated": True,
+            },
+            {
+                "test_start": "2025-03-01",
+                "test_end": "2025-04-01",
+                "oos_evaluated": True,
+            },
+            {
+                "test_start": "2025-04-01",
+                "test_end": "2025-10-01",
+                "oos_evaluated": False,
+            },
+        ]
+    )
+    market = pd.DataFrame(
+        {"session_date": pd.date_range("2025-01-01", "2025-04-01", freq="B").date}
+    )
+
+    period = campaign_stages._wfa_oos_evaluation_period(results, market)
+
+    assert period is not None
+    assert period.start_date.isoformat() == "2025-01-01"
+    assert period.end_date.isoformat() == "2025-03-31"
+    assert period.calendar_days == 62
+    assert period.interval_count == 2
+    assert period.eligible_session_count == 44
+
+
+def test_campaign_stage_work_progress_uses_only_monotonic_authoritative_counters():
+    assert campaign_stages._stage_work_percent("limited_core_grid_test", "limited core preparation", 100) == 5
+    assert campaign_stages._stage_work_percent("limited_core_grid_test", "fixed-default replay", 50) == 10
+    assert campaign_stages._stage_work_percent("limited_core_grid_test", "event replay sessions", 100) == 15
+    assert campaign_stages._stage_work_percent("limited_core_grid_test", "core grid", 50) == 57.5
+    assert campaign_stages._stage_work_percent("walk_forward_analysis", "walk-forward windows", 40) == 40
+    assert campaign_stages._stage_work_percent("walk_forward_analysis", "walk-forward 2/8 train grid", 100) is None
+    assert campaign_stages._stage_work_percent("wfa_oos_monte_carlo", "monte carlo runs", 25) == 25
 
 
 def test_prepare_stage_data_reuses_cache_when_validation_is_skipped(tmp_path, monkeypatch):
@@ -172,6 +213,48 @@ def test_prepare_stage_data_reuses_cache_when_validation_is_skipped(tmp_path, mo
     assert second[2]["prepared_data_cache"]["hit"] is True
 
 
+def test_prepare_stage_data_does_not_materialize_canonical_event_history(tmp_path, monkeypatch):
+    calls = []
+    market = pd.DataFrame({"timestamp": pd.to_datetime(["2024-01-02"], utc=True)})
+
+    def fake_prepare_data(
+        data_config,
+        output_dir,
+        subset,
+        timeframe=None,
+        include_execution_data=False,
+        show_progress=False,
+    ):
+        calls.append(include_execution_data)
+        return market, {"rows": 1}
+
+    monkeypatch.setattr(campaign_stages, "prepare_data", fake_prepare_data)
+    monkeypatch.setattr(campaign_stages, "data_source_hash", lambda data_config, subset: "hash-1")
+    cfg = {
+        "engine_lane": "canonical_event_replay",
+        "timeframe": "3m",
+        "data": {
+            "source": "parquet",
+            "raw_parquet": "bars.parquet",
+            "execution_data": {"source": "sierra_scid_records"},
+        },
+    }
+    subset = {"start_date": "2024-01-01", "end_date": "2024-01-31"}
+
+    prepared_market, detail, quality, input_hash = campaign_stages._prepare_stage_data(
+        cfg,
+        subset,
+        tmp_path / "stage",
+        True,
+    )
+
+    assert calls == [False]
+    assert prepared_market is market
+    assert detail is None
+    assert quality["rows"] == 1
+    assert input_hash == "hash-1"
+
+
 def test_limited_core_summary_records_resolved_data_period(tmp_path, monkeypatch):
     base_subset = {"start_date": "2011-01-03", "end_date": "2026-06-09", "session_labels": ["RTH"]}
     expected_resolved_subset = {"start_date": "2011-02-22", "end_date": "2012-09-06", "session_labels": ["RTH"]}
@@ -198,7 +281,15 @@ def test_limited_core_summary_records_resolved_data_period(tmp_path, monkeypatch
             {"total_combinations_tested": 1, "data_subset": dict(grid_cfg.get("data_subset") or {})},
         )
 
-    def fake_write_fixed_config_core_artifacts(cfg, market_data, detail_data, stage_dir, subset, quality_report):
+    def fake_write_fixed_config_core_artifacts(
+        cfg,
+        market_data,
+        detail_data,
+        stage_dir,
+        subset,
+        quality_report,
+        **_kwargs,
+    ):
         seen["fixed_config_core_subset"] = subset
         return {
             "purpose": "fixed_config_mechanics_cross_check",
@@ -453,6 +544,50 @@ def test_fast_runtime_defaults_enable_parallel_sections_without_mutating_input()
     }
 
 
+def test_authoritative_parallel_defaults_are_result_invariant_runtime_settings():
+    cfg = {
+        "strategy": {"event": {"module": "demo", "params": {"threshold": 3}}},
+        "core_grid": {"parameters": {"event.params.threshold": [2, 3]}},
+        "monkey": {"seed": 7},
+        "wfa": {"parameters": {"event.params.threshold": [2, 3]}},
+        "monte_carlo": {"seed": 11},
+        "campaign_tests": {
+            "limited_core_grid_test": {},
+            "limited_monkey_test": {},
+            "walk_forward_analysis": {},
+            "wfa_oos_monkey_test": {},
+            "wfa_oos_monte_carlo": {},
+            "simulated_incubation_core": {"train_selection": {}},
+            "simulated_incubation_monkey": {},
+            campaign_stages.ACCEPTANCE_STAGE: {},
+        },
+    }
+
+    out = campaign_stages.apply_authoritative_parallel_defaults(
+        cfg,
+        workers=3,
+        core_grid_workers=6,
+    )
+
+    assert "parallel" not in cfg["core_grid"]
+    assert out["strategy"] == cfg["strategy"]
+    assert out["core_grid"]["parameters"] == cfg["core_grid"]["parameters"]
+    assert out["core_grid"]["parallel"] == {
+        "enabled": True,
+        "workers": 6,
+        "scope": "grid",
+    }
+    assert out["campaign_tests"]["limited_core_grid_test"]["parallel"]["workers"] == 6
+    assert out["campaign_tests"]["walk_forward_analysis"]["parallel"]["workers"] == 3
+    assert out["wfa"]["parallel"] == {
+        "enabled": True,
+        "workers": 3,
+        "scope": "window_grid",
+    }
+    assert out["monkey"]["seed"] == 7
+    assert out["monte_carlo"]["seed"] == 11
+
+
 def test_canonicalized_campaign_forces_monkey_runs_to_8000():
     cfg = campaign_stages.canonicalize_campaign_config(
         {
@@ -533,10 +668,12 @@ def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, m
 
     monkeypatch.setattr(campaign_stages, "_run_stage", fake_run_stage)
 
+    progress_updates = []
     summary = campaign_stages.run_campaign_stage_tests(
         config_path,
         include_acceptance=False,
         skip_validation=True,
+        progress_callback=progress_updates.append,
     )
 
     run_dir = tmp_path / "research/evidence/runs/demo_campaign/demo_variant/ES/run2"
@@ -559,6 +696,12 @@ def test_staged_campaign_writes_directly_to_campaign_test_run_folder(tmp_path, m
     assert summary["variant_metadata"]["mechanic"]["entry_module"] == "demo_entry"
     assert (tmp_path / "research/evidence/runs/demo_campaign/demo_variant/variant.yaml").is_file()
     assert (tmp_path / "research/evidence/runs/demo_campaign/variants_index.yaml").is_file()
+    assert progress_updates[0]["phase"] == campaign_stages.PRE_ACCEPTANCE_STAGE_ORDER[0]
+    assert progress_updates[0]["percent"] == 0.0
+    assert progress_updates[0]["stage_index"] == 1
+    assert progress_updates[-1]["phase"] == campaign_stages.PRE_ACCEPTANCE_STAGE_ORDER[-1]
+    assert progress_updates[-1]["percent"] == 100.0
+    assert progress_updates[-1]["stage_total"] == len(campaign_stages.PRE_ACCEPTANCE_STAGE_ORDER)
     effective_config = (run_dir / "effective_config.yaml").read_text(encoding="utf-8")
     source_config = (run_dir / "source_config.yaml").read_text(encoding="utf-8")
     assert "stage_order:" in effective_config
@@ -1070,8 +1213,9 @@ def test_wfa_monte_carlo_probability_remains_exclusive():
 
     mc_criteria = campaign_stages._criteria_for_stage("wfa_oos_monte_carlo", {})
     mc_results = evaluate_criteria({"summary": {"mean_net_pnl": 0.0}}, mc_criteria)
-    assert mc_results[0]["passed"] is False
-    assert mc_results[0]["expected"] == {"exclusive_min": 0.0}
+    mean_pnl = next(item for item in mc_results if item["metric"] == "summary.mean_net_pnl")
+    assert mean_pnl["passed"] is False
+    assert mean_pnl["expected"] == {"exclusive_min": 0.0}
 
 
 def test_wfa_oos_monte_carlo_defaults_to_50k_prop_challenge_lifecycle(tmp_path, monkeypatch):
@@ -1658,7 +1802,43 @@ def test_configured_stale_criteria_are_ignored_for_canonical_stage():
         {"criteria": [{"metric": "stitched_oos_metrics.profit_factor", "min": 1.4}]},
     )
 
-    assert {"metric": "stitched_oos_metrics.profit_factor", "min": 1.2} in criteria
+    assert {
+        "metric": "stitched_oos_metrics.profit_factor",
+        "min": 1.2,
+        "decision_role": "generic_objective",
+    } in criteria
+
+
+def test_stage_decisions_keep_generic_failure_separate_from_validity():
+    result = campaign_stages._annotate_stage_decisions(
+        {
+            "stage": "walk_forward_analysis",
+            "status": "failed",
+            "criteria": [
+                {"metric": "summary.realized_oos_windows", "passed": True, "decision_role": "scientific_validity"},
+                {"metric": "stitched_oos_metrics.mar", "passed": False, "decision_role": "generic_objective"},
+            ],
+        }
+    )
+
+    assert result["scientific_validity_verdict"] == "PASS"
+    assert result["generic_objective_verdict"] == "FAIL"
+
+
+def test_stage_decisions_fail_closed_on_validity_failure():
+    result = campaign_stages._annotate_stage_decisions(
+        {
+            "stage": "walk_forward_analysis",
+            "status": "failed",
+            "criteria": [
+                {"metric": "summary.realized_oos_windows", "passed": False, "decision_role": "scientific_validity"},
+                {"metric": "stitched_oos_metrics.mar", "passed": True, "decision_role": "generic_objective"},
+            ],
+        }
+    )
+
+    assert result["scientific_validity_verdict"] == "FAIL"
+    assert result["generic_objective_verdict"] == "PASS"
 
 
 def test_incubation_core_stage_uses_four_year_train_latest_one_year_oos(tmp_path, monkeypatch):

@@ -1,0 +1,485 @@
+{
+  "$defs": {
+    "PairwisePortfolioMetricV1": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_a": {
+          "title": "Candidate A",
+          "type": "string"
+        },
+        "candidate_b": {
+          "title": "Candidate B",
+          "type": "string"
+        },
+        "common_sessions": {
+          "minimum": 1,
+          "title": "Common Sessions",
+          "type": "integer"
+        },
+        "overlapping_loss_days": {
+          "minimum": 0,
+          "title": "Overlapping Loss Days",
+          "type": "integer"
+        },
+        "overlapping_loss_fraction": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Overlapping Loss Fraction",
+          "type": "number"
+        },
+        "overlapping_loss_jaccard": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Overlapping Loss Jaccard",
+          "type": "number"
+        },
+        "pnl_correlation": {
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "title": "Pnl Correlation",
+          "type": "number"
+        },
+        "return_correlation": {
+          "maximum": 1.0,
+          "minimum": -1.0,
+          "title": "Return Correlation",
+          "type": "number"
+        }
+      },
+      "required": [
+        "candidate_a",
+        "candidate_b",
+        "common_sessions",
+        "pnl_correlation",
+        "return_correlation",
+        "overlapping_loss_days",
+        "overlapping_loss_fraction",
+        "overlapping_loss_jaccard"
+      ],
+      "title": "PairwisePortfolioMetricV1",
+      "type": "object"
+    },
+    "PortfolioAnalysisV1": {
+      "additionalProperties": false,
+      "properties": {
+        "combined_common_period_net_pnl": {
+          "title": "Combined Common Period Net Pnl",
+          "type": "number"
+        },
+        "combined_equal_weight_max_drawdown_return": {
+          "minimum": 0.0,
+          "title": "Combined Equal Weight Max Drawdown Return",
+          "type": "number"
+        },
+        "combined_max_drawdown": {
+          "minimum": 0.0,
+          "title": "Combined Max Drawdown",
+          "type": "number"
+        },
+        "common_coverage_end": {
+          "format": "date",
+          "title": "Common Coverage End",
+          "type": "string"
+        },
+        "common_coverage_start": {
+          "format": "date",
+          "title": "Common Coverage Start",
+          "type": "string"
+        },
+        "common_session_count": {
+          "minimum": 2,
+          "title": "Common Session Count",
+          "type": "integer"
+        },
+        "common_sessions_with_any_trade": {
+          "minimum": 1,
+          "title": "Common Sessions With Any Trade",
+          "type": "integer"
+        },
+        "common_sessions_with_no_trades": {
+          "minimum": 0,
+          "title": "Common Sessions With No Trades",
+          "type": "integer"
+        },
+        "contributions": {
+          "items": {
+            "$ref": "#/$defs/PortfolioContributionV1"
+          },
+          "title": "Contributions",
+          "type": "array"
+        },
+        "gross_pnl_activity_hhi": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Gross Pnl Activity Hhi",
+          "type": "number"
+        },
+        "largest_gross_pnl_activity_share": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Largest Gross Pnl Activity Share",
+          "type": "number"
+        },
+        "maximum_pairwise_absolute_pnl_correlation": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Maximum Pairwise Absolute Pnl Correlation",
+          "type": "number"
+        },
+        "methodology": {
+          "const": "intersection_of_hash_bound_acceptance_session_calendars_zero_filled_equal_weight_v1",
+          "default": "intersection_of_hash_bound_acceptance_session_calendars_zero_filled_equal_weight_v1",
+          "enum": [
+            "intersection_of_hash_bound_acceptance_session_calendars_zero_filled_equal_weight_v1"
+          ],
+          "title": "Methodology",
+          "type": "string"
+        },
+        "minimum_common_sessions": {
+          "minimum": 2,
+          "title": "Minimum Common Sessions",
+          "type": "integer"
+        },
+        "pairwise": {
+          "items": {
+            "$ref": "#/$defs/PairwisePortfolioMetricV1"
+          },
+          "title": "Pairwise",
+          "type": "array"
+        },
+        "zero_filled_candidate_sessions": {
+          "minimum": 0,
+          "title": "Zero Filled Candidate Sessions",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "minimum_common_sessions",
+        "common_coverage_start",
+        "common_coverage_end",
+        "common_session_count",
+        "common_sessions_with_any_trade",
+        "common_sessions_with_no_trades",
+        "zero_filled_candidate_sessions",
+        "pairwise",
+        "contributions",
+        "combined_common_period_net_pnl",
+        "combined_max_drawdown",
+        "combined_equal_weight_max_drawdown_return",
+        "maximum_pairwise_absolute_pnl_correlation",
+        "largest_gross_pnl_activity_share",
+        "gross_pnl_activity_hhi"
+      ],
+      "title": "PortfolioAnalysisV1",
+      "type": "object"
+    },
+    "PortfolioCandidateBindingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_session_calendar_path": {
+          "title": "Acceptance Session Calendar Path",
+          "type": "string"
+        },
+        "acceptance_session_calendar_sha256": {
+          "title": "Acceptance Session Calendar Sha256",
+          "type": "string"
+        },
+        "acceptance_summary_path": {
+          "title": "Acceptance Summary Path",
+          "type": "string"
+        },
+        "acceptance_summary_sha256": {
+          "title": "Acceptance Summary Sha256",
+          "type": "string"
+        },
+        "acceptance_trade_log_path": {
+          "title": "Acceptance Trade Log Path",
+          "type": "string"
+        },
+        "acceptance_trade_log_sha256": {
+          "title": "Acceptance Trade Log Sha256",
+          "type": "string"
+        },
+        "acceptance_trades": {
+          "minimum": 1,
+          "title": "Acceptance Trades",
+          "type": "integer"
+        },
+        "account_assessment_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account Assessment Id"
+        },
+        "account_profile_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account Profile Id"
+        },
+        "account_profile_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account Profile Version"
+        },
+        "campaign_id": {
+          "title": "Campaign Id",
+          "type": "string"
+        },
+        "candidate_key": {
+          "title": "Candidate Key",
+          "type": "string"
+        },
+        "candidate_review_path": {
+          "title": "Candidate Review Path",
+          "type": "string"
+        },
+        "candidate_review_sha256": {
+          "title": "Candidate Review Sha256",
+          "type": "string"
+        },
+        "config_path": {
+          "title": "Config Path",
+          "type": "string"
+        },
+        "config_sha256": {
+          "title": "Config Sha256",
+          "type": "string"
+        },
+        "coverage_end": {
+          "format": "date",
+          "title": "Coverage End",
+          "type": "string"
+        },
+        "coverage_start": {
+          "format": "date",
+          "title": "Coverage Start",
+          "type": "string"
+        },
+        "eligibility_basis": {
+          "default": "generic_scientific_pass",
+          "enum": [
+            "generic_scientific_pass",
+            "destination_specific_pass"
+          ],
+          "title": "Eligibility Basis",
+          "type": "string"
+        },
+        "evaluation_sessions": {
+          "minimum": 2,
+          "title": "Evaluation Sessions",
+          "type": "integer"
+        },
+        "finalization_manifest_path": {
+          "title": "Finalization Manifest Path",
+          "type": "string"
+        },
+        "finalization_manifest_sha256": {
+          "title": "Finalization Manifest Sha256",
+          "type": "string"
+        },
+        "initial_balance": {
+          "exclusiveMinimum": 0.0,
+          "title": "Initial Balance",
+          "type": "number"
+        },
+        "instrument": {
+          "title": "Instrument",
+          "type": "string"
+        },
+        "no_trade_sessions": {
+          "minimum": 0,
+          "title": "No Trade Sessions",
+          "type": "integer"
+        },
+        "observed_trade_sessions": {
+          "minimum": 1,
+          "title": "Observed Trade Sessions",
+          "type": "integer"
+        },
+        "result_bundle_path": {
+          "title": "Result Bundle Path",
+          "type": "string"
+        },
+        "result_bundle_sha256": {
+          "title": "Result Bundle Sha256",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "variant_id": {
+          "title": "Variant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate_key",
+        "campaign_id",
+        "variant_id",
+        "run_id",
+        "instrument",
+        "initial_balance",
+        "result_bundle_path",
+        "result_bundle_sha256",
+        "finalization_manifest_path",
+        "finalization_manifest_sha256",
+        "candidate_review_path",
+        "candidate_review_sha256",
+        "config_path",
+        "config_sha256",
+        "acceptance_trade_log_path",
+        "acceptance_trade_log_sha256",
+        "acceptance_summary_path",
+        "acceptance_summary_sha256",
+        "acceptance_session_calendar_path",
+        "acceptance_session_calendar_sha256",
+        "coverage_start",
+        "coverage_end",
+        "evaluation_sessions",
+        "observed_trade_sessions",
+        "no_trade_sessions",
+        "acceptance_trades"
+      ],
+      "title": "PortfolioCandidateBindingV1",
+      "type": "object"
+    },
+    "PortfolioContributionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "candidate_key": {
+          "title": "Candidate Key",
+          "type": "string"
+        },
+        "common_period_max_drawdown": {
+          "minimum": 0.0,
+          "title": "Common Period Max Drawdown",
+          "type": "number"
+        },
+        "common_period_net_pnl": {
+          "title": "Common Period Net Pnl",
+          "type": "number"
+        },
+        "gross_pnl_activity_share": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Gross Pnl Activity Share",
+          "type": "number"
+        },
+        "marginal_combined_max_drawdown": {
+          "title": "Marginal Combined Max Drawdown",
+          "type": "number"
+        },
+        "observed_trade_sessions": {
+          "minimum": 1,
+          "title": "Observed Trade Sessions",
+          "type": "integer"
+        },
+        "zero_filled_sessions": {
+          "minimum": 0,
+          "title": "Zero Filled Sessions",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "candidate_key",
+        "common_period_net_pnl",
+        "common_period_max_drawdown",
+        "gross_pnl_activity_share",
+        "marginal_combined_max_drawdown",
+        "observed_trade_sessions",
+        "zero_filled_sessions"
+      ],
+      "title": "PortfolioContributionV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Immutable, verdict-neutral review of two or more candidates.",
+  "properties": {
+    "analysis": {
+      "$ref": "#/$defs/PortfolioAnalysisV1"
+    },
+    "automatic_deployment_permitted": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Automatic Deployment Permitted",
+      "type": "boolean"
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/PortfolioCandidateBindingV1"
+      },
+      "minItems": 2,
+      "title": "Candidates",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "review_id": {
+      "title": "Review Id",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.portfolio-review/v1",
+      "default": "alphaquest.portfolio-review/v1",
+      "enum": [
+        "alphaquest.portfolio-review/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "scientific_disposition": {
+      "const": "NEEDS MANUAL REVIEW",
+      "default": "NEEDS MANUAL REVIEW",
+      "enum": [
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Scientific Disposition",
+      "type": "string"
+    },
+    "status": {
+      "const": "READY_FOR_HUMAN_REVIEW",
+      "default": "READY_FOR_HUMAN_REVIEW",
+      "enum": [
+        "READY_FOR_HUMAN_REVIEW"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "review_id",
+    "generated_at",
+    "candidates",
+    "analysis"
+  ],
+  "title": "PortfolioReviewV1",
+  "type": "object"
+}

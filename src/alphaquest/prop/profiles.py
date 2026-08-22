@@ -18,12 +18,14 @@ _ALIASES = {
 _CATALOG: dict[str, dict[str, Any]] = {
     DEFAULT_PROP_PROFILE: {
         "profile_id": DEFAULT_PROP_PROFILE,
-        "name": "AlphaQuest local evaluation v1",
+        "name": "Synthetic local evaluation (legacy)",
         "description": (
-            "Vendor-neutral local research simulation with a 6% challenge target, "
-            "4% trailing drawdown and fully declared payout lifecycle rules."
+            "Vendor-neutral compatibility simulation. It is not an Apex or other firm account "
+            "and cannot support a deployment decision; select a governed target account profile."
         ),
         "novice_visible": True,
+        "synthetic": True,
+        "promotable": False,
         "account_lifecycle_enabled": True,
         "challenge_fee": 98.0,
         "challenge_profit_target_fraction": 0.06,
@@ -56,6 +58,8 @@ def list_prop_profiles(*, novice_only: bool = True) -> list[dict[str, Any]]:
                 "challenge_consistency_limit_pct": 100 * profile["challenge_consistency_limit"],
                 "minimum_trading_days": profile["min_trading_days"],
                 "account_lifecycle_enabled": profile["account_lifecycle_enabled"],
+                "synthetic": bool(profile.get("synthetic", False)),
+                "promotable": bool(profile.get("promotable", False)),
             }
         )
     return rows

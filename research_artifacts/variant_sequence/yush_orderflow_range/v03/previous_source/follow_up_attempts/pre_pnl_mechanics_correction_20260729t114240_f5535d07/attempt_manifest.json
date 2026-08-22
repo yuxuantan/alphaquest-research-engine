@@ -1,0 +1,163 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260729t114240_f5535d07",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "806aaadd800dc6c743834c3e3dfa7ff19ff6647e5f46d3d4daddb8a9f77253cf",
+        "implementation_version": 10,
+        "manifest_sha256": "3ba4ccaf8c7f619e654b2422cd8047c3e26541b6d72bbb5349d3c65bb3c8752c",
+        "strategy_id": "yush_adaptive_orderflow_range"
+      },
+      "old": {
+        "implementation_sha256": "98850062a81c2634601c41e58261ac06d9047726b91c29f43f2c99bafc98f578",
+        "implementation_version": 9,
+        "manifest_sha256": "cdc23f0acbc9c1cc7f613ba3d99e1ddc3c57f04ada14f53d24de678c4f9b0073",
+        "strategy_id": "yush_adaptive_orderflow_range"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v02"
+    },
+    {
+      "change_kind": "certified_execution_default",
+      "field": "latest_entry_time",
+      "new": "15:30:00",
+      "old": "11:30:00",
+      "reviewed": true,
+      "scope": "core",
+      "variant_id": "v02"
+    },
+    {
+      "change_kind": "certified_execution_default",
+      "field": "latest_entry_time",
+      "new": "15:30:00",
+      "old": "11:30:00",
+      "reviewed": true,
+      "scope": "apex_rules",
+      "variant_id": "v02"
+    },
+    {
+      "field": "minimum_trade_samples",
+      "new": 5,
+      "old": null,
+      "reviewed": true,
+      "scope": "research_metadata.validation_gate",
+      "variant_id": "v02"
+    },
+    {
+      "field": "migrated_fixed_certified_defaults",
+      "new": {
+        "failure_confirmation_bars": 3,
+        "sweep_maximum_ticks": 40
+      },
+      "old": {
+        "failure_confirmation_bars": 2,
+        "sweep_maximum_ticks": 12
+      },
+      "reviewed": true,
+      "scope": "strategy.event.params",
+      "variant_id": "v02"
+    },
+    {
+      "field": "sweep_maximum_ticks",
+      "new": 40,
+      "old": 12,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v02"
+    },
+    {
+      "field": "sweep_maximum_atr_multiple",
+      "new": 1.25,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v02"
+    },
+    {
+      "field": "failure_confirmation_bars",
+      "new": 3,
+      "old": 2,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v02"
+    },
+    {
+      "field": "morning_entry_start",
+      "new": "09:33:00",
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v02"
+    },
+    {
+      "field": "morning_entry_end",
+      "new": "11:30:00",
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v02"
+    },
+    {
+      "field": "afternoon_entry_start",
+      "new": "13:30:00",
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v02"
+    },
+    {
+      "field": "afternoon_entry_end",
+      "new": "15:30:00",
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v02"
+    }
+  ],
+  "config_sha256": {
+    "v01": "f6a9f3095e3273f51756110f902eb0ccc838f8a90603b77aa959ef0a0c5f4dd5",
+    "v02": "baac9b1916a596dc51820914a838bcef92f44737fcdaf08ae37d357091775eb1"
+  },
+  "created_at": "2026-07-29T11:42:41.908228+00:00",
+  "created_by": "Codex on user instruction",
+  "dataset_bindings": {
+    "v01": {
+      "dataset_id": "es_databento_trade_events_20250714_20260610_0930_1100_ny",
+      "dataset_manifest_sha256": "1597cc593bc872576070dc1ccbcfc16aaaca01eee078db35d28cf36411b0393c"
+    },
+    "v02": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260729t114240_f5535d07",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260729t112337_b53ec762",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Replace v02 before any performance testing because the prior mechanics produced zero completed trades in the ten-session causal replay. Frequency of at least five trades is a predeclared mechanics-validation requirement needed to inspect entry and exit behavior; the correction uses no PnL, profitability metric, or holdout result.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v01": "83a4fa23066785688b5e246fb2972a775761a51eca621907f72dae7325e4895f",
+    "v02": "9c9893c6f859bbbc61e46397b5a9ef15407c04971b26861705889e85a10e8497"
+  },
+  "target_variant_id": "v02",
+  "variant_mechanic_signatures": {
+    "v01": "40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1",
+    "v02": "9ddb0706f57b5dc03fcd0a35abc1ca270cec84e3fdbd48e0e575081e6536fc47"
+  },
+  "variant_order": [
+    "v01",
+    "v02"
+  ]
+}

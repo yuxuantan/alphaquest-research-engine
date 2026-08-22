@@ -3,12 +3,101 @@
   "$id": "https://alphaquest.local/schemas/research-settings.schema.json",
   "title": "AlphaQuest Research Settings",
   "type": "object",
+  "required": [
+    "methodology_policy",
+    "research_policy",
+    "execution_defaults",
+    "prop_flatten_rules",
+    "random_seeds",
+    "methodology_caps",
+    "stage_defaults",
+    "stage_gates"
+  ],
   "properties": {
-    "version": {"type": ["string", "number"]},
-    "stage_order": {"type": "array", "items": {"type": "string"}},
-    "stage_criteria": {"type": "object"},
-    "shortlist_data_window": {"type": "object"},
-    "wfa_data_window": {"type": "object"}
+    "methodology_policy": {
+      "type": "object",
+      "required": ["version", "description"]
+    },
+    "research_policy": {"type": "object"},
+    "execution_defaults": {"type": "object"},
+    "prop_flatten_rules": {"type": "object"},
+    "random_seeds": {"type": "object"},
+    "methodology_caps": {"type": "object"},
+    "stage_defaults": {
+      "type": "object",
+      "required": [
+        "acceptance_stage",
+        "pre_acceptance_stage_order",
+        "monkey_runs",
+        "mechanics_validation",
+        "research_objective_floors",
+        "shortlist_data_window",
+        "wfa_data_window",
+        "core_grid",
+        "monkey",
+        "walk_forward_analysis",
+        "wfa_oos_monte_carlo",
+        "simulated_incubation",
+        "acceptance_oos"
+      ],
+      "properties": {
+        "mechanics_validation": {
+          "type": "object",
+          "required": [
+            "selection_mode",
+            "session_count",
+            "parameter_mode",
+            "manual_review_random_sample_size",
+            "manual_review_seed",
+            "minimum_trade_samples"
+          ],
+          "properties": {
+            "selection_mode": {"const": "latest_eligible_sessions"},
+            "session_count": {"const": 10},
+            "parameter_mode": {"const": "declared_defaults"},
+            "manual_review_random_sample_size": {"const": 5},
+            "manual_review_seed": {"type": "integer"},
+            "minimum_trade_samples": {"type": "integer", "minimum": 5}
+          },
+          "additionalProperties": false
+        },
+        "research_objective_floors": {
+          "type": "object",
+          "required": [
+            "minimum_evaluation_horizon_months",
+            "minimum_complete_wfa_windows",
+            "minimum_wfa_oos_trades",
+            "minimum_acceptance_oos_trades",
+            "minimum_mar",
+            "maximum_drawdown_fraction",
+            "minimum_monte_carlo_runs",
+            "minimum_monte_carlo_horizon_months",
+            "minimum_net_profit_probability",
+            "maximum_account_breach_probability",
+            "minimum_forward_incubation_calendar_days",
+            "minimum_forward_incubation_trades",
+            "maximum_variants"
+          ],
+          "properties": {
+            "minimum_evaluation_horizon_months": {"type": "integer", "minimum": 6},
+            "minimum_complete_wfa_windows": {"type": "integer", "minimum": 2},
+            "minimum_wfa_oos_trades": {"type": "integer", "minimum": 1},
+            "minimum_acceptance_oos_trades": {"type": "integer", "minimum": 1},
+            "minimum_mar": {"type": "number", "minimum": 0},
+            "maximum_drawdown_fraction": {"type": "number", "exclusiveMinimum": 0, "maximum": 1},
+            "minimum_monte_carlo_runs": {"type": "integer", "minimum": 1000},
+            "minimum_monte_carlo_horizon_months": {"type": "integer", "minimum": 1},
+            "minimum_net_profit_probability": {"type": "number", "minimum": 0, "maximum": 1},
+            "maximum_account_breach_probability": {"type": "number", "minimum": 0, "maximum": 1},
+            "minimum_forward_incubation_calendar_days": {"type": "integer", "minimum": 30},
+            "minimum_forward_incubation_trades": {"type": "integer", "minimum": 1},
+            "maximum_variants": {"type": "integer", "minimum": 1, "maximum": 5}
+          },
+          "additionalProperties": false
+        }
+      }
+    },
+    "stage_gates": {"type": "object"}
   },
-  "additionalProperties": true
+  "additionalProperties": false
 }

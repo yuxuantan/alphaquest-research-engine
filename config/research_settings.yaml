@@ -1,6 +1,6 @@
 methodology_policy:
-  version: "2026-07-23.1"
-  description: "Authoritative fail-closed research policy for staged futures backtests."
+  version: "2026-08-14.2"
+  description: "Fail-closed staged policy separating scientific validity from generic investment objectives and destination suitability."
 
 research_policy:
   data_scope: local_only
@@ -55,6 +55,27 @@ stage_defaults:
     - simulated_incubation_core
     - simulated_incubation_monkey
   monkey_runs: 8000
+  mechanics_validation:
+    selection_mode: latest_eligible_sessions
+    session_count: 10
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 7
+    minimum_trade_samples: 5
+  research_objective_floors:
+    minimum_evaluation_horizon_months: 12
+    minimum_complete_wfa_windows: 3
+    minimum_wfa_oos_trades: 50
+    minimum_acceptance_oos_trades: 30
+    minimum_mar: 0.40
+    maximum_drawdown_fraction: 0.20
+    minimum_monte_carlo_runs: 8000
+    minimum_monte_carlo_horizon_months: 6
+    minimum_net_profit_probability: 0.70
+    maximum_account_breach_probability: 0.10
+    minimum_forward_incubation_calendar_days: 90
+    minimum_forward_incubation_trades: 30
+    maximum_variants: 5
   shortlist_data_window:
     mode: random_fraction
     fraction: 0.10
@@ -65,6 +86,35 @@ stage_defaults:
         end_date: "2021-06-30"
   wfa_data_window:
     mode: before_sequential_holdouts
+  core_grid:
+    objective: MAR
+    retain_iteration_reports: false
+  monkey:
+    seed: 7
+    retain_iteration_reports: false
+    constraints:
+      trade_count_tolerance_pct: 0.05
+      long_short_ratio_tolerance: 0.05
+      average_bars_tolerance_pct: 0.10
+      duration_shape: 0.70
+      rth_only: true
+      enforce_non_overlapping: true
+  walk_forward_analysis:
+    mode: unanchored
+    train_months: 48
+    test_months: 12
+    step_months: 12
+    objective: MAR
+    selection_exclusive_min_trades_per_year: 50
+    early_exit_min_train_profit_factor: 1.0
+  wfa_oos_monte_carlo:
+    runs: 8000
+    seed: 11
+    path_months: 6
+    skip_trade_probability: 0.05
+    cluster_losses: true
+    retain_path_trades: false
+    retain_path_events: false
   simulated_incubation:
     train_months: 48
     test_months: 12
@@ -77,67 +127,93 @@ stage_gates:
     criteria:
       - metric: summary.total_combinations_tested
         valid_parameter_combination_count: true
+        decision_role: scientific_validity
       - metric: summary.percentage_profitable_iterations
         min: 0.70
-      - metric: summary.apex_rule_violating_iterations
-        max: 0
+        decision_role: scientific_validity
   limited_monkey_test:
     criteria:
       - metric: summary.core_beats_monkey_net_profit_rate
         min: 0.90
+        decision_role: scientific_validity
       - metric: summary.core_beats_monkey_max_drawdown_rate
         min: 0.90
-      - metric: summary.core_metrics.apex_rule_violations
-        max: 0
+        decision_role: scientific_validity
   walk_forward_analysis:
     criteria:
       - metric: summary.early_exit
         equals: false
+        decision_role: scientific_validity
+      - metric: summary.realized_oos_windows
+        min: 3
+        decision_role: scientific_validity
+      - metric: summary.realized_oos_trades
+        min: 50
+        decision_role: scientific_validity
+      - metric: stitched_oos_metrics.annualization_available
+        equals: true
+        decision_role: scientific_validity
       - metric: stitched_oos_metrics.profit_factor
         min: 1.20
+        decision_role: generic_objective
       - metric: stitched_oos_metrics.mar
         min: 0.40
+        decision_role: generic_objective
       - metric: stitched_oos_metrics.trades_per_year
         min: 50
-      - metric: stitched_oos_metrics.apex_rule_violations
-        max: 0
+        decision_role: generic_objective
   wfa_oos_monkey_test:
     criteria:
       - metric: summary.core_beats_monkey_net_profit_rate
         min: 0.80
+        decision_role: scientific_validity
       - metric: summary.core_beats_monkey_max_drawdown_rate
         min: 0.80
-      - metric: summary.core_metrics.apex_rule_violations
-        max: 0
+        decision_role: scientific_validity
   wfa_oos_monte_carlo:
     criteria:
+      - metric: summary.number_of_runs
+        min: 8000
+        decision_role: scientific_validity
       - metric: summary.mean_net_pnl
         exclusive_min: 0.0
+        decision_role: generic_objective
+      - metric: summary.probability_net_profit_gt_0
+        min: 0.70
+        decision_role: generic_objective
   simulated_incubation_core:
     criteria:
+      - metric: metrics.annualization_available
+        equals: true
+        decision_role: scientific_validity
       - metric: metrics.profit_factor
         min: 1.00
+        decision_role: generic_objective
       - metric: metrics.mar
         min: 1.00
+        decision_role: generic_objective
       - metric: metrics.trades_per_year
         min: 50
-      - metric: metrics.apex_rule_violations
-        max: 0
+        decision_role: generic_objective
   simulated_incubation_monkey:
     criteria:
       - metric: summary.core_beats_monkey_net_profit_rate
         min: 0.80
+        decision_role: scientific_validity
       - metric: summary.core_beats_monkey_max_drawdown_rate
         min: 0.80
-      - metric: summary.core_metrics.apex_rule_violations
-        max: 0
+        decision_role: scientific_validity
   acceptance_oos_test:
     criteria:
+      - metric: metrics.annualization_available
+        equals: true
+        decision_role: scientific_validity
       - metric: metrics.profit_factor
         min: 1.00
+        decision_role: generic_objective
       - metric: metrics.mar
         min: 1.00
+        decision_role: generic_objective
       - metric: metrics.trades_per_year
         min: 50
-      - metric: metrics.apex_rule_violations
-        max: 0
+        decision_role: generic_objective

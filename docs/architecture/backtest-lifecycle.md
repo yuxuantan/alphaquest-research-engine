@@ -7,10 +7,10 @@
 5. Export bar evidence for bar strategies or canonical event transitions for event-replay strategies.
 6. Resolve all automated validation errors and write a hash-bound manual `approved_for_testing` decision.
 7. Execute limited core grid tests, rejecting failures before later stages.
-8. Continue through monkey, WFA stitched OOS, Monte Carlo, and simulated incubation gates.
+8. Continue through monkey, complete non-overlapping WFA stitched OOS, session-block Monte Carlo, and secondary historical OOS holdout gates.
 9. Freeze mechanics and open the locked acceptance holdout only after every earlier gate passes.
 10. Update the ledger and emit `PASS`, `FAIL`, or `NEEDS MANUAL REVIEW`.
-11. Treat a pass only as a candidate pending independent review and paper/live incubation.
+11. Treat a pass only as a candidate pending independent review and chronological paper/live forward incubation.
 
 The runner halts before performance testing when an opted-in governance-v2 validation gate is missing, stale, rejected, hash-mismatched, or lane-incompatible. It also halts after a failed performance stage unless explicitly invoked in diagnostic mode. Later-stage folders from older runs are not evidence for a newer run.
 

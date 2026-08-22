@@ -1,7 +1,12 @@
 from alphaquest.backtest.engine import BacktestEngine
 from alphaquest.data.clean import clean_data
 from alphaquest.data.features import build_features
-from alphaquest.prop.rules import PropRules
+from alphaquest.prop.profiles import DEFAULT_PROP_PROFILE, resolve_prop_profile
+from alphaquest.prop.rules import (
+    CHALLENGE_PASS_RULE_FIELDS,
+    PROP_RULE_EXECUTION_COVERAGE,
+    PropRules,
+)
 from alphaquest.prop.simulator import simulate_prop_path, simulate_prop_path_with_events
 import alphaquest.research.monte_carlo as monte_carlo_module
 from alphaquest.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
@@ -151,6 +156,7 @@ def test_prop_lifecycle_challenge_requires_target_and_consistency():
             challenge_fee=98,
             challenge_profit_target_amount=3000,
             challenge_consistency_limit=0.50,
+            max_best_day_profit_percentage=0.50,
             trailing_drawdown_lock_balance=52100,
             trailing_drawdown_locked_floor=50100,
             daily_loss_limit=100000,
@@ -185,6 +191,7 @@ def test_prop_lifecycle_replacement_fee_after_breach_ignores_account_loss():
             challenge_fee=98,
             challenge_profit_target_amount=3000,
             challenge_consistency_limit=0.50,
+            max_best_day_profit_percentage=0.50,
             daily_loss_limit=100000,
         ),
     )
@@ -218,6 +225,7 @@ def test_prop_lifecycle_funded_payout_uses_profit_share_and_resets_profit_days()
             challenge_fee=98,
             challenge_profit_target_amount=3000,
             challenge_consistency_limit=0.50,
+            max_best_day_profit_percentage=0.50,
             funded_starting_balance=50000,
             funded_payout_min_profit_day=150,
             funded_payout_required_profit_days=5,
@@ -268,6 +276,222 @@ def test_prop_lifecycle_eod_trailing_drawdown_locks_at_configured_floor():
     assert breach_events[0]["balance"] == 50099.0
 
 
+def test_prop_lifecycle_groups_noncontiguous_source_day_into_one_eod_update():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 100.0},
+            {"trade_id": 2, "session_date": "2024-01-03", "contracts": 1, "net_pnl": 100.0},
+            {"trade_id": 3, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 100.0},
+        ]
+    )
+
+    _, events = simulate_prop_path_with_events(
+        trades,
+        PropRules(
+            account_lifecycle_enabled=True,
+            challenge_profit_target_amount=99999,
+            trailing_drawdown=100000,
+            daily_loss_limit=100000,
+        ),
+    )
+
+    eod_events = [row for row in events if str(row["event"]).startswith("eod_update")]
+    assert [row["source_session_date"] for row in eod_events] == ["2024-01-02", "2024-01-03"]
+    assert [row["simulated_session_index"] for row in eod_events] == [1, 2]
+    assert [row["daily_pnl"] for row in eod_events] == [200.0, 100.0]
+
+
+def test_prop_lifecycle_uses_monotonic_simulated_sessions_when_source_dates_reverse():
+    trades = pd.DataFrame(
+        [
+            {
+                "trade_id": 1,
+                "session_date": "2024-01-03",
+                "_simulated_session_index": 1,
+                "contracts": 1,
+                "net_pnl": 100.0,
+            },
+            {
+                "trade_id": 2,
+                "session_date": "2024-01-02",
+                "_simulated_session_index": 2,
+                "contracts": 1,
+                "net_pnl": 100.0,
+            },
+        ]
+    )
+
+    _, events = simulate_prop_path_with_events(
+        trades,
+        PropRules(
+            account_lifecycle_enabled=True,
+            challenge_profit_target_amount=99999,
+            trailing_drawdown=100000,
+            daily_loss_limit=100000,
+        ),
+    )
+
+    eod_events = [row for row in events if str(row["event"]).startswith("eod_update")]
+    assert [row["source_session_date"] for row in eod_events] == ["2024-01-03", "2024-01-02"]
+    assert [row["simulated_session_index"] for row in eod_events] == [1, 2]
+
+
+def test_prop_lifecycle_challenge_requires_minimum_trading_days():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 3000.0},
+            {"trade_id": 2, "session_date": "2024-01-03", "contracts": 1, "net_pnl": 0.0},
+        ]
+    )
+
+    result, events = simulate_prop_path_with_events(
+        trades,
+        PropRules(
+            account_lifecycle_enabled=True,
+            challenge_profit_target_amount=3000,
+            challenge_consistency_limit=1.0,
+            max_best_day_profit_percentage=1.0,
+            min_trading_days=2,
+            trailing_drawdown=100000,
+            daily_loss_limit=100000,
+        ),
+    )
+
+    trade_events = [row for row in events if str(row["event"]).startswith("trade")]
+    assert "challenge_passed" not in trade_events[0]["event"]
+    assert "challenge_passed" in trade_events[1]["event"]
+    assert trade_events[1]["challenge_trading_days"] == 2
+    assert result["challenge_passes"] == 1
+
+
+def test_prop_lifecycle_challenge_rejects_best_day_concentration_until_diluted():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 3000.0},
+            {"trade_id": 2, "session_date": "2024-01-03", "contracts": 1, "net_pnl": 1000.0},
+            {"trade_id": 3, "session_date": "2024-01-04", "contracts": 1, "net_pnl": 2000.0},
+        ]
+    )
+
+    result, events = simulate_prop_path_with_events(
+        trades,
+        PropRules(
+            account_lifecycle_enabled=True,
+            challenge_profit_target_amount=3000,
+            challenge_consistency_limit=1.0,
+            max_best_day_profit_percentage=0.60,
+            min_trading_days=1,
+            trailing_drawdown=100000,
+            daily_loss_limit=100000,
+        ),
+    )
+
+    trade_events = [row for row in events if str(row["event"]).startswith("trade")]
+    assert "challenge_passed" not in trade_events[0]["event"]
+    assert "challenge_passed" not in trade_events[1]["event"]
+    assert "challenge_passed" in trade_events[2]["event"]
+    assert trade_events[2]["challenge_best_day_profit_ratio"] == 0.5
+    assert result["challenge_passes"] == 1
+
+
+def test_prop_lifecycle_daily_loss_is_execution_failure_distinct_from_lifecycle_success():
+    result = simulate_prop_path(
+        pd.DataFrame([{"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": -1000.0}]),
+        PropRules(
+            account_lifecycle_enabled=True,
+            daily_loss_limit=1000,
+            trailing_drawdown=100000,
+            challenge_profit_target_amount=99999,
+        ),
+    )
+
+    assert result["accounts_breached"] == 1
+    assert result["breach_reason"] == "daily_loss_limit"
+    assert result["execution_rule_compliant"] is False
+    assert result["daily_loss_breach_count"] == 1
+    assert result["lifecycle_success"] is False
+
+
+def test_certified_prop_profile_has_explicit_execution_coverage_for_every_rule():
+    profile = resolve_prop_profile(
+        DEFAULT_PROP_PROFILE,
+        starting_balance=50000,
+        max_contracts=5,
+        force_flatten_time="15:55:00",
+    )
+    rules = PropRules.from_dict(profile)
+
+    assert set(PROP_RULE_EXECUTION_COVERAGE) == set(PropRules.__dataclass_fields__)
+    assert CHALLENGE_PASS_RULE_FIELDS == {
+        "challenge_profit_target_amount",
+        "challenge_consistency_limit",
+        "max_best_day_profit_percentage",
+        "min_trading_days",
+    }
+    assert CHALLENGE_PASS_RULE_FIELDS <= set(profile)
+    for field in PropRules.__dataclass_fields__:
+        assert getattr(rules, field) == profile[field]
+
+
+def test_monte_carlo_samples_coherent_session_blocks_and_preserves_trade_order():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 100.0},
+            {"trade_id": 3, "session_date": "2024-01-03", "contracts": 1, "net_pnl": -100.0},
+            {"trade_id": 2, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 50.0},
+            {"trade_id": 4, "session_date": "2024-01-03", "contracts": 1, "net_pnl": -50.0},
+        ]
+    )
+
+    path = monte_carlo_module._path_sample(
+        trades,
+        monte_carlo_module.random.Random(7),
+        {"cluster_losses": True},
+    )
+
+    blocks = path.groupby("_simulated_session_index", sort=True)["trade_id"].apply(list).tolist()
+    assert blocks == [[3, 4], [1, 2]]
+    assert path["_simulated_session_index"].is_monotonic_increasing
+    assert path.groupby("session_date")["_simulated_session_index"].nunique().max() == 1
+
+
+def test_monte_carlo_path_months_executes_as_a_session_horizon():
+    trades = pd.DataFrame(
+        [
+            {
+                "trade_id": month,
+                "session_date": f"2024-{month:02d}-02",
+                "contracts": 1,
+                "net_pnl": 10.0,
+            }
+            for month in range(1, 13)
+        ]
+    )
+
+    _, summary, path_trades, _ = run_monte_carlo_with_audit(
+        trades,
+        {"runs": 1, "seed": 1, "path_months": 6, "retain_path_trades": True},
+        PropRules(trailing_drawdown=100000, daily_loss_limit=100000),
+    )
+
+    assert len(path_trades) == 6
+    assert summary["sampling"]["source_calendar_months"] == 12
+    assert summary["sampling"]["target_session_count"] == 6
+    assert summary["sampling"]["path_months"] == 6
+
+
+def test_monte_carlo_path_months_rejects_horizon_larger_than_source():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "session_date": "2024-01-02", "contracts": 1, "net_pnl": 10.0},
+            {"trade_id": 2, "session_date": "2024-01-03", "contracts": 1, "net_pnl": 10.0},
+        ]
+    )
+
+    with pytest.raises(ValueError, match="exceeds the source trade-log horizon"):
+        run_monte_carlo(trades, {"runs": 1, "seed": 1, "path_months": 6}, PropRules())
+
+
 def test_monte_carlo_summary():
     trades = _trades()
     results, summary = run_monte_carlo(trades, {"runs": 5, "seed": 1}, PropRules())
@@ -279,6 +503,12 @@ def test_monte_carlo_summary():
         "skip_trade_probability": 0.0,
         "skip_winning_trade_probability": 0.0,
         "cluster_losses": False,
+        "sampling_unit": "session_block",
+        "source_session_count": 2,
+        "source_calendar_months": 2,
+        "path_months": None,
+        "target_session_count": 2,
+        "replacement": False,
     }
 
 
@@ -299,6 +529,8 @@ def test_lifecycle_monte_carlo_benchmark_uses_strict_positive_mean_net_pnl():
     assert summary["prop_pass_chance_benchmark_metric"] == "mean_net_pnl"
     assert summary["prop_pass_chance_benchmark_threshold"] == 0.0
     assert summary["meets_prop_pass_chance_benchmark"] is False
+    assert summary["probability_execution_rule_compliant"] == 1.0
+    assert summary["probability_lifecycle_success"] == 0.0
 
 
 def test_monte_carlo_audit_logs_path_trades_and_events():
@@ -633,10 +865,7 @@ def test_monte_carlo_loads_variant_wfa_oos_trade_source(tmp_path, monkeypatch):
         "timeframe": "5m",
         "data": {"symbol": "ES", "dataset_id": "1m_full_history"},
     }
-    trade_log = (
-        tmp_path
-        / "backtest-campaigns/sample_campaign/baseline/ES/run1/wfa/wfa_oos_trade_log.csv"
-    )
+    trade_log = tmp_path / "backtest-campaigns/sample_campaign/baseline/ES/run1/wfa/wfa_oos_trade_log.csv"
     trade_log.parent.mkdir(parents=True)
     pd.DataFrame(
         [
@@ -671,10 +900,7 @@ def test_monte_carlo_loads_variant_core_trade_source(tmp_path, monkeypatch):
         "timeframe": "5m",
         "data": {"symbol": "ES", "dataset_id": "1m_full_history"},
     }
-    trade_log = (
-        tmp_path
-        / "backtest-campaigns/sample_campaign/baseline/ES/run1/core/trade_log.csv"
-    )
+    trade_log = tmp_path / "backtest-campaigns/sample_campaign/baseline/ES/run1/core/trade_log.csv"
     trade_log.parent.mkdir(parents=True)
     pd.DataFrame(
         [

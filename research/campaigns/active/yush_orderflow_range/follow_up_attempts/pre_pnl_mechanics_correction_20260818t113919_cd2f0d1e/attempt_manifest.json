@@ -1,0 +1,90 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260818t113919_cd2f0d1e",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "d69404335352c63b1c56e5492ba043a2edf84eebf27a479bea4a974e6d66150e",
+        "implementation_version": 17,
+        "manifest_sha256": "b2483c7697f0bde6294a7d0d2389b8bd3585e3ed35cc6ddc22513dbbb05af558",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "6f3ced4878e521c8cb938c03c798a5c9712fb9d3a21e03980a40863b68367871",
+        "implementation_version": 16,
+        "manifest_sha256": "2bc867c8f04ce3765d9ab03d57c4b6dd57abcac91dac4bf348bea2d0560a3fbb",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "field": "migrated_fixed_certified_defaults",
+      "new": {
+        "target_1_fraction": 0.5
+      },
+      "old": {
+        "target_1_fraction": 1.0
+      },
+      "reviewed": true,
+      "scope": "strategy.event.params",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "aoi_ttl_minutes",
+      "new": null,
+      "old": 30,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "target_1_fraction",
+      "new": 0.5,
+      "old": 1.0,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "66359ac3f89c20f73389223030108ae379ab60c6012c918e46ceda9a997d8a11"
+  },
+  "created_at": "2026-08-18T11:39:19.788540+00:00",
+  "created_by": "Codex on user instruction",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260818t113919_cd2f0d1e",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260817t022938_ce574a29",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Publish certified v17 before any PnL-bearing test: replace the next-event stop-market with a resting edge-retest limit, cancel it when ordered price reaches the initial structural stop first, invalidate it when the developing value edge leaves the AOI, remove clock expiry, and freeze equal midpoint and opposite-edge scale-out targets at AOI creation. No observed PnL informed these corrections; fresh mechanics evidence and approval are required.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "64e3d375a928fce04cc729c88d2b20f86efbe9cf20170a93bd76e7e97457c732"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "cc8745aefd2f96853f34fc8577326cbb89683dda48cc5603a312308e0ab68b46"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

@@ -10,15 +10,47 @@ from tests.test_backtest_engine import BASE_CFG
 from tests.test_data_pipeline import DATA_CFG
 
 
+def _with_next_month_coverage_boundary(data: pd.DataFrame) -> pd.DataFrame:
+    """Append an excluded boundary row so a calendar OOS block is complete."""
+    boundary = data.iloc[[-1]].copy()
+    boundary["timestamp"] = pd.Timestamp(data["timestamp"].max()) + pd.DateOffset(months=1)
+    return pd.concat([data, boundary], ignore_index=True).sort_values("timestamp").reset_index(drop=True)
+
+
+def _oos_trade_frame(
+    window_id: int,
+    test_start: str,
+    test_end: str,
+    entry_timestamp: str,
+    *,
+    source_trade_id: int = 1,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        [
+            {
+                "wfa_window_id": window_id,
+                "wfa_test_start": test_start,
+                "wfa_test_end": test_end,
+                "source_trade_id": source_trade_id,
+                "session_date": entry_timestamp[:10],
+                "entry_timestamp": entry_timestamp,
+                "exit_timestamp": str(pd.Timestamp(entry_timestamp) + pd.Timedelta(minutes=5)),
+                "contracts": 1,
+                "net_pnl": 1.0,
+            }
+        ]
+    )
+
+
 def test_wfa_train_test_split():
     df, _, _ = clean_data(DATA_CFG)
-    data = build_features(df, DATA_CFG)
+    data = _with_next_month_coverage_boundary(build_features(df, DATA_CFG))
     windows = list(create_windows(data, 1, 1, 1))
     assert windows
 
 
 def test_wfa_unanchored_windows_move_training_by_test_period():
-    data = pd.DataFrame({"timestamp": pd.date_range("2007-01-01", "2013-12-01", freq="MS", tz="UTC")})
+    data = pd.DataFrame({"timestamp": pd.date_range("2007-01-01", "2014-01-01", freq="MS", tz="UTC")})
 
     windows = list(create_windows(data, train_months=48, test_months=12))
 
@@ -45,7 +77,7 @@ def test_wfa_unanchored_windows_move_training_by_test_period():
 
 
 def test_wfa_anchored_windows_expand_training_from_first_start():
-    data = pd.DataFrame({"timestamp": pd.date_range("2007-01-01", "2013-12-01", freq="MS", tz="UTC")})
+    data = pd.DataFrame({"timestamp": pd.date_range("2007-01-01", "2014-01-01", freq="MS", tz="UTC")})
 
     windows = list(create_windows(data, train_months=48, test_months=12, mode="anchored"))
 
@@ -78,9 +110,75 @@ def test_wfa_rejects_unknown_window_mode():
         list(create_windows(data, train_months=1, test_months=1, mode="rolling"))
 
 
+def test_wfa_emits_only_complete_oos_windows_and_drops_partial_final_block():
+    data = pd.DataFrame(
+        {
+            "timestamp": pd.to_datetime(
+                ["2022-01-01", "2022-02-01", "2022-03-01", "2022-03-15"],
+                utc=True,
+            )
+        }
+    )
+
+    windows = list(create_windows(data, train_months=1, test_months=1, step_months=1))
+
+    assert windows == [
+        (
+            pd.Timestamp("2022-01-01"),
+            pd.Timestamp("2022-02-01"),
+            pd.Timestamp("2022-02-01"),
+            pd.Timestamp("2022-03-01"),
+        )
+    ]
+
+
+def test_wfa_rejects_overlapping_oos_window_configuration():
+    data = pd.DataFrame(
+        {"timestamp": pd.date_range("2022-01-01", "2022-12-01", freq="MS", tz="UTC")}
+    )
+
+    with pytest.raises(ValueError, match="do not overlap"):
+        list(create_windows(data, train_months=2, test_months=2, step_months=1))
+
+
+def test_wfa_stitch_rejects_duplicate_oos_intervals():
+    first = _oos_trade_frame(1, "2022-02-01", "2022-03-01", "2022-02-02T10:00:00Z")
+    duplicate_interval = _oos_trade_frame(
+        2,
+        "2022-02-01",
+        "2022-03-01",
+        "2022-02-03T10:00:00Z",
+        source_trade_id=2,
+    )
+
+    with pytest.raises(ValueError, match="duplicate OOS interval"):
+        wfa_module._stitch_oos_trades([first, duplicate_interval])
+
+
+def test_wfa_stitch_rejects_overlapping_oos_intervals():
+    first = _oos_trade_frame(1, "2022-02-01", "2022-03-01", "2022-02-02T10:00:00Z")
+    overlapping = _oos_trade_frame(
+        2,
+        "2022-02-15",
+        "2022-03-15",
+        "2022-03-02T10:00:00Z",
+    )
+
+    with pytest.raises(ValueError, match="overlapping OOS intervals"):
+        wfa_module._stitch_oos_trades([first, overlapping])
+
+
+def test_wfa_stitch_rejects_duplicate_source_trades_within_window():
+    trade = _oos_trade_frame(1, "2022-02-01", "2022-03-01", "2022-02-02T10:00:00Z")
+    duplicate = pd.concat([trade, trade], ignore_index=True)
+
+    with pytest.raises(ValueError, match="duplicate source trade IDs"):
+        wfa_module._stitch_oos_trades([duplicate])
+
+
 def test_wfa_runs():
     df, _, _ = clean_data(DATA_CFG)
-    data = build_features(df, DATA_CFG)
+    data = _with_next_month_coverage_boundary(build_features(df, DATA_CFG))
     wfa_cfg = {
         "train_months": 1,
         "test_months": 1,
@@ -102,7 +200,7 @@ def test_wfa_runs():
 
 def test_wfa_runs_fixed_config_when_parameter_grid_is_empty():
     df, _, _ = clean_data(DATA_CFG)
-    data = build_features(df, DATA_CFG)
+    data = _with_next_month_coverage_boundary(build_features(df, DATA_CFG))
 
     results, summary = run_wfa(
         data,
@@ -174,7 +272,7 @@ def test_wfa_uses_own_parameter_space(monkeypatch):
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
+                ["2022-01-15", "2022-02-15", "2022-03-15", "2022-04-15"], utc=True
             )
         }
     )
@@ -264,7 +362,7 @@ def test_wfa_can_return_stitched_oos_trade_log(monkeypatch):
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
+                ["2022-01-15", "2022-02-15", "2022-03-15", "2022-04-15"], utc=True
             )
         }
     )
@@ -284,6 +382,17 @@ def test_wfa_can_return_stitched_oos_trade_log(monkeypatch):
 
     assert len(results) == 2
     assert summary["stitched_oos_trades"] == 2
+    assert summary["complete_oos_windows_only"] is True
+    assert summary["planned_complete_oos_windows"] == 2
+    assert summary["realized_oos_windows"] == 2
+    assert summary["realized_oos_observations"] == 2
+    assert summary["realized_oos_trades"] == 2
+    assert summary["realized_oos_start"] == "2022-02-15"
+    assert summary["realized_oos_end"] == "2022-04-15"
+    assert [item["window_id"] for item in summary["realized_oos_intervals"]] == [1, 2]
+    assert results["oos_window_complete"].all()
+    assert results["oos_evaluated"].all()
+    assert list(results["test_observations"]) == [1, 1]
     assert list(trades["trade_id"]) == [1, 2]
     assert list(trades["source_trade_id"]) == [1, 1]
     assert list(trades["wfa_window_id"]) == [1, 2]
@@ -351,7 +460,7 @@ def test_wfa_can_persist_window_train_grids(monkeypatch, tmp_path):
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                ["2022-01-15", "2022-02-15"], utc=True
+                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
             )
         }
     )
@@ -451,7 +560,7 @@ def test_wfa_can_reuse_existing_window_train_grid(monkeypatch, tmp_path):
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                ["2022-01-15", "2022-02-15"], utc=True
+                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
             )
         }
     )
@@ -495,7 +604,9 @@ def test_wfa_rejects_stale_reusable_train_grid(monkeypatch, tmp_path):
     existing.to_csv(tmp_path / "window_001_train_grid.csv", index=False)
     monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
 
-    data = pd.DataFrame({"timestamp": pd.to_datetime(["2022-01-15", "2022-02-15"], utc=True)})
+    data = pd.DataFrame(
+        {"timestamp": pd.to_datetime(["2022-01-15", "2022-02-15", "2022-03-15"], utc=True)}
+    )
     with pytest.raises(ValueError, match="missing metadata column wfa_window_id"):
         run_wfa(
             data,
@@ -571,7 +682,9 @@ def test_wfa_window_grid_parallel_uses_pooled_worker_path(monkeypatch):
     monkeypatch.setattr(wfa_module, "_evaluate_core_grid_combo", fake_evaluate)
     monkeypatch.setattr("alphaquest.research.wfa.run_core_grid", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError()))
     monkeypatch.setattr("alphaquest.research.wfa.BacktestEngine", FakeBacktestEngine)
-    data = pd.DataFrame({"timestamp": pd.to_datetime(["2022-01-15", "2022-02-15"], utc=True)})
+    data = pd.DataFrame(
+        {"timestamp": pd.to_datetime(["2022-01-15", "2022-02-15", "2022-03-15"], utc=True)}
+    )
 
     results, summary = run_wfa(
         data,
@@ -629,7 +742,7 @@ def test_wfa_early_exits_when_selected_train_row_is_not_profitable(monkeypatch):
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                ["2022-01-15", "2022-02-15"], utc=True
+                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
             )
         }
     )
@@ -681,7 +794,7 @@ def test_wfa_progress_updates_at_start_and_after_each_window(monkeypatch):
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
+                ["2022-01-15", "2022-02-15", "2022-03-15", "2022-04-15"], utc=True
             )
         }
     )
@@ -756,7 +869,7 @@ def test_wfa_logs_current_window_details(monkeypatch, capsys):
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                ["2022-01-15", "2022-02-15"], utc=True
+                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
             )
         }
     )
@@ -850,7 +963,7 @@ def test_wfa_mar_objective_selects_highest_in_sample_mar(monkeypatch):
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                ["2022-01-15", "2022-02-15"], utc=True
+                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
             )
         }
     )
@@ -944,7 +1057,7 @@ def test_wfa_early_exits_when_selection_filter_removes_all_rows(monkeypatch):
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                ["2022-01-15", "2022-02-15"], utc=True
+                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
             )
         }
     )
@@ -998,7 +1111,7 @@ def test_wfa_can_early_exit_on_low_selected_train_profit_factor(monkeypatch):
     data = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
-                ["2022-01-15", "2022-02-15"], utc=True
+                ["2022-01-15", "2022-02-15", "2022-03-15"], utc=True
             )
         }
     )

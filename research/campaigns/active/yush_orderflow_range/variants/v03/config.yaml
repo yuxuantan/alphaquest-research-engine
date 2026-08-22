@@ -1,0 +1,400 @@
+campaign_id: yush_orderflow_range
+variant_id: v03
+attempt_id: original
+attempt_kind: original
+attempt_provenance: authored
+strategy_name: yush_adaptive_orderflow_range_v3
+symbol: ES
+dataset_id: es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02
+timeframe: 3m
+research_metadata:
+  authoring_contract: alphaquest.campaign-draft/v1
+  mechanic_signature: 0ef08b6edfed91fed6a9d345fc80aa12db8f1a44ef8ec31c849c8207a6dd7806
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  mechanics_review:
+    mechanic_expresses_edge: Retain the same failed-auction return-to-fair-value edge while allowing independent opportunities
+      through fresh footprint identities, explicit inside-to-outside crossings, and causal AOI expiry. Normalize sweep, reclaim,
+      structural stop, and trend distances by the ATR known at each completed bar.
+    entry_logic_rationale: A fresh qualifying footprint freezes a causal MotiveWave Standard value edge, POC, opposite edge,
+      profile epoch, and volatility scale. Price must cross from inside to the required adaptive distance outside, then a
+      completed three-minute bar must reclaim inside within three bars; entry occurs only at the next ordered trade event
+      and the signal expires after that single event.
+    stop_loss_rationale: The stop is frozen beyond the observed sweep extreme by the larger of one tick and one tenth ATR.
+      The setup is rejected when planned risk is below two ticks or above the selected causal ATR multiple, so risk adapts
+      across regimes without the contradictory fixed minimum and maximum stop band in v02.
+    target_exit_rationale: 'Two contracts express the fair-value path directly: half exits at the POC frozen when the sweep
+      began and half at the opposite frozen value edge. The generic event engine preserves pessimistic stop-first ordering,
+      a twelve-bar maximum hold, transaction costs, and the 15:55 New York forced flatten.'
+    profitability_rationale: Repeated rejection at a developing value boundary suggests passive liquidity is absorbing aggressive
+      flow; a fresh delta or large-trade event after the tap supplies causal confirmation for reversion. Retain the same failed-auction
+      return-to-fair-value edge while allowing independent opportunities through fresh footprint identities, explicit inside-to-outside
+      crossings, and causal AOI expiry. Normalize sweep, reclaim, structural stop, and trend distances by the ATR known at
+      each completed bar.
+    known_failure_modes: Fresh footprint re-arming can increase correlated signals during noisy rotational sessions even though
+      each identity permits only one fill. ATR normalization can lag abrupt volatility transitions and may reject valid reversals
+      or admit unusually wide structural risk immediately after a shock. The split POC and opposite-edge targets can still
+      fail when a reclaimed auction resumes its directional move before returning to fair value.
+    pre_test_decision: approve_for_testing
+  timeframe_rationale: One-minute source bars and canonical Sierra trades remain unmodified inputs, while completed three-minute
+    bars are the declared signal clock. Morning entries run 09:45-11:30; the profile resets at 13:30 before 13:45-15:30 afternoon
+    entries, preventing the morning auction from dominating later value.
+  validation_gate:
+    required: true
+    lane: event_replay
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 0
+    data_subset:
+      start_date: '2026-05-08'
+      end_date: '2026-05-22'
+    evidence_dir: research/evidence/runs/yush_orderflow_range/v03/ES/mechanics_validation/validation_runs/core
+    approval_path: research_artifacts/validation_approvals/yush_orderflow_range/v03/approval.json
+data:
+  dataset_id: es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/bars.parquet
+  symbol: ES
+  timezone: America/New_York
+  source_timezone: UTC
+  exchange_timezone: America/New_York
+  timestamp_semantics: bar_open
+  source_timestamp_semantics: bar_open
+  source_sha256: 9e47ffd5b5a98ef49339649620753376f0c5b0f2ed096a61816450f265e46e47
+  canonical_sha256: 9e47ffd5b5a98ef49339649620753376f0c5b0f2ed096a61816450f265e46e47
+  roll_policy: MotiveWave/Rithmic predeclared active-contract calendar; no back adjustment
+  continuous_contract: explicit_roll_calendar
+  contract_column: contract_symbol
+  contract_count: 60
+  certified_features: []
+  rth_start: 09:30:00
+  rth_end: '16:00:00'
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+  roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+  execution_data:
+    source: sierra_scid_records
+    raw_dir: /Users/yx/Desktop/alphaquest-research-engine/data/raw/ES/sierra-es-trades
+    raw_manifest: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/raw_manifest.json
+    raw_manifest_sha256: 35bc989f4ba151bf8578a9e9f5e13a30b2d5b115b1667ab140a0429f5a7f7747
+    session_levels: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/session_levels.parquet
+    session_levels_sha256: 3e4dce824457483b0c8a65e053aa2e711fb99b5602da0c5ced2c9c6a9fb445c1
+    quality_manifest: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/event_capabilities.csv
+    quality_manifest_sha256: ce31c4c9e48704723e242c8a014d023fed0374b88535c2481c2162e87da671ab
+    concordance_report: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/strategy_concordance.json
+    concordance_report_sha256: d3a9499c554f9ddd0a4b08cbdc10e22faa4c459c27293736465131e338a158e7
+    required_capability: full_rth_strategy_events_extrapolated
+    ineligible_session_policy: blackout
+    timestamp_inversion_policy: preserve_source_order_clamp
+    max_timestamp_inversion_rate: 0.002
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+    root_symbol: ES
+    aggregation_ms: 100
+    overnight_start: '16:00:00'
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    reset_previous_levels_on_roll: true
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  force_flatten_enabled: true
+  force_flatten_time: '15:55:00'
+  latest_flat_time: '15:55:00'
+  latest_entry_time: '15:30:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: yush_adaptive_orderflow_range_v3
+    params:
+      mechanics:
+        tick_size: 0.25
+        point_value: 50.0
+        commission_per_contract: 1.55
+        bar_seconds: 180
+        price_bin_ticks: 4
+        value_area_fraction: 0.7
+        value_area_method: motivewave_standard
+        opening_range_seconds: 30
+        aoi_level_distance_ticks: 4
+        aoi_big_trade_lookback_minutes: 30
+        big_trade_reference_percentile: 0.995
+        big_trade_lookback_sessions: 20
+        big_trade_interval_ms: 100
+        big_trade_price_bucket_ticks: 1
+        delta_profile_percentile: 0.9
+        regime_window_bars: 10
+        trend_midpoint_shift_ticks: 8
+        trend_poc_shift_ticks: 8
+        trend_overlap_maximum: 0.5
+        trend_efficiency_minimum: 0.55
+        sweep_minimum_ticks: 2
+        failure_confirmation_bars: 3
+        morning_entry_start: 09:45:00
+        morning_entry_end: '11:30:00'
+        afternoon_entry_start: '13:45:00'
+        afternoon_entry_end: '15:30:00'
+        entry_offset_ticks: 1
+        stop_offset_ticks: 1
+        minimum_stop_ticks: 2
+        maximum_stop_ticks: 60
+        maximum_stop_atr_multiple: 1.75
+        atr_lookback_bars: 14
+        target_1_fraction: 0.5
+        maximum_holding_bars: 12
+        entry_expiry_bars: 1
+        maximum_entries_per_aoi: 1
+        risk_budget_dollars: 1600.0
+        atr_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+        atr_context_sha256: 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+        big_trade_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q995_prior20_context.parquet
+        big_trade_context_sha256: 139f53eea8b3808390c891831c659ba8d9e5c659e8ae9b7ea17644d8fa481ca6
+        max_trades_per_day: 0
+        sweep_atr_fraction: 0.2
+        reclaim_atr_fraction: 0.05
+        stop_buffer_atr_fraction: 0.1
+        trend_shift_atr_fraction: 0.5
+        aoi_ttl_minutes: 30
+        profile_warmup_bars: 5
+        afternoon_profile_reset: '13:30:00'
+  sl:
+    module: event_adaptive_sweep_structural_stop
+    params: {}
+  tp:
+    module: event_frozen_poc_value_area_scale_out
+    params: {}
+  flatten_time: '15:55:00'
+  event:
+    module: yush_adaptive_orderflow_range_v3
+    params:
+      tick_size: 0.25
+      point_value: 50.0
+      commission_per_contract: 1.55
+      bar_seconds: 180
+      price_bin_ticks: 4
+      value_area_fraction: 0.7
+      value_area_method: motivewave_standard
+      opening_range_seconds: 30
+      aoi_level_distance_ticks: 4
+      aoi_big_trade_lookback_minutes: 30
+      big_trade_reference_percentile: 0.995
+      big_trade_lookback_sessions: 20
+      big_trade_interval_ms: 100
+      big_trade_price_bucket_ticks: 1
+      delta_profile_percentile: 0.9
+      regime_window_bars: 10
+      trend_midpoint_shift_ticks: 8
+      trend_poc_shift_ticks: 8
+      trend_overlap_maximum: 0.5
+      trend_efficiency_minimum: 0.55
+      sweep_minimum_ticks: 2
+      failure_confirmation_bars: 3
+      morning_entry_start: 09:45:00
+      morning_entry_end: '11:30:00'
+      afternoon_entry_start: '13:45:00'
+      afternoon_entry_end: '15:30:00'
+      entry_offset_ticks: 1
+      stop_offset_ticks: 1
+      minimum_stop_ticks: 2
+      maximum_stop_ticks: 60
+      maximum_stop_atr_multiple: 1.75
+      atr_lookback_bars: 14
+      target_1_fraction: 0.5
+      maximum_holding_bars: 12
+      entry_expiry_bars: 1
+      maximum_entries_per_aoi: 1
+      max_trades_per_day: 0
+      risk_budget_dollars: 1600.0
+      atr_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+      atr_context_sha256: 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+      big_trade_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q995_prior20_context.parquet
+      big_trade_context_sha256: 139f53eea8b3808390c891831c659ba8d9e5c659e8ae9b7ea17644d8fa481ca6
+      sweep_atr_fraction: 0.2
+      reclaim_atr_fraction: 0.05
+      stop_buffer_atr_fraction: 0.1
+      trend_shift_atr_fraction: 0.5
+      aoi_ttl_minutes: 30
+      profile_warmup_bars: 5
+      afternoon_profile_reset: '13:30:00'
+core:
+  data_subset:
+    start_date: '2011-08-15'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  initial_balance: 50000.0
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 1.55
+  slippage_ticks: 1.0
+  position_sizing:
+    mode: fixed_dollar_risk
+    risk_budget: 1600.0
+    cost_allowance_per_contract: 28.1
+    rounding: floor
+    min_contracts: 2
+    max_contracts: 2
+  flatten_time: '15:55:00'
+  max_trades_per_day: 0
+  contracts: 2
+  entry_start: 09:45:00
+  latest_entry_time: '15:30:00'
+  event_stop_market_fill_policy: trade_event_price_on_gap
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-08-15'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parameters:
+    event.params.sweep_atr_fraction:
+    - 0.1
+    - 0.2
+    - 0.3
+    event.params.maximum_stop_atr_multiple:
+    - 1.25
+    - 1.75
+    - 2.25
+monkey:
+  data_subset:
+    start_date: '2011-08-15'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+wfa:
+  data_subset:
+    start_date: '2011-08-15'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parameters:
+    event.params.sweep_atr_fraction:
+    - 0.1
+    - 0.2
+    - 0.3
+    event.params.maximum_stop_atr_multiple:
+    - 1.25
+    - 1.75
+    - 2.25
+campaign_tests:
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    enabled: true
+  limited_monkey_test:
+    enabled: true
+  walk_forward_analysis:
+    enabled: true
+  wfa_oos_monkey_test:
+    enabled: true
+  wfa_oos_monte_carlo:
+    enabled: true
+  simulated_incubation_core:
+    enabled: true
+  simulated_incubation_monkey:
+    enabled: true
+  acceptance_oos_test:
+    enabled: true
+    train_months: 24
+    test_months: 6
+prop_rules:
+  schema: alphaquest.prop-profile/v1
+  profile: configured_local_profile
+  profile_fully_specified: true
+  starting_balance: 50000.0
+  daily_loss_limit: 2000.0
+  trailing_drawdown: 2000.0
+  max_contracts: 2
+  max_best_day_profit_percentage: 0.4
+  min_trading_days: 2
+  payout_threshold: 1000.0
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.04
+  profit_target_amount: 3000.0
+  drawdown_limit_amount: 2000.0
+  account_lifecycle_enabled: true
+  challenge_fee: 98.0
+  challenge_profit_target_amount: 3000.0
+  challenge_consistency_limit: 0.5
+  trailing_drawdown_lock_balance: 52100.0
+  trailing_drawdown_locked_floor: 50100.0
+  funded_starting_balance: 50000.0
+  funded_initial_drawdown_floor: 48000.0
+  funded_payout_min_profit_day: 150.0
+  funded_payout_required_profit_days: 5
+  funded_payout_profit_fraction: 0.5
+  funded_payout_profit_share: 0.9
+  funded_payout_max_amount: 2000.0
+  max_payouts_per_account: 5
+  no_overnight_positions: true
+  force_flatten_time: '15:55:00'
+  profile_sha256: 35a3521e6a79f7e59b450aaf66fdd427f8d559840a67d79a4e51c891ac8c4ceb
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 2
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+test_run_id: run1
+engine_lane: canonical_event_replay
+strategy_certification:
+  strategy_id: yush_adaptive_orderflow_range_v3
+  implementation_version: 1
+  implementation_sha256: 6c83237d491a26f65f10df80567efb13eb76c342112c53894bde4e90cf6ad76d
+  manifest_sha256: 33088df480acbffd04bcbd4fdc9309c96874cfe8a852e0eb51742735549e9cee

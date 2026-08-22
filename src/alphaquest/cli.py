@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 import csv
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -12,6 +13,7 @@ import sys
 from typing import Any, Iterable
 
 import yaml
+import pandas as pd
 
 from alphaquest.research.campaign_stages import run_campaign_stage_tests
 from alphaquest.research.definitions import write_definition_manifests
@@ -62,6 +64,44 @@ def _parser() -> argparse.ArgumentParser:
     strategy_certify.add_argument("--project-root", default=".")
     strategy_certify.add_argument("--json", action="store_true")
     strategy_certify.set_defaults(handler=_strategy_certify)
+
+    account = commands.add_parser("account", help="List and run governed account-specific suitability assessments.")
+    account_commands = account.add_subparsers(dest="account_command")
+    account_list = account_commands.add_parser("list", help="List reviewed challenge, funded, and live profiles.")
+    account_list.add_argument("--project-root", default=".")
+    account_list.add_argument("--all", action="store_true", help="Include synthetic and hidden compatibility profiles.")
+    account_list.add_argument("--json", action="store_true")
+    account_list.set_defaults(handler=_account_list)
+    account_assess = account_commands.add_parser(
+        "assess", help="Replay frozen trade evidence against one versioned account profile."
+    )
+    account_assess.add_argument("profile_id")
+    account_assess.add_argument("--profile-version")
+    account_assess.add_argument("--project-root", default=".")
+    account_assess.add_argument("--trades", required=True, help="Acceptance/WFA trade log CSV or Parquet.")
+    account_assess.add_argument("--config", required=True, help="Frozen source config used to generate the trades.")
+    account_assess.add_argument(
+        "--output-root",
+        help="Artifact root; defaults to the repository-owned research_artifact_root.",
+    )
+    account_assess.add_argument("--campaign-id", required=True)
+    account_assess.add_argument("--variant-id", required=True)
+    account_assess.add_argument("--attempt-id", required=True)
+    account_assess.add_argument("--data-sha256", required=True)
+    account_assess.add_argument("--strategy-implementation-sha256")
+    account_assess.add_argument("--evaluation-price", type=float)
+    account_assess.add_argument("--activation-fee", type=float)
+    account_assess.add_argument("--other-upfront-costs", type=float, default=0.0)
+    account_assess.add_argument("--cost-source")
+    account_assess.add_argument("--cost-observed-at")
+    account_assess.add_argument("--attest", action="append", default=[])
+    account_assess.add_argument("--evaluation-start")
+    account_assess.add_argument("--evaluation-end")
+    account_assess.add_argument("--runs", type=int)
+    account_assess.add_argument("--seed", type=int, default=11)
+    account_assess.add_argument("--result-bundle-v2", help="Also create ResultBundleV3 beside this scientific bundle.")
+    account_assess.add_argument("--json", action="store_true")
+    account_assess.set_defaults(handler=_account_assess)
 
     workspace = commands.add_parser("workspace", help="Build generated indexes and views.")
     workspace_commands = workspace.add_subparsers(dest="workspace_command")
@@ -257,13 +297,42 @@ def _parser() -> argparse.ArgumentParser:
     attempt_create.add_argument("--created-by", required=True)
     attempt_create.add_argument("--dataset-id")
     attempt_create.add_argument("--target-variant")
+    attempt_create.add_argument("--mechanics-variant")
+    attempt_create.add_argument("--mechanics-start-date")
+    attempt_create.add_argument("--mechanics-end-date")
+    attempt_create.add_argument(
+        "--mechanics-session-count",
+        type=int,
+        help=(
+            "Compatibility check for the fixed repository-wide mechanics session count; "
+            "this cannot override policy and should normally be omitted."
+        ),
+    )
     attempt_create.add_argument("--component", choices=("entry", "sl", "tp"))
     attempt_create.add_argument("--parameter")
     attempt_create.add_argument("--value", help="JSON scalar for an explicit mechanics correction.")
     attempt_create.add_argument(
+        "--refresh-certification",
+        action="store_true",
+        help=(
+            "For a pre-PnL mechanics correction, bind the target variant to the current certified "
+            "implementation without changing a scalar parameter."
+        ),
+    )
+    attempt_create.add_argument(
+        "--replacement-strategy-id",
+        help=(
+            "For a certified implementation refresh, replace the target variant's "
+            "strategy package while preserving the immutable parent attempt."
+        ),
+    )
+    attempt_create.add_argument(
         "--parameter-grid-json",
         help="JSON object of certified event parameter names to predeclared value lists.",
     )
+    attempt_create.add_argument("--latest-entry-time")
+    attempt_create.add_argument("--flatten-time")
+    attempt_create.add_argument("--max-trades-per-day", type=int)
     attempt_create.add_argument("--authorized-by")
     attempt_create.add_argument("--project-root", default=".")
     attempt_create.add_argument("--json", action="store_true")
@@ -313,6 +382,99 @@ def _strategy_list(args: argparse.Namespace) -> int:
                 f"{record['strategy_id']} v{record['implementation_version']} "
                 f"{record['certification_status']} {record['implementation_sha256']}"
             )
+    return 0
+
+
+def _account_list(args: argparse.Namespace) -> int:
+    from alphaquest.accounts.catalog import list_account_profiles
+
+    rows = list_account_profiles(args.project_root, novice_only=not args.all)
+    _emit_rows(rows, args.json)
+    return 0
+
+
+def _account_assess(args: argparse.Namespace) -> int:
+    from alphaquest.accounts.assessment import run_governed_account_assessment
+    from alphaquest.accounts.catalog import resolve_account_profile
+    from alphaquest.accounts.models import AccountAssessmentCostsV1
+    from alphaquest.studio.results import RESULT_BUNDLE_V3_FILENAME, build_result_bundle_v3
+
+    resolved = resolve_account_profile(
+        args.profile_id,
+        version=args.profile_version,
+        project_root=args.project_root,
+    )
+    path = Path(args.trades).resolve()
+    if not path.is_file():
+        raise FileNotFoundError(f"trade evidence is missing: {path}")
+    trades = pd.read_parquet(path) if path.suffix.lower() == ".parquet" else pd.read_csv(path)
+    config_path = Path(args.config).resolve()
+    if not config_path.is_file():
+        raise FileNotFoundError(f"frozen config is missing: {config_path}")
+    config_sha256 = _file_digest(config_path)
+
+    acquisition = resolved.profile.rules.acquisition
+    cost_required = (
+        acquisition.evaluation_price_mode == "assessment_input_required"
+        or acquisition.activation_fee_mode == "assessment_input_required"
+    )
+    costs = None
+    if cost_required:
+        missing = []
+        if args.evaluation_price is None:
+            missing.append("--evaluation-price")
+        if acquisition.activation_fee_mode == "assessment_input_required" and args.activation_fee is None:
+            missing.append("--activation-fee")
+        if not args.cost_source:
+            missing.append("--cost-source")
+        if not args.cost_observed_at:
+            missing.append("--cost-observed-at")
+        if missing:
+            raise ValueError("cost-adjusted account assessment requires " + ", ".join(missing))
+        costs = AccountAssessmentCostsV1.model_validate(
+            {
+                "evaluation_purchase_price": args.evaluation_price,
+                "activation_fee": args.activation_fee or 0.0,
+                "other_upfront_costs": args.other_upfront_costs,
+                "observed_at": args.cost_observed_at,
+                "source": args.cost_source,
+            },
+            strict=False,
+        )
+
+    output_root = args.output_root or load_storage_layout(args.project_root).research_artifact_root
+    manifest = run_governed_account_assessment(
+        trades,
+        resolved,
+        output_root,
+        campaign_id=args.campaign_id,
+        variant_id=args.variant_id,
+        attempt_id=args.attempt_id,
+        config_sha256=config_sha256,
+        data_sha256=args.data_sha256,
+        strategy_implementation_sha256=args.strategy_implementation_sha256,
+        costs=costs,
+        manual_attestations=args.attest,
+        evaluation_start=args.evaluation_start,
+        evaluation_end=args.evaluation_end,
+        runs=args.runs,
+        seed=args.seed,
+    )
+    if args.result_bundle_v2:
+        result_v2 = Path(args.result_bundle_v2).resolve()
+        build_result_bundle_v3(
+            result_v2,
+            [Path(manifest["assessment_path"]) / "evaluation_manifest.json"],
+            result_v2.parent / RESULT_BUNDLE_V3_FILENAME,
+        )
+        manifest["result_bundle_v3"] = str(result_v2.parent / RESULT_BUNDLE_V3_FILENAME)
+    if args.json:
+        print(json.dumps(manifest, indent=2, sort_keys=True))
+    else:
+        print(
+            f"{manifest['profile_id']}@{manifest['profile_version']}: {manifest['verdict']} "
+            f"({manifest['assessment_path']})"
+        )
     return 0
 
 
@@ -443,6 +605,47 @@ def _studio_attempt_create(args: argparse.Namespace) -> int:
         parameter_grid = json.loads(args.parameter_grid_json)
         if not isinstance(parameter_grid, dict):
             raise ValueError("--parameter-grid-json must decode to an object")
+    mechanics_window_values = (
+        args.mechanics_variant,
+        args.mechanics_start_date,
+        args.mechanics_end_date,
+    )
+    mechanics_validation_window = None
+    if any(value is not None for value in mechanics_window_values):
+        if not all(value is not None for value in mechanics_window_values):
+            raise ValueError(
+                "mechanics validation window requires --mechanics-variant, "
+                "--mechanics-start-date, and --mechanics-end-date together"
+            )
+        mechanics_validation_window = {
+            "variant_id": args.mechanics_variant,
+            "start_date": args.mechanics_start_date,
+            "end_date": args.mechanics_end_date,
+        }
+        if args.mechanics_session_count is not None:
+            mechanics_validation_window["session_count"] = args.mechanics_session_count
+    elif args.mechanics_session_count is not None:
+        raise ValueError(
+            "--mechanics-session-count requires --mechanics-variant, "
+            "--mechanics-start-date, and --mechanics-end-date"
+        )
+    execution_values = (
+        args.latest_entry_time,
+        args.flatten_time,
+        args.max_trades_per_day,
+    )
+    execution_timeline = None
+    if any(value is not None for value in execution_values):
+        if not all(value is not None for value in execution_values):
+            raise ValueError(
+                "execution timeline correction requires --latest-entry-time, "
+                "--flatten-time, and --max-trades-per-day together"
+            )
+        execution_timeline = {
+            "latest_entry_time": args.latest_entry_time,
+            "flatten_time": args.flatten_time,
+            "max_trades_per_day": args.max_trades_per_day,
+        }
     request = FollowUpAttemptRequestV1.model_validate(
         {
             "campaign_id": args.campaign_id,
@@ -454,7 +657,11 @@ def _studio_attempt_create(args: argparse.Namespace) -> int:
             "target_variant_id": args.target_variant,
             "authorized_by": args.authorized_by,
             "mechanic_patches": patches,
+            "refresh_certification": args.refresh_certification,
+            "replacement_strategy_id": args.replacement_strategy_id,
             "parameter_grid": parameter_grid,
+            "mechanics_validation_window": mechanics_validation_window,
+            "execution_timeline": execution_timeline,
         }
     )
     result = FollowUpAttemptService(args.project_root).create(request)
@@ -900,6 +1107,12 @@ def _variant_scaffold(args: argparse.Namespace, *, dataset_id: str, data_path: s
 
 
 def _validation_approval_template(args: argparse.Namespace, variant_id: str) -> dict[str, Any]:
+    from alphaquest.validation.promotion_gate import (
+        REQUIRED_SAMPLE_CATEGORIES,
+        SAMPLING_POLICY_SHA256,
+        SAMPLING_POLICY_VERSION,
+    )
+
     return {
         "schema": "alphaquest.validation-approval/v1",
         "status": "needs_review",
@@ -913,17 +1126,10 @@ def _validation_approval_template(args: argparse.Namespace, variant_id: str) -> 
         "input_data_hash": "",
         "validation_schema_version": "1.4",
         "sampled_trade_ids": [],
-        "sampling_categories": {
-            "first_trade": [],
-            "last_trade": [],
-            "random_trades": [],
-            "best_trade": [],
-            "worst_trade": [],
-            "forced_flattens": [],
-            "same_bar_ambiguity": [],
-            "warnings": [],
-            "strategy_edge_cases": [],
-        },
+        "sampling_categories": {name: [] for name in REQUIRED_SAMPLE_CATEGORIES},
+        "sampling_reasons": {},
+        "sampling_policy_version": SAMPLING_POLICY_VERSION,
+        "sampling_policy_sha256": SAMPLING_POLICY_SHA256,
     }
 
 
@@ -1105,6 +1311,14 @@ def _display_value(value: Any) -> str:
 def _write_yaml(path: Path, payload: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(yaml.safe_dump(payload, sort_keys=False, width=120), encoding="utf-8")
+
+
+def _file_digest(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
 
 
 def _warn_if_stale(database: Path) -> None:

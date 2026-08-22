@@ -1,0 +1,139 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260822t022102_f529f023",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "154e701e097e12f9ccd55801e0a80470b0e858cbe6ef925fcd05b43170563e2f",
+        "implementation_version": 24,
+        "manifest_sha256": "638e20c241c3a351c8c02a3ebdfcc98d75faadb82991f5d381e3febcf7b422aa",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "ae7ec7b80faf90957b5ad7a5f1e7c0b4bb42325bc5174577c15dcb403e20cfc3",
+        "implementation_version": 23,
+        "manifest_sha256": "18fe1b6da78525887cd814445ea6d602f4b1ce07092eb7fd8027ebe7df41c005",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "field": "migrated_fixed_certified_defaults",
+      "new": {
+        "entry_offset_ticks": 2,
+        "stop_at_sweep_extreme": false
+      },
+      "old": {
+        "entry_offset_ticks": 1,
+        "stop_at_sweep_extreme": true
+      },
+      "reviewed": true,
+      "scope": "strategy.event.params",
+      "variant_id": "v03"
+    },
+    {
+      "field": "delta_profile_price_bin_ticks",
+      "new": 4,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "confirmation_delta_reference_percentile",
+      "new": 0.9,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "confirmation_delta_lookback_sessions",
+      "new": 20,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "entry_offset_ticks",
+      "new": 2,
+      "old": 1,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "stop_at_sweep_extreme",
+      "new": false,
+      "old": true,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "stop_offset_ticks",
+      "new": 2,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "confirmation_delta_context_path",
+      "new": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/bar_delta_3m_4tick_q90_prior20_context.parquet",
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "confirmation_delta_context_sha256",
+      "new": "ff98f3ede2aeddaea0c8453da36245e40e6111355634f9e16961115a57b0569b",
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "571b5d3d7f4ff9ae4dc7f300d7326631f32c8734d331c8f0cf7c17f55f44a9c6"
+  },
+  "created_at": "2026-08-22T02:21:03.020824+00:00",
+  "created_by": "Codex",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260822t022102_f529f023",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260820t131546_68e5612e",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Retain the reviewed AOI, ordered sweep, distinct post-AOI order-flow confirmation, and reclaim stop-trigger sequence. Change the stop-entry trigger from one to two ticks inside the frozen value edge and buffer the protective stop two ticks beyond the sweep-bar extreme. Aggregate the session-anchored AOI delta profile into globally aligned MotiveWave-style four-tick price cells. Aggregate separate completed three-minute bar-delta confirmation into the same four-tick cells and require causal prior-20-session q90 absolute cell delta.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "55ba2f45e189400eddbdbc81fc439b7ebc7af67a00829e90b4f45de12fdcd710"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "cc8745aefd2f96853f34fc8577326cbb89683dda48cc5603a312308e0ab68b46"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

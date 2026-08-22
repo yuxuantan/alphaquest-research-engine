@@ -1,0 +1,61 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260822t143033_0013b746",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "fc9af219ce0a1e9d808ebee7d64857be4c327f8fcc2ecade3c51911b2faf6280",
+        "implementation_version": 29,
+        "manifest_sha256": "e1d648f19fc03f335e80ed2fb93c7115f62c83ae04c7f6f6aa15c44a9e4a7c38",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "e77e43716b7ebca54e59cdbaf99e680bdc423347075e61d743bfda99d313b628",
+        "implementation_version": 28,
+        "manifest_sha256": "98ad724aadabbd69f361fba2a16249b2ba0b5cf82e43be509156b58de22ac547",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "8bf242aafdecb3cf15072938476f10dd614d8fb0de1bebbecb2eb3c781b08e03"
+  },
+  "created_at": "2026-08-22T14:30:33.395063+00:00",
+  "created_by": "codex",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260822t143033_0013b746",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260822t142641_0b190924",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Apply the declared gross midpoint reward-to-risk threshold to the certified modeled entry fill, including the fixed one-tick adverse entry slippage, rather than to the pre-slippage stop trigger. This corrects a mechanics/report mismatch found during evidence audit before approval or performance use.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "149ca3ea1237a67585b0ac25a8d2979452b01f9355f16563ea888d8ec4eba361"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "53c056f89454e1278b61b5337c88face45ccb31cdcc06788a5c354251e132a6e"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

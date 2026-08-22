@@ -1,0 +1,160 @@
+schema: alphaquest.strategy-spec/v1
+campaign_id: yush_orderflow_range
+draft_sha256: 390384581e645015d2e498853b036ddf7e38823900e84fe28ea89aefe0cc495b
+frozen: true
+hypothesis: During balanced ES morning auctions, a retest of a developing value-area edge that overlaps a prior liquidity
+  reference and then attracts fresh one-sided trade activity may reverse toward fair value.
+expected_mechanism: Repeated rejection at a developing value boundary suggests passive liquidity is absorbing aggressive flow;
+  a fresh delta or large-trade event after the tap supplies causal confirmation for reversion.
+holding_horizon: Intraday only, from a post-tap stop entry between 09:30 and 10:59:59 New York until 11:00.
+known_failure_modes:
+- A developing profile can move while an order is pending, apparent one-sided delta can be continuation rather than absorption,
+  and sparse trade prints can make a narrow AOI or local prominence unstable.
+- Trade-message aggressor classification, contract rolls, gap-through fills, and platform aggregation differences may cause
+  mechanical entries to disagree with a MotiveWave/Rithmic chart.
+authoring_lane: certified_event_replay
+certified_recipe: null
+event_strategy: yush_orderflow_range
+strategy_certification:
+  schema: alphaquest.strategy-certification/v1
+  strategy_id: yush_orderflow_range
+  implementation_version: 1
+  certification_status: certified
+  lane: canonical_event_replay
+  entry_module: yush_orderflow_range
+  stop_module: event_aoi_structural_stop
+  target_module: event_value_area_management
+  implementation_sha256: f74191560103fbe817289f2ebc8d713d6c1b28bac6307410af5d6258733faed5
+  manifest_sha256: c18aa9c12194d6e777d078951d9985ab4c4a2dab4954f20c2363c7388e503ab6
+  required_test_categories:
+  - session_logic
+  - entry_timing
+  - stop_target_ordering
+  - forced_flatten
+  - no_lookahead
+  - registry_and_runner
+  required_tests:
+  - tests/test_yush_range_reversal_v2.py
+  - tests/test_event_replay.py
+  studio:
+    visible: true
+    label: Yush Orderflow Range Reversal
+    description: Stateful causal AOI and order-flow reversal strategy for canonical trade-event replay.
+dataset:
+  schema: alphaquest.dataset-manifest/v1
+  dataset_id: es_databento_trade_events_20250714_20260610_0930_1100_ny
+  source: parquet
+  path: data/cache/orderflow/es_databento_trades_1m_20250714_20260610_0930_1100_ny.parquet
+  symbol: ES
+  timeframe: 1m
+  timezone: America/New_York
+  exchange_timezone: America/New_York
+  timestamp_semantics: bar_open
+  source_timestamp_semantics: bar_open
+  source_sha256: d6df4a528173cdf6627224cfe225c1f9cb551d675472cc12223a605a1fa7ed76
+  canonical_sha256: d6df4a528173cdf6627224cfe225c1f9cb551d675472cc12223a605a1fa7ed76
+  coverage_start: '2025-07-14T09:30:00-04:00'
+  coverage_end: '2026-06-10T10:59:59-04:00'
+  roll_policy: MotiveWave/Rithmic predeclared active-contract calendar; no back adjustment
+  continuous_contract: explicit_roll_calendar
+  contract_column: contract_symbol
+  source_contract_column: null
+  contract_count: 4
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+  roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+  transformations:
+  - Canonical one-minute bars retained only for dataset provenance and reporting context
+  - Strategy decisions and fills use causally ordered Databento trade messages
+  row_count: 20700
+  dropped_row_count: 0
+  gap_count: 0
+  duplicate_count: 0
+  out_of_order_count: 0
+  invalid_ohlc_count: 0
+  cadence_violation_count: 0
+  certified_features: []
+  quality_verdict: PASS
+  quality_notes:
+  - All 230 sessions contain exactly 90 one-minute reporting bars with no internal cadence defects.
+  - The event source is separately hash-bound and is the sole source of strategy decisions and fills.
+  event_source:
+    source: databento_zip_trades
+    archive: data/raw/ES/GLBX-20260713-S6XF67C8UA.zip
+    archive_sha256: 144daa86f98f22dae2eada9f86b345bc7e4a92038c058c395630357585298fa1
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+    root_symbol: ES
+    aggregation_ms: 100
+    overnight_start: '16:00:00'
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    reset_previous_levels_on_roll: true
+execution:
+  session_start: 09:30:00
+  session_end: '16:00:00'
+  latest_entry_time: '10:59:59'
+  flatten_time: '11:00:00'
+  latest_flat_time: '11:00:00'
+  overnight_allowed: false
+  initial_balance: 50000.0
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1.0
+  contracts: 1
+  prop_profile: configured_local_profile
+variants:
+- variant_id: v01
+  title: Exact forward-tested AOI and post-tap order-flow confirmation
+  mechanic_signature: 40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1
+  entry:
+    module: yush_orderflow_range
+    params:
+      mechanics:
+        tick_size: 0.25
+        point_value: 50.0
+        contracts: 1
+        commission_per_contract: 2.5
+        max_trades_per_day: 3
+        max_aoi_width_points: 3.0
+        entry_offset_ticks: 2
+        stop_offset_ticks: 2
+        max_stop_points: 5.0
+        value_area_fraction: 0.7
+        range_expansion_fraction: 0.2
+        delta_profile_min_abs: 300
+        delta_bubble_threshold: 300
+        big_trade_threshold: 200
+        big_trade_window_ms: 100
+        breakeven_offset_points: 1.25
+        opening_range_seconds: 32
+        bar_seconds: 180
+        breakout_probe_ticks: 2
+        initial_balance: 50000.0
+        minimum_stop_points: 2.0
+        slippage_ticks: 1
+        delta_neighbour_multiple: 2.0
+        aoi_lineage_mode: exact_fingerprint
+    parameter_grid: {}
+  stop:
+    module: event_aoi_structural_stop
+    params: {}
+    parameter_grid: {}
+  target:
+    module: event_value_area_management
+    params: {}
+    parameter_grid: {}
+  rationales:
+    mechanic: Build a causal AOI around developing VAL or VAH plus the strongest available market, local-delta, and large-trade
+      categories; reset eligibility whenever the exact AOI price envelope or selected confluence identity changes, then require
+      a prior reversal, a fresh directed tap, and a new post-tap trigger.
+    entry: A two-tick stop entry beyond the AOI demands observable movement away from the tested boundary, while neither the
+      tap nor its post-tap trigger can be the event that created or materially changed the exact AOI; a tapped AOI is frozen
+      until its developing-value anchor leaves the box.
+    stop: The stop sits two ticks beyond the opposite AOI edge but is widened to at least two points so tiny confluence envelopes
+      do not create suffocating risk; entries above five points are rejected.
+    target: The developing value midpoint is the first objective; after it trades, the stop protects 1.25 points and the opposite
+      developing value edge becomes the final target, with an 11:00 hard flatten.
+    timeframe_session: Trade messages are replayed in causal order from 09:30 to 11:00 New York; the three-minute delta bubble
+      clock and 100 millisecond large-trade aggregation match the frozen chart interpretation.

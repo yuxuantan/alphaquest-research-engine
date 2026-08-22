@@ -1,7 +1,164 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
 import math
+from typing import Any, Iterable
+
 import pandas as pd
+
+
+@dataclass(frozen=True)
+class EvaluationPeriod:
+    """Governed calendar coverage used for annualized backtest metrics.
+
+    The period is deliberately independent of the trade timestamps.  Sparse
+    strategies must be annualized over the market window on which they were
+    eligible to trade, including zero-trade time, rather than the distance
+    between their first and last fills.
+    """
+
+    start_date: date
+    end_date: date
+    calendar_days: int
+    eligible_session_count: int | None = None
+    source: str = "governed_evaluation_period"
+    interval_count: int = 1
+
+    def __post_init__(self) -> None:
+        if self.end_date < self.start_date:
+            raise ValueError("evaluation-period end precedes its start")
+        if self.calendar_days < 1:
+            raise ValueError("evaluation-period calendar_days must be positive")
+        if self.eligible_session_count is not None and self.eligible_session_count < 1:
+            raise ValueError("evaluation-period eligible_session_count must be positive when supplied")
+        if self.interval_count < 1:
+            raise ValueError("evaluation-period interval_count must be positive")
+
+    @property
+    def years(self) -> float:
+        return float(self.calendar_days / 365.25)
+
+    def as_dict(self) -> dict[str, Any]:
+        return {
+            "available": True,
+            "source": self.source,
+            "start_date": self.start_date.isoformat(),
+            "end_date": self.end_date.isoformat(),
+            "calendar_days": int(self.calendar_days),
+            "years": self.years,
+            "eligible_session_count": self.eligible_session_count,
+            "interval_count": int(self.interval_count),
+        }
+
+    @classmethod
+    def from_bounds(
+        cls,
+        start: date | datetime | str | pd.Timestamp,
+        end: date | datetime | str | pd.Timestamp,
+        *,
+        eligible_session_count: int | None = None,
+        source: str = "governed_bounds",
+    ) -> "EvaluationPeriod":
+        """Build a period from inclusive governed date bounds."""
+
+        start_date = _evaluation_date(start, "start")
+        end_date = _evaluation_date(end, "end")
+        return cls(
+            start_date=start_date,
+            end_date=end_date,
+            calendar_days=(end_date - start_date).days + 1,
+            eligible_session_count=eligible_session_count,
+            source=source,
+        )
+
+    @classmethod
+    def from_session_dates(
+        cls,
+        values: Iterable[date | datetime | str | pd.Timestamp],
+        *,
+        source: str = "governed_sessions",
+    ) -> "EvaluationPeriod":
+        """Build a contiguous span plus explicit eligible-session coverage."""
+
+        dates = sorted({_evaluation_date(value, "session") for value in values})
+        if not dates:
+            raise ValueError("evaluation-period session coverage is empty")
+        return cls.from_bounds(
+            dates[0],
+            dates[-1],
+            eligible_session_count=len(dates),
+            source=source,
+        )
+
+    @classmethod
+    def from_frame(
+        cls,
+        frame: pd.DataFrame,
+        *,
+        source: str = "governed_market_frame",
+    ) -> "EvaluationPeriod":
+        """Build coverage from the exact governed market frame, never trades."""
+
+        if frame is None or frame.empty:
+            raise ValueError("evaluation-period market frame is empty")
+        if "session_date" not in frame.columns:
+            raise ValueError("evaluation-period market frame requires session_date")
+        parsed = pd.to_datetime(frame["session_date"], errors="coerce")
+        if bool(parsed.isna().any()):
+            raise ValueError("evaluation-period market frame contains an invalid session_date")
+        return cls.from_session_dates(parsed.dt.date, source=source)
+
+    @classmethod
+    def from_half_open_intervals(
+        cls,
+        intervals: Iterable[
+            tuple[
+                date | datetime | str | pd.Timestamp,
+                date | datetime | str | pd.Timestamp,
+            ]
+        ],
+        *,
+        eligible_session_count: int | None = None,
+        source: str = "governed_interval_union",
+    ) -> "EvaluationPeriod":
+        """Build coverage from the union of governed ``[start, end)`` windows."""
+
+        normalized: list[tuple[date, date]] = []
+        for start, end_exclusive in intervals:
+            start_date = _evaluation_date(start, "interval start")
+            end_exclusive_date = _evaluation_date(end_exclusive, "interval end")
+            if end_exclusive_date <= start_date:
+                raise ValueError("evaluation-period interval end must be after its start")
+            normalized.append((start_date, end_exclusive_date - timedelta(days=1)))
+        if not normalized:
+            raise ValueError("evaluation-period interval coverage is empty")
+
+        merged: list[list[date]] = []
+        for start_date, end_date in sorted(normalized):
+            if not merged or start_date > merged[-1][1] + timedelta(days=1):
+                merged.append([start_date, end_date])
+            else:
+                merged[-1][1] = max(merged[-1][1], end_date)
+        calendar_days = sum((end_date - start_date).days + 1 for start_date, end_date in merged)
+        return cls(
+            start_date=merged[0][0],
+            end_date=merged[-1][1],
+            calendar_days=calendar_days,
+            eligible_session_count=eligible_session_count,
+            source=source,
+            interval_count=len(merged),
+        )
+
+
+def _evaluation_date(
+    value: date | datetime | str | pd.Timestamp,
+    label: str,
+) -> date:
+    try:
+        return pd.Timestamp(value).date()
+    except (TypeError, ValueError, OverflowError) as exc:
+        raise ValueError(f"evaluation-period {label} is invalid: {exc}") from exc
 
 
 def _ordered_trades(trades: pd.DataFrame) -> pd.DataFrame:
@@ -66,17 +223,29 @@ def daily_results(trades: pd.DataFrame) -> pd.DataFrame:
     return out
 
 
-def _elapsed_years(trades: pd.DataFrame) -> float:
-    if trades.empty:
-        return 0.0
-    timestamps = pd.to_datetime(
-        pd.concat([trades["entry_timestamp"], trades["exit_timestamp"]]), utc=True
+def calculate_metrics(
+    trades: pd.DataFrame,
+    initial_balance: float = 0.0,
+    *,
+    evaluation_period: EvaluationPeriod | None = None,
+) -> dict:
+    period_payload = (
+        evaluation_period.as_dict()
+        if evaluation_period is not None
+        else {
+            "available": False,
+            "reason": "explicit governed evaluation-period bounds and session coverage are required",
+        }
     )
-    elapsed_days = max((timestamps.max() - timestamps.min()).total_seconds() / 86400.0, 1.0)
-    return elapsed_days / 365.25
-
-
-def calculate_metrics(trades: pd.DataFrame, initial_balance: float = 0.0) -> dict:
+    years = evaluation_period.years if evaluation_period is not None else 0.0
+    annualization = {
+        "annualization_available": evaluation_period is not None,
+        "evaluation_period": period_payload,
+        "evaluation_years": years,
+        "eligible_session_count": (
+            evaluation_period.eligible_session_count if evaluation_period is not None else None
+        ),
+    }
     if trades.empty:
         return {
             "total_trades": 0,
@@ -94,8 +263,10 @@ def calculate_metrics(trades: pd.DataFrame, initial_balance: float = 0.0) -> dic
             "max_consecutive_losses": 0,
             "positive_month_rate": 0.0,
             "win_rate": 0.0,
+            "execution_compliance_violations": 0,
             "apex_rule_violations": 0,
             "apex_forced_flatten_trades": 0,
+            **annualization,
         }
     trades = _ordered_trades(trades)
     wins = trades.loc[trades["net_pnl"] > 0, "net_pnl"].sum()
@@ -107,7 +278,6 @@ def calculate_metrics(trades: pd.DataFrame, initial_balance: float = 0.0) -> dic
     monthly = months.groupby("month")["net_pnl"].sum()
     net_profit = float(trades["net_pnl"].sum())
     best_day = float(daily["net_pnl"].max()) if len(daily) else 0.0
-    years = _elapsed_years(trades)
     drawdown, max_drawdown_pct = drawdown_stats(trades, initial_balance=initial_balance)
     ending_balance = initial_balance + net_profit
     if initial_balance <= 0 or years <= 0:
@@ -134,14 +304,30 @@ def calculate_metrics(trades: pd.DataFrame, initial_balance: float = 0.0) -> dic
         "positive_month_rate": float((monthly > 0).mean()) if len(monthly) else 0.0,
         "win_rate": float((trades["net_pnl"] > 0).mean()),
         "average_trade": float(trades["net_pnl"].mean()),
+        "execution_compliance_violations": _boolean_count(trades, "apex_rule_violation"),
+        # Deprecated compatibility alias. Generic backtest mechanics do not
+        # establish compliance with a particular Apex account product.
         "apex_rule_violations": _boolean_count(trades, "apex_rule_violation"),
         "apex_forced_flatten_trades": _boolean_count(trades, "was_forced_flatten"),
+        **annualization,
     }
 
 
 def benchmark(metrics: dict, thresholds: dict) -> tuple[bool, str]:
-    checks = [
-        ("apex_rule_violations", metrics.get("apex_rule_violations", 0) <= 0),
+    checks = []
+    if "annualization_available" in metrics:
+        checks.append(("evaluation_period", metrics.get("annualization_available") is True))
+    checks.extend([
+        (
+            # Keep the historical benchmark reason token until repository-owned
+            # gate policy is migrated in a separate methodology version.
+            "apex_rule_violations",
+            metrics.get(
+                "execution_compliance_violations",
+                metrics.get("apex_rule_violations", 0),
+            )
+            <= 0,
+        ),
         ("min_total_net_profit", metrics.get("net_profit", 0) >= thresholds.get("min_total_net_profit", float("-inf"))),
         ("min_profit_factor", metrics.get("profit_factor", 0) >= thresholds.get("min_profit_factor", 0)),
         ("min_expectancy_r", metrics.get("expectancy_r", 0) >= thresholds.get("min_expectancy_r", float("-inf"))),
@@ -156,7 +342,7 @@ def benchmark(metrics: dict, thresholds: dict) -> tuple[bool, str]:
         ("preferred_min_total_trades", metrics.get("total_trades", 0) >= thresholds.get("preferred_min_total_trades", 0)),
         ("max_best_day_concentration", metrics.get("best_day_concentration", 0) <= thresholds.get("max_best_day_concentration", 1)),
         ("min_positive_month_rate", metrics.get("positive_month_rate", 0) >= thresholds.get("min_positive_month_rate", 0)),
-    ]
+    ])
     failures = [name for name, ok in checks if not ok]
     return not failures, ";".join(failures)
 

@@ -13,7 +13,7 @@ from __future__ import annotations
 from copy import deepcopy
 import csv
 from dataclasses import dataclass
-from datetime import UTC, datetime, time
+from datetime import UTC, date, datetime, time
 import hashlib
 import json
 import math
@@ -24,6 +24,7 @@ import shutil
 from typing import Any, Callable, Literal, Mapping
 from uuid import uuid4
 
+import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 import yaml
 
@@ -37,14 +38,16 @@ from alphaquest.authoring.models import DatasetManifestV1, ModuleBindingV1
 from alphaquest.research.definitions import write_definition_manifests
 from alphaquest.research.campaign_stages import (
     DEFAULT_STAGE_ORDER,
+    canonicalize_campaign_config,
     campaign_test_data_window_plan,
 )
+from alphaquest.research.policy import load_research_policy
 from alphaquest.research.preflight import run_preflight
 from alphaquest.research.schemas import validate_campaign_config_contract
 from alphaquest.research.storage import load_storage_layout
 from alphaquest.studio.approvals import require_all_variant_mechanics_approved
 from alphaquest.studio.finalization import REPORTING_DIRECTORY, inspect_finalized_result
-from alphaquest.studio.jobs import JobRecordV1, SQLiteJobQueue
+from alphaquest.studio.jobs import JobRecordV1, OperationalState, SQLiteJobQueue
 from alphaquest.studio.ledger import append_planned_follow_up
 from alphaquest.studio.results import RESULT_BUNDLE_FILENAME
 from alphaquest.studio.workspace import refresh_generated_indexes_if_stale
@@ -53,6 +56,7 @@ from alphaquest.strategy_certification import (
     get_strategy_certification,
     normalize_certified_event_params,
     strategy_identity_for_config,
+    validate_certified_parameter_value,
     validate_certified_event_parameter_grid,
 )
 from alphaquest.validation.promotion_gate import inspect_validation_gate
@@ -77,6 +81,7 @@ AttemptKind = Literal[
     "rescue",
 ]
 JsonScalar = str | int | float | bool | None
+TARGET_VARIANT_PERFORMANCE_SCOPE = "target_variant_v1"
 
 
 class MechanicParameterPatchV1(BaseModel):
@@ -97,6 +102,55 @@ class MechanicParameterPatchV1(BaseModel):
         return value
 
 
+class MechanicsValidationWindowV1(BaseModel):
+    """One predeclared mechanics-review data window for a frozen variant."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    variant_id: str = Field(pattern=r"^[a-z0-9][a-z0-9_]*$")
+    start_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    end_date: str = Field(pattern=r"^\d{4}-\d{2}-\d{2}$")
+    session_count: int = Field(
+        default_factory=lambda: int(
+            load_research_policy().mechanics_validation["session_count"]
+        )
+    )
+
+    @model_validator(mode="after")
+    def bounded_window(self) -> "MechanicsValidationWindowV1":
+        try:
+            start = date.fromisoformat(self.start_date)
+            end = date.fromisoformat(self.end_date)
+        except ValueError as exc:
+            raise ValueError("mechanics validation dates must be valid ISO dates") from exc
+        if end < start:
+            raise ValueError("mechanics validation end_date cannot precede start_date")
+        required = int(load_research_policy().mechanics_validation["session_count"])
+        if self.session_count != required:
+            raise ValueError(
+                f"mechanics validation must use the repository-wide {required}-session policy"
+            )
+        if (end - start).days > 60:
+            raise ValueError("mechanics validation window cannot exceed 60 calendar days")
+        return self
+
+
+class ExecutionTimelinePatchV1(BaseModel):
+    """Atomic event-lane entry cutoff, flatten, and daily-limit correction."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    latest_entry_time: str = Field(pattern=r"^\d{2}:\d{2}:\d{2}$")
+    flatten_time: str = Field(pattern=r"^\d{2}:\d{2}:\d{2}$")
+    max_trades_per_day: int = Field(ge=0)
+
+    @model_validator(mode="after")
+    def causal_timeline(self) -> "ExecutionTimelinePatchV1":
+        if self.latest_entry_time >= self.flatten_time:
+            raise ValueError("latest_entry_time must precede flatten_time")
+        return self
+
+
 class FollowUpAttemptRequestV1(BaseModel):
     """Strict human-reviewed request for a new scientific attempt identity."""
 
@@ -111,7 +165,14 @@ class FollowUpAttemptRequestV1(BaseModel):
     target_variant_id: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_]*$")
     authorized_by: str | None = None
     mechanic_patches: list[MechanicParameterPatchV1] = Field(default_factory=list)
+    refresh_certification: bool = False
+    replacement_strategy_id: str | None = Field(
+        default=None,
+        pattern=r"^[a-z0-9][a-z0-9_]*$",
+    )
     parameter_grid: dict[str, list[JsonScalar]] = Field(default_factory=dict)
+    mechanics_validation_window: MechanicsValidationWindowV1 | None = None
+    execution_timeline: ExecutionTimelinePatchV1 | None = None
 
     @field_validator("reason", "created_by", "authorized_by")
     @classmethod
@@ -130,15 +191,78 @@ class FollowUpAttemptRequestV1(BaseModel):
             raise ValueError("data_refresh requires a governed dataset_id")
         if self.attempt_kind != "data_refresh" and self.dataset_id is not None:
             raise ValueError("dataset_id is only valid for data_refresh")
-        if mechanics_kind and (not self.target_variant_id or not self.mechanic_patches):
-            raise ValueError(f"{self.attempt_kind} requires a target variant and an explicit mechanics patch")
-        if declaration_kind and (not self.target_variant_id or not self.parameter_grid):
-            raise ValueError("pre_pnl_parameter_declaration requires a target variant and parameter grid")
-        if not (mechanics_kind or declaration_kind) and (
-            self.target_variant_id is not None or self.mechanic_patches or self.parameter_grid
+        if mechanics_kind and not self.target_variant_id:
+            raise ValueError(f"{self.attempt_kind} requires a target variant")
+        if self.attempt_kind == "pre_pnl_mechanics_correction":
+            modes = sum(
+                (
+                    bool(self.mechanic_patches),
+                    bool(self.refresh_certification),
+                    self.execution_timeline is not None,
+                )
+            )
+            if modes != 1:
+                raise ValueError(
+                    "pre_pnl_mechanics_correction requires exactly one of an explicit "
+                    "mechanics patch, a certified implementation refresh, or an "
+                    "atomic execution-timeline correction"
+                )
+        if self.attempt_kind == "rescue" and not self.mechanic_patches:
+            raise ValueError("rescue requires an explicit mechanics patch")
+        if self.refresh_certification and self.attempt_kind not in {
+            "pre_pnl_mechanics_correction",
+            "methodology_rerun",
+        }:
+            raise ValueError(
+                "refresh_certification is reserved for a pre-PnL mechanics correction "
+                "or a methodology rerun with a fixed mechanics window"
+            )
+        if (
+            self.attempt_kind == "methodology_rerun"
+            and self.refresh_certification
+            and self.mechanics_validation_window is None
         ):
             raise ValueError(
-                "target_variant_id, mechanic_patches, and parameter_grid are only valid for governed mechanics changes"
+                "methodology_rerun certification refresh requires a fixed mechanics validation window"
+            )
+        if (
+            self.execution_timeline is not None
+            and self.attempt_kind != "pre_pnl_mechanics_correction"
+        ):
+            raise ValueError(
+                "execution_timeline is reserved for pre_pnl_mechanics_correction"
+            )
+        if self.replacement_strategy_id and not self.refresh_certification:
+            raise ValueError(
+                "replacement_strategy_id requires a pre-PnL certification refresh"
+            )
+        if (
+            self.replacement_strategy_id
+            and self.attempt_kind != "pre_pnl_mechanics_correction"
+        ):
+            raise ValueError(
+                "replacement_strategy_id is reserved for pre_pnl_mechanics_correction"
+            )
+        if declaration_kind and (not self.target_variant_id or not self.parameter_grid):
+            raise ValueError("pre_pnl_parameter_declaration requires a target variant and parameter grid")
+        target_allowed = (
+            mechanics_kind
+            or declaration_kind
+            or self.attempt_kind == "data_refresh"
+            or self.attempt_kind == "replication"
+            or self.attempt_kind == "methodology_rerun"
+        )
+        if not target_allowed and (
+            self.target_variant_id is not None
+            or self.mechanic_patches
+            or self.refresh_certification
+            or self.replacement_strategy_id
+            or self.parameter_grid
+            or self.execution_timeline is not None
+        ):
+            raise ValueError(
+                "target_variant_id is valid only for replication or governed variant-scoped changes; "
+                "mechanic_patches and parameter_grid require their corresponding governed change type"
             )
         if declaration_kind and self.mechanic_patches:
             raise ValueError("parameter declaration cannot also patch fixed mechanics")
@@ -152,6 +276,13 @@ class FollowUpAttemptRequestV1(BaseModel):
             raise ValueError("rescue requires an explicitly identified authorizer")
         if self.attempt_kind != "rescue" and self.authorized_by is not None:
             raise ValueError("authorized_by is reserved for the governed rescue lane")
+        if (
+            self.attempt_kind != "methodology_rerun"
+            and self.mechanics_validation_window is not None
+        ):
+            raise ValueError(
+                "mechanics_validation_window is reserved for methodology_rerun"
+            )
         for name, values in self.parameter_grid.items():
             if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) is None:
                 raise ValueError(f"invalid certified event parameter name: {name!r}")
@@ -178,6 +309,43 @@ class FollowUpAttemptResult:
     preflight_verdict: str = "PASS"
 
 
+def _require_queueable_performance_job(job: JobRecordV1, *, attempt_id: str) -> None:
+    if job.state in {
+        OperationalState.QUEUED,
+        OperationalState.RUNNING,
+        OperationalState.CANCEL_REQUESTED,
+    }:
+        return
+    raise ValueError(
+        "Performance submission blocked: attempt "
+        f"{attempt_id!r} already has terminal Campaign Variant Run "
+        f"{job.job_id} ({job.state.value}). Interrupted or completed attempts are never replayed. "
+        "Open Research > History, create an Exact replication from this attempt, complete its "
+        "hash-bound mechanics approval, then run the full test suite for the new attempt."
+    )
+
+
+def _is_legacy_unreserved_preflight_only_job(job: JobRecordV1) -> bool:
+    """Recognize an old campaign-wide preflight that never started testing."""
+
+    if (
+        job.job_type != "campaign_variant_run"
+        or job.attempt_reserved
+        or job.state != OperationalState.SUCCEEDED
+        or job.payload.get("execution_scope") is not None
+        or not isinstance(job.result, Mapping)
+    ):
+        return False
+    preflight = job.result.get("preflight")
+    return (
+        job.research_verdict == "NEEDS MANUAL REVIEW"
+        and job.result.get("reason") == "full staged-submission preflight failed"
+        and isinstance(preflight, Mapping)
+        and preflight.get("passed") is False
+        and preflight.get("tests_ran") is False
+    )
+
+
 class FollowUpAttemptService:
     """Create and submit explicit follow-ups without mutating prior attempts."""
 
@@ -193,6 +361,35 @@ class FollowUpAttemptService:
         self._now = now or (lambda: datetime.now(UTC))
         self._token = token or (lambda: uuid4().hex[:8])
 
+    def parent_has_performance_evidence(
+        self,
+        campaign_id: str,
+        parent_attempt_id: str,
+    ) -> bool:
+        """Return whether a parent is past the pre-PnL follow-up boundary.
+
+        Studio uses this same authoritative evidence check when presenting
+        follow-up choices. Creation repeats the check in ``_require_kind_policy``
+        so callers still fail closed if state changes before submission.
+        """
+
+        campaign_root, campaign, variants = self._campaign(campaign_id)
+        self._require_studio_authored(campaign_root, campaign, variants)
+        parent_paths = self.config_paths(campaign_id, parent_attempt_id)
+        parent_path_by_variant = {path.parent.name: path for path in parent_paths}
+        parent_configs = {
+            path.parent.name: _read_yaml(path) for path in parent_paths
+        }
+        return _attempt_has_performance_evidence(
+            self.layout.evidence_roots,
+            self.layout.studio_runtime_root,
+            self.project_root,
+            campaign_id,
+            parent_attempt_id,
+            parent_configs,
+            parent_path_by_variant,
+        )
+
     def create(
         self,
         request: FollowUpAttemptRequestV1 | Mapping[str, Any],
@@ -203,16 +400,21 @@ class FollowUpAttemptService:
         campaign_root, campaign, variants = self._campaign(parsed.campaign_id)
         self._require_studio_authored(campaign_root, campaign, variants)
         parent_paths = self.config_paths(parsed.campaign_id, parsed.parent_attempt_id)
+        frozen_parent_variants = tuple(path.parent.name for path in parent_paths)
+        if len(set(frozen_parent_variants)) != len(frozen_parent_variants):
+            raise ValueError("parent attempt contains duplicate variant identities")
+        unknown_parent_variants = sorted(set(frozen_parent_variants) - set(variants))
+        if unknown_parent_variants:
+            raise ValueError(
+                "parent attempt contains variants outside the campaign: "
+                + ", ".join(unknown_parent_variants)
+            )
+        # A child attempt inherits the parent's frozen scope. In particular,
+        # a v02-only replication must never expand back into v01 merely because
+        # both variants remain historical members of the same campaign.
+        variants = frozen_parent_variants
         parent_path_by_variant = {path.parent.name: path for path in parent_paths}
         parent_configs = {path.parent.name: _read_yaml(path) for path in parent_paths}
-        if tuple(parent_configs) != variants:
-            parent_configs = {
-                variant: _read_yaml(next(path for path in parent_paths if path.parent.name == variant))
-                for variant in variants
-            }
-            parent_path_by_variant = {
-                variant: next(path for path in parent_paths if path.parent.name == variant) for variant in variants
-            }
         for variant, cfg in parent_configs.items():
             if str(cfg.get("attempt_id") or "") != parsed.parent_attempt_id:
                 raise ValueError(f"parent config {variant} does not declare attempt_id={parsed.parent_attempt_id}")
@@ -226,13 +428,44 @@ class FollowUpAttemptService:
             parent_configs,
             parent_path_by_variant,
         )
+        if parsed.attempt_kind == "replication" and parsed.target_variant_id:
+            if parsed.target_variant_id not in parent_configs:
+                raise ValueError(
+                    f"unknown replication target variant: {parsed.target_variant_id}"
+                )
+            variants = (parsed.target_variant_id,)
         configs = {variant: deepcopy(parent_configs[variant]) for variant in variants}
-        dataset_manifest = self._dataset_for_configs(configs)
+        dataset_manifests = self._datasets_for_configs(configs)
         changes: list[dict[str, Any]] = []
+
+        if parsed.attempt_kind == "methodology_rerun":
+            for variant in variants:
+                old_policy = deepcopy(configs[variant].get("research_policy") or {})
+                configs[variant] = canonicalize_campaign_config(configs[variant])
+                if old_policy != configs[variant]["research_policy"]:
+                    changes.append(
+                        {
+                            "variant_id": variant,
+                            "scope": "repository_methodology",
+                            "field": "research_policy",
+                            "old": old_policy,
+                            "new": deepcopy(configs[variant]["research_policy"]),
+                            "reviewed": True,
+                        }
+                    )
 
         if parsed.attempt_kind == "data_refresh":
             dataset_manifest = self._load_dataset(str(parsed.dataset_id))
-            for variant in variants:
+            refresh_variants = (
+                (parsed.target_variant_id,)
+                if parsed.target_variant_id is not None
+                else variants
+            )
+            for variant in refresh_variants:
+                if variant not in configs:
+                    raise ValueError(
+                        f"unknown data refresh target variant: {variant}"
+                    )
                 changes.extend(
                     _apply_dataset_refresh(
                         configs[variant],
@@ -241,11 +474,30 @@ class FollowUpAttemptService:
                         project_root=self.project_root,
                     )
                 )
+                dataset_manifests[variant] = dataset_manifest
         elif parsed.attempt_kind in {"pre_pnl_mechanics_correction", "rescue"}:
             assert parsed.target_variant_id is not None
             target = configs[parsed.target_variant_id]
-            for patch in parsed.mechanic_patches:
-                changes.append(_apply_mechanic_patch(target, patch))
+            if parsed.refresh_certification:
+                changes.extend(
+                    _apply_certification_refresh(
+                        target,
+                        variant_id=parsed.target_variant_id,
+                        project_root=self.project_root,
+                        replacement_strategy_id=parsed.replacement_strategy_id,
+                    )
+                )
+            elif parsed.execution_timeline is not None:
+                changes.extend(
+                    _apply_execution_timeline(
+                        target,
+                        parsed.execution_timeline,
+                        variant_id=parsed.target_variant_id,
+                    )
+                )
+            else:
+                for patch in parsed.mechanic_patches:
+                    changes.append(_apply_mechanic_patch(target, patch))
         elif parsed.attempt_kind == "pre_pnl_parameter_declaration":
             assert parsed.target_variant_id is not None
             target = configs[parsed.target_variant_id]
@@ -256,10 +508,55 @@ class FollowUpAttemptService:
                     project_root=self.project_root,
                 )
             )
+        elif (
+            parsed.attempt_kind == "methodology_rerun"
+            and parsed.mechanics_validation_window is not None
+        ):
+            window = parsed.mechanics_validation_window
+            if window.variant_id not in configs:
+                raise ValueError(
+                    f"unknown mechanics validation target variant: {window.variant_id}"
+                )
+            window_change = _apply_mechanics_validation_window(
+                configs[window.variant_id],
+                window,
+                dataset_manifest=dataset_manifests[window.variant_id],
+                project_root=self.project_root,
+            )
+            if window_change is not None:
+                changes.append(window_change)
+            if parsed.refresh_certification:
+                changes.extend(
+                    _apply_certification_refresh(
+                        configs[window.variant_id],
+                        variant_id=window.variant_id,
+                        project_root=self.project_root,
+                    )
+                )
+            if not changes:
+                raise ValueError(
+                    "methodology rerun must adopt a different repository policy, "
+                    "change the mechanics validation window, or refresh certification"
+                )
+
+        for variant, cfg in configs.items():
+            changes.extend(
+                _rebase_relocated_project_paths(
+                    cfg,
+                    variant_id=variant,
+                    project_root=self.project_root,
+                )
+            )
 
         created_at = self._now()
         if created_at.tzinfo is None or created_at.utcoffset() is None:
             raise ValueError("follow-up attempt clock must return a timezone-aware datetime")
+        certification_target_variant = parsed.target_variant_id
+        if (
+            parsed.attempt_kind == "methodology_rerun"
+            and parsed.mechanics_validation_window is not None
+        ):
+            certification_target_variant = parsed.mechanics_validation_window.variant_id
         for variant, cfg in configs.items():
             _apply_attempt_identity(
                 cfg,
@@ -277,7 +574,17 @@ class FollowUpAttemptService:
             )
             validate_campaign_config_contract(cfg, context=f"follow-up {attempt_id}/{variant}")
             _require_full_methodology(cfg)
-            self._validate_certified_mechanics(cfg, dataset_manifest)
+            target_scoped = parsed.attempt_kind in {
+                "methodology_rerun",
+                "pre_pnl_mechanics_correction",
+                "pre_pnl_parameter_declaration",
+                "rescue",
+            } or (
+                parsed.attempt_kind == "data_refresh"
+                and parsed.target_variant_id is not None
+            )
+            if not target_scoped or variant == certification_target_variant:
+                self._validate_certified_mechanics(cfg, dataset_manifests[variant])
         _refresh_and_require_unique_mechanic_signatures(configs)
 
         source_hashes = {variant: _file_sha256(parent_path_by_variant[variant]) for variant in variants}
@@ -296,8 +603,14 @@ class FollowUpAttemptService:
                 _write_yaml(path, configs[variant])
                 staged_paths.append(path)
             _write_yaml(staging / "strategy_spec.yaml", attempt_spec)
+            preflight_paths = staged_paths
+            if target_scoped:
+                preflight_paths = [
+                    path for path in staged_paths
+                    if path.parent.name == certification_target_variant
+                ]
             preflight = run_preflight(
-                config_paths=staged_paths,
+                config_paths=preflight_paths,
                 run_tests=False,
                 project_root=self.project_root,
             )
@@ -305,6 +618,17 @@ class FollowUpAttemptService:
                 failures = "; ".join(str(item) for item in preflight.get("failures") or [])
                 raise ValueError(f"follow-up preflight failed before installation: {failures}")
             config_hashes = {variant: _file_sha256(path) for variant, path in zip(variants, staged_paths)}
+            dataset_bindings = {
+                variant: {
+                    "dataset_id": dataset_manifests[variant].dataset_id,
+                    "dataset_manifest_sha256": _file_sha256(
+                        self.layout.dataset_root
+                        / dataset_manifests[variant].dataset_id
+                        / "dataset_manifest.json"
+                    ),
+                }
+                for variant in variants
+            }
             manifest = {
                 "schema": FOLLOW_UP_SCHEMA,
                 "campaign_id": parsed.campaign_id,
@@ -324,20 +648,26 @@ class FollowUpAttemptService:
                     variant: str((configs[variant].get("research_metadata") or {}).get("mechanic_signature") or "")
                     for variant in variants
                 },
-                "dataset_id": dataset_manifest.dataset_id,
-                "dataset_manifest_sha256": _file_sha256(
-                    self.layout.dataset_root / dataset_manifest.dataset_id / "dataset_manifest.json"
-                ),
+                "dataset_bindings": dataset_bindings,
                 "changes": changes,
                 "preflight": {
                     "verdict": "PASS",
-                    "config_count": len(staged_paths),
+                    "config_count": len(preflight_paths),
                     "warnings": [str(item) for item in preflight.get("warnings") or []],
                 },
                 "immutable": True,
                 "automatic_replay_permitted": False,
                 "ledger_event_stage": f"follow_up_attempt/{attempt_id}",
             }
+            unique_dataset_ids = {
+                binding["dataset_id"] for binding in dataset_bindings.values()
+            }
+            if len(unique_dataset_ids) == 1:
+                dataset_id = next(iter(unique_dataset_ids))
+                manifest["dataset_id"] = dataset_id
+                manifest["dataset_manifest_sha256"] = dataset_bindings[
+                    next(iter(dataset_bindings))
+                ]["dataset_manifest_sha256"]
             _write_json(staging / "attempt_manifest.json", manifest)
             if destination.exists() or destination.is_symlink():
                 raise FileExistsError(f"follow-up attempt identity already exists: {destination}")
@@ -358,7 +688,10 @@ class FollowUpAttemptService:
                 attempt_kind=parsed.attempt_kind,
                 parent_attempt_id=parsed.parent_attempt_id,
                 reason=parsed.reason,
-                dataset_id=dataset_manifest.dataset_id,
+                dataset_ids={
+                    variant: dataset_manifests[variant].dataset_id
+                    for variant in variants
+                },
                 config_paths={
                     variant: _display_path(path, self.project_root) for variant, path in zip(variants, final_paths)
                 },
@@ -480,6 +813,74 @@ class FollowUpAttemptService:
                 )
         return attempts
 
+    def attempt_detail(
+        self,
+        campaign_id: str,
+        attempt_id: str,
+    ) -> dict[str, Any]:
+        """Load dataset lineage for one immutable attempt on demand."""
+
+        attempts = self.list_attempts(
+            campaign_id,
+            include_dataset_bindings=False,
+        )
+        attempt = next(
+            (
+                dict(item)
+                for item in attempts
+                if str(item.get("attempt_id") or "") == attempt_id
+            ),
+            None,
+        )
+        if attempt is None:
+            raise FileNotFoundError(
+                f"immutable attempt not found: {campaign_id}/{attempt_id}"
+            )
+        try:
+            bindings = self._attempt_dataset_bindings(campaign_id, attempt_id)
+        except (FileNotFoundError, KeyError, OSError, ValueError) as exc:
+            attempt["dataset_lineage_error"] = str(exc)
+            bindings = []
+        parent_id = str(attempt.get("parent_attempt_id") or "")
+        parent_bindings: dict[str, dict[str, Any]] = {}
+        if parent_id:
+            try:
+                parent_bindings = {
+                    str(item.get("variant_id") or ""): item
+                    for item in self._attempt_dataset_bindings(
+                        campaign_id,
+                        parent_id,
+                    )
+                }
+            except (FileNotFoundError, KeyError, OSError, ValueError):
+                parent_bindings = {}
+        for binding in bindings:
+            if attempt_id == "original":
+                binding["dataset_change"] = "original"
+                binding["parent_dataset_id"] = None
+                continue
+            parent = parent_bindings.get(str(binding.get("variant_id") or ""))
+            binding["parent_dataset_id"] = (
+                parent.get("dataset_id") if parent else None
+            )
+            if parent is None:
+                binding["dataset_change"] = "unknown"
+            else:
+                binding["dataset_change"] = (
+                    "inherited"
+                    if (
+                        binding.get("dataset_id"),
+                        binding.get("source_sha256"),
+                    )
+                    == (
+                        parent.get("dataset_id"),
+                        parent.get("source_sha256"),
+                    )
+                    else "changed"
+                )
+        attempt["dataset_bindings"] = bindings
+        return attempt
+
     def _attempt_dataset_bindings(
         self,
         campaign_id: str,
@@ -549,6 +950,30 @@ class FollowUpAttemptService:
             if manifest.get("schema") != FOLLOW_UP_SCHEMA or manifest.get("attempt_id") != attempt_id:
                 raise ValueError(f"follow-up manifest identity is invalid: {manifest_path}")
             declared_hashes = manifest.get("config_sha256")
+            frozen_order = manifest.get("variant_order")
+            if frozen_order is None and isinstance(declared_hashes, Mapping):
+                # Backward-compatible immutable attempts predate the explicit
+                # variant_order field. Their ordered hash-map keys are the
+                # only configs that attempt can legitimately contain.
+                frozen_order = list(declared_hashes)
+            if (
+                not isinstance(frozen_order, list)
+                or not frozen_order
+                or any(
+                    not isinstance(variant, str)
+                    or re.fullmatch(r"[a-z0-9][a-z0-9_]*", variant) is None
+                    for variant in frozen_order
+                )
+                or len(set(frozen_order)) != len(frozen_order)
+            ):
+                raise ValueError(
+                    f"follow-up manifest variant_order is missing or invalid: {manifest_path}"
+                )
+            # A follow-up is immutable evidence about the campaign variants
+            # that existed when it was authored. Later sequential variants
+            # must not retroactively become required files in an older
+            # attempt.
+            variants = tuple(frozen_order)
             if not isinstance(declared_hashes, Mapping) or set(declared_hashes) != set(variants):
                 raise ValueError(f"follow-up manifest does not hash every declared config: {manifest_path}")
             paths = tuple(attempt_root / variant / "config.yaml" for variant in variants)
@@ -568,6 +993,32 @@ class FollowUpAttemptService:
                 )
         return paths
 
+    def target_config_path(self, campaign_id: str, attempt_id: str = "original") -> Path:
+        """Resolve the sole variant governed for execution by an attempt.
+
+        Campaign order is historical context, not cross-variant execution
+        lineage. Sibling configs may remain in an immutable campaign snapshot,
+        but they cannot qualify, approve, preflight, or block the target.
+        """
+
+        paths = self.config_paths(campaign_id, attempt_id)
+        target_variant = ""
+        if attempt_id != "original":
+            campaign_root, _campaign, _variants = self._campaign(campaign_id)
+            manifest = _read_json(
+                campaign_root / FOLLOW_UP_ROOT / attempt_id / "attempt_manifest.json"
+            )
+            target_variant = str(manifest.get("target_variant_id") or "")
+        if not target_variant:
+            target_variant = paths[-1].parent.name
+        matches = [path for path in paths if path.parent.name == target_variant]
+        if len(matches) != 1:
+            raise ValueError(
+                f"attempt {attempt_id!r} must contain exactly one target config for "
+                f"{target_variant}; found {len(matches)}"
+            )
+        return matches[0]
+
     def queue_mechanics_validation(
         self,
         campaign_id: str,
@@ -575,7 +1026,7 @@ class FollowUpAttemptService:
     ) -> list[JobRecordV1]:
         from alphaquest.studio.worker import MECHANICS_VALIDATION_RUN
 
-        paths = self.config_paths(campaign_id, attempt_id)[-1:]
+        paths = (self.target_config_path(campaign_id, attempt_id),)
         queue = SQLiteJobQueue(self.layout.studio_runtime_root / "jobs.sqlite3")
         jobs: list[JobRecordV1] = []
         for config_path in paths:
@@ -606,7 +1057,7 @@ class FollowUpAttemptService:
         return jobs
 
     def queue_performance(self, campaign_id: str, attempt_id: str) -> list[JobRecordV1]:
-        paths = self.config_paths(campaign_id, attempt_id)[-1:]
+        paths = (self.target_config_path(campaign_id, attempt_id),)
         approvals = require_all_variant_mechanics_approved(list(paths))
         gates = {Path(str(item["config_path"])).resolve(): item for item in approvals}
         queue = SQLiteJobQueue(self.layout.studio_runtime_root / "jobs.sqlite3")
@@ -614,6 +1065,29 @@ class FollowUpAttemptService:
         for config_path in paths:
             cfg = _read_yaml(config_path)
             gate = gates[config_path.resolve()]
+            prior_jobs = [
+                prior
+                for prior in queue.list_jobs(limit=10_000)
+                if prior.job_type == "campaign_variant_run"
+                and prior.campaign_id == campaign_id
+                and str(prior.payload.get("attempt_id") or "") == attempt_id
+                and str(prior.payload.get("variant_id") or "")
+                == str(cfg["variant_id"])
+                and prior.payload.get("execution_scope")
+                != TARGET_VARIANT_PERFORMANCE_SCOPE
+            ]
+            for prior in prior_jobs:
+                if prior.state in {
+                    OperationalState.QUEUED,
+                    OperationalState.RUNNING,
+                    OperationalState.CANCEL_REQUESTED,
+                }:
+                    return [prior]
+                if not _is_legacy_unreserved_preflight_only_job(prior):
+                    _require_queueable_performance_job(
+                        prior,
+                        attempt_id=attempt_id,
+                    )
             output_dir = (
                 self.layout.evidence_roots[0]
                 / campaign_id
@@ -621,24 +1095,28 @@ class FollowUpAttemptService:
                 / str(cfg.get("symbol") or (cfg.get("data") or {}).get("symbol"))
                 / str(cfg["test_run_id"])
             )
-            jobs.append(
-                queue.submit(
-                    job_type="campaign_variant_run",
-                    campaign_id=campaign_id,
-                    payload={
-                        "campaign_id": campaign_id,
-                        "variant_id": str(cfg["variant_id"]),
-                        "attempt_id": attempt_id,
-                        "config_path": str(config_path),
-                        "output_dir": str(output_dir),
-                    },
-                    idempotency_key=f"{campaign_id}:{cfg['variant_id']}:{attempt_id}",
-                    hash_locks={
-                        "config_hash": str(gate.get("config_hash") or ""),
-                        "input_data_hash": str(gate.get("input_data_hash") or ""),
-                    },
-                )
+            job = queue.submit(
+                job_type="campaign_variant_run",
+                campaign_id=campaign_id,
+                payload={
+                    "campaign_id": campaign_id,
+                    "variant_id": str(cfg["variant_id"]),
+                    "attempt_id": attempt_id,
+                    "execution_scope": TARGET_VARIANT_PERFORMANCE_SCOPE,
+                    "config_path": str(config_path),
+                    "output_dir": str(output_dir),
+                },
+                idempotency_key=(
+                    f"{campaign_id}:{cfg['variant_id']}:{attempt_id}:"
+                    f"{TARGET_VARIANT_PERFORMANCE_SCOPE}"
+                ),
+                hash_locks={
+                    "config_hash": str(gate.get("config_hash") or ""),
+                    "input_data_hash": str(gate.get("input_data_hash") or ""),
+                },
             )
+            _require_queueable_performance_job(job, attempt_id=attempt_id)
+            jobs.append(job)
         return jobs
 
     def _campaign(self, campaign_id: str) -> tuple[Path, dict[str, Any], tuple[str, ...]]:
@@ -810,8 +1288,7 @@ class FollowUpAttemptService:
             raise ValueError("data refresh requires a governed dataset with quality verdict PASS")
         if manifest.timestamp_semantics != "bar_open":
             raise ValueError("data refresh requires canonical bar-open timestamps")
-        canonical = Path(manifest.path)
-        canonical = canonical if canonical.is_absolute() else self.project_root / canonical
+        canonical = _resolve_project_owned_path(manifest.path, self.project_root)
         if not canonical.is_file() or _file_sha256(canonical) != manifest.canonical_sha256:
             raise ValueError("governed dataset canonical file is missing or hash-drifted")
         if manifest.source_sha256 != manifest.canonical_sha256:
@@ -842,35 +1319,79 @@ class FollowUpAttemptService:
                 value = event.get(field)
                 if not value:
                     continue
-                artifact = Path(str(value))
-                artifact = artifact if artifact.is_absolute() else self.project_root / artifact
+                artifact = _resolve_project_owned_path(value, self.project_root)
                 if not artifact.is_file() or _file_sha256(artifact) != event.get(hash_field):
                     raise ValueError(f"governed event-source artifact is missing or hash-drifted: {field}")
             raw_dir = event.get("raw_dir")
             if raw_dir:
-                directory = Path(str(raw_dir))
-                directory = directory if directory.is_absolute() else self.project_root / directory
+                directory = _resolve_project_owned_path(raw_dir, self.project_root)
                 if not directory.is_dir():
                     raise ValueError("governed Sierra raw_dir is missing")
         return manifest
 
-    def _dataset_for_configs(self, configs: Mapping[str, Mapping[str, Any]]) -> DatasetManifestV1:
-        ids = {
-            str(cfg.get("dataset_id") or (cfg.get("data") or {}).get("dataset_id") or "") for cfg in configs.values()
+    def fixed_mechanics_validation_window(
+        self,
+        cfg: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Materialize the repository-wide mechanics sample for one config.
+
+        The dates are a consequence of the governed dataset and central policy;
+        they are not a per-campaign methodology choice.
+        """
+
+        dataset_id = str(
+            cfg.get("dataset_id")
+            or (cfg.get("data") or {}).get("dataset_id")
+            or ""
+        )
+        if not dataset_id:
+            raise ValueError("campaign config does not declare a governed dataset")
+        manifest = self._load_dataset(dataset_id)
+        subset = mechanics_validation_subset(
+            manifest.coverage_start,
+            manifest.coverage_end,
+            data_path=manifest.path,
+            data_source=manifest.source,
+            exchange_timezone=manifest.exchange_timezone,
+            project_root=self.project_root,
+        )
+        policy = load_research_policy().mechanics_validation
+        return {
+            **subset,
+            "selection_mode": str(policy["selection_mode"]),
+            "session_count": int(policy["session_count"]),
         }
-        if len(ids) != 1 or not next(iter(ids)):
-            raise ValueError("all parent configs must use one governed dataset")
-        return self._load_dataset(next(iter(ids)))
+
+    def _datasets_for_configs(
+        self,
+        configs: Mapping[str, Mapping[str, Any]],
+    ) -> dict[str, DatasetManifestV1]:
+        manifests: dict[str, DatasetManifestV1] = {}
+        for variant, cfg in configs.items():
+            dataset_id = str(
+                cfg.get("dataset_id")
+                or (cfg.get("data") or {}).get("dataset_id")
+                or ""
+            )
+            if not dataset_id:
+                raise ValueError(f"parent config {variant} does not declare a governed dataset")
+            manifests[variant] = self._load_dataset(dataset_id)
+        return manifests
 
     def _validate_certified_mechanics(
         self,
         cfg: dict[str, Any],
         dataset: DatasetManifestV1,
     ) -> None:
-        if cfg.get("symbol") != dataset.symbol or cfg.get("timeframe") != dataset.timeframe:
-            raise ValueError("follow-up dataset symbol and timeframe must match the frozen campaign")
+        if cfg.get("symbol") != dataset.symbol:
+            raise ValueError("follow-up dataset symbol must match the frozen campaign")
         strategy = cfg.get("strategy") if isinstance(cfg.get("strategy"), dict) else {}
-        if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
+        event_lane = str(cfg.get("engine_lane") or "") == "canonical_event_replay"
+        if not event_lane and cfg.get("timeframe") != dataset.timeframe:
+            raise ValueError(
+                "bar-lane follow-up dataset timeframe must match the frozen campaign"
+            )
+        if event_lane:
             event = strategy.get("event") if isinstance(strategy.get("event"), dict) else {}
             try:
                 certification = strategy_identity_for_config(
@@ -891,6 +1412,17 @@ class FollowUpAttemptService:
                 if authored != event_params:
                     raise StrategyCertificationError(
                         "authored event mechanics and canonical strategy.event.params have diverged"
+                    )
+                declared_timeframe = str(cfg.get("timeframe") or "")
+                match = re.fullmatch(r"([1-9][0-9]*)m", declared_timeframe)
+                bar_seconds = event_params.get("bar_seconds")
+                if (
+                    match is not None
+                    and bar_seconds is not None
+                    and int(match.group(1)) * 60 != int(bar_seconds)
+                ):
+                    raise StrategyCertificationError(
+                        "event strategy timeframe must match its certified bar_seconds"
                     )
                 core_grid = (cfg.get("core_grid") or {}).get("parameters", {})
                 wfa_grid = (cfg.get("wfa") or {}).get("parameters", {})
@@ -1001,6 +1533,62 @@ def _apply_attempt_identity(
     run_path = evidence_root / campaign_id / variant_id / symbol / str(cfg["test_run_id"])
     if run_path.exists():
         raise FileExistsError(f"fresh follow-up staged-run path already exists: {run_path}")
+
+
+def _resolve_project_owned_path(value: str | Path, project_root: Path) -> Path:
+    """Resolve a governed path after the repository itself has moved."""
+
+    path = Path(value)
+    if not path.is_absolute():
+        return project_root / path
+    if path.exists():
+        return path
+    parts = path.parts
+    for anchor in ("data", "research", "research_artifacts", "run-store"):
+        if anchor not in parts:
+            continue
+        candidate = project_root.joinpath(*parts[parts.index(anchor) :])
+        if candidate.exists():
+            return candidate
+    return path
+
+
+def _rebase_relocated_project_paths(
+    cfg: dict[str, Any],
+    *,
+    variant_id: str,
+    project_root: Path,
+) -> list[dict[str, Any]]:
+    """Make project-owned operational paths portable in a fresh child."""
+
+    data = cfg.get("data") if isinstance(cfg.get("data"), dict) else {}
+    execution = (
+        data.get("execution_data")
+        if isinstance(data.get("execution_data"), dict)
+        else {}
+    )
+    raw_dir = execution.get("raw_dir")
+    if not raw_dir:
+        return []
+    original = Path(str(raw_dir))
+    resolved = _resolve_project_owned_path(original, project_root)
+    if not original.is_absolute() or resolved == original or not resolved.is_dir():
+        return []
+    try:
+        portable = resolved.relative_to(project_root).as_posix()
+    except ValueError:
+        return []
+    execution["raw_dir"] = portable
+    return [
+        {
+            "variant_id": variant_id,
+            "scope": "operational_storage",
+            "field": "data.execution_data.raw_dir",
+            "old": str(original),
+            "new": portable,
+            "reviewed": True,
+        }
+    ]
 
 
 def _validate_context_bound_module_values(cfg: Mapping[str, Any]) -> None:
@@ -1160,7 +1748,12 @@ def _apply_dataset_refresh(
         manifest.coverage_start,
         manifest.coverage_end,
         entry=entry_binding,
+        data_path=manifest.path,
+        data_source=manifest.source,
+        exchange_timezone=manifest.exchange_timezone,
+        project_root=project_root,
     )
+    gate.update(deepcopy(load_research_policy().mechanics_validation))
     changes = [
         {
             "variant_id": variant_id,
@@ -1180,6 +1773,646 @@ def _apply_dataset_refresh(
                 "old": (old_execution or {}).get("source") if isinstance(old_execution, dict) else None,
                 "new": (data.get("execution_data") or {}).get("source"),
                 "reviewed": True,
+            }
+        )
+    return changes
+
+
+def _apply_execution_timeline(
+    cfg: dict[str, Any],
+    timeline: ExecutionTimelinePatchV1,
+    *,
+    variant_id: str,
+) -> list[dict[str, Any]]:
+    if str(cfg.get("engine_lane") or "") != "canonical_event_replay":
+        raise ValueError(
+            "execution timeline correction requires canonical event replay"
+        )
+    execution = ((cfg.get("data") or {}).get("execution_data") or {})
+    source_end = str(execution.get("rth_end") or "")
+    if source_end and timeline.flatten_time > source_end:
+        raise ValueError(
+            "flatten_time cannot exceed the governed event-source RTH boundary"
+        )
+    event_params = (
+        (((cfg.get("strategy") or {}).get("event") or {}).get("params") or {})
+    )
+    certified_limit = int(event_params.get("max_trades_per_day", -1))
+    if certified_limit != timeline.max_trades_per_day:
+        raise ValueError(
+            "execution timeline daily limit must match certified "
+            "strategy.event.params.max_trades_per_day"
+        )
+
+    changes: list[dict[str, Any]] = []
+    paths = (
+        ("core", "latest_entry_time", timeline.latest_entry_time),
+        ("core", "flatten_time", timeline.flatten_time),
+        ("core", "max_trades_per_day", timeline.max_trades_per_day),
+        ("strategy", "flatten_time", timeline.flatten_time),
+        ("apex_rules", "latest_entry_time", timeline.latest_entry_time),
+        ("apex_rules", "force_flatten_time", timeline.flatten_time),
+        ("apex_rules", "latest_flat_time", timeline.flatten_time),
+    )
+    for section_name, field_name, new_value in paths:
+        section = cfg.setdefault(section_name, {})
+        old_value = section.get(field_name)
+        section[field_name] = new_value
+        changes.append(
+            {
+                "variant_id": variant_id,
+                "scope": section_name,
+                "field": field_name,
+                "old": old_value,
+                "new": new_value,
+                "reviewed": True,
+            }
+        )
+    research = cfg.setdefault("research_metadata", {})
+    mechanics_review = research.get("mechanics_review")
+    if isinstance(mechanics_review, dict):
+        field_name = "target_exit_rationale"
+        old_rationale = str(mechanics_review.get(field_name) or "").strip()
+        flatten_label = timeline.flatten_time[:5]
+        if re.search(
+            r"\b\d{1,2}:\d{2}(?::\d{2})?\s+forced flatten\b",
+            old_rationale,
+        ):
+            new_rationale = re.sub(
+                r"\b\d{1,2}:\d{2}(?::\d{2})?\s+forced flatten\b",
+                f"{flatten_label} forced flatten",
+                old_rationale,
+            )
+        else:
+            new_rationale = (
+                f"{old_rationale.rstrip('.')}."
+                if old_rationale
+                else ""
+            )
+            new_rationale += (
+                f" Positions and pending orders are forced flat at {flatten_label} ET."
+            )
+            new_rationale = new_rationale.strip()
+        mechanics_review[field_name] = new_rationale
+        changes.append(
+            {
+                "variant_id": variant_id,
+                "scope": "research_metadata.mechanics_review",
+                "field": field_name,
+                "old": old_rationale,
+                "new": new_rationale,
+                "reviewed": True,
+            }
+        )
+    daily_limit = (
+        "no daily trade-count cap"
+        if timeline.max_trades_per_day == 0
+        else f"a maximum of {timeline.max_trades_per_day} entries per session"
+    )
+    research["timeframe_rationale"] = (
+        "Trade events are replayed throughout RTH from 09:30 to 16:00 New York. "
+        f"New entries are accepted through {timeline.latest_entry_time}, all "
+        f"positions and pending orders flatten at {timeline.flatten_time}, and "
+        f"{daily_limit} is applied."
+    )
+    return changes
+
+
+def _apply_certification_refresh(
+    cfg: dict[str, Any],
+    *,
+    variant_id: str,
+    project_root: Path,
+    replacement_strategy_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Bind a pre-PnL attempt to a newly certified implementation.
+
+    This is deliberately separate from scalar mechanics edits.  It is the
+    governed publication path when reviewed source logic changes while the
+    strategy remains the same campaign variant.
+    """
+
+    if str(cfg.get("engine_lane") or "") != "canonical_event_replay":
+        raise ValueError("certification refresh requires the canonical event-replay lane")
+    strategy = cfg.get("strategy") if isinstance(cfg.get("strategy"), dict) else {}
+    event = strategy.get("event") if isinstance(strategy.get("event"), dict) else {}
+    old_module = str(event.get("module") or "")
+    module = str(replacement_strategy_id or old_module)
+    certification = get_strategy_certification(module, project_root, require_current=True)
+    old_identity = deepcopy(cfg.get("strategy_certification") or {})
+    new_identity = {
+        "strategy_id": certification.strategy_id,
+        "implementation_version": certification.implementation_version,
+        "implementation_sha256": certification.implementation_sha256,
+        "manifest_sha256": certification.manifest_sha256,
+    }
+
+    old_event_params = deepcopy(event.get("params") or {})
+    if not isinstance(old_event_params, dict):
+        raise ValueError("strategy.event.params must be a mapping")
+    entry = strategy.get("entry") if isinstance(strategy.get("entry"), dict) else {}
+    entry_params = entry.get("params") if isinstance(entry.get("params"), dict) else {}
+    old_authored = deepcopy(entry_params.get("mechanics") or {})
+    if old_authored != old_event_params:
+        raise ValueError("authored event mechanics and canonical strategy.event.params have diverged")
+
+    retired_parameters = sorted(set(old_event_params) - set(certification.parameters))
+    strategy_replaced = module != old_module
+    retained_event_params = (
+        {}
+        if strategy_replaced
+        else {
+            name: value
+            for name, value in old_event_params.items()
+            if name in certification.parameters
+        }
+    )
+    migrated_fixed_defaults: list[str] = []
+    for name, value in list(retained_event_params.items()):
+        parameter = certification.parameters[name]
+        try:
+            validate_certified_parameter_value(
+                parameter,
+                value,
+                context=certification.strategy_id,
+            )
+        except StrategyCertificationError:
+            if parameter.studio_editable or parameter.tunable:
+                raise
+            retained_event_params[name] = parameter.default
+            migrated_fixed_defaults.append(name)
+    normalized = normalize_certified_event_params(certification, retained_event_params)
+    context_coverage_changes = _apply_certified_context_coverage_start(
+        cfg,
+        normalized,
+        variant_id=variant_id,
+        project_root=project_root,
+    )
+    core_grid = (cfg.get("core_grid") or {}).get("parameters", {})
+    wfa_grid = (cfg.get("wfa") or {}).get("parameters", {})
+    if core_grid != wfa_grid:
+        raise ValueError("core and walk-forward event parameter grids must be identical")
+    retired_grid_dimensions: dict[str, list[Any]] = {}
+    reset_grid_dimensions: dict[str, list[Any]] = {}
+    retained_grid: dict[str, list[Any]] = {}
+    for qualified_name, values in core_grid.items():
+        parameter_name = str(qualified_name).removeprefix("event.params.")
+        parameter = certification.parameters.get(parameter_name)
+        if parameter is None or not parameter.tunable:
+            retired_grid_dimensions[str(qualified_name)] = deepcopy(values)
+        else:
+            retained_grid[str(qualified_name)] = deepcopy(values)
+    retained_combination_count = math.prod(
+        len(values) for values in retained_grid.values()
+    )
+    if retained_grid and not 8 <= retained_combination_count <= 120:
+        # A source-level mechanics correction can retire only part of an old
+        # grid, leaving a residual parameter space that is too small to be a
+        # governed optimization declaration.  Freeze the correction at the
+        # reviewed defaults; a separate immutable parameter-declaration child
+        # must install the replacement grid before any performance stage.
+        reset_grid_dimensions = deepcopy(retained_grid)
+        retained_grid = {}
+    canonical_grid = (
+        {}
+        if strategy_replaced
+        else validate_certified_event_parameter_grid(
+            certification,
+            normalized,
+            retained_grid,
+            qualified_keys=True,
+        )
+    )
+
+    changed_defaults = [
+        name for name in normalized if name not in old_event_params or old_event_params[name] != normalized[name]
+    ]
+    if old_identity == new_identity and not changed_defaults and not strategy_replaced:
+        raise ValueError("certification refresh must bind a materially new certified implementation")
+
+    # A new implementation version may retain the stable strategy ID while
+    # changing one of its certified module bindings. Always synchronize the
+    # bindings; limiting this to an ID replacement leaves same-package
+    # upgrades with stale entry/stop/target identities.
+    event["module"] = certification.strategy_id
+    entry["module"] = certification.entry_module
+    stop = strategy.setdefault("sl", {})
+    stop["module"] = certification.stop_module
+    stop["params"] = {}
+    target = strategy.setdefault("tp", {})
+    target["module"] = certification.target_module
+    target["params"] = {}
+    cfg["strategy_name"] = certification.strategy_id
+
+    if strategy_replaced:
+        core = cfg.setdefault("core", {})
+        execution_values = {
+            "tick_size": normalized.get("tick_size"),
+            "point_value": normalized.get("point_value"),
+            "commission_per_contract": normalized.get("commission_per_contract"),
+            "slippage_ticks": normalized.get("slippage_ticks"),
+            "max_trades_per_day": normalized.get("max_trades_per_day"),
+            "contracts": normalized.get("contracts"),
+            "initial_balance": normalized.get("initial_balance"),
+        }
+        for name, value in execution_values.items():
+            if value is not None:
+                core[name] = value
+        if (
+            execution_values["tick_size"] is not None
+            and execution_values["point_value"] is not None
+        ):
+            core["tick_value"] = (
+                float(execution_values["tick_size"])
+                * float(execution_values["point_value"])
+            )
+        sizing = core.setdefault("position_sizing", {})
+        if execution_values["contracts"] is not None:
+            sizing["mode"] = "fixed_contracts"
+            sizing["contracts"] = execution_values["contracts"]
+    event["params"] = deepcopy(normalized)
+    entry_params["mechanics"] = deepcopy(normalized)
+    cfg.setdefault("core_grid", {})["parameters"] = deepcopy(canonical_grid)
+    cfg.setdefault("wfa", {})["parameters"] = deepcopy(canonical_grid)
+    cfg["strategy_certification"] = deepcopy(new_identity)
+    research = cfg.setdefault("research_metadata", {})
+    reviewed_mechanics = certification.studio.get("mechanics_review")
+    if isinstance(reviewed_mechanics, dict):
+        research["mechanics_review"] = deepcopy(reviewed_mechanics)
+        timeframe_rationale = certification.studio.get("timeframe_rationale")
+        if timeframe_rationale:
+            research["timeframe_rationale"] = str(timeframe_rationale)
+    validation_gate = research.setdefault("validation_gate", {})
+    old_minimum_trade_samples = validation_gate.get(
+        "minimum_trade_samples"
+    )
+    mechanics_validation = certification.studio.get(
+        "mechanics_validation"
+    )
+    if isinstance(mechanics_validation, dict):
+        required_samples = int(
+            mechanics_validation.get("minimum_trade_samples") or 1
+        )
+        if required_samples < 1:
+            raise ValueError(
+                "certified minimum_trade_samples must be positive"
+            )
+        validation_gate["minimum_trade_samples"] = required_samples
+
+    execution_changes = _apply_certified_execution_defaults(
+        cfg,
+        certification.studio.get("execution_defaults"),
+        variant_id=variant_id,
+    )
+    changes = [
+        {
+            "variant_id": variant_id,
+            "scope": "strategy_certification",
+            "field": "certified_implementation_identity",
+            "old": old_identity,
+            "new": new_identity,
+            "reviewed": True,
+        }
+    ]
+    changes.extend(execution_changes)
+    changes.extend(context_coverage_changes)
+    if (
+        validation_gate.get("minimum_trade_samples")
+        != old_minimum_trade_samples
+    ):
+        changes.append(
+            {
+                "variant_id": variant_id,
+                "scope": "research_metadata.validation_gate",
+                "field": "minimum_trade_samples",
+                "old": old_minimum_trade_samples,
+                "new": validation_gate["minimum_trade_samples"],
+                "reviewed": True,
+            }
+        )
+    if migrated_fixed_defaults:
+        changes.append(
+            {
+                "variant_id": variant_id,
+                "scope": "strategy.event.params",
+                "field": "migrated_fixed_certified_defaults",
+                "old": {
+                    name: old_event_params[name]
+                    for name in migrated_fixed_defaults
+                },
+                "new": {
+                    name: normalized[name]
+                    for name in migrated_fixed_defaults
+                },
+                "reviewed": True,
+            }
+        )
+    if strategy_replaced:
+        changes.append(
+            {
+                "variant_id": variant_id,
+                "scope": "strategy",
+                "field": "certified_strategy_package",
+                "old": old_module,
+                "new": certification.strategy_id,
+                "reviewed": True,
+            }
+        )
+    changes.extend(
+        {
+            "variant_id": variant_id,
+            "scope": "strategy.event.params,strategy.entry.params.mechanics",
+            "field": name,
+            "old": old_event_params[name],
+            "new": None,
+            "reviewed": True,
+            "change_kind": "retired_certified_parameter",
+        }
+        for name in retired_parameters
+    )
+    changes.extend(
+        {
+            "variant_id": variant_id,
+            "scope": "core_grid.parameters,wfa.parameters",
+            "field": name,
+            "old": values,
+            "new": None,
+            "reviewed": True,
+            "change_kind": "retired_certified_grid_dimension",
+        }
+        for name, values in retired_grid_dimensions.items()
+    )
+    changes.extend(
+        {
+            "variant_id": variant_id,
+            "scope": "core_grid.parameters,wfa.parameters",
+            "field": name,
+            "old": values,
+            "new": None,
+            "reviewed": True,
+            "change_kind": "incomplete_inherited_grid_reset_to_defaults",
+        }
+        for name, values in reset_grid_dimensions.items()
+    )
+    changes.extend(
+        {
+            "variant_id": variant_id,
+            "scope": "strategy.event.params,strategy.entry.params.mechanics",
+            "field": name,
+            "old": old_event_params.get(name),
+            "new": normalized[name],
+            "reviewed": True,
+        }
+        for name in changed_defaults
+    )
+    return changes
+
+
+def _apply_certified_execution_defaults(
+    cfg: dict[str, Any],
+    raw_defaults: Any,
+    *,
+    variant_id: str,
+) -> list[dict[str, Any]]:
+    """Apply manifest-reviewed core execution defaults during a refresh."""
+
+    if raw_defaults is None:
+        return []
+    if not isinstance(raw_defaults, Mapping):
+        raise ValueError("certified studio.execution_defaults must be a mapping")
+    allowed = {
+        "timeframe",
+        "entry_start",
+        "latest_entry_time",
+        "flatten_time",
+        "max_trades_per_day",
+        "daily_loss_limit",
+        "daily_profit_stop",
+        "commission_per_contract",
+        "point_value",
+        "tick_value",
+        "execution_instrument",
+        "signal_instrument",
+        "executable_start_date",
+        "slippage_ticks",
+        "entry_slippage_ticks",
+        "protective_stop_slippage_ticks",
+        "target_limit_slippage_ticks",
+        "market_exit_slippage_ticks",
+        "event_stop_market_fill_policy",
+        "contracts",
+        "position_sizing",
+        "prop_max_contracts",
+        "monte_carlo_position_sizing",
+    }
+    unknown = sorted(set(raw_defaults) - allowed)
+    if unknown:
+        raise ValueError(
+            "unsupported certified execution default(s): "
+            + ", ".join(unknown)
+        )
+    core = cfg.setdefault("core", {})
+    changes: list[dict[str, Any]] = []
+    for name, value in raw_defaults.items():
+        if name == "executable_start_date":
+            start_date = date.fromisoformat(str(value))
+            for section_name in ("core", "core_grid", "monkey", "wfa"):
+                section = cfg.get(section_name)
+                if not isinstance(section, dict):
+                    continue
+                subset = section.setdefault("data_subset", {})
+                old_value = subset.get("start_date")
+                if old_value is None or date.fromisoformat(str(old_value)) < start_date:
+                    subset["start_date"] = start_date.isoformat()
+                    changes.append(
+                        {
+                            "variant_id": variant_id,
+                            "scope": f"{section_name}.data_subset",
+                            "field": "start_date",
+                            "old": old_value,
+                            "new": start_date.isoformat(),
+                            "reviewed": True,
+                            "change_kind": "certified_execution_default",
+                        }
+                    )
+            continue
+        if name == "monte_carlo_position_sizing":
+            if not isinstance(value, Mapping):
+                raise ValueError(
+                    "certified monte_carlo_position_sizing must be a mapping"
+                )
+            new_value = deepcopy(dict(value))
+            monte_carlo = cfg.setdefault("monte_carlo", {})
+            old_value = deepcopy(monte_carlo.get("position_sizing"))
+            monte_carlo["position_sizing"] = new_value
+            if old_value != new_value:
+                changes.append(
+                    {
+                        "variant_id": variant_id,
+                        "scope": "monte_carlo",
+                        "field": "position_sizing",
+                        "old": old_value,
+                        "new": deepcopy(new_value),
+                        "reviewed": True,
+                        "change_kind": "certified_execution_default",
+                    }
+                )
+            continue
+        if name == "prop_max_contracts":
+            new_value = int(value)
+            if new_value < 1:
+                raise ValueError(
+                    "certified prop_max_contracts must be at least one"
+                )
+            prop_rules = cfg.setdefault("prop_rules", {})
+            old_value = prop_rules.get("max_contracts")
+            prop_rules["max_contracts"] = new_value
+            if old_value != new_value:
+                changes.append(
+                    {
+                        "variant_id": variant_id,
+                        "scope": "prop_rules",
+                        "field": "max_contracts",
+                        "old": old_value,
+                        "new": new_value,
+                        "reviewed": True,
+                        "change_kind": "certified_execution_default",
+                    }
+                )
+            continue
+        if name == "timeframe":
+            new_value = str(value)
+            old_value = cfg.get("timeframe")
+            cfg["timeframe"] = new_value
+            if old_value != new_value:
+                changes.append(
+                    {
+                        "variant_id": variant_id,
+                        "scope": "config",
+                        "field": name,
+                        "old": old_value,
+                        "new": new_value,
+                        "reviewed": True,
+                        "change_kind": "certified_execution_default",
+                    }
+                )
+            continue
+        if name == "position_sizing":
+            if not isinstance(value, Mapping):
+                raise ValueError(
+                    "certified execution position_sizing must be a mapping"
+                )
+            new_value = deepcopy(dict(value))
+        else:
+            new_value = deepcopy(value)
+        old_value = deepcopy(core.get(name))
+        core[name] = new_value
+        if old_value != new_value:
+            changes.append(
+                {
+                    "variant_id": variant_id,
+                    "scope": "core",
+                    "field": name,
+                    "old": old_value,
+                    "new": deepcopy(new_value),
+                    "reviewed": True,
+                    "change_kind": "certified_execution_default",
+                }
+            )
+    flatten = raw_defaults.get("flatten_time")
+    if flatten is not None:
+        strategy = cfg.setdefault("strategy", {})
+        old_value = strategy.get("flatten_time")
+        strategy["flatten_time"] = str(flatten)
+        if old_value != flatten:
+            changes.append(
+                {
+                    "variant_id": variant_id,
+                    "scope": "strategy",
+                    "field": "flatten_time",
+                    "old": old_value,
+                    "new": str(flatten),
+                    "reviewed": True,
+                    "change_kind": "certified_execution_default",
+                }
+            )
+    apex = cfg.setdefault("apex_rules", {})
+    timeline = {
+        "latest_entry_time": raw_defaults.get("latest_entry_time"),
+        "force_flatten_time": flatten,
+        "latest_flat_time": flatten,
+    }
+    for name, value in timeline.items():
+        if value is None:
+            continue
+        old_value = apex.get(name)
+        apex[name] = str(value)
+        if old_value != value:
+            changes.append(
+                {
+                    "variant_id": variant_id,
+                    "scope": "apex_rules",
+                    "field": name,
+                    "old": old_value,
+                    "new": str(value),
+                    "reviewed": True,
+                    "change_kind": "certified_execution_default",
+                }
+            )
+    return changes
+
+
+def _apply_certified_context_coverage_start(
+    cfg: dict[str, Any],
+    normalized_event_params: Mapping[str, Any],
+    *,
+    variant_id: str,
+    project_root: Path,
+) -> list[dict[str, Any]]:
+    """Exclude only the causal warm-up prefix missing a certified context seed."""
+
+    path_text = normalized_event_params.get("big_trade_context_path")
+    expected_sha256 = normalized_event_params.get("big_trade_context_sha256")
+    if not path_text or not expected_sha256:
+        return []
+    path = Path(str(path_text)).expanduser()
+    if not path.is_absolute():
+        path = project_root / path
+    if not path.is_file():
+        raise ValueError(f"certified big-trade context is missing: {path}")
+    actual_sha256 = _file_sha256(path)
+    if actual_sha256 != str(expected_sha256):
+        raise ValueError(
+            "certified big-trade context hash drift: "
+            f"expected {expected_sha256}, got {actual_sha256}"
+        )
+    frame = pd.read_parquet(path, columns=["session_date"])
+    if frame.empty:
+        raise ValueError("certified big-trade context contains no session rows")
+    coverage_start = str(frame["session_date"].astype(str).min())
+    changes: list[dict[str, Any]] = []
+    for section_name in ("core", "core_grid", "monkey", "wfa"):
+        section = cfg.get(section_name)
+        subset = (
+            section.get("data_subset")
+            if isinstance(section, dict)
+            else None
+        )
+        if not isinstance(subset, dict):
+            continue
+        old_start = str(subset.get("start_date") or "")
+        if not old_start or old_start >= coverage_start:
+            continue
+        subset["start_date"] = coverage_start
+        changes.append(
+            {
+                "variant_id": variant_id,
+                "scope": f"{section_name}.data_subset",
+                "field": "start_date",
+                "old": old_start,
+                "new": coverage_start,
+                "reviewed": True,
+                "change_kind": "causal_context_warmup",
             }
         )
     return changes
@@ -1285,6 +2518,83 @@ def _apply_parameter_declaration(
     ]
 
 
+def _apply_mechanics_validation_window(
+    cfg: dict[str, Any],
+    window: MechanicsValidationWindowV1,
+    *,
+    dataset_manifest: DatasetManifestV1,
+    project_root: Path,
+) -> dict[str, Any] | None:
+    coverage_start = date.fromisoformat(dataset_manifest.coverage_start[:10])
+    coverage_end = date.fromisoformat(dataset_manifest.coverage_end[:10])
+    start = date.fromisoformat(window.start_date)
+    end = date.fromisoformat(window.end_date)
+    if start < coverage_start or end > coverage_end:
+        raise ValueError(
+            "mechanics validation window must remain inside governed dataset coverage "
+            f"{coverage_start.isoformat()} through {coverage_end.isoformat()}"
+        )
+    required_count = int(
+        load_research_policy().mechanics_validation["session_count"]
+    )
+    if window.session_count != required_count:
+        raise ValueError(
+            f"mechanics validation must use the repository-wide {required_count}-session policy"
+        )
+    if window.session_count:
+        data_path = Path(dataset_manifest.path)
+        if not data_path.is_absolute():
+            data_path = project_root / data_path
+        if not data_path.is_file():
+            raise ValueError(
+                f"mechanics validation session source does not exist: {data_path}"
+            )
+        if dataset_manifest.source == "parquet":
+            timestamps = pd.read_parquet(data_path, columns=["timestamp"])["timestamp"]
+        else:
+            timestamps = pd.read_csv(data_path, usecols=["timestamp"])["timestamp"]
+        local_dates = pd.to_datetime(timestamps, utc=True).dt.tz_convert(
+            dataset_manifest.exchange_timezone
+        ).dt.date
+        sessions = sorted(set(local_dates))
+        selected = sessions[-required_count:]
+        expected_start = selected[0]
+        expected_end = selected[-1]
+        actual_count = int(local_dates[(local_dates >= start) & (local_dates <= end)].nunique())
+        if actual_count != window.session_count:
+            raise ValueError(
+                "mechanics validation window must contain exactly the declared "
+                f"{window.session_count} sessions; found {actual_count}"
+            )
+        if (start, end) != (expected_start, expected_end):
+            raise ValueError(
+                "mechanics validation must use the latest eligible sessions in the governed "
+                f"dataset ({expected_start.isoformat()} through {expected_end.isoformat()})"
+            )
+    research = cfg.setdefault("research_metadata", {})
+    gate = research.get("validation_gate")
+    if not isinstance(gate, dict) or gate.get("required") is not True:
+        raise ValueError("methodology rerun requires mandatory mechanics validation")
+    old = deepcopy(gate.get("data_subset") or {})
+    new = {
+        "start_date": window.start_date,
+        "end_date": window.end_date,
+        "session_dates": [value.isoformat() for value in selected],
+    }
+    gate["data_subset"] = deepcopy(new)
+    gate.update(deepcopy(load_research_policy().mechanics_validation))
+    if old == new:
+        return None
+    return {
+        "variant_id": window.variant_id,
+        "scope": "research_metadata.validation_gate",
+        "field": "data_subset",
+        "old": old,
+        "new": new,
+        "reviewed": True,
+    }
+
+
 def _attempt_strategy_spec(
     request: FollowUpAttemptRequestV1,
     attempt_id: str,
@@ -1350,7 +2660,11 @@ def _attempt_has_performance_evidence(
         for evidence_root in evidence_roots
         for variant_id, cfg in configs.items()
     }
-    if any(path.exists() for path in expected_runs):
+    existing_runs = {path for path in expected_runs if path.exists()}
+    proven_pre_performance_runs = {
+        path for path in existing_runs if _is_proven_pre_performance_incomplete_run(path, attempt_id)
+    }
+    if existing_runs - proven_pre_performance_runs:
         return True
 
     for evidence_root in evidence_roots:
@@ -1360,7 +2674,8 @@ def _attempt_has_performance_evidence(
         for pattern in ("**/campaign_test_summary.json", "**/studio_incomplete_attempt.json"):
             for path in campaign_root.glob(pattern):
                 if str(_read_json(path).get("attempt_id") or "") == attempt_id:
-                    return True
+                    if not _is_proven_pre_performance_incomplete_run(path.parent, attempt_id):
+                        return True
 
     database = runtime_root / "jobs.sqlite3"
     if database.is_file():
@@ -1370,7 +2685,10 @@ def _attempt_has_performance_evidence(
                 job.job_type == "campaign_variant_run"
                 and job.campaign_id == campaign_id
                 and str(job.payload.get("attempt_id") or "") == attempt_id
-                and (job.attempt_reserved or job.state.value in {"QUEUED", "RUNNING", "CANCEL_REQUESTED"})
+                and (
+                    job.state.value in {"QUEUED", "RUNNING", "CANCEL_REQUESTED"}
+                    or (job.attempt_reserved and not proven_pre_performance_runs)
+                )
             ):
                 return True
 
@@ -1392,8 +2710,44 @@ def _attempt_has_performance_evidence(
             output = _resolved_recorded_path(details.get("output_dir"), project_root)
             source = _resolved_recorded_path(details.get("config_path"), project_root)
             if output in expected_runs or source in config_sources:
-                return True
+                if output not in proven_pre_performance_runs:
+                    return True
     return False
+
+
+def _is_proven_pre_performance_incomplete_run(run_dir: Path, attempt_id: str) -> bool:
+    """Recognize a terminal run that stopped before any PnL-bearing stage began."""
+
+    if not run_dir.is_dir():
+        return False
+    summary_path = run_dir / "campaign_test_summary.json"
+    incomplete_path = run_dir / "studio_incomplete_attempt.json"
+    if not summary_path.is_file() or not incomplete_path.is_file():
+        return False
+    summary = _read_json(summary_path)
+    incomplete = _read_json(incomplete_path)
+    if (
+        str(summary.get("attempt_id") or "") != attempt_id
+        or str(incomplete.get("attempt_id") or "") != attempt_id
+        or summary.get("status") != "incomplete"
+        or summary.get("halted") is not True
+        or summary.get("stages") != []
+        or incomplete.get("attempt_reserved") is not True
+        or incomplete.get("operational_state") not in {"FAILED_OPERATIONAL", "CANCELLED"}
+    ):
+        return False
+    allowed_files = {
+        "campaign_test_summary.json",
+        "effective_config.yaml",
+        "source_config.yaml",
+        "studio_incomplete_attempt.json",
+        "variant.yaml",
+    }
+    return all(
+        path.parent == run_dir and path.name in allowed_files
+        for path in run_dir.rglob("*")
+        if path.is_file()
+    )
 
 
 def _attempt_variant_failed(

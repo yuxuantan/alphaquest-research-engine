@@ -40,7 +40,7 @@ make studio-setup
 make smoke
 ```
 
-Studio is the novice path. It guides source declaration, duplicate review, governed data intake, execution rules, five frozen variants, mechanics approval, staged execution, and result review. Unsupported intrabar or custom mechanics become a durable `NEEDS MANUAL REVIEW` engineering handoff; Studio never approximates them with bars.
+Studio is the novice path. It freezes development/risk objectives before the idea, then guides source declaration, duplicate review, governed data intake, execution rules, sequential frozen variants, mechanics approval, staged execution, independent review, and true forward incubation. Unsupported intrabar or custom mechanics become a durable `NEEDS MANUAL REVIEW` engineering handoff; Studio never approximates them with bars.
 
 Run the isolated synthetic tutorial from Studio, or use the expert command:
 
@@ -90,7 +90,10 @@ make qualify
 - Ambiguous same-bar stop/target touches resolve pessimistically without ordered detail data.
 - Costs, session rules, forced flattening, contract values, and roll rules are explicit.
 - Time-series validation is contiguous or purged; final acceptance is locked.
-- A passing result is only a candidate strategy pending independent review and incubation.
+- A passing result is only a candidate strategy pending independent review, chronological forward incubation, portfolio review, and a human deployment decision.
 - Diagnostic or shortened stage sets resolve to `NEEDS MANUAL REVIEW` and cannot create candidate artifacts.
 
-See the [documentation index](docs/README.md) for detailed workflows. The former monolithic guide is preserved as [full-guide.md](docs/reference/full-guide.md).
+See the [documentation index](docs/README.md) for detailed workflows, including
+the [Davey methodology alignment](docs/research/davey-methodology-alignment.md).
+The former monolithic guide is preserved as
+[full-guide.md](docs/reference/full-guide.md).

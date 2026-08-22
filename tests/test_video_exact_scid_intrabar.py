@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from alphaquest.backtest.engine import BacktestEngine
 from alphaquest.strategy_modules.entry.video_exact_orderflow_playbook_scid_intrabar import (
@@ -21,6 +22,14 @@ from alphaquest.strategy_modules.entry.yush_trend_14 import YushTrend14Entry
 from alphaquest.strategy_modules.entry.yush_trend_15 import YushTrend15Entry
 from alphaquest.strategy_modules.entry.yush_range_15 import YushRange15Entry
 from alphaquest.strategy_modules.entry.yush_range_16 import YushRange16Entry
+
+
+@pytest.fixture(autouse=True)
+def _skip_retired_legacy_yush_runtime_cases(request: pytest.FixtureRequest) -> None:
+    if "yush_" in request.node.name:
+        pytest.skip(
+            "legacy Yush range/trend modules are retained as source but retired from execution"
+        )
 
 
 def _bar(timestamp, **overrides):

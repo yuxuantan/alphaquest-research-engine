@@ -1,0 +1,28 @@
+schema: alphaquest.strategy-package-availability/v1
+policy_version: "2026-08-14.1"
+
+# This policy classifies strategy-package availability; it does not certify an
+# implementation or approve mechanics. yush_adaptive_orderflow_range_v3 is the sole Yush
+# package eligible for future governed work, but its current implementation is
+# unavailable for execution or new publication until the required tests pass,
+# its implementation hashes are recertified, and a fresh hash-bound mechanics
+# review is manually approved. Historical approvals must not be transferred.
+active_strategy_ids:
+  - yush_adaptive_orderflow_range_v3
+
+# Retired manifests and implementations remain installed for explicit
+# historical inspection only. Their immutable campaigns, attempts, evidence,
+# approvals, lineage snapshots, ledger rows, and referenced data stay
+# preserved read-only; retirement must never rewrite or delete those records.
+retired_strategy_ids:
+  yush_orderflow_range:
+    retired_at: "2026-08-14"
+    reason: Only Yush Orderflow Range Reversal v03 remains eligible for execution and new publication.
+  yush_failed_auction_reclaim:
+    retired_at: "2026-08-14"
+    reason: Only Yush Orderflow Range Reversal remains eligible for execution and new publication.
+  yush_adaptive_orderflow_range:
+    retired_at: "2026-08-14"
+    reason: Only Yush Orderflow Range Reversal remains eligible for execution and new publication.
+
+historical_evidence_policy: preserve_read_only

@@ -6,11 +6,17 @@ from pathlib import Path
 import shutil
 import signal
 import socket
+import subprocess
+import sys
 import time
 from urllib.request import urlopen
 
 from alphaquest.cli import _parser
 from alphaquest.studio.launcher import start_studio, stop_studio, studio_status
+from alphaquest.studio.process_ownership import (
+    process_group_members,
+    register_process_group,
+)
 
 
 def _free_port() -> int:
@@ -62,6 +68,32 @@ def test_background_launcher_starts_ui_and_durable_worker_then_stops(
 
     assert stopped["running"] is False
     assert stopped["worker_running"] is False
+
+
+def test_stop_studio_terminates_registered_job_process_groups(tmp_path: Path) -> None:
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        start_new_session=True,
+    )
+    process_group_id = os.getpgid(process.pid)
+    register_process_group(
+        tmp_path,
+        job_id="owned-campaign",
+        leader_pid=process.pid,
+        process_group_id=process_group_id,
+        owner_pid=os.getpid(),
+        command=[sys.executable, "-c", "import time; time.sleep(60)"],
+    )
+    try:
+        stopped = stop_studio(project_root=tmp_path, timeout_seconds=1.0)
+        process.wait(timeout=3.0)
+
+        assert stopped["running"] is False
+        assert process_group_members(process_group_id) == []
+    finally:
+        if process.poll() is None:
+            os.killpg(process_group_id, signal.SIGKILL)
+            process.wait(timeout=3.0)
 
 
 def test_restart_replaces_orphan_worker_instead_of_launching_a_second_one(

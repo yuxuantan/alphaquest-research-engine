@@ -7,10 +7,13 @@ authored campaign config
 fail-closed preflight -----> data contract and causal checks
         |
         v
-staged runner ------------> core -> monkey -> WFA -> OOS stress -> incubation -> acceptance
+staged runner ------------> core -> monkey -> WFA -> OOS stress -> historical holdout -> acceptance
         |
         v
 immutable run evidence ---> registry ---> views / CLI / dashboard
+                                              |
+                                              v
+forward lifecycle --------> append-only observations -> human deployment review
 ```
 
 The backtest engine owns execution semantics. Strategy modules produce signals; the engine owns fill timing, costs, exits, sizing, and forced flattening. Research stages own parameter selection and promotion gates. The registry is an index, never the source of a result.

@@ -1,0 +1,103 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260813t135739_7e8993ab",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "cd78e1e6fc98607eacd6fd02bc0976e61cf2cc106e2c2792cb610ae7f34d949c",
+        "implementation_version": 8,
+        "manifest_sha256": "8c38562a1f815aa1440dd016ba293ed4dddd33fe51dfd37e2f4b2fb684627faa",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "9aec7fb9586f4d3d9552dd56bfd3365e721c39ab71538cb64a06a760643a135c",
+        "implementation_version": 7,
+        "manifest_sha256": "688828001a7760b5ad333fff5e23648ffe7f959732605f129764b0859cddf2b3",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "field": "minimum_trade_samples",
+      "new": 10,
+      "old": 5,
+      "reviewed": true,
+      "scope": "research_metadata.validation_gate",
+      "variant_id": "v03"
+    },
+    {
+      "field": "migrated_fixed_certified_defaults",
+      "new": {
+        "minimum_poc_reward_r": 0.0
+      },
+      "old": {
+        "minimum_poc_reward_r": 1.0
+      },
+      "reviewed": true,
+      "scope": "strategy.event.params",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_grid_dimension",
+      "field": "event.params.aoi_ttl_minutes",
+      "new": null,
+      "old": [
+        15,
+        20,
+        30,
+        45
+      ],
+      "reviewed": true,
+      "scope": "core_grid.parameters,wfa.parameters",
+      "variant_id": "v03"
+    },
+    {
+      "field": "minimum_poc_reward_r",
+      "new": 0.0,
+      "old": 1.0,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "508fdd04d109b6db3844f2ddd42a8e890c3f13ef27fd829f335c0f6c1c31bdcf"
+  },
+  "created_at": "2026-08-13T13:57:39.798873+00:00",
+  "created_by": "Codex at user direction",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260813t135739_7e8993ab",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260813t131321_f93c32e8",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Pre-PnL v03 frequency correction authorized by the researcher: allow a genuinely newer qualifying burst to supersede only an unswept AOI, preserve active sweep immutability, replace the fixed 1.0R POC veto with positive net reward plus reporting, and record each AOI supersession and signal submission, block, rejection, or expiry.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "8e89fc04e57ebf0aeff2aac59ce2800f31ae8425fe4fdb92924eb3a8e989d763"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "418113b8e8fa2fe7c841ba0abbda832e213547fc0f36a2fa1bedb68bb6b9d437"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

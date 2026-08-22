@@ -11,19 +11,23 @@ import random
 import re
 import shutil
 import time
-from typing import Any
+from typing import Any, Callable, Mapping
 
 import pandas as pd
 import yaml
 
 from alphaquest.backtest.engine import BacktestEngine
 from alphaquest.backtest.equity_report import write_equity_report
-from alphaquest.backtest.metrics import calculate_metrics
+from alphaquest.backtest.event_replay_cache import (
+    load_event_replay_cache,
+    write_event_replay_cache,
+)
+from alphaquest.backtest.metrics import EvaluationPeriod, calculate_metrics
 from alphaquest.data.pipeline import prepare_data
 from alphaquest.data.source import data_source_hash
 from alphaquest.prop.rules import PropRules
 from alphaquest.research.core_grid import run_core_grid
-from alphaquest.research.execution import run_research_backtest
+from alphaquest.research.execution import run_research_backtest, uses_canonical_event_replay
 from alphaquest.research.monkey import run_monkey
 from alphaquest.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
 from alphaquest.research.policy import active_research_policy_metadata, load_research_policy
@@ -53,6 +57,7 @@ from alphaquest.utils.config import (
 )
 from alphaquest.utils.hashing import file_sha256, object_sha256
 from alphaquest.utils.params import apply_dotted_params
+from alphaquest.utils.progress import listen_for_progress, progress_bar
 from alphaquest.utils.reports import market_timezone, write_report_csv
 from alphaquest.validation.promotion_gate import require_prior_variant_approvals, require_validation_approval
 from alphaquest.version import ENGINE_CONTRACT_VERSION
@@ -72,6 +77,11 @@ DEFAULT_STAGE_CRITERIA = copy.deepcopy(_RESEARCH_POLICY.stage_criteria)
 DEFAULT_SHORTLIST_DATA_WINDOW = copy.deepcopy(_RESEARCH_POLICY.shortlist_data_window)
 DEFAULT_WFA_DATA_WINDOW = copy.deepcopy(_RESEARCH_POLICY.wfa_data_window)
 DEFAULT_MONKEY_RUNS = _RESEARCH_POLICY.monkey_runs
+DEFAULT_MECHANICS_VALIDATION = copy.deepcopy(_RESEARCH_POLICY.mechanics_validation)
+DEFAULT_CORE_GRID_METHODOLOGY = copy.deepcopy(_RESEARCH_POLICY.core_grid)
+DEFAULT_MONKEY_METHODOLOGY = copy.deepcopy(_RESEARCH_POLICY.monkey)
+DEFAULT_WFA_METHODOLOGY = copy.deepcopy(_RESEARCH_POLICY.walk_forward_analysis)
+DEFAULT_MONTE_CARLO_METHODOLOGY = copy.deepcopy(_RESEARCH_POLICY.wfa_oos_monte_carlo)
 MONKEY_STAGE_NAMES = {
     "limited_monkey_test",
     "wfa_oos_monkey_test",
@@ -95,8 +105,8 @@ STAGE_LABELS = {
     "walk_forward_analysis": "Walk Forward Analysis (WFA)",
     "wfa_oos_monkey_test": "WFA OOS Monkey Test",
     "wfa_oos_monte_carlo": "WFA OOS Monte Carlo",
-    "simulated_incubation_core": "Simulated Incubation (OOS) Core",
-    "simulated_incubation_monkey": "Simulated Incubation (OOS) Monkey",
+    "simulated_incubation_core": "Secondary Historical OOS Holdout Core",
+    "simulated_incubation_monkey": "Secondary Historical OOS Holdout Stress",
     ACCEPTANCE_STAGE: "Acceptance OOS Test",
 }
 
@@ -115,34 +125,72 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
     out = copy.deepcopy(cfg)
     policy_metadata = active_research_policy_metadata()
     out["research_policy"] = policy_metadata
-    out.setdefault("monkey", {})["runs"] = DEFAULT_MONKEY_RUNS
+    research = out.setdefault("research_metadata", {})
+    objectives = out.get("research_objectives")
+    if objectives is not None:
+        if not isinstance(objectives, dict):
+            raise ValueError("research_objectives must be a mapping")
+        _RESEARCH_POLICY.validate_objectives(objectives)
+        objective_hash = _objective_sha256(objectives)
+        declared_objective_hash = out.get("research_objectives_sha256")
+        if declared_objective_hash not in {None, objective_hash}:
+            raise ValueError("research_objectives_sha256 does not match the frozen objective contract")
+        out["research_objectives_sha256"] = objective_hash
+        research["objective_contract"] = {
+            "schema": objectives.get("schema", "alphaquest.research-objectives/v1"),
+            "sha256": objective_hash,
+            "status": "frozen_pre_pnl",
+            "repository_floor_policy_sha256": policy_metadata["hash"],
+        }
+    validation_gate = research.setdefault("validation_gate", {})
+    validation_gate.update(copy.deepcopy(DEFAULT_MECHANICS_VALIDATION))
+
+    core_grid = out.setdefault("core_grid", {})
+    core_grid.update(copy.deepcopy(DEFAULT_CORE_GRID_METHODOLOGY))
+
+    monkey = out.setdefault("monkey", {})
+    monkey.update(copy.deepcopy(DEFAULT_MONKEY_METHODOLOGY))
+    monkey["runs"] = DEFAULT_MONKEY_RUNS
+
+    wfa = out.setdefault("wfa", {})
+    wfa.update(copy.deepcopy(DEFAULT_WFA_METHODOLOGY))
+
+    monte_carlo = out.setdefault("monte_carlo", {})
+    monte_carlo.update(copy.deepcopy(DEFAULT_MONTE_CARLO_METHODOLOGY))
+    if isinstance(objectives, dict):
+        monte_carlo["runs"] = max(
+            int(monte_carlo.get("runs", 0)),
+            int(objectives["monte_carlo_min_runs"]),
+        )
+        monte_carlo["path_months"] = max(
+            int(monte_carlo.get("path_months", 0)),
+            int(objectives["monte_carlo_horizon_months"]),
+        )
     campaign_tests = copy.deepcopy(out.get("campaign_tests") or {})
-    incubation_declared = campaign_tests.get("simulated_incubation_core") or {}
-    acceptance_declared = campaign_tests.get(ACCEPTANCE_STAGE) or {}
-    incubation_test_months = int(
-        incubation_declared.get(
-            "test_months",
-            _RESEARCH_POLICY.simulated_incubation.get("test_months", 12),
-        )
-    )
-    acceptance_test_months = int(
-        acceptance_declared.get(
-            "test_months",
-            _RESEARCH_POLICY.acceptance_oos.get("test_months", 6),
-        )
-    )
+    incubation_test_months = int(_RESEARCH_POLICY.simulated_incubation.get("test_months", 12))
+    acceptance_test_months = int(_RESEARCH_POLICY.acceptance_oos.get("test_months", 6))
     stage_order = DEFAULT_STAGE_ORDER if include_acceptance else PRE_ACCEPTANCE_STAGE_ORDER
     campaign_tests["stage_order"] = list(stage_order)
     campaign_tests["research_policy"] = policy_metadata
     for stage_name in DEFAULT_STAGE_ORDER:
         stage_cfg = copy.deepcopy(campaign_tests.get(stage_name) or {})
-        stage_cfg.pop("enabled", None)
+        stage_cfg["enabled"] = include_acceptance or stage_name != ACCEPTANCE_STAGE
         stage_cfg["criteria"] = copy.deepcopy(DEFAULT_STAGE_CRITERIA[stage_name])
         if stage_name in {"limited_core_grid_test", "limited_monkey_test"}:
             stage_cfg.pop("data_subset", None)
             stage_cfg["data_window"] = copy.deepcopy(DEFAULT_SHORTLIST_DATA_WINDOW)
         if stage_name in MONKEY_STAGE_NAMES:
             stage_cfg["runs"] = DEFAULT_MONKEY_RUNS
+            stage_cfg["seed"] = int(DEFAULT_MONKEY_METHODOLOGY.get("seed", 7))
+            stage_cfg["retain_iteration_reports"] = bool(
+                DEFAULT_MONKEY_METHODOLOGY.get("retain_iteration_reports", False)
+            )
+            stage_cfg["constraints"] = copy.deepcopy(
+                DEFAULT_MONKEY_METHODOLOGY.get("constraints") or {}
+            )
+            stage_cfg["beat_threshold"] = (
+                0.90 if stage_name == "limited_monkey_test" else 0.80
+            )
         if stage_name == "walk_forward_analysis":
             stage_cfg.pop("data_subset", None)
             stage_cfg["data_window"] = copy.deepcopy(DEFAULT_WFA_DATA_WINDOW)
@@ -154,17 +202,123 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
                     }
                 )
         if stage_name == "simulated_incubation_core":
-            stage_cfg.setdefault("train_months", int(_RESEARCH_POLICY.simulated_incubation.get("train_months", 48)))
-            stage_cfg.setdefault("test_months", int(_RESEARCH_POLICY.simulated_incubation.get("test_months", 12)))
+            stage_cfg["train_months"] = int(_RESEARCH_POLICY.simulated_incubation.get("train_months", 48))
+            stage_cfg["test_months"] = int(_RESEARCH_POLICY.simulated_incubation.get("test_months", 12))
             stage_cfg["holdout_after_test_months"] = acceptance_test_months
         if stage_name == ACCEPTANCE_STAGE:
-            stage_cfg.setdefault("train_months", int(_RESEARCH_POLICY.acceptance_oos.get("train_months", 24)))
-            stage_cfg.setdefault("test_months", int(_RESEARCH_POLICY.acceptance_oos.get("test_months", 6)))
+            stage_cfg["train_months"] = int(_RESEARCH_POLICY.acceptance_oos.get("train_months", 24))
+            stage_cfg["test_months"] = int(_RESEARCH_POLICY.acceptance_oos.get("test_months", 6))
             if not include_acceptance:
                 stage_cfg["enabled"] = False
+        if stage_name == "wfa_oos_monte_carlo":
+            stage_cfg.update(copy.deepcopy(DEFAULT_MONTE_CARLO_METHODOLOGY))
+            if isinstance(objectives, dict):
+                stage_cfg["runs"] = int(monte_carlo["runs"])
+                stage_cfg["path_months"] = int(monte_carlo["path_months"])
+        if isinstance(objectives, dict):
+            stage_cfg["criteria"] = _criteria_with_research_objectives(
+                stage_name,
+                stage_cfg["criteria"],
+                objectives,
+                initial_balance=float((out.get("core") or {}).get("initial_balance", 0.0)),
+            )
         campaign_tests[stage_name] = stage_cfg
     out["campaign_tests"] = campaign_tests
     return out
+
+
+def _objective_sha256(objectives: Mapping[str, Any]) -> str:
+    payload = json.dumps(
+        objectives,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _criteria_with_research_objectives(
+    stage_name: str,
+    criteria: list[dict[str, Any]],
+    objectives: Mapping[str, Any],
+    *,
+    initial_balance: float,
+) -> list[dict[str, Any]]:
+    """Apply only stricter, predeclared campaign goals to global stage gates."""
+
+    merged = copy.deepcopy(criteria)
+    if stage_name == "walk_forward_analysis":
+        _merge_bound(merged, "summary.realized_oos_windows", "min", objectives["minimum_complete_wfa_windows"], decision_role="scientific_validity")
+        _merge_bound(merged, "summary.realized_oos_trades", "min", objectives["minimum_wfa_oos_trades"], decision_role="scientific_validity")
+        _merge_bound(merged, "stitched_oos_metrics.cagr", "min", objectives["minimum_annualized_return_fraction"], decision_role="generic_objective")
+        _merge_bound(merged, "stitched_oos_metrics.mar", "min", objectives["minimum_mar"], decision_role="generic_objective")
+        _merge_bound(merged, "stitched_oos_metrics.max_drawdown_pct", "max", objectives["maximum_drawdown_fraction"], decision_role="generic_objective")
+        _merge_bound(merged, "stitched_oos_metrics.annualization_available", "equals", True, decision_role="scientific_validity")
+    elif stage_name == "wfa_oos_monte_carlo":
+        _merge_bound(merged, "summary.number_of_runs", "min", objectives["monte_carlo_min_runs"], decision_role="scientific_validity")
+        _merge_bound(
+            merged,
+            "summary.probability_net_profit_gt_0",
+            "min",
+            objectives["minimum_net_profit_probability"],
+            decision_role="generic_objective",
+        )
+        if initial_balance > 0:
+            _merge_bound(
+                merged,
+                "summary.p95_drawdown",
+                "max",
+                initial_balance * float(objectives["maximum_drawdown_fraction"]),
+                decision_role="generic_objective",
+            )
+    elif stage_name in {"simulated_incubation_core", ACCEPTANCE_STAGE}:
+        minimum_trades = (
+            objectives["minimum_acceptance_oos_trades"]
+            if stage_name == ACCEPTANCE_STAGE
+            else min(
+                int(objectives["minimum_wfa_oos_trades"]),
+                int(objectives["minimum_acceptance_oos_trades"]),
+            )
+        )
+        _merge_bound(merged, "metrics.total_trades", "min", minimum_trades, decision_role="scientific_validity")
+        _merge_bound(merged, "metrics.cagr", "min", objectives["minimum_annualized_return_fraction"], decision_role="generic_objective")
+        _merge_bound(merged, "metrics.mar", "min", objectives["minimum_mar"], decision_role="generic_objective")
+        _merge_bound(merged, "metrics.max_drawdown_pct", "max", objectives["maximum_drawdown_fraction"], decision_role="generic_objective")
+        _merge_bound(merged, "metrics.annualization_available", "equals", True, decision_role="scientific_validity")
+    return merged
+
+
+def _merge_bound(
+    criteria: list[dict[str, Any]],
+    metric: str,
+    operator: str,
+    value: Any,
+    *,
+    decision_role: str,
+) -> None:
+    criterion = next((item for item in criteria if item.get("metric") == metric), None)
+    if criterion is None:
+        criteria.append(
+            {
+                "metric": metric,
+                operator: value,
+                "source": "frozen_research_objectives",
+                "decision_role": decision_role,
+            }
+        )
+        return
+    if operator == "min" and "min" in criterion:
+        criterion["min"] = max(float(criterion["min"]), float(value))
+    elif operator == "max" and "max" in criterion:
+        criterion["max"] = min(float(criterion["max"]), float(value))
+    else:
+        criterion[operator] = value
+    criterion["source"] = "repository_policy_and_frozen_research_objectives"
+    if criterion.get("decision_role") != decision_role:
+        raise ValueError(
+            f"criterion {metric} cannot change decision_role from "
+            f"{criterion.get('decision_role')!r} to {decision_role!r}"
+        )
 
 
 def campaign_test_data_window_plan(cfg: dict) -> list[dict[str, Any]]:
@@ -390,34 +544,59 @@ def _planned_timestamp_date(value: Any) -> str | None:
     return pd.Timestamp(value).date().isoformat()
 
 
-def apply_fast_runtime_defaults(cfg: dict, workers: int | None = None) -> dict:
+def apply_authoritative_parallel_defaults(
+    cfg: dict,
+    workers: int | None = None,
+    *,
+    core_grid_workers: int | None = None,
+) -> dict:
+    """Apply result-invariant process scheduling to an execution snapshot.
+
+    These settings change only how independent grid iterations, randomized
+    runs, WFA windows, and Monte Carlo runs are scheduled. They do not change
+    strategy mechanics, data windows, random seeds, parameter spaces, or
+    acceptance criteria, so an otherwise complete run remains authoritative.
+    """
+
     out = copy.deepcopy(cfg)
     # WFA workers keep sliced market/detail frames cached across windows. A lower
     # default avoids memory-heavy process-pool stalls while preserving mechanics.
     worker_count = max(1, int(workers or min(3, os.cpu_count() or 1)))
-    _enable_parallel(out, "core_grid", "grid", worker_count)
+    grid_worker_count = max(
+        1,
+        int(core_grid_workers if core_grid_workers is not None else worker_count),
+    )
+    _enable_parallel(out, "core_grid", "grid", grid_worker_count)
     _enable_parallel(out, "monkey", "runs", worker_count)
     _enable_parallel(out, "wfa", "window_grid", worker_count)
     _enable_parallel(out, "monte_carlo", "runs", worker_count)
 
     campaign_tests = out.get("campaign_tests") or {}
     for stage_name, scope in [
-        ("limited_core_grid_test", "grid"),
         ("limited_monkey_test", "runs"),
         ("walk_forward_analysis", "window_grid"),
         ("wfa_oos_monkey_test", "runs"),
         ("wfa_oos_monte_carlo", "runs"),
         ("simulated_incubation_monkey", "runs"),
-        (ACCEPTANCE_STAGE, "grid"),
     ]:
         stage_cfg = campaign_tests.get(stage_name)
         if isinstance(stage_cfg, dict):
             _enable_parallel(stage_cfg, None, scope, worker_count)
+    for stage_name in ("limited_core_grid_test", ACCEPTANCE_STAGE):
+        stage_cfg = campaign_tests.get(stage_name)
+        if isinstance(stage_cfg, dict):
+            _enable_parallel(stage_cfg, None, "grid", grid_worker_count)
     incubation = campaign_tests.get("simulated_incubation_core") or {}
     train_selection = incubation.get("train_selection")
     if isinstance(train_selection, dict):
-        _enable_parallel(train_selection, None, "grid", worker_count)
+        _enable_parallel(train_selection, None, "grid", grid_worker_count)
     return out
+
+
+def apply_fast_runtime_defaults(cfg: dict, workers: int | None = None) -> dict:
+    """Backward-compatible exploratory alias for parallel runtime defaults."""
+
+    return apply_authoritative_parallel_defaults(cfg, workers=workers)
 
 
 def _require_attempt_contract(
@@ -524,6 +703,9 @@ def run_campaign_stage_tests(
     out_dir: str | Path | None = None,
     include_acceptance: bool = True,
     fast_runtime_defaults: bool = False,
+    authoritative_parallel_workers: int | None = None,
+    authoritative_core_grid_workers: int | None = None,
+    progress_callback: Callable[[Mapping[str, Any]], None] | None = None,
 ) -> dict:
     config_path = Path(config_path)
     source_config_text = config_path.read_text(encoding="utf-8")
@@ -553,6 +735,12 @@ def run_campaign_stage_tests(
     attempt = _require_attempt_contract(cfg, config_path, out_dir=out_dir)
     if fast_runtime_defaults:
         cfg = apply_fast_runtime_defaults(cfg)
+    elif authoritative_parallel_workers is not None:
+        cfg = apply_authoritative_parallel_defaults(
+            cfg,
+            workers=authoritative_parallel_workers,
+            core_grid_workers=authoritative_core_grid_workers,
+        )
     root = Path(out_dir) if out_dir else variant_root(cfg, config_path=config_path)
     root = validate_campaign_run_root(root, cfg, config_path=config_path if out_dir is None else None)
     validate_campaign_config_contract(cfg, context=str(config_path))
@@ -570,39 +758,98 @@ def run_campaign_stage_tests(
     results = []
     halted = False
 
-    for stage_name in stage_order:
+    stage_total = len(stage_order)
+    for stage_index, stage_name in enumerate(stage_order, start=1):
+        stage_label = STAGE_LABELS.get(stage_name, stage_name)
+        _report_campaign_progress(
+            progress_callback,
+            stage_name=stage_name,
+            stage_label=stage_label,
+            stage_index=stage_index,
+            stage_total=stage_total,
+            percent=0.0,
+        )
         if halted:
-            results.append(_skipped_stage(stage_name, "prior stage failed"))
+            results.append(
+                _annotate_stage_decisions(
+                    _skipped_stage(stage_name, "prior scientific-validity stage failed")
+                )
+            )
+            _report_campaign_progress(
+                progress_callback,
+                stage_name=stage_name,
+                stage_label=stage_label,
+                stage_index=stage_index,
+                stage_total=stage_total,
+                percent=100.0,
+                message=f"Skipped {stage_label}: prior stage failed",
+            )
             continue
         stage_cfg = _stage_config(campaign_tests, stage_name)
         if stage_cfg.get("enabled", True) is False:
-            results.append(_skipped_stage(stage_name, "disabled"))
+            results.append(_annotate_stage_decisions(_skipped_stage(stage_name, "disabled")))
+            _report_campaign_progress(
+                progress_callback,
+                stage_name=stage_name,
+                stage_label=stage_label,
+                stage_index=stage_index,
+                stage_total=stage_total,
+                percent=100.0,
+                message=f"Skipped {stage_label}: disabled",
+            )
             continue
 
         stage_dir = root / stage_name
         stage_dir.mkdir(parents=True, exist_ok=True)
         try:
-            result = _run_stage(
-                stage_name,
-                cfg,
-                config_path,
-                stage_cfg,
-                stage_dir,
-                skip_validation,
-                context,
-            )
+            with listen_for_progress(
+                _stage_progress_listener(
+                    progress_callback,
+                    stage_name=stage_name,
+                    stage_label=stage_label,
+                    stage_index=stage_index,
+                    stage_total=stage_total,
+                )
+            ):
+                result = _run_stage(
+                    stage_name,
+                    cfg,
+                    config_path,
+                    stage_cfg,
+                    stage_dir,
+                    skip_validation,
+                    context,
+                )
         except Exception as exc:
             result = _error_stage(stage_name, exc)
+        result = _annotate_stage_decisions(result)
         results.append(result)
         validate_stage_result_contract(result, context=f"{stage_name}/stage_result.json")
         write_json(stage_dir / "stage_result.json", result)
-        if not result["passed"] and not continue_on_failure:
+        _report_campaign_progress(
+            progress_callback,
+            stage_name=stage_name,
+            stage_label=stage_label,
+            stage_index=stage_index,
+            stage_total=stage_total,
+            percent=100.0,
+            message=f"Completed {stage_label}: {result['status']}",
+        )
+        if (
+            result["scientific_validity_verdict"] != "PASS"
+            and not continue_on_failure
+            and not diagnostic_reasons
+        ):
             halted = True
 
     created_at = datetime.now().isoformat(timespec="seconds")
     run_uid = ensure_run_uid(root)
     data_cfg = cfg.get("data") or {}
     research_verdict = _research_verdict(results, diagnostic_reasons)
+    scientific_validity_verdict = _scientific_validity_verdict(
+        results,
+        diagnostic_reasons,
+    )
     summary = {
         "run_uid": run_uid,
         "campaign_id": cfg.get("campaign_id"),
@@ -635,10 +882,22 @@ def run_campaign_stage_tests(
         "skip_validation": skip_validation,
         "mechanics_validation_gate": validation_gate,
         "fast_runtime_defaults": fast_runtime_defaults,
+        "authoritative_parallel_workers": (
+            int(authoritative_parallel_workers)
+            if authoritative_parallel_workers is not None
+            else None
+        ),
+        "authoritative_core_grid_workers": (
+            int(authoritative_core_grid_workers)
+            if authoritative_core_grid_workers is not None
+            else None
+        ),
         "submission_preflight": submission_preflight,
         "diagnostic_only": bool(diagnostic_reasons),
         "diagnostic_reasons": diagnostic_reasons,
         "research_verdict": research_verdict,
+        "generic_objective_verdict": research_verdict,
+        "scientific_validity_verdict": scientific_validity_verdict,
         "passed": research_verdict == "PASS",
         "halted": halted,
         "stages": results,
@@ -683,7 +942,11 @@ def run_campaign_stage_tests(
             "submission_preflight": submission_preflight,
             "diagnostic_only": summary["diagnostic_only"],
             "diagnostic_reasons": diagnostic_reasons,
+            "authoritative_parallel_workers": summary["authoritative_parallel_workers"],
+            "authoritative_core_grid_workers": summary["authoritative_core_grid_workers"],
             "research_verdict": research_verdict,
+            "generic_objective_verdict": research_verdict,
+            "scientific_validity_verdict": scientific_validity_verdict,
             "layout": "campaign_variant_symbol_run",
         },
     )
@@ -694,6 +957,117 @@ def run_campaign_stage_tests(
         _write_candidate_due_diligence_package(root, cfg, summary, config_snapshot_path)
     update_runs_index(root)
     return summary
+
+
+def _stage_progress_listener(
+    progress_callback: Callable[[Mapping[str, Any]], None] | None,
+    *,
+    stage_name: str,
+    stage_label: str,
+    stage_index: int,
+    stage_total: int,
+) -> Callable[[dict[str, object]], None] | None:
+    if progress_callback is None:
+        return None
+
+    def listener(update: dict[str, object]) -> None:
+        label = str(update.get("label") or "work units")
+        work_percent = _stage_work_percent(
+            stage_name,
+            label,
+            float(update.get("percent") or 0.0),
+        )
+        if work_percent is None:
+            return
+        detail = str(update.get("detail") or "").strip()
+        message = f"{stage_label} (stage {stage_index} of {stage_total}): {label}"
+        if detail:
+            message = f"{message} — {detail}"
+        _report_campaign_progress(
+            progress_callback,
+            stage_name=stage_name,
+            stage_label=stage_label,
+            stage_index=stage_index,
+            stage_total=stage_total,
+            percent=work_percent,
+            message=message,
+            completed=int(update.get("completed") or 0),
+            total=int(update.get("total") or 0),
+            unit=label,
+            active_workers=_optional_progress_int(update.get("active_workers")),
+            expected_workers=_optional_progress_int(update.get("expected_workers")),
+        )
+
+    return listener
+
+
+def _stage_work_percent(stage_name: str, label: str, raw_percent: float) -> float | None:
+    """Map authoritative loop counters into one monotonic stage percentage."""
+
+    bounded = max(0.0, min(float(raw_percent), 100.0))
+    event_labels = {"event replay sessions", "bars"}
+    if stage_name == "limited_core_grid_test":
+        if label == "limited core preparation":
+            return bounded * 0.05
+        if label == "fixed-default replay":
+            return 5.0 + bounded * 0.10
+        if label in event_labels:
+            return bounded * 0.15
+        if label == "core grid":
+            return 15.0 + bounded * 0.85
+        return None
+    if stage_name == "limited_monkey_test":
+        if label in event_labels:
+            return bounded * 0.10
+        if label == "monkey runs":
+            return 10.0 + bounded * 0.90
+        return None
+    if stage_name == "walk_forward_analysis":
+        return bounded if label == "walk-forward windows" else None
+    if stage_name in {"wfa_oos_monkey_test", "simulated_incubation_monkey"}:
+        return bounded if label == "monkey runs" else None
+    if stage_name == "wfa_oos_monte_carlo":
+        return bounded if label == "monte carlo runs" else None
+    if stage_name in {"simulated_incubation_core", ACCEPTANCE_STAGE}:
+        return bounded if label in event_labels else None
+    return None
+
+
+def _report_campaign_progress(
+    progress_callback: Callable[[Mapping[str, Any]], None] | None,
+    *,
+    stage_name: str,
+    stage_label: str,
+    stage_index: int,
+    stage_total: int,
+    percent: float,
+    message: str | None = None,
+    completed: int | None = None,
+    total: int | None = None,
+    unit: str | None = None,
+    active_workers: int | None = None,
+    expected_workers: int | None = None,
+) -> None:
+    if progress_callback is None:
+        return
+    progress_callback(
+        {
+            "phase": stage_name,
+            "message": message or f"Running {stage_label} (stage {stage_index} of {stage_total})",
+            "percent": max(0.0, min(float(percent), 100.0)),
+            "completed": completed,
+            "total": total,
+            "unit": unit,
+            "active_workers": active_workers,
+            "expected_workers": expected_workers,
+            "stage_index": stage_index,
+            "stage_total": stage_total,
+        }
+    )
+
+
+def _optional_progress_int(value: object) -> int | None:
+    return int(value) if value is not None else None
 
 
 def _update_source_results_index(config_path: Path, cfg: dict, summary: dict) -> Path | None:
@@ -807,6 +1181,25 @@ def _research_verdict(results: list[dict], diagnostic_reasons: list[str]) -> str
     if any(status == "failed" for status in statuses):
         return "FAIL"
     return "NEEDS MANUAL REVIEW"
+
+
+def _scientific_validity_verdict(
+    results: list[dict],
+    diagnostic_reasons: list[str],
+) -> str:
+    if diagnostic_reasons:
+        return "NEEDS MANUAL REVIEW"
+    if [str(item.get("stage") or "") for item in results] != DEFAULT_STAGE_ORDER:
+        return "NEEDS MANUAL REVIEW"
+    verdicts = [
+        str(item.get("scientific_validity_verdict") or "NEEDS MANUAL REVIEW")
+        for item in results
+    ]
+    if "NEEDS MANUAL REVIEW" in verdicts:
+        return "NEEDS MANUAL REVIEW"
+    if "FAIL" in verdicts:
+        return "FAIL"
+    return "PASS" if verdicts == ["PASS"] * len(DEFAULT_STAGE_ORDER) else "NEEDS MANUAL REVIEW"
 
 
 def _first_failed_stage(stages: list[dict]) -> str | None:
@@ -1096,6 +1489,12 @@ def _run_limited_core_grid(
     grid_cfg = _merged_section(cfg, "core_grid", stage_cfg)
     subset = _stage_subset(cfg, stage_cfg, "core_grid")
     benchmarks, benchmark_adjustments = _limited_core_grid_benchmarks(cfg, subset)
+    preparation = progress_bar(1, "limited core preparation")
+    preparation.update(
+        0,
+        force=True,
+        detail="loading and validating the declared stage window",
+    )
     market, detail, quality, input_hash = _prepare_stage_data_cached(
         cfg,
         subset,
@@ -1103,7 +1502,31 @@ def _run_limited_core_grid(
         skip_validation,
         data_cache=context.get("_prepared_data_cache"),
     )
-    fixed_config_core = _write_fixed_config_core_artifacts(cfg, market, detail, stage_dir, subset, quality)
+    preparation.update(
+        1,
+        force=True,
+        detail="stage data ready",
+    )
+    fixed_replay = progress_bar(1, "fixed-default replay")
+    fixed_replay.update(
+        0,
+        force=True,
+        detail="replaying the reviewed default configuration",
+    )
+    fixed_config_core = _write_fixed_config_core_artifacts(
+        cfg,
+        market,
+        detail,
+        stage_dir,
+        subset,
+        quality,
+        input_hash=input_hash,
+    )
+    fixed_replay.update(
+        1,
+        force=True,
+        detail="reviewed default configuration complete",
+    )
     report_dir = stage_dir if grid_cfg.get("retain_iteration_reports", True) else None
     results, summary = run_core_grid(
         market,
@@ -1140,6 +1563,8 @@ def _write_fixed_config_core_artifacts(
     stage_dir: Path,
     resolved_subset: dict | None,
     quality: dict,
+    *,
+    input_hash: str | None = None,
 ) -> dict:
     """Write a YAML-fixed strategy run for chart/mechanics cross-checking.
 
@@ -1148,7 +1573,17 @@ def _write_fixed_config_core_artifacts(
     monkey-selected, WFA-selected, or rescue-derived parameters.
     """
 
-    result = run_research_backtest(cfg, market, detail_data=detail, bar_engine_cls=BacktestEngine)
+    result = (
+        load_event_replay_cache(cfg, input_hash)
+        if input_hash is not None and uses_canonical_event_replay(cfg)
+        else None
+    )
+    if result is None:
+        result = run_research_backtest(cfg, market, detail_data=detail, bar_engine_cls=BacktestEngine)
+        if input_hash is not None and uses_canonical_event_replay(cfg):
+            cache_key = write_event_replay_cache(cfg, input_hash, result)
+            result.setdefault("reproducibility", {})["result_cache_key"] = cache_key
+            result["reproducibility"]["result_cache_hit"] = False
     trades = result.get("trades", pd.DataFrame())
     daily = result.get("daily", pd.DataFrame())
     report_timezone = market_timezone(cfg)
@@ -1175,6 +1610,7 @@ def _write_fixed_config_core_artifacts(
         "daily_results_csv": str(daily_path),
         "metrics": copy.deepcopy(result.get("metrics", {})),
         "diagnostics": copy.deepcopy(result.get("diagnostics", {})),
+        "reproducibility": copy.deepcopy(result.get("reproducibility", {})),
         "strategy": copy.deepcopy(cfg.get("strategy", {})),
         "core": copy.deepcopy(cfg.get("core", {})),
         **equity_summary,
@@ -1380,9 +1816,16 @@ def _run_wfa_stage(
     write_report_csv(results, stage_dir / "wfa_results.csv", report_timezone, index=False)
     write_report_csv(trades, stage_dir / "wfa_oos_trade_log.csv", report_timezone, index=False)
     initial_balance = float(cfg.get("core", {}).get("initial_balance", 0.0))
-    stitched_metrics = calculate_metrics(trades, initial_balance=initial_balance)
+    oos_evaluation_period = _wfa_oos_evaluation_period(results, market)
+    stitched_metrics = calculate_metrics(
+        trades,
+        initial_balance=initial_balance,
+        evaluation_period=oos_evaluation_period,
+    )
     summary["stitched_oos_metrics"] = stitched_metrics
-    summary["oos_evaluation_years"] = _wfa_oos_evaluation_years(results)
+    summary["oos_evaluation_years"] = (
+        oos_evaluation_period.years if oos_evaluation_period is not None else 0.0
+    )
     summary["required_oos_mar"] = length_adjusted_mar_requirement(summary["oos_evaluation_years"])
     summary["incubation_selected_params"] = _select_incubation_params(results)
     _annotate_stage_data_period(summary, subset, quality)
@@ -1830,15 +2273,24 @@ def _prepare_stage_data(
         return market, detail, quality, input_hash
 
     started = time.perf_counter()
-    market, quality, execution_data = prepare_data(
+    canonical_event_replay = uses_canonical_event_replay(cfg)
+    prepared = prepare_data(
         cfg["data"],
         output_dir,
         subset,
         timeframe=timeframe,
-        include_execution_data=True,
+        include_execution_data=not canonical_event_replay,
         show_progress=show_progress,
     )
-    detail = execution_data if timeframe != "1m" else None
+    if canonical_event_replay:
+        market, quality = prepared
+        # Canonical-event strategies reload their governed source through the
+        # session-streamed runner. Materializing the full execution history
+        # here is redundant and can exceed workstation memory before replay.
+        detail = None
+    else:
+        market, quality, execution_data = prepared
+        detail = execution_data if timeframe != "1m" else None
     input_hash = data_source_hash(cfg["data"], subset)
     quality = {
         **quality,
@@ -1895,15 +2347,67 @@ def evaluate_criteria(payload: dict, criteria: list[dict]) -> list[dict]:
         if item.get("valid_parameter_combination_count"):
             expected["valid_parameter_combination_count"] = "1 fixed combo or 8-120 tunable combos"
             passed = passed and _valid_parameter_combination_count(actual)
-        out.append(
-            {
-                "metric": metric,
-                "actual": actual,
-                "expected": expected,
-                "passed": bool(passed),
-            }
-        )
+        row = {
+            "metric": metric,
+            "actual": actual,
+            "expected": expected,
+            "passed": bool(passed),
+        }
+        if item.get("decision_role") is not None:
+            row["decision_role"] = item["decision_role"]
+        out.append(row)
     return out
+
+
+def _annotate_stage_decisions(result: dict[str, Any]) -> dict[str, Any]:
+    """Separate evidence validity from the generic investment objective.
+
+    A generic-objective miss remains a generic ``FAIL`` but does not stop later
+    unseen-evidence stages. Missing role metadata, execution errors, and skipped
+    stages fail closed as unresolved scientific validity.
+    """
+
+    criteria = result.get("criteria") if isinstance(result.get("criteria"), list) else []
+    status = str(result.get("status") or "")
+    roles = {
+        str(item.get("decision_role") or "")
+        for item in criteria
+        if isinstance(item, Mapping)
+    }
+    known_roles = {"scientific_validity", "generic_objective"}
+    if status in {"error", "skipped"} or not criteria or not roles.issubset(known_roles) or "" in roles:
+        validity = "NEEDS MANUAL REVIEW"
+        generic = "NEEDS MANUAL REVIEW"
+    else:
+        validity_items = [
+            item
+            for item in criteria
+            if isinstance(item, Mapping)
+            and item.get("decision_role") == "scientific_validity"
+        ]
+        generic_items = [
+            item
+            for item in criteria
+            if isinstance(item, Mapping)
+            and item.get("decision_role") == "generic_objective"
+        ]
+        validity = (
+            "PASS"
+            if validity_items and all(bool(item.get("passed")) for item in validity_items)
+            else "FAIL"
+            if validity_items
+            else "NEEDS MANUAL REVIEW"
+        )
+        generic = (
+            "PASS"
+            if all(bool(item.get("passed")) for item in generic_items)
+            else "FAIL"
+        )
+    result["scientific_validity_verdict"] = validity
+    result["scientific_validity_passed"] = validity == "PASS"
+    result["generic_objective_verdict"] = generic
+    result["generic_objective_passed"] = generic == "PASS"
+    return result
 
 
 def _valid_parameter_combination_count(value) -> bool:
@@ -2531,15 +3035,54 @@ def _select_median_profitable_core_grid_row(results: pd.DataFrame | None, parame
     return row
 
 
-def _wfa_oos_evaluation_years(wfa_results: pd.DataFrame) -> float:
+def _wfa_oos_evaluation_period(
+    wfa_results: pd.DataFrame,
+    market: pd.DataFrame | None = None,
+) -> EvaluationPeriod | None:
+    """Return the union of OOS windows that were actually replayed.
+
+    WFA window bounds, not sparse trade timestamps, are authoritative.  Gaps
+    between non-contiguous windows are excluded and overlapping intervals are
+    counted once by :class:`EvaluationPeriod`.
+    """
+
     if wfa_results.empty or not {"test_start", "test_end"}.issubset(wfa_results.columns):
-        return 0.0
-    starts = pd.to_datetime(wfa_results["test_start"], errors="coerce")
-    ends = pd.to_datetime(wfa_results["test_end"], errors="coerce")
-    if starts.dropna().empty or ends.dropna().empty:
-        return 0.0
-    elapsed_days = max((ends.max() - starts.min()).total_seconds() / 86400.0, 1.0)
-    return float(elapsed_days / 365.25)
+        return None
+    evaluated = wfa_results.copy()
+    if "oos_evaluated" in evaluated.columns:
+        evaluated = evaluated[evaluated["oos_evaluated"].fillna(False).astype(bool)]
+    elif "early_exit" in evaluated.columns:
+        evaluated = evaluated[~evaluated["early_exit"].fillna(False).astype(bool)]
+    if evaluated.empty:
+        return None
+
+    starts = pd.to_datetime(evaluated["test_start"], errors="coerce")
+    ends = pd.to_datetime(evaluated["test_end"], errors="coerce")
+    valid = starts.notna() & ends.notna() & (ends > starts)
+    intervals = list(zip(starts[valid], ends[valid]))
+    if not intervals:
+        return None
+
+    eligible_session_count = None
+    if market is not None and not market.empty and "session_date" in market.columns:
+        sessions = pd.to_datetime(market["session_date"], errors="coerce").dt.normalize()
+        if not bool(sessions.isna().any()):
+            covered = pd.Series(False, index=market.index)
+            for start, end in intervals:
+                covered |= (sessions >= start.normalize()) & (sessions < end.normalize())
+            count = int(sessions.loc[covered].nunique())
+            eligible_session_count = count if count > 0 else None
+
+    return EvaluationPeriod.from_half_open_intervals(
+        intervals,
+        eligible_session_count=eligible_session_count,
+        source="stitched_wfa_realized_oos_windows",
+    )
+
+
+def _wfa_oos_evaluation_years(wfa_results: pd.DataFrame) -> float:
+    period = _wfa_oos_evaluation_period(wfa_results)
+    return period.years if period is not None else 0.0
 
 
 def _required_context_frame(context: dict, key: str, message: str) -> pd.DataFrame:

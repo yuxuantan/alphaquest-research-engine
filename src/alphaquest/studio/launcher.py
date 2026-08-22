@@ -18,6 +18,10 @@ from urllib.request import Request, urlopen
 import webbrowser
 
 from alphaquest.research.storage import load_storage_layout
+from alphaquest.studio.process_ownership import (
+    terminate_process_group,
+    terminate_registered_process_groups,
+)
 
 
 STATE_FILENAME = "studio-process.json"
@@ -148,6 +152,14 @@ def _start_studio_locked(
         ]
 
     current = studio_status(project_root=root)
+    if not current["worker_running"]:
+        orphan_outcomes = terminate_registered_process_groups(root)
+        failures = [item for item in orphan_outcomes if not item["terminated"]]
+        if failures:
+            raise RuntimeError(
+                "could not terminate orphaned Studio job processes before startup: "
+                + "; ".join(str(item["error"]) for item in failures)
+            )
 
     state_path, log_path, worker_log_path = _runtime_paths(root)
     state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -296,6 +308,12 @@ def _stop_studio_locked(*, project_root: str | Path, timeout_seconds: float) -> 
     pid = _integer(state.get("pid"))
     worker_pid = _integer(state.get("worker_pid"))
     errors: list[str] = []
+    owned_outcomes = terminate_registered_process_groups(
+        root,
+        term_timeout=timeout_seconds,
+        kill_timeout=timeout_seconds,
+    )
+    errors.extend(str(item["error"]) for item in owned_outcomes if not item["terminated"] and item.get("error"))
     if pid and _pid_matches_studio(pid, state.get("app_path"), _state_ui_runtime(state)):
         try:
             _terminate_pid(pid, label="Research Studio", timeout_seconds=timeout_seconds)
@@ -480,6 +498,20 @@ def _pid_matches_worker(pid: int) -> bool:
 def _terminate_pid(pid: int, *, label: str, timeout_seconds: float) -> None:
     if not _pid_exists(pid):
         return
+    try:
+        process_group_id = os.getpgid(pid)
+    except ProcessLookupError:
+        return
+    if process_group_id == pid and process_group_id != os.getpgrp():
+        try:
+            terminate_process_group(
+                process_group_id,
+                term_timeout=timeout_seconds,
+                kill_timeout=timeout_seconds,
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(f"{label} {exc}") from exc
+        return
     os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + max(0.1, timeout_seconds)
     while time.monotonic() < deadline and _pid_exists(pid):
@@ -491,7 +523,7 @@ def _terminate_pid(pid: int, *, label: str, timeout_seconds: float) -> None:
 def _terminate_process(process: subprocess.Popen, *, label: str, timeout_seconds: float) -> None:
     if process.poll() is not None:
         return
-    process.terminate()
+    _terminate_pid(process.pid, label=label, timeout_seconds=timeout_seconds)
     try:
         process.wait(timeout=max(0.1, timeout_seconds))
     except subprocess.TimeoutExpired as exc:

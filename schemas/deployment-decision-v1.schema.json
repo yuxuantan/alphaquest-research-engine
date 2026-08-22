@@ -1,0 +1,546 @@
+{
+  "$defs": {
+    "AccountContractLimitsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "account_label": {
+          "title": "Account Label",
+          "type": "string"
+        },
+        "instrument_contract_limits": {
+          "additionalProperties": {
+            "type": "integer"
+          },
+          "minProperties": 1,
+          "title": "Instrument Contract Limits",
+          "type": "object"
+        },
+        "maximum_contracts_per_candidate": {
+          "minimum": 1,
+          "title": "Maximum Contracts Per Candidate",
+          "type": "integer"
+        },
+        "maximum_daily_loss_currency": {
+          "exclusiveMinimum": 0.0,
+          "title": "Maximum Daily Loss Currency",
+          "type": "number"
+        },
+        "maximum_total_contracts": {
+          "minimum": 1,
+          "title": "Maximum Total Contracts",
+          "type": "integer"
+        },
+        "maximum_total_drawdown_currency": {
+          "exclusiveMinimum": 0.0,
+          "title": "Maximum Total Drawdown Currency",
+          "type": "number"
+        }
+      },
+      "required": [
+        "account_label",
+        "maximum_total_contracts",
+        "maximum_contracts_per_candidate",
+        "instrument_contract_limits",
+        "maximum_daily_loss_currency",
+        "maximum_total_drawdown_currency"
+      ],
+      "title": "AccountContractLimitsV1",
+      "type": "object"
+    },
+    "DeploymentCandidateBindingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "attempt_id": {
+          "title": "Attempt Id",
+          "type": "string"
+        },
+        "candidate": {
+          "$ref": "#/$defs/PortfolioCandidateBindingV1"
+        },
+        "forward_incubation": {
+          "$ref": "#/$defs/ForwardIncubationBindingV1"
+        },
+        "requested_contracts": {
+          "minimum": 1,
+          "title": "Requested Contracts",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "candidate",
+        "attempt_id",
+        "requested_contracts",
+        "forward_incubation"
+      ],
+      "title": "DeploymentCandidateBindingV1",
+      "type": "object"
+    },
+    "ForwardIncubationBindingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "event_count": {
+          "minimum": 0,
+          "title": "Event Count",
+          "type": "integer"
+        },
+        "events_path": {
+          "title": "Events Path",
+          "type": "string"
+        },
+        "events_sha256": {
+          "title": "Events Sha256",
+          "type": "string"
+        },
+        "governed_config_hash": {
+          "title": "Governed Config Hash",
+          "type": "string"
+        },
+        "last_event_sha256": {
+          "title": "Last Event Sha256",
+          "type": "string"
+        },
+        "plan_path": {
+          "title": "Plan Path",
+          "type": "string"
+        },
+        "plan_sha256": {
+          "title": "Plan Sha256",
+          "type": "string"
+        },
+        "research_objectives_sha256": {
+          "title": "Research Objectives Sha256",
+          "type": "string"
+        },
+        "status": {
+          "const": "ELIGIBLE_FOR_REVIEW",
+          "enum": [
+            "ELIGIBLE_FOR_REVIEW"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "status",
+        "plan_path",
+        "plan_sha256",
+        "events_path",
+        "events_sha256",
+        "event_count",
+        "last_event_sha256",
+        "governed_config_hash",
+        "research_objectives_sha256"
+      ],
+      "title": "ForwardIncubationBindingV1",
+      "type": "object"
+    },
+    "MonitoringThresholdsV1": {
+      "additionalProperties": false,
+      "properties": {
+        "daily_loss_alert_currency": {
+          "exclusiveMinimum": 0.0,
+          "title": "Daily Loss Alert Currency",
+          "type": "number"
+        },
+        "drawdown_alert_currency": {
+          "exclusiveMinimum": 0.0,
+          "title": "Drawdown Alert Currency",
+          "type": "number"
+        },
+        "losing_streak_alert": {
+          "minimum": 1,
+          "title": "Losing Streak Alert",
+          "type": "integer"
+        },
+        "maximum_average_slippage_per_contract": {
+          "minimum": 0.0,
+          "title": "Maximum Average Slippage Per Contract",
+          "type": "number"
+        },
+        "minimum_rolling_expectancy_currency": {
+          "title": "Minimum Rolling Expectancy Currency",
+          "type": "number"
+        },
+        "retirement_review_drawdown_currency": {
+          "exclusiveMinimum": 0.0,
+          "title": "Retirement Review Drawdown Currency",
+          "type": "number"
+        },
+        "retirement_review_losing_streak": {
+          "minimum": 1,
+          "title": "Retirement Review Losing Streak",
+          "type": "integer"
+        },
+        "rolling_window_trades": {
+          "minimum": 2,
+          "title": "Rolling Window Trades",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "daily_loss_alert_currency",
+        "drawdown_alert_currency",
+        "retirement_review_drawdown_currency",
+        "losing_streak_alert",
+        "retirement_review_losing_streak",
+        "rolling_window_trades",
+        "minimum_rolling_expectancy_currency",
+        "maximum_average_slippage_per_contract"
+      ],
+      "title": "MonitoringThresholdsV1",
+      "type": "object"
+    },
+    "PortfolioCandidateBindingV1": {
+      "additionalProperties": false,
+      "properties": {
+        "acceptance_session_calendar_path": {
+          "title": "Acceptance Session Calendar Path",
+          "type": "string"
+        },
+        "acceptance_session_calendar_sha256": {
+          "title": "Acceptance Session Calendar Sha256",
+          "type": "string"
+        },
+        "acceptance_summary_path": {
+          "title": "Acceptance Summary Path",
+          "type": "string"
+        },
+        "acceptance_summary_sha256": {
+          "title": "Acceptance Summary Sha256",
+          "type": "string"
+        },
+        "acceptance_trade_log_path": {
+          "title": "Acceptance Trade Log Path",
+          "type": "string"
+        },
+        "acceptance_trade_log_sha256": {
+          "title": "Acceptance Trade Log Sha256",
+          "type": "string"
+        },
+        "acceptance_trades": {
+          "minimum": 1,
+          "title": "Acceptance Trades",
+          "type": "integer"
+        },
+        "account_assessment_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account Assessment Id"
+        },
+        "account_profile_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account Profile Id"
+        },
+        "account_profile_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Account Profile Version"
+        },
+        "campaign_id": {
+          "title": "Campaign Id",
+          "type": "string"
+        },
+        "candidate_key": {
+          "title": "Candidate Key",
+          "type": "string"
+        },
+        "candidate_review_path": {
+          "title": "Candidate Review Path",
+          "type": "string"
+        },
+        "candidate_review_sha256": {
+          "title": "Candidate Review Sha256",
+          "type": "string"
+        },
+        "config_path": {
+          "title": "Config Path",
+          "type": "string"
+        },
+        "config_sha256": {
+          "title": "Config Sha256",
+          "type": "string"
+        },
+        "coverage_end": {
+          "format": "date",
+          "title": "Coverage End",
+          "type": "string"
+        },
+        "coverage_start": {
+          "format": "date",
+          "title": "Coverage Start",
+          "type": "string"
+        },
+        "eligibility_basis": {
+          "default": "generic_scientific_pass",
+          "enum": [
+            "generic_scientific_pass",
+            "destination_specific_pass"
+          ],
+          "title": "Eligibility Basis",
+          "type": "string"
+        },
+        "evaluation_sessions": {
+          "minimum": 2,
+          "title": "Evaluation Sessions",
+          "type": "integer"
+        },
+        "finalization_manifest_path": {
+          "title": "Finalization Manifest Path",
+          "type": "string"
+        },
+        "finalization_manifest_sha256": {
+          "title": "Finalization Manifest Sha256",
+          "type": "string"
+        },
+        "initial_balance": {
+          "exclusiveMinimum": 0.0,
+          "title": "Initial Balance",
+          "type": "number"
+        },
+        "instrument": {
+          "title": "Instrument",
+          "type": "string"
+        },
+        "no_trade_sessions": {
+          "minimum": 0,
+          "title": "No Trade Sessions",
+          "type": "integer"
+        },
+        "observed_trade_sessions": {
+          "minimum": 1,
+          "title": "Observed Trade Sessions",
+          "type": "integer"
+        },
+        "result_bundle_path": {
+          "title": "Result Bundle Path",
+          "type": "string"
+        },
+        "result_bundle_sha256": {
+          "title": "Result Bundle Sha256",
+          "type": "string"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "variant_id": {
+          "title": "Variant Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "candidate_key",
+        "campaign_id",
+        "variant_id",
+        "run_id",
+        "instrument",
+        "initial_balance",
+        "result_bundle_path",
+        "result_bundle_sha256",
+        "finalization_manifest_path",
+        "finalization_manifest_sha256",
+        "candidate_review_path",
+        "candidate_review_sha256",
+        "config_path",
+        "config_sha256",
+        "acceptance_trade_log_path",
+        "acceptance_trade_log_sha256",
+        "acceptance_summary_path",
+        "acceptance_summary_sha256",
+        "acceptance_session_calendar_path",
+        "acceptance_session_calendar_sha256",
+        "coverage_start",
+        "coverage_end",
+        "evaluation_sessions",
+        "observed_trade_sessions",
+        "no_trade_sessions",
+        "acceptance_trades"
+      ],
+      "title": "PortfolioCandidateBindingV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Human decision record; approval only authorizes a separate manual action.",
+  "properties": {
+    "account_limits": {
+      "$ref": "#/$defs/AccountContractLimitsV1"
+    },
+    "automatic_retirement_permitted": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Automatic Retirement Permitted",
+      "type": "boolean"
+    },
+    "candidates": {
+      "items": {
+        "$ref": "#/$defs/DeploymentCandidateBindingV1"
+      },
+      "minItems": 1,
+      "title": "Candidates",
+      "type": "array"
+    },
+    "checklist_blockers": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Checklist Blockers",
+      "type": "array"
+    },
+    "checklist_status": {
+      "enum": [
+        "ELIGIBLE_FOR_HUMAN_DECISION",
+        "BLOCKED"
+      ],
+      "title": "Checklist Status",
+      "type": "string"
+    },
+    "decided_at": {
+      "format": "date-time",
+      "title": "Decided At",
+      "type": "string"
+    },
+    "decision": {
+      "enum": [
+        "APPROVE",
+        "REJECT",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Decision",
+      "type": "string"
+    },
+    "decision_id": {
+      "title": "Decision Id",
+      "type": "string"
+    },
+    "decision_notes": {
+      "title": "Decision Notes",
+      "type": "string"
+    },
+    "deployment_state": {
+      "enum": [
+        "APPROVED_FOR_MANUAL_DEPLOYMENT",
+        "REJECTED",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Deployment State",
+      "type": "string"
+    },
+    "execution_capability": {
+      "const": "none",
+      "default": "none",
+      "enum": [
+        "none"
+      ],
+      "title": "Execution Capability",
+      "type": "string"
+    },
+    "kill_criteria": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Kill Criteria",
+      "type": "array"
+    },
+    "monitoring_thresholds": {
+      "$ref": "#/$defs/MonitoringThresholdsV1"
+    },
+    "order_submission_permitted": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Order Submission Permitted",
+      "type": "boolean"
+    },
+    "portfolio_review_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Portfolio Review Path"
+    },
+    "portfolio_review_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Portfolio Review Sha256"
+    },
+    "reviewer": {
+      "title": "Reviewer",
+      "type": "string"
+    },
+    "rollback_criteria": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Rollback Criteria",
+      "type": "array"
+    },
+    "schema": {
+      "const": "alphaquest.deployment-decision/v1",
+      "default": "alphaquest.deployment-decision/v1",
+      "enum": [
+        "alphaquest.deployment-decision/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    }
+  },
+  "required": [
+    "decision_id",
+    "decided_at",
+    "reviewer",
+    "decision",
+    "decision_notes",
+    "candidates",
+    "account_limits",
+    "rollback_criteria",
+    "kill_criteria",
+    "monitoring_thresholds",
+    "checklist_status",
+    "checklist_blockers",
+    "deployment_state"
+  ],
+  "title": "DeploymentDecisionV1",
+  "type": "object"
+}

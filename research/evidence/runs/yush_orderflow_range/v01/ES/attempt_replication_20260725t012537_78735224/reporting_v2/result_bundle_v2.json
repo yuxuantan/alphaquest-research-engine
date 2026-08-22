@@ -1,0 +1,324 @@
+{
+  "breakdowns": {
+    "drawdown_curve": {
+      "available": true,
+      "path": "drawdown_curve.csv",
+      "reason": null,
+      "rows": 37,
+      "sha256": "1ff3b58bdf5469f947844c832f6c2a1030ccaf4045ec8ae809d69b5dc6bbccf7"
+    },
+    "entry_session": {
+      "available": true,
+      "path": "entry_session_breakdown.csv",
+      "reason": null,
+      "rows": 2,
+      "sha256": "2f2028e157f68be3e1d7dfa3255668f3fbdaa93bec271635e07515750664bf9b"
+    },
+    "equity_curve": {
+      "available": true,
+      "path": "equity_curve.csv",
+      "reason": null,
+      "rows": 37,
+      "sha256": "8e42c6024db33b32794e49164534958acfadc3463bb3e4a2a48d272b0cee7718"
+    },
+    "monthly": {
+      "available": true,
+      "path": "monthly_breakdown.csv",
+      "reason": null,
+      "rows": 7,
+      "sha256": "40863e611bb1506b7a0c400bdb8841ce9e095f5d4793f8a09174c014e8d9341b"
+    },
+    "side": {
+      "available": true,
+      "path": "side_breakdown.csv",
+      "reason": null,
+      "rows": 2,
+      "sha256": "292ad3ea7ec129dd0bffe540e4f0e8de9e069ec47ece1170e2b5e04ce1d063e5"
+    },
+    "yearly": {
+      "available": true,
+      "path": "yearly_breakdown.csv",
+      "reason": null,
+      "rows": 2,
+      "sha256": "257b85e4582e4f313d2f2c9f336d0181a3ec9e300f9640927cffc763b159f398"
+    }
+  },
+  "campaign_id": "yush_orderflow_range",
+  "generated_at": "2026-07-25T01:30:25.291537Z",
+  "metrics": {
+    "average_loss": {
+      "reason": null,
+      "value": -112.23684210526316
+    },
+    "average_trade_duration_minutes": {
+      "reason": null,
+      "value": 6.309426549206349
+    },
+    "average_win": {
+      "reason": null,
+      "value": 56.80555555555556
+    },
+    "daily_sharpe": {
+      "reason": "trade log contains invalid exit timestamps",
+      "value": null
+    },
+    "daily_sortino": {
+      "reason": "trade log contains invalid exit timestamps",
+      "value": null
+    },
+    "expectancy_currency": {
+      "reason": null,
+      "value": -30.0
+    },
+    "expectancy_r": {
+      "reason": null,
+      "value": -0.2239067349361467
+    },
+    "forced_flatten_compliance": {
+      "reason": "position_flat_before_deadline evidence was not supplied",
+      "value": null
+    },
+    "largest_winning_trade_contribution": {
+      "reason": null,
+      "value": 0.14180929095354522
+    },
+    "mar": {
+      "reason": null,
+      "value": -0.6253239287221666
+    },
+    "max_drawdown": {
+      "reason": null,
+      "value": 1205.0
+    },
+    "max_drawdown_pct": {
+      "reason": null,
+      "value": 0.0241
+    },
+    "max_losing_streak": {
+      "reason": null,
+      "value": 4
+    },
+    "net_profit_after_costs": {
+      "reason": null,
+      "value": -1110.0
+    },
+    "payoff_ratio": {
+      "reason": null,
+      "value": 0.5061221831444574
+    },
+    "profit_factor": {
+      "reason": null,
+      "value": 0.4794841735052755
+    },
+    "prop_rule_outcome": {
+      "reason": "prop-rule simulation outcome was not supplied",
+      "value": null
+    },
+    "total_trades": {
+      "reason": null,
+      "value": 37
+    },
+    "total_transaction_costs": {
+      "reason": null,
+      "value": 1110.0
+    },
+    "trades_per_year": {
+      "reason": null,
+      "value": 25.02638888888889
+    },
+    "win_rate": {
+      "reason": null,
+      "value": 0.4864864864864865
+    }
+  },
+  "run_id": "attempt_replication_20260725t012537_78735224",
+  "schema": "alphaquest.result-bundle/v2",
+  "stage_criteria": [
+    {
+      "actual": {
+        "reason": null,
+        "value": 100
+      },
+      "evidence_path": "limited_core_grid_test/stage_result.json",
+      "metric": "summary.total_combinations_tested",
+      "operator": "present",
+      "reason": "actual 100 met required present 1 fixed combo or 8-120 tunable combos",
+      "result": "PASS",
+      "stage": "limited_core_grid_test",
+      "threshold": {
+        "reason": null,
+        "value": "1 fixed combo or 8-120 tunable combos"
+      }
+    },
+    {
+      "actual": {
+        "reason": null,
+        "value": 0.09
+      },
+      "evidence_path": "limited_core_grid_test/stage_result.json",
+      "metric": "summary.percentage_profitable_iterations",
+      "operator": ">=",
+      "reason": "actual 0.09 did not meet required >= 0.7",
+      "result": "FAIL",
+      "stage": "limited_core_grid_test",
+      "threshold": {
+        "reason": null,
+        "value": 0.7
+      }
+    },
+    {
+      "actual": {
+        "reason": null,
+        "value": 0
+      },
+      "evidence_path": "limited_core_grid_test/stage_result.json",
+      "metric": "summary.apex_rule_violating_iterations",
+      "operator": "<=",
+      "reason": "actual 0 met required <= 0",
+      "result": "PASS",
+      "stage": "limited_core_grid_test",
+      "threshold": {
+        "reason": null,
+        "value": 0
+      }
+    },
+    {
+      "actual": {
+        "reason": null,
+        "value": "skipped"
+      },
+      "evidence_path": null,
+      "metric": "stage_status",
+      "operator": "==",
+      "reason": "prior stage failed",
+      "result": "NEEDS MANUAL REVIEW",
+      "stage": "limited_monkey_test",
+      "threshold": {
+        "reason": null,
+        "value": "passed"
+      }
+    },
+    {
+      "actual": {
+        "reason": null,
+        "value": "skipped"
+      },
+      "evidence_path": null,
+      "metric": "stage_status",
+      "operator": "==",
+      "reason": "prior stage failed",
+      "result": "NEEDS MANUAL REVIEW",
+      "stage": "walk_forward_analysis",
+      "threshold": {
+        "reason": null,
+        "value": "passed"
+      }
+    },
+    {
+      "actual": {
+        "reason": null,
+        "value": "skipped"
+      },
+      "evidence_path": null,
+      "metric": "stage_status",
+      "operator": "==",
+      "reason": "prior stage failed",
+      "result": "NEEDS MANUAL REVIEW",
+      "stage": "wfa_oos_monkey_test",
+      "threshold": {
+        "reason": null,
+        "value": "passed"
+      }
+    },
+    {
+      "actual": {
+        "reason": null,
+        "value": "skipped"
+      },
+      "evidence_path": null,
+      "metric": "stage_status",
+      "operator": "==",
+      "reason": "prior stage failed",
+      "result": "NEEDS MANUAL REVIEW",
+      "stage": "wfa_oos_monte_carlo",
+      "threshold": {
+        "reason": null,
+        "value": "passed"
+      }
+    },
+    {
+      "actual": {
+        "reason": null,
+        "value": "skipped"
+      },
+      "evidence_path": null,
+      "metric": "stage_status",
+      "operator": "==",
+      "reason": "prior stage failed",
+      "result": "NEEDS MANUAL REVIEW",
+      "stage": "simulated_incubation_core",
+      "threshold": {
+        "reason": null,
+        "value": "passed"
+      }
+    },
+    {
+      "actual": {
+        "reason": null,
+        "value": "skipped"
+      },
+      "evidence_path": null,
+      "metric": "stage_status",
+      "operator": "==",
+      "reason": "prior stage failed",
+      "result": "NEEDS MANUAL REVIEW",
+      "stage": "simulated_incubation_monkey",
+      "threshold": {
+        "reason": null,
+        "value": "passed"
+      }
+    },
+    {
+      "actual": {
+        "reason": null,
+        "value": "skipped"
+      },
+      "evidence_path": null,
+      "metric": "stage_status",
+      "operator": "==",
+      "reason": "prior stage failed",
+      "result": "NEEDS MANUAL REVIEW",
+      "stage": "acceptance_oos_test",
+      "threshold": {
+        "reason": null,
+        "value": "passed"
+      }
+    }
+  ],
+  "supplemental_artifacts": {
+    "monte_carlo_summary": {
+      "available": false,
+      "path": "monte_carlo_summary.csv",
+      "reason": "monte_carlo_summary.csv is empty",
+      "rows": 0,
+      "sha256": "cab416b259342944414082b5af4814918d16e2661fbebb0f779b8de57193b680"
+    },
+    "parameter_neighbors": {
+      "available": true,
+      "path": "parameter_neighbors.csv",
+      "reason": null,
+      "rows": 100,
+      "sha256": "6f973d94e3a4211ff96a15a5abbbdf7940f00240d4cddfdc6bb4b2bd322e6a1f"
+    },
+    "wfa_stitched_oos": {
+      "available": false,
+      "path": "wfa_stitched_oos.csv",
+      "reason": "wfa_stitched_oos.csv is empty",
+      "rows": 0,
+      "sha256": "c534b3892ef74f154a43fc7eb76373aad8e947c425f805b48ad19b5acff7f1e5"
+    }
+  },
+  "variant_id": "v01",
+  "verdict": "FAIL",
+  "verdict_message": "FAIL \u2014 first failed criterion: summary.percentage_profitable_iterations; actual 0.09 did not meet required >= 0.7"
+}

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 import csv
+from dataclasses import replace
 from datetime import date
 import hashlib
 import json
@@ -33,6 +34,10 @@ from alphaquest.authoring import (
 )
 from alphaquest.authoring.catalog import ModuleCatalogError
 from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.strategy_certification import (
+    compute_implementation_sha256,
+    get_strategy_certification,
+)
 from alphaquest.research.schemas import validate_campaign_config_contract
 from alphaquest.strategy_modules.entry import ENTRY_MODULES, build_entry_module, entry_module_metadata
 from alphaquest.studio.ledger import LEDGER_FIELDS, append_planned_publication
@@ -44,6 +49,31 @@ LONG_TEXT = (
     "This predeclared explanation is deliberately longer than eighty characters and documents "
     "causal completed-bar mechanics without using any observed strategy profit results."
 )
+
+
+def _research_objectives() -> dict:
+    return {
+        "schema": "alphaquest.research-objectives/v1",
+        "development_goal": "Reject this candidate unless it survives every frozen research gate.",
+        "development_deadline": "2099-12-31",
+        "evaluation_horizon_months": 24,
+        "minimum_annualized_return_fraction": 0.20,
+        "minimum_mar": 0.40,
+        "maximum_drawdown_fraction": 0.10,
+        "minimum_complete_wfa_windows": 3,
+        "minimum_wfa_oos_trades": 50,
+        "minimum_acceptance_oos_trades": 30,
+        "monte_carlo_min_runs": 8000,
+        "monte_carlo_horizon_months": 6,
+        "minimum_net_profit_probability": 0.70,
+        "maximum_account_breach_probability": 0.10,
+        "forward_incubation_min_calendar_days": 90,
+        "forward_incubation_min_trades": 30,
+        "maximum_variants": 5,
+        "abandonment_rules": ["Stop at the first terminal scientific gate failure."],
+        "retirement_rules": ["Retire after a frozen live risk or degradation boundary is breached."],
+        "confirmed": True,
+    }
 
 
 def _rule() -> dict:
@@ -123,6 +153,7 @@ def _draft_document() -> dict:
         "created_at": "2026-07-15",
         "instrument": "ES",
         "timeframe": "1m",
+        "research_objectives": _research_objectives(),
         "edge_family": "completed_bar_reversal",
         "hypothesis": LONG_TEXT,
         "expected_mechanism": LONG_TEXT,
@@ -193,7 +224,7 @@ def _event_draft_document() -> dict:
     document = _draft_document()
     document["authoring_lane"] = "certified_event_replay"
     document["certified_recipe"] = None
-    document["event_strategy"] = "yush_orderflow_range"
+    document["event_strategy"] = "yush_adaptive_orderflow_range_v3"
     document["dataset"].update(
         {
             "continuous_contract": "explicit_roll_calendar",
@@ -221,9 +252,9 @@ def _event_draft_document() -> dict:
             "schema": "alphaquest.variant-draft/v1",
             "variant_id": "v01",
             "title": "Certified event variant",
-            "entry": {"module": "yush_orderflow_range", "params": {"mechanics": {}}},
-            "stop": {"module": "event_aoi_structural_stop", "params": {}},
-            "target": {"module": "event_value_area_management", "params": {}},
+            "entry": {"module": "yush_adaptive_orderflow_range_v3", "params": {"mechanics": {}}},
+            "stop": {"module": "event_fill_time_sweep_to_entry_extreme_stop", "params": {}},
+            "target": {"module": "event_frozen_midpoint_opposite_edge_scale_out", "params": {}},
             "mechanic_rationale": LONG_TEXT,
             "entry_rationale": LONG_TEXT,
             "stop_rationale": LONG_TEXT,
@@ -237,30 +268,92 @@ def _event_draft_document() -> dict:
     return _reconfirm(document)
 
 
-def test_event_campaign_compilation_embeds_current_strategy_certification():
+def _synthetic_current_event_certification(
+    monkeypatch: pytest.MonkeyPatch,
+    project_root: Path,
+):
+    certification = get_strategy_certification(
+        "yush_adaptive_orderflow_range_v3",
+        project_root,
+        require_current=False,
+    )
+    current = replace(
+        certification,
+        implementation_sha256=compute_implementation_sha256(
+            project_root,
+            certification.source_files,
+        ),
+    )
+    monkeypatch.setattr(
+        "alphaquest.authoring.compiler.get_strategy_certification",
+        lambda *args, **kwargs: current,
+    )
+    return current
+
+
+def test_event_campaign_compilation_embeds_current_strategy_certification(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    project_root = Path(__file__).resolve().parents[1]
+    certification = _synthetic_current_event_certification(monkeypatch, project_root)
     compiled = CampaignCompiler(project_root=Path(__file__).resolve().parents[1]).compile(
         CampaignDraftV1.model_validate(_event_draft_document())
     )
     config = compiled.variant_configs["v01"]
     identity = config["strategy_certification"]
 
-    assert identity["strategy_id"] == "yush_orderflow_range"
-    assert identity["implementation_version"] == 4
+    assert identity["strategy_id"] == "yush_adaptive_orderflow_range_v3"
+    assert identity["implementation_version"] == certification.implementation_version
     assert len(identity["implementation_sha256"]) == 64
-    assert compiled.strategy_spec["strategy_certification"]["implementation_sha256"] == identity[
-        "implementation_sha256"
-    ]
-    assert compiled.authoring_manifest["strategy_certification"]["manifest_sha256"] == identity[
-        "manifest_sha256"
-    ]
+    assert (
+        compiled.strategy_spec["strategy_certification"]["implementation_sha256"] == identity["implementation_sha256"]
+    )
+    assert compiled.authoring_manifest["strategy_certification"]["manifest_sha256"] == identity["manifest_sha256"]
 
 
-def test_event_campaign_compiles_one_canonical_grid_for_core_and_wfa():
+def test_campaign_compilation_freezes_versioned_target_account_profile() -> None:
+    document = _draft_document()
+    document["execution"]["target_account_profiles"] = [
+        {
+            "profile_id": "apex/eod_50k/funded",
+            "version": "2026-03-01",
+            "role": "primary",
+        }
+    ]
+    _reconfirm(document)
+
+    compiled = CampaignCompiler(project_root=Path(__file__).resolve().parents[1]).compile(
+        CampaignDraftV1.model_validate(document)
+    )
+
+    bindings = compiled.variant_configs["v01"]["account_profile_bindings"]
+    assert len(bindings) == 1
+    assert bindings[0]["profile_id"] == "apex/eod_50k/funded"
+    assert bindings[0]["role"] == "primary"
+    assert len(bindings[0]["profile_sha256"]) == 64
+    assert bindings[0]["rules"]["eod_drawdown"]["locked_threshold"] == 50_100.0
+
+
+def test_event_campaign_preserves_source_timeframe_separately_from_strategy_clock():
+    document = _event_draft_document()
+    document["timeframe"] = "3m"
+    _reconfirm(document)
+
+    draft = CampaignDraftV1.model_validate(document)
+
+    assert draft.timeframe == "3m"
+    assert draft.dataset.timeframe == "1m"
+
+
+def test_event_campaign_compiles_one_canonical_grid_for_core_and_wfa(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    project_root = Path(__file__).resolve().parents[1]
+    certification = _synthetic_current_event_certification(monkeypatch, project_root)
     document = _event_draft_document()
     document["variants"][0]["event_parameter_grid"] = {
-        "max_aoi_width_points": [3, 4, 5, 6],
-        "entry_offset_ticks": [0, 1, 2, 3, 4],
-        "stop_offset_ticks": [0, 1, 2, 3, 4],
+        "sweep_atr_fraction": [0.1, 0.15, 0.2, 0.25, 0.3],
+        "maximum_stop_atr_multiple": [1.25, 1.5, 1.75],
     }
     _reconfirm(document)
 
@@ -271,12 +364,11 @@ def test_event_campaign_compiles_one_canonical_grid_for_core_and_wfa():
 
     assert config["core_grid"]["parameters"] == config["wfa"]["parameters"]
     assert config["core_grid"]["parameters"] == {
-        "event.params.max_aoi_width_points": [3, 4, 5, 6],
-        "event.params.entry_offset_ticks": [0, 1, 2, 3, 4],
-        "event.params.stop_offset_ticks": [0, 1, 2, 3, 4],
+        "event.params.sweep_atr_fraction": [0.1, 0.15, 0.2, 0.25, 0.3],
+        "event.params.maximum_stop_atr_multiple": [1.25, 1.5, 1.75],
     }
-    assert config["strategy"]["event"]["params"]["max_aoi_width_points"] == 3.0
-    assert len(config["strategy"]["event"]["params"]) == 24
+    assert config["strategy"]["event"]["params"]["sweep_atr_fraction"] == 0.2
+    assert len(config["strategy"]["event"]["params"]) == len(certification.parameters)
 
 
 def _governed_publication_draft(root: Path) -> CampaignDraftV1:
@@ -348,6 +440,16 @@ def test_campaign_draft_is_strict_allows_one_to_five_distinct_variants():
     _reconfirm(sequential)
     assert len(CampaignDraftV1.model_validate(sequential).variants) == 1
 
+    objective_limited = deepcopy(document)
+    objective_limited["research_objectives"]["maximum_variants"] = 1
+    with pytest.raises(ValidationError, match="research-objective limit"):
+        CampaignDraftV1.model_validate(objective_limited)
+
+    missing_objectives = deepcopy(document)
+    missing_objectives.pop("research_objectives")
+    with pytest.raises(ValidationError, match="pre-PnL research objectives"):
+        CampaignDraftV1.model_validate(missing_objectives)
+
     too_many = deepcopy(document)
     extra_variant = deepcopy(too_many["variants"][-1])
     extra_variant["variant_id"] = "v06"
@@ -374,12 +476,7 @@ def test_certified_suggestions_hold_one_edge_fixed_across_five_risk_expressions(
 
     assert len(cards) == 5
     assert {card["entry"]["module"] for card in cards} == {"opening_range_breakout"}
-    assert len(
-        {
-            (card["stop"]["module"], card["target"]["module"])
-            for card in cards
-        }
-    ) == 5
+    assert len({(card["stop"]["module"], card["target"]["module"]) for card in cards}) == 5
 
     crossed_edge = deepcopy(document)
     crossed_edge["variants"][0]["entry"] = {
@@ -789,15 +886,23 @@ def test_fresh_workspace_draft_passes_same_preflight_before_freeze_and_publicati
     from alphaquest.studio.data_import import DataImportSpec, DatasetImporter
 
     source = tmp_path / "research-notes-bars.csv"
-    timestamps = pd.date_range("2026-01-05 09:30:00", periods=60, freq="min")
+    timestamps = pd.DatetimeIndex(
+        [
+            timestamp
+            for session in pd.bdate_range("2026-01-05", periods=10)
+            for timestamp in pd.date_range(
+                f"{session.date().isoformat()} 09:30:00", periods=60, freq="min"
+            )
+        ]
+    )
     pd.DataFrame(
         {
             "timestamp": timestamps.astype(str),
-            "open": [6000.0 + index * 0.25 for index in range(60)],
-            "high": [6001.0 + index * 0.25 for index in range(60)],
-            "low": [5999.0 + index * 0.25 for index in range(60)],
-            "close": [6000.5 + index * 0.25 for index in range(60)],
-            "volume": [100 + index for index in range(60)],
+            "open": [6000.0 + index * 0.25 for index in range(len(timestamps))],
+            "high": [6001.0 + index * 0.25 for index in range(len(timestamps))],
+            "low": [5999.0 + index * 0.25 for index in range(len(timestamps))],
+            "close": [6000.5 + index * 0.25 for index in range(len(timestamps))],
+            "volume": [100 + index for index in range(len(timestamps))],
         }
     ).to_csv(source, index=False)
     imported = DatasetImporter(tmp_path).import_file(
@@ -931,21 +1036,21 @@ def test_dataset_manifest_fails_closed_on_objective_row_defects():
         CampaignDraftV1.model_validate(document)
 
 
-def test_certified_catalog_contains_only_initial_studio_allowlist_and_rejects_unknown_params():
+def test_certified_catalog_contains_the_studio_allowlist_and_rejects_unknown_params():
     names = {(item.module_type, item.name) for item in CERTIFIED_MODULE_CATALOG.all()}
     assert names == {
         ("entry", "safe_bar_rule"),
         ("entry", "calendar_session_bias"),
         ("entry", "opening_range_breakout"),
         ("entry", "daily_time_series_momentum"),
-        ("entry", "yush_orderflow_range"),
+        ("entry", "yush_adaptive_orderflow_range_v3"),
         ("sl", "points_from_entry"),
         ("sl", "percent_from_entry"),
         ("sl", "fixed_dollar_per_contract"),
-        ("sl", "event_aoi_structural_stop"),
+        ("sl", "event_fill_time_sweep_to_entry_extreme_stop"),
         ("tp", "fixed_r"),
         ("tp", "cost_adjusted_fixed_r"),
-        ("tp", "event_value_area_management"),
+        ("tp", "event_frozen_midpoint_opposite_edge_scale_out"),
     }
     safe_manifest = CERTIFIED_MODULE_CATALOG.get("entry", "safe_bar_rule")
     assert safe_manifest.parameters["certified_features"].value_type == "array"
@@ -967,9 +1072,7 @@ def test_certified_catalog_contains_only_initial_studio_allowlist_and_rejects_un
             "left": {"source": "feature", "name": "close"},
             "right": {"source": "tunable", "name": "threshold"},
         },
-        "tunables": [
-            {"name": "threshold", "value_type": "number", "values": [10.0, 20.0], "default": 10.0}
-        ],
+        "tunables": [{"name": "threshold", "value_type": "number", "values": [10.0, 20.0], "default": 10.0}],
     }
     with pytest.raises(ModuleCatalogError, match="must match exactly"):
         CERTIFIED_MODULE_CATALOG.validate_binding(
@@ -1171,6 +1274,16 @@ def test_compiler_is_deterministic_and_emits_current_contracts_without_stubs():
     first = CampaignCompiler().compile(draft)
     second = CampaignCompiler().compile(draft)
     assert first.draft_sha256 == second.draft_sha256
+    objective_hashes = {
+        first.campaign["research_objectives_sha256"],
+        first.strategy_spec["research_objectives_sha256"],
+        first.authoring_manifest["research_objectives_sha256"],
+        *(
+            config["research_objectives_sha256"]
+            for config in first.variant_configs.values()
+        ),
+    }
+    assert len(objective_hashes) == 1
     assert dict(first.campaign) == dict(second.campaign)
     assert tuple(first.variant_configs) == ("v01", "v02", "v03", "v04", "v05")
     assert first.authoring_manifest["generated_python_stubs"] is False
@@ -1201,7 +1314,7 @@ def test_compiler_records_configured_evidence_and_approval_roots():
     assert gate["approval_path"].startswith("custom-artifacts/validation_approvals/")
 
 
-def test_daily_trend_mechanics_subset_includes_contract_warmup_and_review_sessions():
+def test_daily_trend_uses_same_recent_mechanics_window_as_every_strategy():
     document = _draft_document()
     document["certified_recipe"] = "daily_tsm_close_to_close"
     for variant in document["variants"]:
@@ -1214,7 +1327,14 @@ def test_daily_trend_mechanics_subset_includes_contract_warmup_and_review_sessio
     compiled = CampaignCompiler().compile(document)
     subset = compiled.variant_configs["v01"]["research_metadata"]["validation_gate"]["data_subset"]
 
-    assert (date.fromisoformat(subset["end_date"]) - date.fromisoformat(subset["start_date"])).days >= 50
+    assert subset == {
+        "start_date": "2025-12-10",
+        "end_date": "2025-12-31",
+    }
+    gate = compiled.variant_configs["v01"]["research_metadata"]["validation_gate"]
+    assert gate["selection_mode"] == "latest_eligible_sessions"
+    assert gate["session_count"] == 10
+    assert gate["minimum_trade_samples"] == 5
 
 
 def test_compiler_rejects_unfrozen_or_unreviewed_drafts():
@@ -1259,9 +1379,12 @@ def test_compiler_preserves_predeclared_parameter_grid_and_enforces_interval_par
         "entry.params.confirmation_minutes",
         "sl.params.stop_pct",
     ]
-    assert len(grid["entry.params.opening_range_minutes"]) * len(
-        grid["entry.params.confirmation_minutes"]
-    ) * len(grid["sl.params.stop_pct"]) == 8
+    assert (
+        len(grid["entry.params.opening_range_minutes"])
+        * len(grid["entry.params.confirmation_minutes"])
+        * len(grid["sl.params.stop_pct"])
+        == 8
+    )
 
     mismatch = _draft_document()
     mismatch["variants"][1]["entry"]["params"]["bar_interval_minutes"] = 5.0
@@ -1350,15 +1473,16 @@ def test_publisher_runs_repository_preflight_by_default_and_fails_before_install
 def test_publisher_preflight_uses_fresh_workspace_root_for_relative_dataset(tmp_path):
     dataset = tmp_path / "research/datasets/governed_es_1m/bars.csv"
     dataset.parent.mkdir(parents=True)
+    sessions = pd.bdate_range("2024-01-03", periods=10)
     pd.DataFrame(
         {
-            "timestamp": ["2024-01-03 09:30:00-05:00", "2024-01-03 09:31:00-05:00"],
-            "open": [100.0, 100.5],
-            "high": [101.0, 101.5],
-            "low": [99.0, 100.0],
-            "close": [100.5, 101.0],
-            "volume": [100, 120],
-            "timeframe_minutes": [1, 1],
+            "timestamp": [f"{session.date().isoformat()} 09:30:00-05:00" for session in sessions],
+            "open": [100.0 + index for index in range(10)],
+            "high": [101.0 + index for index in range(10)],
+            "low": [99.0 + index for index in range(10)],
+            "close": [100.5 + index for index in range(10)],
+            "volume": [100 + index for index in range(10)],
+            "timeframe_minutes": [1] * 10,
         }
     ).to_csv(dataset, index=False)
     digest = hashlib.sha256(dataset.read_bytes()).hexdigest()
@@ -1369,7 +1493,7 @@ def test_publisher_preflight_uses_fresh_workspace_root_for_relative_dataset(tmp_
     _reconfirm(document)
 
     result = TransactionalCampaignPublisher(project_root=tmp_path).publish(
-        CampaignCompiler().compile(document)
+        CampaignCompiler(project_root=tmp_path).compile(document)
     )
 
     assert result.destination == tmp_path / "research/campaigns/active/demo_completed_bar_edge"
@@ -1384,6 +1508,7 @@ def test_generated_authoring_schemas_are_committed_and_valid():
         "module-manifest-v1.schema.json",
         "dataset-manifest-v1.schema.json",
         "bar-rule-v1.schema.json",
+        "research-objectives-v1.schema.json",
     }
     for document in documents.values():
         Draft202012Validator.check_schema(document)

@@ -18,6 +18,12 @@ def apply_data_subset(data: pd.DataFrame, subset_config: dict | None) -> pd.Data
         sessions = pd.to_datetime(filtered["session_date"]).dt.date
         end_date = pd.Timestamp(subset_config["end_date"]).date()
         filtered = filtered[sessions <= end_date]
+    if subset_config.get("session_dates"):
+        allowed_sessions = {
+            pd.Timestamp(value).date() for value in subset_config["session_dates"]
+        }
+        sessions = pd.to_datetime(filtered["session_date"]).dt.date
+        filtered = filtered[sessions.isin(allowed_sessions)]
     if subset_config.get("start_timestamp"):
         filtered = filtered[filtered["timestamp"] >= _parse_timestamp_bound(data, subset_config["start_timestamp"])]
     if subset_config.get("end_timestamp"):

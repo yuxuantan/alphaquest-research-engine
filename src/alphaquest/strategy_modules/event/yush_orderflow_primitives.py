@@ -8,6 +8,7 @@ import pandas as pd
 
 from alphaquest.backtest.event_replay import (
     CanonicalEvent,
+    CanonicalEventBatch,
     CanonicalEventReplayStrategy,
     EventEntryOrder,
     EventPositionView,
@@ -53,6 +54,28 @@ class ConfluencePoint:
     point_tick: int
     interval_low_tick: int
     interval_high_tick: int
+
+
+def _price_from_tick(tick: int | float, tick_size: float) -> float:
+    """Convert an internal tick index to a stable public point price."""
+
+    return round(float(tick) * float(tick_size), 10)
+
+
+def _format_point_price(tick: int | float, tick_size: float) -> str:
+    value = _price_from_tick(tick, tick_size)
+    return f"{value:.10f}".rstrip("0").rstrip(".")
+
+
+def _format_confluence_level(
+    point: ConfluencePoint,
+    tick_size: float,
+) -> str:
+    low = _format_point_price(point.interval_low_tick, tick_size)
+    high = _format_point_price(point.interval_high_tick, tick_size)
+    if point.interval_low_tick == point.interval_high_tick:
+        return f"{point.level_type}@{low}"
+    return f"{point.level_type}@{low}-{high}"
 
 
 @dataclass(frozen=True)
@@ -188,6 +211,93 @@ class _YushSessionState:
         self._update_market_state(event.event_index, int(event.size), int(event.signed_size))
         self._update_big_trade(event.event_index, str(event.side), int(event.size))
         self.current_profile = self._profile()
+
+    def _ingest_idle_batch(self, batch: CanonicalEventBatch) -> None:
+        """Vectorize one execution-idle interval without changing causal state."""
+
+        start = int(batch.start_event_index)
+        stop = int(batch.stop_event_index)
+        if start != self.event_count or stop <= start:
+            raise AssertionError("Yush idle batches must be non-empty and contiguous.")
+        if batch.sizes is None or batch.sides is None or batch.signed_sizes is None:
+            raise ValueError("Yush idle batches require size, side, and signed_size arrays.")
+        timestamps = np.asarray(batch.timestamp_ns, dtype=np.int64)
+        prices = np.asarray(batch.price_ticks, dtype=np.int64)
+        sizes = np.asarray(batch.sizes, dtype=np.int64)
+        sides = np.asarray(batch.sides).astype(str, copy=False)
+        signed = np.asarray(batch.signed_sizes, dtype=np.int64)
+        if int(timestamps[0]) < self.open_ns:
+            raise ValueError("The Yush strategy requires replay events at or after the 09:30 RTH anchor.")
+        decision_buckets = (timestamps - self.open_ns) // self.decision_interval_ns
+        if self.active_decision_bucket is None or np.any(decision_buckets != self.active_decision_bucket):
+            raise AssertionError("Yush idle batches may not cross a decision boundary.")
+
+        count = stop - start
+        self.decision_due = False
+        self._ensure_capacity(stop)
+        self.timestamp_ns[start:stop] = timestamps
+        self.price_ticks[start:stop] = prices
+
+        min_tick = int(prices.min())
+        max_tick = int(prices.max())
+        self._ensure_price_capacity(min_tick, math.floor(min_tick / 4))
+        self._ensure_price_capacity(max_tick, math.floor(max_tick / 4))
+        one_indexes = prices - int(self.base_tick)
+        four_buckets = np.floor_divide(prices, 4)
+        four_indexes = four_buckets - int(self.base_four)
+        np.add.at(self.profile_volume, one_indexes, sizes)
+        np.add.at(self.delta_one, one_indexes, signed)
+        self.traded_one[one_indexes] = True
+        np.add.at(self.delta_four, four_indexes, signed)
+        np.add.at(self.bar_delta_four, four_indexes, signed)
+        self.traded_four[four_indexes] = True
+        self._dirty_four_buckets.update(int(value) for value in np.unique(four_buckets))
+
+        prior_low = min_tick if self.observed_low_tick is None else int(self.observed_low_tick)
+        prior_high = max_tick if self.observed_high_tick is None else int(self.observed_high_tick)
+        cumulative_low = np.minimum.accumulate(prices)
+        cumulative_high = np.maximum.accumulate(prices)
+        cumulative_low = np.minimum(cumulative_low, prior_low)
+        cumulative_high = np.maximum(cumulative_high, prior_high)
+        self.cumulative_low[start:stop] = cumulative_low
+        self.cumulative_high[start:stop] = cumulative_high
+        self.observed_low_tick = int(cumulative_low[-1])
+        self.observed_high_tick = int(cumulative_high[-1])
+
+        opening_mask = timestamps < self.opening_range_end_ns
+        if bool(opening_mask.any()):
+            opening_prices = prices[opening_mask]
+            opening_low = int(opening_prices.min())
+            opening_high = int(opening_prices.max())
+            self.or_low_tick = opening_low if self.or_low_tick is None else min(self.or_low_tick, opening_low)
+            self.or_high_tick = opening_high if self.or_high_tick is None else max(self.or_high_tick, opening_high)
+
+        bar_ids = np.floor_divide(
+            timestamps - self.open_ns,
+            self.cfg.bar_seconds * 1_000_000_000,
+        )
+        if self.current_bar_id is None or np.any(bar_ids != self.current_bar_id):
+            raise AssertionError("Yush idle batches may not cross a completed-bar boundary.")
+        self.current_bar_last_tick = int(prices[-1])
+
+        side_codes = np.where(sides == "A", 0, np.where(sides == "B", 1, 2)).astype(np.int64)
+        keys = prices * 3 + side_codes
+        unique_keys, inverse = np.unique(keys, return_inverse=True)
+        aggregated = np.zeros(len(unique_keys), dtype=np.int64)
+        np.add.at(aggregated, inverse, sizes)
+        for key, volume in zip(unique_keys, aggregated, strict=True):
+            price_tick, side_code = divmod(int(key), 3)
+            side = ("A", "B", "N")[side_code]
+            bucket_key = (price_tick, side)
+            self._decision_big_trade_volume[bucket_key] = (
+                int(self._decision_big_trade_volume.get(bucket_key, 0)) + int(volume)
+            )
+
+        self.neutral_side_events += int(np.count_nonzero((sides != "A") & (sides != "B")))
+        self.event_count = stop
+        self.last_timestamp_ns = int(timestamps[-1])
+        self.diagnostics["events"] = self.event_count
+        self.diagnostics["neutral_side_events"] = self.neutral_side_events
 
     def _ensure_capacity(self, required: int) -> None:
         if required <= self._capacity:
@@ -828,7 +938,10 @@ class ExactYushRangeEventStrategy(CanonicalEventReplayStrategy):
             aoi_width_points=candidate.width_ticks * self.cfg.tick_size,
             aoi_additional_category_count=len(candidate.categories),
             aoi_categories=",".join(candidate.categories),
-            aoi_confluences=",".join(point.level_type for point in candidate.confluences),
+            aoi_confluences=";".join(
+                _format_confluence_level(point, self.cfg.tick_size)
+                for point in candidate.confluences
+            ),
             trigger_kind=pending.trigger_kind,
             trigger_value=int(pending.bubble_value or 0),
             aoi_eligible_timestamp=pd.Timestamp(lineage.eligible_at_ns, tz="UTC").tz_convert("America/New_York"),

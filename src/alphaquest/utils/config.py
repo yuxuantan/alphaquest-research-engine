@@ -162,6 +162,14 @@ def campaign_variant_root(config: dict | None, root_path: str | Path | None = No
 
 
 def variant_metadata_path(config: dict | None, root_path: str | Path | None = None) -> Path:
+    run_root = _authored_attempt_run_root(config, root_path)
+    if run_root is not None:
+        # A pre-PnL mechanics correction may legitimately replace the
+        # implementation package while retaining the same variant identity.
+        # Bind metadata to that immutable attempt run so the corrected
+        # mechanic cannot overwrite, or be rejected by, an older variant-level
+        # scaffold belonging to a previous attempt.
+        return run_root / VARIANT_METADATA_FILENAME
     return campaign_variant_root(config, root_path=root_path) / VARIANT_METADATA_FILENAME
 
 
@@ -561,6 +569,23 @@ def _campaign_variant_root_from_layout_path(root_path: str | Path | None) -> Pat
     if len(parts) <= index + width + 1:
         return None
     return Path(*parts[: index + width + 2])
+
+
+def _authored_attempt_run_root(
+    config: dict | None,
+    root_path: str | Path | None,
+) -> Path | None:
+    if (
+        root_path is None
+        or (config or {}).get("attempt_provenance") not in {"authored", "generated_validation"}
+        or not str((config or {}).get("attempt_id") or "").strip()
+    ):
+        return None
+    path = Path(root_path)
+    rel = _campaign_report_relative_parts(path)
+    if len(rel) != 4:
+        return None
+    return path
 
 
 def _campaign_report_root_index(parts: tuple[str, ...]) -> tuple[int, int] | None:

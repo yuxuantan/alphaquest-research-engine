@@ -4,6 +4,19 @@
       "additionalProperties": false,
       "description": "Durable operational progress, kept separate from research evidence.",
       "properties": {
+        "active_workers": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active Workers"
+        },
         "completed": {
           "anyOf": [
             {
@@ -16,6 +29,19 @@
           ],
           "default": null,
           "title": "Completed"
+        },
+        "expected_workers": {
+          "anyOf": [
+            {
+              "minimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Workers"
         },
         "message": {
           "title": "Message",
@@ -74,6 +100,19 @@
           "format": "date-time",
           "title": "Updated At",
           "type": "string"
+        },
+        "work_started_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Work Started At"
         }
       },
       "required": [

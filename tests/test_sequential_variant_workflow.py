@@ -94,12 +94,18 @@ def test_next_variant_unlocks_only_after_reviewed_fail(tmp_path: Path, monkeypat
     result = tmp_path / "research/evidence/runs/demo/v01/ES/run1/reporting_v2/result_bundle_v2.json"
     result.parent.mkdir(parents=True)
     result.write_text('{"campaign_id":"demo","variant_id":"v01","verdict":"FAIL"}\n', encoding="utf-8")
-    monkeypatch.setattr(service, "_draft", lambda _campaign_id: SimpleNamespace(variants=[SimpleNamespace(variant_id="v01")]))
+    (result.parent.parent / "source_config.yaml").write_text(
+        "campaign_id: demo\nvariant_id: v01\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        service, "_draft", lambda _campaign_id: SimpleNamespace(variants=[SimpleNamespace(variant_id="v01")])
+    )
     monkeypatch.setattr(service, "_campaign_root", lambda _campaign_id: campaign_root)
     monkeypatch.setattr(service, "_latest_result", lambda *_args: (result, {"verdict": "FAIL"}))
     monkeypatch.setattr(
-        "alphaquest.studio.sequential_variants.MechanicsApprovalService.inspect",
-        lambda _self, _path: {"status": "APPROVED_FOR_TESTING"},
+        "alphaquest.studio.sequential_variants.inspect_historical_validation_approval",
+        lambda _cfg, _path: {"status": "APPROVED_FOR_TESTING"},
     )
 
     state = service.eligibility("demo")
@@ -152,3 +158,47 @@ def test_next_variant_unlocks_only_after_reviewed_fail(tmp_path: Path, monkeypat
     blocked = service.eligibility("demo")
     assert blocked["eligible"] is False
     assert any("only FAIL" in item for item in blocked["blockers"])
+
+
+def test_next_variant_inherits_the_terminal_predecessor_execution_contract(
+    tmp_path: Path,
+) -> None:
+    service = SequentialVariantService(tmp_path)
+
+    execution = service._predecessor_execution_settings(
+        {
+            "data": {"rth_start": "09:30:00", "rth_end": "16:00:00"},
+            "core": {
+                "initial_balance": 50_000.0,
+                "tick_size": 0.25,
+                "point_value": 50.0,
+                "tick_value": 12.5,
+                "commission_per_contract": 1.55,
+                "entry_slippage_ticks": 1,
+                "contracts": 2,
+            },
+            "apex_rules": {
+                "latest_entry_time": "15:30:00",
+                "force_flatten_time": "15:55:00",
+                "latest_flat_time": "15:55:00",
+            },
+            "prop_rules": {"profile": "configured_local_profile"},
+        }
+    )
+
+    assert execution == {
+        "session_start": "09:30:00",
+        "session_end": "16:00:00",
+        "latest_entry_time": "15:30:00",
+        "flatten_time": "15:55:00",
+        "latest_flat_time": "15:55:00",
+        "overnight_allowed": False,
+        "initial_balance": 50_000.0,
+        "tick_size": 0.25,
+        "point_value": 50.0,
+        "tick_value": 12.5,
+        "commission_per_contract": 1.55,
+        "slippage_ticks": 1.0,
+        "contracts": 2,
+        "prop_profile": "configured_local_profile",
+    }

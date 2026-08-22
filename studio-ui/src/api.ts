@@ -161,14 +161,65 @@ export const api = {
       `/api/drafts/${encodeURIComponent(id)}/publish`,
       { method: "POST" },
     ),
-  campaign: (id: string) =>
+  campaign: (id: string, refresh = false) =>
     request<{
       campaign: CampaignDetail;
       attempts: Array<Record<string, any>>;
       stage_matrix: Array<Record<string, any>>;
       latest_results: Record<string, any>;
+      attempt_results: Record<string, Record<string, any>>;
+      account_evaluations: Array<Record<string, any>>;
+      workflow_context: Record<string, any>;
       recommended_action: string;
-    }>(`/api/campaigns/${encodeURIComponent(id)}`),
+    }>(
+      `/api/campaigns/${encodeURIComponent(id)}${
+        refresh ? "?refresh=true" : ""
+      }`,
+    ),
+  campaignResults: (id: string, refresh = false) =>
+    request<{
+      campaign_id: string;
+      attempt_results: Record<string, Record<string, any>>;
+      account_evaluations: Array<Record<string, any>>;
+      partial_errors: Array<Record<string, string>>;
+    }>(
+      `/api/campaigns/${encodeURIComponent(id)}/results${
+        refresh ? "?refresh=true" : ""
+      }`,
+    ),
+  resultArtifactUrl: (
+    campaignId: string,
+    attemptId: string,
+    variantId: string,
+    artifactName: string,
+  ) =>
+    `/api/campaigns/${encodeURIComponent(campaignId)}/results/${encodeURIComponent(attemptId)}/${encodeURIComponent(variantId)}/artifacts/${encodeURIComponent(artifactName)}`,
+  resultReportUrl: (
+    campaignId: string,
+    attemptId: string,
+    variantId: string,
+  ) =>
+    `/api/campaigns/${encodeURIComponent(campaignId)}/results/${encodeURIComponent(attemptId)}/${encodeURIComponent(variantId)}/report.zip`,
+  campaignAttempts: (id: string, refresh = false) =>
+    request<{
+      campaign_id: string;
+      attempts: Array<Record<string, any>>;
+      partial_errors: Array<Record<string, string>>;
+    }>(
+      `/api/campaigns/${encodeURIComponent(id)}/attempts${
+        refresh ? "?refresh=true" : ""
+      }`,
+    ),
+  campaignAttempt: (id: string, attemptId: string, refresh = false) =>
+    request<{
+      campaign_id: string;
+      attempt: Record<string, any>;
+      partial_errors: Array<Record<string, string>>;
+    }>(
+      `/api/campaigns/${encodeURIComponent(id)}/attempts/${encodeURIComponent(
+        attemptId,
+      )}${refresh ? "?refresh=true" : ""}`,
+    ),
   queueMechanics: (id: string, attempt_id = "original") =>
     request<{ jobs: JobRecord[]; deduplicated?: boolean }>(
       `/api/campaigns/${encodeURIComponent(id)}/queue-mechanics`,
@@ -178,6 +229,11 @@ export const api = {
     request<{ jobs: JobRecord[]; deduplicated?: boolean }>(
       `/api/campaigns/${encodeURIComponent(id)}/queue-run`,
       { method: "POST", body: json({ attempt_id }) },
+    ),
+  queueAccountAssessment: (id: string, value: Record<string, unknown>) =>
+    request<{ job: JobRecord }>(
+      `/api/campaigns/${encodeURIComponent(id)}/account-assessments`,
+      { method: "POST", body: json(value) },
     ),
   nextVariant: (id: string) =>
     request<Record<string, any>>(
@@ -218,6 +274,110 @@ export const api = {
       method: "POST",
       body: json(value),
     }),
+  forwardIncubations: (campaignId?: string) =>
+    request<{ items: Array<Record<string, any>> }>(
+      `/api/forward-incubations${campaignId ? `?campaign_id=${encodeURIComponent(campaignId)}` : ""}`,
+    ),
+  uploadForwardIncubationEvidence: (file: File) =>
+    request<{
+      upload_token: string;
+      filename: string;
+      size_bytes: number;
+      sha256: string;
+      local_only: boolean;
+    }>(
+      `/api/forward-incubations/evidence/upload?filename=${encodeURIComponent(file.name)}`,
+      {
+        method: "POST",
+        body: file,
+        headers: { "Content-Type": "application/octet-stream" },
+      },
+    ),
+  startForwardIncubation: (value: unknown) =>
+    request<Record<string, any>>("/api/forward-incubations", {
+      method: "POST",
+      body: json(value),
+    }),
+  appendForwardObservation: (
+    campaignId: string,
+    variantId: string,
+    attemptId: string,
+    value: unknown,
+  ) =>
+    request<Record<string, any>>(
+      `/api/forward-incubations/${encodeURIComponent(campaignId)}/${encodeURIComponent(variantId)}/${encodeURIComponent(attemptId)}/observations`,
+      { method: "POST", body: json(value) },
+    ),
+  reviewForwardIncubation: (
+    campaignId: string,
+    variantId: string,
+    attemptId: string,
+    value: unknown,
+  ) =>
+    request<Record<string, any>>(
+      `/api/forward-incubations/${encodeURIComponent(campaignId)}/${encodeURIComponent(variantId)}/${encodeURIComponent(attemptId)}/reviews`,
+      { method: "POST", body: json(value) },
+    ),
+  retireForwardIncubation: (
+    campaignId: string,
+    variantId: string,
+    attemptId: string,
+    value: unknown,
+  ) =>
+    request<Record<string, any>>(
+      `/api/forward-incubations/${encodeURIComponent(campaignId)}/${encodeURIComponent(variantId)}/${encodeURIComponent(attemptId)}/retire`,
+      { method: "POST", body: json(value) },
+    ),
+  lifecycleCandidates: () =>
+    request<{ items: Array<Record<string, any>> }>("/api/lifecycle/candidates"),
+  portfolioReviews: () =>
+    request<{ items: Array<Record<string, any>> }>("/api/portfolio-reviews"),
+  portfolioReview: (reviewId: string) =>
+    request<Record<string, any>>(
+      `/api/portfolio-reviews/${encodeURIComponent(reviewId)}`,
+    ),
+  createPortfolioReview: (value: unknown) =>
+    request<Record<string, any>>("/api/portfolio-reviews", {
+      method: "POST",
+      body: json(value),
+    }),
+  deploymentDecisions: () =>
+    request<{ items: Array<Record<string, any>> }>("/api/deployment-decisions"),
+  deploymentDecision: (decisionId: string) =>
+    request<Record<string, any>>(
+      `/api/deployment-decisions/${encodeURIComponent(decisionId)}`,
+    ),
+  createDeploymentDecision: (value: unknown) =>
+    request<Record<string, any>>("/api/deployment-decisions", {
+      method: "POST",
+      body: json(value),
+    }),
+  uploadDeploymentMonitoringEvidence: (file: File) =>
+    request<{
+      upload_token: string;
+      filename: string;
+      size_bytes: number;
+      sha256: string;
+    }>(
+      `/api/deployment-monitoring/evidence/upload?filename=${encodeURIComponent(file.name)}`,
+      {
+        method: "POST",
+        body: file,
+        headers: { "Content-Type": "application/octet-stream" },
+      },
+    ),
+  deploymentMonitoring: (decisionId: string) =>
+    request<Record<string, any>>(
+      `/api/deployment-decisions/${encodeURIComponent(decisionId)}/monitoring`,
+    ),
+  appendDeploymentMonitoring: (
+    decisionId: string,
+    value: unknown,
+  ) =>
+    request<Record<string, any>>(
+      `/api/deployment-decisions/${encodeURIComponent(decisionId)}/monitoring`,
+      { method: "POST", body: json(value) },
+    ),
   followUpOptions: (id: string, parentAttemptId = "original") =>
     request<Record<string, any>>(
       `/api/campaigns/${encodeURIComponent(id)}/follow-up-options?parent_attempt_id=${encodeURIComponent(parentAttemptId)}`,
@@ -228,6 +388,11 @@ export const api = {
       { method: "POST", body: json(value) },
     ),
   libraries: () => request<LibrariesResponse>("/api/libraries"),
+  queueStrategyCertification: (strategyId: string, requestId: string) =>
+    request<{ job: JobRecord }>(
+      `/api/strategies/${encodeURIComponent(strategyId)}/certify`,
+      { method: "POST", body: json({ request_id: requestId }) },
+    ),
   jobs: () => request<JobRecord[] | { jobs: JobRecord[] }>("/api/jobs"),
   cancelJob: (id: string) =>
     request<JobRecord>(`/api/jobs/${encodeURIComponent(id)}/cancel`, {
@@ -240,6 +405,7 @@ export const api = {
       size_bytes: number;
       columns: string[];
       suggested_mapping: Record<string, string | null>;
+      discovery?: Record<string, any>;
     }>(`/api/uploads/inspect?filename=${encodeURIComponent(file.name)}`, {
       method: "POST",
       body: file,
@@ -250,6 +416,49 @@ export const api = {
       method: "POST",
       body: json(value),
     }),
+  dataset: (datasetId: string) =>
+    request<Record<string, any>>(
+      `/api/datasets/${encodeURIComponent(datasetId)}`,
+    ),
+  compareDatasets: (leftId: string, rightId: string) =>
+    request<Record<string, any>>(
+      `/api/datasets/compare/${encodeURIComponent(leftId)}/${encodeURIComponent(rightId)}`,
+    ),
+  analysisCapabilities: () =>
+    request<{
+      scope: string;
+      capabilities: Array<Record<string, string>>;
+    }>("/api/analysis/capabilities"),
+  analysisScanner: () =>
+    request<{
+      generated_at: string;
+      rows: Array<Record<string, any>>;
+      note: string;
+    }>("/api/analysis/scanner"),
+  analysisChart: (
+    datasetId: string,
+    options: {
+      resolution?: string;
+      chart_type?: string;
+      limit?: number;
+      compare_dataset_id?: string;
+    } = {},
+  ) => {
+    const params = new URLSearchParams();
+    if (options.resolution) params.set("resolution", options.resolution);
+    if (options.chart_type) params.set("chart_type", options.chart_type);
+    if (options.limit) params.set("limit", String(options.limit));
+    if (options.compare_dataset_id)
+      params.set("compare_dataset_id", options.compare_dataset_id);
+    const query = params.toString();
+    return request<Record<string, any>>(
+      `/api/analysis/chart/${encodeURIComponent(datasetId)}${query ? `?${query}` : ""}`,
+    );
+  },
+  sessionTemplates: () =>
+    request<{ templates: Array<Record<string, any>>; note: string }>(
+      "/api/data/session-templates",
+    ),
   runTutorial: () =>
     request<Record<string, any>>("/api/tutorial/run", {
       method: "POST",
@@ -332,6 +541,7 @@ export function normalizeBootstrap(
     settings: data.settings,
     counts: data.counts,
     attention: array(data.attention),
+    indexed_attention: array(data.indexed_attention),
   };
 }
 

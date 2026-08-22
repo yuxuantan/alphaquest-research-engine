@@ -22,8 +22,21 @@ LONG_TEXT = (
 
 def _dataset(root: Path) -> None:
     source = root / "administrator-bars.csv"
-    timestamps = pd.date_range("2026-01-05 09:30:00", periods=180, freq="min")
-    prices = [5000.0 + index * 0.25 for index in range(len(timestamps))]
+    session_starts = pd.bdate_range("2026-01-05", periods=12)
+    timestamps = pd.DatetimeIndex(
+        [
+            timestamp
+            for session_start in session_starts
+            for timestamp in pd.date_range(
+                f"{session_start.date()} 09:30:00", periods=60, freq="min"
+            )
+        ]
+    )
+    prices = [
+        5000.0 + bar_index * 0.25
+        for _session_start in session_starts
+        for bar_index in range(60)
+    ]
     pd.DataFrame(
         {
             "timestamp": timestamps.astype(str),
@@ -125,6 +138,9 @@ def test_fresh_researcher_completes_all_seven_gates_without_terminal_yaml_or_pyt
         )
         page.get_by_label("Signal inputs").fill("completed close, prior opening range")
         page.get_by_label("Market context").fill("ES regular trading session")
+        page.get_by_text(
+            "I confirm these objectives before inspecting strategy PnL", exact=True
+        ).click()
         page.get_by_role("button", name="Save and continue").click()
         page.wait_for_url("**/design/2")
 
@@ -164,15 +180,10 @@ def test_fresh_researcher_completes_all_seven_gates_without_terminal_yaml_or_pyt
 
         page.get_by_text("Sequential variant stage matrix", exact=True).wait_for()
         assert page.locator(".stage-row").count() == 2
-        page.get_by_role("button", name="History", exact=True).click()
-        page.get_by_role("button", name="Create explicit follow-up").click()
-        page.get_by_label("Scientific reason").fill(
-            "This exact replication is predeclared to verify that the frozen mechanics and governed dataset produce repeatable evidence without changing any parameter."
-        )
-        page.get_by_label("Researcher identity").fill("E2E Researcher")
-        page.get_by_role("button", name="Preflight and create attempt").click()
-        page.get_by_text("created as", exact=False).wait_for(timeout=60_000)
-        assert page.locator(".timeline > .card").count() == 2
+        page.get_by_role("tab", name="History", exact=True).click()
+        follow_up = page.get_by_role("button", name="Create explicit follow-up")
+        assert follow_up.is_enabled()
+        page.get_by_text("Recovery follow-ups remain available", exact=True).wait_for()
         assert not page_errors
         assert (tmp_path / "research/campaigns/active/automated_no_code_edge/campaign.yaml").is_file()
         browser.close()

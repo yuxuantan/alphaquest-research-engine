@@ -38,6 +38,49 @@ export interface CampaignSummary extends DraftSummary {
   workflow_blocker?: string | null;
   verdict?: ScientificVerdict;
   current_attempt?: string;
+  workflow_context?: Record<string, any>;
+  research_progress?: ResearchProgress;
+  integrity_status?: string;
+}
+
+export type ResearchStageStatus =
+  | "complete"
+  | "current"
+  | "ready"
+  | "upcoming"
+  | "locked"
+  | "failed"
+  | "blocked"
+  | "not_applicable";
+
+export interface ResearchStage {
+  id: string;
+  label: string;
+  phase: string;
+  description: string;
+  step: number;
+  status: ResearchStageStatus;
+}
+
+export interface VariantProgress {
+  variant_id: string;
+  attempt_id?: string | null;
+  is_current: boolean;
+  current_step: number;
+  total_steps: number;
+  current_stage_id: string;
+  current_stage_label: string;
+  current_phase: string;
+  scientific_status: ScientificVerdict | string;
+  operational_state: OperationalState | string;
+  next_action: string;
+  stages: ResearchStage[];
+}
+
+export interface ResearchProgress {
+  campaign?: VariantProgress | null;
+  variants: VariantProgress[];
+  flow_definition?: Array<Omit<ResearchStage, "step" | "status">>;
 }
 
 export interface DraftView {
@@ -88,6 +131,17 @@ export interface DatasetSummary {
   timezone?: string;
   timestamp_semantics?: string;
   roll_policy?: string;
+  display_name?: string;
+  source_type?: string;
+  storage_format?: string;
+  exchange_timezone?: string;
+  quality_notes?: string[];
+  capabilities?: string[];
+  used_by?: Array<{
+    campaign_id: string;
+    campaign_title: string;
+    variant_id: string;
+  }>;
   [key: string]: unknown;
 }
 
@@ -99,6 +153,12 @@ export interface ModuleSummary {
   next_bar_entry?: boolean;
   certification?: string;
   certification_status?: string;
+  certification_current?: boolean;
+  certification_errors?: string[];
+  active_strategy_package?: boolean;
+  available_for_publication?: boolean;
+  strategy_label?: string;
+  strategy_description?: string;
   implementation_version?: number;
   implementation_sha256?: string;
   certification_manifest_sha256?: string;
@@ -106,6 +166,11 @@ export interface ModuleSummary {
   required_tests?: string[];
   strategy_package?: boolean;
   parameters?: Record<string, unknown>;
+  used_by?: Array<{
+    campaign_id: string;
+    campaign_title: string;
+    variant_id: string;
+  }>;
 }
 
 export interface JobRecord {
@@ -113,6 +178,7 @@ export interface JobRecord {
   job_type?: string;
   campaign_id?: string;
   variant_id?: string;
+  attempt_id?: string;
   payload?: Record<string, any>;
   state: OperationalState;
   operational_state?: OperationalState;
@@ -133,10 +199,17 @@ export interface JobRecord {
     completed?: number | null;
     total?: number | null;
     unit?: string | null;
+    active_workers?: number | null;
+    expected_workers?: number | null;
     phase_started_at?: string;
+    work_started_at?: string | null;
     updated_at?: string;
     elapsed_seconds?: number | null;
+    work_elapsed_seconds?: number | null;
     eta_seconds?: number | null;
+    throughput_per_hour?: number | null;
+    estimated_finish_at?: string | null;
+    parallelism_warning?: string | null;
   } | null;
 }
 
@@ -166,6 +239,7 @@ export interface ResultCriterion {
   result?: ScientificVerdict | string;
   reason?: string | null;
   evidence_path?: string | null;
+  decision_role?: "scientific_validity" | "generic_objective" | null;
 }
 
 export interface VariantResult {
@@ -173,6 +247,8 @@ export interface VariantResult {
   variant?: string;
   title?: string;
   research_verdict?: ScientificVerdict | string;
+  scientific_validity_verdict?: ScientificVerdict | string;
+  generic_objective_verdict?: ScientificVerdict | string;
   verdict?: ScientificVerdict | string;
   operational_state?: OperationalState | string;
   first_failed_gate?: string;
@@ -188,6 +264,9 @@ export interface CampaignDetail extends CampaignSummary {
   result_matrix?: VariantResult[];
   attempts?: Array<Record<string, any>>;
   protocol?: Record<string, any>;
+  mechanics?: Record<string, any>;
+  workflow_context?: Record<string, any>;
+  attempt_results?: Record<string, Record<string, VariantResult>>;
   next_action?: string;
 }
 
@@ -207,7 +286,9 @@ export interface LibrariesResponse {
   datasets: DatasetSummary[];
   modules: ModuleSummary[];
   prop_profiles?: Array<Record<string, any>>;
+  account_profiles?: Array<Record<string, any>>;
   recipes?: Array<Record<string, any>>;
+  execution_profiles?: Array<Record<string, any>>;
 }
 
 export interface BootstrapResponse {
@@ -225,6 +306,7 @@ export interface BootstrapResponse {
   settings?: StudioSettings;
   counts?: Record<string, number>;
   attention?: Array<Record<string, any>>;
+  indexed_attention?: ReviewTask[];
 }
 
 export interface ApiErrorShape {

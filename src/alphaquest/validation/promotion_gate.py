@@ -14,6 +14,7 @@ from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import pandas as pd
@@ -43,7 +44,7 @@ APPROVAL_FILENAME = "approval.json"
 FIXED_MANUAL_RANDOM_SAMPLE_SIZE = 5
 FIXED_MANUAL_RANDOM_SEED = 0
 SUPPORTED_VALIDATION_LANES = {"bar", "event_replay"}
-REQUIRED_SAMPLE_CATEGORIES = (
+LEGACY_REQUIRED_SAMPLE_CATEGORIES = (
     "first_trade",
     "last_trade",
     "random_trades",
@@ -54,6 +55,34 @@ REQUIRED_SAMPLE_CATEGORIES = (
     "warnings",
     "strategy_edge_cases",
 )
+REQUIRED_SAMPLE_CATEGORIES = (
+    "random_trades",
+    "warning_representatives",
+    "resolved_ambiguities",
+    "universal_coverage",
+)
+SAMPLING_POLICY_VERSION = "alphaquest.mechanics-sampler/v2"
+SAMPLING_POLICY_SPEC = {
+    "baseline": "five deterministic hash-ranked trades",
+    "coverage": (
+        "direction",
+        "entry_order_type",
+        "exit_lifecycle",
+        "order_amendment",
+        "forced_flatten",
+    ),
+    "exceptions": (
+        "one representative per warning code",
+        "one representative per resolved ambiguity",
+        "unresolved ambiguities block approval",
+    ),
+    "missing_entry_order": "covered as unspecified for legacy execution lanes",
+    "error_handling": "automated errors block; warning-severity path mismatches are represented",
+    "selection": "greedy minimum-addition coverage with deterministic hash tie-breaks",
+}
+SAMPLING_POLICY_SHA256 = hashlib.sha256(
+    json.dumps(SAMPLING_POLICY_SPEC, sort_keys=True, separators=(",", ":")).encode("utf-8")
+).hexdigest()
 REQUIRED_AUTOMATED_CHECK_NAMES = {
     "metadata_config_hash_present",
     "metadata_input_data_hash_present",
@@ -188,6 +217,136 @@ def inspect_validation_gate(
     return report
 
 
+def inspect_historical_validation_approval(
+    cfg: dict[str, Any],
+    config_path: str | Path,
+) -> dict[str, Any]:
+    """Verify an immutable predecessor approval without requiring current code.
+
+    A terminal predecessor result remains evidence about the exact strategy
+    implementation recorded in its source config even after the repository
+    advances to a newer certification.  This verifier checks the complete
+    config/evidence/approval hash chain and the certification identity embedded
+    in those frozen artifacts.  It deliberately does not authorize a new run;
+    current performance admission must still use :func:`inspect_validation_gate`.
+    """
+
+    source_path = Path(config_path)
+    gate = validation_gate_config(cfg)
+    report: dict[str, Any] = {
+        "required": True,
+        "status": "BLOCKED",
+        "verdict": "NEEDS MANUAL REVIEW",
+        "historical": True,
+        "errors": [],
+        "warnings": [],
+        "config_path": str(source_path),
+    }
+    if not gate:
+        report["errors"].append(
+            "research_metadata.validation_gate is required for historical mechanics evidence"
+        )
+        return report
+    if not gate.get("required"):
+        report["errors"].append("research_metadata.validation_gate.required must be true")
+        return report
+
+    lane = str(gate.get("lane") or "").strip().lower()
+    report["lane"] = lane
+    if lane not in SUPPORTED_VALIDATION_LANES:
+        report["errors"].append(
+            f"validation lane must be one of {sorted(SUPPORTED_VALIDATION_LANES)}"
+        )
+
+    evidence_dir = _resolve_path(gate.get("evidence_dir"), source_path)
+    approval_path = _resolve_path(gate.get("approval_path"), source_path)
+    report["evidence_dir"] = str(evidence_dir) if evidence_dir else None
+    report["approval_path"] = str(approval_path) if approval_path else None
+    if evidence_dir is None or not evidence_dir.is_dir():
+        report["errors"].append("declared validation evidence_dir does not exist")
+    if approval_path is None or not approval_path.is_file():
+        report["errors"].append("declared manual approval_path does not exist")
+
+    source_hash = _file_sha256(source_path)
+    report["config_hash"] = source_hash or None
+    metadata = _read_json(evidence_dir / METADATA_FILENAME) if evidence_dir else {}
+    approval = _read_json(approval_path) if approval_path else {}
+    input_hash = str(metadata.get("input_data_hash") or "") or None
+    report["input_data_hash"] = input_hash
+    report["validation_schema_version"] = metadata.get("schema_version")
+    report["approval_status"] = approval.get("status")
+    report["reviewer"] = approval.get("reviewer")
+    report["reviewed_at"] = approval.get("reviewed_at")
+
+    certification = _declared_historical_certification(cfg, report["errors"])
+    report["strategy_implementation_version"] = (
+        certification.implementation_version if certification else None
+    )
+    report["strategy_implementation_sha256"] = (
+        certification.implementation_sha256 if certification else None
+    )
+    report["strategy_certification_manifest_sha256"] = (
+        certification.manifest_sha256 if certification else None
+    )
+
+    if evidence_dir and evidence_dir.is_dir():
+        _validate_lane_artifacts(evidence_dir, lane, metadata, report["errors"])
+        _validate_automated_checks(evidence_dir, report["errors"])
+    _validate_metadata(
+        metadata,
+        lane,
+        source_hash,
+        input_hash,
+        certification,
+        report["errors"],
+    )
+    stale_schema_error = "validation metadata schema version is stale or unsupported"
+    if (
+        stale_schema_error in report["errors"]
+        and str(approval.get("validation_schema_version") or "")
+        == str(metadata.get("schema_version") or "")
+    ):
+        report["errors"].remove(stale_schema_error)
+        report["warnings"].append(
+            "historical validation schema is older than the current generator; "
+            "its approval remains bound to the exact frozen metadata version"
+        )
+    _validate_approval(
+        approval,
+        lane,
+        source_hash,
+        input_hash,
+        metadata,
+        certification,
+        report["errors"],
+    )
+    if gate.get("manual_review_random_sample_size") is not None:
+        expected_size = int(gate.get("manual_review_random_sample_size"))
+        expected_seed = int(gate.get("manual_review_seed", FIXED_MANUAL_RANDOM_SEED))
+        if approval.get("fixed_random_sample_size") != expected_size:
+            report["errors"].append(
+                f"manual approval must use the fixed {expected_size}-trade random sample"
+            )
+        if approval.get("fixed_random_seed") != expected_seed:
+            report["errors"].append(
+                f"manual approval must use fixed random seed {expected_seed}"
+            )
+        if approval.get("parameter_mode") != str(
+            gate.get("parameter_mode") or "declared_defaults"
+        ):
+            report["errors"].append(
+                "manual approval must use the variant's declared default parameters"
+            )
+
+    if not report["errors"]:
+        report["status"] = "APPROVED_FOR_TESTING"
+        report["verdict"] = "PASS"
+    elif approval and str(approval.get("status") or "").lower() == "rejected":
+        report["status"] = "REJECTED"
+        report["verdict"] = "FAIL"
+    return report
+
+
 def require_validation_approval(cfg: dict[str, Any], config_path: str | Path) -> dict[str, Any]:
     """Require a current, hash-bound manual mechanics approval before PnL tests."""
 
@@ -233,48 +392,117 @@ def require_prior_variant_approvals(cfg: dict[str, Any], config_path: str | Path
         prior_root = campaign_root / "variants"
     else:
         raise ValueError("Campaign sequencing gate failed: config does not belong to a governed attempt layout")
-    for prior_variant in variants[: variants.index(current)]:
-        prior_path = prior_root / prior_variant / "config.yaml"
+    current_index = variants.index(current)
+    historical_configs: dict[str, Path] = {}
+    if contract_version >= 3 and current_index > 0:
+        history = campaign.get("sequential_variant_history")
+        if not isinstance(history, list) or len(history) < current_index:
+            unresolved.append("failure-informed sequential lineage is missing")
+        else:
+            for index in range(current_index):
+                lineage = history[index]
+                predecessor = variants[index]
+                successor = variants[index + 1]
+                if not isinstance(lineage, dict):
+                    unresolved.append(
+                        f"{successor}: failure-informed sequential lineage is invalid"
+                    )
+                    continue
+                if (
+                    str(lineage.get("variant_id") or "") != successor
+                    or str(lineage.get("predecessor_variant_id") or "") != predecessor
+                    or str(lineage.get("predecessor_verdict") or "") != "FAIL"
+                ):
+                    unresolved.append(
+                        f"{successor}: failure-informed sequential lineage does not match campaign order"
+                    )
+                    continue
+                result_path = _resolve_path(
+                    lineage.get("predecessor_result_path"),
+                    path,
+                )
+                expected_hash = str(lineage.get("predecessor_result_sha256") or "")
+                actual_hash = _file_sha256(result_path) if result_path else None
+                result = _read_json(result_path) if result_path else {}
+                verdict = str(
+                    result.get("verdict")
+                    or result.get("research_verdict")
+                    or result.get("decision")
+                    or ""
+                )
+                if not result_path or not result_path.is_file():
+                    unresolved.append(
+                        f"{predecessor}: predecessor FAIL result artifact is missing"
+                    )
+                elif actual_hash != expected_hash:
+                    unresolved.append(
+                        f"{predecessor}: predecessor FAIL result artifact hash has drifted"
+                    )
+                elif verdict != "FAIL":
+                    unresolved.append(
+                        f"{predecessor}: predecessor terminal verdict is "
+                        f"{verdict or 'unresolved'}, not FAIL"
+                    )
+                else:
+                    historical_configs[predecessor] = (
+                        result_path.parent.parent / "source_config.yaml"
+                    )
+
+    for prior_variant in variants[:current_index]:
+        prior_path = historical_configs.get(
+            prior_variant,
+            prior_root / prior_variant / "config.yaml",
+        )
         try:
             prior_cfg = yaml.safe_load(prior_path.read_text(encoding="utf-8")) or {}
         except (OSError, yaml.YAMLError) as exc:
             unresolved.append(f"{prior_variant}: config unavailable ({exc})")
             continue
-        report = inspect_validation_gate(prior_cfg, prior_path)
+        report = (
+            inspect_historical_validation_approval(prior_cfg, prior_path)
+            if prior_variant in historical_configs
+            else inspect_validation_gate(prior_cfg, prior_path)
+        )
         if report["status"] != "APPROVED_FOR_TESTING":
             unresolved.append(f"{prior_variant}: {report['status']}")
-    if contract_version >= 3 and variants.index(current) > 0:
-        history = campaign.get("sequential_variant_history")
-        expected = variants.index(current)
-        if not isinstance(history, list) or len(history) < expected:
-            unresolved.append("failure-informed sequential lineage is missing")
-        else:
-            lineage = history[expected - 1]
-            if not isinstance(lineage, dict):
-                unresolved.append("failure-informed sequential lineage is invalid")
-            elif (
-                str(lineage.get("variant_id") or "") != current
-                or str(lineage.get("predecessor_variant_id") or "") != variants[expected - 1]
-                or str(lineage.get("predecessor_verdict") or "") != "FAIL"
-            ):
-                unresolved.append("failure-informed sequential lineage does not match campaign order")
-            else:
-                result_path = _resolve_path(lineage.get("predecessor_result_path"), path)
-                expected_hash = str(lineage.get("predecessor_result_sha256") or "")
-                actual_hash = _file_sha256(result_path) if result_path else None
-                result = _read_json(result_path) if result_path else {}
-                verdict = str(result.get("verdict") or result.get("research_verdict") or result.get("decision") or "")
-                if not result_path or not result_path.is_file():
-                    unresolved.append("predecessor FAIL result artifact is missing")
-                elif actual_hash != expected_hash:
-                    unresolved.append("predecessor FAIL result artifact hash has drifted")
-                elif verdict != "FAIL":
-                    unresolved.append(f"predecessor terminal verdict is {verdict or 'unresolved'}, not FAIL")
     if unresolved:
         raise ValueError(
             "Campaign sequencing gate failed; prior variants require completed mechanics approval:\n- "
             + "\n- ".join(unresolved)
         )
+
+
+def _declared_historical_certification(
+    cfg: dict[str, Any],
+    errors: list[str],
+) -> Any:
+    record = cfg.get("strategy_certification")
+    if not isinstance(record, dict):
+        if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
+            errors.append(
+                "historical event strategy config is missing its certification identity"
+            )
+        return None
+    try:
+        implementation_version = int(record["implementation_version"])
+        implementation_sha256 = str(record["implementation_sha256"])
+        manifest_sha256 = str(record["manifest_sha256"])
+    except (KeyError, TypeError, ValueError):
+        errors.append("historical strategy certification identity is incomplete")
+        return None
+    if implementation_version < 1:
+        errors.append("historical strategy implementation version must be positive")
+    for label, value in (
+        ("implementation", implementation_sha256),
+        ("manifest", manifest_sha256),
+    ):
+        if len(value) != 64 or any(character not in "0123456789abcdef" for character in value.lower()):
+            errors.append(f"historical strategy {label} SHA-256 is invalid")
+    return SimpleNamespace(
+        implementation_version=implementation_version,
+        implementation_sha256=implementation_sha256,
+        manifest_sha256=manifest_sha256,
+    )
 
 
 def _validate_lane_artifacts(evidence_dir: Path, lane: str, metadata: dict[str, Any], errors: list[str]) -> None:
@@ -411,7 +639,19 @@ def _validate_approval(
     if not isinstance(categories, dict):
         errors.append("manual approval sampling_categories must be a mapping")
     else:
-        missing = [name for name in REQUIRED_SAMPLE_CATEGORIES if name not in categories]
+        policy_version = str(approval.get("sampling_policy_version") or "")
+        if policy_version:
+            if policy_version != SAMPLING_POLICY_VERSION:
+                errors.append("manual approval sampling policy version is stale or unsupported")
+            if str(approval.get("sampling_policy_sha256") or "") != SAMPLING_POLICY_SHA256:
+                errors.append("manual approval sampling policy hash is stale or mismatched")
+            required_categories = REQUIRED_SAMPLE_CATEGORIES
+        else:
+            # Approvals written before sampler v2 remain valid historical proof
+            # when they carry the complete legacy category contract. New
+            # approvals always declare and bind the v2 policy identity.
+            required_categories = LEGACY_REQUIRED_SAMPLE_CATEGORIES
+        missing = [name for name in required_categories if name not in categories]
         if missing:
             errors.append(f"manual approval is missing sampling categories: {', '.join(missing)}")
 

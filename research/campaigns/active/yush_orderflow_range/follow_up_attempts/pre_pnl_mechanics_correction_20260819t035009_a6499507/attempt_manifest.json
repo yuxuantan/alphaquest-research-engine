@@ -1,0 +1,143 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260819t035009_a6499507",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "90d32609de9190142d21f39d0b29973ae2ac601d739de15c9b993388873e85af",
+        "implementation_version": 20,
+        "manifest_sha256": "dd53a417405e4e8f8cef22eee03578e0f852c440137ad097231f07c5ac3532f2",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "d8385cf499b34f10f1dac28507e20b84e790e28eef9734363dee6b3f3f0818bf",
+        "implementation_version": 19,
+        "manifest_sha256": "c3f4c1338d88b9f85408e88057008a08f0339ba3e713abb529d040eff7b033da",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "aoi_level_distance_ticks",
+      "new": null,
+      "old": 4,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "burst_freshness_bars",
+      "new": null,
+      "old": 3,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "minimum_net_reward_to_worst_case_loss",
+      "new": null,
+      "old": 1.0,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "stop_offset_ticks",
+      "new": null,
+      "old": 1,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_grid_dimension",
+      "field": "event.params.burst_freshness_bars",
+      "new": null,
+      "old": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "reviewed": true,
+      "scope": "core_grid.parameters,wfa.parameters",
+      "variant_id": "v03"
+    },
+    {
+      "field": "context_distance_atr_fraction",
+      "new": 0.3333333333333333,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "burst_freshness_scope",
+      "new": "current_rth_session",
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "stop_at_sweep_extreme",
+      "new": true,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "minimum_midpoint_reward_r",
+      "new": 1.0,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "623ebbd19069c44e2eede9412589b71df576ebbcc3809ad2305ece96dfc18a8f"
+  },
+  "created_at": "2026-08-19T03:50:10.155478+00:00",
+  "created_by": "Codex on user instruction",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260819t035009_a6499507",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260819t015559_4a2b8ce0",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "User-directed pre-PnL v03 correction: replace fixed four-tick AOI and confirmation proximity with one-third causal three-minute ATR; retain eligible exceptional-volume bursts for the current RTH session; remove reclaim; arm a one-tick-outside-edge limit immediately after separate order-flow confirmation only when gross frozen-midpoint reward versus sweep-extreme risk is at least 1:1; cancel an unfilled limit when its intended stop trades first. No observed PnL informed this correction.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "ac759b82d13428a6b84bd332d8d58193a056d95a7f9183ec5754f5fa648e0bc9"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "cc8745aefd2f96853f34fc8577326cbb89683dda48cc5603a312308e0ab68b46"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

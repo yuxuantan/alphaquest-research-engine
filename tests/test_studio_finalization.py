@@ -368,6 +368,39 @@ def test_complete_pass_retains_candidate_only_verdict_and_hashes_all_reporting_i
     } <= set(manifest["evidence_artifact_sha256"])
 
 
+def test_corrected_governed_metrics_cannot_retain_invalid_runner_pass(tmp_path):
+    config_path, run_dir, summary = _fixture(
+        tmp_path,
+        verdict="PASS",
+        include_acceptance_trade=True,
+        include_supplemental=True,
+    )
+    acceptance = summary["stages"][-1]
+    acceptance["criteria"] = [
+        {
+            "metric": "metrics.trades_per_year",
+            "actual": 100.0,
+            "expected": {"min": 50.0},
+            "passed": True,
+        }
+    ]
+    _write_json(run_dir / DEFAULT_STAGE_ORDER[-1] / "stage_result.json", acceptance)
+
+    result = RunFinalizer(
+        tmp_path,
+        registry_refresher=lambda _root: {},
+        source_index_refresher=lambda *_args: None,
+    ).finalize(job_id="job-corrected-metric-replay", config_path=config_path, summary=summary)
+
+    bundle = load_result_bundle(result.result_bundle_path)
+    assert bundle.metrics.trades_per_year.value == pytest.approx(2 / (31 / 365.25))
+    assert bundle.verdict == "NEEDS MANUAL REVIEW"
+    assert any(
+        "corrected terminal criterion metrics.trades_per_year" in item.reason
+        for item in bundle.stage_criteria
+    )
+
+
 @pytest.mark.parametrize(
     ("missing_column", "reason_fragment"),
     [

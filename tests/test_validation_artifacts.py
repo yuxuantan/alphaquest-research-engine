@@ -175,7 +175,7 @@ def test_validation_run_round_trips_sample_records(tmp_path):
 
     loaded = load_validation_run(run_dir)
     assert metadata_record["record_counts"]["trades"] == 1
-    assert loaded.metadata["schema_version"] == "1.4"
+    assert loaded.metadata["schema_version"] == "1.6"
     assert loaded.trades.loc[0, "trade_id"] == 1
     assert loaded.trades.loc[0, "entry_time"] == entry_time
     assert str(loaded.trades.loc[0, "entry_time"].tz) in {eastern, "America/New_York"}
@@ -303,6 +303,22 @@ def test_event_replay_checks_use_causal_transitions_instead_of_bar_snapshots(tmp
                 timestamp=amended_at,
                 source_ordinal=102,
                 event_index=13,
+                transition="position_partially_closed",
+                direction="short",
+                price=97.0,
+                active_from_event_index=13,
+                stop_price=102.0,
+                state_json='{"transition":"position_partially_closed"}',
+                evidence_json='{"event_index":13}',
+            ),
+            EventTransition(
+                trade_id=1,
+                session_date="2025-07-14",
+                contract="ESU5",
+                order_id="VAH",
+                timestamp=amended_at,
+                source_ordinal=102,
+                event_index=13,
                 transition="bracket_amended",
                 direction="short",
                 price=97.0,
@@ -360,6 +376,7 @@ def test_builders_map_existing_trade_log_columns_without_strategy_logic():
                 "direction": "short",
                 "entry_timestamp": pd.Timestamp("2024-03-11 10:00:00", tz="America/New_York"),
                 "entry_price": 5200.0,
+                "entry_trigger_price": 5200.25,
                 "entry_mode": "intrabar",
                 "stop_price": 5202.0,
                 "target_price": 5196.0,
@@ -405,6 +422,7 @@ def test_builders_map_existing_trade_log_columns_without_strategy_logic():
 
     assert summaries.loc[0, "run_id"] == "runA"
     assert summaries.loc[0, "strategy_id"] == "yush_range_1"
+    assert summaries.loc[0, "entry_trigger_price"] == 5200.25
     assert summaries.loc[0, "pnl_ticks"] == 16
     assert summaries.loc[0, "bars_held"] == 3
     assert summaries.loc[0, "fees"] == 4

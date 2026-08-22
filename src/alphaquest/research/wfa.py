@@ -52,8 +52,17 @@ def create_windows(
     step_months: int | None = None,
     mode: str = "unanchored",
 ):
+    if "timestamp" not in data.columns or data.empty:
+        raise ValueError("WFA requires non-empty data with a timestamp column.")
+    valid_timestamps = pd.to_datetime(data["timestamp"], errors="coerce").dropna()
+    if valid_timestamps.empty:
+        raise ValueError("WFA requires at least one valid timestamp.")
     start = pd.Timestamp(data["timestamp"].min()).tz_localize(None).normalize()
-    end = pd.Timestamp(data["timestamp"].max()).tz_localize(None).normalize()
+    # A test interval is [test_start, test_end). Requiring the source to reach
+    # test_end (rather than merely contain a row after test_start) prevents a
+    # truncated final calendar block from being represented as a full OOS
+    # window. In normal staged runs later reserved data supplies that boundary.
+    data_end = pd.Timestamp(valid_timestamps.max()).tz_localize(None)
     step_months = test_months if step_months is None else step_months
     mode = str(mode).lower()
     _validate_window_config(train_months, test_months, step_months, mode)
@@ -62,7 +71,7 @@ def create_windows(
         test_start = start + pd.DateOffset(months=train_months)
         while True:
             test_end = test_start + pd.DateOffset(months=test_months)
-            if test_start > end:
+            if test_end > data_end:
                 break
             yield start, test_start, test_start, test_end
             test_start = test_start + pd.DateOffset(months=step_months)
@@ -73,7 +82,7 @@ def create_windows(
         train_end = train_start + pd.DateOffset(months=train_months)
         test_start = train_end
         test_end = test_start + pd.DateOffset(months=test_months)
-        if test_start > end:
+        if test_end > data_end:
             break
         yield train_start, train_end, test_start, test_end
         train_start = train_start + pd.DateOffset(months=step_months)
@@ -133,6 +142,8 @@ def run_wfa(
             slice_started = time.perf_counter()
             train = _slice(data, tr_s, tr_e)
             test = _slice(data, te_s, te_e)
+            test_first_timestamp = _timestamp_string(test["timestamp"].min()) if not test.empty else None
+            test_last_timestamp = _timestamp_string(test["timestamp"].max()) if not test.empty else None
             train_detail = _slice(detail_data, tr_s, tr_e) if detail_data is not None and pooled_executor is None else None
             test_detail = _slice(detail_data, te_s, te_e) if detail_data is not None else None
             slice_seconds = _elapsed(slice_started)
@@ -223,6 +234,9 @@ def run_wfa(
                         objective,
                         {},
                         "no_in_sample_rows_after_selection_filter",
+                        test_observations=len(test),
+                        test_first_timestamp=test_first_timestamp,
+                        test_last_timestamp=test_last_timestamp,
                     )
                 )
                 progress.update(wid, force=True)
@@ -243,7 +257,21 @@ def run_wfa(
                     f"early exit: selected in-sample net_profit {_metric_value(best, 'net_profit'):.2f} "
                     "<= 0.00",
                 )
-                rows.append(_early_exit_row(wid, tr_s, tr_e, te_s, te_e, objective, best, "selected_train_net_profit_not_positive"))
+                rows.append(
+                    _early_exit_row(
+                        wid,
+                        tr_s,
+                        tr_e,
+                        te_s,
+                        te_e,
+                        objective,
+                        best,
+                        "selected_train_net_profit_not_positive",
+                        test_observations=len(test),
+                        test_first_timestamp=test_first_timestamp,
+                        test_last_timestamp=test_last_timestamp,
+                    )
+                )
                 progress.update(wid, force=True)
                 window_timings.append(
                     {
@@ -274,6 +302,9 @@ def run_wfa(
                         objective,
                         best,
                         "selected_train_profit_factor_below_minimum",
+                        test_observations=len(test),
+                        test_first_timestamp=test_first_timestamp,
+                        test_last_timestamp=test_last_timestamp,
                     )
                 )
                 progress.update(wid, force=True)
@@ -364,6 +395,11 @@ def run_wfa(
                     "test_max_drawdown": _metric_value(test_metrics, "max_drawdown"),
                     "test_trades": int(_metric_value(test_metrics, "total_trades")),
                     "test_passed": passed,
+                    "oos_window_complete": True,
+                    "oos_evaluated": True,
+                    "test_observations": int(len(test)),
+                    "test_first_timestamp": test_first_timestamp,
+                    "test_last_timestamp": test_last_timestamp,
                 }
             )
             _log_window_result(wid, len(windows), objective, params, best, test_metrics)
@@ -383,8 +419,14 @@ def run_wfa(
         if pooled_executor is not None:
             pooled_executor.shutdown()
     df = pd.DataFrame(rows)
+    realized_oos_intervals = _realized_oos_intervals(df)
+    _validate_oos_intervals(realized_oos_intervals)
     stitch_started = time.perf_counter()
-    trades = _stitch_oos_trades(trade_frames) if include_trade_log else None
+    trades = (
+        _stitch_oos_trades(trade_frames, expected_intervals=realized_oos_intervals)
+        if include_trade_log
+        else None
+    )
     if include_trade_log:
         _add_timing(phase_timings, "stitch_oos_trades", _elapsed(stitch_started))
     summary = {
@@ -397,6 +439,21 @@ def run_wfa(
         "step_months": int(wfa_config["step_months"])
         if "step_months" in wfa_config
         else int(wfa_config.get("test_months", 1)),
+        "complete_oos_windows_only": True,
+        "planned_complete_oos_windows": int(len(windows)),
+        "realized_oos_windows": int(len(realized_oos_intervals)),
+        "skipped_complete_oos_windows": int(len(windows) - len(realized_oos_intervals)),
+        "realized_oos_observations": int(
+            sum(int(item["observations"]) for item in realized_oos_intervals)
+        ),
+        "realized_oos_trades": int(sum(int(item["trades"]) for item in realized_oos_intervals)),
+        "realized_oos_start": (
+            min(item["test_start"] for item in realized_oos_intervals) if realized_oos_intervals else None
+        ),
+        "realized_oos_end": (
+            max(item["test_end"] for item in realized_oos_intervals) if realized_oos_intervals else None
+        ),
+        "realized_oos_intervals": realized_oos_intervals,
         "parallel": _wfa_parallel_config(wfa_config),
         "selection_filter": selection_filter,
         "early_exit_min_train_profit_factor": float(early_exit_min_profit_factor)
@@ -440,6 +497,10 @@ def _early_exit_row(
     objective: str,
     best,
     reason: str,
+    *,
+    test_observations: int = 0,
+    test_first_timestamp: str | None = None,
+    test_last_timestamp: str | None = None,
 ) -> dict:
     return {
         "window_id": window_id,
@@ -464,6 +525,11 @@ def _early_exit_row(
         "test_max_drawdown": 0.0,
         "test_trades": 0,
         "test_passed": False,
+        "oos_window_complete": True,
+        "oos_evaluated": False,
+        "test_observations": int(test_observations),
+        "test_first_timestamp": test_first_timestamp,
+        "test_last_timestamp": test_last_timestamp,
         "early_exit": True,
         "early_exit_reason": reason,
     }
@@ -523,12 +589,27 @@ def _annotate_oos_trades(
     return pd.concat([metadata, out], axis=1)
 
 
-def _stitch_oos_trades(frames: list[pd.DataFrame]) -> pd.DataFrame:
+def _stitch_oos_trades(
+    frames: list[pd.DataFrame],
+    *,
+    expected_intervals: list[dict] | None = None,
+) -> pd.DataFrame:
     non_empty = [frame for frame in frames if frame is not None and not frame.empty]
+    expected = list(expected_intervals or [])
+    _validate_oos_intervals(expected)
     if not non_empty:
         return pd.DataFrame(columns=_stitched_oos_trade_columns())
 
+    frame_intervals = _frame_oos_intervals(non_empty)
+    _validate_oos_intervals(frame_intervals)
+    if expected:
+        expected_keys = {_oos_interval_key(item) for item in expected}
+        unexpected = [item for item in frame_intervals if _oos_interval_key(item) not in expected_keys]
+        if unexpected:
+            raise ValueError("stitched OOS trades contain an interval absent from realized WFA results")
+
     out = pd.concat(non_empty, ignore_index=True)
+    _validate_stitched_oos_trade_identity(out, frame_intervals)
     sort_columns = [
         column
         for column in ["entry_timestamp", "exit_timestamp", "session_date", "wfa_window_id", "source_trade_id"]
@@ -538,6 +619,153 @@ def _stitch_oos_trades(frames: list[pd.DataFrame]) -> pd.DataFrame:
         out = out.sort_values(sort_columns, kind="stable").reset_index(drop=True)
     out.insert(0, "trade_id", range(1, len(out) + 1))
     return out
+
+
+def _realized_oos_intervals(results: pd.DataFrame) -> list[dict]:
+    if results.empty or "oos_evaluated" not in results.columns:
+        return []
+
+    intervals = []
+    evaluated = results[results["oos_evaluated"].fillna(False).astype(bool)]
+    for _, row in evaluated.iterrows():
+        window_id = row["window_id"]
+        if hasattr(window_id, "item"):
+            window_id = window_id.item()
+        intervals.append(
+            {
+                "window_id": window_id,
+                "test_start": _date_string(row["test_start"]),
+                "test_end": _date_string(row["test_end"]),
+                "observations": int(row.get("test_observations", 0)),
+                "trades": int(row.get("test_trades", 0)),
+                "first_timestamp": row.get("test_first_timestamp"),
+                "last_timestamp": row.get("test_last_timestamp"),
+            }
+        )
+    return intervals
+
+
+def _frame_oos_intervals(frames: list[pd.DataFrame]) -> list[dict]:
+    required = ("wfa_window_id", "wfa_test_start", "wfa_test_end")
+    intervals = []
+    for frame in frames:
+        missing = [column for column in required if column not in frame.columns]
+        if missing:
+            raise ValueError(
+                "stitched OOS trade frame is missing interval metadata: " + ", ".join(missing)
+            )
+        metadata = frame.loc[:, list(required)].drop_duplicates()
+        if len(metadata) != 1:
+            raise ValueError("each stitched OOS trade frame must describe exactly one OOS interval")
+        row = metadata.iloc[0]
+        window_id = row["wfa_window_id"]
+        if hasattr(window_id, "item"):
+            window_id = window_id.item()
+        intervals.append(
+            {
+                "window_id": window_id,
+                "test_start": _date_string(row["wfa_test_start"]),
+                "test_end": _date_string(row["wfa_test_end"]),
+                "observations": 0,
+                "trades": int(len(frame)),
+            }
+        )
+    return intervals
+
+
+def _validate_oos_intervals(intervals: list[dict]) -> None:
+    normalized = []
+    seen_window_ids = set()
+    seen_intervals = set()
+    for item in intervals:
+        if not all(key in item for key in ("window_id", "test_start", "test_end")):
+            raise ValueError("OOS interval metadata requires window_id, test_start, and test_end")
+        window_key = str(item["window_id"])
+        start = _naive_timestamp(item["test_start"])
+        end = _naive_timestamp(item["test_end"])
+        if pd.isna(start) or pd.isna(end) or start >= end:
+            raise ValueError("OOS interval metadata must contain a valid half-open test interval")
+        interval_key = (start.isoformat(), end.isoformat())
+        if window_key in seen_window_ids:
+            raise ValueError(f"duplicate OOS window_id in stitched evidence: {item['window_id']}")
+        if interval_key in seen_intervals:
+            raise ValueError(
+                f"duplicate OOS interval in stitched evidence: {interval_key[0]} -> {interval_key[1]}"
+            )
+        seen_window_ids.add(window_key)
+        seen_intervals.add(interval_key)
+        normalized.append((start, end, item["window_id"]))
+
+    previous = None
+    for start, end, window_id in sorted(normalized, key=lambda value: (value[0], value[1])):
+        if previous is not None and start < previous[1]:
+            raise ValueError(
+                "overlapping OOS intervals cannot be stitched: "
+                f"window {previous[2]} ends {previous[1].isoformat()} but "
+                f"window {window_id} starts {start.isoformat()}"
+            )
+        previous = (start, end, window_id)
+
+
+def _oos_interval_key(item: dict) -> tuple[str, str, str]:
+    return (
+        str(item["window_id"]),
+        _naive_timestamp(item["test_start"]).isoformat(),
+        _naive_timestamp(item["test_end"]).isoformat(),
+    )
+
+
+def _validate_stitched_oos_trade_identity(out: pd.DataFrame, intervals: list[dict]) -> None:
+    required = ("wfa_window_id", "entry_timestamp")
+    missing = [column for column in required if column not in out.columns]
+    if missing:
+        raise ValueError("stitched OOS trades are missing identity columns: " + ", ".join(missing))
+
+    bounds = {
+        str(item["window_id"]): (
+            _naive_timestamp(item["test_start"]),
+            _naive_timestamp(item["test_end"]),
+        )
+        for item in intervals
+    }
+    normalized_entries = []
+    for _, row in out.iterrows():
+        window_key = str(row["wfa_window_id"])
+        if window_key not in bounds:
+            raise ValueError(f"stitched OOS trade references unknown window_id {row['wfa_window_id']}")
+        entry = _naive_timestamp(row["entry_timestamp"])
+        if pd.isna(entry):
+            raise ValueError("stitched OOS trade entry_timestamp must be valid")
+        start, end = bounds[window_key]
+        if entry < start or entry >= end:
+            raise ValueError(
+                "stitched OOS trade falls outside its declared test interval: "
+                f"window {row['wfa_window_id']} entry {entry.isoformat()}"
+            )
+        normalized_entries.append(entry.isoformat())
+
+    identity = out.copy()
+    identity["_normalized_entry_timestamp"] = normalized_entries
+    if "source_trade_id" in identity.columns:
+        scoped = identity[identity["source_trade_id"].notna()]
+        if scoped.duplicated(subset=["wfa_window_id", "source_trade_id"], keep=False).any():
+            raise ValueError("duplicate source trade IDs exist within an OOS window")
+        global_identity = ["_normalized_entry_timestamp", "source_trade_id"]
+        if "exit_timestamp" in identity.columns:
+            global_identity.insert(1, "exit_timestamp")
+        if scoped.duplicated(subset=global_identity, keep=False).any():
+            raise ValueError("duplicate OOS trades cannot be stitched across windows")
+    else:
+        global_identity = ["_normalized_entry_timestamp"]
+        if "exit_timestamp" in identity.columns:
+            global_identity.append("exit_timestamp")
+        if identity.duplicated(subset=global_identity, keep=False).any():
+            raise ValueError("duplicate OOS trades cannot be stitched across windows")
+
+
+def _naive_timestamp(value) -> pd.Timestamp:
+    timestamp = pd.Timestamp(value)
+    return timestamp.tz_localize(None) if timestamp.tzinfo is not None else timestamp
 
 
 def _stitched_oos_trade_columns() -> list[str]:
@@ -553,6 +781,8 @@ def _stitched_oos_trade_columns() -> list[str]:
         "wfa_selected_params",
         "source_trade_id",
         "session_date",
+        "entry_timestamp",
+        "exit_timestamp",
         "net_pnl",
         "contracts",
     ]
@@ -716,6 +946,10 @@ def _annotate_train_grid(
 
 def _date_string(value) -> str:
     return pd.Timestamp(value).date().isoformat()
+
+
+def _timestamp_string(value) -> str:
+    return pd.Timestamp(value).isoformat()
 
 
 def _train_grid_metadata(base_config: dict, grid_config: dict, input_hash: str | None) -> dict:
@@ -1063,5 +1297,9 @@ def _validate_window_config(train_months: int, test_months: int, step_months: in
         raise ValueError("wfa.test_months must be greater than zero.")
     if step_months <= 0:
         raise ValueError("wfa.step_months must be greater than zero.")
+    if step_months < test_months:
+        raise ValueError(
+            "wfa.step_months must be greater than or equal to wfa.test_months so OOS windows do not overlap."
+        )
     if mode not in {"anchored", "unanchored"}:
         raise ValueError("wfa.mode must be 'anchored' or 'unanchored'.")

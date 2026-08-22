@@ -13,7 +13,11 @@ class DailyRisk:
 
     def allow_new_trade(self, session_date) -> bool:
         day = self._day(session_date)
-        return not day["locked"] and day["trades"] < self.max_trades_per_day
+        within_trade_limit = (
+            self.max_trades_per_day <= 0
+            or day["trades"] < self.max_trades_per_day
+        )
+        return not day["locked"] and within_trade_limit
 
     def record_entry(self, session_date) -> None:
         self._day(session_date)["trades"] += 1
