@@ -1,0 +1,445 @@
+{
+  "$defs": {
+    "SourceClaimHumanReviewV1": {
+      "additionalProperties": false,
+      "description": "A human decision for exactly one AI-proposed source claim.",
+      "properties": {
+        "claim_id": {
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "decision": {
+          "enum": [
+            "ACCEPT",
+            "REJECT"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "evidence_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Sha256"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        },
+        "proposed_support": {
+          "enum": [
+            "DIRECT",
+            "CONFLICTING",
+            "INFERENCE"
+          ],
+          "title": "Proposed Support",
+          "type": "string"
+        },
+        "verification_method": {
+          "title": "Verification Method",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "proposed_support",
+        "decision",
+        "verification_method",
+        "notes"
+      ],
+      "title": "SourceClaimHumanReviewV1",
+      "type": "object"
+    },
+    "SourceClaimV1": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "evidence_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Sha256"
+        },
+        "source_location": {
+          "minLength": 1,
+          "title": "Source Location",
+          "type": "string"
+        },
+        "statement": {
+          "minLength": 20,
+          "title": "Statement",
+          "type": "string"
+        },
+        "support": {
+          "enum": [
+            "DIRECT",
+            "CONFLICTING",
+            "INFERENCE"
+          ],
+          "title": "Support",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "statement",
+        "source_location",
+        "support"
+      ],
+      "title": "SourceClaimV1",
+      "type": "object"
+    },
+    "SourceEvidenceBundleV1": {
+      "additionalProperties": false,
+      "description": "Verified source identity plus claim-level support; never a campaign.",
+      "properties": {
+        "authors": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Authors",
+          "type": "array"
+        },
+        "bundle_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Bundle Id",
+          "type": "string"
+        },
+        "claims": {
+          "items": {
+            "$ref": "#/$defs/SourceClaimV1"
+          },
+          "minItems": 1,
+          "title": "Claims",
+          "type": "array"
+        },
+        "confirmed": {
+          "const": false,
+          "default": false,
+          "enum": [
+            false
+          ],
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "conflicting_evidence": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conflicting Evidence",
+          "type": "array"
+        },
+        "content_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Content Sha256"
+        },
+        "created_by": {
+          "minLength": 1,
+          "title": "Created By",
+          "type": "string"
+        },
+        "inference_notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Inference Notes",
+          "type": "array"
+        },
+        "locator": {
+          "minLength": 4,
+          "title": "Locator",
+          "type": "string"
+        },
+        "publication_type": {
+          "enum": [
+            "PEER_REVIEWED",
+            "WORKING_PAPER",
+            "EXCHANGE_RESEARCH",
+            "PRACTITIONER_RESEARCH",
+            "PRIMARY_DATA_DOCUMENTATION",
+            "OTHER"
+          ],
+          "title": "Publication Type",
+          "type": "string"
+        },
+        "retraction_status": {
+          "enum": [
+            "NOT_RETRACTED",
+            "RETRACTED",
+            "CORRECTED",
+            "UNKNOWN"
+          ],
+          "title": "Retraction Status",
+          "type": "string"
+        },
+        "retrieved_at": {
+          "format": "date-time",
+          "title": "Retrieved At",
+          "type": "string"
+        },
+        "schema": {
+          "const": "alphaquest.source-evidence-bundle/v1",
+          "default": "alphaquest.source-evidence-bundle/v1",
+          "enum": [
+            "alphaquest.source-evidence-bundle/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        },
+        "title": {
+          "minLength": 3,
+          "title": "Title",
+          "type": "string"
+        },
+        "venue": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Venue"
+        },
+        "verification_status": {
+          "enum": [
+            "PARTIAL",
+            "REJECTED"
+          ],
+          "title": "Verification Status",
+          "type": "string"
+        },
+        "year": {
+          "maximum": 2100,
+          "minimum": 1800,
+          "title": "Year",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "bundle_id",
+        "title",
+        "authors",
+        "year",
+        "locator",
+        "publication_type",
+        "venue",
+        "retrieved_at",
+        "verification_status",
+        "retraction_status",
+        "claims",
+        "conflicting_evidence",
+        "inference_notes",
+        "created_by"
+      ],
+      "title": "SourceEvidenceBundleV1",
+      "type": "object"
+    },
+    "SourceEvidenceHumanVerificationV1": {
+      "additionalProperties": false,
+      "description": "Explicit human verification required before source evidence may advance.",
+      "properties": {
+        "claim_reviews": {
+          "items": {
+            "$ref": "#/$defs/SourceClaimHumanReviewV1"
+          },
+          "minItems": 1,
+          "title": "Claim Reviews",
+          "type": "array"
+        },
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "decision": {
+          "const": "ACCEPT_FOR_HYPOTHESIS",
+          "default": "ACCEPT_FOR_HYPOTHESIS",
+          "enum": [
+            "ACCEPT_FOR_HYPOTHESIS"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        },
+        "retraction_status": {
+          "enum": [
+            "NOT_RETRACTED",
+            "CORRECTED"
+          ],
+          "title": "Retraction Status",
+          "type": "string"
+        },
+        "review_id": {
+          "title": "Review Id",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date-time",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "reviewer": {
+          "title": "Reviewer",
+          "type": "string"
+        },
+        "source_identity_status": {
+          "const": "VERIFIED",
+          "default": "VERIFIED",
+          "enum": [
+            "VERIFIED"
+          ],
+          "title": "Source Identity Status",
+          "type": "string"
+        },
+        "verification_method": {
+          "title": "Verification Method",
+          "type": "string"
+        },
+        "verified_metadata_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Verified Metadata Fields",
+          "type": "array"
+        }
+      },
+      "required": [
+        "review_id",
+        "reviewer",
+        "reviewed_at",
+        "verified_metadata_fields",
+        "content_sha256",
+        "retraction_status",
+        "verification_method",
+        "claim_reviews",
+        "notes"
+      ],
+      "title": "SourceEvidenceHumanVerificationV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Complete AI source proposal plus its one-shot human verification.",
+  "properties": {
+    "artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Artifact Sha256",
+      "type": "string"
+    },
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "campaign_mutations_performed": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Campaign Mutations Performed",
+      "type": "boolean"
+    },
+    "human_verification": {
+      "$ref": "#/$defs/SourceEvidenceHumanVerificationV1"
+    },
+    "mechanics_approval_granted": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Mechanics Approval Granted",
+      "type": "boolean"
+    },
+    "proposal_id": {
+      "title": "Proposal Id",
+      "type": "string"
+    },
+    "proposal_payload_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Proposal Payload Sha256",
+      "type": "string"
+    },
+    "proposal_validation_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Proposal Validation Sha256",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.reviewed-source-evidence/v1",
+      "default": "alphaquest.reviewed-source-evidence/v1",
+      "enum": [
+        "alphaquest.reviewed-source-evidence/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "source_evidence": {
+      "$ref": "#/$defs/SourceEvidenceBundleV1"
+    },
+    "source_evidence_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Source Evidence Sha256",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "testing_authorized": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Testing Authorized",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "task_id",
+    "proposal_id",
+    "proposal_payload_sha256",
+    "proposal_validation_sha256",
+    "source_evidence",
+    "source_evidence_sha256",
+    "human_verification",
+    "artifact_sha256"
+  ],
+  "title": "ReviewedSourceEvidenceArtifactV1",
+  "type": "object"
+}

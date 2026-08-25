@@ -406,6 +406,16 @@ def test_deployment_requires_forward_and_portfolio_review_and_never_routes_order
     with pytest.raises(ValueError, match="portfolio review"):
         service.decide(**common)
 
+    candidate_self_review = dict(common)
+    candidate_self_review["reviewer"] = "reviewer-first"
+    with pytest.raises(ValueError, match="differ from the candidate reviewer"):
+        service.decide(**candidate_self_review, portfolio_review_path=portfolio_path)
+
+    mechanics_self_review = dict(common)
+    mechanics_self_review["reviewer"] = "mechanics-first"
+    with pytest.raises(ValueError, match="differ from the mechanics reviewer"):
+        service.decide(**mechanics_self_review, portfolio_review_path=portfolio_path)
+
     decision, decision_path = service.decide(
         **common,
         portfolio_review_path=portfolio_path,

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
 import yaml
 
 from alphaquest.research.registry import _classify_unreviewed_variants, _classify_unreviewed_verdicts
@@ -158,6 +159,111 @@ def test_next_variant_unlocks_only_after_reviewed_fail(tmp_path: Path, monkeypat
     blocked = service.eligibility("demo")
     assert blocked["eligible"] is False
     assert any("only FAIL" in item for item in blocked["blockers"])
+
+
+def test_event_replay_next_variant_uses_the_sole_active_unused_certification(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    service = SequentialVariantService(tmp_path)
+    draft_payload = {
+        "title": "Event edge",
+        "authoring_lane": "certified_event_replay",
+        "known_failure_modes": ["The economic behavior may be absent."],
+        "variants": [
+            {
+                "variant_id": "v03",
+                "entry": {"module": "event_v3"},
+                "stop": {"module": "old_stop"},
+                "target": {"module": "old_target"},
+            }
+        ],
+    }
+    draft = SimpleNamespace(
+        authoring_lane="certified_event_replay",
+        variants=[SimpleNamespace(variant_id="v03")],
+        model_dump=lambda **_kwargs: draft_payload,
+    )
+    state = {
+        "eligible": True,
+        "campaign_id": "demo",
+        "current_variant_id": "v03",
+        "next_variant_id": "v04",
+        "variant_count": 3,
+        "max_variants": 5,
+        "mechanics_approval_status": "APPROVED_FOR_TESTING",
+        "predecessor_verdict": "FAIL",
+        "predecessor_result_path": "result_bundle_v2.json",
+        "blockers": [],
+    }
+    certification = SimpleNamespace(
+        strategy_id="event_v4",
+        lane="canonical_event_replay",
+        entry_module="event_v4",
+        stop_module="event_fill_stop",
+        target_module="event_opposite_value_target",
+        parameters={
+            "fixed_value": SimpleNamespace(default=10, tunable=False, choices=()),
+            "entry_choice": SimpleNamespace(default=0.2, tunable=True, choices=(0.1, 0.2, 0.3)),
+            "stop_choice": SimpleNamespace(default=1.5, tunable=True, choices=(1.25, 1.5, 1.75)),
+        },
+        studio={
+            "visible": True,
+            "label": "Event strategy v04",
+            "description": "Adds separate post-event confirmation and a materially different frozen target.",
+            "mechanics_review": {
+                "mechanic_expresses_edge": "The successor preserves the same event-replay economic edge.",
+                "entry_logic_rationale": "Entry uses a separate causal confirmation after the predecessor event.",
+                "stop_loss_rationale": "The stop is resolved from the causal fill path.",
+                "target_exit_rationale": "The target is frozen before entry from causal context.",
+                "session_logic_rationale": "The same governed intraday session and flatten boundary apply.",
+                "known_failure_modes": "Confirmation may arrive late and the target may remain unreachable.",
+            },
+        },
+    )
+    monkeypatch.setattr(service, "eligibility", lambda _campaign_id: state)
+    monkeypatch.setattr(service, "_draft", lambda _campaign_id: draft)
+    monkeypatch.setattr(
+        service,
+        "_latest_result",
+        lambda *_args: (
+            Path("result_bundle_v2.json"),
+            {"verdict": "FAIL", "verdict_message": "The predecessor failed its frozen objective."},
+        ),
+    )
+    monkeypatch.setattr(
+        "alphaquest.studio.sequential_variants.load_strategy_certifications",
+        lambda *_args, **_kwargs: {"event_v4": certification},
+    )
+    monkeypatch.setattr(
+        "alphaquest.studio.sequential_variants.suggest_variant_card",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("event campaigns must not use the generic recipe generator")
+        ),
+    )
+
+    proposed = service.suggestion("demo")
+
+    variant = proposed["variant"]
+    assert variant["variant_id"] == "v04"
+    assert variant["entry"]["module"] == "event_v4"
+    assert variant["entry"]["params"]["mechanics"] == {
+        "fixed_value": 10,
+        "entry_choice": 0.2,
+        "stop_choice": 1.5,
+    }
+    assert variant["stop"]["module"] == "event_fill_stop"
+    assert variant["target"]["module"] == "event_opposite_value_target"
+    assert variant["event_parameter_grid"] == {
+        "entry_choice": [0.1, 0.2, 0.3],
+        "stop_choice": [1.25, 1.5, 1.75],
+    }
+    assert variant["confirmed"] is False
+    assert "sole active, unused certified event successor" in variant["mechanic_rationale"]
+
+    draft_payload["variants"][0]["entry"]["module"] = "event_v4"
+    with pytest.raises(ValueError, match="no unused active certified event strategy"):
+        service.suggestion("demo")
 
 
 def test_next_variant_inherits_the_terminal_predecessor_execution_contract(

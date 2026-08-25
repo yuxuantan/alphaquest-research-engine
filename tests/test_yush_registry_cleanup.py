@@ -16,15 +16,18 @@ RETIRED_COMPANION_MODULES = {
 }
 
 
-def test_authoring_catalog_retains_only_the_yush_v03_range_reversal_package() -> None:
+def test_authoring_catalog_retains_only_the_yush_v04_range_reversal_package() -> None:
     manifests = CERTIFIED_MODULE_CATALOG.all()
 
     assert {item.name for item in manifests if item.name.startswith("yush_")} == {
-        "yush_adaptive_orderflow_range_v3"
+        "yush_adaptive_orderflow_range_v4"
     }
     assert RETIRED_COMPANION_MODULES.isdisjoint(item.name for item in manifests)
     assert CERTIFIED_MODULE_CATALOG.get("sl", "event_fill_time_sweep_to_entry_extreme_stop")
-    assert CERTIFIED_MODULE_CATALOG.get("tp", "event_frozen_midpoint_opposite_edge_scale_out")
+    assert CERTIFIED_MODULE_CATALOG.get(
+        "tp",
+        "event_frozen_midpoint_two_ticks_outside_opposite_value_area_scale_out",
+    )
 
 
 def test_legacy_yush_sources_are_preserved_but_not_registered() -> None:

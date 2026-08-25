@@ -31,7 +31,7 @@ Active authored definitions live under `research/campaigns/active/`; closed defi
 
 After an administrator completes [installation](docs/getting-started/installation.md), a researcher can double-click **`AlphaQuest Studio.command`**. No terminal, Python, or YAML editing is required inside the research workflow.
 
-Studio's novice interface is a committed React application served by a local FastAPI process. It binds only to the workstation, works without Node.js or a frontend build at runtime, and uses the separate durable Python worker for long research jobs. Except for explicitly enabled optional AI drafting, the Studio workflow does not require an external web service.
+Studio's novice interface is a committed React application served by a local FastAPI process. It binds only to the workstation, works without Node.js or a frontend build at runtime, and uses the separate durable Python worker for long research jobs. The governed workflow remains fully usable offline and manually. An optional second worker can ask a locally installed, ChatGPT-subscription-authenticated Codex CLI for bounded research proposals; it never uses an OpenAI API key, clears no human gate, and remains separate from scientific execution.
 
 Administrator setup:
 

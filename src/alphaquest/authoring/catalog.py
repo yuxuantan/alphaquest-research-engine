@@ -218,10 +218,14 @@ def _manifest(
 CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
     [
         ModuleManifestV1(
-            name="yush_adaptive_orderflow_range_v3",
+            name="yush_adaptive_orderflow_range_v4",
             module_type="entry",
             certification_status="certified",
-            summary="Causal burst-qualified value-edge sweep, reclaim, resting retest, and frozen range scale-out.",
+            summary=(
+                "Causal market/order-flow value-edge AOI, ordered sweep, separate "
+                "post-sweep order-flow confirmation, reclaim stop entry, and frozen "
+                "range scale-out."
+            ),
             decision_timing="intrabar_or_event",
             required_columns=[
                 "timestamp",
@@ -235,7 +239,7 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
             parameters={
                 "mechanics": _parameter(
                     "object",
-                    "Complete frozen mechanics mapping for the certified Yush v03 reversal strategy.",
+                    "Complete frozen mechanics mapping for the certified Yush v04 reversal strategy.",
                     required=True,
                 )
             },
@@ -252,10 +256,10 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
             max_tunable_parameters=0,
         ),
         ModuleManifestV1(
-            name="event_frozen_midpoint_opposite_edge_scale_out",
+            name="event_frozen_midpoint_two_ticks_outside_opposite_value_area_scale_out",
             module_type="tp",
             certification_status="certified",
-            summary="Exit half at the causally frozen value midpoint and the remainder at the opposite value edge.",
+            summary="Exit half at the causally frozen value midpoint and the remainder two ticks outside the opposite value-area edge.",
             decision_timing="post_entry",
             parameters={},
             max_tunable_parameters=0,

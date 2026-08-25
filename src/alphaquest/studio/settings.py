@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -15,6 +15,13 @@ class StudioSettings(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_assignment=True, strict=True)
 
     reviewer_identity: str = ""
+    assistant_mode: Literal[
+        "codex_subscription",
+        "manual_only",
+        "legacy_openai_api",
+    ] = "codex_subscription"
+    codex_timeout_seconds: int = Field(default=1800, ge=60, le=7200)
+    codex_max_runs_per_day: int = Field(default=12, ge=1, le=200)
     openai_model: str = ""
     default_commission_per_contract: float = Field(default=2.5, ge=0)
     default_slippage_ticks: float = Field(default=1.0, ge=0)
@@ -35,12 +42,14 @@ def load_settings(*, project_root: str | Path = ".") -> StudioSettings:
     path = settings_path(project_root=project_root)
     try:
         value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
+    except FileNotFoundError:
         return StudioSettings()
+    except (OSError, json.JSONDecodeError):
+        return StudioSettings(assistant_mode="manual_only")
     try:
         return StudioSettings.model_validate(value)
     except ValueError:
-        return StudioSettings()
+        return StudioSettings(assistant_mode="manual_only")
 
 
 def save_settings(settings: StudioSettings | dict[str, Any], *, project_root: str | Path = ".") -> Path:

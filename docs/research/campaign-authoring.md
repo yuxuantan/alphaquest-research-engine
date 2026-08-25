@@ -1,13 +1,15 @@
 # Campaign Authoring
 
-This is the expert YAML interface. New researchers should use [Research Studio](../getting-started/research-studio.md), which compiles the same authoritative contracts after strict validation. The legacy `alphaquest campaign new` TODO scaffold is retained for engine developers and compatibility; it is not the novice workflow.
+This is the expert YAML interface. New researchers should use [Research Studio](../getting-started/research-studio.md), while code-based authoring should create a strict `CampaignDraftV1` and publish it with `alphaquest draft validate` followed by `alphaquest draft publish`. Both paths compile the same authoritative contracts after strict validation.
 
 One campaign represents one economic edge. A new campaign declares one mechanical variant before PnL is inspected. It may add a materially distinct expression of the same edge only after the immediately prior variant has passed manual mechanics review and received a terminal `FAIL`. The campaign maximum is five variants.
 
-Engine developers may create a legacy scaffold:
+Code authors should validate and publish the strict draft stored at
+`research/drafts/<campaign_id>/draft.json`:
 
 ```bash
-alphaquest campaign new my_campaign --symbol ES --edge-family my_edge
+alphaquest draft validate my_campaign --project-root . --json
+alphaquest draft publish my_campaign --project-root . --json
 ```
 
 Then complete:

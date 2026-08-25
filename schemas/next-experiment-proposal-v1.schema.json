@@ -1,0 +1,145 @@
+{
+  "$defs": {
+    "NextAction": {
+      "enum": [
+        "REPAIR_SAME_VARIANT",
+        "OBTAIN_MANUAL_REVIEW",
+        "ABANDON_EDGE",
+        "PROPOSE_SUCCESSOR",
+        "START_NEW_RESEARCH_GENERATION",
+        "ASSESS_OTHER_DESTINATION",
+        "BEGIN_CANDIDATE_REVIEW",
+        "BEGIN_FORWARD_INCUBATION",
+        "STOP_NO_FRESH_HOLDOUT"
+      ],
+      "title": "NextAction",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "action": {
+      "$ref": "#/$defs/NextAction"
+    },
+    "confirmed": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Confirmed",
+      "type": "boolean"
+    },
+    "diagnosis_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Diagnosis Sha256",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "expected_information_gain": {
+      "minLength": 20,
+      "title": "Expected Information Gain",
+      "type": "string"
+    },
+    "fresh_confirmation_window_id": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Fresh Confirmation Window Id"
+    },
+    "mechanics_intent_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Mechanics Intent Sha256"
+    },
+    "predecessor_result_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Predecessor Result Sha256",
+      "type": "string"
+    },
+    "predecessor_verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Predecessor Verdict",
+      "type": "string"
+    },
+    "proposal_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Proposal Id",
+      "type": "string"
+    },
+    "proposed_variant_id": {
+      "anyOf": [
+        {
+          "pattern": "^v[0-9]{2}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Proposed Variant Id"
+    },
+    "rationale": {
+      "minLength": 30,
+      "title": "Rationale",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.next-experiment-proposal/v1",
+      "default": "alphaquest.next-experiment-proposal/v1",
+      "enum": [
+        "alphaquest.next-experiment-proposal/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "status": {
+      "const": "PROPOSAL",
+      "default": "PROPOSAL",
+      "enum": [
+        "PROPOSAL"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "proposal_id",
+    "diagnosis_sha256",
+    "predecessor_result_sha256",
+    "predecessor_verdict",
+    "action",
+    "rationale",
+    "evidence_refs",
+    "expected_information_gain"
+  ],
+  "title": "NextExperimentProposalV1",
+  "type": "object"
+}

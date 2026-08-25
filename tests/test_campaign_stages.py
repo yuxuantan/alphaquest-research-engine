@@ -7,6 +7,7 @@ import yaml
 
 from alphaquest.research.campaign_stages import evaluate_criteria
 from alphaquest.research import campaign_stages
+from alphaquest.research.factory_policy import research_factory_binding
 
 
 def _mechanics_review_yaml() -> list[str]:
@@ -1620,6 +1621,55 @@ def test_acceptance_window_uses_latest_six_months_after_two_year_train():
     assert window["test_end"] == pd.Timestamp("2026-05-29")
 
 
+def test_factory_acceptance_binding_has_exact_runtime_planner_calendar_parity():
+    dataset = {
+        "dataset_id": "governed_es",
+        "source_sha256": "a" * 64,
+        "canonical_sha256": "b" * 64,
+        "coverage_start": "2011-01-03T09:30:00-05:00",
+        "coverage_end": "2026-05-29T16:00:00-04:00",
+    }
+    binding = research_factory_binding(
+        {"schema": "fixture", "confirmed": True},
+        dataset=dataset,
+        acceptance_train_months=24,
+        acceptance_test_months=6,
+    )
+    _subset, planned = campaign_stages._planned_acceptance_subset(
+        {
+            "start_date": dataset["coverage_start"][:10],
+            "end_date": dataset["coverage_end"][:10],
+        },
+        train_months=24,
+        test_months=6,
+    )
+
+    assert binding["acceptance_window"] == {
+        "train_months": planned["train_months"],
+        "test_months": planned["test_months"],
+        "train_start": planned["train_start"].date().isoformat(),
+        "train_end": planned["train_end"].date().isoformat(),
+        "test_start": planned["test_start"].date().isoformat(),
+        "test_end": planned["test_end"].date().isoformat(),
+    }
+
+
+def test_factory_acceptance_binding_rejects_insufficient_calendar_coverage():
+    with pytest.raises(ValueError, match="complete predeclared acceptance"):
+        research_factory_binding(
+            {"schema": "fixture", "confirmed": True},
+            dataset={
+                "dataset_id": "too_short",
+                "source_sha256": "a" * 64,
+                "canonical_sha256": "b" * 64,
+                "coverage_start": "2025-01-01",
+                "coverage_end": "2026-05-29",
+            },
+            acceptance_train_months=24,
+            acceptance_test_months=6,
+        )
+
+
 def test_incubation_window_uses_latest_one_year_after_four_year_train():
     subset, window = campaign_stages._planned_acceptance_subset(
         {"start_date": "2011-01-03", "end_date": "2026-06-09", "session_labels": ["RTH"]},
@@ -1839,6 +1889,64 @@ def test_stage_decisions_fail_closed_on_validity_failure():
 
     assert result["scientific_validity_verdict"] == "FAIL"
     assert result["generic_objective_verdict"] == "PASS"
+
+
+def test_terminal_scientific_failure_is_not_masked_by_dependency_skips():
+    failed = campaign_stages._annotate_stage_decisions(
+        {
+            "stage": "limited_core_grid_test",
+            "status": "failed",
+            "criteria": [
+                {
+                    "metric": "summary.percentage_profitable_iterations",
+                    "passed": False,
+                    "decision_role": "scientific_validity",
+                }
+            ],
+        }
+    )
+    skipped = [
+        campaign_stages._annotate_stage_decisions(
+            campaign_stages._skipped_stage(
+                stage,
+                "prior scientific-validity stage failed",
+            )
+        )
+        for stage in campaign_stages.DEFAULT_STAGE_ORDER[1:]
+    ]
+
+    assert campaign_stages._scientific_validity_verdict(
+        [failed, *skipped],
+        [],
+    ) == "FAIL"
+
+
+def test_unrelated_unresolved_stage_still_overrides_scientific_failure():
+    failed = {
+        "stage": "limited_core_grid_test",
+        "status": "failed",
+        "scientific_validity_verdict": "FAIL",
+    }
+    unresolved = {
+        "stage": "limited_monkey_test",
+        "status": "skipped",
+        "skip_reason": "required evidence is missing",
+        "scientific_validity_verdict": "NEEDS MANUAL REVIEW",
+    }
+    remaining = [
+        {
+            "stage": stage,
+            "status": "skipped",
+            "skip_reason": "prior scientific-validity stage failed",
+            "scientific_validity_verdict": "NEEDS MANUAL REVIEW",
+        }
+        for stage in campaign_stages.DEFAULT_STAGE_ORDER[2:]
+    ]
+
+    assert campaign_stages._scientific_validity_verdict(
+        [failed, unresolved, *remaining],
+        [],
+    ) == "NEEDS MANUAL REVIEW"
 
 
 def test_incubation_core_stage_uses_four_year_train_latest_one_year_oos(tmp_path, monkeypatch):

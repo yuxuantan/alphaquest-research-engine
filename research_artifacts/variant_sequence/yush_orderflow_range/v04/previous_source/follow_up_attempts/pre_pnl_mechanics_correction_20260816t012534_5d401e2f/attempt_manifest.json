@@ -1,0 +1,81 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260816t012534_5d401e2f",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "114df169bf4e18fda997c0a82b3e2d885980a005665e2980a8473eaf43225622",
+        "implementation_version": 13,
+        "manifest_sha256": "22c62c2e6ff45b97ac2ba50dcd34d713bd76121f7eef21a6d9f2e560cd2a099b",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "01229bff9a2545d45cbd36394f6c4c36b37e24e79d3d4faf295826696fd09293",
+        "implementation_version": 12,
+        "manifest_sha256": "6d2713cb0a08b80a52b965300d07af6249806d5140c449a4a341e22bd5dbdb00",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "field": "migrated_fixed_certified_defaults",
+      "new": {
+        "entry_expiry_bars": 2
+      },
+      "old": {
+        "entry_expiry_bars": 1
+      },
+      "reviewed": true,
+      "scope": "strategy.event.params",
+      "variant_id": "v03"
+    },
+    {
+      "field": "entry_expiry_bars",
+      "new": 2,
+      "old": 1,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "7e624247bcf73c0b5235df966e199ed93716ff8baf604bbc6152d32af797f042"
+  },
+  "created_at": "2026-08-16T01:25:34.966871+00:00",
+  "created_by": "codex",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260816t012534_5d401e2f",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260815t171716_939a2a6e",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Replace the v03 next-event market entry with certified implementation v13: after a completed reclaim, rest a two-bar limit one tick inside the frozen edge; cancel before fill if POC, structural stop, AOI expiry, profile reset, entry cutoff, or expiry occurs; retain the all-in net payoff floor at the attainable fill.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "667c4c26d92a5e1199945d77d59b8815a4901e492b2bba4fc77198267b655937"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "418113b8e8fa2fe7c841ba0abbda832e213547fc0f36a2fa1bedb68bb6b9d437"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

@@ -129,7 +129,10 @@ def _parser() -> argparse.ArgumentParser:
     search.set_defaults(handler=_research_search)
 
     campaign = commands.add_parser("campaign", help="Expert YAML compatibility, validation, inspection, and execution.")
-    campaign_commands = campaign.add_subparsers(dest="campaign_command")
+    campaign_commands = campaign.add_subparsers(
+        dest="campaign_command",
+        metavar="{show,validate,validate-mechanics,run}",
+    )
     show = campaign_commands.add_parser("show", help="Show campaign source and latest run state.")
     show.add_argument("campaign_id")
     _database_argument(show)
@@ -147,7 +150,11 @@ def _parser() -> argparse.ArgumentParser:
     show.set_defaults(handler=_campaign_show)
     new = campaign_commands.add_parser(
         "new",
-        help="Create the legacy developer TODO scaffold; novice researchers should use Studio.",
+        help="Deprecated engine-developer compatibility scaffold.",
+        description=(
+            "Deprecated engine-developer compatibility scaffold. New governed "
+            "research must use CampaignDraftV1 through Studio or `alphaquest draft`."
+        ),
     )
     new.add_argument("campaign_id")
     new.add_argument("--symbol", required=True, choices=("ES", "NQ"))
@@ -157,6 +164,9 @@ def _parser() -> argparse.ArgumentParser:
     new.add_argument("--data-path")
     new.add_argument("--campaign-root", default="research/campaigns/active")
     new.set_defaults(handler=_campaign_new)
+    # Keep old automation callable without advertising an incomplete authoring
+    # path to new researchers. Strict drafts are the only supported new-work UI.
+    campaign_commands._choices_actions.pop()  # type: ignore[attr-defined]
     validate = campaign_commands.add_parser("validate", help="Run fail-closed preflight on one campaign.")
     validate.add_argument("campaign_id")
     validate.add_argument("--campaign-root", default="research/campaigns/active")
@@ -360,6 +370,53 @@ def _parser() -> argparse.ArgumentParser:
     attempt_run.add_argument("--project-root", default=".")
     attempt_run.add_argument("--json", action="store_true")
     attempt_run.set_defaults(handler=_studio_attempt_queue_run)
+
+    factory = commands.add_parser(
+        "factory",
+        help="Operate the supervised, subscription-backed local Codex research factory.",
+    )
+    factory_commands = factory.add_subparsers(dest="factory_command")
+    factory_status = factory_commands.add_parser("status", help="Show Codex availability and factory state.")
+    factory_status.add_argument("--project-root", default=".")
+    factory_status.add_argument("--campaign-id")
+    factory_status.add_argument("--json", action="store_true")
+    factory_status.set_defaults(handler=_factory_status)
+    factory_tasks = factory_commands.add_parser("tasks", help="List durable Codex proposal tasks.")
+    factory_tasks.add_argument("--project-root", default=".")
+    factory_tasks.add_argument("--limit", type=int, default=100)
+    factory_tasks.add_argument("--json", action="store_true")
+    factory_tasks.set_defaults(handler=_factory_tasks)
+    factory_run_next = factory_commands.add_parser(
+        "run-next",
+        help="Queue the next deterministic bounded AI step without invoking Codex inline.",
+    )
+    factory_run_next.add_argument("--project-root", default=".")
+    factory_run_next.add_argument("--campaign-id")
+    factory_run_next.add_argument("--request-id", required=True)
+    factory_run_next.add_argument("--json", action="store_true")
+    factory_run_next.set_defaults(handler=_factory_run_next)
+    factory_worker = factory_commands.add_parser(
+        "worker",
+        help="Run the separate local Codex proposal worker.",
+    )
+    factory_worker.add_argument("--project-root", default=".")
+    factory_worker.add_argument("--once", action="store_true", help="Handle at most one task, then exit.")
+    factory_worker.add_argument("--poll-interval", type=float, default=0.5)
+    factory_worker.set_defaults(handler=_factory_worker)
+    factory_pause = factory_commands.add_parser("pause", help="Pause new local Codex work globally.")
+    factory_pause.add_argument("--project-root", default=".")
+    factory_pause.add_argument("--reason", default="Paused by the local operator.")
+    factory_pause.add_argument("--json", action="store_true")
+    factory_pause.set_defaults(handler=_factory_pause)
+    factory_resume = factory_commands.add_parser("resume", help="Resume the local Codex proposal factory.")
+    factory_resume.add_argument("--project-root", default=".")
+    factory_resume.add_argument("--json", action="store_true")
+    factory_resume.set_defaults(handler=_factory_resume)
+    factory_cancel = factory_commands.add_parser("cancel", help="Cancel one queued or running Codex task.")
+    factory_cancel.add_argument("task_id")
+    factory_cancel.add_argument("--project-root", default=".")
+    factory_cancel.add_argument("--json", action="store_true")
+    factory_cancel.set_defaults(handler=_factory_cancel)
     return parser
 
 
@@ -721,6 +778,96 @@ def _studio_attempt_queue_run(args: argparse.Namespace) -> int:
         print(json.dumps(payload, indent=2))
     else:
         _emit_rows(payload, False)
+    return 0
+
+
+def _factory_status(args: argparse.Namespace) -> int:
+    from alphaquest.studio.factory_service import ResearchFactoryService
+
+    payload = ResearchFactoryService(args.project_root).status(campaign_id=args.campaign_id)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
+    return 0
+
+
+def _factory_tasks(args: argparse.Namespace) -> int:
+    from alphaquest.studio.factory_service import ResearchFactoryService
+
+    payload = ResearchFactoryService(args.project_root).list_tasks(limit=args.limit)
+    if args.json:
+        print(json.dumps({"tasks": payload}, indent=2))
+    else:
+        _emit_rows(payload, False)
+    return 0
+
+
+def _factory_run_next(args: argparse.Namespace) -> int:
+    from alphaquest.studio.factory_service import ResearchFactoryService
+
+    task = ResearchFactoryService(args.project_root).enqueue_next(
+        campaign_id=args.campaign_id,
+        request_id=args.request_id,
+    )
+    payload = {"task": task, "queued_only": True, "codex_invoked_inline": False}
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
+    return 0
+
+
+def _factory_worker(args: argparse.Namespace) -> int:
+    from alphaquest.studio.factory_service import ResearchFactoryService
+
+    service = ResearchFactoryService(args.project_root)
+    handled = service.run_worker_forever(
+        poll_interval=args.poll_interval,
+        max_tasks=1 if args.once else None,
+    )
+    print(
+        json.dumps(
+            {
+                "worker": "stopped",
+                "tasks_handled": handled,
+                "database": str(service.database_path),
+            }
+        )
+    )
+    return 0
+
+
+def _factory_pause(args: argparse.Namespace) -> int:
+    from alphaquest.studio.factory_service import ResearchFactoryService
+
+    payload = ResearchFactoryService(args.project_root).pause(reason=args.reason)
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
+    return 0
+
+
+def _factory_resume(args: argparse.Namespace) -> int:
+    from alphaquest.studio.factory_service import ResearchFactoryService
+
+    payload = ResearchFactoryService(args.project_root).resume()
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
+    return 0
+
+
+def _factory_cancel(args: argparse.Namespace) -> int:
+    from alphaquest.studio.factory_service import ResearchFactoryService
+
+    payload = {"task": ResearchFactoryService(args.project_root).cancel(args.task_id)}
+    if args.json:
+        print(json.dumps(payload, indent=2))
+    else:
+        _print_mapping(payload)
     return 0
 
 

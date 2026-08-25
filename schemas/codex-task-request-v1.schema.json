@@ -1,0 +1,93 @@
+{
+  "$defs": {
+    "CodexSandboxMode": {
+      "const": "read-only",
+      "description": "The factory runtime is proposal-only and therefore always read-only.",
+      "enum": [
+        "read-only"
+      ],
+      "title": "CodexSandboxMode",
+      "type": "string"
+    },
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "One bounded, schema-constrained request to the local Codex executable.",
+  "properties": {
+    "input_hashes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Input Hashes",
+      "type": "object"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "output_schema": {
+      "additionalProperties": {
+        "$ref": "#/$defs/JsonValue"
+      },
+      "title": "Output Schema",
+      "type": "object"
+    },
+    "prompt": {
+      "title": "Prompt",
+      "type": "string"
+    },
+    "sandbox": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/CodexSandboxMode"
+        }
+      ],
+      "default": "read-only"
+    },
+    "schema": {
+      "const": "alphaquest.codex-runtime-task-request/v1",
+      "default": "alphaquest.codex-runtime-task-request/v1",
+      "enum": [
+        "alphaquest.codex-runtime-task-request/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "task_type": {
+      "title": "Task Type",
+      "type": "string"
+    },
+    "timeout_seconds": {
+      "default": 900.0,
+      "maximum": 7200.0,
+      "minimum": 0.05,
+      "title": "Timeout Seconds",
+      "type": "number"
+    },
+    "web_search": {
+      "default": false,
+      "title": "Web Search",
+      "type": "boolean"
+    },
+    "workspace_root": {
+      "title": "Workspace Root",
+      "type": "string"
+    }
+  },
+  "required": [
+    "task_type",
+    "prompt",
+    "output_schema",
+    "workspace_root"
+  ],
+  "title": "CodexTaskRequestV1",
+  "type": "object"
+}

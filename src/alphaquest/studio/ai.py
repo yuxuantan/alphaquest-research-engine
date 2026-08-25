@@ -190,7 +190,13 @@ def load_api_key() -> str | None:
         import keyring
     except ImportError:
         return None
-    value = keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
+    try:
+        value = keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
+    except Exception:
+        # Keychain access is optional and can be unavailable in headless,
+        # sandboxed, or test processes.  Optional drafting must degrade to an
+        # unconfigured state instead of breaking the local Studio API.
+        return None
     return value.strip() if value and value.strip() else None
 
 

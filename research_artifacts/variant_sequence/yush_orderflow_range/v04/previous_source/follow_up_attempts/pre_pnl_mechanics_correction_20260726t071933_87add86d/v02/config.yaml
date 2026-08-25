@@ -1,0 +1,364 @@
+campaign_id: yush_orderflow_range
+variant_id: v02
+attempt_id: pre_pnl_mechanics_correction_20260726t071933_87add86d
+attempt_kind: pre_pnl_mechanics_correction
+attempt_provenance: authored
+strategy_name: yush_failed_auction_reclaim
+symbol: ES
+dataset_id: es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02
+timeframe: 1m
+research_metadata:
+  authoring_contract: alphaquest.campaign-draft/v1
+  mechanic_signature: 2595e548d0eb42bfd6ed029f9b88c07bcc1ca3c0f19573d00387f3019db04da1
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  mechanics_review:
+    mechanic_expresses_edge: Express the same absorption-to-fair-value hypothesis through a failed auction rather than a repeated
+      AOI tap. Freeze the causal developing value boundary, nearby known reference, and POC before the excursion; require
+      directed aggression outside value to fail and price to reclaim the boundary before considering an entry.
+    entry_logic_rationale: A trade is eligible only after price crosses outside a frozen VAL or VAH, travels the predeclared
+      excursion distance, shows outward aggressive flow, and then trades one tick back inside value within the allowed causal
+      window. The signal is created on that reclaim and the generic engine may fill only on the next ordered trade event.
+    stop_loss_rationale: The protective stop is fixed beyond the most adverse price observed during the failed outside excursion
+      plus a reviewed tick buffer. This ties risk to the structure that falsifies the failed-auction premise, rejects entries
+      above the maximum stop distance, and avoids the v01 AOI-envelope stop geometry.
+    target_exit_rationale: The primary target is the developing POC frozen when the episode begins because it is the causal
+      fair-value objective of the re-entry. A ten-minute maximum holding period exits on the next ordered event, and the generic
+      engine retains the configured 11:00 New York forced flatten as the final safety boundary.
+    profitability_rationale: Repeated rejection at a developing value boundary suggests passive liquidity is absorbing aggressive
+      flow; a fresh delta or large-trade event after the tap supplies causal confirmation for reversion. Express the same
+      absorption-to-fair-value hypothesis through a failed auction rather than a repeated AOI tap. Freeze the causal developing
+      value boundary, nearby known reference, and POC before the excursion; require directed aggression outside value to fail
+      and price to reclaim the boundary before considering an entry.
+    known_failure_modes: A failed auction may simply pause before continuation, so a reclaim can reverse again and stop beyond
+      the excursion extreme; sparse or misclassified aggressor-side data can also suppress valid episodes or admit weak ones.
+      The frozen POC can be too close to cover execution costs or too distant to reach before the time exit; the reward-risk
+      gate rejects the former, but the latter can still create many time exits and negative expectancy. Developing value boundaries
+      and nearby references can change rapidly in the opening minutes; freezing them prevents lookahead but may deliberately
+      trade from a level that the live profile no longer emphasizes.
+    pre_test_decision: approve_for_testing
+  timeframe_rationale: Raw Sierra trade messages remain the execution clock from 09:30 to 11:00 New York. Developing value
+    and directional delta use only events already observed, the 100 millisecond decision boundary is retained for shared feature-tape
+    calculation, and exact intervening ticks remain available for entry, stop, target, and time-exit ordering.
+  validation_gate:
+    required: true
+    lane: event_replay
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 0
+    data_subset:
+      start_date: '2026-05-15'
+      end_date: '2026-05-29'
+    evidence_dir: /Users/yx/Desktop/alphaquest-research-engine/research/evidence/runs/yush_orderflow_range/v02/ES/mechanics_validation_pre_pnl_mechanics_correction_20260726t071933_87add86d/validation_runs/core
+    approval_path: /Users/yx/Desktop/alphaquest-research-engine/research_artifacts/validation_approvals/yush_orderflow_range/pre_pnl_mechanics_correction_20260726t071933_87add86d/v02/approval.json
+  parent_variant_id: v02
+  follow_up:
+    schema: alphaquest.follow-up-attempt/v1
+    attempt_id: pre_pnl_mechanics_correction_20260726t071933_87add86d
+    attempt_kind: pre_pnl_mechanics_correction
+    parent_attempt_id: pre_pnl_mechanics_correction_20260726t071923_c676f368
+    reason: The frequency-only ten-session diagnostic produced four trades at 100-delta and seven at 50-delta while inspecting
+      no PnL; freeze delta thresholds at 50 and the 100-millisecond big-trade threshold at 100, retaining every causal, risk,
+      target, and cost rule.
+    created_by: Tan Yu Xuan
+data:
+  dataset_id: es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: research/datasets/es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02/bars.parquet
+  symbol: ES
+  timezone: America/New_York
+  source_timezone: UTC
+  exchange_timezone: America/New_York
+  timestamp_semantics: bar_open
+  source_timestamp_semantics: bar_open
+  source_sha256: 48a2c01120fbc250f4c972a2f509268c0dc952266a3c523182604754780da44f
+  canonical_sha256: 48a2c01120fbc250f4c972a2f509268c0dc952266a3c523182604754780da44f
+  roll_policy: MotiveWave/Rithmic predeclared active-contract calendar; no back adjustment
+  continuous_contract: explicit_roll_calendar
+  contract_column: contract_symbol
+  contract_count: 60
+  certified_features: []
+  rth_start: 09:30:00
+  rth_end: '16:00:00'
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+  roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+  execution_data:
+    source: sierra_scid_records
+    raw_dir: /Users/yx/Desktop/alphaquest-research-engine/data/raw/ES/sierra-es-trades
+    raw_manifest: research/datasets/es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02/raw_manifest.json
+    raw_manifest_sha256: c17dbe8409d353a06097af56ed0c3bc2d3f965949dec3439897456e75c9dc62a
+    session_levels: research/datasets/es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02/session_levels.parquet
+    session_levels_sha256: 2309d1e7e1cd67e68d2126dbfb58de9d708237ad808fd9965f78a4918abf33e2
+    quality_manifest: research/datasets/es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02/event_capabilities.csv
+    quality_manifest_sha256: 77a8e77e220cab44f2e92214f92bcecc32303408357dcf46fdcf70829edcd499
+    concordance_report: research/datasets/es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02/strategy_concordance.json
+    concordance_report_sha256: 06b88d93aa787daffecbfe6d26ca15f8e30ea2abfb8a9beae1afc973f0fbd290
+    required_capability: full_strategy_events_extrapolated
+    ineligible_session_policy: blackout
+    timestamp_inversion_policy: preserve_source_order_clamp
+    max_timestamp_inversion_rate: 0.002
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+    root_symbol: ES
+    aggregation_ms: 100
+    overnight_start: '16:00:00'
+    rth_start: 09:30:00
+    rth_end: '11:00:00'
+    reset_previous_levels_on_roll: true
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  force_flatten_enabled: true
+  force_flatten_time: '11:00:00'
+  latest_flat_time: '11:00:00'
+  latest_entry_time: '10:59:59'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: yush_failed_auction_reclaim
+    params:
+      mechanics:
+        tick_size: 0.25
+        point_value: 50.0
+        contracts: 1
+        commission_per_contract: 2.5
+        max_trades_per_day: 3
+        max_stop_points: 5.0
+        value_area_fraction: 0.7
+        delta_profile_min_abs: 50
+        delta_bubble_threshold: 50
+        big_trade_threshold: 100
+        big_trade_window_ms: 100
+        opening_range_seconds: 32
+        bar_seconds: 180
+        initial_balance: 50000.0
+        slippage_ticks: 1
+        delta_neighbour_multiple: 2.0
+        decision_interval_ms: 100
+        reference_distance_ticks: 4
+        excursion_ticks: 2
+        reclaim_window_seconds: 30
+        stop_buffer_ticks: 2
+        time_exit_seconds: 600
+        minimum_reward_risk: 1.0
+  sl:
+    module: event_excursion_structural_stop
+    params: {}
+  tp:
+    module: event_frozen_poc_time_exit
+    params: {}
+  flatten_time: '11:00:00'
+  event:
+    module: yush_failed_auction_reclaim
+    params:
+      tick_size: 0.25
+      point_value: 50.0
+      contracts: 1
+      commission_per_contract: 2.5
+      max_trades_per_day: 3
+      max_stop_points: 5.0
+      value_area_fraction: 0.7
+      delta_profile_min_abs: 50
+      delta_bubble_threshold: 50
+      big_trade_threshold: 100
+      big_trade_window_ms: 100
+      opening_range_seconds: 32
+      bar_seconds: 180
+      initial_balance: 50000.0
+      slippage_ticks: 1
+      delta_neighbour_multiple: 2.0
+      decision_interval_ms: 100
+      reference_distance_ticks: 4
+      excursion_ticks: 2
+      reclaim_window_seconds: 30
+      stop_buffer_ticks: 2
+      time_exit_seconds: 600
+      minimum_reward_risk: 1.0
+core:
+  data_subset:
+    start_date: '2011-08-12'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  initial_balance: 50000.0
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 2.5
+  slippage_ticks: 1.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  flatten_time: '11:00:00'
+  max_trades_per_day: 3
+  contracts: 1
+  entry_start: 09:30:00
+  latest_entry_time: '10:59:59'
+  event_stop_market_fill_policy: trade_event_price_on_gap
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-08-12'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parameters:
+    event.params.excursion_ticks:
+    - 2
+    - 4
+    - 6
+    event.params.reclaim_window_seconds:
+    - 5
+    - 15
+    - 30
+    event.params.stop_buffer_ticks:
+    - 1
+    - 2
+    - 3
+monkey:
+  data_subset:
+    start_date: '2011-08-12'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  runs: 300
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+wfa:
+  data_subset:
+    start_date: '2011-08-12'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parameters:
+    event.params.excursion_ticks:
+    - 2
+    - 4
+    - 6
+    event.params.reclaim_window_seconds:
+    - 5
+    - 15
+    - 30
+    event.params.stop_buffer_ticks:
+    - 1
+    - 2
+    - 3
+campaign_tests:
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    enabled: true
+  limited_monkey_test:
+    enabled: true
+  walk_forward_analysis:
+    enabled: true
+  wfa_oos_monkey_test:
+    enabled: true
+  wfa_oos_monte_carlo:
+    enabled: true
+  simulated_incubation_core:
+    enabled: true
+  simulated_incubation_monkey:
+    enabled: true
+  acceptance_oos_test:
+    enabled: true
+    train_months: 24
+    test_months: 6
+prop_rules:
+  schema: alphaquest.prop-profile/v1
+  profile: configured_local_profile
+  profile_fully_specified: true
+  starting_balance: 50000.0
+  daily_loss_limit: 2000.0
+  trailing_drawdown: 2000.0
+  max_contracts: 1
+  max_best_day_profit_percentage: 0.4
+  min_trading_days: 2
+  payout_threshold: 1000.0
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.04
+  profit_target_amount: 3000.0
+  drawdown_limit_amount: 2000.0
+  account_lifecycle_enabled: true
+  challenge_fee: 98.0
+  challenge_profit_target_amount: 3000.0
+  challenge_consistency_limit: 0.5
+  trailing_drawdown_lock_balance: 52100.0
+  trailing_drawdown_locked_floor: 50100.0
+  funded_starting_balance: 50000.0
+  funded_initial_drawdown_floor: 48000.0
+  funded_payout_min_profit_day: 150.0
+  funded_payout_required_profit_days: 5
+  funded_payout_profit_fraction: 0.5
+  funded_payout_profit_share: 0.9
+  funded_payout_max_amount: 2000.0
+  max_payouts_per_account: 5
+  no_overnight_positions: true
+  force_flatten_time: '11:00:00'
+  profile_sha256: a8a04012620f4edd87bc8766fbed0c47f27311b0f231c5807babbf921a3f7ada
+monte_carlo:
+  trade_source: core
+  runs: 300
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 12.5
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+test_run_id: attempt_pre_pnl_mechanics_correction_20260726t071933_87add86d
+engine_lane: canonical_event_replay
+strategy_certification:
+  strategy_id: yush_failed_auction_reclaim
+  implementation_version: 3
+  implementation_sha256: fbdcb81e187432b6791141cfff942a490641bd34e3fe476b27b8101a79502c2c
+  manifest_sha256: 43c518c8d8071c70c616e647baa896fed42f95c82c2f69c616392d9ebc996eb2
+parent_attempt_id: pre_pnl_mechanics_correction_20260726t071923_c676f368

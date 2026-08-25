@@ -397,6 +397,11 @@ function MechanicsReview({
   const [decisionNotes, setDecisionNotes] = useState("");
   const [busy, setBusy] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [chartFile, setChartFile] = useState<File | null>(null);
+  const [reconciliation, setReconciliation] = useState<any>(null);
+  const [reviewFilter, setReviewFilter] = useState<
+    "all" | "outstanding" | "attention"
+  >("outstanding");
   const identity = `${item.campaign_id}:${item.attempt_id || "original"}:${item.variant_id}`;
   useEffect(() => {
     api
@@ -521,6 +526,16 @@ function MechanicsReview({
     if (state === "attention") return "Needs attention";
     return "Not reviewed";
   };
+  const visibleTradeIds = sampledTradeIds.filter((id) => {
+    if (reviewFilter === "attention") return attentionTradeIds.has(id);
+    if (reviewFilter === "outstanding") {
+      return unreviewedTradeIds.has(id) || attentionTradeIds.has(id);
+    }
+    return true;
+  });
+  const nextOutstandingTrade = sampledTradeIds.find(
+    (id) => unreviewedTradeIds.has(id) || attentionTradeIds.has(id),
+  );
   async function saveAnnotation(event: FormEvent) {
     event.preventDefault();
     setBusy("annotation");
@@ -580,6 +595,25 @@ function MechanicsReview({
       setBusy("");
     }
   }
+  async function reconcileChart() {
+    if (!chartFile) return;
+    setBusy("reconciliation");
+    setFeedback("");
+    try {
+      const upload = await api.uploadMechanicsChart(chartFile);
+      const result = await api.reconcileMechanicsChart({
+        campaign_id: item.campaign_id,
+        attempt_id: item.attempt_id || "original",
+        variant_id: item.variant_id,
+        upload_token: upload.upload_token,
+      });
+      setReconciliation(result);
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : "Chart reconciliation failed");
+    } finally {
+      setBusy("");
+    }
+  }
   return (
     <>
       <Notice tone="info" title="What you are approving">
@@ -609,6 +643,49 @@ function MechanicsReview({
           </p>
         </div>
       </div>
+      <Card className="chart-reconciliation-card">
+        <div>
+          <p className="eyebrow">Optional external chart reconciliation</p>
+          <h3>Compare a chart-platform trade export</h3>
+          <p>
+            Upload CSV with trade_id and any of entry_time, exit_time,
+            entry_price, exit_price, or direction. This highlights differences;
+            it never writes annotations or grants approval.
+          </p>
+        </div>
+        <Field label="Chart export CSV">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(event) => {
+              setChartFile(event.target.files?.[0] || null);
+              setReconciliation(null);
+            }}
+          />
+        </Field>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={!chartFile || busy === "reconciliation"}
+          onClick={() => void reconcileChart()}
+        >
+          {busy === "reconciliation" ? "Comparing…" : "Compare governed samples"}
+        </Button>
+        {reconciliation && (
+          <Notice tone={reconciliation.status === "MATCH" ? "success" : "warning"} title={humanize(reconciliation.status)}>
+            {reconciliation.matched_trades} of {reconciliation.required_trades} governed samples matched. {reconciliation.note}
+            {(reconciliation.comparisons || []).some((row: any) => row.status !== "MATCH") && (
+              <ul>
+                {reconciliation.comparisons
+                  .filter((row: any) => row.status !== "MATCH")
+                  .map((row: any) => (
+                    <li key={row.trade_id}>Trade {row.trade_id}: {(row.mismatches || []).map((mismatch: any) => mismatch.field).join(", ") || "no comparable fields"}</li>
+                  ))}
+              </ul>
+            )}
+          </Notice>
+        )}
+      </Card>
       {(detail.blockers || []).length > 0 && (
         <Notice tone="warning" title="Approval blocked">
           <ul>
@@ -642,11 +719,37 @@ function MechanicsReview({
               ))}
             </select>
           </Field>
+          <div className="review-exception-toolbar" aria-label="Mechanics review filter">
+            <div className="review-scope-switch">
+              {([
+                ["outstanding", `Outstanding (${unreviewedTradeIds.size + attentionTradeIds.size})`],
+                ["attention", `Exceptions (${attentionTradeIds.size})`],
+                ["all", `All (${sampledTradeIds.length})`],
+              ] as const).map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={reviewFilter === value ? "active" : ""}
+                  onClick={() => setReviewFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!nextOutstandingTrade || busy === "evidence"}
+              onClick={() => nextOutstandingTrade && void selectTrade(nextOutstandingTrade)}
+            >
+              {nextOutstandingTrade ? "Open next outstanding trade" : "All samples resolved"}
+            </Button>
+          </div>
           <div
             className="sample-trade-map"
             aria-label="Sampled trade review status"
           >
-            {sampledTradeIds.map((id) => {
+            {visibleTradeIds.map((id) => {
               const reviewState = tradeReviewState(id);
               return (
                 <button
@@ -665,6 +768,12 @@ function MechanicsReview({
               );
             })}
           </div>
+          {visibleTradeIds.length === 0 && (
+            <Notice tone="success">
+              No trades match this exception filter. The complete deterministic
+              sample remains bound to the final approval.
+            </Notice>
+          )}
           {(detail.sampling_reasons?.[trade] || []).length > 0 && (
             <div className="sample-selection-reasons">
               <strong>Why trade {trade} is included</strong>

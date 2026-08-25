@@ -1,0 +1,124 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260822t142230_db2c8389",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "932e44975aa1748cc2192e5b8c0b686693c94de25373aa845a8943a09e127a07",
+        "implementation_version": 27,
+        "manifest_sha256": "baf05adc99eba067d99c96253809686565abd3c1fa3648997d2274d13d49ef70",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "0e7d0d4d4c1e2b16edc182bc961b8674c79335782eb848efda30de40d81f3cad",
+        "implementation_version": 26,
+        "manifest_sha256": "886ee1d404fb7b2121e8327cdbd34aa7d3687379643a90c933c685aff6b5efd0",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "confirmation_delta_context_path",
+      "new": null,
+      "old": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/bar_delta_3m_4tick_q90_prior20_context.parquet",
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "confirmation_delta_context_sha256",
+      "new": null,
+      "old": "ff98f3ede2aeddaea0c8453da36245e40e6111355634f9e16961115a57b0569b",
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "confirmation_delta_lookback_sessions",
+      "new": null,
+      "old": 20,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "confirmation_delta_reference_percentile",
+      "new": null,
+      "old": 0.9,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "failure_confirmation_bars",
+      "new": null,
+      "old": 3,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "opening_range_seconds",
+      "new": null,
+      "old": 30,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "stop_at_sweep_extreme",
+      "new": null,
+      "old": false,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "b3a8292abd1a217c197c70d0960265faad54c17ec0623e0b586cff4c626d8af7"
+  },
+  "created_at": "2026-08-22T14:22:30.956024+00:00",
+  "created_by": "codex",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260822t142230_db2c8389",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260822t100600_f0c1d321",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Replace long-lived frozen AOIs and the separate three-bar confirmation with causally rebuilt per-bar VAH and VAL AOIs, then resolve the protective stop from the sweep-to-entry path on the actual fill event. This is a pre-PnL mechanics correction requested before inspecting new performance evidence.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "ccc7f80f38d94ac95d24d0bd9bf8f9ea7d0d0e12e910123be29c4bad3b8b79b9"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "53c056f89454e1278b61b5337c88face45ccb31cdcc06788a5c354251e132a6e"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

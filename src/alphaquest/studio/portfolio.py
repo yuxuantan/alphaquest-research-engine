@@ -511,6 +511,7 @@ class DeploymentDecisionService:
         )
         requests = [_coerce_deployment_request(item) for item in candidates]
         bindings, blockers = self._current_bindings(requests, limits)
+        blockers.extend(_deployment_reviewer_separation_blockers(bindings, reviewer))
         portfolio_path_value: str | None = None
         portfolio_hash: str | None = None
         if len(bindings) > 1:
@@ -611,6 +612,7 @@ class DeploymentDecisionService:
             for item in record.candidates
         ]
         bindings, blockers = self._current_bindings(requests, record.account_limits)
+        blockers.extend(_deployment_reviewer_separation_blockers(bindings, record.reviewer))
         if bindings != record.candidates:
             blockers.append("deployment candidate or incubation bindings are stale or mismatched")
         portfolio_hash = None
@@ -1535,6 +1537,29 @@ def _load_current_candidate(
         pnl=series,
         observed_trade_sessions=observed_dates,
     )
+
+
+def _deployment_reviewer_separation_blockers(
+    bindings: Sequence[DeploymentCandidateBindingV1],
+    reviewer: str,
+) -> list[str]:
+    identity = reviewer.strip().casefold()
+    blockers: list[str] = []
+    for binding in bindings:
+        path = Path(binding.candidate.candidate_review_path)
+        try:
+            review = CandidateReviewV1.model_validate_json(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        if identity == review.reviewer.casefold():
+            blockers.append(
+                f"{binding.candidate.candidate_key} deployment reviewer must differ from the candidate reviewer"
+            )
+        if identity == review.mechanics_reviewer.casefold():
+            blockers.append(
+                f"{binding.candidate.candidate_key} deployment reviewer must differ from the mechanics reviewer"
+            )
+    return blockers
 
 
 def _read_acceptance_trade_log(path: Path) -> pd.DataFrame:

@@ -17,6 +17,7 @@ from alphaquest.authoring.models import CampaignDraftV1, ModuleBindingV1, Varian
 from alphaquest.accounts.catalog import resolve_account_profile
 from alphaquest.prop.profiles import resolve_prop_profile
 from alphaquest.research.policy import load_research_policy
+from alphaquest.research.factory_policy import research_factory_binding
 from alphaquest.strategy_certification import (
     StrategyCertification,
     StrategyCertificationError,
@@ -299,6 +300,7 @@ class CampaignCompiler:
     ) -> dict[str, Any]:
         fingerprint = draft.economic_edge_fingerprint
         objectives = draft.research_objectives.model_dump(mode="json", by_alias=True)
+        factory_binding = _research_factory_binding(draft, objectives)
         return {
             "campaign_id": draft.campaign_id,
             "title": draft.title,
@@ -311,6 +313,7 @@ class CampaignCompiler:
             "max_variants": draft.research_objectives.maximum_variants,
             "research_objectives": objectives,
             "research_objectives_sha256": _object_sha256(objectives),
+            "research_factory": factory_binding,
             "authoring_lane": draft.authoring_lane,
             "certified_recipe": draft.certified_recipe,
             "event_strategy": draft.event_strategy,
@@ -416,6 +419,7 @@ class CampaignCompiler:
         profitability = f"{draft.expected_mechanism} {variant.mechanic_rationale}".strip()
         failures = " ".join(variant.known_failure_modes)
         objectives = draft.research_objectives.model_dump(mode="json", by_alias=True)
+        factory_binding = _research_factory_binding(draft, objectives)
         config: dict[str, Any] = {
             "campaign_id": draft.campaign_id,
             "variant_id": variant.variant_id,
@@ -428,6 +432,7 @@ class CampaignCompiler:
             "timeframe": draft.timeframe,
             "research_objectives": objectives,
             "research_objectives_sha256": _object_sha256(objectives),
+            "research_factory": factory_binding,
             "research_metadata": {
                 "authoring_contract": "alphaquest.campaign-draft/v1",
                 "mechanic_signature": variant.mechanic_signature,
@@ -475,6 +480,8 @@ class CampaignCompiler:
                 ),
                 "source_sha256": draft.dataset.source_sha256,
                 "canonical_sha256": draft.dataset.canonical_sha256,
+                "coverage_start": draft.dataset.coverage_start,
+                "coverage_end": draft.dataset.coverage_end,
                 "roll_policy": draft.dataset.roll_policy,
                 "continuous_contract": draft.dataset.continuous_contract,
                 "contract_column": draft.dataset.contract_column,
@@ -654,12 +661,14 @@ class CampaignCompiler:
     ) -> dict[str, Any]:
         first_certification = certifications.get(variants[0][0].variant_id) if variants else None
         objectives = draft.research_objectives.model_dump(mode="json", by_alias=True)
+        factory_binding = _research_factory_binding(draft, objectives)
         return {
             "schema": STRATEGY_SPEC_SCHEMA,
             "campaign_id": draft.campaign_id,
             "draft_sha256": draft_sha256,
             "research_objectives": objectives,
             "research_objectives_sha256": _object_sha256(objectives),
+            "research_factory": factory_binding,
             "frozen": True,
             "hypothesis": draft.hypothesis,
             "expected_mechanism": draft.expected_mechanism,
@@ -712,12 +721,14 @@ class CampaignCompiler:
     ) -> dict[str, Any]:
         first_certification = certifications.get(variants[0][0].variant_id) if variants else None
         objectives = draft.research_objectives.model_dump(mode="json", by_alias=True)
+        factory_binding = _research_factory_binding(draft, objectives)
         return {
             "schema": AUTHORING_MANIFEST_SCHEMA,
             "campaign_id": draft.campaign_id,
             "draft_schema": "alphaquest.campaign-draft/v1",
             "draft_sha256": draft_sha256,
             "research_objectives_sha256": _object_sha256(objectives),
+            "research_factory": factory_binding,
             "dataset_id": draft.dataset.dataset_id,
             "dataset_canonical_sha256": draft.dataset.canonical_sha256,
             "authoring_lane": draft.authoring_lane,
@@ -751,6 +762,27 @@ class CampaignCompiler:
             ],
             "generated_python_stubs": False,
         }
+
+
+def _research_factory_binding(
+    draft: CampaignDraftV1,
+    objectives: Mapping[str, Any],
+) -> dict[str, Any]:
+    policy = load_research_policy()
+    dataset = draft.dataset.model_dump(mode="json", by_alias=True)
+    if draft.authoring_lane != "certified_event_replay":
+        dataset.pop("event_source", None)
+    try:
+        return research_factory_binding(
+            objectives,
+            dataset=dataset,
+            acceptance_train_months=int(policy.acceptance_oos["train_months"]),
+            acceptance_test_months=int(policy.acceptance_oos["test_months"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CampaignCompilationError(
+            f"could not freeze the governed acceptance holdout: {exc}"
+        ) from exc
 
 
 def _executable_binding(binding: ModuleBindingV1) -> dict[str, Any]:

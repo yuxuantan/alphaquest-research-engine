@@ -1,0 +1,69 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260816t130719_632baa3e",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "83c6bd68a5c1d7d521e0f15370df59cb2983af86872acbd559471c4077f27e9a",
+        "implementation_version": 15,
+        "manifest_sha256": "40c71148cf36f6c71bf0b32cb416458eed231786619f7c4293eab9a7bb7c6e36",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "1b34ba90bdcc0825884c4782e6bd706597329c766ea6b5ec90a4dd3cc3235c36",
+        "implementation_version": 14,
+        "manifest_sha256": "79c48a253911448c5dee76feca34315bfb88be718e8ce86501426d16d734f031",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "field": "event_reclaim_hold_seconds",
+      "new": 5,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "25e661e9139878dde25570c45b6bee05908a53a485b74560e7c02fcfb1fad3c7"
+  },
+  "created_at": "2026-08-16T13:07:20.125440+00:00",
+  "created_by": "codex",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260816t130719_632baa3e",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260816t015123_03834a42",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Replace the completed three-minute reclaim with certified implementation v15: after the sweep bar publishes, an ordered trade one tick inside starts a five-second hold; every ordered trade must remain inside, any outside trade resets the clock, and confirmation must occur within three completed bars. Preserve the selected three-bar burst freshness and all edge-retest limit, stop, target, payoff, and execution rules.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "9de2bd832035bc74848aa96f16379e0ff8cbb3950db64bfff8f25c8c538b1a59"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "418113b8e8fa2fe7c841ba0abbda832e213547fc0f36a2fa1bedb68bb6b9d437"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

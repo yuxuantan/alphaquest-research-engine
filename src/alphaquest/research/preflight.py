@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from datetime import date
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -37,6 +38,7 @@ from alphaquest.strategy_certification import (  # noqa: E402
     get_strategy_certification,
     normalize_certified_event_params,
     strategy_identity_for_config,
+    strategy_package_access_for_config,
     validate_certified_event_parameter_grid,
 )
 from alphaquest.strategy_modules.sl import SL_MODULES  # noqa: E402
@@ -307,6 +309,7 @@ def _validate_config(
         failures,
         warnings,
         engine_lane=str(cfg.get("engine_lane") or "bar"),
+        package_access=strategy_package_access_for_config(cfg),
     )
     if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
         try:
@@ -372,6 +375,11 @@ def _validate_account_profile_bindings(
     """
 
     if "account_profile_bindings" not in cfg:
+        if "destination_benchmark_contract" in cfg:
+            failures.append(
+                f"{prefix}: destination_benchmark_contract requires matching "
+                "account_profile_bindings."
+            )
         return
     bindings = cfg.get("account_profile_bindings")
     if not isinstance(bindings, list):
@@ -422,6 +430,74 @@ def _validate_account_profile_bindings(
             warnings.append(f"{item_prefix} is comparison-only and cannot support deployment promotion.")
     if primary_count > 1:
         failures.append(f"{prefix}: account_profile_bindings may contain at most one primary profile.")
+    contract = cfg.get("destination_benchmark_contract")
+    if contract is None:
+        return
+    if not isinstance(contract, dict):
+        failures.append(f"{prefix}: destination_benchmark_contract must be a mapping.")
+        return
+    recorded_contract_hash = str(
+        cfg.get("destination_benchmark_contract_sha256") or ""
+    )
+    computed_contract_hash = hashlib.sha256(
+        json.dumps(
+            contract,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if recorded_contract_hash != computed_contract_hash:
+        failures.append(
+            f"{prefix}: destination benchmark contract hash is missing or drifted."
+        )
+    contract_profiles = contract.get("profiles")
+    if not isinstance(contract_profiles, list) or not contract_profiles:
+        failures.append(
+            f"{prefix}: destination benchmark contract requires declared profiles."
+        )
+        return
+    contract_identities = {
+        (
+            str(item.get("profile_id") or ""),
+            str(item.get("profile_version") or ""),
+            str(item.get("profile_sha256") or ""),
+            str(item.get("role") or ""),
+        )
+        for item in contract_profiles
+        if isinstance(item, dict)
+    }
+    binding_identities = {
+        (
+            str(item.get("profile_id") or ""),
+            str(item.get("version") or ""),
+            str(item.get("profile_sha256") or ""),
+            str(item.get("role") or ""),
+        )
+        for item in bindings
+        if isinstance(item, dict)
+    }
+    if contract_identities != binding_identities:
+        failures.append(
+            f"{prefix}: destination benchmark profiles do not match account_profile_bindings."
+        )
+    if contract.get("scientific_validity_required") is not True:
+        failures.append(
+            f"{prefix}: destination benchmark must require scientific-validity PASS."
+        )
+    if contract.get("generic_objective_pass_required") is not False:
+        failures.append(
+            f"{prefix}: destination benchmark generic-objective policy is invalid."
+        )
+    if contract.get("approval_scope") != "exact_primary_profile_only":
+        failures.append(f"{prefix}: destination benchmark approval scope is invalid.")
+    if sum(
+        isinstance(item, dict) and item.get("role") == "primary"
+        for item in contract_profiles
+    ) != 1:
+        failures.append(
+            f"{prefix}: destination benchmark requires exactly one primary profile."
+        )
 
 
 def _validate_strategy_module_registry(
@@ -431,6 +507,7 @@ def _validate_strategy_module_registry(
     warnings: list[str],
     *,
     engine_lane: str = "bar",
+    package_access: str = "new_work",
 ) -> None:
     entry = strategy.get("entry") if isinstance(strategy.get("entry"), dict) else {}
     tp = strategy.get("tp") if isinstance(strategy.get("tp"), dict) else {}
@@ -442,7 +519,11 @@ def _validate_strategy_module_registry(
         event = strategy.get("event") if isinstance(strategy.get("event"), dict) else {}
         event_name = event.get("module")
         try:
-            certification = get_strategy_certification(str(event_name or ""), require_current=True)
+            certification = get_strategy_certification(
+                str(event_name or ""),
+                require_current=True,
+                access=package_access,
+            )
         except StrategyCertificationError as exc:
             failures.append(f"{prefix}: strategy certification failed: {exc}")
             return
@@ -534,6 +615,7 @@ def _validate_parameter_grid(
                 str(event.get("module") or ""),
                 _resolved_project_root(project_root),
                 require_current=True,
+                access=strategy_package_access_for_config(cfg),
             )
             event_params = normalize_certified_event_params(
                 certification,
@@ -1182,7 +1264,18 @@ def _validate_data(
     if not isinstance(data_cfg, dict):
         return False
     prefix = str(_display_path(path, project_root=project_root))
-    _validate_data_paths(data_cfg, path, failures, project_root=project_root)
+    factory_binding = cfg.get("research_factory")
+    require_bound_dataset_hash = (
+        isinstance(factory_binding, dict)
+        and factory_binding.get("schema") == "alphaquest.research-factory-binding/v2"
+    )
+    _validate_data_paths(
+        data_cfg,
+        path,
+        failures,
+        project_root=project_root,
+        require_bound_dataset_hash=require_bound_dataset_hash,
+    )
     if any(item.startswith(f"{prefix}: data path") for item in failures):
         return False
     if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
@@ -1320,6 +1413,7 @@ def _validate_data_paths(
     failures: list[str],
     *,
     project_root: str | Path | None = None,
+    require_bound_dataset_hash: bool = False,
 ) -> None:
     prefix = str(_display_path(config_path, project_root=project_root))
     for key in ("raw_csv", "raw_parquet", "raw_dir", "roll_calendar"):
@@ -1334,6 +1428,30 @@ def _validate_data_paths(
             failures.append(f"{prefix}: data.roll_calendar_sha256 does not match {roll_calendar}.")
     if not any(data_cfg.get(key) for key in ("raw_csv", "raw_parquet", "raw_dir")):
         failures.append(f"{prefix}: data.raw_csv, data.raw_parquet, or data.raw_dir is required.")
+    if require_bound_dataset_hash:
+        expected_canonical_hash = str(data_cfg.get("canonical_sha256") or "")
+        canonical_source = data_cfg.get("raw_parquet") or data_cfg.get("raw_csv")
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_canonical_hash):
+            failures.append(
+                f"{prefix}: v2 research_factory binding requires data.canonical_sha256."
+            )
+        elif not canonical_source:
+            failures.append(
+                f"{prefix}: v2 research_factory binding requires a hash-verifiable canonical file."
+            )
+        else:
+            resolved_canonical = _resolve_path(
+                canonical_source,
+                config_path,
+                project_root=project_root,
+            )
+            if (
+                resolved_canonical.is_file()
+                and file_sha256(resolved_canonical) != expected_canonical_hash
+            ):
+                failures.append(
+                    f"{prefix}: governed canonical dataset bytes do not match data.canonical_sha256."
+                )
     execution = data_cfg.get("execution_data") if isinstance(data_cfg.get("execution_data"), dict) else {}
     for key in (
         "archive",

@@ -1,0 +1,231 @@
+{
+  "$defs": {
+    "CodexTaskType": {
+      "enum": [
+        "SOURCE_RESEARCH",
+        "HYPOTHESIS_PROPOSAL",
+        "DUPLICATE_ASSESSMENT",
+        "MECHANICS_INTENT",
+        "ENGINEERING_HANDOFF",
+        "RESULT_DIAGNOSIS",
+        "NEXT_EXPERIMENT",
+        "SUCCESSOR_MECHANICS_PROPOSAL",
+        "NEW_RESEARCH_GENERATION_PROPOSAL",
+        "CANDIDATE_DUE_DILIGENCE"
+      ],
+      "title": "CodexTaskType",
+      "type": "string"
+    },
+    "ContextArtifactV1": {
+      "additionalProperties": false,
+      "properties": {
+        "artifact_name": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Artifact Name",
+          "type": "string"
+        },
+        "content": {
+          "title": "Content"
+        },
+        "content_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Content Sha256",
+          "type": "string"
+        },
+        "media_type": {
+          "minLength": 1,
+          "title": "Media Type",
+          "type": "string"
+        },
+        "source_kind": {
+          "enum": [
+            "MAPPING",
+            "SEQUENCE",
+            "TEXT",
+            "FILE"
+          ],
+          "title": "Source Kind",
+          "type": "string"
+        },
+        "source_path": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Source Path"
+        }
+      },
+      "required": [
+        "artifact_name",
+        "source_kind",
+        "source_path",
+        "media_type",
+        "content_sha256",
+        "content"
+      ],
+      "title": "ContextArtifactV1",
+      "type": "object"
+    },
+    "InformationCategory": {
+      "enum": [
+        "SOURCE",
+        "RESEARCH_INVENTORY",
+        "CERTIFIED_CATALOG",
+        "DATASET_METADATA",
+        "DEVELOPMENT_RESULT",
+        "WFA_RESULT",
+        "LOCKED_HOLDOUT_RESULT",
+        "FORWARD_RESULT",
+        "CAMPAIGN_POLICY"
+      ],
+      "title": "InformationCategory",
+      "type": "string"
+    },
+    "InformationGrantV1": {
+      "additionalProperties": false,
+      "properties": {
+        "allowed_use": {
+          "minLength": 10,
+          "title": "Allowed Use",
+          "type": "string"
+        },
+        "artifact_name": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Artifact Name",
+          "type": "string"
+        },
+        "category": {
+          "$ref": "#/$defs/InformationCategory"
+        },
+        "data_window_id": {
+          "anyOf": [
+            {
+              "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Data Window Id"
+        },
+        "granularity": {
+          "$ref": "#/$defs/InformationGranularity"
+        },
+        "locked_holdout": {
+          "default": false,
+          "title": "Locked Holdout",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "artifact_name",
+        "category",
+        "granularity",
+        "allowed_use"
+      ],
+      "title": "InformationGrantV1",
+      "type": "object"
+    },
+    "InformationGranularity": {
+      "enum": [
+        "METADATA",
+        "AGGREGATE",
+        "TRADE_LEVEL",
+        "RAW_MARKET_DATA"
+      ],
+      "title": "InformationGranularity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "allowed_information": {
+      "items": {
+        "$ref": "#/$defs/InformationGrantV1"
+      },
+      "minItems": 1,
+      "title": "Allowed Information",
+      "type": "array"
+    },
+    "artifact_hashes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Artifact Hashes",
+      "type": "object"
+    },
+    "artifacts": {
+      "items": {
+        "$ref": "#/$defs/ContextArtifactV1"
+      },
+      "minItems": 1,
+      "title": "Artifacts",
+      "type": "array"
+    },
+    "built_at": {
+      "format": "date-time",
+      "title": "Built At",
+      "type": "string"
+    },
+    "forbidden_information": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Forbidden Information",
+      "type": "array"
+    },
+    "inputs_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Inputs Sha256",
+      "type": "string"
+    },
+    "objective": {
+      "minLength": 20,
+      "title": "Objective",
+      "type": "string"
+    },
+    "packet_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Packet Sha256",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.codex-context-packet/v1",
+      "default": "alphaquest.codex-context-packet/v1",
+      "enum": [
+        "alphaquest.codex-context-packet/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "task_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "task_type": {
+      "$ref": "#/$defs/CodexTaskType"
+    }
+  },
+  "required": [
+    "task_id",
+    "task_type",
+    "objective",
+    "built_at",
+    "artifacts",
+    "allowed_information",
+    "forbidden_information",
+    "artifact_hashes",
+    "inputs_sha256",
+    "packet_sha256"
+  ],
+  "title": "ContextPacketV1",
+  "type": "object"
+}

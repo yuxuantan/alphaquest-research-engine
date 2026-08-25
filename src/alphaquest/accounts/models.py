@@ -3,7 +3,14 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, HttpUrl, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    HttpUrl,
+    field_validator,
+    model_validator,
+)
 
 
 class StrictModel(BaseModel):
@@ -198,6 +205,20 @@ class AccountAssessmentCostsV1(StrictModel):
     observed_at: datetime
     source: str = Field(min_length=1)
     include_as_replacement_cost: bool = True
+
+    @field_validator("observed_at", mode="before")
+    @classmethod
+    def parse_wire_datetime(cls, value: object) -> object:
+        """Accept the ISO-8601 representation sent over the Studio JSON API."""
+
+        if not isinstance(value, str):
+            return value
+        try:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError as exc:
+            raise ValueError(
+                "observed_at must be a valid ISO-8601 datetime"
+            ) from exc
 
     @property
     def total(self) -> float:

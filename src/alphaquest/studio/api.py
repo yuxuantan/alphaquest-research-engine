@@ -35,6 +35,11 @@ from alphaquest.prop.profiles import list_prop_profiles
 from alphaquest.accounts.catalog import list_account_profiles
 from alphaquest.accounts.assessment import account_suitability_row
 from alphaquest.research.campaign_stages import DEFAULT_STAGE_ORDER, STAGE_LABELS
+from alphaquest.research.experiment_registry import (
+    AttemptFinalizationRecovery,
+    ExperimentRegistry,
+    ExperimentRegistryError,
+)
 from alphaquest.research.storage import (
     load_storage_layout,
     resolve_campaign_context,
@@ -46,9 +51,11 @@ from alphaquest.studio.analysis import (
     governed_dataset_scan,
     research_capability_matrix,
 )
-from alphaquest.studio.finalization import inspect_finalized_result
+from alphaquest.studio.chart_reconciliation import reconcile_chart_export
+from alphaquest.studio.finalization import FinalizationError, RunFinalizer, inspect_finalized_result
 from alphaquest.studio.followups import FollowUpAttemptRequestV1, FollowUpAttemptService
 from alphaquest.studio.forward_incubation import ForwardIncubationService
+from alphaquest.studio.forward_reconciliation import reconcile_forward_trade_csv
 from alphaquest.studio.jobs import OperationalState, SQLiteJobQueue
 from alphaquest.studio.portfolio import (
     AccountContractLimitsV1,
@@ -64,6 +71,12 @@ from alphaquest.studio.portfolio import (
 from alphaquest.studio.results import RESULT_BUNDLE_FILENAME, ResultBundleV2
 from alphaquest.studio.settings import StudioSettings, load_settings, save_settings
 from alphaquest.studio.workflow import StudioWorkflowService
+from alphaquest.studio.workflow_diagnostics import (
+    dataset_readiness_forecast,
+    global_next_actions,
+    workload_forecast,
+    workspace_diagnostics,
+)
 from alphaquest.studio.workspace import (
     list_dataset_manifests,
     list_published_campaigns,
@@ -80,6 +93,7 @@ class CreateDraftRequest(APIModel):
     campaign_id: str
     title: str
     instrument: Literal["ES", "NQ"]
+    research_objectives: ResearchObjectivesV1 | None = None
 
 
 class BriefRequest(APIModel):
@@ -235,6 +249,13 @@ class MechanicsDecisionRequest(APIModel):
     notes: str
 
 
+class MechanicsReconciliationRequest(APIModel):
+    campaign_id: str
+    attempt_id: str = "original"
+    variant_id: str
+    upload_token: str = Field(pattern=r"^[a-f0-9]{32}$")
+
+
 class CandidateDecisionRequest(APIModel):
     review_id: str
     evidence_token: str = Field(pattern=r"^[a-f0-9]{64}$")
@@ -307,6 +328,74 @@ class AIDraftRequest(APIModel):
     selected_text: str = Field(min_length=1)
     source_title: str = Field(min_length=1)
     instrument: Literal["ES", "NQ"]
+
+
+class FactoryRunNextRequest(APIModel):
+    """The browser may select scope and idempotency, never a prompt or runtime."""
+
+    campaign_id: str | None = Field(default=None, pattern=r"^[a-z0-9][a-z0-9_]*$")
+    request_id: str = Field(min_length=8, max_length=120)
+
+
+class FactoryProposalDispositionRequest(APIModel):
+    disposition: Literal["ACKNOWLEDGE", "DISMISS"]
+    reviewer: str = Field(min_length=1)
+    notes: str = Field(min_length=1)
+
+
+class FactorySourceClaimReviewRequest(APIModel):
+    claim_id: str = Field(min_length=1)
+    proposed_support: Literal["DIRECT", "CONFLICTING", "INFERENCE"]
+    decision: Literal["ACCEPT", "REJECT"]
+    evidence_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    verification_method: str = Field(min_length=1)
+    notes: str = Field(min_length=1)
+
+
+class FactoryReviewedSourceRequest(APIModel):
+    reviewer: str = Field(min_length=1)
+    notes: str = Field(min_length=1)
+    verified_metadata_fields: list[str] = Field(min_length=6, max_length=6)
+    content_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    retraction_status: Literal["NOT_RETRACTED", "CORRECTED"]
+    verification_method: str = Field(min_length=1)
+    claim_reviews: list[FactorySourceClaimReviewRequest] = Field(min_length=1)
+
+
+class FactoryReviewedHypothesisRequest(APIModel):
+    reviewer: str = Field(min_length=1)
+    notes: str = Field(min_length=1)
+    reviewed_fields: list[str] = Field(min_length=20, max_length=20)
+    objective_alignment: Literal["PASS"]
+    source_claim_alignment: Literal["PASS"]
+    falsifiability: Literal["PASS"]
+    information_timeline_no_lookahead: Literal["PASS"]
+    execution_cost_awareness: Literal["PASS"]
+
+
+class FactoryReviewedEngineeringIntentRequest(APIModel):
+    reviewer: str = Field(min_length=1)
+    notes: str = Field(min_length=1)
+    reviewed_fields: list[str] = Field(min_length=19, max_length=19)
+    hypothesis_alignment: Literal["PASS"]
+    unsupported_scope_confirmed: Literal["PASS"]
+    causal_timeline_reviewed: Literal["PASS"]
+
+
+class FactorySelectedActionRequest(APIModel):
+    selected_action: Literal[
+        "ABANDON_EDGE",
+        "PROPOSE_SUCCESSOR",
+        "START_NEW_RESEARCH_GENERATION",
+        "STOP_NO_FRESH_HOLDOUT",
+    ]
+    reviewer: str = Field(min_length=1)
+    notes: str = Field(min_length=1)
+
+
+class FactorySelectedActionCompletionRequest(APIModel):
+    reviewer: str = Field(min_length=1)
+    notes: str = Field(min_length=1)
 
 
 class APIKeyRequest(APIModel):
@@ -408,9 +497,11 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             mechanics_reviews,
         )
         jobs = _jobs(root, limit=30)
-        datasets = [
-            _library_dataset_record(item) for item in list_dataset_manifests(root)
-        ]
+        datasets = []
+        for item in list_dataset_manifests(root):
+            record = _library_dataset_record(item)
+            record["research_readiness"] = dataset_readiness_forecast(record)
+            datasets.append(record)
         modules = _modules(root)
         settings = load_settings(project_root=root).model_dump(mode="json")
         active = sum(item.get("lifecycle") == "active" for item in campaigns)
@@ -438,6 +529,13 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             if item.get("type") in {"mechanics", "candidate"}
             or item.get("verdict") in {"NEEDS MANUAL REVIEW", "NEEDS_MANUAL_REVIEW"}
         )
+        diagnostics = workspace_diagnostics(root, index_refresh=refresh)
+        workflow_actions = global_next_actions(
+            drafts=drafts,
+            campaigns=campaigns,
+            reviews=actionable_reviews,
+            jobs=jobs,
+        )
         return {
             "workspace": {
                 "name": root.name,
@@ -445,6 +543,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
                 "ui_runtime": "react-fastapi",
                 "candidate_only": True,
                 "index_refresh": refresh,
+                "diagnostics": diagnostics,
                 "metrics": {
                     "live_drafts": len(drafts),
                     "active_campaigns": active,
@@ -458,6 +557,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             "indexed_attention": indexed_reviews,
             "jobs": jobs,
             "attention": attention,
+            "workflow_actions": workflow_actions,
             "libraries": {
                 "datasets": datasets,
                 "modules": modules,
@@ -466,6 +566,14 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
                 "execution_profiles": list_execution_profiles(root),
             },
             "settings": settings,
+        }
+
+    @app.post("/api/workflow/repair-derived-views")
+    def repair_derived_views() -> dict[str, Any]:
+        refresh = refresh_generated_indexes_if_stale(root, force=True)
+        return {
+            "refresh": refresh,
+            "diagnostics": workspace_diagnostics(root, index_refresh=refresh),
         }
 
     @app.post("/api/drafts", status_code=201)
@@ -740,12 +848,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             partial_errors.append({"section": "disclosure", "message": str(exc)})
         try:
             rows, latest = _authoritative_results(root, campaign_id)
-            for variant_id, result in latest.items():
-                attempt_id = str(result.get("attempt_id") or "")
-                if attempt_id:
-                    attempt_results.setdefault(attempt_id, {})[
-                        variant_id
-                    ] = result
+            attempt_results = _attempt_results(root, campaign_id)
         except Exception as exc:
             partial_errors.append({"section": "results", "message": str(exc)})
         try:
@@ -909,6 +1012,81 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             if hashlib.sha256(content).hexdigest() != status.get("sha256"):
                 raise ValueError(f"report artifact hash is stale or mismatched: {name}")
             files.append((path.name, content))
+        # Add the frozen authoring and review context without mutating or
+        # re-signing any historical artifact. Finalization validity above is
+        # the fail-closed gate for this derived due-diligence package.
+        campaign_rows = {
+            str(item.get("campaign_id")): item for item in list_published_campaigns(root)
+        }
+        campaign_row = campaign_rows.get(campaign_id) or {}
+        campaign_path = resolve_recorded_path(
+            str(campaign_row.get("path") or ""), project_root=root
+        )
+        campaign_root = campaign_path.parent
+        try:
+            source_config = _attempt_config(root, campaign_id, attempt_id, variant_id)
+        except FileNotFoundError:
+            source_config = campaign_root / "variants" / variant_id / "config.yaml"
+        source_candidates = {
+            "source/campaign.yaml": campaign_path,
+            "source/strategy_spec.yaml": campaign_root / "strategy_spec.yaml",
+            "source/authoring_manifest.json": campaign_root / "authoring_manifest.json",
+            "source/config.yaml": source_config,
+        }
+        for archive_name, path in source_candidates.items():
+            if path.is_file():
+                files.append((archive_name, path.read_bytes()))
+        for path in sorted(report_root.glob("candidate_review*.json")):
+            files.append((f"reviews/{path.name}", path.read_bytes()))
+        layout = load_storage_layout(root)
+        approval_path = (
+            layout.research_artifact_root
+            / "validation_approvals"
+            / campaign_id
+            / (variant_id if attempt_id == "original" else attempt_id)
+        )
+        if attempt_id != "original":
+            approval_path = approval_path / variant_id
+        approval_path = approval_path / "approval.json"
+        if approval_path.is_file():
+            files.append(("reviews/mechanics_approval.json", approval_path.read_bytes()))
+        forward_root = (
+            layout.research_artifact_root
+            / "forward_incubation"
+            / campaign_id
+            / variant_id
+            / attempt_id
+        )
+        if forward_root.is_dir():
+            for path in sorted(forward_root.rglob("*")):
+                if path.is_file() and path.suffix.casefold() in {".json", ".jsonl", ".sha256", ".csv"}:
+                    relative = path.relative_to(forward_root).as_posix()
+                    files.append((f"forward_incubation/{relative}", path.read_bytes()))
+        for name in ("finalization_manifest.json", "methodology_audit.md", "candidate_strategy_report.md"):
+            path = report_root / name
+            if path.is_file():
+                files.append((f"reporting/{name}", path.read_bytes()))
+        package_manifest = {
+            "schema": "alphaquest.due-diligence-package/v1",
+            "campaign_id": campaign_id,
+            "attempt_id": attempt_id,
+            "variant_id": variant_id,
+            "scientific_effect": "NONE_DERIVED_EXPORT_ONLY",
+            "files": [
+                {
+                    "path": filename,
+                    "size_bytes": len(content),
+                    "sha256": hashlib.sha256(content).hexdigest(),
+                }
+                for filename, content in sorted(files)
+            ],
+        }
+        files.append(
+            (
+                "due_diligence_manifest.json",
+                json.dumps(package_manifest, indent=2, sort_keys=True).encode("utf-8"),
+            )
+        )
         archive = BytesIO()
         with zipfile.ZipFile(
             archive,
@@ -926,7 +1104,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         return StreamingResponse(
             archive,
             media_type="application/zip",
-            headers={"Content-Disposition": f'attachment; filename="{safe}_report.zip"'},
+            headers={"Content-Disposition": f'attachment; filename="{safe}_due_diligence.zip"'},
         )
 
     @app.get("/api/campaigns/{campaign_id}/attempts")
@@ -1031,6 +1209,55 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         invalidate_campaign_cache(campaign_id)
         return {"jobs": [_job_payload(job) for job in jobs]}
 
+    @app.post(
+        "/api/campaigns/{campaign_id}/attempts/{attempt_id}/recover-finalization"
+    )
+    def recover_attempt_finalization(campaign_id: str, attempt_id: str) -> dict[str, Any]:
+        """Resume publication only; never rerun an immutable research attempt."""
+
+        service = FollowUpAttemptService(root)
+        config_path = service.target_config_path(campaign_id, attempt_id)
+        cfg = _yaml_mapping(config_path)
+        source_job = _finalization_recovery_job(
+            root,
+            campaign_id=campaign_id,
+            attempt_id=attempt_id,
+            variant_id=str(cfg.get("variant_id") or config_path.parent.name),
+            config_path=config_path,
+        )
+        run_dir = resolve_recorded_path(
+            str(source_job.payload.get("output_dir") or ""),
+            project_root=root,
+        ).resolve()
+        try:
+            finalizer = RunFinalizer(root)
+            recovered = finalizer.recover(
+                job_id=source_job.job_id,
+                config_path=config_path,
+                run_dir=run_dir,
+            )
+            experiment_recovery = _recover_experiment_finalization(
+                root,
+                cfg=cfg,
+                result_bundle_path=recovered.result_bundle_path,
+                research_verdict=recovered.research_verdict,
+            )
+            registry_counts = dict(finalizer.registry_refresher(root))
+        except FinalizationError as exc:
+            raise ValueError(str(exc)) from exc
+        except ExperimentRegistryError as exc:
+            raise ValueError(str(exc)) from exc
+        invalidate_campaign_cache(campaign_id)
+        return {
+            "recovered": True,
+            "source_job_id": source_job.job_id,
+            "research_verdict": recovered.research_verdict,
+            "finalization": recovered.as_job_result(project_root=root),
+            "experiment_registry": experiment_recovery,
+            "registry_counts": registry_counts,
+            "next_action": "Open Results to inspect the recovered hash-valid ResultBundleV2.",
+        }
+
     @app.post("/api/campaigns/{campaign_id}/account-assessments", status_code=201)
     def queue_account_assessment(
         campaign_id: str,
@@ -1056,11 +1283,52 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
                 "account assessment requires scientific-validity PASS; generic objective PASS is not required"
             )
 
+        cfg = _yaml_mapping(config_path)
+        destination_contract = cfg.get("destination_benchmark_contract")
+        declared_profile: Mapping[str, Any] | None = None
+        if isinstance(destination_contract, Mapping):
+            declared_contract_hash = str(
+                cfg.get("destination_benchmark_contract_sha256") or ""
+            )
+            computed_contract_hash = hashlib.sha256(
+                json.dumps(
+                    destination_contract,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).hexdigest()
+            if not declared_contract_hash or declared_contract_hash != computed_contract_hash:
+                raise ValueError("frozen destination benchmark contract hash is missing or drifted")
+            declared_profiles = destination_contract.get("profiles")
+            if not isinstance(declared_profiles, list):
+                raise ValueError("frozen destination benchmark contract is malformed")
+            declared_profile = next(
+                (
+                    item
+                    for item in declared_profiles
+                    if isinstance(item, Mapping)
+                    and item.get("profile_id") == value.profile_id
+                    and item.get("profile_version") == value.profile_version
+                ),
+                None,
+            )
+            if declared_profile is None:
+                raise ValueError(
+                    "account assessment profile was not predeclared in the frozen destination benchmark contract"
+                )
+
         resolved = resolve_account_profile(
             value.profile_id,
             version=value.profile_version,
             project_root=root,
         )
+        if declared_profile is not None and declared_profile.get(
+            "profile_sha256"
+        ) != resolved.sha256:
+            raise ValueError(
+                "predeclared destination profile hash no longer matches the governed catalog"
+            )
         acquisition = resolved.profile.rules.acquisition
         costs_required = (
             acquisition.evaluation_price_mode == "assessment_input_required"
@@ -1070,7 +1338,14 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             acquisition.evaluation_price_mode == "assessment_input_required"
         )
         costs: dict[str, Any] | None = None
-        if costs_required:
+        if declared_profile is not None:
+            declared_costs = declared_profile.get("costs")
+            if costs_required and not isinstance(declared_costs, Mapping):
+                raise ValueError(
+                    "predeclared destination benchmark is missing required frozen costs"
+                )
+            costs = dict(declared_costs) if isinstance(declared_costs, Mapping) else None
+        elif costs_required:
             missing: list[str] = []
             if evaluation_price_required and value.evaluation_purchase_price is None:
                 missing.append("evaluation purchase price")
@@ -1104,7 +1379,6 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
                 "confirm the required manual attestations: " + ", ".join(missing_attestations)
             )
 
-        cfg = _yaml_mapping(config_path)
         data_binding = cfg.get("data") if isinstance(cfg.get("data"), Mapping) else {}
         locks = {
             "result_bundle_hash": hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
@@ -1154,6 +1428,41 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             "mechanics": _mechanics_review_summaries(root),
             "candidate": _candidate_review_summaries(root),
         }
+
+    @app.post("/api/reviews/mechanics/reconciliation-upload", status_code=201)
+    async def mechanics_reconciliation_upload(request: Request, filename: str) -> dict[str, Any]:
+        safe_name = Path(filename).name
+        if not safe_name or Path(safe_name).suffix.casefold() != ".csv":
+            raise ValueError("chart reconciliation upload must be a CSV file")
+        upload_root = load_storage_layout(root).studio_runtime_root / "raw-attachments"
+        token = uuid4().hex
+        destination = upload_root / token / safe_name
+        destination.parent.mkdir(parents=True, exist_ok=False)
+        size = 0
+        with destination.open("wb") as handle:
+            async for chunk in request.stream():
+                size += len(chunk)
+                if size > 10 * 1024 * 1024:
+                    raise ValueError("chart reconciliation CSV exceeds the 10 MiB limit")
+                handle.write(chunk)
+        if size == 0:
+            destination.unlink(missing_ok=True)
+            raise ValueError("uploaded chart reconciliation CSV is empty")
+        return {"upload_token": token, "filename": safe_name, "size_bytes": size}
+
+    @app.post("/api/reviews/mechanics/reconcile-chart")
+    def reconcile_mechanics_chart(value: MechanicsReconciliationRequest) -> dict[str, Any]:
+        from alphaquest.studio.approvals import MechanicsApprovalService
+
+        config = _attempt_config(root, value.campaign_id, value.attempt_id, value.variant_id)
+        plan = MechanicsApprovalService().plan(config)
+        governed: list[dict[str, Any]] = []
+        for trade_id in plan.sampled_trade_ids:
+            detail = _mechanics_review_detail(plan, selected_trade_id=str(trade_id))
+            trade = dict(((detail.get("trade_evidence") or {}).get("trade") or {}))
+            trade["trade_id"] = str(trade_id)
+            governed.append(trade)
+        return reconcile_chart_export(_resolve_upload(root, value.upload_token), governed)
 
     @app.get("/api/reviews/mechanics/{campaign_id}/{attempt_id}/{variant_id}")
     def mechanics_review(
@@ -1273,6 +1582,11 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         if size == 0:
             destination.unlink(missing_ok=True)
             raise ValueError("incubation evidence upload is empty")
+        reconciliation = (
+            reconcile_forward_trade_csv(destination)
+            if destination.suffix.casefold() == ".csv"
+            else None
+        )
         return {
             "upload_token": token,
             "filename": safe_name,
@@ -1280,6 +1594,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             "sha256": digest.hexdigest(),
             "local_only": True,
             "durability": "copied into immutable incubation storage when appended",
+            "reconciliation": reconciliation,
         }
 
     @app.get("/api/forward-incubations")
@@ -1522,6 +1837,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         usage = _dataset_usage(root)
         for dataset in datasets:
             dataset["used_by"] = usage.get(str(dataset.get("dataset_id") or ""), [])
+            dataset["research_readiness"] = dataset_readiness_forecast(dataset)
         modules = _modules(root)
         module_usage = _module_usage(root)
         for module in modules:
@@ -1540,15 +1856,28 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         value: StrategyCertificationRunRequest,
     ) -> dict[str, Any]:
         from alphaquest.strategy_certification import (
+            StrategyPackageAccess,
             compute_implementation_sha256,
             get_strategy_certification,
             load_strategy_package_availability,
         )
 
         policy = load_strategy_package_availability(root)
-        if strategy_id not in policy.active_strategy_ids:
-            raise ValueError("only an active strategy package may be recertified from Studio")
-        certification = get_strategy_certification(strategy_id, root, require_current=False)
+        engineering_allowed = (
+            policy.allows(strategy_id, StrategyPackageAccess.ENGINEERING)
+            if hasattr(policy, "allows")
+            else strategy_id in policy.active_strategy_ids
+        )
+        if not engineering_allowed:
+            raise ValueError(
+                "only a development, active, or deprecated strategy package may be recertified from Studio"
+            )
+        certification = get_strategy_certification(
+            strategy_id,
+            root,
+            require_current=False,
+            access=StrategyPackageAccess.ENGINEERING,
+        )
         actual_hash = compute_implementation_sha256(root, certification.source_files)
         manifest_hash = hashlib.sha256(certification.manifest_path.read_bytes()).hexdigest()
         queue = SQLiteJobQueue(load_storage_layout(root).studio_runtime_root / "jobs.sqlite3")
@@ -1579,6 +1908,223 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         if not database.is_file():
             raise FileNotFoundError("Studio job queue does not exist")
         return _job_payload(SQLiteJobQueue(database).request_cancel(job_id))
+
+    @app.get("/api/factory/status")
+    def factory_status(campaign_id: str | None = None) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        return ResearchFactoryService(root).status(campaign_id=campaign_id)
+
+    @app.get("/api/factory/tasks")
+    def factory_tasks(limit: int = 100) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        return {
+            "tasks": ResearchFactoryService(root).list_tasks(
+                limit=max(1, min(500, limit))
+            )
+        }
+
+    @app.get("/api/factory/tasks/{task_id}")
+    def factory_task(task_id: str) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        try:
+            task = ResearchFactoryService(root).get_task(task_id)
+        except KeyError as exc:
+            raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+        return {"task": task}
+
+    @app.post("/api/factory/run-next", status_code=202)
+    def factory_run_next(value: FactoryRunNextRequest) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        task = ResearchFactoryService(root).enqueue_next(
+            campaign_id=value.campaign_id,
+            request_id=value.request_id,
+        )
+        return {
+            "task": task,
+            "queued_only": True,
+            "codex_invoked_inline": False,
+            "proposal_applied": False,
+        }
+
+    @app.post("/api/factory/tasks/{task_id}/cancel")
+    def factory_cancel_task(task_id: str) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        try:
+            task = ResearchFactoryService(root).cancel(task_id)
+        except KeyError as exc:
+            raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+        return {"task": task}
+
+    @app.post("/api/factory/tasks/{task_id}/proposal-disposition")
+    def factory_proposal_disposition(
+        task_id: str,
+        value: FactoryProposalDispositionRequest,
+    ) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        try:
+            task = ResearchFactoryService(root).record_proposal_disposition(
+                task_id,
+                disposition=value.disposition,
+                reviewer=value.reviewer,
+                notes=value.notes,
+            )
+        except KeyError as exc:
+            raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+        return {"task": task}
+
+    @app.post("/api/factory/tasks/{task_id}/reviewed-source-evidence")
+    def factory_reviewed_source_evidence(
+        task_id: str,
+        value: FactoryReviewedSourceRequest,
+    ) -> dict[str, Any]:
+        from alphaquest.studio.factory_reviews import SourceEvidenceHumanVerificationV1
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        verification = SourceEvidenceHumanVerificationV1(
+            review_id=f"source_review_{uuid4().hex}",
+            reviewer=value.reviewer,
+            reviewed_at=datetime.now(timezone.utc),
+            verified_metadata_fields=value.verified_metadata_fields,
+            content_sha256=value.content_sha256,
+            retraction_status=value.retraction_status,
+            verification_method=value.verification_method,
+            claim_reviews=[item.model_dump() for item in value.claim_reviews],
+            notes=value.notes,
+        )
+        try:
+            artifact = ResearchFactoryService(root).record_reviewed_source_evidence(
+                task_id,
+                verification=verification,
+            )
+        except KeyError as exc:
+            raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+        return {
+            "reviewed_artifact": artifact,
+            "campaign_mutated": False,
+            "mechanics_approved": False,
+            "testing_authorized": False,
+        }
+
+    @app.post("/api/factory/tasks/{task_id}/reviewed-hypothesis")
+    def factory_reviewed_hypothesis(
+        task_id: str,
+        value: FactoryReviewedHypothesisRequest,
+    ) -> dict[str, Any]:
+        from alphaquest.studio.factory_reviews import HypothesisHumanAcceptanceV1
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        acceptance = HypothesisHumanAcceptanceV1(
+            review_id=f"hypothesis_review_{uuid4().hex}",
+            reviewer=value.reviewer,
+            reviewed_at=datetime.now(timezone.utc),
+            reviewed_fields=value.reviewed_fields,
+            objective_alignment=value.objective_alignment,
+            source_claim_alignment=value.source_claim_alignment,
+            falsifiability=value.falsifiability,
+            information_timeline_no_lookahead=value.information_timeline_no_lookahead,
+            execution_cost_awareness=value.execution_cost_awareness,
+            notes=value.notes,
+        )
+        try:
+            artifact = ResearchFactoryService(root).record_reviewed_hypothesis(
+                task_id,
+                acceptance=acceptance,
+            )
+        except KeyError as exc:
+            raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+        return {
+            "reviewed_artifact": artifact,
+            "campaign_mutated": False,
+            "mechanics_approved": False,
+            "testing_authorized": False,
+        }
+
+    @app.post("/api/factory/tasks/{task_id}/reviewed-engineering-intent")
+    def factory_reviewed_engineering_intent(
+        task_id: str,
+        value: FactoryReviewedEngineeringIntentRequest,
+    ) -> dict[str, Any]:
+        from alphaquest.studio.factory_reviews import (
+            EngineeringHandoffIntentHumanAcceptanceV1,
+        )
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        acceptance = EngineeringHandoffIntentHumanAcceptanceV1(
+            review_id=f"engineering_intent_review_{uuid4().hex}",
+            reviewer=value.reviewer,
+            reviewed_at=datetime.now(timezone.utc),
+            reviewed_fields=value.reviewed_fields,
+            hypothesis_alignment=value.hypothesis_alignment,
+            unsupported_scope_confirmed=value.unsupported_scope_confirmed,
+            causal_timeline_reviewed=value.causal_timeline_reviewed,
+            notes=value.notes,
+        )
+        try:
+            artifact = ResearchFactoryService(root).record_reviewed_engineering_handoff_intent(
+                task_id,
+                acceptance=acceptance,
+            )
+        except KeyError as exc:
+            raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+        return {
+            "reviewed_artifact": artifact,
+            "campaign_mutated": False,
+            "mechanics_approved": False,
+            "testing_authorized": False,
+        }
+
+    @app.post("/api/factory/tasks/{task_id}/selected-action")
+    def factory_selected_action(
+        task_id: str,
+        value: FactorySelectedActionRequest,
+    ) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        try:
+            task = ResearchFactoryService(root).record_selected_next_action(
+                task_id,
+                selected_action=value.selected_action,
+                reviewer=value.reviewer,
+                notes=value.notes,
+            )
+        except KeyError as exc:
+            raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+        return {"task": task}
+
+    @app.post("/api/factory/tasks/{task_id}/selected-action-completion")
+    def factory_selected_action_completion(
+        task_id: str,
+        value: FactorySelectedActionCompletionRequest,
+    ) -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        try:
+            task = ResearchFactoryService(root).record_selected_action_completion(
+                task_id,
+                reviewer=value.reviewer,
+                notes=value.notes,
+            )
+        except KeyError as exc:
+            raise FileNotFoundError(f"Codex factory task does not exist: {task_id}") from exc
+        return {"task": task}
+
+    @app.post("/api/factory/pause")
+    def factory_pause() -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        return ResearchFactoryService(root).pause()
+
+    @app.post("/api/factory/resume")
+    def factory_resume() -> dict[str, Any]:
+        from alphaquest.studio.factory_service import ResearchFactoryService
+
+        return ResearchFactoryService(root).resume()
 
     @app.post("/api/tutorial/run")
     def run_tutorial(value: TutorialRequest) -> dict[str, Any]:
@@ -1675,6 +2221,10 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
     def store_ai_key(value: APIKeyRequest) -> dict[str, Any]:
         from alphaquest.studio.ai import save_api_key
 
+        if load_settings(project_root=root).assistant_mode != "legacy_openai_api":
+            raise ValueError(
+                "OpenAI API key storage requires explicit legacy_openai_api assistant mode"
+            )
         save_api_key(value.api_key)
         return {"configured": True, "stored_in": "operating-system keychain"}
 
@@ -1689,6 +2239,10 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
     def ai_suggest(value: AIDraftRequest) -> dict[str, Any]:
         from alphaquest.studio.ai import OpenAIResearchDraftAdapter
 
+        if load_settings(project_root=root).assistant_mode != "legacy_openai_api":
+            raise ValueError(
+                "metered OpenAI API drafting requires explicit legacy_openai_api assistant mode"
+            )
         draft_document = workflow.store.load(value.campaign_id)
         if (draft_document.get("draft") or {}).get("frozen"):
             raise ValueError("AI drafting is unavailable after the research protocol is frozen")
@@ -1745,11 +2299,9 @@ def _modules(project_root: str | Path | None = None) -> list[dict[str, Any]]:
         # package is exposed when repository-owned availability cannot be proven.
         certifications = {}
     try:
-        active_strategy_ids = load_strategy_package_availability(
-            project_root
-        ).active_strategy_ids
+        package_policy = load_strategy_package_availability(project_root)
     except StrategyCertificationError:
-        active_strategy_ids = frozenset()
+        package_policy = None
     result = []
     for item in get_certified_module_catalog().all():
         record = item.model_dump(mode="json", by_alias=True)
@@ -1787,8 +2339,20 @@ def _modules(project_root: str | Path | None = None) -> list[dict[str, Any]]:
                         for name, parameter in certification.parameters.items()
                     },
                     "strategy_package": True,
-                    "active_strategy_package": certification.strategy_id
-                    in active_strategy_ids,
+                    "strategy_package_lifecycle": (
+                        package_policy.lifecycle_for(certification.strategy_id).value
+                        if package_policy is not None
+                        and hasattr(package_policy, "lifecycle_for")
+                        else "active"
+                        if package_policy is not None
+                        and certification.strategy_id in package_policy.active_strategy_ids
+                        else "unavailable"
+                    ),
+                    "active_strategy_package": (
+                        certification.strategy_id in package_policy.active_strategy_ids
+                        if package_policy is not None
+                        else False
+                    ),
                 }
             )
         result.append(record)
@@ -2071,6 +2635,10 @@ def _authoritative_results(root: Path, campaign_id: str) -> tuple[list[dict[str,
         row.update(
             {
                 "research verdict": payload["research_verdict"],
+                # A complete hash-valid finalization transaction is the
+                # authoritative current operational outcome. The original
+                # failed publication job remains visible in Jobs history.
+                "operational state": "SUCCEEDED",
                 "first failed or unresolved gate": payload["first_failed_or_unresolved_gate"],
                 "run": payload.get("run_id"),
                 "diagnostic only": bool(entry.get("diagnostic_only")),
@@ -2328,7 +2896,20 @@ def _campaign_workflow_context(
         else None
     )
 
-    if not approved:
+    # Once this exact immutable attempt has a finalized result, its pre-PnL
+    # gate is historical evidence. Never send a terminal attempt backwards to
+    # mechanics review merely because its package later became unavailable for
+    # new work.
+    if exact_result:
+        status = str(
+            exact_result.get("research_verdict")
+            or exact_result.get("verdict")
+            or "NEEDS MANUAL REVIEW"
+        )
+        label = f"Inspect the exact {target_variant} result for this attempt"
+        section = "results"
+        stage = "result_review"
+    elif not approved:
         has_evidence = bool(progress.get("evidence_available")) and sampled > 0
         if has_evidence:
             label = (
@@ -2344,15 +2925,6 @@ def _campaign_workflow_context(
             section = "testing"
             stage = "mechanics_evidence"
         status = "NEEDS MANUAL REVIEW"
-    elif exact_result:
-        status = str(
-            exact_result.get("research_verdict")
-            or exact_result.get("verdict")
-            or "NEEDS MANUAL REVIEW"
-        )
-        label = f"Inspect the exact {target_variant} result for this attempt"
-        section = "results"
-        stage = "result_review"
     else:
         status = "PENDING"
         label = f"Run the approved test suite for {target_variant}"
@@ -2866,6 +3438,18 @@ def _present_indexed_result(
             errors=errors or ["finalization validation did not pass"],
         )
     payload = bundle.model_dump(mode="json", by_alias=True)
+    ratification = inspection.get("scientific_ratification")
+    if isinstance(ratification, Mapping):
+        payload["scientific_validity_verdict"] = ratification[
+            "scientific_validity_verdict"
+        ]
+        metric_overrides = ratification.get("metric_overrides")
+        if isinstance(metric_overrides, Mapping):
+            payload["metrics"] = dict(metric_overrides)
+        payload["verdict_message"] = str(
+            ratification.get("verdict_message") or payload.get("verdict_message") or ""
+        )
+        payload["scientific_ratification"] = dict(ratification)
     artifact_previews = _result_artifact_previews(bundle, bundle_path)
     return {
         **payload,
@@ -3442,6 +4026,7 @@ def _campaign_disclosure(
                     "parameter_combination_count": _grid_combination_count(
                         parameter_grid
                     ),
+                    "workload_forecast": workload_forecast(config),
                     "known_failure_modes": review.get("known_failure_modes"),
                     "material_difference": distinction.get(
                         "material_difference"
@@ -3493,6 +4078,94 @@ def _campaign_disclosure(
                 "variants": variant_rows,
             }
         )
+
+    legacy_action: dict[str, Any] = {
+        "available": False,
+        "parent_attempt_id": None,
+        "target_variant_id": None,
+        "unavailable_reason": "No immutable attempt is available.",
+    }
+    if attempt_rows:
+        current_attempt = attempt_rows[-1]
+        current_attempt_id = str(current_attempt.get("attempt_id") or "original")
+        target_variant_id = str(current_attempt.get("target_variant_id") or "")
+        current_config: dict[str, Any] = {}
+        try:
+            current_paths = service.config_paths(
+                str(campaign.get("campaign_id") or campaign_summary.get("campaign_id")),
+                current_attempt_id,
+            )
+            current_path = next(
+                (
+                    path
+                    for path in current_paths
+                    if path.parent.name == target_variant_id
+                ),
+                current_paths[-1],
+            )
+            current_config = _yaml_mapping(current_path)
+            target_variant_id = str(
+                current_config.get("variant_id") or current_path.parent.name
+            )
+        except (FileNotFoundError, KeyError, OSError, ValueError):
+            current_config = {}
+        current_objectives = current_config.get("research_objectives")
+        current_objective_hash = current_config.get("research_objectives_sha256")
+        destination_contract = current_config.get("destination_benchmark_contract")
+        destination_hash = str(
+            current_config.get("destination_benchmark_contract_sha256") or ""
+        )
+        if isinstance(destination_contract, Mapping) and destination_hash:
+            computed_destination_hash = hashlib.sha256(
+                json.dumps(
+                    destination_contract,
+                    sort_keys=True,
+                    separators=(",", ":"),
+                    ensure_ascii=False,
+                ).encode("utf-8")
+            ).hexdigest()
+            if computed_destination_hash == destination_hash:
+                protocol["destination_benchmark_contract"] = dict(
+                    destination_contract
+                )
+                protocol["source_identity"][
+                    "destination_benchmark_contract_sha256"
+                ] = destination_hash
+        if isinstance(current_objectives, Mapping) and current_objective_hash:
+            protocol["research_objectives"] = dict(current_objectives)
+            protocol["source_identity"]["research_objectives_sha256"] = str(
+                current_objective_hash
+            )
+            protocol["source_identity"]["research_objectives_attempt_id"] = (
+                current_attempt_id
+            )
+            legacy_action = {
+                "available": False,
+                "parent_attempt_id": current_attempt_id,
+                "target_variant_id": target_variant_id,
+                "unavailable_reason": (
+                    "The current attempt already has a frozen research-objective contract."
+                ),
+            }
+        elif current_config:
+            try:
+                has_performance_evidence = service.parent_has_performance_evidence(
+                    str(campaign.get("campaign_id") or campaign_summary.get("campaign_id")),
+                    current_attempt_id,
+                )
+            except (FileNotFoundError, KeyError, OSError, ValueError):
+                has_performance_evidence = True
+            legacy_action = {
+                "available": not has_performance_evidence,
+                "parent_attempt_id": current_attempt_id,
+                "target_variant_id": target_variant_id,
+                "unavailable_reason": (
+                    "This attempt already has performance evidence, so objectives cannot be retrofitted."
+                    if has_performance_evidence
+                    else None
+                ),
+            }
+    protocol["legacy_pre_pnl_action"] = legacy_action
     return protocol, {
         "read_only": True,
         "variant_ids": sorted(variant_ids),
@@ -3535,6 +4208,14 @@ def _attempt_mechanics_gate(
 
     follow_ups = FollowUpAttemptService(root)
     approvals = MechanicsApprovalService()
+    from alphaquest.validation.promotion_gate import (
+        inspect_historical_validation_approval,
+    )
+
+    try:
+        finalized_results = _attempt_results(root, campaign_id)
+    except Exception:
+        finalized_results = {}
     result: dict[str, dict[str, Any]] = {}
     current_attempt_id = str((attempts[-1] if attempts else {}).get("attempt_id") or "")
     for attempt in attempts:
@@ -3557,11 +4238,20 @@ def _attempt_mechanics_gate(
                     )
                     continue
                 try:
-                    report = approvals.inspect(path)
+                    exact_result = (
+                        (finalized_results.get(attempt_id) or {}).get(path.parent.name)
+                        if isinstance(finalized_results.get(attempt_id), Mapping)
+                        else None
+                    )
+                    if exact_result:
+                        config = _yaml_mapping(path)
+                        report = inspect_historical_validation_approval(config, path)
+                    else:
+                        report = approvals.inspect(path)
                     status = str(report.get("status") or "NEEDS_REVIEW")
                     errors = [str(item) for item in report.get("errors") or []]
                     review_progress: dict[str, Any] = {}
-                    if attempt_id == current_attempt_id and status not in {
+                    if not exact_result and attempt_id == current_attempt_id and status not in {
                         "APPROVED_FOR_TESTING",
                         "REJECTED",
                     }:
@@ -3630,6 +4320,10 @@ def _mechanics_review_summaries(root: Path) -> list[dict[str, Any]]:
         ):
             continue
         campaign_id = str(campaign["campaign_id"])
+        try:
+            finalized_results = _attempt_results(root, campaign_id)
+        except Exception:
+            finalized_results = {}
         attempts = service.list_attempts(
             campaign_id,
             include_dataset_bindings=False,
@@ -3667,6 +4361,14 @@ def _mechanics_review_summaries(root: Path) -> list[dict[str, Any]]:
             )
             for path in target_paths[-1:]:
                 if (attempt_id, path.parent.name) in superseded_scopes:
+                    continue
+                if (
+                    isinstance(finalized_results.get(attempt_id), Mapping)
+                    and path.parent.name in finalized_results[attempt_id]
+                ):
+                    # A PnL-bearing result makes this approval historical. Any
+                    # result-integrity issue belongs in Results/Indexed
+                    # Attention, never in the active mechanics queue.
                     continue
                 try:
                     approval_service = MechanicsApprovalService()
@@ -3853,13 +4555,10 @@ def _campaigns_with_workflow_context(
                 mechanics_approval = {}
         try:
             rows, latest = _authoritative_results(root, campaign_id)
+            exact_attempt_results = _attempt_results(root, campaign_id)
         except Exception:
-            rows, latest = [], {}
-        attempt_results: dict[str, dict[str, Any]] = {}
-        for variant_id, presented in latest.items():
-            attempt_id = str(presented.get("attempt_id") or "")
-            if attempt_id:
-                attempt_results.setdefault(attempt_id, {})[variant_id] = presented
+            rows, latest, exact_attempt_results = [], {}, {}
+        attempt_results: dict[str, dict[str, Any]] = exact_attempt_results
         workflow = _campaign_workflow_context(
             row,
             attempts,
@@ -4018,6 +4717,156 @@ def _attempt_config(root: Path, campaign_id: str, attempt_id: str, variant_id: s
     if len(matches) != 1:
         raise FileNotFoundError("governed mechanics-review variant was not found")
     return matches[0]
+
+
+def _finalization_recovery_job(
+    root: Path,
+    *,
+    campaign_id: str,
+    attempt_id: str,
+    variant_id: str,
+    config_path: Path,
+) -> Any:
+    layout = load_storage_layout(root)
+    queue = SQLiteJobQueue(layout.studio_runtime_root / "jobs.sqlite3")
+    candidates = [
+        job
+        for job in queue.list_jobs(limit=10_000)
+        if job.job_type == "campaign_variant_run"
+        and job.campaign_id == campaign_id
+        and job.attempt_reserved
+        and str(job.payload.get("attempt_id") or "") == attempt_id
+        and str(job.payload.get("variant_id") or "") == variant_id
+        and job.state == OperationalState.FAILED_OPERATIONAL
+    ]
+    if not candidates:
+        raise ValueError(
+            "no failed reserved campaign run is eligible for finalization-only recovery"
+        )
+
+    config_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    eligible = []
+    for job in candidates:
+        recorded_config = str(job.payload.get("config_path") or "")
+        recorded_output = str(job.payload.get("output_dir") or "")
+        if not recorded_config or not recorded_output:
+            continue
+        if resolve_recorded_path(recorded_config, project_root=root).resolve() != config_path.resolve():
+            continue
+        if str(job.hash_locks.get("config_hash") or "") != config_hash:
+            continue
+        output = resolve_recorded_path(recorded_output, project_root=root).resolve()
+        if not any(output.is_relative_to(base.resolve()) for base in layout.evidence_roots):
+            continue
+        manifest_path = output / "reporting_v2/finalization_manifest.json"
+        marker_path = output / "studio_incomplete_attempt.json"
+        archive_path = output / "studio_incomplete_attempt.recovered.json"
+        if not manifest_path.is_file() or not (marker_path.is_file() or archive_path.is_file()):
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if isinstance(manifest, Mapping) and str(manifest.get("job_id") or "") == job.job_id:
+            eligible.append(job)
+    if len(eligible) != 1:
+        raise ValueError(
+            "finalization-only recovery requires exactly one hash-bound failed run; "
+            f"found {len(eligible)}"
+        )
+    return eligible[0]
+
+
+def _recover_experiment_finalization(
+    root: Path,
+    *,
+    cfg: Mapping[str, Any],
+    result_bundle_path: Path,
+    research_verdict: str,
+) -> dict[str, Any]:
+    layout = load_storage_layout(root)
+    registry = ExperimentRegistry(
+        layout.research_artifact_root / "governance" / "experiment_registry.jsonl"
+    )
+    identity = (
+        str(cfg.get("campaign_id") or ""),
+        str(cfg.get("variant_id") or ""),
+        str(cfg.get("attempt_id") or ""),
+    )
+    result_sha256 = hashlib.sha256(result_bundle_path.read_bytes()).hexdigest()
+    current = registry.current_status(*identity)
+    if current == "COMPLETED":
+        attempt = next(
+            (
+                item
+                for item in registry.attempts()
+                if (
+                    str(item.get("campaign_id") or ""),
+                    str(item.get("variant_id") or ""),
+                    str(item.get("attempt_id") or ""),
+                )
+                == identity
+            ),
+            None,
+        )
+        resolution = (attempt or {}).get("resolution") or {}
+        if (
+            str(resolution.get("result_sha256") or "") != result_sha256
+            or str(resolution.get("research_verdict") or "") != research_verdict
+        ):
+            raise ExperimentRegistryError(
+                "completed experiment registry recovery does not bind the finalized result"
+            )
+        return {
+            "status": "COMPLETED",
+            "event_type": resolution.get("event_type"),
+            "result_sha256": result_sha256,
+            "idempotent_reuse": True,
+        }
+    if current != "FAILED":
+        raise ExperimentRegistryError(
+            f"finalization recovery requires FAILED or COMPLETED experiment state, found {current}"
+        )
+    prior = next(
+        (
+            event
+            for event in reversed(registry.events())
+            if event.get("event_type") == "ATTEMPT_RESOLVED"
+            and (
+                str(event.get("campaign_id") or ""),
+                str(event.get("variant_id") or ""),
+                str(event.get("attempt_id") or ""),
+            )
+            == identity
+        ),
+        None,
+    )
+    if prior is None or prior.get("result_sha256") is not None:
+        raise ExperimentRegistryError(
+            "failed experiment does not carry an unbound operational resolution eligible for recovery"
+        )
+    event = registry.recover_finalization(
+        AttemptFinalizationRecovery(
+            campaign_id=identity[0],
+            variant_id=identity[1],
+            attempt_id=identity[2],
+            prior_resolution_sha256=str(prior.get("record_sha256") or ""),
+            recorded_at=datetime.now(timezone.utc).isoformat(),
+            reason=(
+                "Explicit finalization-only recovery verified the frozen runner and reporting hashes; "
+                "the PnL-bearing stages were not replayed."
+            ),
+            research_verdict=research_verdict,
+            result_sha256=result_sha256,
+        )
+    )
+    return {
+        "status": "COMPLETED",
+        "event_type": event.get("event_type"),
+        "record_sha256": event.get("record_sha256"),
+        "result_sha256": result_sha256,
+        "idempotent_reuse": False,
+    }
 
 
 def _mechanics_review_detail(plan: Any, *, selected_trade_id: str | None = None) -> dict[str, Any]:
@@ -4378,7 +5227,7 @@ def _follow_up_kind_options(
     rescue_allowed: bool,
     has_performance_evidence: bool = False,
 ) -> list[dict[str, Any]]:
-    return [
+    options = [
         {
             "value": "replication",
             "label": "Exact replication",
@@ -4493,6 +5342,41 @@ def _follow_up_kind_options(
             ),
         },
     ]
+    impacts = {
+        "replication": {
+            "changes": ["attempt identity", "fresh execution evidence"],
+            "preserves": ["strategy mechanics", "dataset", "parameter grid", "methodology"],
+            "invalidates": ["no source contract; a fresh result and review lifecycle are still required"],
+        },
+        "data_refresh": {
+            "changes": ["dataset identity and input-data SHA-256", "fresh attempt evidence"],
+            "preserves": ["strategy mechanics", "parameter grid", "methodology"],
+            "invalidates": ["prior mechanics approval", "prior PnL evidence", "candidate approval"],
+        },
+        "methodology_rerun": {
+            "changes": ["bounded mechanics-validation sample window", "validation evidence hashes"],
+            "preserves": ["strategy mechanics", "dataset", "parameter grid", "performance windows"],
+            "invalidates": ["prior mechanics approval for the child attempt"],
+        },
+        "pre_pnl_mechanics_correction": {
+            "changes": ["one reviewed execution mechanic or certification identity"],
+            "preserves": ["economic hypothesis", "prior immutable attempt"],
+            "invalidates": ["validation evidence", "mechanics approval", "any stale certification binding"],
+        },
+        "pre_pnl_parameter_declaration": {
+            "changes": ["predeclared certified parameter grid"],
+            "preserves": ["reviewed default mechanics", "dataset", "economic hypothesis"],
+            "invalidates": ["prior mechanics approval for the child attempt"],
+        },
+        "rescue": {
+            "changes": ["authorized strategy expression and attempt identity"],
+            "preserves": ["economic edge family", "failed predecessor evidence"],
+            "invalidates": ["all predecessor approvals for the child mechanics", "prior performance evidence as promotion evidence"],
+        },
+    }
+    for option in options:
+        option["impact_preview"] = impacts[str(option["value"])]
+    return options
 
 
 def _follow_up_parent_options(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:

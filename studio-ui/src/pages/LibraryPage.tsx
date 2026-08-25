@@ -712,6 +712,15 @@ function DatasetGrid({ items }: { items: DatasetSummary[] }) {
             <span>{item.duplicate_count || 0} duplicates</span>
             <span>{item.invalid_ohlc_count || 0} invalid OHLC</span>
           </div>
+          {item.research_readiness && (
+            <Notice
+              tone={item.research_readiness.status === "READY" ? "success" : "warning"}
+              title={`Research-window forecast: ${humanize(item.research_readiness.status)}`}
+            >
+              {item.research_readiness.available_months ?? "Unknown"} months available; approximately{" "}
+              {item.research_readiness.required_months} required by the current sequential WFA and holdout policy.
+            </Notice>
+          )}
           {(item.capabilities || []).length > 0 && (
             <div className="capability-list" aria-label="Dataset capabilities">
               {item.capabilities?.map((capability) => (

@@ -3,7 +3,7 @@
     "authoring_lane": "certified_event_replay",
     "campaign_id": "yush_orderflow_range",
     "certified_recipe": null,
-    "confirmation_context_sha256": "7c6366bc6270e49ad9363db0a57f1c862d7e196b4178122aad68e74551709e96",
+    "confirmation_context_sha256": "de009ea18f705966cafc155fed48d7f3defeba6315b9aaf3418805b7e9b4ce3c",
     "created_at": "2026-07-20",
     "dataset": {
       "cadence_violation_count": 0,
@@ -99,20 +99,27 @@
     "engineering_handoff_path": null,
     "event_strategy": "yush_orderflow_range",
     "execution": {
-      "commission_per_contract": 1.55,
-      "contracts": 2,
+      "commission_per_contract": 0.51,
+      "contracts": 1,
       "flatten_time": "15:55:00",
       "initial_balance": 50000.0,
       "latest_entry_time": "15:30:00",
       "latest_flat_time": "15:55:00",
       "overnight_allowed": false,
-      "point_value": 50.0,
+      "point_value": 5.0,
       "prop_profile": "configured_local_profile",
       "session_end": "16:00:00",
       "session_start": "09:30:00",
       "slippage_ticks": 1.0,
+      "target_account_profiles": [
+        {
+          "profile_id": "apex/eod_50k/funded",
+          "role": "primary",
+          "version": "2026-03-01"
+        }
+      ],
       "tick_size": 0.25,
-      "tick_value": 12.5
+      "tick_value": 1.25
     },
     "expected_mechanism": "Repeated rejection at a developing value boundary suggests passive liquidity is absorbing aggressive flow; a fresh delta or large-trade event after the tap supplies causal confirmation for reversion.",
     "frozen": true,
@@ -123,6 +130,32 @@
       "A developing profile can move while an order is pending, apparent one-sided delta can be continuation rather than absorption, and sparse trade prints can make a narrow AOI or local prominence unstable.",
       "Trade-message aggressor classification, contract rolls, gap-through fills, and platform aggregation differences may cause mechanical entries to disagree with a MotiveWave/Rithmic chart."
     ],
+    "research_objectives": {
+      "abandonment_rules": [
+        "Stop when any frozen stage gate fails; do not tune after observing OOS results."
+      ],
+      "confirmed": true,
+      "development_deadline": "2027-02-19",
+      "development_goal": "Determine whether this candidate can survive the frozen research protocol.",
+      "evaluation_horizon_months": 24,
+      "forward_incubation_min_calendar_days": 90,
+      "forward_incubation_min_trades": 30,
+      "maximum_account_breach_probability": 0.1,
+      "maximum_drawdown_fraction": 0.1,
+      "maximum_variants": 5,
+      "minimum_acceptance_oos_trades": 30,
+      "minimum_annualized_return_fraction": 0.2,
+      "minimum_complete_wfa_windows": 3,
+      "minimum_mar": 0.4,
+      "minimum_net_profit_probability": 0.7,
+      "minimum_wfa_oos_trades": 50,
+      "monte_carlo_horizon_months": 6,
+      "monte_carlo_min_runs": 8000,
+      "retirement_rules": [
+        "Retire after a live risk breach or sustained degradation beyond the frozen limits."
+      ],
+      "schema": "alphaquest.research-objectives/v1"
+    },
     "schema": "alphaquest.campaign-draft/v1",
     "sequential_variant_history": [
       {
@@ -146,6 +179,17 @@
         "predecessor_verdict": "FAIL",
         "schema": "alphaquest.sequential-variant-lineage/v1",
         "variant_id": "v03"
+      },
+      {
+        "created_at": "2026-08-25T15:29:27.486205+00:00",
+        "created_by": "Tan Yu Xuan",
+        "failure_analysis": "v03 reached a terminal scientific FAIL at the Limited Core Grid Test. All 15 predeclared combinations across sweep ATR fraction 0.10\u20130.30 and maximum stop ATR multiple 1.25\u20131.75 were unprofitable, versus the required 70% profitable-combination threshold. Net profit ranged from -$4,004.51 to -$16,480.02, profit factor from 0.698 to 0.877, expectancy from -0.165R to -0.042R, and maximum drawdown from 13.25% to 34.02%. The frozen fixed-config cross-check produced 467 trades, -$14,435.64 after costs, profit factor 0.687, expectancy -$30.91/-0.164R per trade, 29.55% maximum drawdown, and a 14-trade losing streak. Mechanics approval, execution compliance, and forced-flatten compliance were valid, so the failure is attributable to a broadly negative economic expression rather than an isolated parameter choice or operational defect. Downstream tests were correctly skipped. Do not retune v03; any v04 proposal must preserve the Yush economic hypothesis while expressing it through materially different, predeclared mechanics.",
+        "predecessor_result_path": "research/evidence/runs/yush_orderflow_range/v03/ES/attempt_pre_pnl_protocol_declaration_20260823t021633_94aff48a/reporting_v2/result_bundle_v2.json",
+        "predecessor_result_sha256": "7e43dbe9b2a405026f3198750fe5005d912a2152798745f50a301f64f503f341",
+        "predecessor_variant_id": "v03",
+        "predecessor_verdict": "FAIL",
+        "schema": "alphaquest.sequential-variant-lineage/v1",
+        "variant_id": "v04"
       }
     ],
     "sources": [
@@ -426,11 +470,96 @@
         "timeframe_session_rationale": "One-minute source bars and canonical Sierra trades remain unmodified inputs, while completed three-minute bars are the declared signal clock. Morning entries run 09:45-11:30; the profile resets at 13:30 before 13:45-15:30 afternoon entries, preventing the morning auction from dominating later value.",
         "title": "Volatility-normalized re-armable failed auction at causal value",
         "variant_id": "v03"
+      },
+      {
+        "confirmed": true,
+        "entry": {
+          "module": "yush_adaptive_orderflow_range_v4",
+          "parameter_grid": {},
+          "params": {
+            "mechanics": {
+              "afternoon_entry_end": "15:30:00",
+              "afternoon_entry_start": "13:39:00",
+              "afternoon_profile_reset": "disabled",
+              "atr_context_path": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet",
+              "atr_context_sha256": "436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4",
+              "atr_lookback_bars": 14,
+              "bar_seconds": 180,
+              "big_trade_aggregation_mode": "motivewave_consecutive",
+              "big_trade_context_path": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_motivewave_consecutive_q999_prior20_context.parquet",
+              "big_trade_context_sha256": "1dec5cfd0b4ed4ca5782298932d833527c80dd8a83e92a75c9f7558db8c4d51f",
+              "big_trade_interval_ms": 100,
+              "big_trade_lookback_sessions": 20,
+              "big_trade_price_bucket_ticks": 1,
+              "big_trade_reference_percentile": 0.999,
+              "burst_freshness_scope": "current_rth_session",
+              "commission_per_contract": 0.51,
+              "context_distance_atr_fraction": 0.3333333333333333,
+              "delta_profile_percentile": 0.9,
+              "delta_profile_price_bin_ticks": 4,
+              "entry_offset_ticks": 2,
+              "max_trades_per_day": 0,
+              "maximum_entries_per_aoi": 1,
+              "maximum_holding_bars": 12,
+              "maximum_stop_atr_multiple": 1.75,
+              "minimum_midpoint_reward_r": 1,
+              "minimum_stop_ticks": 2,
+              "morning_entry_end": "11:30:00",
+              "morning_entry_start": "09:39:00",
+              "point_value": 5,
+              "price_bin_ticks": 1,
+              "profile_warmup_bars": 3,
+              "stop_offset_ticks": 2,
+              "sweep_atr_fraction": 0.2,
+              "sweep_minimum_ticks": 2,
+              "target_1_fraction": 0.5,
+              "tick_size": 0.25,
+              "value_area_fraction": 0.7,
+              "value_area_method": "motivewave_standard"
+            }
+          }
+        },
+        "entry_rationale": "Each AOI applies only to the next three-minute bar and is rebuilt at the following boundary from the then-latest VAH or VAL and confluences. An ordered event at or inside the edge arms the crossing; a later event at the ATR-normalized sweep distance completes a sweep when that bar closes. The completed sweep waits for a distinct later q99.9 large execution or newly accumulated top-decile absolute four-tick delta cell. For a short the confirmation label must be strictly above the frozen AOI-zone bottom; for a long it must be strictly below the frozen AOI-zone top. Only then is the stop-market reclaim entry armed two ticks beyond that boundary. There is no AOI supersession model or intended-stop invalidation before fill, and the confirmed entry order has no clock expiry.",
+        "event_parameter_grid": {
+          "maximum_stop_atr_multiple": [
+            1.25,
+            1.5,
+            1.75
+          ],
+          "sweep_atr_fraction": [
+            0.1,
+            0.15,
+            0.2,
+            0.25,
+            0.3
+          ]
+        },
+        "known_failure_modes": [
+          "Per-bar AOIs may churn as developing value moves; session-old bursts may be stale; early cross-sectional delta ranks may be unstable; direction-neutral confluence may be unrelated to reversal direction; a market level alone may be too common to identify absorption; a wide AOI zone may reduce fills; the separate confirmation can arrive late or never arrive; a pending order can remain live for a long time; the sweep-to-entry extreme can produce a wide stop; stop-market entry can gap; and requiring two ticks beyond the opposite value-area edge can reduce final-target fills and give back midpoint gains."
+        ],
+        "material_difference": "Replaces certified event entry yush_adaptive_orderflow_range_v3 with yush_adaptive_orderflow_range_v4, stop event_fill_time_sweep_to_entry_extreme_stop, and target event_frozen_midpoint_two_ticks_outside_opposite_value_area_scale_out. Per-bar VAH and VAL AOIs built from a nearby market level, exceptional volume, or sign-agnostic four-tick delta within one-third ATR, followed by an ordered sweep, a separate post-sweep big-trade or delta confirmation, an AOI-zone reclaim stop entry, and a fill-time sweep-to-entry structural stop. The predecessor failed limited_core_grid_test/summary.percentage_profitable_iterations: actual 0.0 did not meet required >= 0.7 This is a newly frozen expression of the same economic edge, not a parameter-only rename or a post-hoc reinterpretation of predecessor PnL.",
+        "mechanic_rationale": "At every completed three-minute boundary, independently attempt a short AOI at the latest VAH and a long AOI at the latest VAL. The AOI exists only when a prior-20-session q99.9 MotiveWave-compatible consecutive aggressive-volume sequence of either side and/or a sign-agnostic top-decile absolute session-anchored four-tick delta cell, or a PDH, PDL, PDC, ONH, ONL, ORH, or ORL lies within one third of causal ATR above or below that edge. A market level may independently qualify the AOI. The repository availability policy selected this as the sole active, unused certified event successor; observed PnL did not select its parameters.",
+        "schema": "alphaquest.variant-draft/v1",
+        "stop": {
+          "module": "event_fill_time_sweep_to_entry_extreme_stop",
+          "parameter_grid": {},
+          "params": {}
+        },
+        "stop_rationale": "The order is submitted without a predeclared stop. On the exact causal fill event, after that event has updated the path, resolve the stop two ticks beyond the adverse extreme observed from the entire sweep bar through the entry event, inclusive. Validate the minimum and causal-ATR maximum, size from the resolved risk, and create the position only after the stop is valid.",
+        "target": {
+          "module": "event_frozen_midpoint_two_ticks_outside_opposite_value_area_scale_out",
+          "parameter_grid": {},
+          "params": {}
+        },
+        "target_rationale": "When a per-bar AOI is created, retain its value-area midpoint and opposite edge for any setup swept from that AOI. Exit half at the midpoint and the remainder two ticks outside the opposite value-area edge; two ticks below frozen VAL for a short and two ticks above frozen VAH for a long. The one-to-one gross midpoint reward gate is evaluated on the fill event against the resolved sweep-to-entry stop.",
+        "timeframe_session_rationale": "Build causally from one RTH profile beginning at 09:30 without a 13:30 reset. Entries remain restricted to 09:39-11:30 and 13:39-15:30 New York, with forced flatten at 15:55. Strategy mechanics have no daily trade cap; account controls remain separate.",
+        "title": "Yush Orderflow Range Reversal v04",
+        "variant_id": "v04"
       }
     ]
   },
-  "frozen_draft_sha256": "61cb9d4e749724b0108f220f7962e340d7970a1624165d6691451f058c6bfb52",
+  "frozen_draft_sha256": "a07f3e9fa821321bf3af8fdd69318d9c78fa731928b193c418bc527ff2116102",
   "schema": "alphaquest.studio-autosave/v1",
-  "updated_at": "2026-08-03T04:47:00.290091+00:00",
+  "updated_at": "2026-08-25T15:29:32.343549+00:00",
   "wizard_step": 7
 }

@@ -5,7 +5,7 @@ import {
   useParams,
   useSearchParams,
 } from "react-router-dom";
-import { api } from "../api";
+import { ApiError, api } from "../api";
 import { Icon } from "../components/Icons";
 import {
   progressPosition,
@@ -255,7 +255,12 @@ export function CampaignPage() {
         tabIndex={0}
       >
         {current === "overview" && <CampaignOverview detail={detail} />}
-        {current === "protocol" && <Protocol detail={detail} />}
+        {current === "protocol" && (
+          <Protocol
+            detail={detail}
+            onRefresh={() => api.campaign(campaignId, true).then(setDetail)}
+          />
+        )}
         {current === "mechanics" && <Mechanics detail={detail} />}
         {current === "testing" && (
           <Testing
@@ -409,11 +414,18 @@ function StageMatrix({ rows, variants = [] }: { rows: any[]; variants?: any[] })
   );
 }
 
-export function Protocol({ detail }: { detail: any }) {
+export function Protocol({
+  detail,
+  onRefresh,
+}: {
+  detail: any;
+  onRefresh?: () => Promise<any>;
+}) {
   const c = detail.campaign || {};
   const protocol = detail.protocol || {};
   const sources = protocol.supporting_sources || [];
   const objectives = protocol.research_objectives || {};
+  const destinationContract = protocol.destination_benchmark_contract || {};
   return (
     <div className="protocol-layout">
       <Notice
@@ -503,13 +515,60 @@ export function Protocol({ detail }: { detail: any }) {
             </small>
           </>
         ) : (
-          <Notice tone="warning" title="Legacy protocol has no frozen objective contract">
-            New performance testing is blocked. Development goals cannot be
-            retrofitted after results may have been observed; create a new
-            pre-P&amp;L campaign protocol and preserve this history unchanged.
-          </Notice>
+          <>
+            <Notice tone="warning" title="Legacy protocol has no frozen objective contract">
+              New performance testing is blocked. Objectives may be declared
+              only while the current attempt has no performance evidence.
+              Studio creates a new immutable child attempt and preserves this
+              history unchanged.
+            </Notice>
+            {protocol.legacy_pre_pnl_action?.available && onRefresh ? (
+              <LegacyPrePnlProtocolAction
+                campaignId={c.campaign_id}
+                action={protocol.legacy_pre_pnl_action}
+                onRefresh={onRefresh}
+              />
+            ) : protocol.legacy_pre_pnl_action?.unavailable_reason ? (
+              <p className="error-text">
+                {protocol.legacy_pre_pnl_action.unavailable_reason}
+              </p>
+            ) : null}
+          </>
         )}
       </Card>
+      {(destinationContract.profiles || []).length > 0 && (
+        <Card>
+          <p className="eyebrow">Frozen before PnL</p>
+          <h2>Destination-specific passing benchmark</h2>
+          <Notice tone="info">
+            Scientific-validity PASS is mandatory. Generic investment quality
+            remains separate; only the exact primary profile can support
+            destination-specific candidate approval.
+          </Notice>
+          <div className="criteria-list">
+            {destinationContract.profiles.map((profile: any) => (
+              <div key={`${profile.profile_id}@${profile.profile_version}`}>
+                <span>
+                  <strong>{profile.account_label || profile.profile_id}</strong>
+                  <small>
+                    {profile.role} · {profile.profile_id}@{profile.profile_version}
+                  </small>
+                </span>
+                <span>
+                  <strong>{profile.provider}</strong>
+                  <small>{profile.program}</small>
+                </span>
+                <StatusBadge
+                  value={profile.role === "primary" ? "Primary benchmark" : "Comparison"}
+                />
+              </div>
+            ))}
+          </div>
+          <small>
+            Benchmark SHA {String(protocol.source_identity?.destination_benchmark_contract_sha256 || "missing").slice(0, 16)}
+          </small>
+        </Card>
+      )}
       <Card>
         <p className="eyebrow">Signal inputs</p>
         <h2>Information the hypothesis depends on</h2>
@@ -573,6 +632,553 @@ export function Protocol({ detail }: { detail: any }) {
         <pre>{JSON.stringify(protocol.source_identity || {}, null, 2)}</pre>
       </TechnicalDetails>
     </div>
+  );
+}
+
+function LegacyPrePnlProtocolAction({
+  campaignId,
+  action,
+  onRefresh,
+}: {
+  campaignId: string;
+  action: any;
+  onRefresh: () => Promise<any>;
+}) {
+  const { data: studioData } = useStudio();
+  const defaultDeadline = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [feedback, setFeedback] = useState("");
+  const accountProfiles = (studioData.libraries?.account_profiles || []).filter(
+    (item: any) => item.promotable,
+  );
+  const [primaryProfileKey, setPrimaryProfileKey] = useState("");
+  const [comparisonProfileKeys, setComparisonProfileKeys] = useState<string[]>(
+    [],
+  );
+  const [benchmarkCosts, setBenchmarkCosts] = useState<
+    Record<string, Record<string, string>>
+  >({});
+  const [defaultCostObservedAt] = useState(() => {
+    const now = new Date();
+    return new Date(now.getTime() - now.getTimezoneOffset() * 60_000)
+      .toISOString()
+      .slice(0, 16);
+  });
+  const [form, setForm] = useState<Record<string, any>>({
+    development_goal:
+      "Determine whether this candidate can survive the frozen research protocol.",
+    development_deadline: defaultDeadline,
+    evaluation_horizon_months: 24,
+    minimum_annualized_return_percent: 20,
+    minimum_mar: 0.4,
+    maximum_drawdown_percent: 10,
+    minimum_complete_wfa_windows: 3,
+    minimum_wfa_oos_trades: 50,
+    minimum_acceptance_oos_trades: 30,
+    monte_carlo_min_runs: 8000,
+    monte_carlo_horizon_months: 6,
+    minimum_net_profit_probability_percent: 70,
+    maximum_account_breach_probability_percent: 10,
+    forward_incubation_min_calendar_days: 90,
+    forward_incubation_min_trades: 30,
+    maximum_variants: 5,
+    abandonment_rules:
+      "Stop when any frozen stage gate fails; do not tune after observing OOS results.",
+    retirement_rules:
+      "Retire after a live risk breach or sustained degradation beyond the frozen limits.",
+    reason:
+      "Create a result-invariant pre-PnL objective contract for this legacy attempt while preserving its certified mechanics, parameter space, dataset, execution, and methodology lineage.",
+    created_by: studioData.settings?.reviewer_identity || "",
+    confirmed: false,
+    destination_scope_confirmed: false,
+  });
+  const update = (key: string, value: any) =>
+    setForm((current) => ({ ...current, [key]: value }));
+  const objectiveLines = (value: string) =>
+    value
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  const numericFields = [
+    ["evaluation_horizon_months", "Evaluation horizon (months)", 12, 120, 1],
+    ["maximum_variants", "Maximum variants", 1, 5, 1],
+    ["minimum_annualized_return_percent", "Minimum annualized return (%)", 0.01, 500, 0.01],
+    ["minimum_mar", "Minimum MAR", 0.4, 20, 0.01],
+    ["maximum_drawdown_percent", "Maximum drawdown (%)", 0.01, 20, 0.01],
+    ["minimum_complete_wfa_windows", "Complete WFA windows", 3, 100, 1],
+    ["minimum_wfa_oos_trades", "Minimum stitched WFA trades", 50, undefined, 1],
+    ["minimum_acceptance_oos_trades", "Minimum final OOS trades", 30, undefined, 1],
+    ["monte_carlo_min_runs", "Monte Carlo runs", 8000, 1000000, 1],
+    ["monte_carlo_horizon_months", "Stress horizon (months)", 6, 120, 1],
+    ["minimum_net_profit_probability_percent", "Minimum profitable paths (%)", 70, 100, 0.1],
+    ["maximum_account_breach_probability_percent", "Maximum account breaches (%)", 0, 10, 0.1],
+    ["forward_incubation_min_calendar_days", "Forward incubation days", 90, 1095, 1],
+    ["forward_incubation_min_trades", "Forward incubation trades", 30, undefined, 1],
+  ] as const;
+  const profileKey = (profile: any) =>
+    `${profile.profile_id}@${profile.version}`;
+  const selectedDestinationProfiles = accountProfiles.filter((profile: any) =>
+    [primaryProfileKey, ...comparisonProfileKeys].includes(profileKey(profile)),
+  );
+  const costsFor = (key: string) =>
+    benchmarkCosts[key] || {
+      evaluation_purchase_price: "",
+      activation_fee: "",
+      other_upfront_costs: "0",
+      cost_observed_at: defaultCostObservedAt,
+      cost_source: "",
+    };
+  const updateCosts = (key: string, field: string, value: string) =>
+    setBenchmarkCosts((current) => ({
+      ...current,
+      [key]: { ...costsFor(key), [field]: value },
+    }));
+
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    if (!form.created_by.trim()) {
+      setFeedback("Enter the researcher identity before creating the protocol.");
+      return;
+    }
+    if (form.reason.trim().length < 80) {
+      setFeedback("Enter a declaration rationale of at least 80 characters.");
+      return;
+    }
+    if (!form.development_goal.trim()) {
+      setFeedback("Enter the development goal for this protocol.");
+      return;
+    }
+    if (!form.development_deadline) {
+      setFeedback("Choose the protocol decision deadline.");
+      return;
+    }
+    const invalidNumeric = numericFields.find(([key, , min, max]) => {
+      const value = Number(form[key]);
+      return (
+        form[key] === "" ||
+        !Number.isFinite(value) ||
+        value < min ||
+        (max !== undefined && value > max)
+      );
+    });
+    if (invalidNumeric) {
+      setFeedback(`Enter a valid value for ${invalidNumeric[1]}.`);
+      return;
+    }
+    if (!objectiveLines(form.abandonment_rules).length) {
+      setFeedback("Declare at least one abandonment rule.");
+      return;
+    }
+    if (!objectiveLines(form.retirement_rules).length) {
+      setFeedback("Declare at least one retirement rule.");
+      return;
+    }
+    if (!form.confirmed) {
+      setFeedback(
+        "Confirm that these objectives were chosen before inspecting strategy PnL.",
+      );
+      return;
+    }
+    if (!primaryProfileKey) {
+      setFeedback("Select one primary prop-firm account benchmark.");
+      return;
+    }
+    if (
+      !selectedDestinationProfiles.some(
+        (profile: any) => profileKey(profile) === primaryProfileKey,
+      )
+    ) {
+      setFeedback(
+        "The selected primary account profile is no longer available. Select it again.",
+      );
+      return;
+    }
+    if (!form.destination_scope_confirmed) {
+      setFeedback(
+        "Confirm that candidate approval is limited to the exact frozen primary account profile.",
+      );
+      return;
+    }
+    for (const profile of selectedDestinationProfiles) {
+      if (!profile.cost_input_required) continue;
+      const values = costsFor(profileKey(profile));
+      if (
+        (profile.evaluation_price_input_required &&
+          values.evaluation_purchase_price === "") ||
+        (profile.activation_fee_input_required && values.activation_fee === "") ||
+        !values.cost_observed_at ||
+        !values.cost_source.trim()
+      ) {
+        setFeedback(
+          `Complete the frozen acquisition costs and source for ${profile.name}.`,
+        );
+        return;
+      }
+    }
+    setBusy(true);
+    setFeedback("");
+    try {
+      const destinationBenchmarks = selectedDestinationProfiles.map(
+        (profile: any) => {
+          const key = profileKey(profile);
+          const values = costsFor(key);
+          const costs = profile.cost_input_required
+            ? {
+                currency: profile.identity?.currency || "USD",
+                evaluation_purchase_price: Number(
+                  values.evaluation_purchase_price || 0,
+                ),
+                activation_fee: Number(values.activation_fee || 0),
+                other_upfront_costs: Number(values.other_upfront_costs || 0),
+                observed_at: new Date(values.cost_observed_at).toISOString(),
+                source: values.cost_source.trim(),
+                include_as_replacement_cost: true,
+              }
+            : null;
+          return {
+            profile_id: profile.profile_id,
+            profile_version: profile.version,
+            profile_sha256: profile.profile_sha256,
+            role: key === primaryProfileKey ? "primary" : "comparison",
+            costs,
+            benchmark_acknowledged: true,
+          };
+        },
+      );
+      const result = await api.createFollowUp(campaignId, {
+        campaign_id: campaignId,
+        attempt_kind: "pre_pnl_protocol_declaration",
+        parent_attempt_id: action.parent_attempt_id,
+        target_variant_id: action.target_variant_id,
+        reason: form.reason,
+        created_by: form.created_by,
+        destination_benchmarks: destinationBenchmarks,
+        destination_scope_acknowledged: true,
+        research_objectives: {
+          schema: "alphaquest.research-objectives/v1",
+          development_goal: form.development_goal,
+          development_deadline: form.development_deadline,
+          evaluation_horizon_months: Number(form.evaluation_horizon_months),
+          minimum_annualized_return_fraction:
+            Number(form.minimum_annualized_return_percent) / 100,
+          minimum_mar: Number(form.minimum_mar),
+          maximum_drawdown_fraction:
+            Number(form.maximum_drawdown_percent) / 100,
+          minimum_complete_wfa_windows: Number(
+            form.minimum_complete_wfa_windows,
+          ),
+          minimum_wfa_oos_trades: Number(form.minimum_wfa_oos_trades),
+          minimum_acceptance_oos_trades: Number(
+            form.minimum_acceptance_oos_trades,
+          ),
+          monte_carlo_min_runs: Number(form.monte_carlo_min_runs),
+          monte_carlo_horizon_months: Number(
+            form.monte_carlo_horizon_months,
+          ),
+          minimum_net_profit_probability:
+            Number(form.minimum_net_profit_probability_percent) / 100,
+          maximum_account_breach_probability:
+            Number(form.maximum_account_breach_probability_percent) / 100,
+          forward_incubation_min_calendar_days: Number(
+            form.forward_incubation_min_calendar_days,
+          ),
+          forward_incubation_min_trades: Number(
+            form.forward_incubation_min_trades,
+          ),
+          maximum_variants: Number(form.maximum_variants),
+          abandonment_rules: objectiveLines(form.abandonment_rules),
+          retirement_rules: objectiveLines(form.retirement_rules),
+          confirmed: true,
+        },
+      });
+      setFeedback(
+        `${result.attempt_id} created. Fresh hash-bound mechanics evidence and approval are now required.`,
+      );
+      await onRefresh();
+    } catch (error) {
+      const fieldMessages =
+        error instanceof ApiError
+          ? Object.entries(error.fields).map(
+              ([field, message]) => `${field}: ${message}`,
+            )
+          : [];
+      setFeedback(
+        fieldMessages.length
+          ? `Protocol rejected: ${fieldMessages.join("; ")}`
+          : error instanceof Error
+            ? error.message
+            : "Pre-PnL protocol was not created",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (!open) {
+    return (
+      <div className="inline-actions">
+        <Button type="button" onClick={() => setOpen(true)}>
+          Create pre-PnL protocol from legacy campaign
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <form className="form-section" onSubmit={submit} noValidate>
+      <Notice tone="info" title="Immutable lineage and fresh approval">
+        This copies the selected attempt's certified mechanics, parameter grid,
+        dataset, and execution into a new attempt. Repository methodology stays
+        fixed; declared objectives may only tighten its criteria. The new config
+        hash clears inherited evidence references, so the existing mechanics
+        approval does not carry forward.
+      </Notice>
+      <Field label="Development goal">
+        <textarea
+          rows={2}
+          value={form.development_goal}
+          onChange={(event) => update("development_goal", event.target.value)}
+          required
+        />
+      </Field>
+      <Field label="Decision deadline">
+        <input
+          type="date"
+          value={form.development_deadline}
+          onChange={(event) => update("development_deadline", event.target.value)}
+          required
+        />
+      </Field>
+      <div className="form-grid three">
+        {numericFields.map(([key, label, min, max, step]) => (
+          <Field key={key} label={label}>
+            <input
+              type="number"
+              min={min}
+              max={max}
+              step={step}
+              value={form[key]}
+              onChange={(event) => update(key, event.target.value)}
+              required
+            />
+          </Field>
+        ))}
+      </div>
+      <div className="form-grid two">
+        <Field label="Abandonment rules" hint="One precommitted stop rule per line">
+          <textarea rows={3} value={form.abandonment_rules} onChange={(event) => update("abandonment_rules", event.target.value)} required />
+        </Field>
+        <Field label="Retirement rules" hint="One live degradation or risk rule per line">
+          <textarea rows={3} value={form.retirement_rules} onChange={(event) => update("retirement_rules", event.target.value)} required />
+        </Field>
+      </div>
+      <div className="governed-patch">
+        <div className="form-section-heading">
+          <span>PF</span>
+          <div>
+            <h2>Pre-PnL prop-firm benchmark</h2>
+            <p>
+              Freeze one promotion target and optional comparison accounts.
+              Scientific-validity PASS remains mandatory; generic investment
+              quality is reported separately.
+            </p>
+          </div>
+        </div>
+        <Field
+          label="Primary account benchmark"
+          hint="Only this exact profile may support destination-specific candidate approval."
+        >
+          <select
+            value={primaryProfileKey}
+            onChange={(event) => {
+              setPrimaryProfileKey(event.target.value);
+              setComparisonProfileKeys((current) =>
+                current.filter((key) => key !== event.target.value),
+              );
+            }}
+            required
+          >
+            <option value="">Select a reviewed prop-firm account</option>
+            {accountProfiles.map((profile: any) => (
+              <option key={profileKey(profile)} value={profileKey(profile)}>
+                {profile.name} · v{profile.version}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="parameter-list">
+          {accountProfiles
+            .filter((profile: any) => profileKey(profile) !== primaryProfileKey)
+            .map((profile: any) => {
+              const key = profileKey(profile);
+              return (
+                <label className="check-card" key={key}>
+                  <input
+                    type="checkbox"
+                    checked={comparisonProfileKeys.includes(key)}
+                    onChange={(event) =>
+                      setComparisonProfileKeys((current) =>
+                        event.target.checked
+                          ? [...current, key]
+                          : current.filter((item) => item !== key),
+                      )
+                    }
+                  />
+                  <span>
+                    <strong>{profile.name}</strong>
+                    <small>Optional comparison · {profile.profile_id}@{profile.version}</small>
+                  </span>
+                </label>
+              );
+            })}
+        </div>
+        {selectedDestinationProfiles.map((profile: any) => {
+          const key = profileKey(profile);
+          const costs = costsFor(key);
+          const primary = key === primaryProfileKey;
+          return (
+            <Card key={key} className="account-benchmark-card">
+              <div className="card-kicker">
+                <div>
+                  <p className="eyebrow">
+                    {primary ? "Primary passing benchmark" : "Comparison only"}
+                  </p>
+                  <h3>{profile.name}</h3>
+                </div>
+                <StatusBadge value={profile.verification_status} />
+              </div>
+              <p>{profile.description}</p>
+              <ul className="disclosure-list">
+                {(profile.recommended_tests || []).map((item: string) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+              {profile.cost_input_required && (
+                <div className="form-grid two">
+                  {profile.evaluation_price_input_required && (
+                    <Field label="Challenge purchase price">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={costs.evaluation_purchase_price}
+                        onChange={(event) =>
+                          updateCosts(
+                            key,
+                            "evaluation_purchase_price",
+                            event.target.value,
+                          )
+                        }
+                        required
+                      />
+                    </Field>
+                  )}
+                  {profile.activation_fee_input_required && (
+                    <Field label="Activation fee">
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={costs.activation_fee}
+                        onChange={(event) =>
+                          updateCosts(key, "activation_fee", event.target.value)
+                        }
+                        required
+                      />
+                    </Field>
+                  )}
+                  <Field label="Other upfront costs">
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      value={costs.other_upfront_costs}
+                      onChange={(event) =>
+                        updateCosts(key, "other_upfront_costs", event.target.value)
+                      }
+                      required
+                    />
+                  </Field>
+                  <Field label="Cost observed at">
+                    <input
+                      type="datetime-local"
+                      value={costs.cost_observed_at}
+                      onChange={(event) =>
+                        updateCosts(key, "cost_observed_at", event.target.value)
+                      }
+                      required
+                    />
+                  </Field>
+                  <Field
+                    label="Cost source"
+                    hint="Official checkout URL, invoice, or recorded quote."
+                  >
+                    <input
+                      value={costs.cost_source}
+                      onChange={(event) =>
+                        updateCosts(key, "cost_source", event.target.value)
+                      }
+                      required
+                    />
+                  </Field>
+                </div>
+              )}
+              <TechnicalDetails>
+                <pre>{JSON.stringify(profile.evaluation_policy, null, 2)}</pre>
+              </TechnicalDetails>
+            </Card>
+          );
+        })}
+        <Link to="/library/accounts">Inspect complete account-rule profiles</Link>
+        <label className="check-card">
+          <input
+            type="checkbox"
+            checked={form.destination_scope_confirmed}
+            onChange={(event) =>
+              update("destination_scope_confirmed", event.target.checked)
+            }
+          />
+          <span>
+            <strong>
+              I understand approval is limited to the exact frozen primary profile
+            </strong>
+            <small>
+              Comparison accounts cannot support candidate approval. Profile rules,
+              versions, hashes, costs, and success requirements become immutable.
+            </small>
+          </span>
+        </label>
+      </div>
+      <Field label="Researcher identity">
+        <input value={form.created_by} onChange={(event) => update("created_by", event.target.value)} required />
+      </Field>
+      <Field label="Declaration rationale" hint="At least 80 characters; stored in immutable lineage">
+        <textarea rows={3} minLength={80} value={form.reason} onChange={(event) => update("reason", event.target.value)} required />
+      </Field>
+      <label className="check-card">
+        <input type="checkbox" checked={form.confirmed} onChange={(event) => update("confirmed", event.target.checked)} />
+        <span>
+          <strong>I chose these objectives before inspecting strategy PnL</strong>
+          <small>The declaration is immutable and result-invariant.</small>
+        </span>
+      </label>
+      {feedback && (
+        <div aria-live="polite">
+          <Notice tone="warning">{feedback}</Notice>
+        </div>
+      )}
+      <div className="inline-actions">
+        <Button type="submit" disabled={busy}>
+          {busy ? "Creating…" : "Create immutable protocol attempt"}
+        </Button>
+        <Button type="button" variant="secondary" disabled={busy} onClick={() => setOpen(false)}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   );
 }
 
@@ -828,6 +1434,20 @@ export function Mechanics({ detail }: { detail: any }) {
           empty="No tunable parameters; the frozen defaults are the single combination."
         />
       </div>
+      {selectedMechanic.workload_forecast && (
+        <Card>
+          <div className="card-kicker">
+            <p className="eyebrow">Runtime and storage planning</p>
+            <StatusBadge value={selectedMechanic.workload_forecast.workload_class} />
+          </div>
+          <h2>
+            {selectedMechanic.workload_forecast.parameter_combinations} parameter combinations ·{" "}
+            {selectedMechanic.workload_forecast.minimum_wfa_windows} minimum WFA windows ·{" "}
+            {selectedMechanic.workload_forecast.monte_carlo_paths} Monte Carlo paths
+          </h2>
+          <p>{selectedMechanic.workload_forecast.limitations}</p>
+        </Card>
+      )}
       {selectedMechanic.material_difference && (
         <Card>
           <p className="eyebrow">Material difference from predecessor</p>
@@ -1039,6 +1659,21 @@ export function Testing({
   const hasReviewableEvidence =
     Boolean(reviewProgress.evidence_available) &&
     Number(reviewProgress.sampled_count || 0) > 0;
+  const finalizationRecoveryRequired =
+    attempt === workflow.current_attempt_id &&
+    (detail.stage_matrix || []).some(
+      (row: any) =>
+        String(row.variant || row.variant_id || "") === targetVariant &&
+        String(row["operational state"] || row.operational_state || "") ===
+          "FAILED_OPERATIONAL" &&
+        String(
+          row["first failed or unresolved gate"] ||
+            row.first_failed_or_unresolved_gate ||
+            "",
+        ) === "result_bundle_v2_finalization",
+    );
+  const finalizedResult =
+    detail.attempt_results?.[attempt]?.[targetVariant] || null;
   function selectAttempt(value: string) {
     setAttempt(value);
     const nextAttempt =
@@ -1074,6 +1709,26 @@ export function Testing({
     } catch (reason) {
       setFeedback(
         reason instanceof Error ? reason.message : "Submission blocked",
+      );
+    } finally {
+      setBusy("");
+    }
+  }
+  async function recoverFinalization() {
+    setBusy("recovery");
+    setFeedback("");
+    try {
+      const result = await api.recoverFinalization(
+        campaign.campaign_id,
+        attempt,
+      );
+      setFeedback(
+        `Finalization recovered without rerunning PnL. The hash-valid result is ${result.research_verdict}. Open Results to inspect it.`,
+      );
+      await onRefresh();
+    } catch (reason) {
+      setFeedback(
+        reason instanceof Error ? reason.message : "Finalization recovery blocked",
       );
     } finally {
       setBusy("");
@@ -1138,46 +1793,82 @@ export function Testing({
           </Notice>
         )}
         <div className="action-stack">
-          {hasReviewableEvidence && !mechanicsGate.all_approved ? (
-            <Link
-              className="button button-primary"
-              to={`/reviews?type=mechanics&campaign=${encodeURIComponent(
-                campaign.campaign_id,
-              )}&attempt=${encodeURIComponent(attempt)}&variant=${encodeURIComponent(
-                targetVariant,
-              )}`}
-            >
-              Review {reviewProgress.sampled_count} sampled trades ·{" "}
-              {targetVariant}
-            </Link>
+          {finalizationRecoveryRequired ? (
+            <>
+              <Notice tone="warning" title="Research finished; publication did not">
+                Studio found preserved reporting for this exact reserved attempt.
+                Recovery verifies the frozen config plus every recorded runner and
+                reporting hash, then republishes only the ledger and indexes. It
+                never invokes the backtest runner.
+              </Notice>
+              <Button
+                onClick={() => void recoverFinalization()}
+                disabled={Boolean(busy)}
+              >
+                {busy === "recovery"
+                  ? "Verifying and recovering…"
+                  : `Recover finalized evidence · ${targetVariant}`}
+              </Button>
+            </>
+          ) : finalizedResult ? (
+            <>
+              <Notice tone="info" title="This immutable attempt is finalized">
+                The hash-valid result is {finalizedResult.research_verdict || finalizedResult.verdict}.
+                A completed attempt cannot be rerun in place.
+              </Notice>
+              <Link
+                className="button button-primary"
+                to={`/research/${campaign.campaign_id}/results?attempt=${encodeURIComponent(
+                  attempt,
+                )}&variant=${encodeURIComponent(targetVariant)}`}
+              >
+                View finalized result · {targetVariant}
+              </Link>
+            </>
           ) : (
-            <Button
-              onClick={() => void queue("mechanics")}
-              disabled={Boolean(busy)}
-            >
-              {busy === "mechanics"
-                ? "Queuing…"
-                : `Generate mechanics evidence · ${targetVariant}`}
-            </Button>
-          )}
-          {mechanicsGate.all_approved ? (
-            <Button
-              variant="secondary"
-              onClick={() => void queue("run")}
-              disabled={Boolean(busy)}
-            >
-              {busy === "run"
-                ? "Queuing…"
-                : `Run full test suite · ${targetVariant}`}
-            </Button>
-          ) : (
-            <Notice tone="warning" title="Performance testing remains hidden">
-              {hasReviewableEvidence
-                ? `${reviewProgress.unreviewed_count || 0} sampled trade review${
-                    Number(reviewProgress.unreviewed_count || 0) === 1 ? "" : "s"
-                  } remain before the hash-bound mechanics decision.`
-                : `${targetVariant} needs mechanics evidence, then a hash-bound manual review using fixed default parameters. The universal sampler contains five deterministic hash-ranked entries (or all if fewer exist) plus the minimum trades needed to cover observed execution lifecycles, warning codes, and resolved ambiguities; duplicate selections are counted once.`}
-            </Notice>
+            <>
+              {hasReviewableEvidence && !mechanicsGate.all_approved ? (
+                <Link
+                  className="button button-primary"
+                  to={`/reviews?type=mechanics&campaign=${encodeURIComponent(
+                    campaign.campaign_id,
+                  )}&attempt=${encodeURIComponent(attempt)}&variant=${encodeURIComponent(
+                    targetVariant,
+                  )}`}
+                >
+                  Review {reviewProgress.sampled_count} sampled trades ·{" "}
+                  {targetVariant}
+                </Link>
+              ) : (
+                <Button
+                  onClick={() => void queue("mechanics")}
+                  disabled={Boolean(busy)}
+                >
+                  {busy === "mechanics"
+                    ? "Queuing…"
+                    : `Generate mechanics evidence · ${targetVariant}`}
+                </Button>
+              )}
+              {mechanicsGate.all_approved ? (
+                <Button
+                  variant="secondary"
+                  onClick={() => void queue("run")}
+                  disabled={Boolean(busy)}
+                >
+                  {busy === "run"
+                    ? "Queuing…"
+                    : `Run full test suite · ${targetVariant}`}
+                </Button>
+              ) : (
+                <Notice tone="warning" title="Performance testing remains hidden">
+                  {hasReviewableEvidence
+                    ? `${reviewProgress.unreviewed_count || 0} sampled trade review${
+                        Number(reviewProgress.unreviewed_count || 0) === 1 ? "" : "s"
+                      } remain before the hash-bound mechanics decision.`
+                    : `${targetVariant} needs mechanics evidence, then a hash-bound manual review using fixed default parameters. The universal sampler contains five deterministic hash-ranked entries (or all if fewer exist) plus the minimum trades needed to cover observed execution lifecycles, warning codes, and resolved ambiguities; duplicate selections are counted once.`}
+                </Notice>
+              )}
+            </>
           )}
         </div>
       </Card>
@@ -1372,6 +2063,97 @@ function SequentialVariantPanel({
   );
 }
 
+export function VerdictDecisionMatrix({
+  scientificValidity,
+  genericVerdict,
+  accountEvaluations = [],
+  evidenceErrors = [],
+}: {
+  scientificValidity: string;
+  genericVerdict: string;
+  accountEvaluations?: any[];
+  evidenceErrors?: unknown[];
+}) {
+  const verificationErrors = Array.isArray(evidenceErrors)
+    ? evidenceErrors
+    : evidenceErrors
+      ? [evidenceErrors]
+      : [];
+  const accountPass = accountEvaluations.some(
+    (item: any) => String(item.verdict).toUpperCase() === "PASS",
+  );
+  const evidenceVerdict = verificationErrors.length
+    ? "NEEDS MANUAL REVIEW"
+    : "PASS";
+  const nextAction =
+    scientificValidity === "FAIL"
+      ? "Reject this variant or, after reviewed terminal failure, prepare one materially different successor."
+      : scientificValidity !== "PASS" || evidenceVerdict !== "PASS"
+        ? "Resolve the evidence or governance blocker before promotion."
+        : genericVerdict === "PASS"
+          ? "Open independent candidate review. PASS remains candidate-only."
+          : accountPass
+            ? "Open profile-scoped candidate review for the passing frozen account contract."
+            : "Do not promote. Generic objectives failed and no destination-specific PASS exists.";
+  const rows = [
+    {
+      label: "Scientific validity",
+      value: scientificValidity,
+      detail: scientificValidity === "PASS"
+        ? "Causal, data, mechanics, and robustness evidence passed."
+        : "Promotion remains closed at the scientific gate.",
+    },
+    {
+      label: "Generic objectives",
+      value: genericVerdict,
+      detail: genericVerdict === "PASS"
+        ? "The frozen generic return and risk objectives passed."
+        : "The frozen generic destination was not achieved.",
+    },
+    {
+      label: "Named account destination",
+      value: accountEvaluations.length ? (accountPass ? "PASS" : "FAIL") : "NOT ASSESSED",
+      detail: accountEvaluations.length
+        ? `${accountEvaluations.length} hash-bound account assessment(s).`
+        : "Optional unless a specific account destination was declared.",
+    },
+    {
+      label: "Evidence integrity",
+      value: evidenceVerdict,
+      detail: verificationErrors.length
+        ? `${verificationErrors.length} verification error(s) require review.`
+        : "The finalized result exposed no verification errors.",
+    },
+    {
+      label: "Deployment authorization",
+      value: "NOT AUTHORIZED",
+      detail: "Backtest and candidate review never submit orders or authorize deployment.",
+    },
+  ];
+  return (
+    <Card className="verdict-decision-matrix">
+      <div className="card-kicker">
+        <div>
+          <p className="eyebrow">Authoritative decision summary</p>
+          <h2>What passed, what failed, and what happens next</h2>
+        </div>
+      </div>
+      <div className="verdict-matrix" role="table" aria-label="Final verdict matrix">
+        {rows.map((row) => (
+          <div className="verdict-matrix-row" role="row" key={row.label}>
+            <strong>{row.label}</strong>
+            <StatusBadge value={row.value} kind="scientific" />
+            <span>{row.detail}</span>
+          </div>
+        ))}
+      </div>
+      <Notice tone={scientificValidity === "FAIL" ? "danger" : scientificValidity === "PASS" ? "info" : "warning"} title="Exact next action">
+        {nextAction}
+      </Notice>
+    </Card>
+  );
+}
+
 export function Results({ detail }: { detail: any }) {
   const { data: studioData, refresh: refreshStudio } = useStudio();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -1389,8 +2171,26 @@ export function Results({ detail }: { detail: any }) {
   );
   const [resultsError, setResultsError] = useState("");
   const accountProfiles = studioData.libraries?.account_profiles || [];
+  const frozenDestinationProfiles =
+    detail.protocol?.destination_benchmark_contract?.profiles || [];
+  const assessmentAccountProfiles = frozenDestinationProfiles.length
+    ? accountProfiles.filter((profile: any) =>
+        frozenDestinationProfiles.some(
+          (item: any) =>
+            item.profile_id === profile.profile_id &&
+            item.profile_version === profile.version,
+        ),
+      )
+    : accountProfiles;
+  const frozenPrimaryProfile = frozenDestinationProfiles.find(
+    (item: any) => item.role === "primary",
+  );
   const [assessmentOpen, setAssessmentOpen] = useState(false);
-  const [assessmentProfileKey, setAssessmentProfileKey] = useState("");
+  const [assessmentProfileKey, setAssessmentProfileKey] = useState(
+    frozenPrimaryProfile
+      ? `${frozenPrimaryProfile.profile_id}@${frozenPrimaryProfile.profile_version}`
+      : "",
+  );
   const [assessmentCosts, setAssessmentCosts] = useState({
     evaluation_purchase_price: "",
     activation_fee: "",
@@ -1470,6 +2270,10 @@ export function Results({ detail }: { detail: any }) {
   const selectedAssessmentProfile = accountProfiles.find(
     (item: any) => `${item.profile_id}@${item.version}` === assessmentProfileKey,
   );
+  const frozenAssessmentProfile = frozenDestinationProfiles.find(
+    (item: any) =>
+      `${item.profile_id}@${item.profile_version}` === assessmentProfileKey,
+  );
   useEffect(() => {
     if (!assessmentJobId) return;
     const timer = window.setInterval(() => {
@@ -1506,7 +2310,9 @@ export function Results({ detail }: { detail: any }) {
     setAssessmentBusy(true);
     setAssessmentFeedback("");
     try {
-      const costRequired = selectedAssessmentProfile.cost_input_required === true;
+      const costsAreFrozen = Boolean(frozenAssessmentProfile);
+      const costRequired =
+        !costsAreFrozen && selectedAssessmentProfile.cost_input_required === true;
       const evaluationPriceRequired =
         selectedAssessmentProfile.evaluation_price_input_required === true;
       const result = await api.queueAccountAssessment(detail.campaign?.campaign_id, {
@@ -1514,13 +2320,16 @@ export function Results({ detail }: { detail: any }) {
         variant_id: selected,
         profile_id: selectedAssessmentProfile.profile_id,
         profile_version: selectedAssessmentProfile.version,
-        evaluation_purchase_price: evaluationPriceRequired
+        evaluation_purchase_price: !costsAreFrozen && evaluationPriceRequired
           ? Number(assessmentCosts.evaluation_purchase_price)
           : null,
-        activation_fee: selectedAssessmentProfile.activation_fee_input_required
+        activation_fee:
+          !costsAreFrozen && selectedAssessmentProfile.activation_fee_input_required
           ? Number(assessmentCosts.activation_fee)
           : null,
-        other_upfront_costs: Number(assessmentCosts.other_upfront_costs || 0),
+        other_upfront_costs: costsAreFrozen
+          ? 0
+          : Number(assessmentCosts.other_upfront_costs || 0),
         cost_observed_at: costRequired
           ? new Date(assessmentCosts.cost_observed_at).toISOString()
           : null,
@@ -1610,13 +2419,14 @@ export function Results({ detail }: { detail: any }) {
   const requiredAssessmentAttestations =
     selectedAssessmentProfile?.rules?.manual_attestations_required || [];
   const assessmentCostsComplete = selectedAssessmentProfile
-    ? (!selectedAssessmentProfile.evaluation_price_input_required ||
+    ? Boolean(frozenAssessmentProfile) ||
+      ((!selectedAssessmentProfile.evaluation_price_input_required ||
         assessmentCosts.evaluation_purchase_price !== "") &&
       (!selectedAssessmentProfile.cost_input_required ||
         (assessmentCosts.cost_observed_at !== "" &&
           assessmentCosts.cost_source.trim() !== "")) &&
       (!selectedAssessmentProfile.activation_fee_input_required ||
-        assessmentCosts.activation_fee !== "")
+        assessmentCosts.activation_fee !== ""))
     : false;
   const assessmentAttestationsComplete = requiredAssessmentAttestations.every(
     (item: string) => assessmentAttestations.includes(item),
@@ -1712,38 +2522,12 @@ export function Results({ detail }: { detail: any }) {
             />
           ) : (
             <>
-          <div className="metrics-grid">
-            <Card
-              className={`verdict-card verdict-${String(scientificValidity).toLowerCase().replaceAll(" ", "-")}`}
-            >
-              <div>
-                <p className="eyebrow">Scientific validity</p>
-                <h2>{scientificValidity}</h2>
-              </div>
-              <p>
-                {scientificValidity === "PASS"
-                  ? "Evidence is complete enough for generic and destination-specific decisions."
-                  : scientificValidity === "FAIL"
-                    ? "A validity, leakage, mechanics, data-quality, or robustness gate failed. Promotion stops closed."
-                    : "Validity evidence is incomplete or from an older methodology and requires a governed rerun or review."}
-              </p>
-            </Card>
-            <Card
-              className={`verdict-card verdict-${String(verdict).toLowerCase().replaceAll(" ", "-")}`}
-            >
-              <div>
-                <p className="eyebrow">Generic investment quality</p>
-                <h2>{verdict}</h2>
-              </div>
-              <p>
-                {verdict === "PASS"
-                  ? "Generic objectives passed. This remains a candidate strategy only."
-                  : verdict === "FAIL"
-                    ? "One or more generic return-quality objectives failed. A named account profile may still be suitable if scientific validity passed."
-                    : "Generic objective evidence is incomplete or unresolved."}
-              </p>
-            </Card>
-          </div>
+          <VerdictDecisionMatrix
+            scientificValidity={scientificValidity}
+            genericVerdict={verdict}
+            accountEvaluations={exactAccountEvaluations}
+            evidenceErrors={result.errors || result.verification_errors || []}
+          />
           {exactAccountEvaluations.length === 0 ? (
             <Notice tone="warning" title="No account-specific suitability verdict">
               This scientific result has not been replayed against a hash-bound
@@ -1831,7 +2615,7 @@ export function Results({ detail }: { detail: any }) {
                       }}
                     >
                       <option value="">Select a reviewed profile</option>
-                      {accountProfiles.map((profile: any) => (
+                      {assessmentAccountProfiles.map((profile: any) => (
                         <option
                           key={`${profile.profile_id}@${profile.version}`}
                           value={`${profile.profile_id}@${profile.version}`}
@@ -1852,7 +2636,15 @@ export function Results({ detail }: { detail: any }) {
                       {selectedAssessmentProfile.summary ||
                         `${humanize(selectedAssessmentProfile.phase)} profile ${selectedAssessmentProfile.profile_id}@${selectedAssessmentProfile.version}`}
                     </Notice>
-                    {(selectedAssessmentProfile.cost_input_required ||
+                    {frozenAssessmentProfile && (
+                      <Notice tone="success" title="Pre-PnL benchmark inputs are frozen">
+                        Studio will reuse the hash-bound profile and acquisition
+                        costs declared before performance testing. This assessment
+                        cannot substitute current or more favorable checkout values.
+                      </Notice>
+                    )}
+                    {!frozenAssessmentProfile &&
+                      (selectedAssessmentProfile.cost_input_required ||
                       selectedAssessmentProfile.activation_fee_input_required) && (
                       <div className="form-grid two">
                         {selectedAssessmentProfile.evaluation_price_input_required && (
@@ -2098,6 +2890,7 @@ export function Results({ detail }: { detail: any }) {
               campaignId={detail.campaign?.campaign_id}
               attemptId={selectedAttemptId}
               variantId={selected}
+              parameterColumns={coreGrid.parameter_columns || []}
               declaredDefaultOnly={
                 coreGrid.available &&
                 !coreGrid.iteration_reports_retained &&
@@ -2177,12 +2970,14 @@ export function ResultArtifactEvidence({
   attemptId,
   variantId,
   declaredDefaultOnly = false,
+  parameterColumns = [],
 }: {
   previews: Record<string, any>;
   campaignId?: string;
   attemptId?: string;
   variantId?: string;
   declaredDefaultOnly?: boolean;
+  parameterColumns?: string[];
 }) {
   const curves = ["equity_curve", "drawdown_curve"];
   const tables = [
@@ -2220,7 +3015,7 @@ export function ResultArtifactEvidence({
               href={api.resultReportUrl(campaignId, attemptId, variantId)}
               download
             >
-              Download report ZIP
+              Download due-diligence ZIP
             </a>
           </div>
         )}
@@ -2282,7 +3077,10 @@ export function ResultArtifactEvidence({
         <ExcursionScatter preview={previews.mfe_mae} />
         <MonteCarloBandChart preview={previews.monte_carlo_bands} />
       </div>
-      <ParameterHeatmap preview={previews.parameter_surface} />
+      <ParameterHeatmap
+        preview={previews.parameter_surface}
+        parameterColumns={parameterColumns}
+      />
       <div className="result-breakdown-stack">
         {tables.map((name) => (
           <ResultPreviewTable key={name} name={name} preview={previews[name]} />
@@ -2490,7 +3288,14 @@ function TradeExplorer({
   );
 }
 
-function ResultTradeChart({
+function retainedFiniteNumber(value: any): number | null {
+  if (value === null || value === undefined || value === "" || typeof value === "boolean")
+    return null;
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+export function ResultTradeChart({
   trade,
   excursion,
   campaignId,
@@ -2510,14 +3315,34 @@ function ResultTradeChart({
     ["Stop", trade.stop_price, "#a3342c"],
     ["Target", trade.target_price, "#18724d"],
     ["Exit", trade.exit_price, "#5d4b8a"],
-  ].filter(([, value]) => Number.isFinite(Number(value))) as Array<
-    [string, number, string]
-  >;
-  const values = levels.map(([, value]) => Number(value));
-  const low = Math.min(...values, 0);
-  const high = Math.max(...values, 1);
-  const spread = Math.max(high - low, 0.25);
-  const y = (value: number) => 18 + ((high - value) * 184) / spread;
+  ].flatMap(([label, value, color]) => {
+    const numeric = retainedFiniteNumber(value);
+    return numeric === null ? [] : [[label, numeric, color] as [string, number, string]];
+  });
+  const values = levels.map(([, value]) => value);
+  const observedLow = values.length ? Math.min(...values) : 0;
+  const observedHigh = values.length ? Math.max(...values) : 1;
+  const observedSpread = Math.max(observedHigh - observedLow, 0.25);
+  const padding = Math.max(observedSpread * 0.12, 0.25);
+  const low = observedLow - padding;
+  const high = observedHigh + padding;
+  const spread = high - low;
+  const y = (value: number) => 24 + ((high - value) * 192) / spread;
+  const sortedLevels = [...levels].sort((left, right) => right[1] - left[1]);
+  const labelY = new Map(
+    sortedLevels.map(([label], index) => [
+      label,
+      sortedLevels.length === 1
+        ? y(sortedLevels[0][1])
+        : 28 + (index * 184) / (sortedLevels.length - 1),
+    ]),
+  );
+  const entryTime = Date.parse(String(trade.entry_timestamp || ""));
+  const exitTime = Date.parse(String(trade.exit_timestamp || ""));
+  const durationMinutes =
+    Number.isFinite(entryTime) && Number.isFinite(exitTime) && exitTime >= entryTime
+      ? (exitTime - entryTime) / 60000
+      : null;
   return (
     <div className="result-trade-chart">
       <div>
@@ -2529,11 +3354,28 @@ function ResultTradeChart({
         </small>
       </div>
       {levels.length ? (
-        <svg viewBox="0 0 560 220" role="img" aria-label="Trade price levels">
+        <svg viewBox="0 0 640 240" role="img" aria-label="Trade price levels">
           {levels.map(([label, value, color]) => (
             <g key={label}>
-              <line x1="20" x2="540" y1={y(Number(value))} y2={y(Number(value))} stroke={color} strokeDasharray="8 5" />
-              <text x="28" y={y(Number(value)) - 5} fill={color}>
+              <line
+                data-level={label}
+                x1="20"
+                x2="440"
+                y1={y(value)}
+                y2={y(value)}
+                stroke={color}
+                strokeDasharray="8 5"
+              />
+              <circle cx="440" cy={y(value)} r="3" fill={color} />
+              <line
+                x1="440"
+                x2="470"
+                y1={y(value)}
+                y2={labelY.get(label)}
+                stroke={color}
+                strokeWidth="1"
+              />
+              <text x="478" y={(labelY.get(label) || 0) + 4} fill={color}>
                 {label} {displayMetric(value)}
               </text>
             </g>
@@ -2554,8 +3396,8 @@ function ResultTradeChart({
         <div>
           <dt>Duration</dt>
           <dd>
-            {trade.entry_timestamp && trade.exit_timestamp
-              ? `${Math.max(0, (new Date(trade.exit_timestamp).getTime() - new Date(trade.entry_timestamp).getTime()) / 60000).toFixed(1)} min`
+            {durationMinutes !== null
+              ? `${durationMinutes.toFixed(1)} min`
               : "Not retained"}
           </dd>
         </div>
@@ -2717,35 +3559,107 @@ function MonteCarloBandChart({ preview }: { preview: any }) {
   );
 }
 
-function ParameterHeatmap({ preview }: { preview: any }) {
+function parameterHeatmapLabel(name: string): string {
+  const withoutPrefix = name.includes(".params.")
+    ? name.split(".params.").at(-1) || name
+    : name;
+  return humanize(withoutPrefix.replaceAll(".", "_"));
+}
+
+function parameterHeatmapKey(value: any): string {
+  return `${typeof value}:${String(value)}`;
+}
+
+function parameterHeatmapValues(rows: any[], name: string): any[] {
+  const seen = new Set<string>();
+  return rows.flatMap((row) => {
+    const value = row[name];
+    const key = parameterHeatmapKey(value);
+    if (value === null || value === undefined || seen.has(key)) return [];
+    seen.add(key);
+    return [value];
+  });
+}
+
+function parameterHeatmapReference(metric: string): number {
+  return metric === "profit_factor" ? 1 : 0;
+}
+
+function parameterHeatmapTone(
+  value: number,
+  reference: number,
+): "negative" | "neutral" | "positive" {
+  if (value < reference) return "negative";
+  if (value > reference) return "positive";
+  return "neutral";
+}
+
+function parameterHeatmapColor(
+  value: number,
+  low: number,
+  high: number,
+  reference: number,
+): string {
+  if (value === reference) return "var(--surface-2)";
+  if (value < reference) {
+    const span = Math.max(reference - low, Number.EPSILON);
+    const intensity = Math.min(1, Math.max(0, (reference - value) / span));
+    return `color-mix(in srgb, #a3342c ${Math.round(18 + intensity * 62)}%, #ffffff)`;
+  }
+  const span = Math.max(high - reference, Number.EPSILON);
+  const intensity = Math.min(1, Math.max(0, (value - reference) / span));
+  return `color-mix(in srgb, #18724d ${Math.round(18 + intensity * 62)}%, #ffffff)`;
+}
+
+export function ParameterHeatmap({
+  preview,
+  parameterColumns = [],
+}: {
+  preview: any;
+  parameterColumns?: string[];
+}) {
   if (!preview)
     return null;
   const rows = preview.preview_rows || [];
+  const columns = preview.columns || [];
   const metric = [
     "net_profit_after_costs",
     "net_profit",
     "profit_factor",
     "expectancy",
-  ].find((name) => (preview.columns || []).includes(name));
-  const parameters = (preview.columns || []).filter(
-    (name: string) =>
-      name !== "run_id" &&
-      name !== metric &&
-      ![
-        "total_trades",
-        "trades",
-        "max_drawdown",
-        "mar",
-        "win_rate",
-      ].includes(name),
+    "expectancy_r",
+  ].find((name) => columns.includes(name));
+  const declaredParameters = parameterColumns.filter((name) =>
+    columns.includes(name),
   );
+  const inferredParameters = columns.filter((name: string) =>
+    /(^|\.)params\./.test(name),
+  );
+  const parameters = declaredParameters.length
+    ? declaredParameters
+    : inferredParameters;
   const xName = parameters[0];
   const yName = parameters[1];
-  const values = rows
-    .map((row: any) => Number(row[metric || ""]))
-    .filter(Number.isFinite);
+  const finiteRows = rows.filter((row: any) =>
+    Number.isFinite(Number(row[metric || ""])),
+  );
+  const values = finiteRows.map((row: any) => Number(row[metric || ""]));
   const low = values.length ? Math.min(...values) : 0;
   const high = values.length ? Math.max(...values) : 0;
+  const reference = parameterHeatmapReference(metric || "");
+  const xValues = xName ? parameterHeatmapValues(finiteRows, xName) : [];
+  const yValues = yName
+    ? parameterHeatmapValues(finiteRows, yName)
+    : [null];
+  const cells = new Map<string, any>(
+    finiteRows.map((row: any) => [
+      `${parameterHeatmapKey(row[xName])}|${yName ? parameterHeatmapKey(row[yName]) : ""}`,
+      row,
+    ]),
+  );
+  const allBelowReference = values.length > 0 && high < reference;
+  const allAboveReference = values.length > 0 && low > reference;
+  const referenceLabel = metric === "profit_factor" ? "1.0" : "zero";
   return (
     <Card className="parameter-heatmap">
       <div className="card-kicker">
@@ -2755,29 +3669,116 @@ function ParameterHeatmap({ preview }: { preview: any }) {
         </div>
         <small>{metric ? humanize(metric) : "Metric unavailable"}</small>
       </div>
-      {!preview.available || !metric || !xName || !rows.length ? (
+      {!preview.available || !metric || !xName || !finiteRows.length ? (
         <Notice tone="warning">
           {preview.reason || "At least one parameter and a performance metric are required."}
         </Notice>
+      ) : parameters.length > 2 ? (
+        <Notice tone="warning">
+          A two-axis heatmap cannot faithfully display {parameters.length} parameter
+          dimensions. Inspect the hash-verified parameter surface table below.
+        </Notice>
       ) : (
-        <div className="heatmap-grid">
-          {rows.slice(0, 120).map((row: any, index: number) => {
-            const value = Number(row[metric]);
-            const ratio = high === low ? 0.5 : (value - low) / (high - low);
-            return (
-              <span
-                key={`${row.run_id}-${index}`}
-                style={{
-                  background: `color-mix(in srgb, #18724d ${Math.round(ratio * 82)}%, #f4d6d2)`,
-                }}
-                title={`${humanize(xName)} ${displayMetric(row[xName])}${yName ? ` · ${humanize(yName)} ${displayMetric(row[yName])}` : ""} · ${humanize(metric)} ${displayMetric(value)}`}
-              >
-                <small>{displayMetric(row[xName])}</small>
-                <strong>{displayMetric(value)}</strong>
-              </span>
-            );
-          })}
-        </div>
+        <>
+          <div className="heatmap-axis-summary">
+            <span><strong>Columns:</strong> {parameterHeatmapLabel(xName)}</span>
+            {yName && <span><strong>Rows:</strong> {parameterHeatmapLabel(yName)}</span>}
+          </div>
+          <div className="heatmap-legend" aria-label="Heatmap color scale">
+            <span className="heatmap-legend-negative" />
+            <small>Below {referenceLabel}</small>
+            <span className="heatmap-legend-neutral" />
+            <small>{referenceLabel}</small>
+            <span className="heatmap-legend-positive" />
+            <small>Above {referenceLabel}</small>
+          </div>
+          {(allBelowReference || allAboveReference) && (
+            <p
+              className={`heatmap-scale-note ${allBelowReference ? "negative" : "positive"}`}
+            >
+              All displayed {humanize(metric).toLowerCase()} results are {allBelowReference ? `below ${referenceLabel}` : `above ${referenceLabel}`}.
+            </p>
+          )}
+          <div className="heatmap-scroll">
+            <div
+              className="heatmap-matrix"
+              role="table"
+              aria-label={`${humanize(metric)} by ${parameterHeatmapLabel(xName)}${yName ? ` and ${parameterHeatmapLabel(yName)}` : ""}`}
+              style={{
+                gridTemplateColumns: `${yName ? "minmax(150px, max-content) " : ""}repeat(${xValues.length}, minmax(110px, 1fr))`,
+              }}
+            >
+              <div className="heatmap-matrix-row" role="row">
+                {yName && (
+                  <div className="heatmap-axis-corner" role="columnheader">
+                    Row / column
+                  </div>
+                )}
+                {xValues.map((xValue) => (
+                  <div
+                    className="heatmap-column-header"
+                    role="columnheader"
+                    key={parameterHeatmapKey(xValue)}
+                  >
+                    {displayMetric(xValue)}
+                  </div>
+                ))}
+              </div>
+              {yValues.map((yValue) => (
+                <div
+                  className="heatmap-matrix-row"
+                  role="row"
+                  key={yName ? parameterHeatmapKey(yValue) : "single-row"}
+                >
+                  {yName && (
+                    <div className="heatmap-row-header" role="rowheader">
+                      {displayMetric(yValue)}
+                    </div>
+                  )}
+                  {xValues.map((xValue) => {
+                    const cell = cells.get(
+                      `${parameterHeatmapKey(xValue)}|${yName ? parameterHeatmapKey(yValue) : ""}`,
+                    );
+                    if (!cell)
+                      return (
+                        <div
+                          className="heatmap-cell unavailable"
+                          role="cell"
+                          key={parameterHeatmapKey(xValue)}
+                          aria-label={`${parameterHeatmapLabel(xName)} ${displayMetric(xValue)}${yName ? `, ${parameterHeatmapLabel(yName)} ${displayMetric(yValue)}` : ""}: unavailable`}
+                        >
+                          —
+                        </div>
+                      );
+                    const value = Number(cell[metric]);
+                    const tone = parameterHeatmapTone(value, reference);
+                    const label = `${parameterHeatmapLabel(xName)} ${displayMetric(xValue)}${yName ? ` · ${parameterHeatmapLabel(yName)} ${displayMetric(yValue)}` : ""} · ${humanize(metric)} ${displayMetric(value)}`;
+                    return (
+                      <div
+                        className="heatmap-cell"
+                        role="cell"
+                        data-tone={tone}
+                        key={parameterHeatmapKey(xValue)}
+                        style={{
+                          background: parameterHeatmapColor(
+                            value,
+                            low,
+                            high,
+                            reference,
+                          ),
+                        }}
+                        title={label}
+                        aria-label={label}
+                      >
+                        <strong>{displayMetric(value)}</strong>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+        </>
       )}
     </Card>
   );
@@ -2886,6 +3887,94 @@ function ResultPreviewTable({ name, preview }: { name: string; preview: any }) {
   );
 }
 
+function PromotionChecklist({
+  detail,
+  records,
+}: {
+  detail: any;
+  records: any[];
+}) {
+  const workflow = detail.workflow_context || {};
+  const campaignId = String(detail.campaign?.campaign_id || workflow.campaign_id || "");
+  const attemptId = String(workflow.current_attempt_id || "original");
+  const variantId = String(workflow.target_variant_id || "v01");
+  const result =
+    detail.attempt_results?.[attemptId]?.[variantId] ||
+    detail.latest_results?.[variantId] ||
+    {};
+  const [governance, setGovernance] = useState<any>({
+    candidates: [],
+    decisions: [],
+  });
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all([api.lifecycleCandidates(), api.deploymentDecisions()])
+      .then(([candidates, decisions]) => {
+        if (!cancelled) {
+          setGovernance({
+            candidates: candidates.items || [],
+            decisions: decisions.items || [],
+          });
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [campaignId, attemptId, variantId]);
+  const candidate = governance.candidates.find(
+    (item: any) =>
+      item.campaign_id === campaignId &&
+      item.variant_id === variantId &&
+      item.attempt_id === attemptId,
+  );
+  const forward = records.find(
+    (item) => item.variant_id === variantId && item.attempt_id === attemptId,
+  );
+  const deployment = governance.decisions.find((item: any) => {
+    const record = item.decision || item;
+    return (record.candidates || []).some(
+      (selection: any) => selection.candidate_id === candidate?.candidate_id,
+    );
+  });
+  const scientific = String(
+    result.scientific_validity_verdict || result.verdict || "PENDING",
+  );
+  const generic = String(
+    result["research verdict"] || result.research_verdict || result.verdict || "PENDING",
+  );
+  const accountRequired = scientific === "PASS" && generic === "FAIL";
+  const profileScoped = String(candidate?.eligibility_basis || "").includes("account");
+  const rows = [
+    ["Scientific result", scientific, scientific === "PASS" ? "Final hash-valid evidence passed." : "Complete or resolve the governed result."],
+    ["Independent candidate review", candidate ? "COMPLETE" : "LOCKED", candidate ? "A different reviewer approved this exact candidate." : "Available only after an eligible PASS result."],
+    ["Named account assessment", accountRequired ? (profileScoped ? "COMPLETE" : "REQUIRED") : "NOT REQUIRED", accountRequired ? "Required because generic objectives did not pass." : "Generic-quality PASS does not require an account-specific rescue route."],
+    ["True forward incubation", forward?.status || "LOCKED", forward ? `${forward.calendar_days || 0}/${forward.minimum_calendar_days || 0} days · ${forward.trade_count || 0}/${forward.minimum_trades || 0} trades` : "Starts only after independent candidate approval."],
+    ["Portfolio review", "CONDITIONAL", "Required only when two or more candidates will share the deployment allocation."],
+    ["Human deployment decision", deployment?.status || deployment?.deployment_state || "LOCKED", deployment ? "The recorded decision remains separate from order routing." : "Unlocks after the required forward and portfolio evidence."],
+  ];
+  return (
+    <Card className="promotion-checklist">
+      <div className="card-kicker">
+        <div>
+          <p className="eyebrow">One promotion checklist</p>
+          <h2>Candidate to separate manual deployment</h2>
+        </div>
+        <span>{variantId} · {humanize(attemptId)}</span>
+      </div>
+      <div className="promotion-checklist-rows">
+        {rows.map(([label, state, explanation], index) => (
+          <div key={label}>
+            <span className="promotion-step-number">{index + 1}</span>
+            <span><strong>{label}</strong><small>{explanation}</small></span>
+            <StatusBadge value={state} kind="scientific" />
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function Lifecycle({ detail }: { detail: any }) {
   const campaign = detail.campaign || {};
   const workflow = detail.workflow_context || {};
@@ -2959,6 +4048,7 @@ function Lifecycle({ detail }: { detail: any }) {
         evidence. Reaching the time and trade minimum creates another human
         review task—it never converts the strategy to PASS or sends orders.
       </Notice>
+      <PromotionChecklist detail={detail} records={records} />
       <section className="section-heading">
         <div>
           <p className="eyebrow">Post-research candidate lifecycle</p>
@@ -3033,6 +4123,8 @@ function ForwardIncubationCard({
   const [actor, setActor] = useState("");
   const [notes, setNotes] = useState("");
   const [file, setFile] = useState<File | null>(null);
+  const [uploadReceipt, setUploadReceipt] = useState<any>(null);
+  const [reconciliationConfirmed, setReconciliationConfirmed] = useState(false);
   const [trades, setTrades] = useState(0);
   const [netPnl, setNetPnl] = useState(0);
   const [propRuleBreach, setPropRuleBreach] = useState(false);
@@ -3060,6 +4152,8 @@ function ForwardIncubationCard({
     setMode("");
     setNotes("");
     setFile(null);
+    setUploadReceipt(null);
+    setReconciliationConfirmed(false);
     setTrades(0);
     setNetPnl(0);
     setPropRuleBreach(false);
@@ -3070,13 +4164,54 @@ function ForwardIncubationCard({
 
   async function upload(): Promise<string> {
     if (!file) throw new Error("Attach the paper/shadow evidence used for this record.");
+    if (uploadReceipt?.filename === file.name && uploadReceipt?.upload_token) {
+      return uploadReceipt.upload_token;
+    }
     return (await api.uploadForwardIncubationEvidence(file)).upload_token;
+  }
+
+  async function inspectEvidence(nextFile: File | null) {
+    setFile(nextFile);
+    setUploadReceipt(null);
+    setReconciliationConfirmed(false);
+    if (!nextFile) return;
+    setBusy(true);
+    setFeedback("");
+    try {
+      const receipt = await api.uploadForwardIncubationEvidence(nextFile);
+      setUploadReceipt(receipt);
+      const reconciliation = receipt.reconciliation;
+      if (reconciliation?.usable) {
+        setTrades(Number(reconciliation.trade_count_delta));
+        setNetPnl(Number(reconciliation.net_pnl_delta));
+        if (reconciliation.prop_rule_breach !== null) {
+          setPropRuleBreach(Boolean(reconciliation.prop_rule_breach));
+        }
+        if (reconciliation.forced_flatten_violation !== null) {
+          setFlattenViolation(Boolean(reconciliation.forced_flatten_violation));
+        }
+      }
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : "Evidence could not be inspected");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function submitObservation() {
     if (!actor.trim() || !notes.trim()) {
       setFeedback("Researcher identity and observation notes are required.");
       return;
+    }
+    if (file?.name.toLowerCase().endsWith(".csv")) {
+      if (!uploadReceipt?.reconciliation?.usable) {
+        setFeedback("Resolve the CSV reconciliation blockers before recording this observation.");
+        return;
+      }
+      if (!reconciliationConfirmed) {
+        setFeedback("Confirm the CSV-derived trade count, P&L, and breach interpretation.");
+        return;
+      }
     }
     setBusy(true);
     setFeedback("");
@@ -3239,11 +4374,55 @@ function ForwardIncubationCard({
                 <input
                   type="file"
                   accept=".csv,.json,.md,.parquet,.pdf,.png,.jpg,.jpeg,.txt"
-                  onChange={(event) => setFile(event.target.files?.[0] || null)}
+                  onChange={(event) => void inspectEvidence(event.target.files?.[0] || null)}
                 />
               </Field>
             )}
           </div>
+          {uploadReceipt?.reconciliation && mode === "observation" && (
+            <Card className="forward-reconciliation-preview">
+              <div className="card-kicker">
+                <div>
+                  <p className="eyebrow">Calculated from attached CSV</p>
+                  <h3>Forward-journal reconciliation</h3>
+                </div>
+                <StatusBadge
+                  value={uploadReceipt.reconciliation.usable ? "READY FOR CONFIRMATION" : "BLOCKED"}
+                  kind="scientific"
+                />
+              </div>
+              <dl className="compact-dl">
+                <div><dt>Trade rows</dt><dd>{uploadReceipt.reconciliation.trade_count_delta ?? "Unresolved"}</dd></div>
+                <div><dt>Net P&L</dt><dd>{displayMetric(uploadReceipt.reconciliation.net_pnl_delta)}</dd></div>
+                <div><dt>Prop-rule breach</dt><dd>{uploadReceipt.reconciliation.prop_rule_breach === null ? "Confirm manually" : uploadReceipt.reconciliation.prop_rule_breach ? "Yes" : "No"}</dd></div>
+                <div><dt>Forced-flatten violation</dt><dd>{uploadReceipt.reconciliation.forced_flatten_violation === null ? "Confirm manually" : uploadReceipt.reconciliation.forced_flatten_violation ? "Yes" : "No"}</dd></div>
+              </dl>
+              {uploadReceipt.reconciliation.blockers?.length > 0 && (
+                <Notice tone="danger" title="Reconciliation blocked">
+                  {uploadReceipt.reconciliation.blockers.join(" · ")}
+                </Notice>
+              )}
+              {uploadReceipt.reconciliation.warnings?.length > 0 && (
+                <Notice tone="warning" title="Human confirmation still required">
+                  {uploadReceipt.reconciliation.warnings.join(" · ")}
+                </Notice>
+              )}
+              {uploadReceipt.reconciliation.usable && (
+                <label className="confirmation compact">
+                  <input
+                    type="checkbox"
+                    checked={reconciliationConfirmed}
+                    onChange={(event) => setReconciliationConfirmed(event.target.checked)}
+                  />
+                  <span><Icon name="check" /></span>
+                  <div>
+                    <strong>I confirm this deterministic reconciliation</strong>
+                    <small>The CSV is not appended until I confirm the calculated totals and any manually reviewed flags.</small>
+                  </div>
+                </label>
+              )}
+            </Card>
+          )}
           <Field label={mode === "retire" ? "Retirement reason" : "Evidence notes"}>
             <textarea
               rows={3}
@@ -3260,6 +4439,7 @@ function ForwardIncubationCard({
                     min="0"
                     step="1"
                     value={trades}
+                    disabled={Boolean(uploadReceipt?.reconciliation?.usable)}
                     onChange={(event) => setTrades(Number(event.target.value))}
                   />
                 </Field>
@@ -3268,6 +4448,7 @@ function ForwardIncubationCard({
                     type="number"
                     step="any"
                     value={netPnl}
+                    disabled={Boolean(uploadReceipt?.reconciliation?.usable)}
                     onChange={(event) => setNetPnl(Number(event.target.value))}
                   />
                 </Field>
@@ -4811,6 +5992,20 @@ export function FollowUpDecisionGuide({
           <p>
             <strong>Avoid when:</strong> {active.do_not_use_when}
           </p>
+          {active.impact_preview && (
+            <div className="follow-up-impact-grid">
+              {(["changes", "preserves", "invalidates"] as const).map((key) => (
+                <div key={key}>
+                  <strong>{humanize(key)}</strong>
+                  <ul>
+                    {(active.impact_preview[key] || []).map((item: string) => (
+                      <li key={item}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>

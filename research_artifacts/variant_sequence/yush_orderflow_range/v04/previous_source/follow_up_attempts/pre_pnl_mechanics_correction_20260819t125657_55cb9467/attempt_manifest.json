@@ -1,0 +1,61 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260819t125657_55cb9467",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "ff546257469ee4f9612171466ddfeb3761177fbfe6996c5790195822c61cd578",
+        "implementation_version": 21,
+        "manifest_sha256": "d1aa9c3c506b6ea1a5139a9ae49623ce0bf0b9c9bd25cc351ee7eea94d31746b",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "90d32609de9190142d21f39d0b29973ae2ac601d739de15c9b993388873e85af",
+        "implementation_version": 20,
+        "manifest_sha256": "dd53a417405e4e8f8cef22eee03578e0f852c440137ad097231f07c5ac3532f2",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "171a6646d205975f0f72fe0ca08bc42717bb8e22a0dca104c2fb32bd08690451"
+  },
+  "created_at": "2026-08-19T12:56:58.121042+00:00",
+  "created_by": "Codex on user instruction",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260819t125657_55cb9467",
+  "parent_attempt_id": "replication_20260819t035118_369ade90",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "User-directed pre-PnL v03 mechanics correction after manual inspection of the prior diagnostic mechanics evidence: replace the immediately marketable outside-edge limit with a native gap-aware stop-market entry at VAH minus one tick for shorts and VAL plus one tick for longs. The trigger crossing now supplies the causal reclaim. Preserve the frozen sweep-extreme protective stop, stop-first pre-fill cancellation, one-third-ATR context rules, session-wide burst eligibility, midpoint/opposite-edge targets, parameters, data, and validation protocol. The prior immutable evidence is preserved and this rationale explicitly records that the correction followed review of its unacceptable 11.1 percent diagnostic win rate.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "ac07cbf1480b7910c4ee6cb7b5a44166a8e1e5f5e1da4618939c962f213dde72"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "cc8745aefd2f96853f34fc8577326cbb89683dda48cc5603a312308e0ab68b46"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

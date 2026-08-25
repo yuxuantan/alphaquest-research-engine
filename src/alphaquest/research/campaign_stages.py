@@ -31,6 +31,7 @@ from alphaquest.research.execution import run_research_backtest, uses_canonical_
 from alphaquest.research.monkey import run_monkey
 from alphaquest.research.monte_carlo import run_monte_carlo, run_monte_carlo_with_audit
 from alphaquest.research.policy import active_research_policy_metadata, load_research_policy
+from alphaquest.research.factory_policy import validate_research_factory_binding
 from alphaquest.research.preflight import run_preflight
 from alphaquest.research.run_store import ensure_run_uid
 from alphaquest.research.schemas import (
@@ -127,6 +128,7 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
     out["research_policy"] = policy_metadata
     research = out.setdefault("research_metadata", {})
     objectives = out.get("research_objectives")
+    factory_binding = out.get("research_factory")
     if objectives is not None:
         if not isinstance(objectives, dict):
             raise ValueError("research_objectives must be a mapping")
@@ -142,6 +144,29 @@ def canonicalize_campaign_config(cfg: dict, *, include_acceptance: bool = True) 
             "status": "frozen_pre_pnl",
             "repository_floor_policy_sha256": policy_metadata["hash"],
         }
+        if factory_binding is not None:
+            data_binding = out.get("data") if isinstance(out.get("data"), dict) else {}
+            out["research_factory"] = validate_research_factory_binding(
+                factory_binding,
+                objectives=objectives,
+                dataset={
+                    "dataset_id": out.get("dataset_id") or data_binding.get("dataset_id"),
+                    "canonical_sha256": data_binding.get("canonical_sha256"),
+                    "source_sha256": data_binding.get("source_sha256"),
+                    "coverage_start": data_binding.get("coverage_start"),
+                    "coverage_end": data_binding.get("coverage_end"),
+                    "roll_calendar_sha256": data_binding.get("roll_calendar_sha256"),
+                    "execution_data": data_binding.get("execution_data"),
+                },
+                acceptance_train_months=int(
+                    _RESEARCH_POLICY.acceptance_oos.get("train_months", 24)
+                ),
+                acceptance_test_months=int(
+                    _RESEARCH_POLICY.acceptance_oos.get("test_months", 6)
+                ),
+            )
+    elif factory_binding is not None:
+        raise ValueError("research_factory binding requires frozen research_objectives")
     validation_gate = research.setdefault("validation_gate", {})
     validation_gate.update(copy.deepcopy(DEFAULT_MECHANICS_VALIDATION))
 
@@ -1195,7 +1220,17 @@ def _scientific_validity_verdict(
         str(item.get("scientific_validity_verdict") or "NEEDS MANUAL REVIEW")
         for item in results
     ]
-    if "NEEDS MANUAL REVIEW" in verdicts:
+    unresolved = [
+        item
+        for item, verdict in zip(results, verdicts, strict=True)
+        if verdict == "NEEDS MANUAL REVIEW"
+        and not (
+            str(item.get("status") or "") == "skipped"
+            and str(item.get("skip_reason") or "")
+            == "prior scientific-validity stage failed"
+        )
+    ]
+    if unresolved:
         return "NEEDS MANUAL REVIEW"
     if "FAIL" in verdicts:
         return "FAIL"

@@ -10,7 +10,12 @@ import pytest
 import yaml
 
 from alphaquest.research.campaign_stages import DEFAULT_STAGE_ORDER
-from alphaquest.studio.finalization import FinalizationError, RunFinalizer, inspect_finalized_result
+from alphaquest.studio.finalization import (
+    FinalizationError,
+    RunFinalizer,
+    inspect_finalized_result,
+    ratify_terminal_scientific_failure,
+)
 from alphaquest.studio.results import load_result_bundle
 
 
@@ -33,6 +38,7 @@ def _fixture(
         "variant_id": "v01",
         "attempt_id": "original",
         "attempt_kind": "original",
+        "test_run_id": "run1",
         "symbol": "ES",
         "timeframe": "1m",
         "strategy_name": "demo-v01",
@@ -78,6 +84,7 @@ def _fixture(
         "run_uid": "run-uid-1",
         "campaign_id": "demo",
         "variant_id": "v01",
+        "attempt_id": "original",
         "test_run_id": "run1",
         "symbol": "ES",
         "timeframe": "1m",
@@ -93,7 +100,7 @@ def _fixture(
         {"campaign_id": "demo", "variant_id": "v01", "run_uid": "run-uid-1"},
     )
     (run_dir / "effective_config.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
-    (run_dir / "source_config.yaml").write_text(yaml.safe_dump(cfg), encoding="utf-8")
+    (run_dir / "source_config.yaml").write_bytes(config_path.read_bytes())
 
     trades = pd.DataFrame(
         [
@@ -232,6 +239,68 @@ def test_finalization_atomically_publishes_strict_bundle_and_idempotent_ledger(t
     assert journal["phase"] == "FINALIZED"
     assert journal["terminal"] is True
     assert journal["automatic_replay_permitted"] is False
+
+
+def test_terminal_failure_ratification_preserves_bundle_trades_and_pnl(
+    tmp_path,
+    monkeypatch,
+):
+    config_path, run_dir, summary = _fixture(tmp_path)
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    cfg["strategy"]["flatten_time"] = "15:55:00"
+    config_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    (run_dir / "source_config.yaml").write_bytes(config_path.read_bytes())
+
+    trades_path = run_dir / "limited_core_grid_test/fixed_config_core_trade_log.csv"
+    trades = pd.read_csv(trades_path)
+    trades["session_date"] = ["2025-01-02", "2025-01-03"]
+    trades.to_csv(trades_path, index=False)
+    summary["scientific_validity_verdict"] = "NEEDS MANUAL REVIEW"
+    summary["diagnostic_reasons"] = []
+    for index, stage in enumerate(summary["stages"]):
+        if index == 0:
+            stage["scientific_validity_verdict"] = "FAIL"
+            stage["criteria"][0]["decision_role"] = "scientific_validity"
+            _write_json(run_dir / stage["stage"] / "stage_result.json", stage)
+        else:
+            stage["scientific_validity_verdict"] = "NEEDS MANUAL REVIEW"
+            stage["skip_reason"] = "prior scientific-validity stage failed"
+    for name in ("campaign_test_summary.json", "variant_test_summary.json"):
+        _write_json(run_dir / name, summary)
+
+    result = RunFinalizer(
+        tmp_path,
+        registry_refresher=lambda _root: {"runs": 1},
+        source_index_refresher=lambda *_args: None,
+    ).finalize(job_id="job-ratification", config_path=config_path, summary=summary)
+    original_sha = hashlib.sha256(result.result_bundle_path.read_bytes()).hexdigest()
+    approval_path = tmp_path / "approval.json"
+    _write_json(approval_path, {"status": "approved_for_testing"})
+    monkeypatch.setattr(
+        "alphaquest.validation.promotion_gate.inspect_historical_validation_approval",
+        lambda *_args, **_kwargs: {
+            "status": "APPROVED_FOR_TESTING",
+            "errors": [],
+            "approval_path": str(approval_path),
+        },
+    )
+
+    ratification = ratify_terminal_scientific_failure(
+        result.result_bundle_path,
+        config_path=config_path,
+        ratified_by="test:reporting-reconciliation",
+        reason="Verify append-only terminal failure ratification without replaying stages.",
+    )
+
+    assert ratification["scientific_validity_verdict"] == "FAIL"
+    assert ratification["runner_replayed"] is False
+    assert ratification["reconciliation"]["trade_count"] == 2
+    assert ratification["reconciliation"]["net_profit_after_costs"] == 50.0
+    assert ratification["reconciliation"]["forced_flatten_compliance"] is True
+    assert hashlib.sha256(result.result_bundle_path.read_bytes()).hexdigest() == original_sha
+    inspected = inspect_finalized_result(result.result_bundle_path, config_path=config_path)
+    assert inspected["valid"] is True
+    assert inspected["scientific_ratification"]["scientific_validity_verdict"] == "FAIL"
 
 
 def test_nonfinite_runner_criterion_becomes_null_with_reason_in_strict_bundle(tmp_path):
@@ -603,6 +672,84 @@ def test_failure_injected_after_atomic_publish_marks_attempt_incomplete_without_
     assert len(rows) == 1
     assert rows[-1]["result"] == "NEEDS MANUAL REVIEW"
     assert rows[-1]["stage"] == "incomplete_studio_attempt"
+
+
+def test_explicit_recovery_hash_verifies_and_finishes_published_runner_without_replay(tmp_path):
+    config_path, run_dir, summary = _fixture(tmp_path)
+    broken = RunFinalizer(
+        tmp_path,
+        registry_refresher=lambda _root: (_ for _ in ()).throw(RuntimeError("injected registry crash")),
+        source_index_refresher=lambda *_args: None,
+    )
+    with pytest.raises(FinalizationError, match="post-publication"):
+        broken.finalize(job_id="job-explicit-recovery", config_path=config_path, summary=summary)
+
+    recovered = RunFinalizer(
+        tmp_path,
+        registry_refresher=lambda _root: {"runs": 1, "artifacts": 4},
+        source_index_refresher=lambda *_args: None,
+    ).recover(
+        job_id="job-explicit-recovery",
+        config_path=config_path,
+        run_dir=run_dir,
+    )
+
+    assert recovered.idempotent_reuse is True
+    assert recovered.research_verdict == "FAIL"
+    assert not (run_dir / "studio_incomplete_attempt.json").exists()
+    archive = run_dir / "studio_incomplete_attempt.recovered.json"
+    assert archive.is_file()
+    manifest = json.loads(recovered.finalization_manifest_path.read_text(encoding="utf-8"))
+    assert manifest["transaction_complete"] is True
+    assert manifest["explicit_recovery"] is True
+    assert manifest["incomplete_marker_sha256"] == hashlib.sha256(archive.read_bytes()).hexdigest()
+    assert "transaction_error" not in manifest
+    assert inspect_finalized_result(recovered.result_bundle_path, config_path=config_path)["valid"] is True
+
+    # A repeated explicit action after a response loss is a pure hash-verified reuse.
+    repeated = RunFinalizer(
+        tmp_path,
+        registry_refresher=lambda _root: {"runs": 1, "artifacts": 4},
+        source_index_refresher=lambda *_args: None,
+    ).recover(
+        job_id="job-explicit-recovery",
+        config_path=config_path,
+        run_dir=run_dir,
+    )
+    assert repeated.result_bundle_path == recovered.result_bundle_path
+    with (tmp_path / "research_ledger.csv").open(newline="", encoding="utf-8") as handle:
+        rows = list(csv.DictReader(handle))
+    assert [row["stage"] for row in rows] == [
+        "incomplete_studio_attempt",
+        "full_staged_methodology",
+    ]
+
+
+def test_explicit_recovery_refuses_drifted_runner_evidence_and_keeps_marker(tmp_path):
+    config_path, run_dir, summary = _fixture(tmp_path)
+    broken = RunFinalizer(
+        tmp_path,
+        registry_refresher=lambda _root: (_ for _ in ()).throw(RuntimeError("injected registry crash")),
+        source_index_refresher=lambda *_args: None,
+    )
+    with pytest.raises(FinalizationError, match="post-publication"):
+        broken.finalize(job_id="job-drifted-recovery", config_path=config_path, summary=summary)
+
+    stage = run_dir / DEFAULT_STAGE_ORDER[0] / "stage_result.json"
+    stage.write_text(stage.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    with pytest.raises(FinalizationError, match="runner evidence hash mismatch"):
+        RunFinalizer(
+            tmp_path,
+            registry_refresher=lambda _root: {"runs": 1},
+            source_index_refresher=lambda *_args: None,
+        ).recover(
+            job_id="job-drifted-recovery",
+            config_path=config_path,
+            run_dir=run_dir,
+        )
+
+    assert (run_dir / "studio_incomplete_attempt.json").is_file()
+    assert not (run_dir / "studio_incomplete_attempt.recovered.json").exists()
 
 
 def test_second_registry_publication_failure_revokes_completed_transaction(tmp_path):

@@ -23,6 +23,10 @@ from alphaquest.studio.drafts import DraftStore, _verify_frozen_document
 from alphaquest.studio.ledger import append_planned_publication
 from alphaquest.studio.variants import suggest_variant_card
 from alphaquest.studio.workspace import refresh_generated_indexes_if_stale
+from alphaquest.strategy_certification import (
+    StrategyCertification,
+    load_strategy_certifications,
+)
 from alphaquest.validation.promotion_gate import inspect_historical_validation_approval
 
 
@@ -81,13 +85,23 @@ class SequentialVariantService:
         index = len(draft.variants)
         _, result = self._latest_result(campaign_id, draft.variants[-1].variant_id)
         failure_context = _failure_context(result)
-        card = suggest_variant_card(
-            draft.model_dump(mode="json", by_alias=True),
-            index=index,
-            failure_context=failure_context,
-        )
+        draft_payload = draft.model_dump(mode="json", by_alias=True)
+        if draft_payload.get("authoring_lane") == "certified_event_replay":
+            card = _suggest_certified_event_variant_card(
+                draft_payload,
+                index=index,
+                failure_context=failure_context,
+                project_root=self.project_root,
+            )
+        else:
+            card = suggest_variant_card(
+                draft_payload,
+                index=index,
+                failure_context=failure_context,
+            )
         card["variant_id"] = state["next_variant_id"]
         card["confirmed"] = False
+        card = VariantDraftV1.model_validate(card).model_dump(mode="json", by_alias=True)
         return {**state, "failure_context": failure_context, "variant": card}
 
     def append(
@@ -281,11 +295,32 @@ class SequentialVariantService:
         try:
             draft = self.drafts.validate(campaign_id)
         except ValidationError as exc:
-            if "variant confirmations are stale" not in str(exc):
+            message = str(exc)
+            allowed_legacy_repairs = (
+                "variant confirmations are stale" in message
+                or "a frozen campaign requires confirmed pre-PnL research objectives" in message
+            )
+            if not allowed_legacy_repairs:
                 raise
             document = self.drafts.load(campaign_id)
             _verify_frozen_document(document, campaign_id)
             payload = deepcopy(document["draft"])
+            if payload.get("research_objectives") is None:
+                variants = payload.get("variants") if isinstance(payload.get("variants"), list) else []
+                current_variant_id = str((variants[-1] if variants else {}).get("variant_id") or "")
+                result_path, _result = self._latest_result(campaign_id, current_variant_id)
+                if result_path is None:
+                    raise ValueError(
+                        "legacy frozen draft lacks objectives and has no terminal predecessor result"
+                    ) from exc
+                predecessor = self._predecessor_source_config(result_path)
+                objectives = predecessor.get("research_objectives")
+                objective_hash = str(predecessor.get("research_objectives_sha256") or "")
+                if not isinstance(objectives, Mapping) or _object_sha256(objectives) != objective_hash:
+                    raise ValueError(
+                        "terminal predecessor objectives are missing or hash-drifted"
+                    ) from exc
+                payload["research_objectives"] = deepcopy(dict(objectives))
             payload["confirmation_context_sha256"] = campaign_confirmation_context_sha256(payload)
             draft = CampaignDraftV1.model_validate(payload)
         if not draft.frozen:
@@ -511,6 +546,169 @@ def _failure_context(result: Mapping[str, Any]) -> dict[str, Any]:
         "operator": "==",
         "reason": str(result.get("verdict_message") or "The predecessor received a terminal FAIL."),
         "verdict_message": str(result.get("verdict_message") or ""),
+    }
+
+
+def _suggest_certified_event_variant_card(
+    draft: Mapping[str, Any],
+    *,
+    index: int,
+    failure_context: Mapping[str, Any],
+    project_root: Path,
+) -> dict[str, Any]:
+    """Build the next event variant from one active, unused certified package.
+
+    The package policy and current certification select executable mechanics;
+    predecessor PnL is used only to document sequential lineage. Ambiguous
+    active successors fail closed instead of guessing from labels or results.
+    """
+
+    certifications = load_strategy_certifications(
+        project_root,
+        require_current=True,
+    )
+    used_entry_modules = {
+        str((item.get("entry") or {}).get("module") or "")
+        for item in draft.get("variants") or []
+        if isinstance(item, Mapping)
+    }
+    candidates = [
+        certification
+        for certification in certifications.values()
+        if certification.lane == "canonical_event_replay"
+        and certification.studio.get("visible") is True
+        and certification.entry_module not in used_entry_modules
+    ]
+    if not candidates:
+        raise ValueError(
+            "no unused active certified event strategy package is available for the next variant"
+        )
+    if len(candidates) != 1:
+        raise ValueError(
+            "multiple unused active certified event strategy packages are available; "
+            "repository policy must identify one successor before generating the next variant"
+        )
+    certification = candidates[0]
+    return _event_variant_card(
+        certification,
+        draft=draft,
+        index=index,
+        failure_context=failure_context,
+    )
+
+
+def _event_variant_card(
+    certification: StrategyCertification,
+    *,
+    draft: Mapping[str, Any],
+    index: int,
+    failure_context: Mapping[str, Any],
+) -> dict[str, Any]:
+    studio = certification.studio
+    review = studio.get("mechanics_review")
+    if not isinstance(review, Mapping):
+        raise ValueError(
+            f"active event strategy {certification.strategy_id!r} is missing Studio mechanics-review metadata"
+        )
+    rationale_fields = {
+        "mechanic_rationale": "mechanic_expresses_edge",
+        "entry_rationale": "entry_logic_rationale",
+        "stop_rationale": "stop_loss_rationale",
+        "target_rationale": "target_exit_rationale",
+        "timeframe_session_rationale": "session_logic_rationale",
+    }
+    rationales: dict[str, str] = {}
+    for card_field, review_field in rationale_fields.items():
+        value = str(review.get(review_field) or "").strip()
+        if not value:
+            raise ValueError(
+                f"active event strategy {certification.strategy_id!r} is missing {review_field}"
+            )
+        rationales[card_field] = value
+
+    defaults = {
+        name: deepcopy(parameter.default)
+        for name, parameter in certification.parameters.items()
+    }
+    event_parameter_grid: dict[str, list[Any]] = {}
+    for name, parameter in certification.parameters.items():
+        if not parameter.tunable:
+            continue
+        values = [deepcopy(value) for value in parameter.choices]
+        if len(values) < 2:
+            raise ValueError(
+                f"active event strategy {certification.strategy_id!r} tunable {name!r} "
+                "must declare at least two certified choices"
+            )
+        if parameter.default not in values:
+            raise ValueError(
+                f"active event strategy {certification.strategy_id!r} tunable {name!r} "
+                "does not include its reviewed default"
+            )
+        event_parameter_grid[name] = values
+
+    known_failure_modes = str(review.get("known_failure_modes") or "").strip()
+    if not known_failure_modes:
+        inherited = draft.get("known_failure_modes")
+        if isinstance(inherited, list):
+            known_failure_modes = " ".join(str(item).strip() for item in inherited if str(item).strip())
+    if not known_failure_modes:
+        raise ValueError(
+            f"active event strategy {certification.strategy_id!r} is missing known failure modes"
+        )
+
+    predecessor = next(
+        (
+            item
+            for item in reversed(list(draft.get("variants") or []))
+            if isinstance(item, Mapping)
+        ),
+        {},
+    )
+    predecessor_entry = str((predecessor.get("entry") or {}).get("module") or "the predecessor")
+    failure_stage = str(failure_context.get("stage") or "terminal assessment")
+    failure_metric = str(failure_context.get("metric") or "campaign verdict")
+    failure_reason = str(
+        failure_context.get("reason")
+        or failure_context.get("verdict_message")
+        or "the predecessor received a terminal scientific FAIL"
+    ).strip()
+    description = str(studio.get("description") or certification.strategy_id).strip()
+    material_difference = (
+        f"Replaces certified event entry {predecessor_entry} with {certification.entry_module}, "
+        f"stop {certification.stop_module}, and target {certification.target_module}. {description} "
+        f"The predecessor failed {failure_stage}/{failure_metric}: {failure_reason} "
+        "This is a newly frozen expression of the same economic edge, not a parameter-only rename "
+        "or a post-hoc reinterpretation of predecessor PnL."
+    )
+    rationales["mechanic_rationale"] = (
+        f"{rationales['mechanic_rationale']} The repository availability policy selected this as "
+        "the sole active, unused certified event successor; observed PnL did not select its parameters."
+    )
+    return {
+        "schema": "alphaquest.variant-draft/v1",
+        "variant_id": f"v{index + 1:02d}",
+        "title": str(studio.get("label") or certification.strategy_id),
+        "entry": {
+            "module": certification.entry_module,
+            "params": {"mechanics": defaults},
+            "parameter_grid": {},
+        },
+        "stop": {
+            "module": certification.stop_module,
+            "params": {},
+            "parameter_grid": {},
+        },
+        "target": {
+            "module": certification.target_module,
+            "params": {},
+            "parameter_grid": {},
+        },
+        "event_parameter_grid": event_parameter_grid,
+        **rationales,
+        "known_failure_modes": [known_failure_modes],
+        "material_difference": material_difference,
+        "confirmed": False,
     }
 
 

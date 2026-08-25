@@ -836,6 +836,18 @@ def _normalize_trades(trades: pd.DataFrame) -> pd.DataFrame:
     return frame
 
 
+def _parse_utc_timestamps(values: pd.Series) -> pd.Series:
+    """Parse valid ISO timestamps even when fractional precision varies by row.
+
+    Pandas 2 infers one strict format from the first string unless ``mixed`` is
+    explicit. Event trade logs legitimately combine exchange timestamps with
+    whole seconds, milliseconds, and microseconds, so a single inferred format
+    would silently coerce valid exits to ``NaT``.
+    """
+
+    return pd.to_datetime(values, utc=True, errors="coerce", format="mixed")
+
+
 def _time_breakdown(
     trades: pd.DataFrame,
     timestamp_column: str | None,
@@ -847,7 +859,7 @@ def _time_breakdown(
     columns = [key, *_BREAKDOWN_METRIC_COLUMNS]
     if trades.empty or timestamp_column is None:
         return pd.DataFrame(columns=columns)
-    timestamps = pd.to_datetime(trades[timestamp_column], utc=True, errors="coerce").dt.tz_convert(
+    timestamps = _parse_utc_timestamps(trades[timestamp_column]).dt.tz_convert(
         exchange_timezone
     )
     if period == "year":
@@ -871,7 +883,7 @@ def _session_breakdown(
             return _summarize_groups(trades, trades[candidate].astype("string"), "entry_session")
     if entry_column is None:
         return pd.DataFrame(columns=columns)
-    timestamps = pd.to_datetime(trades[entry_column], utc=True, errors="coerce").dt.tz_convert(
+    timestamps = _parse_utc_timestamps(trades[entry_column]).dt.tz_convert(
         exchange_timezone
     )
     labels = timestamps.dt.strftime("%H:00-%H:59").replace("NaN:00-NaN:59", pd.NA)
@@ -929,7 +941,7 @@ def _equity_and_drawdown(
         return pd.DataFrame(columns=eq_columns), pd.DataFrame(columns=dd_columns)
     ordered = trades.copy()
     if timestamp_column:
-        ordered["_exit"] = pd.to_datetime(ordered[timestamp_column], utc=True, errors="coerce")
+        ordered["_exit"] = _parse_utc_timestamps(ordered[timestamp_column])
         sort_columns = ["_exit"] + (["trade_id"] if "trade_id" in ordered.columns else [])
         ordered = ordered.sort_values(sort_columns, kind="mergesort")
     else:
@@ -976,7 +988,7 @@ def _drawdown_inputs(
 ) -> tuple[float, float | None, float]:
     ordered = trades.assign(_pnl=pnl)
     if exit_column:
-        ordered = ordered.assign(_exit=pd.to_datetime(ordered[exit_column], utc=True, errors="coerce"))
+        ordered = ordered.assign(_exit=_parse_utc_timestamps(ordered[exit_column]))
         ordered = ordered.sort_values("_exit", kind="mergesort")
     equity = initial_balance + ordered["_pnl"].cumsum()
     full = pd.concat([pd.Series([initial_balance]), equity.reset_index(drop=True)], ignore_index=True)
@@ -1038,7 +1050,7 @@ def _governed_daily_returns(
     if not trades.empty:
         if exit_column is None:
             return None, "valid exit timestamps are required for daily returns"
-        exits = pd.to_datetime(trades[exit_column], utc=True, errors="coerce").dt.tz_convert(
+        exits = _parse_utc_timestamps(trades[exit_column]).dt.tz_convert(
             exchange_timezone
         )
         if bool(exits.isna().any()):
@@ -1087,8 +1099,8 @@ def _daily_sortino(
 def _average_duration(trades: pd.DataFrame, entry_column: str | None, exit_column: str | None) -> float | None:
     if not entry_column or not exit_column:
         return None
-    entry = pd.to_datetime(trades[entry_column], utc=True, errors="coerce")
-    exit_ = pd.to_datetime(trades[exit_column], utc=True, errors="coerce")
+    entry = _parse_utc_timestamps(trades[entry_column])
+    exit_ = _parse_utc_timestamps(trades[exit_column])
     durations = (exit_ - entry).dt.total_seconds().div(60.0).dropna()
     if durations.empty or bool((durations < 0).any()):
         return None
@@ -1222,8 +1234,8 @@ def _scope_performance_statistics(
     )
     durations = pd.Series(dtype=float)
     if entry_column and exit_column and entry_column in trades and exit_column in trades:
-        entry = pd.to_datetime(trades[entry_column], utc=True, errors="coerce")
-        exit_ = pd.to_datetime(trades[exit_column], utc=True, errors="coerce")
+        entry = _parse_utc_timestamps(trades[entry_column])
+        exit_ = _parse_utc_timestamps(trades[exit_column])
         durations = (exit_ - entry).dt.total_seconds().div(60.0)
         durations = durations[(durations >= 0) & durations.notna()]
     mae = _numeric_column(trades, "mae_usd", "mae", "mae_points", "max_adverse_excursion")
@@ -1538,8 +1550,8 @@ def _duration_distribution(
     columns = ["bin_start", "bin_end", "count", "share"]
     if trades.empty or entry_column is None or exit_column is None:
         return pd.DataFrame(columns=columns)
-    entry = pd.to_datetime(trades[entry_column], utc=True, errors="coerce")
-    exit_ = pd.to_datetime(trades[exit_column], utc=True, errors="coerce")
+    entry = _parse_utc_timestamps(trades[entry_column])
+    exit_ = _parse_utc_timestamps(trades[exit_column])
     durations = (exit_ - entry).dt.total_seconds().div(60.0)
     valid = durations[(durations >= 0) & durations.notna()]
     if valid.empty:
@@ -1564,7 +1576,7 @@ def _rolling_metrics(trades: pd.DataFrame, exit_column: str | None) -> pd.DataFr
         return pd.DataFrame(columns=columns)
     frame = trades.copy()
     if exit_column:
-        frame["_exit"] = pd.to_datetime(frame[exit_column], utc=True, errors="coerce")
+        frame["_exit"] = _parse_utc_timestamps(frame[exit_column])
         frame = frame.sort_values(["_exit"], kind="mergesort")
     else:
         frame["_exit"] = pd.NaT
@@ -1609,7 +1621,7 @@ def _losing_streaks(trades: pd.DataFrame, exit_column: str | None) -> pd.DataFra
         return pd.DataFrame(columns=columns)
     frame = trades.copy()
     if exit_column:
-        frame["_exit"] = pd.to_datetime(frame[exit_column], utc=True, errors="coerce")
+        frame["_exit"] = _parse_utc_timestamps(frame[exit_column])
         frame = frame.sort_values(["_exit"], kind="mergesort")
     else:
         frame["_exit"] = pd.NaT

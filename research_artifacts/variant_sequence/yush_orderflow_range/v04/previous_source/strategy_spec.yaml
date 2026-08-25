@@ -1,0 +1,1164 @@
+schema: alphaquest.strategy-spec/v1
+campaign_id: yush_orderflow_range
+draft_sha256: 61cb9d4e749724b0108f220f7962e340d7970a1624165d6691451f058c6bfb52
+frozen: true
+hypothesis: During balanced ES morning auctions, a retest of a developing value-area edge that overlaps a prior liquidity
+  reference and then attracts fresh one-sided trade activity may reverse toward fair value.
+expected_mechanism: Repeated rejection at a developing value boundary suggests passive liquidity is absorbing aggressive flow;
+  a fresh delta or large-trade event after the tap supplies causal confirmation for reversion.
+holding_horizon: Intraday only, from a post-tap stop entry between 09:30 and 10:59:59 New York until 11:00.
+known_failure_modes:
+- A developing profile can move while an order is pending, apparent one-sided delta can be continuation rather than absorption,
+  and sparse trade prints can make a narrow AOI or local prominence unstable.
+- Trade-message aggressor classification, contract rolls, gap-through fills, and platform aggregation differences may cause
+  mechanical entries to disagree with a MotiveWave/Rithmic chart.
+authoring_lane: certified_event_replay
+certified_recipe: null
+event_strategy: yush_orderflow_range
+strategy_certification:
+  schema: alphaquest.strategy-certification/v1
+  strategy_id: yush_orderflow_range
+  implementation_version: 1
+  certification_status: certified
+  lane: canonical_event_replay
+  entry_module: yush_orderflow_range
+  stop_module: event_aoi_structural_stop
+  target_module: event_value_area_management
+  implementation_sha256: f74191560103fbe817289f2ebc8d713d6c1b28bac6307410af5d6258733faed5
+  manifest_sha256: c18aa9c12194d6e777d078951d9985ab4c4a2dab4954f20c2363c7388e503ab6
+  required_test_categories:
+  - session_logic
+  - entry_timing
+  - stop_target_ordering
+  - forced_flatten
+  - no_lookahead
+  - registry_and_runner
+  required_tests:
+  - tests/test_yush_range_reversal_v2.py
+  - tests/test_event_replay.py
+  studio:
+    visible: true
+    label: Yush Orderflow Range Reversal
+    description: Stateful causal AOI and order-flow reversal strategy for canonical trade-event replay.
+variant_strategy_certifications:
+  v01:
+    schema: alphaquest.strategy-certification/v1
+    strategy_id: yush_orderflow_range
+    implementation_version: 1
+    certification_status: certified
+    lane: canonical_event_replay
+    entry_module: yush_orderflow_range
+    stop_module: event_aoi_structural_stop
+    target_module: event_value_area_management
+    implementation_sha256: f74191560103fbe817289f2ebc8d713d6c1b28bac6307410af5d6258733faed5
+    manifest_sha256: c18aa9c12194d6e777d078951d9985ab4c4a2dab4954f20c2363c7388e503ab6
+    required_test_categories:
+    - session_logic
+    - entry_timing
+    - stop_target_ordering
+    - forced_flatten
+    - no_lookahead
+    - registry_and_runner
+    required_tests:
+    - tests/test_yush_range_reversal_v2.py
+    - tests/test_event_replay.py
+    studio:
+      visible: true
+      label: Yush Orderflow Range Reversal
+      description: Stateful causal AOI and order-flow reversal strategy for canonical trade-event replay.
+  v02:
+    schema: alphaquest.strategy-certification/v1
+    strategy_id: yush_failed_auction_reclaim
+    implementation_version: 1
+    certification_status: certified
+    lane: canonical_event_replay
+    entry_module: yush_failed_auction_reclaim
+    stop_module: event_excursion_structural_stop
+    target_module: event_frozen_poc_time_exit
+    implementation_sha256: 2c248c1fdb1ddaa242d70dcd04497c64cf61ed59bb678721a98eb95b41c1e7b5
+    manifest_sha256: 2ed03b067e94325e0c3b58d6274c963bcd0a24852be0677ed7d50ea4603952c3
+    required_test_categories:
+    - session_logic
+    - entry_timing
+    - stop_target_ordering
+    - forced_flatten
+    - no_lookahead
+    - registry_and_runner
+    required_tests:
+    - tests/test_yush_failed_auction_reclaim.py
+    - tests/test_event_replay.py
+    - tests/test_core_grid.py
+    parameters:
+      tick_size:
+        category: entry
+        value_type: number
+        default: 0.25
+        description: ES minimum price increment used for every frozen level and event fill.
+        tunable: false
+        studio_editable: false
+        minimum: 0.01
+        maximum: null
+        choices: []
+      point_value:
+        category: entry
+        value_type: number
+        default: 50.0
+        description: Dollar value of one ES point under the execution contract.
+        tunable: false
+        studio_editable: false
+        minimum: 0.01
+        maximum: null
+        choices: []
+      contracts:
+        category: entry
+        value_type: integer
+        default: 1
+        description: Fixed position size used by the certified event strategy.
+        tunable: false
+        studio_editable: false
+        minimum: 1.0
+        maximum: null
+        choices: []
+      commission_per_contract:
+        category: entry
+        value_type: number
+        default: 2.5
+        description: Per-side commission used by the entry reward-to-risk gate.
+        tunable: false
+        studio_editable: false
+        minimum: 0.0
+        maximum: null
+        choices: []
+      max_trades_per_day:
+        category: entry
+        value_type: integer
+        default: 3
+        description: Maximum filled failed-auction entries in one session.
+        tunable: false
+        studio_editable: true
+        minimum: 1.0
+        maximum: 3.0
+        choices: []
+      max_stop_points:
+        category: sl
+        value_type: number
+        default: 5.0
+        description: Maximum entry-to-excursion-stop risk accepted before a fill.
+        tunable: false
+        studio_editable: true
+        minimum: 0.25
+        maximum: 12.0
+        choices: []
+      value_area_fraction:
+        category: entry
+        value_type: number
+        default: 0.7
+        description: Causal developing profile fraction used to compute VAL VAH and POC.
+        tunable: false
+        studio_editable: true
+        minimum: 0.5
+        maximum: 0.9
+        choices: []
+      delta_profile_min_abs:
+        category: entry
+        value_type: integer
+        default: 300
+        description: Minimum absolute directional four-tick delta during the outside excursion.
+        tunable: false
+        studio_editable: true
+        minimum: 1.0
+        maximum: null
+        choices: []
+      delta_bubble_threshold:
+        category: entry
+        value_type: integer
+        default: 300
+        description: Reviewed directional delta threshold retained from the campaign fingerprint.
+        tunable: false
+        studio_editable: true
+        minimum: 1.0
+        maximum: null
+        choices: []
+      big_trade_threshold:
+        category: entry
+        value_type: integer
+        default: 200
+        description: Minimum same-price same-side volume in a causal 100 millisecond interval.
+        tunable: false
+        studio_editable: true
+        minimum: 1.0
+        maximum: null
+        choices: []
+      big_trade_window_ms:
+        category: entry
+        value_type: integer
+        default: 100
+        description: Causal aggregation interval for same-price same-side aggressive trades.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - 100
+      opening_range_seconds:
+        category: entry
+        value_type: integer
+        default: 32
+        description: Elapsed RTH time required before opening-range references are available.
+        tunable: false
+        studio_editable: true
+        minimum: 1.0
+        maximum: null
+        choices: []
+      bar_seconds:
+        category: entry
+        value_type: integer
+        default: 180
+        description: Causal clock for local four-tick signed-delta accumulation.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - 180
+      initial_balance:
+        category: entry
+        value_type: number
+        default: 50000.0
+        description: Fixed account balance used by the reviewed execution contract.
+        tunable: false
+        studio_editable: false
+        minimum: 1.0
+        maximum: null
+        choices: []
+      slippage_ticks:
+        category: entry
+        value_type: integer
+        default: 1
+        description: Adverse ticks charged on entry and exit by the generic event engine.
+        tunable: false
+        studio_editable: false
+        minimum: 0.0
+        maximum: null
+        choices: []
+      delta_neighbour_multiple:
+        category: entry
+        value_type: number
+        default: 2.0
+        description: Required prominence versus the four neighboring delta buckets.
+        tunable: false
+        studio_editable: true
+        minimum: 1.0
+        maximum: null
+        choices: []
+      decision_interval_ms:
+        category: entry
+        value_type: integer
+        default: 100
+        description: Causal market-state publication interval shared with event feature tapes.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - 100
+      reference_distance_ticks:
+        category: entry
+        value_type: integer
+        default: 4
+        description: Maximum distance between the developing value edge and a known market reference.
+        tunable: false
+        studio_editable: true
+        minimum: 0.0
+        maximum: 12.0
+        choices: []
+      excursion_ticks:
+        category: entry
+        value_type: integer
+        default: 4
+        description: Minimum failed continuation distance outside the frozen value boundary.
+        tunable: true
+        studio_editable: true
+        minimum: 1.0
+        maximum: 12.0
+        choices: []
+      reclaim_window_seconds:
+        category: entry
+        value_type: integer
+        default: 15
+        description: Maximum causal time from outside crossing to one-tick reclaim inside value.
+        tunable: true
+        studio_editable: true
+        minimum: 1.0
+        maximum: 60.0
+        choices: []
+      stop_buffer_ticks:
+        category: sl
+        value_type: integer
+        default: 2
+        description: Protective-stop displacement beyond the observed excursion extreme.
+        tunable: true
+        studio_editable: true
+        minimum: 1.0
+        maximum: 8.0
+        choices: []
+      time_exit_seconds:
+        category: tp
+        value_type: integer
+        default: 600
+        description: Maximum holding time before flattening at the next canonical trade event.
+        tunable: false
+        studio_editable: true
+        minimum: 60.0
+        maximum: 1800.0
+        choices: []
+      minimum_reward_risk:
+        category: tp
+        value_type: number
+        default: 1.0
+        description: Minimum frozen POC reward relative to initial risk before transaction costs.
+        tunable: false
+        studio_editable: true
+        minimum: 1.0
+        maximum: null
+        choices: []
+    studio:
+      visible: true
+      label: Yush Failed-Auction Reclaim
+      description: Directional outside aggression must fail and reclaim a frozen value edge before entry.
+  v03:
+    schema: alphaquest.strategy-certification/v1
+    strategy_id: yush_adaptive_orderflow_range_v3
+    implementation_version: 1
+    certification_status: certified
+    lane: canonical_event_replay
+    entry_module: yush_adaptive_orderflow_range_v3
+    stop_module: event_adaptive_sweep_structural_stop
+    target_module: event_frozen_poc_value_area_scale_out
+    implementation_sha256: 6c83237d491a26f65f10df80567efb13eb76c342112c53894bde4e90cf6ad76d
+    manifest_sha256: 33088df480acbffd04bcbd4fdc9309c96874cfe8a852e0eb51742735549e9cee
+    required_test_categories:
+    - session_logic
+    - entry_timing
+    - stop_target_ordering
+    - forced_flatten
+    - no_lookahead
+    - registry_and_runner
+    required_tests:
+    - tests/test_yush_adaptive_orderflow_range_v3.py
+    - tests/test_yush_chart_fanatics_range.py
+    - tests/test_yush_big_trade_context.py
+    - tests/test_event_replay_partial_exit.py
+    - tests/test_event_replay.py
+    - tests/test_position_sizing.py
+    - tests/test_event_replay_cache.py
+    - tests/test_core_grid.py
+    - tests/test_scid_execution.py
+    - tests/test_sierra_events.py
+    - tests/test_sierra_session_stream.py
+    - tests/test_validation_checks.py
+    parameters:
+      tick_size:
+        category: entry
+        value_type: number
+        default: 0.25
+        description: ES minimum price increment.
+        tunable: false
+        studio_editable: false
+        minimum: 0.25
+        maximum: 0.25
+        choices: []
+      point_value:
+        category: entry
+        value_type: number
+        default: 50.0
+        description: Dollar value of one ES point.
+        tunable: false
+        studio_editable: false
+        minimum: 50.0
+        maximum: 50.0
+        choices: []
+      commission_per_contract:
+        category: entry
+        value_type: number
+        default: 1.55
+        description: Per-side commission in dollars per contract.
+        tunable: false
+        studio_editable: false
+        minimum: 1.55
+        maximum: 1.55
+        choices: []
+      bar_seconds:
+        category: entry
+        value_type: integer
+        default: 180
+        description: Causal profile signal and holding bar duration.
+        tunable: false
+        studio_editable: false
+        minimum: 180.0
+        maximum: 180.0
+        choices: []
+      price_bin_ticks:
+        category: entry
+        value_type: integer
+        default: 4
+        description: MotiveWave profile row width in ES ticks.
+        tunable: false
+        studio_editable: false
+        minimum: 4.0
+        maximum: 4.0
+        choices: []
+      value_area_fraction:
+        category: entry
+        value_type: number
+        default: 0.7
+        description: MotiveWave Standard value-area volume fraction.
+        tunable: false
+        studio_editable: false
+        minimum: 0.7
+        maximum: 0.7
+        choices: []
+      value_area_method:
+        category: entry
+        value_type: string
+        default: motivewave_standard
+        description: Deterministic MotiveWave Standard adjacent-pair value-area expansion.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - motivewave_standard
+      opening_range_seconds:
+        category: entry
+        value_type: integer
+        default: 30
+        description: Diagnostic opening-range duration.
+        tunable: false
+        studio_editable: false
+        minimum: 30.0
+        maximum: 30.0
+        choices: []
+      aoi_level_distance_ticks:
+        category: entry
+        value_type: integer
+        default: 4
+        description: One profile-row footprint and context proximity radius.
+        tunable: false
+        studio_editable: false
+        minimum: 4.0
+        maximum: 4.0
+        choices: []
+      aoi_big_trade_lookback_minutes:
+        category: entry
+        value_type: integer
+        default: 30
+        description: Fresh large-execution footprint lookback and AOI lifetime.
+        tunable: false
+        studio_editable: false
+        minimum: 30.0
+        maximum: 30.0
+        choices: []
+      big_trade_reference_percentile:
+        category: entry
+        value_type: number
+        default: 0.995
+        description: Prior-session causal large-execution percentile.
+        tunable: false
+        studio_editable: false
+        minimum: 0.995
+        maximum: 0.995
+        choices: []
+      big_trade_lookback_sessions:
+        category: entry
+        value_type: integer
+        default: 20
+        description: Completed sessions used for the large-execution threshold.
+        tunable: false
+        studio_editable: false
+        minimum: 20.0
+        maximum: 20.0
+        choices: []
+      big_trade_interval_ms:
+        category: entry
+        value_type: integer
+        default: 100
+        description: Fixed wall-clock large-execution cell duration.
+        tunable: false
+        studio_editable: false
+        minimum: 100.0
+        maximum: 100.0
+        choices: []
+      big_trade_price_bucket_ticks:
+        category: entry
+        value_type: integer
+        default: 1
+        description: Large-execution cells isolate one ES tick and aggressor side.
+        tunable: false
+        studio_editable: false
+        minimum: 1.0
+        maximum: 1.0
+        choices: []
+      delta_profile_percentile:
+        category: entry
+        value_type: number
+        default: 0.9
+        description: Required absolute profile-delta percentile at the exact edge row.
+        tunable: false
+        studio_editable: false
+        minimum: 0.9
+        maximum: 0.9
+        choices: []
+      regime_window_bars:
+        category: entry
+        value_type: integer
+        default: 10
+        description: Bars in each causal trend-comparison window.
+        tunable: false
+        studio_editable: false
+        minimum: 10.0
+        maximum: 10.0
+        choices: []
+      trend_midpoint_shift_ticks:
+        category: entry
+        value_type: integer
+        default: 8
+        description: Legacy compatibility field superseded by the ATR-normalized trend shift.
+        tunable: false
+        studio_editable: false
+        minimum: 8.0
+        maximum: 8.0
+        choices: []
+      trend_poc_shift_ticks:
+        category: entry
+        value_type: integer
+        default: 8
+        description: Legacy compatibility field superseded by the ATR-normalized trend shift.
+        tunable: false
+        studio_editable: false
+        minimum: 8.0
+        maximum: 8.0
+        choices: []
+      trend_overlap_maximum:
+        category: entry
+        value_type: number
+        default: 0.5
+        description: Maximum overlap for a directional breakout regime.
+        tunable: false
+        studio_editable: false
+        minimum: 0.5
+        maximum: 0.5
+        choices: []
+      trend_efficiency_minimum:
+        category: entry
+        value_type: number
+        default: 0.55
+        description: Minimum path efficiency for a directional breakout regime.
+        tunable: false
+        studio_editable: false
+        minimum: 0.55
+        maximum: 0.55
+        choices: []
+      sweep_minimum_ticks:
+        category: entry
+        value_type: integer
+        default: 2
+        description: Absolute floor under the ATR-normalized sweep distance.
+        tunable: false
+        studio_editable: false
+        minimum: 2.0
+        maximum: 2.0
+        choices: []
+      failure_confirmation_bars:
+        category: entry
+        value_type: integer
+        default: 3
+        description: Maximum completed bars allowed for a reclaim.
+        tunable: false
+        studio_editable: false
+        minimum: 3.0
+        maximum: 3.0
+        choices: []
+      morning_entry_start:
+        category: entry
+        value_type: string
+        default: 09:45:00
+        description: Morning entry start after five completed profile bars.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - 09:45:00
+      morning_entry_end:
+        category: entry
+        value_type: string
+        default: '11:30:00'
+        description: Morning entry cutoff.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - '11:30:00'
+      afternoon_entry_start:
+        category: entry
+        value_type: string
+        default: '13:45:00'
+        description: Afternoon entry start after five completed reset-profile bars.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - '13:45:00'
+      afternoon_entry_end:
+        category: entry
+        value_type: string
+        default: '15:30:00'
+        description: Afternoon entry cutoff.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - '15:30:00'
+      entry_offset_ticks:
+        category: entry
+        value_type: integer
+        default: 1
+        description: One adverse entry-slippage tick used in causal planning.
+        tunable: false
+        studio_editable: false
+        minimum: 1.0
+        maximum: 1.0
+        choices: []
+      stop_offset_ticks:
+        category: sl
+        value_type: integer
+        default: 1
+        description: Absolute floor under the ATR-normalized structural-stop buffer.
+        tunable: false
+        studio_editable: false
+        minimum: 1.0
+        maximum: 1.0
+        choices: []
+      minimum_stop_ticks:
+        category: sl
+        value_type: integer
+        default: 2
+        description: Two-tick execution floor that can never exceed the adaptive maximum.
+        tunable: false
+        studio_editable: false
+        minimum: 2.0
+        maximum: 2.0
+        choices: []
+      maximum_stop_ticks:
+        category: sl
+        value_type: integer
+        default: 60
+        description: Catastrophe cap for structural entry risk.
+        tunable: false
+        studio_editable: false
+        minimum: 60.0
+        maximum: 60.0
+        choices: []
+      maximum_stop_atr_multiple:
+        category: sl
+        value_type: number
+        default: 1.75
+        description: Maximum structural entry risk in causal ATR units.
+        tunable: true
+        studio_editable: true
+        minimum: 1.25
+        maximum: 2.25
+        choices:
+        - 1.25
+        - 1.75
+        - 2.25
+      atr_lookback_bars:
+        category: sl
+        value_type: integer
+        default: 14
+        description: Wilder ATR lookback in completed three-minute bars.
+        tunable: false
+        studio_editable: false
+        minimum: 14.0
+        maximum: 14.0
+        choices: []
+      target_1_fraction:
+        category: tp
+        value_type: number
+        default: 0.5
+        description: Fraction exited at the frozen POC.
+        tunable: false
+        studio_editable: false
+        minimum: 0.5
+        maximum: 0.5
+        choices: []
+      maximum_holding_bars:
+        category: tp
+        value_type: integer
+        default: 12
+        description: Maximum hold after entry in completed three-minute bars.
+        tunable: false
+        studio_editable: false
+        minimum: 12.0
+        maximum: 12.0
+        choices: []
+      entry_expiry_bars:
+        category: entry
+        value_type: integer
+        default: 1
+        description: Safety expiry for the single-next-event market instruction.
+        tunable: false
+        studio_editable: false
+        minimum: 1.0
+        maximum: 1.0
+        choices: []
+      maximum_entries_per_aoi:
+        category: entry
+        value_type: integer
+        default: 1
+        description: One fill per fresh footprint identity rather than per price per session.
+        tunable: false
+        studio_editable: false
+        minimum: 1.0
+        maximum: 1.0
+        choices: []
+      max_trades_per_day:
+        category: entry
+        value_type: integer
+        default: 0
+        description: No strategy-level daily entry cap; independent account risk controls remain active.
+        tunable: false
+        studio_editable: false
+        minimum: 0.0
+        maximum: 0.0
+        choices: []
+      risk_budget_dollars:
+        category: entry
+        value_type: number
+        default: 1600.0
+        description: Predeclared maximum planned account risk budget.
+        tunable: false
+        studio_editable: false
+        minimum: 1600.0
+        maximum: 1600.0
+        choices: []
+      atr_context_path:
+        category: entry
+        value_type: string
+        default: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+        description: Hash-bound prior-session ATR seed context.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+      atr_context_sha256:
+        category: entry
+        value_type: string
+        default: 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+        description: SHA-256 of the ATR seed context.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+      big_trade_context_path:
+        category: entry
+        value_type: string
+        default: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q995_prior20_context.parquet
+        description: Hash-bound prior-session large-execution context.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q995_prior20_context.parquet
+      big_trade_context_sha256:
+        category: entry
+        value_type: string
+        default: 139f53eea8b3808390c891831c659ba8d9e5c659e8ae9b7ea17644d8fa481ca6
+        description: SHA-256 of the prior-session large-execution context.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - 139f53eea8b3808390c891831c659ba8d9e5c659e8ae9b7ea17644d8fa481ca6
+      sweep_atr_fraction:
+        category: entry
+        value_type: number
+        default: 0.2
+        description: Sweep distance as a fraction of causal ATR with a two-tick floor.
+        tunable: true
+        studio_editable: true
+        minimum: 0.1
+        maximum: 0.3
+        choices:
+        - 0.1
+        - 0.2
+        - 0.3
+      reclaim_atr_fraction:
+        category: entry
+        value_type: number
+        default: 0.05
+        description: Required close-back-inside depth as a fraction of causal ATR with a one-tick floor.
+        tunable: false
+        studio_editable: false
+        minimum: 0.05
+        maximum: 0.05
+        choices: []
+      stop_buffer_atr_fraction:
+        category: sl
+        value_type: number
+        default: 0.1
+        description: Stop buffer beyond the sweep extreme in causal ATR units with a one-tick floor.
+        tunable: false
+        studio_editable: false
+        minimum: 0.1
+        maximum: 0.1
+        choices: []
+      trend_shift_atr_fraction:
+        category: entry
+        value_type: number
+        default: 0.5
+        description: Required rolling POC and midpoint migration in causal ATR units.
+        tunable: false
+        studio_editable: false
+        minimum: 0.5
+        maximum: 0.5
+        choices: []
+      aoi_ttl_minutes:
+        category: entry
+        value_type: integer
+        default: 30
+        description: Maximum lifetime of one fresh footprint AOI identity.
+        tunable: false
+        studio_editable: false
+        minimum: 30.0
+        maximum: 30.0
+        choices: []
+      profile_warmup_bars:
+        category: entry
+        value_type: integer
+        default: 5
+        description: Completed bars required before an auction-epoch profile may arm.
+        tunable: false
+        studio_editable: false
+        minimum: 5.0
+        maximum: 5.0
+        choices: []
+      afternoon_profile_reset:
+        category: entry
+        value_type: string
+        default: '13:30:00'
+        description: Causal afternoon auction-profile and delta reset.
+        tunable: false
+        studio_editable: false
+        minimum: null
+        maximum: null
+        choices:
+        - '13:30:00'
+    studio:
+      visible: true
+      label: Yush Adaptive Orderflow Range v03
+      description: Volatility-normalized re-armable value-edge failure with fresh footprint identities and next-event entry.
+dataset:
+  schema: alphaquest.dataset-manifest/v1
+  dataset_id: es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02
+  source: parquet
+  path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/bars.parquet
+  symbol: ES
+  timeframe: 1m
+  timezone: UTC
+  exchange_timezone: America/New_York
+  timestamp_semantics: bar_open
+  source_timestamp_semantics: bar_open
+  source_sha256: 9e47ffd5b5a98ef49339649620753376f0c5b0f2ed096a61816450f265e46e47
+  canonical_sha256: 9e47ffd5b5a98ef49339649620753376f0c5b0f2ed096a61816450f265e46e47
+  coverage_start: '2011-08-15 13:30:00+00:00'
+  coverage_end: '2026-05-29 19:59:00+00:00'
+  roll_policy: MotiveWave/Rithmic predeclared active-contract calendar; no back adjustment
+  continuous_contract: explicit_roll_calendar
+  contract_column: contract_symbol
+  source_contract_column: contract_symbol
+  contract_count: 60
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+  roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+  transformations:
+  - restricted completed Sierra bars to regular 09:30-16:00 ET sessions
+  - reconstructed full-RTH events from Sierra FIRST/LAST trade groups
+  - blacked out all known non-equivalent full-RTH overlap sessions
+  - retained per-session runtime structure and timestamp fail-closed gates
+  row_count: 1420380
+  dropped_row_count: 0
+  gap_count: 344
+  duplicate_count: 0
+  out_of_order_count: 0
+  invalid_ohlc_count: 0
+  cadence_violation_count: 0
+  certified_features: []
+  quality_verdict: PASS
+  quality_notes:
+  - Entry events cover 09:30-16:00 ET; the strategy blocks new entries after 15:54:59 and flattens at 15:55.
+  - Modern non-equivalent full-RTH overlap sessions are blacked out.
+  - Older event fidelity is an explicit extrapolation; reconstruction remains fail-closed per session.
+  event_source:
+    source: sierra_scid_records
+    archive: null
+    archive_sha256: null
+    raw_dir: /Users/yx/Desktop/alphaquest-research-engine/data/raw/ES/sierra-es-trades
+    raw_manifest: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/raw_manifest.json
+    raw_manifest_sha256: 35bc989f4ba151bf8578a9e9f5e13a30b2d5b115b1667ab140a0429f5a7f7747
+    session_levels: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/session_levels.parquet
+    session_levels_sha256: 3e4dce824457483b0c8a65e053aa2e711fb99b5602da0c5ced2c9c6a9fb445c1
+    quality_manifest: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/event_capabilities.csv
+    quality_manifest_sha256: ce31c4c9e48704723e242c8a014d023fed0374b88535c2481c2162e87da671ab
+    concordance_report: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/strategy_concordance.json
+    concordance_report_sha256: d3a9499c554f9ddd0a4b08cbdc10e22faa4c459c27293736465131e338a158e7
+    required_capability: full_rth_strategy_events_extrapolated
+    ineligible_session_policy: blackout
+    timestamp_inversion_policy: preserve_source_order_clamp
+    max_timestamp_inversion_rate: 0.002
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+    root_symbol: ES
+    aggregation_ms: 100
+    overnight_start: '16:00:00'
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    reset_previous_levels_on_roll: true
+execution:
+  session_start: 09:30:00
+  session_end: '16:00:00'
+  latest_entry_time: '15:30:00'
+  flatten_time: '15:55:00'
+  latest_flat_time: '15:55:00'
+  overnight_allowed: false
+  initial_balance: 50000.0
+  tick_size: 0.25
+  point_value: 50.0
+  tick_value: 12.5
+  commission_per_contract: 1.55
+  slippage_ticks: 1.0
+  contracts: 2
+  prop_profile: configured_local_profile
+variants:
+- variant_id: v01
+  title: Exact forward-tested AOI and post-tap order-flow confirmation
+  mechanic_signature: 40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1
+  entry:
+    module: yush_orderflow_range
+    params:
+      mechanics:
+        bar_seconds: 180
+        big_trade_threshold: 200
+        big_trade_window_ms: 100
+        breakeven_offset_points: 1.25
+        breakout_probe_ticks: 2
+        commission_per_contract: 2.5
+        contracts: 1
+        aoi_lineage_mode: exact_fingerprint
+        delta_bubble_threshold: 300
+        delta_neighbour_multiple: 2.0
+        delta_profile_min_abs: 300
+        entry_offset_ticks: 2
+        initial_balance: 50000.0
+        max_aoi_width_points: 3.0
+        max_stop_points: 5.0
+        max_trades_per_day: 3
+        minimum_stop_points: 2.0
+        opening_range_seconds: 32
+        point_value: 50.0
+        range_expansion_fraction: 0.2
+        slippage_ticks: 1
+        stop_offset_ticks: 2
+        tick_size: 0.25
+        value_area_fraction: 0.7
+    parameter_grid: {}
+  stop:
+    module: event_aoi_structural_stop
+    params: {}
+    parameter_grid: {}
+  target:
+    module: event_value_area_management
+    params: {}
+    parameter_grid: {}
+  event_parameter_grid: {}
+  rationales:
+    mechanic: Build a causal AOI around developing VAL or VAH plus the strongest available market, local-delta, and large-trade
+      categories; reset eligibility whenever the exact AOI price envelope or selected confluence identity changes, then require
+      a prior reversal, a fresh directed tap, and a new post-tap trigger.
+    entry: A two-tick stop entry beyond the AOI demands observable movement away from the tested boundary, while neither the
+      tap nor its post-tap trigger can be the event that created or materially changed the exact AOI; a tapped AOI is frozen
+      until its developing-value anchor leaves the box.
+    stop: The stop sits two ticks beyond the opposite AOI edge but is widened to at least two points so tiny confluence envelopes
+      do not create suffocating risk; entries above five points are rejected.
+    target: The developing value midpoint is the first objective; after it trades, the stop protects 1.25 points and the opposite
+      developing value edge becomes the final target, with an 11:00 hard flatten.
+    timeframe_session: Trade messages are replayed in causal order from 09:30 to 11:00 New York; the three-minute delta bubble
+      clock and 100 millisecond large-trade aggregation match the frozen chart interpretation.
+- variant_id: v02
+  title: Causal failed-auction reclaim at developing value
+  mechanic_signature: 2595e548d0eb42bfd6ed029f9b88c07bcc1ca3c0f19573d00387f3019db04da1
+  entry:
+    module: yush_failed_auction_reclaim
+    params:
+      mechanics:
+        tick_size: 0.25
+        point_value: 50.0
+        contracts: 1
+        commission_per_contract: 2.5
+        max_trades_per_day: 3
+        max_stop_points: 5.0
+        value_area_fraction: 0.7
+        delta_profile_min_abs: 300
+        delta_bubble_threshold: 300
+        big_trade_threshold: 200
+        big_trade_window_ms: 100
+        opening_range_seconds: 32
+        bar_seconds: 180
+        initial_balance: 50000.0
+        slippage_ticks: 1
+        delta_neighbour_multiple: 2.0
+        decision_interval_ms: 100
+        reference_distance_ticks: 4
+        excursion_ticks: 4
+        reclaim_window_seconds: 15
+        stop_buffer_ticks: 2
+        time_exit_seconds: 600
+        minimum_reward_risk: 1.0
+    parameter_grid: {}
+  stop:
+    module: event_excursion_structural_stop
+    params: {}
+    parameter_grid: {}
+  target:
+    module: event_frozen_poc_time_exit
+    params: {}
+    parameter_grid: {}
+  event_parameter_grid:
+    excursion_ticks:
+    - 2
+    - 4
+    - 6
+    reclaim_window_seconds:
+    - 5
+    - 15
+    - 30
+    stop_buffer_ticks:
+    - 1
+    - 2
+    - 3
+  rationales:
+    mechanic: Express the same absorption-to-fair-value hypothesis through a failed auction rather than a repeated AOI tap.
+      Freeze the causal developing value boundary, nearby known reference, and POC before the excursion; require directed
+      aggression outside value to fail and price to reclaim the boundary before considering an entry.
+    entry: A trade is eligible only after price crosses outside a frozen VAL or VAH, travels the predeclared excursion distance,
+      shows outward aggressive flow, and then trades one tick back inside value within the allowed causal window. The signal
+      is created on that reclaim and the generic engine may fill only on the next ordered trade event.
+    stop: The protective stop is fixed beyond the most adverse price observed during the failed outside excursion plus a reviewed
+      tick buffer. This ties risk to the structure that falsifies the failed-auction premise, rejects entries above the maximum
+      stop distance, and avoids the v01 AOI-envelope stop geometry.
+    target: The primary target is the developing POC frozen when the episode begins because it is the causal fair-value objective
+      of the re-entry. A ten-minute maximum holding period exits on the next ordered event, and the generic engine retains
+      the configured 11:00 New York forced flatten as the final safety boundary.
+    timeframe_session: Raw Sierra trade messages remain the execution clock from 09:30 to 11:00 New York. Developing value
+      and directional delta use only events already observed, the 100 millisecond decision boundary is retained for shared
+      feature-tape calculation, and exact intervening ticks remain available for entry, stop, target, and time-exit ordering.
+- variant_id: v03
+  title: Volatility-normalized re-armable failed auction at causal value
+  mechanic_signature: 0ef08b6edfed91fed6a9d345fc80aa12db8f1a44ef8ec31c849c8207a6dd7806
+  entry:
+    module: yush_adaptive_orderflow_range_v3
+    params:
+      mechanics:
+        tick_size: 0.25
+        point_value: 50.0
+        commission_per_contract: 1.55
+        bar_seconds: 180
+        price_bin_ticks: 4
+        value_area_fraction: 0.7
+        value_area_method: motivewave_standard
+        opening_range_seconds: 30
+        aoi_level_distance_ticks: 4
+        aoi_big_trade_lookback_minutes: 30
+        big_trade_reference_percentile: 0.995
+        big_trade_lookback_sessions: 20
+        big_trade_interval_ms: 100
+        big_trade_price_bucket_ticks: 1
+        delta_profile_percentile: 0.9
+        regime_window_bars: 10
+        trend_midpoint_shift_ticks: 8
+        trend_poc_shift_ticks: 8
+        trend_overlap_maximum: 0.5
+        trend_efficiency_minimum: 0.55
+        sweep_minimum_ticks: 2
+        failure_confirmation_bars: 3
+        morning_entry_start: 09:45:00
+        morning_entry_end: '11:30:00'
+        afternoon_entry_start: '13:45:00'
+        afternoon_entry_end: '15:30:00'
+        entry_offset_ticks: 1
+        stop_offset_ticks: 1
+        minimum_stop_ticks: 2
+        maximum_stop_ticks: 60
+        maximum_stop_atr_multiple: 1.75
+        atr_lookback_bars: 14
+        target_1_fraction: 0.5
+        maximum_holding_bars: 12
+        entry_expiry_bars: 1
+        maximum_entries_per_aoi: 1
+        risk_budget_dollars: 1600.0
+        atr_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+        atr_context_sha256: 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+        big_trade_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q995_prior20_context.parquet
+        big_trade_context_sha256: 139f53eea8b3808390c891831c659ba8d9e5c659e8ae9b7ea17644d8fa481ca6
+        max_trades_per_day: 0
+        sweep_atr_fraction: 0.2
+        reclaim_atr_fraction: 0.05
+        stop_buffer_atr_fraction: 0.1
+        trend_shift_atr_fraction: 0.5
+        aoi_ttl_minutes: 30
+        profile_warmup_bars: 5
+        afternoon_profile_reset: '13:30:00'
+    parameter_grid: {}
+  stop:
+    module: event_adaptive_sweep_structural_stop
+    params: {}
+    parameter_grid: {}
+  target:
+    module: event_frozen_poc_value_area_scale_out
+    params: {}
+    parameter_grid: {}
+  event_parameter_grid:
+    sweep_atr_fraction:
+    - 0.1
+    - 0.2
+    - 0.3
+    maximum_stop_atr_multiple:
+    - 1.25
+    - 1.75
+    - 2.25
+  rationales:
+    mechanic: Retain the same failed-auction return-to-fair-value edge while allowing independent opportunities through fresh
+      footprint identities, explicit inside-to-outside crossings, and causal AOI expiry. Normalize sweep, reclaim, structural
+      stop, and trend distances by the ATR known at each completed bar.
+    entry: A fresh qualifying footprint freezes a causal MotiveWave Standard value edge, POC, opposite edge, profile epoch,
+      and volatility scale. Price must cross from inside to the required adaptive distance outside, then a completed three-minute
+      bar must reclaim inside within three bars; entry occurs only at the next ordered trade event and the signal expires
+      after that single event.
+    stop: The stop is frozen beyond the observed sweep extreme by the larger of one tick and one tenth ATR. The setup is rejected
+      when planned risk is below two ticks or above the selected causal ATR multiple, so risk adapts across regimes without
+      the contradictory fixed minimum and maximum stop band in v02.
+    target: 'Two contracts express the fair-value path directly: half exits at the POC frozen when the sweep began and half
+      at the opposite frozen value edge. The generic event engine preserves pessimistic stop-first ordering, a twelve-bar
+      maximum hold, transaction costs, and the 15:55 New York forced flatten.'
+    timeframe_session: One-minute source bars and canonical Sierra trades remain unmodified inputs, while completed three-minute
+      bars are the declared signal clock. Morning entries run 09:45-11:30; the profile resets at 13:30 before 13:45-15:30
+      afternoon entries, preventing the morning auction from dominating later value.

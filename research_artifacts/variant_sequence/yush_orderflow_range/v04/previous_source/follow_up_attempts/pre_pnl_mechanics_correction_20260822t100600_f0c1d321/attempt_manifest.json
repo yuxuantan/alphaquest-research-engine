@@ -1,0 +1,61 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260822t100600_f0c1d321",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "0e7d0d4d4c1e2b16edc182bc961b8674c79335782eb848efda30de40d81f3cad",
+        "implementation_version": 26,
+        "manifest_sha256": "886ee1d404fb7b2121e8327cdbd34aa7d3687379643a90c933c685aff6b5efd0",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "c985094e931929116e3a91fc2f14a5fda0d336ff26e6fec26090340ea869b7fc",
+        "implementation_version": 25,
+        "manifest_sha256": "0f1df86445b509845c7d248a1db6337810510f8e70186ba384ec79f0f10a3345",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "ccc7f80f38d94ac95d24d0bd9bf8f9ea7d0d0e12e910123be29c4bad3b8b79b9"
+  },
+  "created_at": "2026-08-22T10:06:00.289201+00:00",
+  "created_by": "Codex",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260822t100600_f0c1d321",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260822t092406_25f5d1f4",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "User-directed v03 correction after review of v25 mechanics evidence: move the reclaim stop-entry reference from the frozen value edge to the reclaim-side boundary of the complete frozen AOI zone. Define the AOI zone as the minimum-to-maximum price span containing the frozen VAH or VAL and every selected big-trade, four-tick delta-cell, and market-level source bound. Place the short trigger at zone low minus two ticks and the long trigger at zone high plus two ticks. Preserve direction-neutral AOI order-flow sources, directional separate confirmation, ordered sweep, two-tick-beyond-sweep protective stop, frozen midpoint/opposite-edge targets, timing, risk, data, and validation protocol. Prior evidence remains immutable and fresh manual mechanics approval is required.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "a86442d0f0b843b8cb7a55217cc730f172aa647989e8e1aab6355025af6d45e1"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "cc8745aefd2f96853f34fc8577326cbb89683dda48cc5603a312308e0ab68b46"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

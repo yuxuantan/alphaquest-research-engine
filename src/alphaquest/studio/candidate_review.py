@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 import hashlib
 import json
@@ -191,6 +192,8 @@ class CandidateReviewService:
                 raise ValueError(
                     "destination-specific candidate approval requires scientific-validity PASS and account PASS"
                 )
+            if decision == "approved_candidate":
+                _require_primary_declared_destination(cfg, destination[1])
 
         lifecycle = {
             "approved_candidate": "candidate",
@@ -330,6 +333,11 @@ class CandidateReviewService:
                         errors.append(f"{label} is stale or mismatched")
                 if review.decision == "approved_candidate" and not binding.destination_candidate_eligible:
                     errors.append("destination-specific eligibility is no longer satisfied")
+                if review.decision == "approved_candidate":
+                    try:
+                        _require_primary_declared_destination(_load_yaml(config), binding)
+                    except ValueError as exc:
+                        errors.append(str(exc))
             except (ValueError, OSError) as exc:
                 errors.append(str(exc))
         return {
@@ -385,6 +393,61 @@ def _validated_destination_binding(
     if len(matches) != 1:
         raise ValueError("ResultBundleV3 does not contain exactly one requested account assessment")
     return bundle_v3, matches[0], result_bundle_v3_path
+
+
+def _require_primary_declared_destination(
+    config: Mapping[str, Any],
+    binding: Any,
+) -> None:
+    contract = config.get("destination_benchmark_contract")
+    if not isinstance(contract, Mapping):
+        return
+    recorded_hash = str(
+        config.get("destination_benchmark_contract_sha256") or ""
+    )
+    computed_hash = hashlib.sha256(
+        json.dumps(
+            contract,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if not recorded_hash or recorded_hash != computed_hash:
+        raise ValueError(
+            "destination-specific candidate approval requires a current frozen benchmark contract hash"
+        )
+    if (
+        contract.get("scientific_validity_required") is not True
+        or contract.get("generic_objective_pass_required") is not False
+        or contract.get("approval_scope") != "exact_primary_profile_only"
+    ):
+        raise ValueError(
+            "destination-specific candidate approval benchmark policy is invalid"
+        )
+    profiles = contract.get("profiles")
+    primary = [
+        item
+        for item in profiles or []
+        if isinstance(item, Mapping) and item.get("role") == "primary"
+    ]
+    if len(primary) != 1:
+        raise ValueError(
+            "destination-specific candidate approval requires exactly one frozen primary benchmark"
+        )
+    expected = primary[0]
+    if (
+        expected.get("profile_id"),
+        expected.get("profile_version"),
+        expected.get("profile_sha256"),
+    ) != (
+        binding.profile_id,
+        binding.profile_version,
+        binding.profile_sha256,
+    ):
+        raise ValueError(
+            "destination-specific candidate approval is limited to the exact frozen primary profile"
+        )
 
 
 def _load_yaml(path: Path) -> dict[str, Any]:

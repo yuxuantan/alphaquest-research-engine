@@ -55,7 +55,14 @@ class StudioWorkflowService:
         self.project_root = Path(project_root).resolve()
         self.store = DraftStore(self.project_root)
 
-    def create_draft(self, *, campaign_id: str, title: str, instrument: str) -> dict[str, Any]:
+    def create_draft(
+        self,
+        *,
+        campaign_id: str,
+        title: str,
+        instrument: str,
+        research_objectives: ResearchObjectivesV1 | Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
         identifier = campaign_id.strip().lower()
         if _IDENTIFIER.fullmatch(identifier) is None:
             raise ValueError("campaign ID must use lowercase letters, numbers, and underscores")
@@ -66,19 +73,33 @@ class StudioWorkflowService:
         if self.store.path_for(identifier).exists():
             raise FileExistsError(f"Studio draft already exists: {identifier}")
         _require_unreserved_campaign_id(self.project_root, identifier)
+        objectives = (
+            ResearchObjectivesV1.model_validate(research_objectives)
+            if research_objectives is not None
+            else None
+        )
+        if objectives is not None:
+            load_research_policy().validate_objectives(objectives.model_dump(mode="json"))
+            if date.fromisoformat(objectives.development_deadline) < date.today():
+                raise ValueError("research development deadline cannot be in the past")
+        initial_draft = {
+            "schema": "alphaquest.campaign-draft/v1",
+            "campaign_id": identifier,
+            "title": title.strip(),
+            "created_at": date.today().isoformat(),
+            "instrument": instrument,
+            "timeframe": "1m",
+            "variant_protocol": "sequential_failure_informed",
+            "sequential_variant_history": [],
+            "frozen": False,
+        }
+        if objectives is not None:
+            initial_draft["research_objectives"] = objectives.model_dump(
+                mode="json", by_alias=True
+            )
         self.store.save(
             identifier,
-            {
-                "schema": "alphaquest.campaign-draft/v1",
-                "campaign_id": identifier,
-                "title": title.strip(),
-                "created_at": date.today().isoformat(),
-                "instrument": instrument,
-                "timeframe": "1m",
-                "variant_protocol": "sequential_failure_informed",
-                "sequential_variant_history": [],
-                "frozen": False,
-            },
+            initial_draft,
             wizard_step=1,
         )
         return self.draft_view(identifier)

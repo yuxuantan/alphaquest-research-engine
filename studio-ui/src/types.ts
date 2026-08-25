@@ -106,6 +106,12 @@ export interface DuplicateMatch {
   match_reasons?: string[];
   hypothesis?: string;
   expected_mechanism?: string;
+  exact_fingerprint?: boolean;
+  taxonomy_schema?: string;
+  taxonomy_score?: number;
+  match_band?: string;
+  matched_dimensions?: string[];
+  dimension_scores?: Record<string, number>;
 }
 
 export interface DuplicateReview {
@@ -137,6 +143,13 @@ export interface DatasetSummary {
   exchange_timezone?: string;
   quality_notes?: string[];
   capabilities?: string[];
+  research_readiness?: {
+    status: string;
+    required_months: number;
+    available_months?: number | null;
+    blockers: string[];
+    limitations: string[];
+  };
   used_by?: Array<{
     campaign_id: string;
     campaign_title: string;
@@ -213,6 +226,139 @@ export interface JobRecord {
   } | null;
 }
 
+export type CodexAvailabilityState =
+  | "AVAILABLE"
+  | "NOT_INSTALLED"
+  | "AUTH_REQUIRED"
+  | "WRONG_AUTH_MODE"
+  | "UNAVAILABLE";
+
+export interface CodexAvailability {
+  schema?: "alphaquest.codex-availability/v1" | string;
+  status: CodexAvailabilityState | string;
+  executable_available: boolean;
+  authenticated?: boolean | null;
+  authentication_mode?: "CHATGPT" | "API_KEY" | "UNKNOWN" | string | null;
+  version?: string | null;
+  checked_at?: string;
+  detail?: string;
+}
+
+export type CodexTaskState =
+  | "WAITING_FOR_CODEX"
+  | "RUNNING"
+  | "PROPOSAL_READY"
+  | "FAILED"
+  | "PAUSED"
+  | "CANCEL_REQUESTED"
+  | "CANCELLED";
+
+export interface CodexTaskRecord {
+  schema?: "alphaquest.codex-task-record/v1" | string;
+  task_id: string;
+  idempotency_key?: string;
+  submission_sha256?: string;
+  request?: {
+    schema?: string;
+    task_type?: string;
+    input_hashes?: Record<string, string>;
+  };
+  task_type?: string;
+  campaign_id?: string | null;
+  factory_task_id?: string;
+  state: CodexTaskState | string;
+  worker_id?: string | null;
+  run_count?: number;
+  max_runs?: number;
+  proposal?: Record<string, unknown> | null;
+  proposal_validation?: {
+    status?: string;
+    error?: string | null;
+    [key: string]: unknown;
+  } | null;
+  proposal_disposition?: {
+    status?: string;
+    reviewer?: string;
+    notes?: string;
+    recorded_at?: string;
+    campaign_mutations_performed?: boolean;
+    approval_granted?: boolean;
+    [key: string]: unknown;
+  } | null;
+  structured_review?: {
+    status?: string;
+    artifact_sha256?: string | null;
+    reviewer?: string | null;
+    recorded_at?: string | null;
+  } | null;
+  selected_action?: {
+    selected_action?:
+      | "ABANDON_EDGE"
+      | "PROPOSE_SUCCESSOR"
+      | "START_NEW_RESEARCH_GENERATION"
+      | "ASSESS_OTHER_DESTINATION"
+      | "STOP_NO_FRESH_HOLDOUT"
+      | string;
+    selected_rank?: number;
+    reviewer?: string;
+    notes?: string;
+    selection_sha256?: string;
+    recorded_at?: string;
+    campaign_mutations_performed?: boolean;
+    approval_granted?: boolean;
+    [key: string]: unknown;
+  } | null;
+  selected_action_completion?: {
+    decision_id?: string;
+    selected_action?: "ABANDON_EDGE" | "STOP_NO_FRESH_HOLDOUT" | string;
+    terminal_status?: string;
+    reviewer?: string;
+    notes?: string;
+    completion_sha256?: string;
+    recorded_at?: string;
+    completed?: boolean;
+    scientific_verdict_changed?: boolean;
+    [key: string]: unknown;
+  } | null;
+  applied?: boolean;
+  approved?: boolean;
+  failure_kind?: string | null;
+  error?: string | null;
+  pause_reason?: string | null;
+  created_at?: string;
+  updated_at?: string;
+  started_at?: string | null;
+  heartbeat_at?: string | null;
+  cancellation_requested_at?: string | null;
+  finished_at?: string | null;
+}
+
+export interface FactoryNextAction {
+  kind?: string;
+  task_type?: string;
+  campaign_id?: string | null;
+  label?: string;
+  detail?: string;
+  eligible?: boolean;
+  requires_human_review?: boolean;
+  blocked_reason?: string | null;
+  href?: string;
+}
+
+export interface FactoryStatus {
+  schema?: string;
+  enabled: boolean;
+  availability: CodexAvailability;
+  factory_state?: string;
+  paused: boolean;
+  pause_reason?: string | null;
+  queue_counts?: Record<string, number>;
+  active_task?: CodexTaskRecord | null;
+  latest_task?: CodexTaskRecord | null;
+  next_action?: FactoryNextAction | string | null;
+  legacy_openai_api_available?: boolean;
+}
+
 export interface ReviewTask {
   id?: string;
   review_id?: string;
@@ -272,6 +418,12 @@ export interface CampaignDetail extends CampaignSummary {
 
 export interface StudioSettings {
   reviewer_identity?: string;
+  assistant_mode?:
+    | "codex_subscription"
+    | "manual_only"
+    | "legacy_openai_api";
+  codex_timeout_seconds?: number;
+  codex_max_runs_per_day?: number;
   default_commission_per_contract?: number;
   default_slippage_ticks?: number;
   default_initial_balance?: number;
@@ -297,6 +449,7 @@ export interface BootstrapResponse {
     project_name?: string;
     path?: string;
     healthy?: boolean;
+    diagnostics?: Record<string, any>;
   };
   drafts: DraftSummary[];
   campaigns: CampaignSummary[];
@@ -307,6 +460,14 @@ export interface BootstrapResponse {
   counts?: Record<string, number>;
   attention?: Array<Record<string, any>>;
   indexed_attention?: ReviewTask[];
+  workflow_actions?: Array<{
+    priority: number;
+    kind: string;
+    campaign_id: string;
+    label: string;
+    detail: string;
+    href: string;
+  }>;
 }
 
 export interface ApiErrorShape {

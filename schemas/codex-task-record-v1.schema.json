@@ -1,0 +1,594 @@
+{
+  "$defs": {
+    "CodexFailureKind": {
+      "enum": [
+        "AUTH",
+        "RATE_LIMIT",
+        "UNAVAILABLE",
+        "TIMEOUT",
+        "CANCELLED",
+        "INVALID_OUTPUT",
+        "PROCESS_ERROR"
+      ],
+      "title": "CodexFailureKind",
+      "type": "string"
+    },
+    "CodexOutputMetadataV1": {
+      "additionalProperties": false,
+      "description": "Bounded capture metadata; raw authentication/process streams are not stored.",
+      "properties": {
+        "output_bytes": {
+          "minimum": 0,
+          "title": "Output Bytes",
+          "type": "integer"
+        },
+        "output_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Sha256"
+        },
+        "schema": {
+          "const": "alphaquest.codex-output-metadata/v1",
+          "default": "alphaquest.codex-output-metadata/v1",
+          "enum": [
+            "alphaquest.codex-output-metadata/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        },
+        "schema_validated": {
+          "title": "Schema Validated",
+          "type": "boolean"
+        },
+        "stderr_bytes": {
+          "minimum": 0,
+          "title": "Stderr Bytes",
+          "type": "integer"
+        },
+        "stderr_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Stderr Sha256",
+          "type": "string"
+        },
+        "stdout_bytes": {
+          "minimum": 0,
+          "title": "Stdout Bytes",
+          "type": "integer"
+        },
+        "stdout_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Stdout Sha256",
+          "type": "string"
+        }
+      },
+      "required": [
+        "output_bytes",
+        "stdout_sha256",
+        "stdout_bytes",
+        "stderr_sha256",
+        "stderr_bytes",
+        "schema_validated"
+      ],
+      "title": "CodexOutputMetadataV1",
+      "type": "object"
+    },
+    "CodexRunProvenanceV1": {
+      "additionalProperties": false,
+      "description": "Secret-free, hash-bound record of one local Codex invocation.",
+      "properties": {
+        "codex_version": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Codex Version"
+        },
+        "command_argv": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Command Argv",
+          "type": "array"
+        },
+        "duration_ms": {
+          "minimum": 0,
+          "title": "Duration Ms",
+          "type": "integer"
+        },
+        "exit_code": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Exit Code"
+        },
+        "failure_kind": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/CodexFailureKind"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "finished_at": {
+          "format": "date-time",
+          "title": "Finished At",
+          "type": "string"
+        },
+        "input_hashes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Input Hashes",
+          "type": "object"
+        },
+        "output_schema_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Output Schema Sha256",
+          "type": "string"
+        },
+        "prompt_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Prompt Sha256",
+          "type": "string"
+        },
+        "requested_model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Requested Model"
+        },
+        "run_id": {
+          "title": "Run Id",
+          "type": "string"
+        },
+        "safe_error": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Safe Error"
+        },
+        "sandbox": {
+          "$ref": "#/$defs/CodexSandboxMode"
+        },
+        "schema": {
+          "const": "alphaquest.codex-runtime-run-provenance/v1",
+          "default": "alphaquest.codex-runtime-run-provenance/v1",
+          "enum": [
+            "alphaquest.codex-runtime-run-provenance/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        },
+        "started_at": {
+          "format": "date-time",
+          "title": "Started At",
+          "type": "string"
+        },
+        "task_id": {
+          "title": "Task Id",
+          "type": "string"
+        },
+        "task_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Task Sha256",
+          "type": "string"
+        },
+        "thread_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Thread Id"
+        },
+        "workspace_root": {
+          "title": "Workspace Root",
+          "type": "string"
+        }
+      },
+      "required": [
+        "run_id",
+        "task_id",
+        "task_sha256",
+        "prompt_sha256",
+        "output_schema_sha256",
+        "input_hashes",
+        "workspace_root",
+        "sandbox",
+        "command_argv",
+        "started_at",
+        "finished_at",
+        "duration_ms"
+      ],
+      "title": "CodexRunProvenanceV1",
+      "type": "object"
+    },
+    "CodexRunResultV1": {
+      "additionalProperties": false,
+      "description": "Result of a Codex run; a successful proposal is still untrusted input.",
+      "properties": {
+        "output_metadata": {
+          "$ref": "#/$defs/CodexOutputMetadataV1"
+        },
+        "proposal": {
+          "anyOf": [
+            {
+              "additionalProperties": {
+                "$ref": "#/$defs/JsonValue"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Proposal"
+        },
+        "provenance": {
+          "$ref": "#/$defs/CodexRunProvenanceV1"
+        },
+        "schema": {
+          "const": "alphaquest.codex-run-result/v1",
+          "default": "alphaquest.codex-run-result/v1",
+          "enum": [
+            "alphaquest.codex-run-result/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        },
+        "status": {
+          "$ref": "#/$defs/CodexRunStatus"
+        }
+      },
+      "required": [
+        "status",
+        "provenance",
+        "output_metadata"
+      ],
+      "title": "CodexRunResultV1",
+      "type": "object"
+    },
+    "CodexRunStatus": {
+      "enum": [
+        "SUCCEEDED",
+        "FAILED"
+      ],
+      "title": "CodexRunStatus",
+      "type": "string"
+    },
+    "CodexSandboxMode": {
+      "const": "read-only",
+      "description": "The factory runtime is proposal-only and therefore always read-only.",
+      "enum": [
+        "read-only"
+      ],
+      "title": "CodexSandboxMode",
+      "type": "string"
+    },
+    "CodexTaskRequestV1": {
+      "additionalProperties": false,
+      "description": "One bounded, schema-constrained request to the local Codex executable.",
+      "properties": {
+        "input_hashes": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Input Hashes",
+          "type": "object"
+        },
+        "model": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Model"
+        },
+        "output_schema": {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "title": "Output Schema",
+          "type": "object"
+        },
+        "prompt": {
+          "title": "Prompt",
+          "type": "string"
+        },
+        "sandbox": {
+          "allOf": [
+            {
+              "$ref": "#/$defs/CodexSandboxMode"
+            }
+          ],
+          "default": "read-only"
+        },
+        "schema": {
+          "const": "alphaquest.codex-runtime-task-request/v1",
+          "default": "alphaquest.codex-runtime-task-request/v1",
+          "enum": [
+            "alphaquest.codex-runtime-task-request/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        },
+        "task_type": {
+          "title": "Task Type",
+          "type": "string"
+        },
+        "timeout_seconds": {
+          "default": 900.0,
+          "maximum": 7200.0,
+          "minimum": 0.05,
+          "title": "Timeout Seconds",
+          "type": "number"
+        },
+        "web_search": {
+          "default": false,
+          "title": "Web Search",
+          "type": "boolean"
+        },
+        "workspace_root": {
+          "title": "Workspace Root",
+          "type": "string"
+        }
+      },
+      "required": [
+        "task_type",
+        "prompt",
+        "output_schema",
+        "workspace_root"
+      ],
+      "title": "CodexTaskRequestV1",
+      "type": "object"
+    },
+    "CodexTaskState": {
+      "enum": [
+        "WAITING_FOR_CODEX",
+        "RUNNING",
+        "PROPOSAL_READY",
+        "FAILED",
+        "PAUSED",
+        "CANCEL_REQUESTED",
+        "CANCELLED"
+      ],
+      "title": "CodexTaskState",
+      "type": "string"
+    },
+    "JsonValue": {}
+  },
+  "additionalProperties": false,
+  "description": "Strict public representation of one durable Codex task.",
+  "properties": {
+    "cancellation_requested_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Cancellation Requested At"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Error"
+    },
+    "failure_kind": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CodexFailureKind"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "finished_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Finished At"
+    },
+    "heartbeat_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Heartbeat At"
+    },
+    "idempotency_key": {
+      "title": "Idempotency Key",
+      "type": "string"
+    },
+    "last_run_result": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CodexRunResultV1"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "max_runs": {
+      "maximum": 10,
+      "minimum": 1,
+      "title": "Max Runs",
+      "type": "integer"
+    },
+    "pause_reason": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pause Reason"
+    },
+    "proposal": {
+      "anyOf": [
+        {
+          "additionalProperties": {
+            "$ref": "#/$defs/JsonValue"
+          },
+          "type": "object"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Proposal"
+    },
+    "request": {
+      "$ref": "#/$defs/CodexTaskRequestV1"
+    },
+    "run_count": {
+      "minimum": 0,
+      "title": "Run Count",
+      "type": "integer"
+    },
+    "schema": {
+      "const": "alphaquest.codex-task-record/v1",
+      "default": "alphaquest.codex-task-record/v1",
+      "enum": [
+        "alphaquest.codex-task-record/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "started_at": {
+      "anyOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Started At"
+    },
+    "state": {
+      "$ref": "#/$defs/CodexTaskState"
+    },
+    "submission_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Submission Sha256",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "updated_at": {
+      "format": "date-time",
+      "title": "Updated At",
+      "type": "string"
+    },
+    "worker_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Worker Id"
+    }
+  },
+  "required": [
+    "task_id",
+    "idempotency_key",
+    "submission_sha256",
+    "request",
+    "state",
+    "run_count",
+    "max_runs",
+    "created_at",
+    "updated_at"
+  ],
+  "title": "CodexTaskRecordV1",
+  "type": "object"
+}

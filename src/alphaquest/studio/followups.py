@@ -28,13 +28,18 @@ import pandas as pd
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 import yaml
 
+from alphaquest.accounts.models import AccountAssessmentCostsV1
 from alphaquest.authoring.catalog import CERTIFIED_MODULE_CATALOG
 from alphaquest.authoring.compiler import (
     AUTHORING_MANIFEST_SCHEMA,
     STRATEGY_SPEC_SCHEMA,
     mechanics_validation_subset,
 )
-from alphaquest.authoring.models import DatasetManifestV1, ModuleBindingV1
+from alphaquest.authoring.models import (
+    DatasetManifestV1,
+    ModuleBindingV1,
+    ResearchObjectivesV1,
+)
 from alphaquest.research.definitions import write_definition_manifests
 from alphaquest.research.campaign_stages import (
     DEFAULT_STAGE_ORDER,
@@ -42,6 +47,7 @@ from alphaquest.research.campaign_stages import (
     campaign_test_data_window_plan,
 )
 from alphaquest.research.policy import load_research_policy
+from alphaquest.research.factory_policy import research_factory_binding
 from alphaquest.research.preflight import run_preflight
 from alphaquest.research.schemas import validate_campaign_config_contract
 from alphaquest.research.storage import load_storage_layout
@@ -68,6 +74,7 @@ ATTEMPT_KINDS = (
     "replication",
     "data_refresh",
     "methodology_rerun",
+    "pre_pnl_protocol_declaration",
     "pre_pnl_mechanics_correction",
     "pre_pnl_parameter_declaration",
     "rescue",
@@ -76,12 +83,14 @@ AttemptKind = Literal[
     "replication",
     "data_refresh",
     "methodology_rerun",
+    "pre_pnl_protocol_declaration",
     "pre_pnl_mechanics_correction",
     "pre_pnl_parameter_declaration",
     "rescue",
 ]
 JsonScalar = str | int | float | bool | None
 TARGET_VARIANT_PERFORMANCE_SCOPE = "target_variant_v1"
+DESTINATION_BENCHMARK_SCHEMA = "alphaquest.destination-benchmark-contract/v1"
 
 
 class MechanicParameterPatchV1(BaseModel):
@@ -151,6 +160,27 @@ class ExecutionTimelinePatchV1(BaseModel):
         return self
 
 
+class DestinationBenchmarkSelectionV1(BaseModel):
+    """One pre-PnL, versioned account destination and its observed costs."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    profile_id: str = Field(min_length=1)
+    profile_version: str = Field(min_length=1)
+    profile_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    role: Literal["primary", "comparison"]
+    costs: AccountAssessmentCostsV1 | None = None
+    benchmark_acknowledged: Literal[True]
+
+    @model_validator(mode="after")
+    def costs_are_time_bound(self) -> "DestinationBenchmarkSelectionV1":
+        if self.costs is not None:
+            observed_at = self.costs.observed_at
+            if observed_at.tzinfo is None or observed_at.utcoffset() is None:
+                raise ValueError("destination benchmark costs must use a timezone-aware observed_at")
+        return self
+
+
 class FollowUpAttemptRequestV1(BaseModel):
     """Strict human-reviewed request for a new scientific attempt identity."""
 
@@ -173,6 +203,12 @@ class FollowUpAttemptRequestV1(BaseModel):
     parameter_grid: dict[str, list[JsonScalar]] = Field(default_factory=dict)
     mechanics_validation_window: MechanicsValidationWindowV1 | None = None
     execution_timeline: ExecutionTimelinePatchV1 | None = None
+    research_objectives: ResearchObjectivesV1 | None = None
+    destination_benchmarks: list[DestinationBenchmarkSelectionV1] = Field(
+        default_factory=list,
+        max_length=8,
+    )
+    destination_scope_acknowledged: bool = False
 
     @field_validator("reason", "created_by", "authorized_by")
     @classmethod
@@ -187,6 +223,7 @@ class FollowUpAttemptRequestV1(BaseModel):
             raise ValueError("created_by must identify the researcher")
         mechanics_kind = self.attempt_kind in {"pre_pnl_mechanics_correction", "rescue"}
         declaration_kind = self.attempt_kind == "pre_pnl_parameter_declaration"
+        protocol_kind = self.attempt_kind == "pre_pnl_protocol_declaration"
         if self.attempt_kind == "data_refresh" and not self.dataset_id:
             raise ValueError("data_refresh requires a governed dataset_id")
         if self.attempt_kind != "data_refresh" and self.dataset_id is not None:
@@ -245,9 +282,50 @@ class FollowUpAttemptRequestV1(BaseModel):
             )
         if declaration_kind and (not self.target_variant_id or not self.parameter_grid):
             raise ValueError("pre_pnl_parameter_declaration requires a target variant and parameter grid")
+        if protocol_kind and (not self.target_variant_id or self.research_objectives is None):
+            raise ValueError(
+                "pre_pnl_protocol_declaration requires a target variant and confirmed research objectives"
+            )
+        if not protocol_kind and self.research_objectives is not None:
+            raise ValueError(
+                "research_objectives are reserved for pre_pnl_protocol_declaration"
+            )
+        if not protocol_kind and (
+            self.destination_benchmarks or self.destination_scope_acknowledged
+        ):
+            raise ValueError(
+                "destination benchmarks are reserved for pre_pnl_protocol_declaration"
+            )
+        if protocol_kind and not self.destination_benchmarks:
+            raise ValueError(
+                "pre_pnl_protocol_declaration requires one primary destination benchmark"
+            )
+        if self.destination_benchmarks:
+            identities = [
+                (item.profile_id, item.profile_version)
+                for item in self.destination_benchmarks
+            ]
+            if len(identities) != len(set(identities)):
+                raise ValueError("destination benchmark profiles must be unique")
+            primary_count = sum(
+                item.role == "primary" for item in self.destination_benchmarks
+            )
+            if primary_count != 1:
+                raise ValueError(
+                    "destination benchmarks require exactly one primary profile"
+                )
+            if not self.destination_scope_acknowledged:
+                raise ValueError(
+                    "destination benchmark scope must be explicitly acknowledged"
+                )
+        elif self.destination_scope_acknowledged:
+            raise ValueError(
+                "destination scope acknowledgment requires at least one benchmark profile"
+            )
         target_allowed = (
             mechanics_kind
             or declaration_kind
+            or protocol_kind
             or self.attempt_kind == "data_refresh"
             or self.attempt_kind == "replication"
             or self.attempt_kind == "methodology_rerun"
@@ -259,6 +337,9 @@ class FollowUpAttemptRequestV1(BaseModel):
             or self.replacement_strategy_id
             or self.parameter_grid
             or self.execution_timeline is not None
+            or self.research_objectives is not None
+            or self.destination_benchmarks
+            or self.destination_scope_acknowledged
         ):
             raise ValueError(
                 "target_variant_id is valid only for replication or governed variant-scoped changes; "
@@ -268,6 +349,16 @@ class FollowUpAttemptRequestV1(BaseModel):
             raise ValueError("parameter declaration cannot also patch fixed mechanics")
         if mechanics_kind and self.parameter_grid:
             raise ValueError("mechanics correction and rescue cannot also redeclare the parameter grid")
+        if protocol_kind and (
+            self.mechanic_patches
+            or self.refresh_certification
+            or self.replacement_strategy_id
+            or self.parameter_grid
+            or self.execution_timeline is not None
+        ):
+            raise ValueError(
+                "pre-PnL protocol declaration cannot also change mechanics, certification, parameters, or execution"
+            )
         if self.target_variant_id and any(
             patch.variant_id != self.target_variant_id for patch in self.mechanic_patches
         ):
@@ -428,17 +519,41 @@ class FollowUpAttemptService:
             parent_configs,
             parent_path_by_variant,
         )
-        if parsed.attempt_kind == "replication" and parsed.target_variant_id:
+        if parsed.attempt_kind in {
+            "replication",
+            "pre_pnl_protocol_declaration",
+        } and parsed.target_variant_id:
             if parsed.target_variant_id not in parent_configs:
                 raise ValueError(
-                    f"unknown replication target variant: {parsed.target_variant_id}"
+                    f"unknown {parsed.attempt_kind} target variant: {parsed.target_variant_id}"
                 )
             variants = (parsed.target_variant_id,)
         configs = {variant: deepcopy(parent_configs[variant]) for variant in variants}
         dataset_manifests = self._datasets_for_configs(configs)
         changes: list[dict[str, Any]] = []
 
-        if parsed.attempt_kind == "methodology_rerun":
+        if parsed.attempt_kind == "pre_pnl_protocol_declaration":
+            assert parsed.target_variant_id is not None
+            assert parsed.research_objectives is not None
+            changes.extend(
+                _apply_research_objectives(
+                    configs[parsed.target_variant_id],
+                    parsed.research_objectives,
+                    variant_id=parsed.target_variant_id,
+                    today=self._now().date(),
+                )
+            )
+            if parsed.destination_benchmarks:
+                changes.extend(
+                    _apply_destination_benchmarks(
+                        configs[parsed.target_variant_id],
+                        parsed.destination_benchmarks,
+                        variant_id=parsed.target_variant_id,
+                        project_root=self.project_root,
+                        declared_at=self._now(),
+                    )
+                )
+        elif parsed.attempt_kind == "methodology_rerun":
             for variant in variants:
                 old_policy = deepcopy(configs[variant].get("research_policy") or {})
                 configs[variant] = canonicalize_campaign_config(configs[variant])
@@ -576,6 +691,7 @@ class FollowUpAttemptService:
             _require_full_methodology(cfg)
             target_scoped = parsed.attempt_kind in {
                 "methodology_rerun",
+                "pre_pnl_protocol_declaration",
                 "pre_pnl_mechanics_correction",
                 "pre_pnl_parameter_declaration",
                 "rescue",
@@ -659,6 +775,20 @@ class FollowUpAttemptService:
                 "automatic_replay_permitted": False,
                 "ledger_event_stage": f"follow_up_attempt/{attempt_id}",
             }
+            if (
+                parsed.attempt_kind == "pre_pnl_protocol_declaration"
+                and parsed.target_variant_id is not None
+            ):
+                manifest["research_objectives_sha256"] = configs[
+                    parsed.target_variant_id
+                ].get("research_objectives_sha256")
+                destination_hash = configs[parsed.target_variant_id].get(
+                    "destination_benchmark_contract_sha256"
+                )
+                if destination_hash:
+                    manifest["destination_benchmark_contract_sha256"] = (
+                        destination_hash
+                    )
             unique_dataset_ids = {
                 binding["dataset_id"] for binding in dataset_bindings.values()
             }
@@ -1226,6 +1356,7 @@ class FollowUpAttemptService:
         parent_paths: Mapping[str, Path],
     ) -> None:
         if request.attempt_kind in {
+            "pre_pnl_protocol_declaration",
             "pre_pnl_mechanics_correction",
             "pre_pnl_parameter_declaration",
         }:
@@ -1241,6 +1372,20 @@ class FollowUpAttemptService:
                 raise ValueError(
                     f"{request.attempt_kind} is forbidden after performance evidence exists; "
                     "use replication, data refresh, methodology rerun, or an authorized rescue"
+                )
+        if request.attempt_kind == "pre_pnl_protocol_declaration":
+            assert request.target_variant_id is not None
+            parent = parent_configs.get(request.target_variant_id)
+            if parent is None:
+                raise ValueError(
+                    f"unknown pre-PnL protocol target variant: {request.target_variant_id}"
+                )
+            has_objectives = isinstance(parent.get("research_objectives"), Mapping)
+            has_objectives_hash = bool(parent.get("research_objectives_sha256"))
+            if has_objectives or has_objectives_hash:
+                raise ValueError(
+                    "the selected parent already has a frozen research-objective contract; "
+                    "use another governed follow-up type"
                 )
         if request.attempt_kind != "rescue":
             return
@@ -1699,6 +1844,8 @@ def _apply_dataset_refresh(
             "source_timestamp_semantics": manifest.source_timestamp_semantics or manifest.timestamp_semantics,
             "source_sha256": manifest.source_sha256,
             "canonical_sha256": manifest.canonical_sha256,
+            "coverage_start": manifest.coverage_start,
+            "coverage_end": manifest.coverage_end,
             "roll_policy": manifest.roll_policy,
             "continuous_contract": manifest.continuous_contract,
             "contract_column": manifest.contract_column,
@@ -1725,6 +1872,27 @@ def _apply_dataset_refresh(
             "implementation_sha256": certification.implementation_sha256,
             "manifest_sha256": certification.manifest_sha256,
         }
+    factory_binding = cfg.get("research_factory")
+    if (
+        isinstance(factory_binding, Mapping)
+        and factory_binding.get("schema") == "alphaquest.research-factory-binding/v2"
+    ):
+        objectives = cfg.get("research_objectives")
+        if not isinstance(objectives, Mapping):
+            raise ValueError("v2 research_factory data refresh requires frozen research objectives")
+        policy = load_research_policy()
+        old_factory_binding = deepcopy(factory_binding)
+        factory_dataset = manifest.model_dump(mode="json", by_alias=True)
+        if str(cfg.get("engine_lane") or "") != "canonical_event_replay":
+            factory_dataset.pop("event_source", None)
+        cfg["research_factory"] = research_factory_binding(
+            objectives,
+            dataset=factory_dataset,
+            acceptance_train_months=int(policy.acceptance_oos["train_months"]),
+            acceptance_test_months=int(policy.acceptance_oos["test_months"]),
+        )
+    else:
+        old_factory_binding = None
     full = {
         "start_date": manifest.coverage_start[:10],
         "end_date": manifest.coverage_end[:10],
@@ -1764,6 +1932,17 @@ def _apply_dataset_refresh(
             "reviewed": True,
         }
     ]
+    if old_factory_binding is not None:
+        changes.append(
+            {
+                "variant_id": variant_id,
+                "scope": "research_factory",
+                "field": "locked_acceptance_dataset_and_calendar",
+                "old": old_factory_binding,
+                "new": deepcopy(cfg["research_factory"]),
+                "reviewed": True,
+            }
+        )
     if old_execution != data.get("execution_data"):
         changes.append(
             {
@@ -2602,7 +2781,23 @@ def _attempt_strategy_spec(
     configs: Mapping[str, Mapping[str, Any]],
     changes: list[dict[str, Any]],
 ) -> dict[str, Any]:
-    return {
+    target_config = (
+        configs.get(str(request.target_variant_id or ""))
+        if request.target_variant_id is not None
+        else None
+    )
+    objectives = (
+        deepcopy(target_config.get("research_objectives"))
+        if isinstance(target_config, Mapping)
+        and isinstance(target_config.get("research_objectives"), Mapping)
+        else None
+    )
+    objectives_sha256 = (
+        str(target_config.get("research_objectives_sha256") or "")
+        if isinstance(target_config, Mapping)
+        else ""
+    )
+    document = {
         "schema": "alphaquest.follow-up-strategy-spec/v1",
         "campaign_id": request.campaign_id,
         "attempt_id": attempt_id,
@@ -2626,6 +2821,192 @@ def _attempt_strategy_spec(
             for variant, cfg in configs.items()
         ],
     }
+    if objectives is not None and objectives_sha256:
+        document["research_objectives"] = objectives
+        document["research_objectives_sha256"] = objectives_sha256
+    if isinstance(target_config, Mapping):
+        destination_contract = target_config.get("destination_benchmark_contract")
+        destination_hash = str(
+            target_config.get("destination_benchmark_contract_sha256") or ""
+        )
+        if isinstance(destination_contract, Mapping) and destination_hash:
+            document["destination_benchmark_contract"] = deepcopy(
+                destination_contract
+            )
+            document["destination_benchmark_contract_sha256"] = destination_hash
+            document["account_profile_bindings"] = deepcopy(
+                target_config.get("account_profile_bindings") or []
+            )
+    return document
+
+
+def _apply_research_objectives(
+    cfg: dict[str, Any],
+    objectives: ResearchObjectivesV1,
+    *,
+    variant_id: str,
+    today: date,
+) -> list[dict[str, Any]]:
+    """Freeze a missing objective contract without changing strategy mechanics."""
+
+    if isinstance(cfg.get("research_objectives"), Mapping) or cfg.get(
+        "research_objectives_sha256"
+    ):
+        raise ValueError(
+            f"{variant_id} already declares frozen research objectives; they cannot be replaced"
+        )
+    if date.fromisoformat(objectives.development_deadline) < today:
+        raise ValueError("research development deadline cannot be in the past")
+    payload = objectives.model_dump(mode="json", by_alias=True)
+    load_research_policy().validate_objectives(payload)
+    objective_hash = _object_sha256(payload)
+    old_tests = deepcopy(cfg.get("campaign_tests"))
+    cfg["research_objectives"] = deepcopy(payload)
+    cfg["research_objectives_sha256"] = objective_hash
+    canonical = canonicalize_campaign_config(cfg)
+    cfg.clear()
+    cfg.update(canonical)
+    changes = [
+        {
+            "variant_id": variant_id,
+            "scope": "research_protocol",
+            "field": "research_objectives",
+            "old": None,
+            "new": deepcopy(payload),
+            "new_sha256": objective_hash,
+            "reviewed": True,
+        }
+    ]
+    if old_tests != cfg.get("campaign_tests"):
+        changes.append(
+            {
+                "variant_id": variant_id,
+                "scope": "repository_methodology",
+                "field": "campaign_tests",
+                "old": old_tests,
+                "new": deepcopy(cfg.get("campaign_tests")),
+                "reviewed": True,
+            }
+        )
+    return changes
+
+
+def _apply_destination_benchmarks(
+    cfg: dict[str, Any],
+    selections: list[DestinationBenchmarkSelectionV1],
+    *,
+    variant_id: str,
+    project_root: Path,
+    declared_at: datetime,
+) -> list[dict[str, Any]]:
+    """Freeze exact account profiles, costs, and promotion scope before PnL."""
+
+    from alphaquest.accounts.catalog import resolve_account_profile
+
+    if cfg.get("destination_benchmark_contract") or cfg.get(
+        "destination_benchmark_contract_sha256"
+    ):
+        raise ValueError(
+            f"{variant_id} already declares a destination benchmark contract"
+        )
+    if cfg.get("account_profile_bindings"):
+        raise ValueError(
+            f"{variant_id} already has account profile bindings; the legacy protocol "
+            "action cannot replace them"
+        )
+    if declared_at.tzinfo is None or declared_at.utcoffset() is None:
+        raise ValueError("destination benchmark declaration time must be timezone-aware")
+
+    bindings: list[dict[str, Any]] = []
+    profiles: list[dict[str, Any]] = []
+    for selection in selections:
+        resolved = resolve_account_profile(
+            selection.profile_id,
+            version=selection.profile_version,
+            project_root=project_root,
+        )
+        profile = resolved.profile
+        if not profile.promotable:
+            raise ValueError(
+                f"destination benchmark is not promotable: {profile.profile_id}@{profile.version}"
+            )
+        if resolved.sha256 != selection.profile_sha256:
+            raise ValueError(
+                f"destination profile hash drifted before declaration: "
+                f"{profile.profile_id}@{profile.version}"
+            )
+        acquisition = profile.rules.acquisition
+        costs_required = (
+            acquisition.evaluation_price_mode == "assessment_input_required"
+            or acquisition.activation_fee_mode == "assessment_input_required"
+        )
+        if costs_required and selection.costs is None:
+            raise ValueError(
+                f"{profile.profile_id}@{profile.version} requires frozen acquisition costs"
+            )
+        if not costs_required and selection.costs is not None:
+            raise ValueError(
+                f"{profile.profile_id}@{profile.version} does not accept acquisition costs"
+            )
+        costs = selection.costs
+        if costs is not None:
+            if costs.currency != profile.identity.currency:
+                raise ValueError(
+                    f"destination costs for {profile.profile_id} must use "
+                    f"{profile.identity.currency}"
+                )
+            if costs.observed_at > declared_at:
+                raise ValueError("destination benchmark costs cannot be observed in the future")
+
+        snapshot = resolved.snapshot()
+        snapshot["role"] = selection.role
+        bindings.append(snapshot)
+        profiles.append(
+            {
+                "profile_id": profile.profile_id,
+                "profile_version": profile.version,
+                "profile_sha256": resolved.sha256,
+                "role": selection.role,
+                "account_kind": profile.identity.account_kind,
+                "provider": profile.identity.provider,
+                "program": profile.identity.program,
+                "account_label": profile.identity.account_label,
+                "costs": costs.model_dump(mode="json") if costs else None,
+                "success_requirements": profile.evaluation_policy.model_dump(
+                    mode="json"
+                ),
+                "required_manual_attestations": list(
+                    profile.rules.manual_attestations_required
+                ),
+                "benchmark_acknowledged": True,
+            }
+        )
+
+    contract = {
+        "schema": DESTINATION_BENCHMARK_SCHEMA,
+        "declared_at": declared_at.isoformat(),
+        "declared_pre_pnl": True,
+        "scientific_validity_required": True,
+        "generic_objective_pass_required": False,
+        "approval_scope": "exact_primary_profile_only",
+        "profiles": profiles,
+        "confirmed": True,
+    }
+    contract_hash = _object_sha256(contract)
+    cfg["account_profile_bindings"] = bindings
+    cfg["destination_benchmark_contract"] = contract
+    cfg["destination_benchmark_contract_sha256"] = contract_hash
+    return [
+        {
+            "variant_id": variant_id,
+            "scope": "destination_benchmark",
+            "field": "destination_benchmark_contract",
+            "old": None,
+            "new": deepcopy(contract),
+            "new_sha256": contract_hash,
+            "reviewed": True,
+        }
+    ]
 
 
 def _require_full_methodology(cfg: Mapping[str, Any]) -> None:
@@ -3111,6 +3492,8 @@ def _restore_bytes(path: Path, previous: bytes | None) -> None:
 
 __all__ = [
     "ATTEMPT_KINDS",
+    "DESTINATION_BENCHMARK_SCHEMA",
+    "DestinationBenchmarkSelectionV1",
     "FOLLOW_UP_SCHEMA",
     "FollowUpAttemptRequestV1",
     "FollowUpAttemptResult",

@@ -1,8 +1,10 @@
 import type {
   BootstrapResponse,
   CampaignDetail,
+  CodexTaskRecord,
   DraftView,
   DuplicateReview,
+  FactoryStatus,
   JobRecord,
   LibrariesResponse,
   ReviewTask,
@@ -86,6 +88,7 @@ export const api = {
     title: string;
     instrument: string;
     campaign_id?: string;
+    research_objectives?: Record<string, unknown>;
   }) =>
     request<DraftView>("/api/drafts", { method: "POST", body: json(value) }),
   draft: (id: string) =>
@@ -230,6 +233,17 @@ export const api = {
       `/api/campaigns/${encodeURIComponent(id)}/queue-run`,
       { method: "POST", body: json({ attempt_id }) },
     ),
+  recoverFinalization: (id: string, attemptId: string) =>
+    request<{
+      recovered: boolean;
+      source_job_id: string;
+      research_verdict: string;
+      finalization: Record<string, unknown>;
+      next_action: string;
+    }>(
+      `/api/campaigns/${encodeURIComponent(id)}/attempts/${encodeURIComponent(attemptId)}/recover-finalization`,
+      { method: "POST" },
+    ),
   queueAccountAssessment: (id: string, value: Record<string, unknown>) =>
     request<{ job: JobRecord }>(
       `/api/campaigns/${encodeURIComponent(id)}/account-assessments`,
@@ -285,6 +299,18 @@ export const api = {
       size_bytes: number;
       sha256: string;
       local_only: boolean;
+      reconciliation: null | {
+        schema: string;
+        usable: boolean;
+        columns: string[];
+        row_count: number;
+        trade_count_delta: number | null;
+        net_pnl_delta: number | null;
+        prop_rule_breach: boolean | null;
+        forced_flatten_violation: boolean | null;
+        warnings: string[];
+        blockers: string[];
+      };
     }>(
       `/api/forward-incubations/evidence/upload?filename=${encodeURIComponent(file.name)}`,
       {
@@ -398,6 +424,132 @@ export const api = {
     request<JobRecord>(`/api/jobs/${encodeURIComponent(id)}/cancel`, {
       method: "POST",
     }),
+  factoryStatus: (campaignId?: string) =>
+    request<FactoryStatus>(
+      `/api/factory/status${campaignId ? `?campaign_id=${encodeURIComponent(campaignId)}` : ""}`,
+    ),
+  factoryTasks: (limit = 20) =>
+    request<CodexTaskRecord[] | { tasks: CodexTaskRecord[] }>(
+      `/api/factory/tasks?limit=${encodeURIComponent(String(limit))}`,
+    ),
+  factoryTask: (id: string) =>
+    request<CodexTaskRecord | { task: CodexTaskRecord }>(
+      `/api/factory/tasks/${encodeURIComponent(id)}`,
+    ),
+  runNextFactoryStep: (value: {
+    request_id: string;
+    campaign_id?: string;
+  }) =>
+    request<
+      CodexTaskRecord | { task: CodexTaskRecord; deduplicated?: boolean }
+    >("/api/factory/run-next", {
+      method: "POST",
+      body: json(value),
+    }),
+  cancelFactoryTask: (id: string) =>
+    request<CodexTaskRecord | { task: CodexTaskRecord }>(
+      `/api/factory/tasks/${encodeURIComponent(id)}/cancel`,
+      { method: "POST" },
+    ),
+  setFactoryProposalDisposition: (
+    id: string,
+    value: {
+      disposition: "ACKNOWLEDGE" | "DISMISS";
+      reviewer: string;
+      notes: string;
+    },
+  ) =>
+    request<CodexTaskRecord | { task: CodexTaskRecord }>(
+      `/api/factory/tasks/${encodeURIComponent(id)}/proposal-disposition`,
+      { method: "POST", body: json(value) },
+    ),
+  recordFactoryReviewedSource: (
+    id: string,
+    value: {
+      reviewer: string;
+      notes: string;
+      verified_metadata_fields: string[];
+      content_sha256: string;
+      retraction_status: "NOT_RETRACTED" | "CORRECTED";
+      verification_method: string;
+      claim_reviews: Array<{
+        claim_id: string;
+        proposed_support: "DIRECT" | "CONFLICTING" | "INFERENCE";
+        decision: "ACCEPT" | "REJECT";
+        evidence_sha256?: string | null;
+        verification_method: string;
+        notes: string;
+      }>;
+    },
+  ) =>
+    request<Record<string, unknown>>(
+      `/api/factory/tasks/${encodeURIComponent(id)}/reviewed-source-evidence`,
+      { method: "POST", body: json(value) },
+    ),
+  recordFactoryReviewedHypothesis: (
+    id: string,
+    value: {
+      reviewer: string;
+      notes: string;
+      reviewed_fields: string[];
+      objective_alignment: "PASS";
+      source_claim_alignment: "PASS";
+      falsifiability: "PASS";
+      information_timeline_no_lookahead: "PASS";
+      execution_cost_awareness: "PASS";
+    },
+  ) =>
+    request<Record<string, unknown>>(
+      `/api/factory/tasks/${encodeURIComponent(id)}/reviewed-hypothesis`,
+      { method: "POST", body: json(value) },
+    ),
+  recordFactoryReviewedEngineeringIntent: (
+    id: string,
+    value: {
+      reviewer: string;
+      notes: string;
+      reviewed_fields: string[];
+      hypothesis_alignment: "PASS";
+      unsupported_scope_confirmed: "PASS";
+      causal_timeline_reviewed: "PASS";
+    },
+  ) =>
+    request<Record<string, unknown>>(
+      `/api/factory/tasks/${encodeURIComponent(id)}/reviewed-engineering-intent`,
+      { method: "POST", body: json(value) },
+    ),
+  setFactorySelectedAction: (
+    id: string,
+    value: {
+      selected_action:
+        | "ABANDON_EDGE"
+        | "PROPOSE_SUCCESSOR"
+        | "START_NEW_RESEARCH_GENERATION"
+        | "STOP_NO_FRESH_HOLDOUT";
+      reviewer: string;
+      notes: string;
+    },
+  ) =>
+    request<CodexTaskRecord | { task: CodexTaskRecord }>(
+      `/api/factory/tasks/${encodeURIComponent(id)}/selected-action`,
+      { method: "POST", body: json(value) },
+    ),
+  completeFactorySelectedAction: (
+    id: string,
+    value: { reviewer: string; notes: string },
+  ) =>
+    request<CodexTaskRecord | { task: CodexTaskRecord }>(
+      `/api/factory/tasks/${encodeURIComponent(id)}/selected-action-completion`,
+      { method: "POST", body: json(value) },
+    ),
+  pauseFactory: () =>
+    request<FactoryStatus>("/api/factory/pause", { method: "POST" }),
+  resumeFactory: () =>
+    request<FactoryStatus>("/api/factory/resume", { method: "POST" }),
+  repairDerivedViews: () =>
+    request<Record<string, any>>("/api/workflow/repair-derived-views", {
+      method: "POST",
+    }),
   inspectUpload: (file: File) =>
     request<{
       upload_token: string;
@@ -410,6 +562,20 @@ export const api = {
       method: "POST",
       body: file,
       headers: { "Content-Type": "application/octet-stream" },
+    }),
+  uploadMechanicsChart: (file: File) =>
+    request<{ upload_token: string; filename: string; size_bytes: number }>(
+      `/api/reviews/mechanics/reconciliation-upload?filename=${encodeURIComponent(file.name)}`,
+      {
+        method: "POST",
+        body: file,
+        headers: { "Content-Type": "text/csv" },
+      },
+    ),
+  reconcileMechanicsChart: (value: unknown) =>
+    request<Record<string, any>>("/api/reviews/mechanics/reconcile-chart", {
+      method: "POST",
+      body: json(value),
     }),
   importDataset: (value: unknown) =>
     request<Record<string, any>>("/api/datasets/import", {
@@ -542,6 +708,7 @@ export function normalizeBootstrap(
     counts: data.counts,
     attention: array(data.attention),
     indexed_attention: array(data.indexed_attention),
+    workflow_actions: array(data.workflow_actions),
   };
 }
 

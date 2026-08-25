@@ -39,6 +39,8 @@ from alphaquest.strategy_certification import (
     get_strategy_certification,
 )
 from alphaquest.research.schemas import validate_campaign_config_contract
+from alphaquest.research.campaign_stages import canonicalize_campaign_config
+from alphaquest.research.factory_policy import research_factory_binding
 from alphaquest.strategy_modules.entry import ENTRY_MODULES, build_entry_module, entry_module_metadata
 from alphaquest.studio.ledger import LEDGER_FIELDS, append_planned_publication
 from alphaquest.studio.publishing import StudioPublicationService, _publication_file_lock
@@ -224,7 +226,7 @@ def _event_draft_document() -> dict:
     document = _draft_document()
     document["authoring_lane"] = "certified_event_replay"
     document["certified_recipe"] = None
-    document["event_strategy"] = "yush_adaptive_orderflow_range_v3"
+    document["event_strategy"] = "yush_adaptive_orderflow_range_v4"
     document["dataset"].update(
         {
             "continuous_contract": "explicit_roll_calendar",
@@ -252,9 +254,12 @@ def _event_draft_document() -> dict:
             "schema": "alphaquest.variant-draft/v1",
             "variant_id": "v01",
             "title": "Certified event variant",
-            "entry": {"module": "yush_adaptive_orderflow_range_v3", "params": {"mechanics": {}}},
+            "entry": {"module": "yush_adaptive_orderflow_range_v4", "params": {"mechanics": {}}},
             "stop": {"module": "event_fill_time_sweep_to_entry_extreme_stop", "params": {}},
-            "target": {"module": "event_frozen_midpoint_opposite_edge_scale_out", "params": {}},
+            "target": {
+                "module": "event_frozen_midpoint_two_ticks_outside_opposite_value_area_scale_out",
+                "params": {},
+            },
             "mechanic_rationale": LONG_TEXT,
             "entry_rationale": LONG_TEXT,
             "stop_rationale": LONG_TEXT,
@@ -273,7 +278,7 @@ def _synthetic_current_event_certification(
     project_root: Path,
 ):
     certification = get_strategy_certification(
-        "yush_adaptive_orderflow_range_v3",
+        "yush_adaptive_orderflow_range_v4",
         project_root,
         require_current=False,
     )
@@ -302,13 +307,23 @@ def test_event_campaign_compilation_embeds_current_strategy_certification(
     config = compiled.variant_configs["v01"]
     identity = config["strategy_certification"]
 
-    assert identity["strategy_id"] == "yush_adaptive_orderflow_range_v3"
+    assert identity["strategy_id"] == "yush_adaptive_orderflow_range_v4"
     assert identity["implementation_version"] == certification.implementation_version
     assert len(identity["implementation_sha256"]) == 64
     assert (
         compiled.strategy_spec["strategy_certification"]["implementation_sha256"] == identity["implementation_sha256"]
     )
     assert compiled.authoring_manifest["strategy_certification"]["manifest_sha256"] == identity["manifest_sha256"]
+    factory_dataset = config["research_factory"]["dataset"]
+    assert factory_dataset["event_execution_artifact_sha256s"] == {
+        "archive_sha256": "d" * 64,
+        "roll_calendar_sha256": "c" * 64,
+    }
+
+    drifted = deepcopy(dict(config))
+    drifted["data"]["execution_data"]["archive_sha256"] = "e" * 64
+    with pytest.raises(ValueError, match="dataset identity or bytes are stale or mismatched"):
+        canonicalize_campaign_config(drifted)
 
 
 def test_campaign_compilation_freezes_versioned_target_account_profile() -> None:
@@ -886,10 +901,11 @@ def test_fresh_workspace_draft_passes_same_preflight_before_freeze_and_publicati
     from alphaquest.studio.data_import import DataImportSpec, DatasetImporter
 
     source = tmp_path / "research-notes-bars.csv"
+    sessions = pd.bdate_range("2023-01-03", "2026-01-16")
     timestamps = pd.DatetimeIndex(
         [
             timestamp
-            for session in pd.bdate_range("2026-01-05", periods=10)
+            for session in sessions
             for timestamp in pd.date_range(
                 f"{session.date().isoformat()} 09:30:00", periods=60, freq="min"
             )
@@ -1043,14 +1059,17 @@ def test_certified_catalog_contains_the_studio_allowlist_and_rejects_unknown_par
         ("entry", "calendar_session_bias"),
         ("entry", "opening_range_breakout"),
         ("entry", "daily_time_series_momentum"),
-        ("entry", "yush_adaptive_orderflow_range_v3"),
+        ("entry", "yush_adaptive_orderflow_range_v4"),
         ("sl", "points_from_entry"),
         ("sl", "percent_from_entry"),
         ("sl", "fixed_dollar_per_contract"),
         ("sl", "event_fill_time_sweep_to_entry_extreme_stop"),
         ("tp", "fixed_r"),
         ("tp", "cost_adjusted_fixed_r"),
-        ("tp", "event_frozen_midpoint_opposite_edge_scale_out"),
+        (
+            "tp",
+            "event_frozen_midpoint_two_ticks_outside_opposite_value_area_scale_out",
+        ),
     }
     safe_manifest = CERTIFIED_MODULE_CATALOG.get("entry", "safe_bar_rule")
     assert safe_manifest.parameters["certified_features"].value_type == "array"
@@ -1284,6 +1303,31 @@ def test_compiler_is_deterministic_and_emits_current_contracts_without_stubs():
         ),
     }
     assert len(objective_hashes) == 1
+    expected_factory_binding = research_factory_binding(
+        first.campaign["research_objectives"],
+        dataset=first.strategy_spec["dataset"],
+    )
+    assert expected_factory_binding["schema"] == "alphaquest.research-factory-binding/v2"
+    assert expected_factory_binding["dataset"]["dataset_id"] == "governed_es_1m"
+    assert expected_factory_binding["dataset"]["canonical_sha256"] == "b" * 64
+    assert expected_factory_binding["acceptance_window"] == {
+        "train_months": 24,
+        "test_months": 6,
+        "train_start": "2023-06-30",
+        "train_end": "2025-06-29",
+        "test_start": "2025-06-30",
+        "test_end": "2025-12-31",
+    }
+    assert expected_factory_binding["confirmation_holdout_window_id"].endswith(
+        "_confirmation_02"
+    )
+    assert first.campaign["research_factory"] == expected_factory_binding
+    assert first.strategy_spec["research_factory"] == expected_factory_binding
+    assert first.authoring_manifest["research_factory"] == expected_factory_binding
+    assert all(
+        config["research_factory"] == expected_factory_binding
+        for config in first.variant_configs.values()
+    )
     assert dict(first.campaign) == dict(second.campaign)
     assert tuple(first.variant_configs) == ("v01", "v02", "v03", "v04", "v05")
     assert first.authoring_manifest["generated_python_stubs"] is False
@@ -1301,6 +1345,44 @@ def test_compiler_is_deterministic_and_emits_current_contracts_without_stubs():
     assert fixed_dollar["tick_value"] == 12.5
     assert "risk_dollars" not in fixed_dollar
     assert "point_value" not in fixed_dollar
+
+
+def test_research_factory_holdout_binding_fails_closed_on_objective_or_window_drift():
+    compiled = CampaignCompiler().compile(CampaignDraftV1.model_validate(_draft_document()))
+    config = deepcopy(dict(compiled.variant_configs["v01"]))
+
+    stale_window = deepcopy(config)
+    stale_window["research_factory"]["locked_holdout_window_id"] = "holdout_stale_acceptance_01"
+    with pytest.raises(ValueError, match="window identity is stale or mismatched"):
+        canonicalize_campaign_config(stale_window)
+
+    stale_objectives = deepcopy(config)
+    stale_objectives["research_factory"]["research_objectives_sha256"] = "0" * 64
+    with pytest.raises(ValueError, match="objective hash is stale or mismatched"):
+        canonicalize_campaign_config(stale_objectives)
+
+    stale_dataset = deepcopy(config)
+    stale_dataset["data"]["canonical_sha256"] = "c" * 64
+    with pytest.raises(ValueError, match="dataset identity or bytes are stale or mismatched"):
+        canonicalize_campaign_config(stale_dataset)
+
+    stale_calendar = deepcopy(config)
+    stale_calendar["research_factory"]["acceptance_window"]["test_start"] = "2025-07-01"
+    with pytest.raises(ValueError, match="acceptance calendar is stale or mismatched"):
+        canonicalize_campaign_config(stale_calendar)
+
+
+def test_research_factory_preserves_historical_logical_binding_without_backfill():
+    compiled = CampaignCompiler().compile(CampaignDraftV1.model_validate(_draft_document()))
+    config = deepcopy(dict(compiled.variant_configs["v01"]))
+    legacy = research_factory_binding(config["research_objectives"])
+    config["research_factory"] = legacy
+
+    canonical = canonicalize_campaign_config(config)
+
+    assert canonical["research_factory"] == legacy
+    assert canonical["research_factory"]["schema"] == "alphaquest.research-factory-binding/v1"
+    assert "dataset" not in canonical["research_factory"]
 
 
 def test_compiler_records_configured_evidence_and_approval_roots():

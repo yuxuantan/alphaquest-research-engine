@@ -1,0 +1,180 @@
+{
+  "additionalProperties": false,
+  "description": "Falsifiable economic hypothesis frozen before mechanics selection.",
+  "properties": {
+    "capacity_assumptions": {
+      "minLength": 10,
+      "title": "Capacity Assumptions",
+      "type": "string"
+    },
+    "causal_mechanism": {
+      "minLength": 20,
+      "title": "Causal Mechanism",
+      "type": "string"
+    },
+    "confirmed": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Confirmed",
+      "type": "boolean"
+    },
+    "confounders": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Confounders",
+      "type": "array"
+    },
+    "counterparty": {
+      "minLength": 10,
+      "title": "Counterparty",
+      "type": "string"
+    },
+    "edge_family_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Edge Family Id",
+      "type": "string"
+    },
+    "expected_holding_horizon": {
+      "minLength": 3,
+      "title": "Expected Holding Horizon",
+      "type": "string"
+    },
+    "expected_regimes": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Expected Regimes",
+      "type": "array"
+    },
+    "falsifying_observations": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Falsifying Observations",
+      "type": "array"
+    },
+    "hypothesis_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Hypothesis Id",
+      "type": "string"
+    },
+    "information_availability_timeline": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Information Availability Timeline",
+      "type": "array"
+    },
+    "instrument": {
+      "minLength": 1,
+      "title": "Instrument",
+      "type": "string"
+    },
+    "market_behavior": {
+      "minLength": 20,
+      "title": "Market Behavior",
+      "type": "string"
+    },
+    "null_hypothesis": {
+      "minLength": 20,
+      "title": "Null Hypothesis",
+      "type": "string"
+    },
+    "persistence_rationale": {
+      "minLength": 20,
+      "title": "Persistence Rationale",
+      "type": "string"
+    },
+    "required_data_fields": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Required Data Fields",
+      "type": "array"
+    },
+    "research_objectives_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Research Objectives Sha256",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.hypothesis-proposal/v1",
+      "default": "alphaquest.hypothesis-proposal/v1",
+      "enum": [
+        "alphaquest.hypothesis-proposal/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "source_bundle_sha256s": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Source Bundle Sha256S",
+      "type": "array"
+    },
+    "source_claim_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Source Claim Ids",
+      "type": "array"
+    },
+    "status": {
+      "const": "PROPOSAL",
+      "default": "PROPOSAL",
+      "enum": [
+        "PROPOSAL"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "transaction_cost_sensitivity": {
+      "minLength": 10,
+      "title": "Transaction Cost Sensitivity",
+      "type": "string"
+    },
+    "unresolved_questions": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Unresolved Questions",
+      "type": "array"
+    }
+  },
+  "required": [
+    "hypothesis_id",
+    "edge_family_id",
+    "instrument",
+    "market_behavior",
+    "causal_mechanism",
+    "counterparty",
+    "information_availability_timeline",
+    "expected_holding_horizon",
+    "null_hypothesis",
+    "falsifying_observations",
+    "confounders",
+    "persistence_rationale",
+    "expected_regimes",
+    "transaction_cost_sensitivity",
+    "capacity_assumptions",
+    "required_data_fields",
+    "source_bundle_sha256s",
+    "source_claim_ids",
+    "research_objectives_sha256",
+    "unresolved_questions"
+  ],
+  "title": "HypothesisProposalV1",
+  "type": "object"
+}

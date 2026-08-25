@@ -34,9 +34,27 @@ alphaquest studio stop
 
 The default interface is the committed React bundle served by a local FastAPI/Uvicorn process. `alphaquest studio status` reports the UI runtime, HTTP health, worker health, URL, process IDs, and local log paths. The launcher opens the browser only after both the web application and durable worker are healthy. No Node.js process, development server, CDN, or hosted application is involved.
 
-After Python packages have been installed, the normal workflow can run offline against local data. Optional AI drafting is the exception: it is disabled without a key and requires an outbound OpenAI API connection when explicitly used.
+After Python packages have been installed, the normal workflow can run offline against local data. Studio also has an optional subscription-backed research factory. It uses a locally installed Codex CLI and the ChatGPT subscription login already available on the workstation; it does not require or accept an OpenAI API key for factory work.
 
-The OpenAI drafting adapter is optional. Studio works without a key. If enabled, the key is stored in the operating-system keychain; no credential is written to the workspace.
+Verify the optional Codex boundary before enabling it:
+
+```bash
+codex --version
+codex login status
+alphaquest factory status
+```
+
+`codex login status` must report `Logged in using ChatGPT`. OpenAI documents ChatGPT sign-in as subscription access and API-key sign-in as usage-based access in its [Codex authentication guide](https://learn.chatgpt.com/docs/auth). Do not use `codex login --with-api-key` for the factory: AlphaQuest rejects API-key and unknown authentication modes and removes provider and unrelated secret variables from the child process.
+
+The Codex queue and worker are deliberately separate from the scientific Studio worker. Start the optional worker in a terminal only when you want it to process queued proposals:
+
+```bash
+alphaquest factory worker
+```
+
+Use `alphaquest factory worker --once` for at most one task, `alphaquest factory pause` to stop new AI work, and `alphaquest factory resume` to allow it again. Studio health does not depend on this optional worker. Every task uses the documented [`codex exec` non-interactive mode](https://learn.chatgpt.com/docs/non-interactive-mode), ignores user configuration and rules, strips unrelated provider credentials, uses a read-only sandbox, and receives a bounded, hash-recorded context packet. The supplied workspace is not an operating-system filesystem read jail; use only the trusted local Codex installation on a trusted workstation. Output remains an untrusted proposal and cannot write campaign evidence or grant research, mechanics, certification, candidate, or deployment approval.
+
+The previous OpenAI API drafting adapter remains available only as an explicit legacy compatibility mode. It is unrelated to the Codex factory, may incur separate API charges, and stores its optional key in the operating-system keychain rather than the workspace.
 
 ## Frontend developer setup
 

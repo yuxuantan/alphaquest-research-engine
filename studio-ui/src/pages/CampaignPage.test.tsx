@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, within } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryRouter } from "react-router-dom";
 
@@ -6,10 +6,13 @@ import {
   FollowUpDecisionGuide,
   Mechanics,
   ParentAttemptGuide,
+  ParameterHeatmap,
   Protocol,
+  ResultTradeChart,
   Results,
   Testing,
 } from "./CampaignPage";
+import { api } from "../api";
 
 const gridRows = [
   {
@@ -233,6 +236,99 @@ describe("core-grid result inspection", () => {
 
     expect(view.getAllByText("FAIL").length).toBeGreaterThan(0);
     expect(view.getByLabelText("Variant result")).toHaveValue("v01");
+  });
+});
+
+describe("parameter heatmap", () => {
+  it("renders two parameters as labelled axes and keeps losing results red", () => {
+    const rows = [
+      {
+        run_id: 1,
+        "event.params.sweep_atr_fraction": 0.1,
+        "event.params.maximum_stop_atr_multiple": 1.25,
+        net_profit: -9695.59,
+      },
+      {
+        run_id: 2,
+        "event.params.sweep_atr_fraction": 0.2,
+        "event.params.maximum_stop_atr_multiple": 1.25,
+        net_profit: -11388.6,
+      },
+      {
+        run_id: 3,
+        "event.params.sweep_atr_fraction": 0.1,
+        "event.params.maximum_stop_atr_multiple": 1.5,
+        net_profit: -12786.85,
+      },
+      {
+        run_id: 4,
+        "event.params.sweep_atr_fraction": 0.2,
+        "event.params.maximum_stop_atr_multiple": 1.5,
+        net_profit: -15232.4,
+      },
+    ];
+    render(
+      <ParameterHeatmap
+        parameterColumns={[
+          "event.params.sweep_atr_fraction",
+          "event.params.maximum_stop_atr_multiple",
+        ]}
+        preview={{
+          available: true,
+          columns: Object.keys(rows[0]),
+          preview_rows: rows,
+        }}
+      />,
+    );
+
+    const matrix = screen.getByRole("table", {
+      name: "Net Profit by Sweep Atr Fraction and Maximum Stop Atr Multiple",
+    });
+    expect(within(matrix).getAllByRole("columnheader")).toHaveLength(3);
+    expect(within(matrix).getAllByRole("rowheader")).toHaveLength(2);
+    expect(
+      within(matrix).getByRole("cell", {
+        name: /Sweep Atr Fraction 0.1.*Maximum Stop Atr Multiple 1.25.*Net Profit -9,695.59/,
+      }),
+    ).toBeVisible();
+    const cells = within(matrix).getAllByRole("cell");
+    expect(cells).toHaveLength(4);
+    cells.forEach((cell) => expect(cell).toHaveAttribute("data-tone", "negative"));
+    expect(
+      screen.getByText("All displayed net profit results are below zero."),
+    ).toBeVisible();
+  });
+});
+
+describe("execution-level trade chart", () => {
+  it("omits an unretained target and separates nearby price levels", () => {
+    render(
+      <ResultTradeChart
+        trade={{
+          trade_id: 1,
+          entry_price: 4368.5,
+          stop_price: 4365.5,
+          target_price: null,
+          exit_price: 4365.25,
+          entry_timestamp: "2021-07-13 14:00:00.000000-04:00",
+          exit_timestamp: "2021-07-13 14:08:36-04:00",
+        }}
+        excursion={{ mae: 2.75, mfe: 3 }}
+      />,
+    );
+
+    const chart = screen.getByRole("img", { name: "Trade price levels" });
+    expect(screen.queryByText(/Target Undefined/)).not.toBeInTheDocument();
+    expect(within(chart).queryByText(/^Target/)).not.toBeInTheDocument();
+    const levelLines = [...chart.querySelectorAll("line[data-level]")];
+    expect(levelLines).toHaveLength(3);
+    const linePositions = levelLines.map((line) => Number(line.getAttribute("y1")));
+    expect(Math.max(...linePositions) - Math.min(...linePositions)).toBeGreaterThan(100);
+    const labelPositions = [...chart.querySelectorAll("text")].map((label) =>
+      label.getAttribute("y"),
+    );
+    expect(new Set(labelPositions).size).toBe(labelPositions.length);
+    expect(screen.getByText("8.6 min")).toBeVisible();
   });
 });
 
@@ -463,6 +559,125 @@ describe("variant-aware testing attempt selection", () => {
       screen.queryByText("Performance testing remains hidden"),
     ).not.toBeInTheDocument();
   });
+
+  it("replaces rerun controls with explicit finalization-only recovery", async () => {
+    const recovery = vi.spyOn(api, "recoverFinalization").mockResolvedValue({
+      recovered: true,
+      source_job_id: "job-1",
+      research_verdict: "FAIL",
+      finalization: {},
+      next_action: "Open Results.",
+    });
+    const onRefresh = vi.fn().mockResolvedValue({});
+    render(
+      <MemoryRouter>
+        <Testing
+          detail={{
+            campaign: { campaign_id: "demo", variant_count: 1 },
+            workflow_context: {
+              current_attempt_id: "protocol_1",
+              target_variant_id: "v03",
+            },
+            attempts: [
+              {
+                attempt_id: "protocol_1",
+                attempt_kind: "pre_pnl_protocol_declaration",
+                dataset_bindings: [{ variant_id: "v03" }],
+              },
+            ],
+            stage_matrix: [
+              {
+                variant: "v03",
+                "operational state": "FAILED_OPERATIONAL",
+                "first failed or unresolved gate":
+                  "result_bundle_v2_finalization",
+              },
+            ],
+            mechanics_approval: {
+              protocol_1: {
+                all_approved: true,
+                variants: [
+                  { variant_id: "v03", status: "APPROVED_FOR_TESTING" },
+                ],
+              },
+            },
+          }}
+          onRefresh={onRefresh}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Run full test suite · v03" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Research finished; publication did not"),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Recover finalized evidence · v03",
+      }),
+    );
+
+    await waitFor(() =>
+      expect(recovery).toHaveBeenCalledWith("demo", "protocol_1"),
+    );
+    expect(onRefresh).toHaveBeenCalled();
+  });
+
+  it("routes a finalized immutable attempt to Results instead of offering a rerun", () => {
+    render(
+      <MemoryRouter>
+        <Testing
+          detail={{
+            campaign: { campaign_id: "demo", variant_count: 1 },
+            workflow_context: {
+              current_attempt_id: "protocol_1",
+              target_variant_id: "v03",
+            },
+            attempts: [
+              {
+                attempt_id: "protocol_1",
+                attempt_kind: "pre_pnl_protocol_declaration",
+                dataset_bindings: [{ variant_id: "v03" }],
+              },
+            ],
+            stage_matrix: [
+              {
+                variant: "v03",
+                "operational state": "SUCCEEDED",
+                "first failed or unresolved gate": "limited_core_grid_test",
+              },
+            ],
+            attempt_results: {
+              protocol_1: {
+                v03: { research_verdict: "FAIL" },
+              },
+            },
+            mechanics_approval: {
+              protocol_1: {
+                all_approved: true,
+                variants: [
+                  { variant_id: "v03", status: "APPROVED_FOR_TESTING" },
+                ],
+              },
+            },
+          }}
+          onRefresh={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.queryByRole("button", { name: "Run full test suite · v03" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: "View finalized result · v03" }),
+    ).toHaveAttribute(
+      "href",
+      "/research/demo/results?attempt=protocol_1&variant=v03",
+    );
+  });
 });
 
 describe("governed protocol and mechanics disclosure", () => {
@@ -505,6 +720,60 @@ describe("governed protocol and mechanics disclosure", () => {
     ).toBeVisible();
     expect(screen.getByText("Order-flow study")).toBeVisible();
     expect(screen.getByText("A reclaim can fail again.")).toBeVisible();
+  });
+
+  it("offers the immutable pre-PnL protocol action for an eligible legacy attempt", () => {
+    render(
+      <MemoryRouter>
+        <Protocol
+          detail={{
+            campaign: {
+              campaign_id: "demo",
+              title: "Legacy campaign",
+            },
+            protocol: {
+              research_objectives: {},
+              source_identity: { frozen: true },
+              legacy_pre_pnl_action: {
+                available: true,
+                parent_attempt_id: "mechanics_correction_1",
+                target_variant_id: "v03",
+              },
+            },
+          }}
+          onRefresh={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Create pre-PnL protocol from legacy campaign",
+      }),
+    );
+
+    expect(screen.getByText("Immutable lineage and fresh approval")).toBeVisible();
+    expect(screen.getByLabelText("Development goal")).toBeVisible();
+    expect(screen.getByLabelText(/Primary account benchmark/)).toBeVisible();
+    expect(
+      screen.getByText(
+        "I understand approval is limited to the exact frozen primary profile",
+      ),
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        "This copies the selected attempt's certified mechanics, parameter grid, dataset, and execution into a new attempt. Repository methodology stays fixed; declared objectives may only tighten its criteria. The new config hash clears inherited evidence references, so the existing mechanics approval does not carry forward.",
+      ),
+    ).toBeVisible();
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create immutable protocol attempt" }),
+    );
+    expect(
+      screen.getByText(
+        "Enter the researcher identity before creating the protocol.",
+      ),
+    ).toBeVisible();
   });
 
   it("selects an immutable attempt and displays exact rules and hashes", () => {

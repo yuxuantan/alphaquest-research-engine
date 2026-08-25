@@ -22,7 +22,9 @@ LONG_TEXT = (
 
 def _dataset(root: Path) -> None:
     source = root / "administrator-bars.csv"
-    session_starts = pd.bdate_range("2026-01-05", periods=12)
+    # Full publication must have enough declared history for the frozen
+    # 24-month selection plus terminal 6-month acceptance calendar.
+    session_starts = pd.bdate_range("2023-01-02", "2026-01-16")
     timestamps = pd.DatetimeIndex(
         [
             timestamp
@@ -105,7 +107,7 @@ def _browser(playwright):
     return playwright.chromium.launch(headless=True, executable_path=str(executable))
 
 
-def test_fresh_researcher_completes_all_seven_gates_without_terminal_yaml_or_python(
+def test_fresh_researcher_completes_six_decisions_and_all_governance_gates_without_terminal_yaml_or_python(
     tmp_path: Path,
 ) -> None:
     playwright_module = pytest.importorskip("playwright.sync_api")
@@ -119,6 +121,10 @@ def test_fresh_researcher_completes_all_seven_gates_without_terminal_yaml_or_pyt
 
         page.goto(f"{base_url}/research/new")
         page.get_by_label("Research title").fill("Automated no-code edge")
+        page.get_by_role(
+            "checkbox",
+            name="I confirm this performance and risk objective before AI source research or PnL.",
+        ).check()
         page.get_by_role("button", name="Create research draft").click()
         page.wait_for_url("**/design/1")
 
@@ -138,9 +144,6 @@ def test_fresh_researcher_completes_all_seven_gates_without_terminal_yaml_or_pyt
         )
         page.get_by_label("Signal inputs").fill("completed close, prior opening range")
         page.get_by_label("Market context").fill("ES regular trading session")
-        page.get_by_text(
-            "I confirm these objectives before inspecting strategy PnL", exact=True
-        ).click()
         page.get_by_role("button", name="Save and continue").click()
         page.wait_for_url("**/design/2")
 
@@ -173,9 +176,9 @@ def test_fresh_researcher_completes_all_seven_gates_without_terminal_yaml_or_pyt
         page.wait_for_url("**/design/7")
 
         page.get_by_text("Freeze this research protocol", exact=True).click()
-        page.get_by_role("button", name="Validate and freeze").click()
-        page.get_by_text("Protocol frozen", exact=True).wait_for()
-        page.get_by_role("button", name="Publish governed campaign").click()
+        page.get_by_role(
+            "button", name="Review and publish governed campaign"
+        ).click()
         page.wait_for_url("**/automated_no_code_edge/overview", timeout=60_000)
 
         page.get_by_text("Sequential variant stage matrix", exact=True).wait_for()

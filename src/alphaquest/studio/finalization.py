@@ -24,7 +24,7 @@ import math
 import os
 from pathlib import Path
 import shutil
-from tempfile import NamedTemporaryFile
+from tempfile import NamedTemporaryFile, TemporaryDirectory
 from typing import Any, Callable, Mapping, Sequence
 
 import pandas as pd
@@ -40,6 +40,7 @@ from alphaquest.studio.results import (
     ResultBundleBuilder,
     ResultBundleV2,
     StageCriterionV2,
+    _parse_utc_timestamps,
     load_result_bundle,
 )
 
@@ -50,6 +51,9 @@ REPORTING_DIRECTORY = "reporting_v2"
 FINALIZATION_MANIFEST = "finalization_manifest.json"
 METHODOLOGY_AUDIT = "methodology_audit.md"
 INCOMPLETE_ATTEMPT_MARKER = "studio_incomplete_attempt.json"
+RECOVERED_ATTEMPT_MARKER = "studio_incomplete_attempt.recovered.json"
+SCIENTIFIC_RATIFICATION_FILENAME = "scientific_ratification.json"
+SCIENTIFIC_RATIFICATION_SCHEMA = "alphaquest.scientific-ratification/v1"
 
 LEDGER_FIELDS = (
     "timestamp",
@@ -229,13 +233,244 @@ def inspect_finalized_result(
                 if not matches_source:
                     errors.append("candidate config does not match finalized source_config")
 
+    ratification = _inspect_scientific_ratification(
+        reporting_dir,
+        run_dir=run_dir,
+        bundle=bundle,
+        manifest=manifest,
+        errors=errors,
+    )
+
     return {
         "valid": not errors,
         "errors": errors,
         "bundle": bundle,
         "manifest": manifest,
         "manifest_path": manifest_path,
+        "scientific_ratification": ratification,
     }
+
+
+def ratify_terminal_scientific_failure(
+    result_bundle_path: str | Path,
+    *,
+    config_path: str | Path,
+    ratified_by: str,
+    reason: str,
+) -> dict[str, Any]:
+    """Append a hash-bound reporting correction without replaying PnL stages.
+
+    ResultBundleV2 remains immutable.  The adjacent ratification is an
+    authoritative overlay only when every bound source still hashes exactly,
+    the corrected verdict is a terminal scientific FAIL, and corrected
+    reporting preserves both trade count and net PnL.
+    """
+
+    bundle_path = Path(result_bundle_path).resolve()
+    cfg_path = Path(config_path).resolve()
+    reporting_dir = bundle_path.parent
+    run_dir = reporting_dir.parent
+    ratification_path = reporting_dir / SCIENTIFIC_RATIFICATION_FILENAME
+    inspection = inspect_finalized_result(bundle_path, config_path=cfg_path)
+    if inspection.get("valid") is not True:
+        raise FinalizationError(
+            "scientific ratification requires a complete hash-valid finalization: "
+            + "; ".join(str(item) for item in inspection.get("errors") or [])
+        )
+    existing = inspection.get("scientific_ratification")
+    if isinstance(existing, Mapping):
+        return dict(existing)
+    if ratification_path.exists():
+        raise FinalizationError("an invalid scientific ratification already exists")
+    if not ratified_by.strip() or not reason.strip():
+        raise FinalizationError("scientific ratification requires an identified ratifier and reason")
+
+    bundle = inspection.get("bundle")
+    manifest = inspection.get("manifest")
+    if not isinstance(bundle, ResultBundleV2) or not isinstance(manifest, Mapping):
+        raise FinalizationError("finalized ResultBundleV2 or manifest is unavailable")
+    if bundle.verdict != "FAIL" or bundle.scientific_validity_verdict != "NEEDS MANUAL REVIEW":
+        raise FinalizationError(
+            "reporting ratification is limited to a top-level FAIL whose scientific verdict is unresolved"
+        )
+
+    cfg = _read_yaml_mapping(cfg_path)
+    summary_path = run_dir / "campaign_test_summary.json"
+    summary = _read_json_mapping(summary_path)
+    stages = summary.get("stages") if isinstance(summary.get("stages"), list) else []
+    diagnostic_reasons = (
+        [str(item) for item in summary.get("diagnostic_reasons")]
+        if isinstance(summary.get("diagnostic_reasons"), list)
+        else []
+    )
+    from alphaquest.research.campaign_stages import _scientific_validity_verdict
+    from alphaquest.validation.promotion_gate import inspect_historical_validation_approval
+
+    corrected_scientific = _scientific_validity_verdict(stages, diagnostic_reasons)
+    if corrected_scientific != "FAIL":
+        raise FinalizationError(
+            f"completed stage evidence does not support terminal scientific FAIL: {corrected_scientific}"
+        )
+    approval = inspect_historical_validation_approval(cfg, cfg_path)
+    if approval.get("status") != "APPROVED_FOR_TESTING" or approval.get("errors"):
+        raise FinalizationError("mechanics approval is absent, stale, or hash-mismatched")
+
+    trades, trade_relative, trade_issue = _load_reporting_trades(run_dir, require_acceptance=False)
+    if trade_issue or trade_relative is None:
+        raise FinalizationError(trade_issue or "ratification trade evidence is unavailable")
+    entry_column = next(
+        (name for name in ("entry_timestamp", "entry_time") if name in trades.columns),
+        None,
+    )
+    exit_column = next(
+        (name for name in ("exit_timestamp", "exit_time") if name in trades.columns),
+        None,
+    )
+    if entry_column is None or exit_column is None:
+        raise FinalizationError("ratification trade evidence lacks entry or exit timestamps")
+    invalid_entries = int(_parse_utc_timestamps(trades[entry_column]).isna().sum())
+    invalid_exits = int(_parse_utc_timestamps(trades[exit_column]).isna().sum())
+    if invalid_entries or invalid_exits:
+        raise FinalizationError(
+            f"ratification found invalid timestamps: entries={invalid_entries}, exits={invalid_exits}"
+        )
+    flatten_compliance, flatten_issue = _forced_flatten_compliance_from_trade_evidence(
+        trades,
+        cfg,
+    )
+    if flatten_compliance is not True:
+        raise FinalizationError(flatten_issue or "forced-flatten compliance is not proven")
+
+    stage_criteria = _stage_criteria(summary)
+    optional_frames, _supplemental_issues = _supplemental_frames(run_dir)
+    evaluation = _reporting_evaluation_contract(run_dir, trade_relative)
+    with TemporaryDirectory(prefix="alphaquest-ratification-", dir=run_dir) as temporary:
+        corrected = ResultBundleBuilder().build_and_write(
+            trades,
+            Path(temporary),
+            campaign_id=bundle.campaign_id,
+            variant_id=bundle.variant_id,
+            run_id=bundle.run_id,
+            verdict=bundle.verdict,
+            scientific_validity_verdict="FAIL",
+            generic_objective_verdict=bundle.generic_objective_verdict,
+            stage_criteria=stage_criteria,
+            initial_balance=float((cfg.get("core") or {}).get("initial_balance") or 0.0),
+            forced_flatten_compliance=True,
+            parameter_neighbors=optional_frames["parameter_neighbors"],
+            wfa_stitched_oos=optional_frames["wfa_stitched_oos"],
+            monte_carlo_summary=optional_frames["monte_carlo_summary"],
+            generated_at=bundle.generated_at,
+            exchange_timezone=_config_exchange_timezone(cfg),
+            evaluation_start=evaluation["start"],
+            evaluation_end=evaluation["end"],
+            trading_dates=evaluation["trading_dates"],
+        )
+
+    original_count = bundle.metrics.total_trades.value
+    original_net = bundle.metrics.net_profit_after_costs.value
+    corrected_count = corrected.metrics.total_trades.value
+    corrected_net = corrected.metrics.net_profit_after_costs.value
+    if original_count != corrected_count or original_count != len(trades):
+        raise FinalizationError(
+            "reporting reconciliation changed the immutable trade count: "
+            f"bundle={original_count}, corrected={corrected_count}, source={len(trades)}"
+        )
+    raw_net = float(pd.to_numeric(trades["net_pnl"], errors="raise").sum())
+    if any(
+        value is None or not math.isclose(float(value), raw_net, rel_tol=0.0, abs_tol=1e-9)
+        for value in (original_net, corrected_net)
+    ):
+        raise FinalizationError(
+            "reporting reconciliation changed immutable net PnL: "
+            f"bundle={original_net}, corrected={corrected_net}, source={raw_net}"
+        )
+
+    failed_stage = next(
+        (
+            item
+            for item in stages
+            if isinstance(item, Mapping)
+            and str(item.get("scientific_validity_verdict") or "") == "FAIL"
+        ),
+        None,
+    )
+    if not isinstance(failed_stage, Mapping):
+        raise FinalizationError("ratification found no completed failed scientific-validity stage")
+    failed_criteria = [
+        dict(item)
+        for item in failed_stage.get("criteria") or []
+        if isinstance(item, Mapping)
+        and item.get("decision_role") == "scientific_validity"
+        and item.get("passed") is False
+    ]
+    if not failed_criteria:
+        raise FinalizationError("ratification found no failed predeclared scientific criterion")
+
+    approval_path = Path(str(approval.get("approval_path") or ""))
+    trade_path = run_dir / trade_relative
+    failed_stage_path = run_dir / str(failed_stage.get("stage")) / "stage_result.json"
+    payload: dict[str, Any] = {
+        "schema": SCIENTIFIC_RATIFICATION_SCHEMA,
+        "status": "RATIFIED",
+        "campaign_id": bundle.campaign_id,
+        "variant_id": bundle.variant_id,
+        "run_id": bundle.run_id,
+        "ratified_at": _now_iso(),
+        "ratified_by": ratified_by.strip(),
+        "reason": reason.strip(),
+        "runner_replayed": False,
+        "original_scientific_validity_verdict": bundle.scientific_validity_verdict,
+        "scientific_validity_verdict": "FAIL",
+        "generic_objective_verdict": bundle.generic_objective_verdict,
+        "research_verdict": bundle.verdict,
+        "failed_stage": str(failed_stage.get("stage") or ""),
+        "failed_criteria": failed_criteria,
+        "bindings": {
+            "result_bundle_sha256": _file_sha256(bundle_path),
+            "finalization_manifest_sha256": _file_sha256(reporting_dir / FINALIZATION_MANIFEST),
+            "campaign_test_summary_sha256": _file_sha256(summary_path),
+            "source_config_sha256": _file_sha256(cfg_path),
+            "trade_log": trade_relative,
+            "trade_log_sha256": _file_sha256(trade_path),
+            "failed_stage_result": str(failed_stage_path.relative_to(run_dir)),
+            "failed_stage_result_sha256": _file_sha256(failed_stage_path),
+            "approval_path": display_path(approval_path, _result_project_root(run_dir, manifest=manifest)),
+            "approval_sha256": _file_sha256(approval_path),
+        },
+        "reconciliation": {
+            "trade_count": int(len(trades)),
+            "net_profit_after_costs": raw_net,
+            "invalid_entry_timestamps": invalid_entries,
+            "invalid_exit_timestamps": invalid_exits,
+            "forced_flatten_compliance": True,
+            "forced_flatten_violations": 0,
+            "flatten_time": str((cfg.get("strategy") or {}).get("flatten_time") or ""),
+            "time_flatten_trades": int(
+                trades.get("exit_reason", pd.Series(dtype="object"))
+                .astype(str)
+                .str.casefold()
+                .eq("time_flatten")
+                .sum()
+            ),
+        },
+        "metric_overrides": corrected.metrics.model_dump(mode="json"),
+        "verdict_message": (
+            "FAIL — terminal scientific failure ratified from the completed predeclared stage; "
+            "downstream stages were intentionally skipped after that failure."
+        ),
+    }
+    _atomic_write_json(ratification_path, payload)
+    verified = inspect_finalized_result(bundle_path, config_path=cfg_path)
+    if verified.get("valid") is not True or not isinstance(
+        verified.get("scientific_ratification"), Mapping
+    ):
+        ratification_path.unlink(missing_ok=True)
+        raise FinalizationError(
+            "scientific ratification failed its final hash-bound readback: "
+            + "; ".join(str(item) for item in verified.get("errors") or [])
+        )
+    return dict(verified["scientific_ratification"])
 
 
 def _result_project_root(run_dir: Path, *, manifest: Mapping[str, Any] | None = None) -> Path:
@@ -522,6 +757,9 @@ class RunFinalizer:
                     verdict = "NEEDS MANUAL REVIEW"
                 stage_criteria.append(_reporting_criterion(trade_issue))
             evaluation = _reporting_evaluation_contract(run_dir, trade_path)
+            forced_flatten_compliance, _forced_flatten_issue = (
+                _forced_flatten_compliance_from_trade_evidence(trades, cfg)
+            )
 
             optional_frames, supplemental_issues = _supplemental_frames(run_dir)
             if (
@@ -552,6 +790,7 @@ class RunFinalizer:
                         generic_objective_verdict=bundle_verdict,  # type: ignore[arg-type]
                         stage_criteria=stage_criteria,
                         initial_balance=float((cfg.get("core") or {}).get("initial_balance") or 0.0),
+                        forced_flatten_compliance=forced_flatten_compliance,
                         parameter_neighbors=optional_frames["parameter_neighbors"],
                         wfa_stitched_oos=optional_frames["wfa_stitched_oos"],
                         monte_carlo_summary=optional_frames["monte_carlo_summary"],
@@ -783,6 +1022,164 @@ class RunFinalizer:
             artifact_hashes=artifact_hashes,
         )
 
+    def recover(
+        self,
+        *,
+        job_id: str,
+        config_path: str | Path,
+        run_dir: str | Path,
+    ) -> FinalizationResult:
+        """Explicitly finish publication for one already-completed runner.
+
+        This entrypoint is intentionally separate from :meth:`finalize`.  It
+        never invokes the staged runner and is the only path allowed to clear
+        an incomplete-attempt marker.  The published runner evidence,
+        reporting bundle, frozen source config, job identity, and manifest
+        hashes must all still match before any mutable index is refreshed.
+        """
+
+        cfg_path = _resolve_path(config_path, self.project_root)
+        cfg = _read_yaml_mapping(cfg_path)
+        output = _resolve_path(run_dir, self.project_root)
+        marker_path = output / INCOMPLETE_ATTEMPT_MARKER
+        archive_path = output / RECOVERED_ATTEMPT_MARKER
+        reporting_dir = output / REPORTING_DIRECTORY
+        manifest_path = reporting_dir / FINALIZATION_MANIFEST
+        journal_path = self.recovery_journal_path(job_id)
+
+        if not output.is_dir():
+            raise FinalizationError(f"recovery run directory does not exist: {output}")
+        summary = _read_json_mapping(output / "campaign_test_summary.json")
+        manifest = _validate_finalization_manifest(
+            manifest_path,
+            job_id=job_id,
+            journal_path=journal_path if bool(_read_json_mapping(manifest_path).get("transaction_complete")) else None,
+        )
+        marker = _read_json_mapping(marker_path) if marker_path.is_file() else None
+        archived_marker = _read_json_mapping(archive_path) if archive_path.is_file() else None
+        if marker is None and archived_marker is None:
+            raise FinalizationError(
+                "attempt has no incomplete finalization marker eligible for explicit recovery"
+            )
+        recovery_marker = marker or archived_marker or {}
+        _validate_recovery_identity(
+            project_root=self.project_root,
+            job_id=job_id,
+            cfg_path=cfg_path,
+            cfg=cfg,
+            run_dir=output,
+            summary=summary,
+            manifest=manifest,
+            marker=recovery_marker,
+        )
+        _validate_reporting_hashes(reporting_dir, manifest)
+        _validate_evidence_hashes(output, manifest)
+        bundle = load_result_bundle(reporting_dir / RESULT_BUNDLE_FILENAME)
+        if (
+            bundle.campaign_id != str(cfg.get("campaign_id") or "")
+            or bundle.variant_id != str(cfg.get("variant_id") or "")
+            or bundle.run_id != str(cfg.get("test_run_id") or "")
+            or bundle.verdict != str(manifest.get("research_verdict") or "")
+        ):
+            raise FinalizationError(
+                "ResultBundleV2 identity or verdict differs from its frozen config, runner summary, or manifest"
+            )
+        source_hash = str((manifest.get("evidence_artifact_sha256") or {}).get("source_config.yaml") or "")
+        if _file_sha256(cfg_path) != source_hash:
+            raise FinalizationError(
+                "frozen source config hash differs from the runner evidence bound by finalization"
+            )
+
+        # A repeated POST after a successful response loss is safe: the
+        # recovered marker remains as an audit artifact and the complete
+        # transaction is only reused after all hashes validate again.
+        if manifest.get("transaction_complete") is True:
+            inspection = inspect_finalized_result(
+                reporting_dir / RESULT_BUNDLE_FILENAME,
+                config_path=cfg_path,
+            )
+            if inspection.get("valid") is not True:
+                raise FinalizationError(
+                    "completed recovery is no longer hash-valid: "
+                    + "; ".join(str(item) for item in inspection.get("errors") or [])
+                )
+            return self._reuse_completed(
+                job_id=job_id,
+                cfg_path=cfg_path,
+                cfg=cfg,
+                summary=summary,
+                run_dir=output,
+                reporting_dir=reporting_dir,
+                manifest_path=manifest_path,
+                journal_path=journal_path,
+            )
+
+        if marker is None:
+            raise FinalizationError(
+                "incomplete finalization marker is missing while the transaction remains incomplete"
+            )
+        if archive_path.exists():
+            if archive_path.read_bytes() != marker_path.read_bytes():
+                raise FinalizationError("recovered-marker archive conflicts with the active incomplete marker")
+            marker_path.unlink()
+        else:
+            os.replace(marker_path, archive_path)
+            _fsync_directory(output)
+
+        archive_hash = _file_sha256(archive_path)
+        self.record_recovery_phase(
+            job_id,
+            "FINALIZATION_RECOVERY_REQUESTED",
+            details={
+                "run_dir": display_path(output, self.project_root),
+                "incomplete_marker_archive": display_path(archive_path, self.project_root),
+                "incomplete_marker_sha256": archive_hash,
+            },
+        )
+        manifest["explicit_recovery"] = True
+        manifest["recovery_requested_at"] = _now_iso()
+        manifest["incomplete_marker_archive"] = display_path(archive_path, self.project_root)
+        manifest["incomplete_marker_sha256"] = archive_hash
+        manifest.pop("transaction_error", None)
+        _atomic_write_json(manifest_path, manifest)
+
+        try:
+            result = self._reuse_completed(
+                job_id=job_id,
+                cfg_path=cfg_path,
+                cfg=cfg,
+                summary=summary,
+                run_dir=output,
+                reporting_dir=reporting_dir,
+                manifest_path=manifest_path,
+                journal_path=journal_path,
+            )
+            inspection = inspect_finalized_result(result.result_bundle_path, config_path=cfg_path)
+            if inspection.get("valid") is not True:
+                raise FinalizationError(
+                    "recovered transaction failed final readback: "
+                    + "; ".join(str(item) for item in inspection.get("errors") or [])
+                )
+            return result
+        except Exception as exc:
+            # Keep the attempt visibly fail-closed if any recovery publication
+            # step fails.  `_reuse_completed` may already have written a newer
+            # marker with the concrete failure; never overwrite that evidence.
+            if not marker_path.exists() and archive_path.exists():
+                os.replace(archive_path, marker_path)
+                _fsync_directory(output)
+            failed = _read_json_mapping(manifest_path)
+            failed["transaction_complete"] = False
+            failed["transaction_error"] = f"explicit recovery failed: {type(exc).__name__}: {exc}"
+            _atomic_write_json(manifest_path, failed)
+            self.record_recovery_phase(
+                job_id,
+                "FINALIZATION_FAILED",
+                details={"error": failed["transaction_error"]},
+                terminal=True,
+            )
+            raise FinalizationError(f"explicit finalization recovery failed: {exc}") from exc
+
     def _reuse_completed(
         self,
         *,
@@ -853,6 +1250,7 @@ class RunFinalizer:
                 manifest["terminal_recovery_journal_sha256"] = _file_sha256(journal_path)
                 manifest["transaction_completed_at"] = _now_iso()
                 manifest["transaction_complete"] = True
+                manifest.pop("transaction_error", None)
                 _atomic_write_json(manifest_path, manifest)
                 registry_counts = dict(self.registry_refresher(self.project_root))
                 _validate_finalization_manifest(
@@ -1351,6 +1749,53 @@ def _reporting_evaluation_contract(run_dir: Path, trade_path: str | None) -> dic
     return output
 
 
+def _forced_flatten_compliance_from_trade_evidence(
+    trades: pd.DataFrame,
+    cfg: Mapping[str, Any],
+) -> tuple[bool | None, str | None]:
+    """Prove the frozen flatten rule from immutable trade timestamps.
+
+    Event-replay trade logs historically omitted the convenience
+    ``position_flat_before_deadline`` column.  The causal exit timestamp,
+    session date, frozen exchange timezone, and frozen flatten time are the
+    stronger source evidence, so reporting may derive only this aggregate
+    compliance fact without rewriting the trade log.
+    """
+
+    if trades.empty:
+        return None, "no trades are available for forced-flatten reconciliation"
+    required = {"session_date", "exit_timestamp"}
+    missing = sorted(required - set(trades.columns))
+    if missing:
+        return None, "forced-flatten reconciliation lacks " + ", ".join(missing)
+    strategy = cfg.get("strategy") if isinstance(cfg.get("strategy"), Mapping) else {}
+    flatten_value = strategy.get("flatten_time")
+    if flatten_value in (None, ""):
+        return None, "frozen strategy flatten_time is missing"
+    try:
+        flatten_time = pd.Timestamp(str(flatten_value)).time()
+    except (TypeError, ValueError):
+        return None, "frozen strategy flatten_time is invalid"
+    exits = _parse_utc_timestamps(trades["exit_timestamp"])
+    if bool(exits.isna().any()):
+        return None, "trade log contains invalid exit timestamps"
+    try:
+        local_exits = exits.dt.tz_convert(_config_exchange_timezone(cfg))
+        sessions = pd.to_datetime(trades["session_date"], errors="coerce").dt.date
+    except (TypeError, ValueError, KeyError) as exc:
+        return None, f"forced-flatten timestamps could not be normalized: {exc}"
+    if bool(sessions.isna().any()):
+        return None, "trade log contains invalid session dates"
+    compliant = [
+        exit_timestamp.date() == session_date
+        and exit_timestamp.time().replace(tzinfo=None) <= flatten_time
+        for exit_timestamp, session_date in zip(local_exits, sessions, strict=True)
+    ]
+    if not all(compliant):
+        return False, f"{len(compliant) - sum(compliant)} trades exited after the frozen session deadline"
+    return True, None
+
+
 def _optional_json_mapping(path: Path) -> dict[str, Any]:
     if not path.is_file():
         return {}
@@ -1465,7 +1910,7 @@ def _wfa_trade_schema_issue(frame: pd.DataFrame) -> str | None:
     if numeric_issue:
         return numeric_issue
     for column in ("wfa_test_start", "wfa_test_end", "entry_timestamp", "exit_timestamp"):
-        if bool(pd.to_datetime(frame[column], errors="coerce", utc=True).isna().any()):
+        if bool(_parse_utc_timestamps(frame[column]).isna().any()):
             return f"mandatory stitched walk-forward OOS evidence has invalid {column} values"
     return None
 
@@ -1899,6 +2344,248 @@ def _validate_reporting_hashes(reporting_dir: Path, manifest: Mapping[str, Any])
             mismatches.append(f"{relative}: expected {expected}, observed {actual}")
     if mismatches:
         raise FinalizationError("published reporting hash mismatch: " + "; ".join(mismatches))
+
+
+def _inspect_scientific_ratification(
+    reporting_dir: Path,
+    *,
+    run_dir: Path,
+    bundle: ResultBundleV2 | None,
+    manifest: Mapping[str, Any] | None,
+    errors: list[str],
+) -> dict[str, Any] | None:
+    path = reporting_dir / SCIENTIFIC_RATIFICATION_FILENAME
+    if not path.exists():
+        return None
+    try:
+        value = _read_json_mapping(path)
+    except (OSError, ValueError) as exc:
+        errors.append(f"scientific ratification is invalid: {exc}")
+        return None
+    if bundle is None or manifest is None:
+        errors.append("scientific ratification lacks a valid finalized result binding")
+        return None
+    if value.get("schema") != SCIENTIFIC_RATIFICATION_SCHEMA or value.get("status") != "RATIFIED":
+        errors.append("scientific ratification schema or status is invalid")
+    expected_identity = (bundle.campaign_id, bundle.variant_id, bundle.run_id)
+    observed_identity = (
+        str(value.get("campaign_id") or ""),
+        str(value.get("variant_id") or ""),
+        str(value.get("run_id") or ""),
+    )
+    if observed_identity != expected_identity:
+        errors.append("scientific ratification identity does not match ResultBundleV2")
+    if (
+        value.get("runner_replayed") is not False
+        or value.get("original_scientific_validity_verdict") != bundle.scientific_validity_verdict
+        or value.get("scientific_validity_verdict") != "FAIL"
+        or value.get("research_verdict") != bundle.verdict
+        or bundle.verdict != "FAIL"
+    ):
+        errors.append("scientific ratification verdict transition is not permitted")
+
+    bindings = value.get("bindings") if isinstance(value.get("bindings"), Mapping) else {}
+    project_root = _result_project_root(run_dir, manifest=manifest)
+    source_value = str(manifest.get("source_config") or "")
+    source_path = _resolve_path(source_value, project_root) if source_value else Path()
+    summary_path = run_dir / "campaign_test_summary.json"
+    bound_files = {
+        "result_bundle_sha256": reporting_dir / RESULT_BUNDLE_FILENAME,
+        "finalization_manifest_sha256": reporting_dir / FINALIZATION_MANIFEST,
+        "campaign_test_summary_sha256": summary_path,
+        "source_config_sha256": source_path,
+    }
+    for key, bound_path in bound_files.items():
+        expected = str(bindings.get(key) or "")
+        actual = _file_sha256(bound_path) if bound_path.is_file() else "<missing>"
+        if expected != actual:
+            errors.append(f"scientific ratification binding drifted: {key}")
+
+    for path_key, hash_key in (
+        ("trade_log", "trade_log_sha256"),
+        ("failed_stage_result", "failed_stage_result_sha256"),
+    ):
+        relative = str(bindings.get(path_key) or "")
+        target = (run_dir / relative).resolve()
+        if not relative or not target.is_relative_to(run_dir.resolve()):
+            errors.append(f"scientific ratification {path_key} is outside the immutable run")
+            continue
+        expected = str(bindings.get(hash_key) or "")
+        actual = _file_sha256(target) if target.is_file() else "<missing>"
+        if expected != actual:
+            errors.append(f"scientific ratification binding drifted: {hash_key}")
+
+    approval_value = str(bindings.get("approval_path") or "")
+    approval_path = _resolve_path(approval_value, project_root) if approval_value else Path()
+    approval_expected = str(bindings.get("approval_sha256") or "")
+    approval_actual = _file_sha256(approval_path) if approval_path.is_file() else "<missing>"
+    if approval_expected != approval_actual:
+        errors.append("scientific ratification mechanics-approval binding drifted")
+
+    try:
+        cfg = _read_yaml_mapping(source_path)
+        summary = _read_json_mapping(summary_path)
+        from alphaquest.research.campaign_stages import _scientific_validity_verdict
+        from alphaquest.validation.promotion_gate import inspect_historical_validation_approval
+
+        stages = summary.get("stages") if isinstance(summary.get("stages"), list) else []
+        diagnostics = (
+            [str(item) for item in summary.get("diagnostic_reasons")]
+            if isinstance(summary.get("diagnostic_reasons"), list)
+            else []
+        )
+        if _scientific_validity_verdict(stages, diagnostics) != "FAIL":
+            errors.append("scientific ratification is no longer supported by the stage evidence")
+        approval = inspect_historical_validation_approval(cfg, source_path)
+        if approval.get("status") != "APPROVED_FOR_TESTING" or approval.get("errors"):
+            errors.append("scientific ratification mechanics approval is no longer valid")
+        trade_relative = str(bindings.get("trade_log") or "")
+        trades = pd.read_csv(run_dir / trade_relative)
+        invalid_entries = int(_parse_utc_timestamps(trades["entry_timestamp"]).isna().sum())
+        invalid_exits = int(_parse_utc_timestamps(trades["exit_timestamp"]).isna().sum())
+        flatten, flatten_issue = _forced_flatten_compliance_from_trade_evidence(trades, cfg)
+        reconciliation = (
+            value.get("reconciliation")
+            if isinstance(value.get("reconciliation"), Mapping)
+            else {}
+        )
+        raw_net = float(pd.to_numeric(trades["net_pnl"], errors="raise").sum())
+        if (
+            invalid_entries != 0
+            or invalid_exits != 0
+            or flatten is not True
+            or reconciliation.get("invalid_entry_timestamps") != 0
+            or reconciliation.get("invalid_exit_timestamps") != 0
+            or reconciliation.get("forced_flatten_compliance") is not True
+            or int(reconciliation.get("trade_count") or -1) != len(trades)
+            or not math.isclose(
+                float(reconciliation.get("net_profit_after_costs")),
+                raw_net,
+                rel_tol=0.0,
+                abs_tol=1e-9,
+            )
+        ):
+            errors.append(
+                "scientific ratification timestamp, PnL, or forced-flatten reconciliation drifted"
+                + (f": {flatten_issue}" if flatten_issue else "")
+            )
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        errors.append(f"scientific ratification could not be recomputed: {exc}")
+
+    metric_overrides = value.get("metric_overrides")
+    if not isinstance(metric_overrides, Mapping):
+        errors.append("scientific ratification metric overrides are missing")
+    else:
+        total = metric_overrides.get("total_trades")
+        net = metric_overrides.get("net_profit_after_costs")
+        flatten = metric_overrides.get("forced_flatten_compliance")
+        if (
+            not isinstance(total, Mapping)
+            or total.get("value") != bundle.metrics.total_trades.value
+            or not isinstance(net, Mapping)
+            or not math.isclose(
+                float(net.get("value")),
+                float(bundle.metrics.net_profit_after_costs.value),
+                rel_tol=0.0,
+                abs_tol=1e-9,
+            )
+            or not isinstance(flatten, Mapping)
+            or flatten.get("value") is not True
+        ):
+            errors.append("scientific ratification metric invariants do not match ResultBundleV2")
+    return {
+        **value,
+        "path": str(path),
+        "sha256": _file_sha256(path),
+    }
+
+
+def _validate_evidence_hashes(run_dir: Path, manifest: Mapping[str, Any]) -> None:
+    hashes = manifest.get("evidence_artifact_sha256")
+    if not isinstance(hashes, Mapping) or not hashes:
+        raise FinalizationError("finalization manifest does not contain runner evidence hashes")
+    mismatches = []
+    root = run_dir.resolve()
+    for relative, expected in hashes.items():
+        path = (root / str(relative)).resolve()
+        if not path.is_relative_to(root):
+            mismatches.append(f"{relative}: path escapes the immutable run directory")
+            continue
+        actual = _file_sha256(path) if path.is_file() else "<missing>"
+        if actual != expected:
+            mismatches.append(f"{relative}: expected {expected}, observed {actual}")
+    if mismatches:
+        raise FinalizationError("published runner evidence hash mismatch: " + "; ".join(mismatches))
+
+
+def _validate_recovery_identity(
+    *,
+    project_root: Path,
+    job_id: str,
+    cfg_path: Path,
+    cfg: Mapping[str, Any],
+    run_dir: Path,
+    summary: Mapping[str, Any],
+    manifest: Mapping[str, Any],
+    marker: Mapping[str, Any],
+) -> None:
+    if marker.get("schema") != "alphaquest.studio-incomplete-attempt/v1":
+        raise FinalizationError("explicit recovery requires a supported incomplete-attempt marker")
+    if marker.get("automatic_replay_permitted") is not False:
+        raise FinalizationError("incomplete-attempt marker does not forbid automatic replay")
+    expected = {
+        "campaign_id": str(cfg.get("campaign_id") or ""),
+        "variant_id": str(cfg.get("variant_id") or ""),
+        "attempt_id": str(cfg.get("attempt_id") or ""),
+        "run_id": str(cfg.get("test_run_id") or ""),
+    }
+    observed = {
+        "campaign_id": (
+            str(summary.get("campaign_id") or ""),
+            str(manifest.get("campaign_id") or ""),
+            str(marker.get("campaign_id") or ""),
+        ),
+        "variant_id": (
+            str(summary.get("variant_id") or ""),
+            str(manifest.get("variant_id") or ""),
+            str(marker.get("variant_id") or ""),
+        ),
+        "attempt_id": (
+            str(summary.get("attempt_id") or ""),
+            str(marker.get("attempt_id") or ""),
+        ),
+        "run_id": (
+            str(summary.get("test_run_id") or ""),
+            str(manifest.get("run_id") or ""),
+            str(marker.get("run_id") or ""),
+        ),
+    }
+    mismatches = [
+        label
+        for label, values in observed.items()
+        if not expected[label] or any(value != expected[label] for value in values)
+    ]
+    if mismatches:
+        raise FinalizationError(
+            "explicit recovery identity mismatch: " + ", ".join(sorted(mismatches))
+        )
+    if str(marker.get("job_id") or "") != job_id:
+        raise FinalizationError("incomplete-attempt marker belongs to a different Studio job")
+
+    recorded_paths = {
+        "summary output_dir": summary.get("output_dir"),
+        "manifest run_dir": manifest.get("run_dir"),
+        "marker run_dir": marker.get("run_dir"),
+    }
+    for label, value in recorded_paths.items():
+        if not value or _resolve_path(str(value), project_root) != run_dir:
+            raise FinalizationError(f"{label} does not identify the selected immutable run")
+    for label, value in {
+        "manifest source_config": manifest.get("source_config"),
+        "marker source_config": marker.get("source_config"),
+    }.items():
+        if not value or _resolve_path(str(value), project_root) != cfg_path:
+            raise FinalizationError(f"{label} does not identify the frozen attempt config")
 
 
 def _suppress_candidate_package(run_dir: Path) -> None:

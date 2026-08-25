@@ -1,3 +1,5 @@
+import hashlib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -7,7 +9,12 @@ import yaml
 
 from alphaquest.research.campaign_stages import canonicalize_campaign_config
 from alphaquest.accounts.catalog import AccountProfileCatalog
-from research.preflight import _config_paths, _is_archived_path, run_preflight
+from research.preflight import (
+    _config_paths,
+    _is_archived_path,
+    _validate_data_paths,
+    run_preflight,
+)
 
 
 def _write_csv(path, *, duplicate: bool = False) -> None:
@@ -142,6 +149,37 @@ def test_preflight_accepts_valid_config_and_timezone_aware_data(tmp_path):
     assert result["failures"] == []
 
 
+def test_v2_factory_preflight_rejects_canonical_dataset_byte_drift(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    expected = hashlib.sha256(data.read_bytes()).hexdigest()
+    data_cfg = {
+        "source": "csv",
+        "raw_csv": str(data),
+        "canonical_sha256": expected,
+    }
+
+    failures: list[str] = []
+    _validate_data_paths(
+        data_cfg,
+        config,
+        failures,
+        require_bound_dataset_hash=True,
+    )
+    assert failures == []
+
+    data.write_text(data.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    failures = []
+    _validate_data_paths(
+        data_cfg,
+        config,
+        failures,
+        require_bound_dataset_hash=True,
+    )
+    assert any("canonical dataset bytes" in item for item in failures)
+
+
 def test_preflight_accepts_matching_account_profile_hash_and_rejects_drift(tmp_path):
     data = tmp_path / "bars.csv"
     config = tmp_path / "config.yaml"
@@ -163,6 +201,58 @@ def test_preflight_accepts_matching_account_profile_hash_and_rejects_drift(tmp_p
     drifted = run_preflight(config_paths=[config], run_tests=False)
     assert drifted["passed"] is False
     assert any("profile hash drift" in item for item in drifted["failures"])
+
+
+def test_preflight_binds_destination_contract_to_exact_account_profiles(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    resolved = AccountProfileCatalog(Path(__file__).resolve().parents[1]).resolve(
+        "apex/eod_50k/funded", "2026-03-01"
+    )
+    cfg = _config(data)
+    binding = resolved.snapshot()
+    binding["role"] = "primary"
+    cfg["account_profile_bindings"] = [binding]
+    contract = {
+        "schema": "alphaquest.destination-benchmark-contract/v1",
+        "profiles": [
+            {
+                "profile_id": resolved.profile.profile_id,
+                "profile_version": resolved.profile.version,
+                "profile_sha256": resolved.sha256,
+                "role": "primary",
+            }
+        ],
+        "scientific_validity_required": True,
+        "generic_objective_pass_required": False,
+        "approval_scope": "exact_primary_profile_only",
+    }
+    cfg["destination_benchmark_contract"] = contract
+    cfg["destination_benchmark_contract_sha256"] = hashlib.sha256(
+        json.dumps(
+            contract,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    _write_config(config, cfg)
+
+    assert run_preflight(config_paths=[config], run_tests=False)["passed"] is True
+
+    del cfg["account_profile_bindings"]
+    _write_config(config, cfg)
+    unbound = run_preflight(config_paths=[config], run_tests=False)
+    assert unbound["passed"] is False
+    assert any("requires matching account_profile_bindings" in item for item in unbound["failures"])
+
+    cfg["account_profile_bindings"] = [binding]
+    cfg["destination_benchmark_contract"]["profiles"][0]["role"] = "comparison"
+    _write_config(config, cfg)
+    drifted = run_preflight(config_paths=[config], run_tests=False)
+    assert drifted["passed"] is False
+    assert any("contract hash" in item for item in drifted["failures"])
 
 
 def test_preflight_rejects_strategy_specific_stage_methodology(tmp_path):

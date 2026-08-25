@@ -1,0 +1,120 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "automatic_deployment_permitted": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Automatic Deployment Permitted",
+      "type": "boolean"
+    },
+    "campaign_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "forward_requirements": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Forward Requirements",
+      "type": "array"
+    },
+    "human_approval_required": {
+      "const": true,
+      "default": true,
+      "enum": [
+        true
+      ],
+      "title": "Human Approval Required",
+      "type": "boolean"
+    },
+    "limitations": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Limitations",
+      "type": "array"
+    },
+    "mechanics_approval_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Mechanics Approval Sha256",
+      "type": "string"
+    },
+    "recommendation": {
+      "enum": [
+        "ELIGIBLE_FOR_HUMAN_REVIEW",
+        "REJECT"
+      ],
+      "title": "Recommendation",
+      "type": "string"
+    },
+    "result_bundle_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Result Bundle Sha256",
+      "type": "string"
+    },
+    "robustness_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Robustness Evidence",
+      "type": "array"
+    },
+    "schema": {
+      "const": "alphaquest.candidate-due-diligence-summary/v1",
+      "default": "alphaquest.candidate-due-diligence-summary/v1",
+      "enum": [
+        "alphaquest.candidate-due-diligence-summary/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "scientific_verdict": {
+      "const": "PASS",
+      "default": "PASS",
+      "enum": [
+        "PASS"
+      ],
+      "title": "Scientific Verdict",
+      "type": "string"
+    },
+    "summary_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Summary Id",
+      "type": "string"
+    },
+    "unresolved_risks": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Unresolved Risks",
+      "type": "array"
+    },
+    "variant_id": {
+      "pattern": "^v[0-9]{2}$",
+      "title": "Variant Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "summary_id",
+    "campaign_id",
+    "variant_id",
+    "result_bundle_sha256",
+    "mechanics_approval_sha256",
+    "robustness_evidence",
+    "limitations",
+    "unresolved_risks",
+    "forward_requirements",
+    "recommendation"
+  ],
+  "title": "CandidateDueDiligenceSummaryV1",
+  "type": "object"
+}

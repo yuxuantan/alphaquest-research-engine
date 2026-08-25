@@ -24,6 +24,8 @@ import {
   publicationAvailableStrategyPackages,
   strategyPackageLabel,
 } from "../strategyAvailability";
+import { OBJECTIVE_TEMPLATES } from "../researchObjectives";
+export { OBJECTIVE_TEMPLATES } from "../researchObjectives";
 import type {
   DatasetSummary,
   DraftView,
@@ -33,14 +35,19 @@ import type {
 } from "../types";
 
 const stepDescriptions = [
-  "Goals, source, and hypothesis",
-  "Prior research",
+  "Goals, claim, source, and prior research",
   "Governed bars",
   "Costs and compliance",
   "Causal implementation",
   "Risk and exit expressions",
   "Preflight and immutable freeze",
 ];
+
+const VISIBLE_STEP_COUNT = 6;
+
+function visibleStepNumber(sourceStep: number): number {
+  return sourceStep <= 2 ? 1 : sourceStep - 1;
+}
 
 export function WizardPage() {
   const { campaignId = "", step = "1" } = useParams();
@@ -155,34 +162,45 @@ export function WizardPage() {
         </div>
         <nav aria-label="Research design steps">
           <ol>
-            {view.steps.map((item) => (
+            {view.steps.filter((item) => item.number !== 2).map((item) => {
+              const planReview = view.steps.find((candidate) => candidate.number === 2);
+              const combinedPlan = item.number === 1;
+              const complete = combinedPlan
+                ? Boolean(item.complete && planReview?.complete)
+                : item.complete;
+              const current = combinedPlan
+                ? stepNumber <= 2
+                : item.number === stepNumber;
+              const target = combinedPlan && item.complete && !planReview?.complete ? 2 : item.number;
+              return (
               <li key={item.number}>
                 <Link
-                  aria-current={item.number === stepNumber ? "step" : undefined}
-                  className={`${item.number === stepNumber ? "current" : ""} ${item.complete ? "complete" : ""} ${!item.available ? "locked" : ""}`}
+                  aria-current={current ? "step" : undefined}
+                  className={`${current ? "current" : ""} ${complete ? "complete" : ""} ${!item.available ? "locked" : ""}`}
                   to={
                     item.available
-                      ? `/research/${campaignId}/design/${item.number}`
+                      ? `/research/${campaignId}/design/${target}`
                       : `#step-${item.number}`
                   }
                   onClick={(event) => !item.available && event.preventDefault()}
                 >
                   <span className="step-marker">
-                    {item.complete ? (
+                    {complete ? (
                       <Icon name="check" />
                     ) : !item.available ? (
                       <Icon name="lock" />
                     ) : (
-                      item.number
+                      visibleStepNumber(item.number)
                     )}
                   </span>
                   <span>
-                    <strong>{item.label}</strong>
-                    <small>{stepDescriptions[item.number - 1]}</small>
+                    <strong>{combinedPlan ? "Research plan" : item.label}</strong>
+                    <small>{stepDescriptions[visibleStepNumber(item.number) - 1]}</small>
                   </span>
                 </Link>
               </li>
-            ))}
+              );
+            })}
           </ol>
         </nav>
         <Notice tone="info">
@@ -200,9 +218,9 @@ export function WizardPage() {
       </aside>
       <div className="wizard-main">
         <div className="mobile-step-progress">
-          <span>Step {stepNumber} of 7</span>
+          <span>Step {visibleStepNumber(stepNumber)} of {VISIBLE_STEP_COUNT}</span>
           <div>
-            <i style={{ width: `${(stepNumber / 7) * 100}%` }} />
+            <i style={{ width: `${(visibleStepNumber(stepNumber) / VISIBLE_STEP_COUNT) * 100}%` }} />
           </div>
         </div>
         <div className="wizard-content">
@@ -282,7 +300,7 @@ function StepHeader({
   return (
     <header className="wizard-header">
       <p className="eyebrow">
-        Step {number} of 7 · About {time}
+        Step {number} of {VISIBLE_STEP_COUNT} · About {time}
       </p>
       <h1>{title}</h1>
       <p>{description}</p>
@@ -337,6 +355,9 @@ function FormError({ error }: { error: string }) {
 }
 
 function BriefStep({ view, onComplete }: StepProps) {
+  const { data } = useStudio();
+  const legacyAiDraftingEnabled =
+    data.settings?.assistant_mode === "legacy_openai_api";
   const draft = view.draft;
   const source = draft.sources?.[0] || {};
   const fp = draft.economic_edge_fingerprint || {};
@@ -400,6 +421,9 @@ function BriefStep({ view, onComplete }: StepProps) {
     signal_inputs: (fp.signal_inputs || []).join(", "),
     market_context: fp.market_context || "RTH futures",
   });
+  const [objectiveTemplate, setObjectiveTemplate] = useState<
+    keyof typeof OBJECTIVE_TEMPLATES | "custom"
+  >(objectives.confirmed ? "custom" : "generic_candidate");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showAi, setShowAi] = useState(false);
@@ -413,6 +437,16 @@ function BriefStep({ view, onComplete }: StepProps) {
   const [pdfBusy, setPdfBusy] = useState(false);
   const update = (key: string, value: any) =>
     setForm((old) => ({ ...old, [key]: value }));
+  function applyObjectiveTemplate(key: keyof typeof OBJECTIVE_TEMPLATES) {
+    const { label: _label, description: _description, ...values } =
+      OBJECTIVE_TEMPLATES[key];
+    setObjectiveTemplate(key);
+    setForm((current) => ({
+      ...current,
+      ...values,
+      objectives_confirmed: false,
+    }));
+  }
   async function toggleAi() {
     const next = !showAi;
     setShowAi(next);
@@ -605,6 +639,34 @@ function BriefStep({ view, onComplete }: StepProps) {
             </p>
           </div>
         </div>
+        <div className="objective-template-picker">
+          <Field
+            label="Objective template"
+            hint="Templates only populate repository-safe values. The complete expanded contract is still reviewed and frozen."
+          >
+            <select
+              value={objectiveTemplate}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === "custom") {
+                  setObjectiveTemplate("custom");
+                  return;
+                }
+                applyObjectiveTemplate(value as keyof typeof OBJECTIVE_TEMPLATES);
+              }}
+            >
+              {Object.entries(OBJECTIVE_TEMPLATES).map(([key, template]) => (
+                <option key={key} value={key}>{template.label}</option>
+              ))}
+              <option value="custom">Custom governed objective</option>
+            </select>
+          </Field>
+          <Notice tone="info">
+            {objectiveTemplate === "custom"
+              ? "Custom values remain subject to every repository policy floor."
+              : OBJECTIVE_TEMPLATES[objectiveTemplate].description}
+          </Notice>
+        </div>
         <Field label="Development goal">
           <textarea
             rows={2}
@@ -677,6 +739,8 @@ function BriefStep({ view, onComplete }: StepProps) {
             />
           </Field>
         </div>
+        <details className="advanced-settings objective-policy-details">
+          <summary>Review WFA, Monte Carlo, forward, and retirement policy</summary>
         <div className="form-grid three">
           <Field label="Complete WFA windows">
             <input
@@ -796,6 +860,7 @@ function BriefStep({ view, onComplete }: StepProps) {
             />
           </Field>
         </div>
+        </details>
         <label className="check-card">
           <input
             type="checkbox"
@@ -810,6 +875,7 @@ function BriefStep({ view, onComplete }: StepProps) {
           </span>
         </label>
       </Card>
+      {legacyAiDraftingEnabled && (
       <Card className="ai-drafting-card">
         <div>
           <span className="ai-drafting-icon">
@@ -972,6 +1038,7 @@ function BriefStep({ view, onComplete }: StepProps) {
           </div>
         )}
       </Card>
+      )}
       <Card className="form-section">
         <div className="form-section-heading">
           <span>01</span>
@@ -1207,7 +1274,7 @@ function DuplicateStep({ view, onComplete }: StepProps) {
   return (
     <form onSubmit={submit}>
       <StepHeader
-        number={2}
+        number={1}
         time="4 minutes"
         title="Review prior research"
         description="AlphaQuest scans active definitions, archives, and ledger history. You decide whether the economics are genuinely distinct."
@@ -1260,7 +1327,10 @@ function DuplicateStep({ view, onComplete }: StepProps) {
                     </small>
                   </span>
                 </label>
-                <StatusBadge value={match.lifecycle || "Prior research"} />
+                <div className="tag-row">
+                  <StatusBadge value={match.match_band || match.lifecycle || "Prior research"} />
+                  {match.exact_fingerprint && <StatusBadge value="Exact fingerprint" />}
+                </div>
                 {typeof (match.score ?? match.similarity) === "number" && (
                   <div className="similarity">
                     <span
@@ -1280,6 +1350,13 @@ function DuplicateStep({ view, onComplete }: StepProps) {
                   <div className="tag-row">
                     {match.match_reasons.map((reason) => (
                       <span key={reason}>{reason}</span>
+                    ))}
+                  </div>
+                )}
+                {(match.matched_dimensions || []).length > 0 && (
+                  <div className="tag-row" aria-label="Matched economic dimensions">
+                    {match.matched_dimensions!.map((dimension) => (
+                      <span key={dimension}>{humanize(dimension)}</span>
                     ))}
                   </div>
                 )}
@@ -1414,15 +1491,18 @@ function DatasetStep({ view, onComplete }: StepProps) {
   const { data } = useStudio();
   const eligible = data.libraries?.datasets || [];
   const draft = view.draft;
-  const [selected, setSelected] = useState(draft.dataset?.dataset_id || "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const filtered = eligible.filter(
     (item) =>
       item.symbol === draft.instrument &&
       item.timeframe === draft.timeframe &&
       item.quality_verdict === "PASS",
   );
+  const [selected, setSelected] = useState(
+    draft.dataset?.dataset_id ||
+      (filtered.length === 1 ? filtered[0].dataset_id : ""),
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const chosen = filtered.find((item) => item.dataset_id === selected);
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1439,7 +1519,7 @@ function DatasetStep({ view, onComplete }: StepProps) {
   return (
     <form onSubmit={submit}>
       <StepHeader
-        number={3}
+        number={2}
         time="3 minutes"
         title="Choose governed market data"
         description={`Only ${draft.instrument} ${draft.timeframe} bars with a PASS quality verdict can enter this protocol.`}
@@ -1549,6 +1629,16 @@ function DatasetStep({ view, onComplete }: StepProps) {
               <strong>{chosen.invalid_ohlc_count || 0}</strong>Invalid OHLC
             </span>
           </div>
+          {chosen.research_readiness && (
+            <Notice
+              tone={chosen.research_readiness.status === "READY" ? "success" : "warning"}
+              title={`Research-window forecast: ${humanize(chosen.research_readiness.status)}`}
+            >
+              {chosen.research_readiness.available_months ?? "Unknown"} months available; approximately{" "}
+              {chosen.research_readiness.required_months} required. {chosen.research_readiness.blockers.join(" ")}
+              <br />This forecast does not predict signal count or performance.
+            </Notice>
+          )}
           <TechnicalDetails>
             <pre>{JSON.stringify(chosen, null, 2)}</pre>
           </TechnicalDetails>
@@ -1599,6 +1689,20 @@ function ExecutionStep({ view, onComplete }: StepProps) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const update = (k: string, v: any) => setForm((old) => ({ ...old, [k]: v }));
+  function restoreGovernedDefaults() {
+    setForm((currentForm) => ({
+      ...currentForm,
+      flatten_time: settings.default_flatten_time || "15:55:00",
+      commission_per_contract:
+        settings.default_commission_per_contract ?? 2.5,
+      slippage_ticks: settings.default_slippage_ticks ?? 1,
+      initial_balance: settings.default_initial_balance || 150000,
+      tick_size: defaults.tick_size,
+      point_value: defaults.point_value,
+      tick_value: defaults.tick_value,
+    }));
+    setConfirmed(false);
+  }
   const propProfiles = data.libraries?.prop_profiles || [];
   const accountProfiles = data.libraries?.account_profiles || [];
   const selectedProfile = propProfiles.find(
@@ -1644,7 +1748,7 @@ function ExecutionStep({ view, onComplete }: StepProps) {
   return (
     <form onSubmit={submit}>
       <StepHeader
-        number={4}
+        number={3}
         time="4 minutes"
         title="Confirm realistic execution"
         description="Set costs, session rules, and mandatory flattening before mechanics are designed."
@@ -1652,10 +1756,17 @@ function ExecutionStep({ view, onComplete }: StepProps) {
       <FormError error={error} />
       <Notice
         tone="info"
-        title={`${draft.instrument} instrument defaults applied`}
+        title="Governed values inherited once"
       >
-        Tick size, point value, and tick value are visible for review. Overnight
-        exposure remains prohibited in Studio V1.
+        Studio inherited {draft.instrument} constants plus the commission,
+        slippage, balance, and flatten defaults from Settings. Confirm the
+        resolved contract here; downstream definitions reuse it without asking
+        you to type it again.
+        <div className="notice-actions">
+          <Button type="button" variant="secondary" onClick={restoreGovernedDefaults}>
+            Restore governed defaults
+          </Button>
+        </div>
       </Notice>
       <Card className="form-section">
         <div className="form-section-heading">
@@ -1950,7 +2061,7 @@ function MechanicsStep({ view, onComplete }: StepProps) {
   return (
     <form onSubmit={submit}>
       <StepHeader
-        number={5}
+        number={4}
         time="5 minutes"
         title="Choose how the idea becomes mechanics"
         description="Only representations that preserve the frozen hypothesis and causal timing may proceed."
@@ -2664,7 +2775,7 @@ function VariantsStep({ view, onComplete }: StepProps) {
   return (
     <div>
       <StepHeader
-        number={6}
+        number={5}
         time="8 minutes"
         title="Confirm the first expression"
         description="Freeze only the initial mechanic now. A different expression may be proposed later only after this one is manually reviewed and fails."
@@ -2991,23 +3102,15 @@ function ProtocolStep({ view, onComplete }: StepProps) {
         draft.variants.every((v: any) => v.confirmed),
     ],
   ];
-  async function freeze() {
-    setBusy(true);
-    setError("");
-    try {
-      const result = await api.freeze(view.campaign_id);
-      setFrozen(true);
-      onComplete(result);
-    } catch (reason) {
-      setError(message(reason));
-    } finally {
-      setBusy(false);
-    }
-  }
   async function publish() {
     setBusy(true);
     setError("");
     try {
+      if (!frozen) {
+        const result = await api.freeze(view.campaign_id);
+        setFrozen(true);
+        onComplete(result);
+      }
       await api.publish(view.campaign_id);
       setPublished(true);
       window.setTimeout(
@@ -3023,10 +3126,10 @@ function ProtocolStep({ view, onComplete }: StepProps) {
   return (
     <div>
       <StepHeader
-        number={7}
+        number={6}
         time="5 minutes"
-        title="Review and freeze the protocol"
-        description="This is the final pre-PnL checkpoint. A later data or mechanics change requires an explicit governed follow-up."
+        title="Review and publish the frozen protocol"
+        description="One action runs strict validation, freezes the exact contract, and publishes transactionally. A later data or mechanics change still requires an explicit governed follow-up."
       />
       <FormError error={error} />
       {published && (
@@ -3171,8 +3274,8 @@ function ProtocolStep({ view, onComplete }: StepProps) {
         back={6}
         busy={busy}
         disabled={(!frozen && !confirm) || published}
-        label={frozen ? "Publish governed campaign" : "Validate and freeze"}
-        onNext={() => void (frozen ? publish() : freeze())}
+        label="Review and publish governed campaign"
+        onNext={() => void publish()}
       />
     </div>
   );

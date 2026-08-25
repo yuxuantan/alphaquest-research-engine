@@ -1,0 +1,258 @@
+{
+  "$defs": {
+    "CriterionOutcomeV1": {
+      "additionalProperties": false,
+      "properties": {
+        "actual": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Actual"
+        },
+        "comparator": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Comparator"
+        },
+        "criterion_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Criterion Id",
+          "type": "string"
+        },
+        "evidence_ref": {
+          "minLength": 1,
+          "title": "Evidence Ref",
+          "type": "string"
+        },
+        "metric": {
+          "minLength": 1,
+          "title": "Metric",
+          "type": "string"
+        },
+        "near_threshold": {
+          "default": false,
+          "title": "Near Threshold",
+          "type": "boolean"
+        },
+        "passed": {
+          "title": "Passed",
+          "type": "boolean"
+        },
+        "stage": {
+          "minLength": 1,
+          "title": "Stage",
+          "type": "string"
+        },
+        "threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Threshold"
+        }
+      },
+      "required": [
+        "criterion_id",
+        "metric",
+        "stage",
+        "passed",
+        "actual",
+        "threshold",
+        "comparator",
+        "evidence_ref"
+      ],
+      "title": "CriterionOutcomeV1",
+      "type": "object"
+    },
+    "FailureClass": {
+      "enum": [
+        "INSUFFICIENT_EVIDENCE",
+        "DATA_QUALITY",
+        "MECHANICS_DEFECT",
+        "EDGE_ABSENT",
+        "COST_SENSITIVE",
+        "TRADE_DENSITY",
+        "PARAMETER_INSTABILITY",
+        "WFA_INSTABILITY",
+        "REGIME_DEPENDENCE",
+        "TAIL_RISK",
+        "ACCOUNT_UNSUITABLE"
+      ],
+      "title": "FailureClass",
+      "type": "string"
+    },
+    "StageKind": {
+      "enum": [
+        "DEVELOPMENT",
+        "WFA_IN_SAMPLE",
+        "WFA_OOS",
+        "LOCKED_HOLDOUT",
+        "STRESS",
+        "FINAL_ACCEPTANCE",
+        "FORWARD",
+        "ACCOUNT_ASSESSMENT",
+        "UNKNOWN"
+      ],
+      "title": "StageKind",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "campaign_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "classifications": {
+      "items": {
+        "$ref": "#/$defs/FailureClass"
+      },
+      "title": "Classifications",
+      "type": "array"
+    },
+    "competing_diagnoses": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Competing Diagnoses",
+      "type": "array"
+    },
+    "confidence": {
+      "maximum": 1.0,
+      "minimum": 0.0,
+      "title": "Confidence",
+      "type": "number"
+    },
+    "deterministic": {
+      "const": true,
+      "default": true,
+      "enum": [
+        true
+      ],
+      "title": "Deterministic",
+      "type": "boolean"
+    },
+    "diagnosis_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Diagnosis Id",
+      "type": "string"
+    },
+    "evidence_refs": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Evidence Refs",
+      "type": "array"
+    },
+    "failed_criteria": {
+      "items": {
+        "$ref": "#/$defs/CriterionOutcomeV1"
+      },
+      "title": "Failed Criteria",
+      "type": "array"
+    },
+    "failed_stage": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Failed Stage"
+    },
+    "human_approval_required": {
+      "const": true,
+      "default": true,
+      "enum": [
+        true
+      ],
+      "title": "Human Approval Required",
+      "type": "boolean"
+    },
+    "near_failed_criteria": {
+      "items": {
+        "$ref": "#/$defs/CriterionOutcomeV1"
+      },
+      "title": "Near Failed Criteria",
+      "type": "array"
+    },
+    "result_bundle_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Result Bundle Sha256",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.failure-diagnosis/v1",
+      "default": "alphaquest.failure-diagnosis/v1",
+      "enum": [
+        "alphaquest.failure-diagnosis/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "stage_kind": {
+      "$ref": "#/$defs/StageKind"
+    },
+    "variant_id": {
+      "pattern": "^v[0-9]{2}$",
+      "title": "Variant Id",
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "required": [
+    "diagnosis_id",
+    "campaign_id",
+    "variant_id",
+    "result_bundle_sha256",
+    "verdict",
+    "failed_stage",
+    "stage_kind",
+    "classifications",
+    "failed_criteria",
+    "near_failed_criteria",
+    "evidence_refs",
+    "competing_diagnoses",
+    "confidence"
+  ],
+  "title": "FailureDiagnosisV1",
+  "type": "object"
+}

@@ -15,7 +15,9 @@ from alphaquest.research.campaign_stages import (
     DEFAULT_STAGE_ORDER,
     canonicalize_campaign_config,
 )
+from alphaquest.research.factory_policy import research_factory_binding
 from alphaquest.studio.followups import (
+    DestinationBenchmarkSelectionV1,
     FollowUpAttemptRequestV1,
     FollowUpAttemptService,
     ExecutionTimelinePatchV1,
@@ -32,7 +34,13 @@ from alphaquest.studio.followups import (
     _require_queueable_performance_job,
     _resolve_project_owned_path,
 )
-from alphaquest.authoring.models import DatasetManifestV1, EventExecutionSourceV1
+from alphaquest.accounts.catalog import AccountProfileCatalog
+from alphaquest.accounts.models import AccountAssessmentCostsV1
+from alphaquest.authoring.models import (
+    DatasetManifestV1,
+    EventExecutionSourceV1,
+    ResearchObjectivesV1,
+)
 from alphaquest.strategy_certification import (
     compute_implementation_sha256,
     get_strategy_certification,
@@ -356,6 +364,90 @@ def _request(kind: str, **updates) -> FollowUpAttemptRequestV1:
     return FollowUpAttemptRequestV1.model_validate(values)
 
 
+def _research_objectives() -> ResearchObjectivesV1:
+    return ResearchObjectivesV1.model_validate(
+        {
+            "schema": "alphaquest.research-objectives/v1",
+            "development_goal": (
+                "Determine whether this candidate survives every frozen research gate."
+            ),
+            "development_deadline": "2027-01-15",
+            "evaluation_horizon_months": 24,
+            "minimum_annualized_return_fraction": 0.20,
+            "minimum_mar": 0.40,
+            "maximum_drawdown_fraction": 0.10,
+            "minimum_complete_wfa_windows": 3,
+            "minimum_wfa_oos_trades": 50,
+            "minimum_acceptance_oos_trades": 30,
+            "monte_carlo_min_runs": 8000,
+            "monte_carlo_horizon_months": 6,
+            "minimum_net_profit_probability": 0.70,
+            "maximum_account_breach_probability": 0.10,
+            "forward_incubation_min_calendar_days": 90,
+            "forward_incubation_min_trades": 30,
+            "maximum_variants": 5,
+            "abandonment_rules": [
+                "Stop when any frozen stage gate fails; never tune after OOS results."
+            ],
+            "retirement_rules": [
+                "Retire after a live risk breach or sustained degradation."
+            ],
+            "confirmed": True,
+        }
+    )
+
+
+def _destination_benchmark(project_root: Path) -> DestinationBenchmarkSelectionV1:
+    resolved = AccountProfileCatalog(project_root).resolve(
+        "apex/eod_50k/funded",
+        "2026-03-01",
+    )
+    return DestinationBenchmarkSelectionV1(
+        profile_id=resolved.profile.profile_id,
+        profile_version=resolved.profile.version,
+        profile_sha256=resolved.sha256,
+        role="primary",
+        costs=AccountAssessmentCostsV1(
+            currency="USD",
+            evaluation_purchase_price=37.0,
+            activation_fee=85.0,
+            other_upfront_costs=0.0,
+            observed_at=datetime(2026, 7, 14, 12, 0, tzinfo=UTC),
+            source="Apex checkout observed before performance testing",
+            include_as_replacement_cost=True,
+        ),
+        benchmark_acknowledged=True,
+    )
+
+
+def test_protocol_request_accepts_iso_datetime_from_studio_json() -> None:
+    destination = _destination_benchmark(Path(__file__).resolve().parents[1])
+    wire_destination = destination.model_dump(mode="json")
+    assert isinstance(wire_destination["costs"]["observed_at"], str)
+
+    request = FollowUpAttemptRequestV1.model_validate(
+        {
+            "campaign_id": "demo",
+            "attempt_kind": "pre_pnl_protocol_declaration",
+            "parent_attempt_id": "original",
+            "target_variant_id": "v03",
+            "reason": (
+                "This pre-PnL declaration freezes the destination benchmark and "
+                "research objectives without changing mechanics or inspecting PnL."
+            ),
+            "created_by": "researcher@example.com",
+            "research_objectives": _research_objectives().model_dump(
+                mode="json", by_alias=True
+            ),
+            "destination_benchmarks": [wire_destination],
+            "destination_scope_acknowledged": True,
+        }
+    )
+
+    observed_at = request.destination_benchmarks[0].costs.observed_at
+    assert observed_at == datetime(2026, 7, 14, 12, 0, tzinfo=UTC)
+
+
 def test_execution_timeline_correction_is_atomic_and_requires_certified_limit():
     config = {
         "engine_lane": "canonical_event_replay",
@@ -456,6 +548,102 @@ def test_targeted_replication_contains_only_independent_target_variant(tmp_path,
     assert config["research_metadata"]["parent_variant_id"] == "v02"
     assert result.ledger_rows_appended == 1
     assert (campaign_root / "variants/v01/config.yaml").is_file()
+
+
+def test_pre_pnl_protocol_declaration_preserves_legacy_mechanics_and_requires_fresh_approval(
+    tmp_path,
+    monkeypatch,
+):
+    with pytest.raises(ValueError, match="requires one primary destination benchmark"):
+        _request(
+            "pre_pnl_protocol_declaration",
+            target_variant_id="v03",
+            research_objectives=_research_objectives(),
+        )
+
+    campaign_root = _workspace(tmp_path)
+    parent_path = campaign_root / "variants/v03/config.yaml"
+    parent = yaml.safe_load(parent_path.read_text(encoding="utf-8"))
+    parent_gate = deepcopy(parent["research_metadata"]["validation_gate"])
+    service = _service(tmp_path, monkeypatch)
+    repository_root = Path(__file__).resolve().parents[1]
+    destination = _destination_benchmark(repository_root)
+    resolved_destination = AccountProfileCatalog(repository_root).resolve(
+        destination.profile_id,
+        destination.profile_version,
+    )
+    monkeypatch.setattr(
+        "alphaquest.accounts.catalog.resolve_account_profile",
+        lambda *_args, **_kwargs: resolved_destination,
+    )
+
+    result = service.create(
+        _request(
+            "pre_pnl_protocol_declaration",
+            target_variant_id="v03",
+            research_objectives=_research_objectives(),
+            destination_benchmarks=[destination],
+            destination_scope_acknowledged=True,
+        )
+    )
+
+    assert [path.parent.name for path in result.config_paths] == ["v03"]
+    child = yaml.safe_load(result.config_paths[0].read_text(encoding="utf-8"))
+    assert child["parent_attempt_id"] == "original"
+    assert child["strategy"] == parent["strategy"]
+    assert child["data"] == parent["data"]
+    assert child["dataset_id"] == parent["dataset_id"]
+    assert child["core_grid"]["parameters"] == parent["core_grid"]["parameters"]
+    assert child["wfa"].get("parameters") == parent["wfa"].get("parameters")
+    assert child["research_objectives"]["confirmed"] is True
+    assert child["research_objectives_sha256"] == _object_sha(
+        child["research_objectives"]
+    )
+    assert child["account_profile_bindings"][0]["role"] == "primary"
+    benchmark = child["destination_benchmark_contract"]
+    assert benchmark["scientific_validity_required"] is True
+    assert benchmark["generic_objective_pass_required"] is False
+    assert benchmark["approval_scope"] == "exact_primary_profile_only"
+    assert benchmark["profiles"][0]["profile_id"] == "apex/eod_50k/funded"
+    assert benchmark["profiles"][0]["costs"]["activation_fee"] == 85.0
+    assert child["destination_benchmark_contract_sha256"] == _object_sha(
+        benchmark
+    )
+    child_gate = child["research_metadata"]["validation_gate"]
+    assert child_gate["evidence_dir"] != parent_gate["evidence_dir"]
+    assert child_gate["approval_path"] != parent_gate["approval_path"]
+    assert result.attempt_id in child_gate["evidence_dir"]
+    assert result.attempt_id in child_gate["approval_path"]
+
+    manifest = json.loads(result.manifest_path.read_text(encoding="utf-8"))
+    assert manifest["research_objectives_sha256"] == child[
+        "research_objectives_sha256"
+    ]
+    assert manifest["target_variant_id"] == "v03"
+    assert manifest["destination_benchmark_contract_sha256"] == child[
+        "destination_benchmark_contract_sha256"
+    ]
+    strategy_spec = yaml.safe_load(
+        (result.destination / "strategy_spec.yaml").read_text(encoding="utf-8")
+    )
+    assert strategy_spec["research_objectives_sha256"] == child[
+        "research_objectives_sha256"
+    ]
+    assert strategy_spec["destination_benchmark_contract_sha256"] == child[
+        "destination_benchmark_contract_sha256"
+    ]
+
+    with pytest.raises(ValueError, match="already has a frozen research-objective"):
+        service.create(
+            _request(
+                "pre_pnl_protocol_declaration",
+                parent_attempt_id=result.attempt_id,
+                target_variant_id="v03",
+                research_objectives=_research_objectives(),
+                destination_benchmarks=[destination],
+                destination_scope_acknowledged=True,
+            )
+        )
 
 
 def test_parameter_declaration_from_targeted_replication_remains_target_only(
@@ -908,6 +1096,47 @@ def test_ledger_failure_rolls_back_the_new_source_tree(tmp_path, monkeypatch):
     assert not (tmp_path / "research_ledger.csv").exists()
 
 
+def test_v2_data_refresh_rebinds_exact_dataset_and_acceptance_calendar(tmp_path):
+    campaign_root = _workspace(tmp_path)
+    old_document = json.loads(
+        (tmp_path / "research/datasets/bars_v1/dataset_manifest.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    refreshed = DatasetManifestV1.model_validate(
+        _dataset(tmp_path, "bars_v2", start="2021-01-01")
+    )
+    config = yaml.safe_load(
+        (campaign_root / "variants/v01/config.yaml").read_text(encoding="utf-8")
+    )
+    objectives = _research_objectives().model_dump(mode="json", by_alias=True)
+    config["research_objectives"] = objectives
+    config["research_objectives_sha256"] = _object_sha(objectives)
+    config["data"]["coverage_start"] = old_document["coverage_start"]
+    config["data"]["coverage_end"] = old_document["coverage_end"]
+    config["data"]["source_sha256"] = old_document["source_sha256"]
+    config["data"]["canonical_sha256"] = old_document["canonical_sha256"]
+    config["research_factory"] = research_factory_binding(
+        objectives,
+        dataset=old_document,
+    )
+
+    changes = _apply_dataset_refresh(
+        config,
+        refreshed,
+        variant_id="v01",
+        project_root=tmp_path,
+    )
+
+    binding = config["research_factory"]
+    assert binding["dataset"]["dataset_id"] == "bars_v2"
+    assert binding["dataset"]["canonical_sha256"] == refreshed.canonical_sha256
+    assert binding["acceptance_window"]["test_start"] == "2025-06-30"
+    assert binding["acceptance_window"]["test_end"] == "2025-12-31"
+    assert any(item["scope"] == "research_factory" for item in changes)
+    assert canonicalize_campaign_config(config)["research_factory"] == binding
+
+
 def test_data_refresh_requires_pass_governed_manifest_and_changes_only_declared_data(tmp_path, monkeypatch):
     _workspace(tmp_path)
     _dataset(tmp_path, "bars_v2", start="2021-01-01")
@@ -1330,6 +1559,18 @@ def test_pre_pnl_correction_records_explicit_scalar_diff_and_is_forbidden_after_
                 "pre_pnl_mechanics_correction",
                 target_variant_id="v01",
                 mechanic_patches=[patch],
+            )
+        )
+    with pytest.raises(ValueError, match="forbidden after performance evidence"):
+        service.create(
+            _request(
+                "pre_pnl_protocol_declaration",
+                target_variant_id="v01",
+                research_objectives=_research_objectives(),
+                destination_benchmarks=[
+                    _destination_benchmark(Path(__file__).resolve().parents[1])
+                ],
+                destination_scope_acknowledged=True,
             )
         )
 

@@ -5,9 +5,15 @@ import sqlite3
 
 import pandas as pd
 import pytest
+import yaml
 
 from alphaquest.research.registry import _campaign_lifecycle, build_registry, generate_views, registry_summary
 from alphaquest.studio.results import ResultBundleBuilder
+from alphaquest.validation.promotion_gate import (
+    REQUIRED_SAMPLE_CATEGORIES,
+    SAMPLING_POLICY_SHA256,
+    SAMPLING_POLICY_VERSION,
+)
 
 
 def _write_fixture(root: Path, *, passed: bool = False) -> None:
@@ -131,6 +137,31 @@ def test_registry_records_source_lineage_runs_and_stages(tmp_path):
         assert connection.execute("SELECT stage_name FROM stages").fetchone()[0] == "limited_core_grid_test"
         assert connection.execute("SELECT COUNT(*) FROM artifact_objects").fetchone()[0] >= 1
         assert connection.execute("SELECT MIN(LENGTH(sha256)) FROM artifacts").fetchone()[0] == 64
+
+
+def test_registry_deduplicates_aliased_historical_artifact_paths(tmp_path):
+    _write_fixture(tmp_path)
+    run = tmp_path / "backtest-campaigns/demo/base/ES/run1"
+    alias = tmp_path / "legacy-checkout-run"
+    alias.symlink_to(run, target_is_directory=True)
+    summary_path = run / "campaign_test_summary.json"
+    summary = json.loads(summary_path.read_text(encoding="utf-8"))
+    summary["output_dir"] = str(alias)
+    summary_path.write_text(json.dumps(summary), encoding="utf-8")
+    database = tmp_path / "catalogs" / "registry.sqlite"
+
+    build_registry(project_root=tmp_path, database_path=database)
+
+    with sqlite3.connect(database) as connection:
+        artifact_count, distinct_count = connection.execute(
+            "SELECT COUNT(*), COUNT(DISTINCT run_uid || ':' || path) FROM artifacts"
+        ).fetchone()
+        summary_count = connection.execute(
+            "SELECT COUNT(*) FROM artifacts WHERE path = ?",
+            ("backtest-campaigns/demo/base/ES/run1/campaign_test_summary.json",),
+        ).fetchone()[0]
+    assert artifact_count == distinct_count
+    assert summary_count == 1
 
 
 def test_registry_derives_one_unique_inferred_legacy_attempt_per_run(tmp_path):
@@ -334,6 +365,66 @@ def test_registry_pass_waits_for_independent_candidate_review(tmp_path):
     summary = registry_summary(database)
 
     assert summary["campaign_lifecycle"] == {"review_queue": 1}
+
+
+def test_registry_accepts_hash_bound_v2_universal_sample_with_declared_seed(tmp_path):
+    _write_fixture(tmp_path)
+    config_path = tmp_path / "campaigns/demo/variants/base/config.yaml"
+    evidence = tmp_path / "validation/demo/base"
+    approval_path = tmp_path / "approvals/demo/base/approval.json"
+    evidence.mkdir(parents=True)
+    approval_path.parent.mkdir(parents=True)
+    config = {
+        "campaign_id": "demo",
+        "variant_id": "base",
+        "symbol": "ES",
+        "timeframe": "1m",
+        "dataset_id": "fixture",
+        "research_metadata": {
+            "validation_gate": {
+                "required": True,
+                "approval_path": str(approval_path),
+                "evidence_dir": str(evidence),
+                "manual_review_random_sample_size": 5,
+                "manual_review_seed": 7,
+                "parameter_mode": "declared_defaults",
+            }
+        },
+    }
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    input_hash = "d" * 64
+    (evidence / "metadata.json").write_text(
+        json.dumps({"input_data_hash": input_hash, "schema_version": "1.6"}),
+        encoding="utf-8",
+    )
+    approval_path.write_text(
+        json.dumps(
+            {
+                "schema": "alphaquest.validation-approval/v1",
+                "status": "approved_for_testing",
+                "review_scope": "implementation_matches_frozen_specification",
+                "config_hash": hashlib.sha256(config_path.read_bytes()).hexdigest(),
+                "input_data_hash": input_hash,
+                "validation_schema_version": "1.6",
+                "fixed_random_sample_size": 5,
+                "fixed_random_seed": 7,
+                "parameter_mode": "declared_defaults",
+                "sampling_policy_version": SAMPLING_POLICY_VERSION,
+                "sampling_policy_sha256": SAMPLING_POLICY_SHA256,
+                "sampling_categories": {
+                    name: [] for name in REQUIRED_SAMPLE_CATEGORIES
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    database = tmp_path / "catalogs/registry.sqlite"
+
+    counts = build_registry(project_root=tmp_path, database_path=database)
+
+    assert counts["archived_unreviewed_runs"] == 0
+    with sqlite3.connect(database) as connection:
+        assert connection.execute("SELECT archived FROM runs").fetchone()[0] == 0
 
 
 def test_registry_promotes_only_after_valid_candidate_review_signal():

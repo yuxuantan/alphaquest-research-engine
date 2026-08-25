@@ -1,0 +1,82 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "context_packet_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Context Packet Sha256",
+      "type": "string"
+    },
+    "durable_writes_performed": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Durable Writes Performed",
+      "type": "boolean"
+    },
+    "payload_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Payload Sha256",
+      "type": "string"
+    },
+    "proposal_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Proposal Id",
+      "type": "string"
+    },
+    "proposal_schema": {
+      "title": "Proposal Schema",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.imported-proposal/v1",
+      "default": "alphaquest.imported-proposal/v1",
+      "enum": [
+        "alphaquest.imported-proposal/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "status": {
+      "const": "VALIDATED_NOT_APPLIED",
+      "default": "VALIDATED_NOT_APPLIED",
+      "enum": [
+        "VALIDATED_NOT_APPLIED"
+      ],
+      "title": "Status",
+      "type": "string"
+    },
+    "task_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "task_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Task Sha256",
+      "type": "string"
+    },
+    "validated_at": {
+      "format": "date-time",
+      "title": "Validated At",
+      "type": "string"
+    },
+    "validated_payload": {
+      "title": "Validated Payload",
+      "type": "object"
+    }
+  },
+  "required": [
+    "proposal_id",
+    "task_id",
+    "task_sha256",
+    "context_packet_sha256",
+    "proposal_schema",
+    "payload_sha256",
+    "validated_payload",
+    "validated_at"
+  ],
+  "title": "ImportedProposalV1",
+  "type": "object"
+}

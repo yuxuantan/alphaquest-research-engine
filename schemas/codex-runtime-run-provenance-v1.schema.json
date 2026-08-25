@@ -1,0 +1,185 @@
+{
+  "$defs": {
+    "CodexFailureKind": {
+      "enum": [
+        "AUTH",
+        "RATE_LIMIT",
+        "UNAVAILABLE",
+        "TIMEOUT",
+        "CANCELLED",
+        "INVALID_OUTPUT",
+        "PROCESS_ERROR"
+      ],
+      "title": "CodexFailureKind",
+      "type": "string"
+    },
+    "CodexSandboxMode": {
+      "const": "read-only",
+      "description": "The factory runtime is proposal-only and therefore always read-only.",
+      "enum": [
+        "read-only"
+      ],
+      "title": "CodexSandboxMode",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Secret-free, hash-bound record of one local Codex invocation.",
+  "properties": {
+    "codex_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Codex Version"
+    },
+    "command_argv": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Command Argv",
+      "type": "array"
+    },
+    "duration_ms": {
+      "minimum": 0,
+      "title": "Duration Ms",
+      "type": "integer"
+    },
+    "exit_code": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Exit Code"
+    },
+    "failure_kind": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/CodexFailureKind"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "input_hashes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Input Hashes",
+      "type": "object"
+    },
+    "output_schema_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Output Schema Sha256",
+      "type": "string"
+    },
+    "prompt_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Prompt Sha256",
+      "type": "string"
+    },
+    "requested_model": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Requested Model"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "safe_error": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Safe Error"
+    },
+    "sandbox": {
+      "$ref": "#/$defs/CodexSandboxMode"
+    },
+    "schema": {
+      "const": "alphaquest.codex-runtime-run-provenance/v1",
+      "default": "alphaquest.codex-runtime-run-provenance/v1",
+      "enum": [
+        "alphaquest.codex-runtime-run-provenance/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "task_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Task Sha256",
+      "type": "string"
+    },
+    "thread_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Thread Id"
+    },
+    "workspace_root": {
+      "title": "Workspace Root",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "task_id",
+    "task_sha256",
+    "prompt_sha256",
+    "output_schema_sha256",
+    "input_hashes",
+    "workspace_root",
+    "sandbox",
+    "command_argv",
+    "started_at",
+    "finished_at",
+    "duration_ms"
+  ],
+  "title": "CodexRunProvenanceV1",
+  "type": "object"
+}

@@ -607,6 +607,36 @@ def test_candidate_review_requires_independent_reviewer_and_is_hash_bound(tmp_pa
 
 def test_destination_candidate_review_accepts_generic_fail_with_valid_account_pass(tmp_path):
     config_path, evidence, _ = _validation_fixture(tmp_path)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    contract = {
+        "schema": "alphaquest.destination-benchmark-contract/v1",
+        "profiles": [
+            {
+                "profile_id": "apex/eod_50k/funded",
+                "profile_version": "2026-08-14.1",
+                "profile_sha256": "a" * 64,
+                "role": "primary",
+            },
+            {
+                "profile_id": "apex/eod_50k/evaluation",
+                "profile_version": "2026-08-14.1",
+                "profile_sha256": "c" * 64,
+                "role": "comparison",
+            },
+        ],
+        "scientific_validity_required": True,
+        "generic_objective_pass_required": False,
+        "approval_scope": "exact_primary_profile_only",
+    }
+    config["destination_benchmark_contract"] = contract
+    config["destination_benchmark_contract_sha256"] = hashlib.sha256(
+        json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    metadata_path = evidence / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["config_hash"] = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
     _approve_all_samples(config_path, evidence)
     result_dir = tmp_path / "destination-results"
     trades = pd.DataFrame(
@@ -683,10 +713,27 @@ def test_destination_candidate_review_accepts_generic_fail_with_valid_account_pa
                 manifest_sha256="b" * 64,
                 destination_candidate_eligible=True,
                 eligibility_blockers=[],
-            )
+            ),
+            AccountEvaluationBindingV3(
+                assessment_id="assessment-2",
+                profile_id="apex/eod_50k/evaluation",
+                profile_version="2026-08-14.1",
+                profile_sha256="c" * 64,
+                account_kind="prop_challenge",
+                verdict="PASS",
+                deterministic_verdict="PASS",
+                monte_carlo_verdict="PASS",
+                manifest_path="evaluation_manifest_2.json",
+                manifest_sha256="d" * 64,
+                destination_candidate_eligible=True,
+                eligibility_blockers=[],
+            ),
         ],
         account_suitability_complete=True,
-        destination_candidate_profile_ids=["apex/eod_50k/funded"],
+        destination_candidate_profile_ids=[
+            "apex/eod_50k/evaluation",
+            "apex/eod_50k/funded",
+        ],
     )
     v3_path = result_dir / "result_bundle_v3.json"
     v3_path.write_text(
@@ -710,3 +757,15 @@ def test_destination_candidate_review_accepts_generic_fail_with_valid_account_pa
     assert review.generic_objective_verdict == "FAIL"
     assert review.account_profile_id == "apex/eod_50k/funded"
     assert (result_dir / "candidate_review__assessment-1.json").is_file()
+
+    with pytest.raises(ValueError, match="exact frozen primary profile"):
+        CandidateReviewService().review(
+            result_bundle_path=bundle_path,
+            config_path=config_path,
+            reviewer="comparison-reviewer",
+            decision="approved_candidate",
+            notes="A passing comparison account cannot replace the primary benchmark.",
+            eligibility_basis="destination_specific_pass",
+            result_bundle_v3_path=v3_path,
+            account_assessment_id="assessment-2",
+        )

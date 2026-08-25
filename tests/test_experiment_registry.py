@@ -5,6 +5,7 @@ import json
 import pytest
 
 from alphaquest.research.experiment_registry import (
+    AttemptFinalizationRecovery,
     AttemptReservation,
     AttemptResolution,
     AttemptStatusTransition,
@@ -130,6 +131,55 @@ def test_experiment_transitions_and_resolutions_are_append_only_and_immutable(tm
                 research_verdict="NEEDS MANUAL REVIEW",
             )
         )
+
+
+def test_finalization_recovery_amends_only_unbound_operational_failure(tmp_path):
+    registry = ExperimentRegistry(tmp_path / "experiment_registry.jsonl")
+    registry.reserve(_reservation())
+    registry.transition(
+        AttemptStatusTransition(
+            campaign_id="demo",
+            variant_id="v01",
+            attempt_id="attempt_001",
+            from_status="RESERVED",
+            to_status="RUNNING",
+            recorded_at="2026-08-14T08:01:00+00:00",
+            reason="Runner accepted the reservation.",
+        )
+    )
+    failed = registry.resolve(
+        AttemptResolution(
+            campaign_id="demo",
+            variant_id="v01",
+            attempt_id="attempt_001",
+            from_status="RUNNING",
+            terminal_status="FAILED",
+            recorded_at="2026-08-14T09:00:00+00:00",
+            reason="Post-publication finalization failed after the runner completed.",
+            research_verdict="NEEDS MANUAL REVIEW",
+        )
+    )
+    recovery = AttemptFinalizationRecovery(
+        campaign_id="demo",
+        variant_id="v01",
+        attempt_id="attempt_001",
+        prior_resolution_sha256=failed["record_sha256"],
+        recorded_at="2026-08-14T09:05:00+00:00",
+        reason="Hash-valid publication recovered without replaying the runner.",
+        research_verdict="FAIL",
+        result_sha256="f" * 64,
+    )
+
+    first = registry.recover_finalization(recovery)
+    repeated = registry.recover_finalization(recovery)
+
+    assert first == repeated
+    assert registry.current_status("demo", "v01", "attempt_001") == "COMPLETED"
+    attempt = registry.attempts()[0]
+    assert attempt["resolution"]["event_type"] == "ATTEMPT_FINALIZATION_RECOVERED"
+    assert attempt["resolution"]["research_verdict"] == "FAIL"
+    assert attempt["resolution"]["result_sha256"] == "f" * 64
+    assert registry.trial_count("a" * 64) == 1
 
 
 def test_experiment_registry_requires_preexisting_parent_and_counts_all_reserved_trials(tmp_path):
