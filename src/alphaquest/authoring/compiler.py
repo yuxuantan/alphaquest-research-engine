@@ -21,8 +21,10 @@ from alphaquest.research.factory_policy import research_factory_binding
 from alphaquest.strategy_certification import (
     StrategyCertification,
     StrategyCertificationError,
+    apply_certified_execution_contract,
     get_strategy_certification,
     normalize_certified_event_params,
+    require_certified_execution_contract,
     validate_certified_event_parameter_grid,
 )
 
@@ -645,6 +647,17 @@ class CampaignCompiler:
                     "min_contracts": draft.execution.contracts,
                     "max_contracts": draft.execution.contracts,
                 }
+            try:
+                apply_certified_execution_contract(
+                    config,
+                    certification,
+                    variant_id=variant.variant_id,
+                )
+                require_certified_execution_contract(config, certification)
+            except StrategyCertificationError as exc:
+                raise CampaignCompilationError(
+                    f"variant {variant.variant_id} certified execution contract failed: {exc}"
+                ) from exc
         # All newly authored strategies receive the same repository-owned
         # stage methodology. Strategy configs may declare mechanics and
         # parameter grids, but cannot choose different research procedures.

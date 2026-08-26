@@ -314,6 +314,22 @@ def test_event_campaign_compilation_embeds_current_strategy_certification(
         compiled.strategy_spec["strategy_certification"]["implementation_sha256"] == identity["implementation_sha256"]
     )
     assert compiled.authoring_manifest["strategy_certification"]["manifest_sha256"] == identity["manifest_sha256"]
+    assert config["core"]["position_sizing"] == {
+        "mode": "risk_percent_net_liq",
+        "risk_pct": 0.004,
+        "cost_allowance_per_contract": 2.27,
+        "rounding": "floor",
+        "min_contracts": 1,
+    }
+    assert config["monte_carlo"]["position_sizing"] == config["core"][
+        "position_sizing"
+    ]
+    assert config["certified_execution_contract"]["manifest_sha256"] == (
+        certification.manifest_sha256
+    )
+    assert config["research_metadata"]["mechanics_review"][
+        "pre_test_decision"
+    ] == "approve_for_testing"
     factory_dataset = config["research_factory"]["dataset"]
     assert factory_dataset["event_execution_artifact_sha256s"] == {
         "archive_sha256": "d" * 64,

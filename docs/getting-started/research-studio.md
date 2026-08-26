@@ -101,7 +101,9 @@ MBO queue priority, hidden liquidity, exchange-specific matching priority, live 
 
 ## Explicit follow-up attempts
 
-Studio never edits or replays an original attempt. Open a campaign's **History** tab and choose **Create explicit follow-up**, then select one of six lanes. Before creation, Studio shows exactly what the selected lane changes, preserves, and invalidates:
+Do not create a follow-up merely because a terminal `FAIL` has unlocked the next sequential variant. A confirmed sequential variant remains under its governed authored attempt identity; after it is frozen, open **Testing** for that exact attempt and variant and generate mechanics evidence. For example, a newly frozen `original/v04` proceeds directly to `testing?attempt=original&variant=v04`.
+
+A follow-up has a different purpose: it creates a new immutable scientific identity for an exact replication, governed data replacement, methodology rerun, eligible pre-PnL correction or declaration, or authorized rescue. Studio never edits or automatically replays an existing attempt. Open a campaign's **History** tab and choose **Create explicit follow-up**, then select one of six lanes. The active research scope is recommended by default, while older attempts remain selectable for an intentional historical branch. Before creation, Studio shows exactly what the selected lane changes, preserves, and invalidates:
 
 - Replication keeps the frozen mechanics, data, and methodology unchanged while issuing fresh evidence identity.
 - Data refresh requires another governed `PASS` dataset and records the data change across every currently declared variant.
@@ -109,6 +111,8 @@ Studio never edits or replays an original attempt. Open a campaign's **History**
 - Pre-PnL mechanics correction records the exact old and new scalar module value and is rejected once parent performance evidence exists.
 - Pre-PnL parameter declaration freezes a certified grid before the first PnL-bearing run and requires fresh mechanics approval.
 - Authorized rescue requires an immutable parent `FAIL`, a named authorizer, campaign policy with `allowed: true`, and is limited to one rescue for the failed target variant.
+
+A deprecated strategy package remains available only for the actions permitted by its repository lifecycle. Studio may inspect it and offer an exact historical replication, but new-work lanes remain disabled with the lifecycle reason shown. The options screen reads immutable metadata only; full config, data, certification, and approval hashes are revalidated when an attempt is created or mechanics/performance work is queued.
 
 Every follow-up receives a unique attempt ID, parent lineage, substantive reason, immutable manifest/config hashes for the currently declared variants, planned ledger events, and fresh validation, approval, and run paths under the storage-aware campaign tree. Publication runs full preflight before one atomic install. Repeating a queue click returns the same jobs; creating a follow-up is the only way to obtain a new scientific identity. A blocked pre-reservation job shows this action explicitly and will not replay itself.
 

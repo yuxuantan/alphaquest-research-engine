@@ -812,6 +812,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
         service = FollowUpAttemptService(root)
         partial_errors: list[dict[str, str]] = []
         attempts: list[dict[str, Any]] = []
+        current_scope: dict[str, Any] = {}
         mechanics_approval: dict[str, Any] = {}
         protocol: dict[str, Any] = {}
         mechanics: dict[str, Any] = {}
@@ -825,6 +826,11 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
                     campaign_id,
                     include_dataset_bindings=False,
                 )
+                current_scope = _resolve_current_work_scope(
+                    root,
+                    campaign_id,
+                    attempts,
+                )
             except Exception as exc:
                 partial_errors.append({"section": "attempts", "message": str(exc)})
             try:
@@ -832,6 +838,7 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
                     root,
                     campaign_id,
                     attempts,
+                    current_scope=current_scope,
                 )
             except Exception as exc:
                 partial_errors.append(
@@ -860,7 +867,12 @@ def register_api_routes(app: FastAPI, project_root: str | Path) -> None:
             attempts,
             mechanics_approval,
             attempt_results,
+            current_scope=current_scope,
         )
+        if mechanics:
+            mechanics["default_attempt_id"] = workflow_context.get(
+                "current_attempt_id"
+            )
         workflow_rows = _workflow_stage_matrix(rows, workflow_context)
         research_progress = _campaign_research_progress(
             workflow_context,
@@ -2833,11 +2845,70 @@ def _dataset_manager_detail(root: Path, dataset_id: str) -> dict[str, Any]:
     }
 
 
+def _resolve_current_work_scope(
+    root: Path,
+    campaign_id: str,
+    attempts: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Resolve active sequential work independently from lineage recency.
+
+    The authored ``original`` attempt advances when a reviewed terminal FAIL
+    installs the next sequential variant.  A later-created historical follow-up
+    for an older variant remains immutable evidence, but must not take active
+    workflow ownership away from that newer authored variant.
+    """
+
+    if not attempts:
+        return {}
+    service = FollowUpAttemptService(root)
+    latest = dict(attempts[-1])
+    try:
+        active_variant_id = service.target_config_path(
+            campaign_id,
+            "original",
+        ).parent.name
+    except (FileNotFoundError, KeyError, OSError, ValueError):
+        active_variant_id = str(latest.get("target_variant_id") or "")
+
+    selected: dict[str, Any] | None = None
+    selected_variant_id = ""
+    for attempt in reversed(attempts):
+        attempt_id = str(attempt.get("attempt_id") or "original")
+        target_variant_id = str(attempt.get("target_variant_id") or "")
+        if not target_variant_id:
+            try:
+                target_variant_id = service.target_config_path(
+                    campaign_id,
+                    attempt_id,
+                ).parent.name
+            except (FileNotFoundError, KeyError, OSError, ValueError):
+                target_variant_id = ""
+        if not active_variant_id or target_variant_id == active_variant_id:
+            selected = dict(attempt)
+            selected_variant_id = target_variant_id
+            break
+
+    if selected is None:
+        selected = latest
+        selected_variant_id = str(selected.get("target_variant_id") or "")
+    selected["target_variant_id"] = selected_variant_id or active_variant_id
+    selected["latest_attempt_id"] = str(
+        latest.get("attempt_id") or "original"
+    )
+    selected["latest_attempt_kind"] = str(
+        latest.get("attempt_kind") or "original"
+    )
+    selected["latest_attempt_label"] = _friendly_attempt_label(latest)
+    return selected
+
+
 def _campaign_workflow_context(
     campaign: Mapping[str, Any],
     attempts: list[dict[str, Any]],
     mechanics_approval: Mapping[str, Any],
     attempt_results: Mapping[str, Any],
+    *,
+    current_scope: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Resolve one current attempt, target variant, gate, and primary action."""
 
@@ -2857,7 +2928,8 @@ def _campaign_workflow_context(
             },
         }
 
-    current = attempts[-1]
+    current = dict(current_scope or attempts[-1])
+    latest = attempts[-1]
     attempt_id = str(current.get("attempt_id") or "original")
     gate = mechanics_approval.get(attempt_id) or {}
     variants = gate.get("variants") if isinstance(gate.get("variants"), list) else []
@@ -2936,6 +3008,9 @@ def _campaign_workflow_context(
         "current_attempt_kind": str(current.get("attempt_kind") or "original"),
         "current_attempt_label": _friendly_attempt_label(current),
         "parent_attempt_id": current.get("parent_attempt_id"),
+        "latest_attempt_id": str(latest.get("attempt_id") or "original"),
+        "latest_attempt_kind": str(latest.get("attempt_kind") or "original"),
+        "latest_attempt_label": _friendly_attempt_label(latest),
         "target_variant_id": target_variant,
         "mechanics_status": target_gate.get("status") or "NEEDS_REVIEW",
         "review_progress": dict(progress),
@@ -4203,6 +4278,8 @@ def _attempt_mechanics_gate(
     root: Path,
     campaign_id: str,
     attempts: list[dict[str, Any]],
+    *,
+    current_scope: Mapping[str, Any] | None = None,
 ) -> dict[str, dict[str, Any]]:
     from alphaquest.studio.approvals import MechanicsApprovalService
 
@@ -4217,7 +4294,10 @@ def _attempt_mechanics_gate(
     except Exception:
         finalized_results = {}
     result: dict[str, dict[str, Any]] = {}
-    current_attempt_id = str((attempts[-1] if attempts else {}).get("attempt_id") or "")
+    current_attempt_id = str(
+        (current_scope or (attempts[-1] if attempts else {})).get("attempt_id")
+        or ""
+    )
     for attempt in attempts:
         attempt_id = str(attempt.get("attempt_id") or "")
         variants: list[dict[str, Any]] = []
@@ -4328,9 +4408,13 @@ def _mechanics_review_summaries(root: Path) -> list[dict[str, Any]]:
             campaign_id,
             include_dataset_bindings=False,
         )
-        current_attempt_id = str(
-            (attempts[-1] if attempts else {}).get("attempt_id") or ""
+        current_scope = _resolve_current_work_scope(
+            root,
+            campaign_id,
+            attempts,
         )
+        current_attempt_id = str(current_scope.get("attempt_id") or "")
+        current_variant_id = str(current_scope.get("target_variant_id") or "")
         paths_by_attempt: dict[str, tuple[Path, ...]] = {}
         for attempt in attempts:
             attempt_id = str(attempt["attempt_id"])
@@ -4414,11 +4498,14 @@ def _mechanics_review_summaries(root: Path) -> list[dict[str, Any]]:
                         "attempt_kind": attempt.get("attempt_kind") or "original",
                         "attempt_label": _friendly_attempt_label(attempt),
                         "created_at": attempt.get("created_at"),
-                        "is_current_workflow": attempt_id
-                        == current_attempt_id,
+                        "is_current_workflow": (
+                            attempt_id == current_attempt_id
+                            and path.parent.name == current_variant_id
+                        ),
                         "queue_scope": (
                             "current"
                             if attempt_id == current_attempt_id
+                            and path.parent.name == current_variant_id
                             else "history"
                         ),
                     }
@@ -4514,7 +4601,8 @@ def _campaigns_with_workflow_context(
                 attempts = []
         else:
             attempts = []
-        current = attempts[-1] if attempts else {}
+        current = _resolve_current_work_scope(root, campaign_id, attempts)
+        latest_attempt = attempts[-1] if attempts else {}
         current_attempt_id = str(current.get("attempt_id") or "")
         current_variant_id = str(current.get("target_variant_id") or "")
         compact_review = review_by_campaign.get(campaign_id) or {}
@@ -4550,7 +4638,12 @@ def _campaigns_with_workflow_context(
             }
         else:
             try:
-                mechanics_approval = _attempt_mechanics_gate(root, campaign_id, attempts)
+                mechanics_approval = _attempt_mechanics_gate(
+                    root,
+                    campaign_id,
+                    attempts,
+                    current_scope=current,
+                )
             except Exception:
                 mechanics_approval = {}
         try:
@@ -4564,6 +4657,7 @@ def _campaigns_with_workflow_context(
             attempts,
             mechanics_approval,
             attempt_results,
+            current_scope=current,
         )
         workflow_rows = _workflow_stage_matrix(rows, workflow)
         progress = _campaign_research_progress(
@@ -4574,8 +4668,8 @@ def _campaigns_with_workflow_context(
         )
         workflow["progress"] = progress.get("campaign") or {}
         row["current_attempt"] = workflow.get("current_attempt_id")
-        if current.get("created_at"):
-            row["updated_at"] = current.get("created_at")
+        if latest_attempt.get("created_at"):
+            row["updated_at"] = latest_attempt.get("created_at")
         row["workflow_context"] = workflow
         row["research_progress"] = progress
         result.append(row)
@@ -5136,15 +5230,31 @@ def _follow_up_options(root: Path, campaign_id: str, parent_attempt_id: str) -> 
     """Describe governed choices without exposing YAML editing to the browser."""
 
     import yaml
+    from alphaquest.strategy_certification import (
+        StrategyCertificationError,
+        StrategyPackageAccess,
+        get_strategy_certification,
+    )
 
     service = FollowUpAttemptService(root)
-    attempts = service.list_attempts(campaign_id)
+    attempts = service.list_attempts(
+        campaign_id,
+        include_dataset_bindings=False,
+    )
     if parent_attempt_id not in {str(item.get("attempt_id")) for item in attempts}:
         raise FileNotFoundError("selected parent attempt was not found")
+    current_scope = _resolve_current_work_scope(root, campaign_id, attempts)
+    selected_config_path = service.target_config_path(
+        campaign_id,
+        parent_attempt_id,
+    )
     parameters: dict[str, list[dict[str, Any]]] = {}
     event_parameter_declarations: dict[str, list[dict[str, Any]]] = {}
     mechanics_validation_windows: dict[str, dict[str, Any]] = {}
-    for path in service.config_paths(campaign_id, parent_attempt_id):
+    parent_new_work_allowed = True
+    parent_new_work_reason: str | None = None
+    parent_strategy_package: dict[str, Any] | None = None
+    for path in (selected_config_path,):
         config = yaml.safe_load(path.read_text(encoding="utf-8"))
         mechanics_validation_windows[path.parent.name] = (
             service.fixed_mechanics_validation_window(config)
@@ -5169,11 +5279,27 @@ def _follow_up_options(root: Path, campaign_id: str, parent_attempt_id: str) -> 
         parameters[path.parent.name] = options
         event = strategy.get("event") if isinstance(strategy, dict) and isinstance(strategy.get("event"), dict) else {}
         if event:
-            from alphaquest.strategy_certification import get_strategy_certification
-
             certification = get_strategy_certification(
-                str(event.get("module") or ""), root, require_current=True
+                str(event.get("module") or ""),
+                root,
+                require_current=True,
+                access=StrategyPackageAccess.INSPECTION,
             )
+            try:
+                get_strategy_certification(
+                    certification.strategy_id,
+                    root,
+                    require_current=True,
+                    access=StrategyPackageAccess.NEW_WORK,
+                )
+            except StrategyCertificationError as exc:
+                parent_new_work_allowed = False
+                parent_new_work_reason = str(exc)
+            parent_strategy_package = {
+                "strategy_id": certification.strategy_id,
+                "new_work_allowed": parent_new_work_allowed,
+                "new_work_blocker": parent_new_work_reason,
+            }
             current_params = event.get("params") if isinstance(event.get("params"), dict) else {}
             current_grid = (config.get("core_grid") or {}).get("parameters") or {}
             event_parameter_declarations[path.parent.name] = [
@@ -5202,13 +5328,23 @@ def _follow_up_options(root: Path, campaign_id: str, parent_attempt_id: str) -> 
         campaign_id,
         parent_attempt_id,
     )
-    parent_attempts = _follow_up_parent_options(attempts)
+    parent_attempts = _follow_up_parent_options(
+        attempts,
+        recommended_attempt_id=str(current_scope.get("attempt_id") or ""),
+    )
     return {
         "attempt_kinds": _follow_up_kind_options(
             rescue_allowed=rescue_allowed,
             has_performance_evidence=has_performance_evidence,
+            parent_new_work_allowed=parent_new_work_allowed,
+            parent_new_work_reason=parent_new_work_reason,
         ),
         "parent_attempt_id": parent_attempt_id,
+        "current_work_scope": {
+            "attempt_id": current_scope.get("attempt_id"),
+            "variant_id": current_scope.get("target_variant_id"),
+            "latest_attempt_id": current_scope.get("latest_attempt_id"),
+        },
         "parent_attempts": parent_attempts,
         "selected_parent": next(
             item for item in parent_attempts if item["attempt_id"] == parent_attempt_id
@@ -5217,6 +5353,7 @@ def _follow_up_options(root: Path, campaign_id: str, parent_attempt_id: str) -> 
         "event_parameter_declarations": event_parameter_declarations,
         "mechanics_validation_windows": mechanics_validation_windows,
         "datasets": datasets,
+        "parent_strategy_package": parent_strategy_package,
         "rescue_allowed": rescue_allowed,
         "reason_min_length": 80,
     }
@@ -5226,6 +5363,8 @@ def _follow_up_kind_options(
     *,
     rescue_allowed: bool,
     has_performance_evidence: bool = False,
+    parent_new_work_allowed: bool = True,
+    parent_new_work_reason: str | None = None,
 ) -> list[dict[str, Any]]:
     options = [
         {
@@ -5375,11 +5514,28 @@ def _follow_up_kind_options(
         },
     }
     for option in options:
+        if (
+            option["value"] != "replication"
+            and not parent_new_work_allowed
+        ):
+            option["available"] = False
+            existing_reason = str(option.get("unavailable_reason") or "").strip()
+            lifecycle_reason = (
+                parent_new_work_reason
+                or "The selected parent strategy package is unavailable for new work."
+            )
+            option["unavailable_reason"] = " ".join(
+                item for item in (existing_reason, lifecycle_reason) if item
+            )
         option["impact_preview"] = impacts[str(option["value"])]
     return options
 
 
-def _follow_up_parent_options(attempts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+def _follow_up_parent_options(
+    attempts: list[dict[str, Any]],
+    *,
+    recommended_attempt_id: str | None = None,
+) -> list[dict[str, Any]]:
     child_counts: dict[str, int] = {}
     for attempt in attempts:
         parent_id = str(attempt.get("parent_attempt_id") or "")
@@ -5390,7 +5546,20 @@ def _follow_up_parent_options(attempts: list[dict[str, Any]]) -> list[dict[str, 
         for attempt in attempts
         if child_counts.get(str(attempt.get("attempt_id") or ""), 0) == 0
     ]
-    recommended = leaves[-1] if leaves else "original"
+    recommended = (
+        recommended_attempt_id
+        if recommended_attempt_id
+        and recommended_attempt_id
+        in {str(item.get("attempt_id") or "") for item in attempts}
+        else leaves[-1]
+        if leaves
+        else "original"
+    )
+    recommended_label = (
+        "Recommended active work"
+        if recommended_attempt_id and recommended == recommended_attempt_id
+        else "Recommended current leaf"
+    )
     result: list[dict[str, Any]] = []
     for attempt in attempts:
         attempt_id = str(attempt.get("attempt_id") or "")
@@ -5406,7 +5575,7 @@ def _follow_up_parent_options(attempts: list[dict[str, Any]]) -> list[dict[str, 
                 "is_leaf": children == 0,
                 "recommended": attempt_id == recommended,
                 "lineage_label": (
-                    "Recommended current leaf"
+                    recommended_label
                     if attempt_id == recommended
                     else "Available leaf"
                     if children == 0

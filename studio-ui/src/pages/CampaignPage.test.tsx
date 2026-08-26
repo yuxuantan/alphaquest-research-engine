@@ -4,6 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 
 import {
   FollowUpDecisionGuide,
+  History,
   Mechanics,
   ParentAttemptGuide,
   ParameterHeatmap,
@@ -432,9 +433,173 @@ describe("follow-up creation guidance", () => {
       screen.getByText("You are creating a separate branch"),
     ).toBeVisible();
   });
+
+  it("defaults to active work, stops loading on failure, retries, and keeps details lazy", async () => {
+    const attempts = [
+      {
+        attempt_id: "original",
+        attempt_kind: "original",
+      },
+      {
+        attempt_id: "protocol_v03",
+        attempt_kind: "pre_pnl_protocol_declaration",
+        target_variant_id: "v03",
+      },
+    ];
+    const attemptList = vi
+      .spyOn(api, "campaignAttempts")
+      .mockResolvedValue({
+        campaign_id: "yush_orderflow_range",
+        attempts,
+        partial_errors: [],
+      });
+    const attemptDetail = vi.spyOn(api, "campaignAttempt");
+    const followUpOptions = vi
+      .spyOn(api, "followUpOptions")
+      .mockRejectedValueOnce(new Error("Lifecycle preview unavailable"))
+      .mockResolvedValueOnce({
+        attempt_kinds: [
+          {
+            value: "replication",
+            label: "Exact replication",
+            summary: "Repeat the frozen attempt.",
+            use_when: "Exact reproducibility is required.",
+            do_not_use_when: "Any research definition must change.",
+            parent_rule: "Select the exact attempt to reproduce.",
+            available: true,
+          },
+        ],
+        parent_attempts: attempts,
+        selected_parent: attempts[0],
+        parameters: { v04: [] },
+        event_parameter_declarations: { v04: [] },
+        mechanics_validation_windows: { v04: {} },
+        datasets: [],
+        reason_min_length: 80,
+      });
+
+    const view = render(
+      <MemoryRouter>
+        <History
+          detail={{
+            campaign: {
+              campaign_id: "yush_orderflow_range",
+              studio_managed: true,
+            },
+            attempts,
+            workflow_context: {
+              current_attempt_id: "original",
+              latest_attempt_id: "protocol_v03",
+              target_variant_id: "v04",
+              stage: "mechanics_evidence",
+            },
+            mechanics_approval: {
+              original: {
+                variants: [{ variant_id: "v04", status: "BLOCKED" }],
+              },
+              protocol_v03: {
+                variants: [
+                  { variant_id: "v03", status: "HISTORICAL_IMMUTABLE" },
+                ],
+              },
+            },
+          }}
+          onRefresh={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    await waitFor(() => expect(attemptList).toHaveBeenCalled());
+    expect(attemptDetail).not.toHaveBeenCalled();
+    expect(screen.getByText("Active work")).toBeVisible();
+    expect(screen.getByText("Latest historical attempt")).toBeVisible();
+    expect(
+      screen.getByRole("link", { name: "Testing" }),
+    ).toHaveAttribute(
+      "href",
+      "/research/yush_orderflow_range/testing?attempt=original&variant=v04",
+    );
+
+    fireEvent.click(
+      screen.getByRole("button", { name: "Create explicit follow-up" }),
+    );
+    await waitFor(() =>
+      expect(followUpOptions).toHaveBeenCalledWith(
+        "yush_orderflow_range",
+        "original",
+      ),
+    );
+    expect(
+      await screen.findByText("Lifecycle preview unavailable"),
+    ).toBeVisible();
+    expect(screen.getByRole("button", { name: "Retry" })).toBeVisible();
+
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(
+      await screen.findByText("Two choices, two different jobs"),
+    ).toBeVisible();
+    expect(followUpOptions).toHaveBeenCalledTimes(2);
+    expect(attemptDetail).not.toHaveBeenCalled();
+
+    view.unmount();
+    attemptList.mockRestore();
+    attemptDetail.mockRestore();
+    followUpOptions.mockRestore();
+  });
 });
 
 describe("variant-aware testing attempt selection", () => {
+  it("honors the exact original/v04 URL even when historical v03 context is present", () => {
+    const view = render(
+      <MemoryRouter
+        initialEntries={["/testing?attempt=original&variant=v04"]}
+      >
+        <Testing
+          detail={{
+            campaign: {
+              campaign_id: "yush_orderflow_range",
+              variant_count: 4,
+            },
+            workflow_context: {
+              current_attempt_id: "original",
+              latest_attempt_id: "protocol_v03",
+              target_variant_id: "v04",
+            },
+            next_variant: { current_variant_id: "v04" },
+            attempts: [
+              { attempt_id: "original", attempt_kind: "original" },
+              {
+                attempt_id: "protocol_v03",
+                attempt_kind: "pre_pnl_protocol_declaration",
+                target_variant_id: "v03",
+              },
+            ],
+            mechanics_approval: {
+              original: {
+                all_approved: false,
+                variants: [{ variant_id: "v04", status: "BLOCKED" }],
+              },
+              protocol_v03: {
+                all_approved: true,
+                variants: [
+                  { variant_id: "v03", status: "HISTORICAL_IMMUTABLE" },
+                ],
+              },
+            },
+          }}
+          onRefresh={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+
+    expect(
+      screen.getByRole("button", {
+        name: "Generate mechanics evidence · v04",
+      }),
+    ).toBeVisible();
+    view.unmount();
+  });
+
   it("defaults to the attempt containing v02 and names the exact target variant", () => {
     render(
       <MemoryRouter>

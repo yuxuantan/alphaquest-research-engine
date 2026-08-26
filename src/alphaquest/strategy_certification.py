@@ -7,7 +7,9 @@ implementation is allowed to interpret that config.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
+from datetime import date
 from enum import Enum
 import hashlib
 import importlib
@@ -16,12 +18,13 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import yaml
 
 
 CERTIFICATION_SCHEMA = "alphaquest.strategy-certification/v1"
+CERTIFIED_EXECUTION_CONTRACT_SCHEMA = "alphaquest.certified-execution-contract/v1"
 STRATEGY_PACKAGE_AVAILABILITY_SCHEMA = "alphaquest.strategy-package-availability/v2"
 LEGACY_STRATEGY_PACKAGE_AVAILABILITY_SCHEMA = "alphaquest.strategy-package-availability/v1"
 REQUIRED_TEST_CATEGORIES = frozenset(
@@ -32,6 +35,33 @@ REQUIRED_TEST_CATEGORIES = frozenset(
         "forced_flatten",
         "no_lookahead",
         "registry_and_runner",
+    }
+)
+CERTIFIED_EXECUTION_DEFAULT_FIELDS = frozenset(
+    {
+        "timeframe",
+        "entry_start",
+        "latest_entry_time",
+        "flatten_time",
+        "max_trades_per_day",
+        "daily_loss_limit",
+        "daily_profit_stop",
+        "commission_per_contract",
+        "point_value",
+        "tick_value",
+        "execution_instrument",
+        "signal_instrument",
+        "executable_start_date",
+        "slippage_ticks",
+        "entry_slippage_ticks",
+        "protective_stop_slippage_ticks",
+        "target_limit_slippage_ticks",
+        "market_exit_slippage_ticks",
+        "event_stop_market_fill_policy",
+        "contracts",
+        "position_sizing",
+        "prop_max_contracts",
+        "monte_carlo_position_sizing",
     }
 )
 
@@ -373,6 +403,232 @@ class StrategyCertification:
             },
             "studio": dict(self.studio),
         }
+
+
+def certified_execution_defaults(
+    certification: StrategyCertification,
+) -> dict[str, Any]:
+    """Return and validate the manifest-owned executable contract.
+
+    ``studio.execution_defaults`` was historically treated as optional UI
+    metadata by fresh authoring while certification refreshes applied it to
+    configs.  It is now one fixed, manifest-owned contract for every certified
+    event config.  Campaign-owned values that are intentionally variable must
+    therefore stay outside this mapping.
+    """
+
+    raw = certification.studio.get("execution_defaults")
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise StrategyCertificationError(
+            "certified studio.execution_defaults must be a mapping"
+        )
+    unknown = sorted(set(raw) - CERTIFIED_EXECUTION_DEFAULT_FIELDS)
+    if unknown:
+        raise StrategyCertificationError(
+            "unsupported certified execution default(s): " + ", ".join(unknown)
+        )
+    defaults = deepcopy(dict(raw))
+    for name in ("position_sizing", "monte_carlo_position_sizing"):
+        if name in defaults and not isinstance(defaults[name], Mapping):
+            raise StrategyCertificationError(
+                f"certified {name} must be a mapping"
+            )
+        if name in defaults:
+            defaults[name] = deepcopy(dict(defaults[name]))
+            _validate_certified_position_sizing(defaults[name], context=name)
+    if "contracts" in defaults and int(defaults["contracts"]) < 1:
+        raise StrategyCertificationError("certified contracts must be at least one")
+    if "prop_max_contracts" in defaults and int(defaults["prop_max_contracts"]) < 1:
+        raise StrategyCertificationError(
+            "certified prop_max_contracts must be at least one"
+        )
+    if "executable_start_date" in defaults:
+        try:
+            date.fromisoformat(str(defaults["executable_start_date"]))
+        except ValueError as exc:
+            raise StrategyCertificationError(
+                "certified executable_start_date must be an ISO date"
+            ) from exc
+    return defaults
+
+
+def _validate_certified_position_sizing(
+    sizing: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    mode = str(sizing.get("mode") or "")
+    if mode not in {
+        "fixed_contracts",
+        "fixed_dollar_risk",
+        "fixed_risk_budget",
+        "risk_percent_net_liq",
+        "risk_percent_initial_balance",
+        "reference",
+    }:
+        raise StrategyCertificationError(
+            f"certified {context}.mode is unsupported: {mode!r}"
+        )
+    if mode == "fixed_contracts" and int(sizing.get("contracts") or 0) < 1:
+        raise StrategyCertificationError(
+            f"certified {context}.contracts must be at least one"
+        )
+    if mode in {"fixed_dollar_risk", "fixed_risk_budget"}:
+        risk_budget = sizing.get("risk_budget")
+        if not isinstance(risk_budget, (int, float)) or float(risk_budget) <= 0:
+            raise StrategyCertificationError(
+                f"certified {context}.risk_budget must be positive"
+            )
+    if mode in {"risk_percent_net_liq", "risk_percent_initial_balance"}:
+        risk_pct = sizing.get("risk_pct")
+        if not isinstance(risk_pct, (int, float)) or not 0 < float(risk_pct) <= 1:
+            raise StrategyCertificationError(
+                f"certified {context}.risk_pct must be in (0, 1]"
+            )
+    if "min_contracts" in sizing and int(sizing["min_contracts"]) < 1:
+        raise StrategyCertificationError(
+            f"certified {context}.min_contracts must be at least one"
+        )
+
+
+def _execution_contract_record(
+    certification: StrategyCertification,
+    defaults: Mapping[str, Any],
+) -> dict[str, Any]:
+    canonical = json.dumps(
+        dict(defaults),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return {
+        "schema": CERTIFIED_EXECUTION_CONTRACT_SCHEMA,
+        "strategy_id": certification.strategy_id,
+        "manifest_sha256": certification.manifest_sha256,
+        "execution_defaults_sha256": hashlib.sha256(
+            canonical.encode("utf-8")
+        ).hexdigest(),
+        "resolved_defaults": deepcopy(dict(defaults)),
+    }
+
+
+def apply_certified_execution_contract(
+    config: dict[str, Any],
+    certification: StrategyCertification,
+    *,
+    variant_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Apply the exact manifest execution contract and record every change."""
+
+    defaults = certified_execution_defaults(certification)
+    if not defaults:
+        return []
+    variant = str(variant_id or config.get("variant_id") or "")
+    core = config.setdefault("core", {})
+    if not isinstance(core, dict):
+        raise StrategyCertificationError("core must be a mapping")
+    changes: list[dict[str, Any]] = []
+
+    def replace(scope: str, owner: dict[str, Any], name: str, value: Any) -> None:
+        new_value = deepcopy(value)
+        old_value = deepcopy(owner.get(name))
+        owner[name] = new_value
+        if old_value != new_value:
+            changes.append(
+                {
+                    "variant_id": variant,
+                    "scope": scope,
+                    "field": name,
+                    "old": old_value,
+                    "new": deepcopy(new_value),
+                    "reviewed": True,
+                    "change_kind": "certified_execution_contract",
+                }
+            )
+
+    for name, value in defaults.items():
+        if name == "executable_start_date":
+            start_date = date.fromisoformat(str(value))
+            for section_name in ("core", "core_grid", "monkey", "wfa"):
+                section = config.get(section_name)
+                if not isinstance(section, dict):
+                    continue
+                subset = section.setdefault("data_subset", {})
+                if not isinstance(subset, dict):
+                    raise StrategyCertificationError(
+                        f"{section_name}.data_subset must be a mapping"
+                    )
+                old_value = subset.get("start_date")
+                if old_value is None or date.fromisoformat(str(old_value)) < start_date:
+                    replace(
+                        f"{section_name}.data_subset",
+                        subset,
+                        "start_date",
+                        start_date.isoformat(),
+                    )
+            continue
+        if name == "monte_carlo_position_sizing":
+            monte_carlo = config.setdefault("monte_carlo", {})
+            if not isinstance(monte_carlo, dict):
+                raise StrategyCertificationError("monte_carlo must be a mapping")
+            replace("monte_carlo", monte_carlo, "position_sizing", value)
+            continue
+        if name == "prop_max_contracts":
+            prop_rules = config.setdefault("prop_rules", {})
+            if not isinstance(prop_rules, dict):
+                raise StrategyCertificationError("prop_rules must be a mapping")
+            replace("prop_rules", prop_rules, "max_contracts", int(value))
+            continue
+        if name == "timeframe":
+            replace("config", config, "timeframe", str(value))
+            continue
+        replace("core", core, name, value)
+
+    flatten = defaults.get("flatten_time")
+    if flatten is not None:
+        strategy = config.setdefault("strategy", {})
+        if not isinstance(strategy, dict):
+            raise StrategyCertificationError("strategy must be a mapping")
+        replace("strategy", strategy, "flatten_time", str(flatten))
+    apex = config.setdefault("apex_rules", {})
+    if not isinstance(apex, dict):
+        raise StrategyCertificationError("apex_rules must be a mapping")
+    for name, value in (
+        ("latest_entry_time", defaults.get("latest_entry_time")),
+        ("force_flatten_time", flatten),
+        ("latest_flat_time", flatten),
+    ):
+        if value is not None:
+            replace("apex_rules", apex, name, str(value))
+
+    replace(
+        "config",
+        config,
+        "certified_execution_contract",
+        _execution_contract_record(certification, defaults),
+    )
+    return changes
+
+
+def require_certified_execution_contract(
+    config: Mapping[str, Any],
+    certification: StrategyCertification,
+) -> None:
+    """Fail closed when a config differs from its manifest execution contract."""
+
+    candidate = deepcopy(dict(config))
+    changes = apply_certified_execution_contract(candidate, certification)
+    if changes:
+        mismatches = ", ".join(
+            f"{change['scope']}.{change['field']}"
+            for change in changes
+        )
+        raise StrategyCertificationError(
+            "config certified execution contract is missing or mismatched: "
+            + mismatches
+        )
 
 
 def validate_certified_parameter_value(
@@ -738,6 +994,10 @@ def audit_strategy_certification(
         except StrategyCertificationError as exc:
             errors.append(str(exc))
     try:
+        certified_execution_defaults(certification)
+    except StrategyCertificationError as exc:
+        errors.append(str(exc))
+    try:
         actual = compute_implementation_sha256(root, certification.source_files)
     except StrategyCertificationError as exc:
         errors.append(str(exc))
@@ -819,6 +1079,20 @@ def strategy_identity_for_config(
             raise StrategyCertificationError(
                 "config strategy certification is stale or mismatched: " + ", ".join(mismatched)
             )
+    research = config.get("research_metadata")
+    authored_config = (
+        isinstance(research, dict)
+        and research.get("authoring_contract") == "alphaquest.campaign-draft/v1"
+    )
+    if (
+        require_declared_match
+        and StrategyPackageAccess(requested_access) is StrategyPackageAccess.NEW_WORK
+        and (
+            authored_config
+            or config.get("certified_execution_contract") is not None
+        )
+    ):
+        require_certified_execution_contract(config, certification)
     return certification
 
 
@@ -950,6 +1224,8 @@ def _load_manifest(path: Path) -> StrategyCertification:
 
 __all__ = [
     "CERTIFICATION_SCHEMA",
+    "CERTIFIED_EXECUTION_CONTRACT_SCHEMA",
+    "CERTIFIED_EXECUTION_DEFAULT_FIELDS",
     "REQUIRED_TEST_CATEGORIES",
     "STRATEGY_PACKAGE_AVAILABILITY_SCHEMA",
     "StrategyCertification",
@@ -960,12 +1236,15 @@ __all__ = [
     "StrategyPackageLifecycle",
     "StrategyPackageLifecycleRecord",
     "audit_strategy_certification",
+    "apply_certified_execution_contract",
+    "certified_execution_defaults",
     "certify_strategy",
     "compute_implementation_sha256",
     "get_strategy_certification",
     "load_strategy_package_availability",
     "load_strategy_certifications",
     "normalize_certified_event_params",
+    "require_certified_execution_contract",
     "resolve_factory",
     "strategy_identity_for_config",
     "strategy_package_access_for_config",

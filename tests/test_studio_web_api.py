@@ -16,6 +16,7 @@ import yaml
 from alphaquest.studio.api import (
     _attempt_mechanics_gate,
     _campaign_workflow_context,
+    _follow_up_options,
     _follow_up_kind_options,
     _follow_up_parent_options,
     _job_payload,
@@ -24,6 +25,7 @@ from alphaquest.studio.api import (
     _mechanics_strategy_context,
     _mechanics_review_summaries,
     _modules,
+    _resolve_current_work_scope,
     register_api_routes,
 )
 from alphaquest.studio.jobs import SQLiteJobQueue
@@ -78,6 +80,81 @@ def test_finalized_exact_attempt_result_outranks_current_mechanics_blocker() -> 
     assert workflow["primary_action"]["label"] == (
         "Inspect the exact v03 result for this attempt"
     )
+
+
+def test_new_sequential_variant_is_active_work_over_newer_historical_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeAttempts:
+        def __init__(self, _root):
+            pass
+
+        def target_config_path(self, _campaign_id, attempt_id):
+            variant_id = "v04" if attempt_id == "original" else "v03"
+            return tmp_path / variant_id / "config.yaml"
+
+    attempts = [
+        {
+            "attempt_id": "original",
+            "attempt_kind": "original",
+        },
+        {
+            "attempt_id": "protocol_v03",
+            "attempt_kind": "pre_pnl_protocol_declaration",
+            "target_variant_id": "v03",
+            "created_at": "2026-08-23T02:16:33+00:00",
+        },
+    ]
+    monkeypatch.setattr("alphaquest.studio.api.FollowUpAttemptService", FakeAttempts)
+
+    scope = _resolve_current_work_scope(
+        tmp_path,
+        "yush_orderflow_range",
+        attempts,
+    )
+    workflow = _campaign_workflow_context(
+        {"campaign_id": "yush_orderflow_range"},
+        attempts,
+        {
+            "original": {
+                "all_approved": False,
+                "variants": [
+                    {
+                        "variant_id": "v04",
+                        "status": "BLOCKED",
+                        "review_progress": {},
+                    }
+                ],
+            },
+            "protocol_v03": {
+                "all_approved": True,
+                "variants": [
+                    {
+                        "variant_id": "v03",
+                        "status": "APPROVED_FOR_TESTING",
+                        "review_progress": {},
+                    }
+                ],
+            },
+        },
+        {"protocol_v03": {"v03": {"research_verdict": "FAIL"}}},
+        current_scope=scope,
+    )
+
+    assert scope["attempt_id"] == "original"
+    assert scope["target_variant_id"] == "v04"
+    assert workflow["current_attempt_id"] == "original"
+    assert workflow["latest_attempt_id"] == "protocol_v03"
+    assert workflow["target_variant_id"] == "v04"
+    assert workflow["stage"] == "mechanics_evidence"
+    assert workflow["primary_action"] == {
+        "label": "Generate mechanics evidence for v04",
+        "section": "testing",
+        "campaign_id": "yush_orderflow_range",
+        "attempt_id": "original",
+        "variant_id": "v04",
+    }
 
 
 def test_finalized_current_attempt_uses_historical_approval_and_leaves_mechanics_queue(
@@ -284,6 +361,114 @@ def test_follow_up_options_disable_only_pre_pnl_types_after_performance_evidence
         assert by_kind[kind]["available"] is False
         assert "performance evidence" in by_kind[kind]["unavailable_reason"]
     assert by_kind["rescue"]["available"] is False
+
+
+def test_follow_up_options_are_lightweight_and_lifecycle_aware(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent_path = tmp_path / "v03" / "config.yaml"
+    parent_path.parent.mkdir(parents=True)
+    parent_path.write_text(
+        yaml.safe_dump(
+            {
+                "strategy": {
+                    "event": {
+                        "module": "deprecated_v03",
+                        "params": {},
+                    }
+                },
+                "core_grid": {"parameters": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    attempts = [
+        {
+            "attempt_id": "original",
+            "attempt_kind": "original",
+        },
+        {
+            "attempt_id": "protocol_v03",
+            "attempt_kind": "pre_pnl_protocol_declaration",
+            "target_variant_id": "v03",
+            "parent_attempt_id": "original",
+        },
+    ]
+
+    class FakeAttempts:
+        def __init__(self, _root):
+            pass
+
+        def list_attempts(self, _campaign_id, *, include_dataset_bindings=True):
+            assert include_dataset_bindings is False
+            return attempts
+
+        def target_config_path(self, _campaign_id, attempt_id):
+            if attempt_id == "original":
+                return tmp_path / "v04" / "config.yaml"
+            return parent_path
+
+        def fixed_mechanics_validation_window(self, _config):
+            return {"start_date": "2026-05-01", "end_date": "2026-05-10"}
+
+        def parent_has_performance_evidence(self, _campaign_id, _attempt_id):
+            return True
+
+    def fake_certification(_strategy_id, _root, *, require_current, access):
+        from alphaquest.strategy_certification import (
+            StrategyCertificationError,
+            StrategyPackageAccess,
+        )
+
+        assert require_current is True
+        if access is StrategyPackageAccess.NEW_WORK:
+            raise StrategyCertificationError(
+                "strategy 'deprecated_v03' is deprecated and unavailable for new work"
+            )
+        assert access is StrategyPackageAccess.INSPECTION
+        return SimpleNamespace(strategy_id="deprecated_v03", parameters={})
+
+    monkeypatch.setattr("alphaquest.studio.api.FollowUpAttemptService", FakeAttempts)
+    monkeypatch.setattr(
+        "alphaquest.strategy_certification.get_strategy_certification",
+        fake_certification,
+    )
+    monkeypatch.setattr("alphaquest.studio.api.list_dataset_manifests", lambda _root: [])
+    monkeypatch.setattr(
+        "alphaquest.studio.api.list_published_campaigns",
+        lambda _root: [
+            {"campaign_id": "demo", "rescue_policy": {"allowed": False}}
+        ],
+    )
+
+    value = _follow_up_options(tmp_path, "demo", "protocol_v03")
+    kinds = {item["value"]: item for item in value["attempt_kinds"]}
+
+    assert value["current_work_scope"] == {
+        "attempt_id": "original",
+        "variant_id": "v04",
+        "latest_attempt_id": "protocol_v03",
+    }
+    assert [
+        item["attempt_id"]
+        for item in value["parent_attempts"]
+        if item["recommended"]
+    ] == ["original"]
+    assert list(value["parameters"]) == ["v03"]
+    assert kinds["replication"]["available"] is True
+    for kind in (
+        "data_refresh",
+        "methodology_rerun",
+        "pre_pnl_mechanics_correction",
+        "pre_pnl_parameter_declaration",
+        "rescue",
+    ):
+        assert kinds[kind]["available"] is False
+    assert "deprecated and unavailable for new work" in kinds[
+        "data_refresh"
+    ]["unavailable_reason"]
 
 
 def test_job_api_exposes_durable_progress_elapsed_time_and_eta(tmp_path: Path) -> None:

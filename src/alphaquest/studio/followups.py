@@ -59,6 +59,7 @@ from alphaquest.studio.results import RESULT_BUNDLE_FILENAME
 from alphaquest.studio.workspace import refresh_generated_indexes_if_stale
 from alphaquest.strategy_certification import (
     StrategyCertificationError,
+    apply_certified_execution_contract,
     get_strategy_certification,
     normalize_certified_event_params,
     strategy_identity_for_config,
@@ -2238,9 +2239,9 @@ def _apply_certification_refresh(
             )
         validation_gate["minimum_trade_samples"] = required_samples
 
-    execution_changes = _apply_certified_execution_defaults(
+    execution_changes = apply_certified_execution_contract(
         cfg,
-        certification.studio.get("execution_defaults"),
+        certification,
         variant_id=variant_id,
     )
     changes = [
@@ -2344,200 +2345,6 @@ def _apply_certification_refresh(
         }
         for name in changed_defaults
     )
-    return changes
-
-
-def _apply_certified_execution_defaults(
-    cfg: dict[str, Any],
-    raw_defaults: Any,
-    *,
-    variant_id: str,
-) -> list[dict[str, Any]]:
-    """Apply manifest-reviewed core execution defaults during a refresh."""
-
-    if raw_defaults is None:
-        return []
-    if not isinstance(raw_defaults, Mapping):
-        raise ValueError("certified studio.execution_defaults must be a mapping")
-    allowed = {
-        "timeframe",
-        "entry_start",
-        "latest_entry_time",
-        "flatten_time",
-        "max_trades_per_day",
-        "daily_loss_limit",
-        "daily_profit_stop",
-        "commission_per_contract",
-        "point_value",
-        "tick_value",
-        "execution_instrument",
-        "signal_instrument",
-        "executable_start_date",
-        "slippage_ticks",
-        "entry_slippage_ticks",
-        "protective_stop_slippage_ticks",
-        "target_limit_slippage_ticks",
-        "market_exit_slippage_ticks",
-        "event_stop_market_fill_policy",
-        "contracts",
-        "position_sizing",
-        "prop_max_contracts",
-        "monte_carlo_position_sizing",
-    }
-    unknown = sorted(set(raw_defaults) - allowed)
-    if unknown:
-        raise ValueError(
-            "unsupported certified execution default(s): "
-            + ", ".join(unknown)
-        )
-    core = cfg.setdefault("core", {})
-    changes: list[dict[str, Any]] = []
-    for name, value in raw_defaults.items():
-        if name == "executable_start_date":
-            start_date = date.fromisoformat(str(value))
-            for section_name in ("core", "core_grid", "monkey", "wfa"):
-                section = cfg.get(section_name)
-                if not isinstance(section, dict):
-                    continue
-                subset = section.setdefault("data_subset", {})
-                old_value = subset.get("start_date")
-                if old_value is None or date.fromisoformat(str(old_value)) < start_date:
-                    subset["start_date"] = start_date.isoformat()
-                    changes.append(
-                        {
-                            "variant_id": variant_id,
-                            "scope": f"{section_name}.data_subset",
-                            "field": "start_date",
-                            "old": old_value,
-                            "new": start_date.isoformat(),
-                            "reviewed": True,
-                            "change_kind": "certified_execution_default",
-                        }
-                    )
-            continue
-        if name == "monte_carlo_position_sizing":
-            if not isinstance(value, Mapping):
-                raise ValueError(
-                    "certified monte_carlo_position_sizing must be a mapping"
-                )
-            new_value = deepcopy(dict(value))
-            monte_carlo = cfg.setdefault("monte_carlo", {})
-            old_value = deepcopy(monte_carlo.get("position_sizing"))
-            monte_carlo["position_sizing"] = new_value
-            if old_value != new_value:
-                changes.append(
-                    {
-                        "variant_id": variant_id,
-                        "scope": "monte_carlo",
-                        "field": "position_sizing",
-                        "old": old_value,
-                        "new": deepcopy(new_value),
-                        "reviewed": True,
-                        "change_kind": "certified_execution_default",
-                    }
-                )
-            continue
-        if name == "prop_max_contracts":
-            new_value = int(value)
-            if new_value < 1:
-                raise ValueError(
-                    "certified prop_max_contracts must be at least one"
-                )
-            prop_rules = cfg.setdefault("prop_rules", {})
-            old_value = prop_rules.get("max_contracts")
-            prop_rules["max_contracts"] = new_value
-            if old_value != new_value:
-                changes.append(
-                    {
-                        "variant_id": variant_id,
-                        "scope": "prop_rules",
-                        "field": "max_contracts",
-                        "old": old_value,
-                        "new": new_value,
-                        "reviewed": True,
-                        "change_kind": "certified_execution_default",
-                    }
-                )
-            continue
-        if name == "timeframe":
-            new_value = str(value)
-            old_value = cfg.get("timeframe")
-            cfg["timeframe"] = new_value
-            if old_value != new_value:
-                changes.append(
-                    {
-                        "variant_id": variant_id,
-                        "scope": "config",
-                        "field": name,
-                        "old": old_value,
-                        "new": new_value,
-                        "reviewed": True,
-                        "change_kind": "certified_execution_default",
-                    }
-                )
-            continue
-        if name == "position_sizing":
-            if not isinstance(value, Mapping):
-                raise ValueError(
-                    "certified execution position_sizing must be a mapping"
-                )
-            new_value = deepcopy(dict(value))
-        else:
-            new_value = deepcopy(value)
-        old_value = deepcopy(core.get(name))
-        core[name] = new_value
-        if old_value != new_value:
-            changes.append(
-                {
-                    "variant_id": variant_id,
-                    "scope": "core",
-                    "field": name,
-                    "old": old_value,
-                    "new": deepcopy(new_value),
-                    "reviewed": True,
-                    "change_kind": "certified_execution_default",
-                }
-            )
-    flatten = raw_defaults.get("flatten_time")
-    if flatten is not None:
-        strategy = cfg.setdefault("strategy", {})
-        old_value = strategy.get("flatten_time")
-        strategy["flatten_time"] = str(flatten)
-        if old_value != flatten:
-            changes.append(
-                {
-                    "variant_id": variant_id,
-                    "scope": "strategy",
-                    "field": "flatten_time",
-                    "old": old_value,
-                    "new": str(flatten),
-                    "reviewed": True,
-                    "change_kind": "certified_execution_default",
-                }
-            )
-    apex = cfg.setdefault("apex_rules", {})
-    timeline = {
-        "latest_entry_time": raw_defaults.get("latest_entry_time"),
-        "force_flatten_time": flatten,
-        "latest_flat_time": flatten,
-    }
-    for name, value in timeline.items():
-        if value is None:
-            continue
-        old_value = apex.get(name)
-        apex[name] = str(value)
-        if old_value != value:
-            changes.append(
-                {
-                    "variant_id": variant_id,
-                    "scope": "apex_rules",
-                    "field": name,
-                    "old": old_value,
-                    "new": str(value),
-                    "reviewed": True,
-                    "change_kind": "certified_execution_default",
-                }
-            )
     return changes
 
 

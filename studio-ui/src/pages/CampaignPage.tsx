@@ -1641,9 +1641,13 @@ export function Testing({
     selectedAttempt,
     detail.mechanics_approval,
   );
+  const requestedVariant = searchParams.get("variant");
   const includesCurrentVariant =
     Boolean(currentVariant) && selectedVariants.includes(currentVariant);
   const targetVariant =
+    (requestedVariant && selectedVariants.includes(requestedVariant)
+      ? requestedVariant
+      : "") ||
     selectedAttempt?.target_variant_id ||
     (includesCurrentVariant ? currentVariant : selectedVariants.at(-1)) ||
     "unknown variant";
@@ -1974,6 +1978,12 @@ function SequentialVariantPanel({
   const [researcher, setResearcher] = useState("");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const activeAttemptId = String(
+    detail.workflow_context?.current_attempt_id || "",
+  );
+  const activeVariantId = String(
+    detail.workflow_context?.target_variant_id || state.current_variant_id || "",
+  );
 
   async function prepare() {
     setBusy(true);
@@ -2008,6 +2018,33 @@ function SequentialVariantPanel({
   }
 
   if (!state.eligible) {
+    if (
+      detail.workflow_context?.stage === "mechanics_evidence" &&
+      activeAttemptId &&
+      activeVariantId
+    ) {
+      return (
+        <Card className="form-section">
+          <Notice
+            tone="info"
+            title={`${activeVariantId} is frozen and ready for mechanics evidence`}
+          >
+            Sequential variants stay under their governed attempt identity. No
+            separate follow-up attempt is required before mechanics validation.
+          </Notice>
+          <Link
+            className="button button-primary"
+            to={`/research/${encodeURIComponent(
+              campaign.campaign_id,
+            )}/testing?attempt=${encodeURIComponent(
+              activeAttemptId,
+            )}&variant=${encodeURIComponent(activeVariantId)}`}
+          >
+            Generate mechanics evidence · {activeVariantId}
+          </Link>
+        </Card>
+      );
+    }
     return (
       <details className="locked-secondary-action">
         <summary>Next variant is locked</summary>
@@ -4999,7 +5036,7 @@ function nonblankLines(value: string): string[] {
     .filter(Boolean);
 }
 
-function History({
+export function History({
   detail,
   onRefresh,
 }: {
@@ -5020,6 +5057,10 @@ function History({
     detail.workflow_context?.current_attempt_id ||
     attempts.at(-1)?.attempt_id ||
     "";
+  const latestAttemptId =
+    detail.workflow_context?.latest_attempt_id ||
+    attempts.at(-1)?.attempt_id ||
+    "";
   const [expandedAttempts, setExpandedAttempts] = useState<Set<string>>(
     () => new Set(),
   );
@@ -5028,9 +5069,15 @@ function History({
     "mechanics_evidence",
     "mechanics_review",
   ].includes(workflowStage);
-  const recommendedParent = recommendedParentAttempt(attempts);
+  const recommendedParent =
+    currentAttemptId || recommendedParentAttempt(attempts);
   const [creating, setCreating] = useState(false);
   const [options, setOptions] = useState<any>(null);
+  const [optionsState, setOptionsState] = useState<
+    "idle" | "loading" | "ready" | "failed"
+  >("idle");
+  const [optionsError, setOptionsError] = useState("");
+  const [optionsRetry, setOptionsRetry] = useState(0);
   const [parent, setParent] = useState(recommendedParent);
   const [kind, setKind] = useState("replication");
   const [reason, setReason] = useState("");
@@ -5101,9 +5148,6 @@ function History({
       });
     }
   }
-  useEffect(() => {
-    if (currentAttemptId) void loadAttemptDetail(currentAttemptId);
-  }, [campaign.campaign_id, currentAttemptId]);
   function toggleAttempt(attemptId: string) {
     const expanding = !expandedAttempts.has(attemptId);
     setExpandedAttempts((current) => {
@@ -5117,11 +5161,16 @@ function History({
 
   useEffect(() => {
     if (!creating || !campaign.campaign_id) return;
+    let active = true;
     setOptions(null);
+    setOptionsError("");
+    setOptionsState("loading");
     api
       .followUpOptions(campaign.campaign_id, parent)
       .then((value) => {
+        if (!active) return;
         setOptions(value);
+        setOptionsState("ready");
         const currentKind = (value.attempt_kinds || []).find(
           (item: any) => item.value === kind,
         );
@@ -5158,14 +5207,19 @@ function History({
           ),
         );
       })
-      .catch((error) =>
-        setFeedback(
+      .catch((error) => {
+        if (!active) return;
+        setOptionsError(
           error instanceof Error
             ? error.message
             : "Follow-up choices unavailable",
-        ),
-      );
-  }, [creating, campaign.campaign_id, parent]);
+        );
+        setOptionsState("failed");
+      });
+    return () => {
+      active = false;
+    };
+  }, [creating, campaign.campaign_id, parent, optionsRetry]);
 
   const parameters = options?.parameters?.[targetVariant] || [];
   const selectedParameter = parameters.find(
@@ -5316,7 +5370,11 @@ function History({
             variant="secondary"
             onClick={() => {
               setCreating((value) => {
-                if (!value) setParent(recommendedParentAttempt(attempts));
+                if (!value) {
+                  setParent(recommendedParent);
+                  setOptionsState("idle");
+                  setOptionsError("");
+                }
                 return !value;
               });
               setFeedback("");
@@ -5328,10 +5386,23 @@ function History({
       </div>
       {mechanicsWorkflowActive && (
         <Notice tone="info" title="Recovery follow-ups remain available">
-          The current {humanize(workflowStage)} attempt stays immutable. You may
-          create an exact replication, governed data refresh, methodology rerun,
-          or a valid pre-PnL correction without approving obsolete or defective
-          evidence first. Each follow-up type applies its own eligibility rules.
+          Current sequential work does not need a follow-up. The active scope is{" "}
+          <code>{currentAttemptId}</code> /{" "}
+          <code>{detail.workflow_context?.target_variant_id}</code>. Continue in{" "}
+          <Link
+            to={`/research/${encodeURIComponent(
+              campaign.campaign_id,
+            )}/testing?attempt=${encodeURIComponent(
+              currentAttemptId,
+            )}&variant=${encodeURIComponent(
+              detail.workflow_context?.target_variant_id || "",
+            )}`}
+          >
+            Testing
+          </Link>{" "}
+          for mechanics evidence. Create a follow-up only for an explicit
+          replication, data replacement, methodology rerun, eligible pre-PnL
+          correction, or authorized rescue.
         </Notice>
       )}
       {feedback && (
@@ -5358,9 +5429,30 @@ function History({
               </p>
             </div>
           </div>
-          {!options ? (
+          {optionsState === "loading" ? (
             <Skeleton lines={5} />
-          ) : (
+          ) : optionsState === "failed" ? (
+            <div className="action-stack">
+              <Notice tone="warning" title="Follow-up choices could not be loaded">
+                {optionsError || "The local service did not return governed follow-up choices."}
+              </Notice>
+              <div className="inline-actions">
+                <Button
+                  type="button"
+                  onClick={() => setOptionsRetry((value) => value + 1)}
+                >
+                  Retry
+                </Button>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={() => setCreating(false)}
+                >
+                  Cancel
+                </Button>
+              </div>
+            </div>
+          ) : optionsState === "ready" && options ? (
             <form onSubmit={submitFollowUp}>
               <Notice tone="info" title="Two choices, two different jobs">
                 <strong>Follow-up type</strong> controls what this new attempt is
@@ -5641,7 +5733,7 @@ function History({
                 </Button>
               </div>
             </form>
-          )}
+          ) : null}
         </Card>
       )}
       {attemptsLoading ? (
@@ -5666,7 +5758,7 @@ function History({
             );
             const targetVariant =
               attemptId === "original"
-                ? item.target_variant_id
+                ? item.target_variant_id || includedVariantIds.at(-1)
                 : item.target_variant_id || includedVariantIds.at(-1);
             const parentAttempt = attempts.find(
               (candidate: any) =>
@@ -5692,7 +5784,11 @@ function History({
                   </span>
                   <span className="attempt-summary-badges">
                     {attemptId === currentAttemptId && (
-                      <StatusBadge value="Current workflow" />
+                      <StatusBadge value="Active work" />
+                    )}
+                    {attemptId === latestAttemptId &&
+                      attemptId !== currentAttemptId && (
+                        <StatusBadge value="Latest historical attempt" />
                     )}
                     <StatusBadge value={item.attempt_kind || "Original"} />
                     <Icon name="chevron" />
@@ -5787,7 +5883,17 @@ function History({
                         </dd>
                       </div>
                       <div className="hash-row">
-                        <dt>Input-data hash</dt>
+                        <dt>Recorded source hash</dt>
+                        <dd>
+                          {binding.source_sha256 ? (
+                            <code>{binding.source_sha256}</code>
+                          ) : (
+                            "Not recorded"
+                          )}
+                        </dd>
+                      </div>
+                      <div className="hash-row">
+                        <dt>Currently verified input-data hash</dt>
                         <dd>
                           {binding.input_data_hash ? (
                             <code>{binding.input_data_hash}</code>

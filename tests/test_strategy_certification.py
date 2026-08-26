@@ -10,12 +10,14 @@ from alphaquest.strategy_certification import (
     StrategyCertificationError,
     StrategyPackageAccess,
     StrategyPackageLifecycle,
+    apply_certified_execution_contract,
     audit_strategy_certification,
     compute_implementation_sha256,
     get_strategy_certification,
     load_strategy_certifications,
     load_strategy_package_availability,
     normalize_certified_event_params,
+    require_certified_execution_contract,
     strategy_package_access_for_config,
     strategy_identity_for_config,
     validate_certified_event_parameter_grid,
@@ -76,6 +78,85 @@ def test_yush_v04_certification_is_current_and_declares_required_coverage():
     actual_sha256 = compute_implementation_sha256(PROJECT_ROOT, certification.source_files)
     assert certification.implementation_sha256 == actual_sha256
     assert audit_strategy_certification(certification, PROJECT_ROOT) == []
+
+
+def test_certified_execution_contract_applies_risk_percent_sizing_and_rejects_drift():
+    certification = get_strategy_certification(
+        "yush_adaptive_orderflow_range_v4",
+        PROJECT_ROOT,
+        require_current=False,
+    )
+    config = {
+        "variant_id": "v04",
+        "timeframe": "3m",
+        "strategy": {},
+        "core": {
+            "data_subset": {"start_date": "2011-08-15"},
+            "position_sizing": {"mode": "fixed_contracts", "contracts": 1},
+        },
+        "core_grid": {"data_subset": {"start_date": "2011-08-15"}},
+        "monkey": {"data_subset": {"start_date": "2011-08-15"}},
+        "wfa": {"data_subset": {"start_date": "2011-08-15"}},
+        "monte_carlo": {
+            "position_sizing": {"mode": "fixed_contracts", "contracts": 1}
+        },
+        "apex_rules": {},
+        "prop_rules": {},
+    }
+
+    changes = apply_certified_execution_contract(config, certification)
+
+    assert config["core"]["position_sizing"] == {
+        "mode": "risk_percent_net_liq",
+        "risk_pct": 0.004,
+        "cost_allowance_per_contract": 2.27,
+        "rounding": "floor",
+        "min_contracts": 1,
+    }
+    assert config["monte_carlo"]["position_sizing"] == config["core"][
+        "position_sizing"
+    ]
+    assert config["certified_execution_contract"]["manifest_sha256"] == (
+        certification.manifest_sha256
+    )
+    assert any(change["field"] == "position_sizing" for change in changes)
+    require_certified_execution_contract(config, certification)
+
+    config.update(
+        {
+            "engine_lane": "canonical_event_replay",
+            "strategy_name": certification.strategy_id,
+            "strategy_certification": {
+                "strategy_id": certification.strategy_id,
+                "implementation_version": certification.implementation_version,
+                "implementation_sha256": certification.implementation_sha256,
+                "manifest_sha256": certification.manifest_sha256,
+            },
+            "research_metadata": {
+                "authoring_contract": "alphaquest.campaign-draft/v1"
+            },
+        }
+    )
+    config["strategy"]["event"] = {
+        "module": certification.strategy_id,
+        "params": {},
+    }
+    assert strategy_identity_for_config(config, PROJECT_ROOT) == certification
+
+    config["core"]["position_sizing"] = {
+        "mode": "fixed_contracts",
+        "contracts": 1,
+    }
+    with pytest.raises(
+        StrategyCertificationError,
+        match="core.position_sizing",
+    ):
+        require_certified_execution_contract(config, certification)
+    with pytest.raises(
+        StrategyCertificationError,
+        match="core.position_sizing",
+    ):
+        strategy_identity_for_config(config, PROJECT_ROOT)
 
 
 def test_strategy_package_availability_has_exactly_one_active_yush_package():
