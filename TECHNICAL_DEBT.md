@@ -102,6 +102,13 @@ runtime/temp state are addressed by P0A/P0B engineering changes.
    must preserve hashes, manifests, offline auditability, and historical paths
    or verified redirects.
 
+6. **[Operational reliability] Move GitHub Actions off deprecated Node 20 action runtimes.**
+   GitHub currently warns that `actions/checkout@v4`, `actions/setup-python@v5`,
+   and `actions/setup-node@v4` target Node 20 and are being forced onto Node 24.
+   Review supported successor action majors in a dedicated dependency change,
+   then verify permissions, caches, all independent jobs, and the unchanged
+   `Required integration gate` check identity before adoption.
+
 ## P3: non-urgent quality improvements
 
 1. **[Cosmetic]** Extend documentation validation from file existence to anchors and selected
