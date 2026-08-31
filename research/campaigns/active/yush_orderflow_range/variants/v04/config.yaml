@@ -1,0 +1,991 @@
+campaign_id: yush_orderflow_range
+variant_id: v04
+attempt_id: original
+attempt_kind: original
+attempt_provenance: authored
+strategy_name: yush_adaptive_orderflow_range_v4
+symbol: ES
+dataset_id: es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02
+timeframe: 3m
+research_objectives:
+  schema: alphaquest.research-objectives/v1
+  development_goal: Determine whether this candidate can survive the frozen research protocol.
+  development_deadline: '2027-02-19'
+  evaluation_horizon_months: 24
+  minimum_annualized_return_fraction: 0.2
+  minimum_mar: 0.4
+  maximum_drawdown_fraction: 0.1
+  minimum_complete_wfa_windows: 3
+  minimum_wfa_oos_trades: 50
+  minimum_acceptance_oos_trades: 30
+  monte_carlo_min_runs: 8000
+  monte_carlo_horizon_months: 6
+  minimum_net_profit_probability: 0.7
+  maximum_account_breach_probability: 0.1
+  forward_incubation_min_calendar_days: 90
+  forward_incubation_min_trades: 30
+  maximum_variants: 5
+  abandonment_rules:
+  - Stop when any frozen stage gate fails; do not tune after observing OOS results.
+  retirement_rules:
+  - Retire after a live risk breach or sustained degradation beyond the frozen limits.
+  confirmed: true
+research_objectives_sha256: 37940e6c2d7aa4f1dbcd445759659ea70750260f4f5084769577982d47a1218b
+research_factory:
+  schema: alphaquest.research-factory-binding/v2
+  research_objectives_sha256: 37940e6c2d7aa4f1dbcd445759659ea70750260f4f5084769577982d47a1218b
+  locked_holdout_window_id: holdout_37940e6c2d7aa4f1_acceptance_01
+  confirmation_holdout_window_id: holdout_37940e6c2d7aa4f1_confirmation_02
+  dataset:
+    dataset_id: es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02
+    canonical_sha256: 9e47ffd5b5a98ef49339649620753376f0c5b0f2ed096a61816450f265e46e47
+    source_sha256: 9e47ffd5b5a98ef49339649620753376f0c5b0f2ed096a61816450f265e46e47
+    coverage_start: '2011-08-15 13:30:00+00:00'
+    coverage_end: '2026-05-29 19:59:00+00:00'
+    roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+    event_execution_contract_sha256: d0c63499d57f513111d3de9bcf1166e3058ee5d7cf25acea0d8f6cbec05f6b09
+    event_execution_artifact_sha256s:
+      raw_manifest_sha256: 35bc989f4ba151bf8578a9e9f5e13a30b2d5b115b1667ab140a0429f5a7f7747
+      session_levels_sha256: 3e4dce824457483b0c8a65e053aa2e711fb99b5602da0c5ced2c9c6a9fb445c1
+      quality_manifest_sha256: ce31c4c9e48704723e242c8a014d023fed0374b88535c2481c2162e87da671ab
+      concordance_report_sha256: d3a9499c554f9ddd0a4b08cbdc10e22faa4c459c27293736465131e338a158e7
+      roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+  acceptance_window:
+    train_months: 24
+    test_months: 6
+    train_start: '2023-11-29'
+    train_end: '2025-11-28'
+    test_start: '2025-11-29'
+    test_end: '2026-05-29'
+research_metadata:
+  authoring_contract: alphaquest.campaign-draft/v1
+  mechanic_signature: 02cbd4808b202e8245dbc0e1ecb312fc2078000a0221481dab42f45e4d728edd
+  mechanics_review_required: true
+  mechanics_review_version: 1
+  mechanics_review:
+    mechanic_expresses_edge: At every completed three-minute boundary, independently attempt a short AOI at the latest VAH
+      and a long AOI at the latest VAL. The AOI exists only when a prior-20-session q99.9 MotiveWave-compatible consecutive
+      aggressive-volume sequence of either side and/or a sign-agnostic top-decile absolute session-anchored four-tick delta
+      cell, or a PDH, PDL, PDC, ONH, ONL, ORH, or ORL lies within one third of causal ATR above or below that edge. A market
+      level may independently qualify the AOI. The repository availability policy selected this as the sole active, unused
+      certified event successor; observed PnL did not select its parameters.
+    entry_logic_rationale: Each AOI applies only to the next three-minute bar and is rebuilt at the following boundary from
+      the then-latest VAH or VAL and confluences. An ordered event at or inside the edge arms the crossing; a later event
+      at the ATR-normalized sweep distance completes a sweep when that bar closes. The completed sweep waits for a distinct
+      later q99.9 large execution or newly accumulated top-decile absolute four-tick delta cell. For a short the confirmation
+      label must be strictly above the frozen AOI-zone bottom; for a long it must be strictly below the frozen AOI-zone top.
+      Only then is the stop-market reclaim entry armed two ticks beyond that boundary. There is no AOI supersession model
+      or intended-stop invalidation before fill, and the confirmed entry order has no clock expiry.
+    stop_loss_rationale: The order is submitted without a predeclared stop. On the exact causal fill event, after that event
+      has updated the path, resolve the stop two ticks beyond the adverse extreme observed from the entire sweep bar through
+      the entry event, inclusive. Validate the minimum and causal-ATR maximum, size from the resolved risk, and create the
+      position only after the stop is valid.
+    target_exit_rationale: When a per-bar AOI is created, retain its value-area midpoint and opposite edge for any setup swept
+      from that AOI. Exit half at the midpoint and the remainder two ticks outside the opposite value-area edge; two ticks
+      below frozen VAL for a short and two ticks above frozen VAH for a long. The one-to-one gross midpoint reward gate is
+      evaluated on the fill event against the resolved sweep-to-entry stop.
+    profitability_rationale: Repeated rejection at a developing value boundary suggests passive liquidity is absorbing aggressive
+      flow; a fresh delta or large-trade event after the tap supplies causal confirmation for reversion. At every completed
+      three-minute boundary, independently attempt a short AOI at the latest VAH and a long AOI at the latest VAL. The AOI
+      exists only when a prior-20-session q99.9 MotiveWave-compatible consecutive aggressive-volume sequence of either side
+      and/or a sign-agnostic top-decile absolute session-anchored four-tick delta cell, or a PDH, PDL, PDC, ONH, ONL, ORH,
+      or ORL lies within one third of causal ATR above or below that edge. A market level may independently qualify the AOI.
+      The repository availability policy selected this as the sole active, unused certified event successor; observed PnL
+      did not select its parameters.
+    known_failure_modes: Per-bar AOIs may churn as developing value moves; session-old bursts may be stale; early cross-sectional
+      delta ranks may be unstable; direction-neutral confluence may be unrelated to reversal direction; a market level alone
+      may be too common to identify absorption; a wide AOI zone may reduce fills; the separate confirmation can arrive late
+      or never arrive; a pending order can remain live for a long time; the sweep-to-entry extreme can produce a wide stop;
+      stop-market entry can gap; and requiring two ticks beyond the opposite value-area edge can reduce final-target fills
+      and give back midpoint gains.
+    pre_test_decision: approve_for_testing
+  timeframe_rationale: Build causally from one RTH profile beginning at 09:30 without a 13:30 reset. Entries remain restricted
+    to 09:39-11:30 and 13:39-15:30 New York, with forced flatten at 15:55. Strategy mechanics have no daily trade cap; account
+    controls remain separate.
+  validation_gate:
+    required: true
+    lane: event_replay
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 7
+    data_subset:
+      start_date: '2026-05-14'
+      end_date: '2026-05-29'
+      session_dates:
+      - '2026-05-14'
+      - '2026-05-15'
+      - '2026-05-19'
+      - '2026-05-20'
+      - '2026-05-21'
+      - '2026-05-22'
+      - '2026-05-26'
+      - '2026-05-27'
+      - '2026-05-28'
+      - '2026-05-29'
+    evidence_dir: research/evidence/runs/yush_orderflow_range/v04/ES/mechanics_validation/validation_runs/core
+    approval_path: research_artifacts/validation_approvals/yush_orderflow_range/v04/approval.json
+    selection_mode: latest_eligible_sessions
+    session_count: 10
+    minimum_trade_samples: 5
+  objective_contract:
+    schema: alphaquest.research-objectives/v1
+    sha256: 37940e6c2d7aa4f1dbcd445759659ea70750260f4f5084769577982d47a1218b
+    status: frozen_pre_pnl
+    repository_floor_policy_sha256: eb9063467c6667a5e1476a8cb46428e8bb5722e388d76c72610305c0525235b2
+data:
+  dataset_id: es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02
+  source_timeframe: 1m
+  source: parquet
+  raw_parquet: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/bars.parquet
+  symbol: ES
+  timezone: America/New_York
+  source_timezone: UTC
+  exchange_timezone: America/New_York
+  timestamp_semantics: bar_open
+  source_timestamp_semantics: bar_open
+  source_sha256: 9e47ffd5b5a98ef49339649620753376f0c5b0f2ed096a61816450f265e46e47
+  canonical_sha256: 9e47ffd5b5a98ef49339649620753376f0c5b0f2ed096a61816450f265e46e47
+  coverage_start: '2011-08-15 13:30:00+00:00'
+  coverage_end: '2026-05-29 19:59:00+00:00'
+  roll_policy: MotiveWave/Rithmic predeclared active-contract calendar; no back adjustment
+  continuous_contract: explicit_roll_calendar
+  contract_column: contract_symbol
+  contract_count: 60
+  certified_features: []
+  rth_start: 09:30:00
+  rth_end: '16:00:00'
+  roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+  roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+  execution_data:
+    source: sierra_scid_records
+    raw_dir: /Users/yx/Desktop/alphaquest-research-engine/data/raw/ES/sierra-es-trades
+    raw_manifest: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/raw_manifest.json
+    raw_manifest_sha256: 35bc989f4ba151bf8578a9e9f5e13a30b2d5b115b1667ab140a0429f5a7f7747
+    session_levels: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/session_levels.parquet
+    session_levels_sha256: 3e4dce824457483b0c8a65e053aa2e711fb99b5602da0c5ced2c9c6a9fb445c1
+    quality_manifest: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/event_capabilities.csv
+    quality_manifest_sha256: ce31c4c9e48704723e242c8a014d023fed0374b88535c2481c2162e87da671ab
+    concordance_report: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/strategy_concordance.json
+    concordance_report_sha256: d3a9499c554f9ddd0a4b08cbdc10e22faa4c459c27293736465131e338a158e7
+    required_capability: full_rth_strategy_events_extrapolated
+    ineligible_session_policy: blackout
+    timestamp_inversion_policy: preserve_source_order_clamp
+    max_timestamp_inversion_rate: 0.002
+    roll_calendar: data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv
+    roll_calendar_sha256: 4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6
+    root_symbol: ES
+    aggregation_ms: 100
+    overnight_start: '16:00:00'
+    rth_start: 09:30:00
+    rth_end: '16:00:00'
+    reset_previous_levels_on_roll: true
+apex_rules:
+  enabled: true
+  timezone: America/New_York
+  force_flatten_enabled: true
+  force_flatten_time: '15:55:00'
+  latest_flat_time: '15:55:00'
+  latest_entry_time: '15:30:00'
+  cancel_pending_orders_before_flatten: true
+  no_overnight_positions: true
+  reject_if_position_after_flatten_deadline: true
+  reject_if_pending_order_after_flatten_deadline: true
+  reject_if_entry_after_latest_entry_time: true
+strategy:
+  entry:
+    module: yush_adaptive_orderflow_range_v4
+    params:
+      mechanics:
+        tick_size: 0.25
+        point_value: 5
+        commission_per_contract: 0.51
+        bar_seconds: 180
+        price_bin_ticks: 1
+        delta_profile_price_bin_ticks: 4
+        value_area_fraction: 0.7
+        value_area_method: motivewave_standard
+        context_distance_atr_fraction: 0.3333333333333333
+        delta_profile_percentile: 0.9
+        big_trade_reference_percentile: 0.999
+        big_trade_lookback_sessions: 20
+        big_trade_interval_ms: 100
+        big_trade_price_bucket_ticks: 1
+        big_trade_aggregation_mode: motivewave_consecutive
+        burst_freshness_scope: current_rth_session
+        sweep_minimum_ticks: 2
+        morning_entry_start: 09:39:00
+        morning_entry_end: '11:30:00'
+        afternoon_entry_start: '13:39:00'
+        afternoon_entry_end: '15:30:00'
+        entry_offset_ticks: 2
+        stop_offset_ticks: 2
+        minimum_stop_ticks: 2
+        maximum_stop_atr_multiple: 1.75
+        atr_lookback_bars: 14
+        target_1_fraction: 0.5
+        maximum_holding_bars: 12
+        maximum_entries_per_aoi: 1
+        max_trades_per_day: 0
+        atr_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+        atr_context_sha256: 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+        big_trade_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_motivewave_consecutive_q999_prior20_context.parquet
+        big_trade_context_sha256: 1dec5cfd0b4ed4ca5782298932d833527c80dd8a83e92a75c9f7558db8c4d51f
+        sweep_atr_fraction: 0.2
+        minimum_midpoint_reward_r: 1
+        profile_warmup_bars: 3
+        afternoon_profile_reset: disabled
+  sl:
+    module: event_fill_time_sweep_to_entry_extreme_stop
+    params: {}
+  tp:
+    module: event_frozen_midpoint_two_ticks_outside_opposite_value_area_scale_out
+    params: {}
+  flatten_time: '15:55:00'
+  event:
+    module: yush_adaptive_orderflow_range_v4
+    params:
+      tick_size: 0.25
+      point_value: 5
+      commission_per_contract: 0.51
+      bar_seconds: 180
+      price_bin_ticks: 1
+      delta_profile_price_bin_ticks: 4
+      value_area_fraction: 0.7
+      value_area_method: motivewave_standard
+      context_distance_atr_fraction: 0.3333333333333333
+      delta_profile_percentile: 0.9
+      big_trade_reference_percentile: 0.999
+      big_trade_lookback_sessions: 20
+      big_trade_interval_ms: 100
+      big_trade_price_bucket_ticks: 1
+      big_trade_aggregation_mode: motivewave_consecutive
+      burst_freshness_scope: current_rth_session
+      sweep_minimum_ticks: 2
+      morning_entry_start: 09:39:00
+      morning_entry_end: '11:30:00'
+      afternoon_entry_start: '13:39:00'
+      afternoon_entry_end: '15:30:00'
+      entry_offset_ticks: 2
+      stop_offset_ticks: 2
+      minimum_stop_ticks: 2
+      maximum_stop_atr_multiple: 1.75
+      atr_lookback_bars: 14
+      target_1_fraction: 0.5
+      maximum_holding_bars: 12
+      maximum_entries_per_aoi: 1
+      max_trades_per_day: 0
+      atr_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+      atr_context_sha256: 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+      big_trade_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_motivewave_consecutive_q999_prior20_context.parquet
+      big_trade_context_sha256: 1dec5cfd0b4ed4ca5782298932d833527c80dd8a83e92a75c9f7558db8c4d51f
+      sweep_atr_fraction: 0.2
+      minimum_midpoint_reward_r: 1
+      profile_warmup_bars: 3
+      afternoon_profile_reset: disabled
+core:
+  data_subset:
+    start_date: '2011-08-15'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  initial_balance: 50000.0
+  tick_size: 0.25
+  point_value: 5.0
+  tick_value: 1.25
+  commission_per_contract: 0.51
+  slippage_ticks: 1.0
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  flatten_time: '15:55:00'
+  max_trades_per_day: 0
+  contracts: 1
+  entry_start: 09:39:00
+  latest_entry_time: '15:30:00'
+  event_stop_market_fill_policy: trade_event_price_on_gap
+benchmarks:
+  min_trades_per_year: 50
+  preferred_min_total_trades: 500
+  min_profit_factor: 1.3
+  min_total_net_profit: 0
+  min_expectancy_r: 0.05
+  min_win_rate: 0.4
+  max_drawdown_pct: 0.1
+  min_cagr: 0.0
+  min_mar: 0.5
+  max_daily_loss: 1500
+  max_consecutive_losses: 8
+  max_best_day_concentration: 0.4
+  min_positive_month_rate: 0.5
+  min_wfa_profitable_window_rate: 0.7
+  min_monte_carlo_prop_pass_chance: 0.5
+core_grid:
+  data_subset:
+    start_date: '2011-08-15'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  objective: MAR
+  min_profitable_iteration_rate: 0.7
+  retain_iteration_reports: false
+  parameters:
+    event.params.maximum_stop_atr_multiple:
+    - 1.25
+    - 1.5
+    - 1.75
+    event.params.sweep_atr_fraction:
+    - 0.1
+    - 0.15
+    - 0.2
+    - 0.25
+    - 0.3
+monkey:
+  data_subset:
+    start_date: '2011-08-15'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  runs: 8000
+  seed: 7
+  beat_threshold: 0.9
+  retain_iteration_reports: false
+  constraints:
+    trade_count_tolerance_pct: 0.05
+    long_short_ratio_tolerance: 0.05
+    average_bars_tolerance_pct: 0.1
+    duration_shape: 0.7
+    rth_only: true
+    enforce_non_overlapping: true
+wfa:
+  data_subset:
+    start_date: '2011-08-15'
+    end_date: '2026-05-29'
+    session_labels:
+    - RTH
+  mode: unanchored
+  train_months: 48
+  test_months: 12
+  step_months: 12
+  objective: MAR
+  selection_exclusive_min_trades_per_year: 50
+  early_exit_min_train_profit_factor: 1.0
+  parameters:
+    event.params.maximum_stop_atr_multiple:
+    - 1.25
+    - 1.5
+    - 1.75
+    event.params.sweep_atr_fraction:
+    - 0.1
+    - 0.15
+    - 0.2
+    - 0.25
+    - 0.3
+campaign_tests:
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  limited_core_grid_test:
+    enabled: true
+    criteria:
+    - metric: summary.total_combinations_tested
+      valid_parameter_combination_count: true
+      decision_role: scientific_validity
+    - metric: summary.percentage_profitable_iterations
+      min: 0.7
+      decision_role: scientific_validity
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+  limited_monkey_test:
+    enabled: true
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.9
+      decision_role: scientific_validity
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.9
+      decision_role: scientific_validity
+    data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    runs: 8000
+    seed: 7
+    retain_iteration_reports: false
+    constraints:
+      trade_count_tolerance_pct: 0.05
+      long_short_ratio_tolerance: 0.05
+      average_bars_tolerance_pct: 0.1
+      duration_shape: 0.7
+      rth_only: true
+      enforce_non_overlapping: true
+    beat_threshold: 0.9
+  walk_forward_analysis:
+    enabled: true
+    criteria:
+    - metric: summary.early_exit
+      equals: false
+      decision_role: scientific_validity
+    - metric: summary.realized_oos_windows
+      min: 3.0
+      decision_role: scientific_validity
+      source: repository_policy_and_frozen_research_objectives
+    - metric: summary.realized_oos_trades
+      min: 50.0
+      decision_role: scientific_validity
+      source: repository_policy_and_frozen_research_objectives
+    - metric: stitched_oos_metrics.annualization_available
+      equals: true
+      decision_role: scientific_validity
+      source: repository_policy_and_frozen_research_objectives
+    - metric: stitched_oos_metrics.profit_factor
+      min: 1.2
+      decision_role: generic_objective
+    - metric: stitched_oos_metrics.mar
+      min: 0.4
+      decision_role: generic_objective
+      source: repository_policy_and_frozen_research_objectives
+    - metric: stitched_oos_metrics.trades_per_year
+      min: 50
+      decision_role: generic_objective
+    - metric: stitched_oos_metrics.cagr
+      min: 0.2
+      source: frozen_research_objectives
+      decision_role: generic_objective
+    - metric: stitched_oos_metrics.max_drawdown_pct
+      max: 0.1
+      source: frozen_research_objectives
+      decision_role: generic_objective
+    data_window:
+      mode: before_sequential_holdouts
+      incubation_test_months: 12
+      acceptance_test_months: 6
+  wfa_oos_monkey_test:
+    enabled: true
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+      decision_role: scientific_validity
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+      decision_role: scientific_validity
+    runs: 8000
+    seed: 7
+    retain_iteration_reports: false
+    constraints:
+      trade_count_tolerance_pct: 0.05
+      long_short_ratio_tolerance: 0.05
+      average_bars_tolerance_pct: 0.1
+      duration_shape: 0.7
+      rth_only: true
+      enforce_non_overlapping: true
+    beat_threshold: 0.8
+  wfa_oos_monte_carlo:
+    enabled: true
+    criteria:
+    - metric: summary.number_of_runs
+      min: 8000.0
+      decision_role: scientific_validity
+      source: repository_policy_and_frozen_research_objectives
+    - metric: summary.mean_net_pnl
+      exclusive_min: 0.0
+      decision_role: generic_objective
+    - metric: summary.probability_net_profit_gt_0
+      min: 0.7
+      decision_role: generic_objective
+      source: repository_policy_and_frozen_research_objectives
+    - metric: summary.p95_drawdown
+      max: 5000.0
+      source: frozen_research_objectives
+      decision_role: generic_objective
+    runs: 8000
+    seed: 11
+    path_months: 6
+    skip_trade_probability: 0.05
+    cluster_losses: true
+    retain_path_trades: false
+    retain_path_events: false
+  simulated_incubation_core:
+    enabled: true
+    criteria:
+    - metric: metrics.annualization_available
+      equals: true
+      decision_role: scientific_validity
+      source: repository_policy_and_frozen_research_objectives
+    - metric: metrics.profit_factor
+      min: 1.0
+      decision_role: generic_objective
+    - metric: metrics.mar
+      min: 1.0
+      decision_role: generic_objective
+      source: repository_policy_and_frozen_research_objectives
+    - metric: metrics.trades_per_year
+      min: 50
+      decision_role: generic_objective
+    - metric: metrics.total_trades
+      min: 30
+      source: frozen_research_objectives
+      decision_role: scientific_validity
+    - metric: metrics.cagr
+      min: 0.2
+      source: frozen_research_objectives
+      decision_role: generic_objective
+    - metric: metrics.max_drawdown_pct
+      max: 0.1
+      source: frozen_research_objectives
+      decision_role: generic_objective
+    train_months: 48
+    test_months: 12
+    holdout_after_test_months: 6
+  simulated_incubation_monkey:
+    enabled: true
+    criteria:
+    - metric: summary.core_beats_monkey_net_profit_rate
+      min: 0.8
+      decision_role: scientific_validity
+    - metric: summary.core_beats_monkey_max_drawdown_rate
+      min: 0.8
+      decision_role: scientific_validity
+    runs: 8000
+    seed: 7
+    retain_iteration_reports: false
+    constraints:
+      trade_count_tolerance_pct: 0.05
+      long_short_ratio_tolerance: 0.05
+      average_bars_tolerance_pct: 0.1
+      duration_shape: 0.7
+      rth_only: true
+      enforce_non_overlapping: true
+    beat_threshold: 0.8
+  acceptance_oos_test:
+    enabled: true
+    train_months: 24
+    test_months: 6
+    criteria:
+    - metric: metrics.annualization_available
+      equals: true
+      decision_role: scientific_validity
+      source: repository_policy_and_frozen_research_objectives
+    - metric: metrics.profit_factor
+      min: 1.0
+      decision_role: generic_objective
+    - metric: metrics.mar
+      min: 1.0
+      decision_role: generic_objective
+      source: repository_policy_and_frozen_research_objectives
+    - metric: metrics.trades_per_year
+      min: 50
+      decision_role: generic_objective
+    - metric: metrics.total_trades
+      min: 30
+      source: frozen_research_objectives
+      decision_role: scientific_validity
+    - metric: metrics.cagr
+      min: 0.2
+      source: frozen_research_objectives
+      decision_role: generic_objective
+    - metric: metrics.max_drawdown_pct
+      max: 0.1
+      source: frozen_research_objectives
+      decision_role: generic_objective
+  research_policy:
+    version: 2026-08-14.2
+    path: config/research_settings.yaml
+    hash: eb9063467c6667a5e1476a8cb46428e8bb5722e388d76c72610305c0525235b2
+    stage_order:
+    - limited_core_grid_test
+    - limited_monkey_test
+    - walk_forward_analysis
+    - wfa_oos_monkey_test
+    - wfa_oos_monte_carlo
+    - simulated_incubation_core
+    - simulated_incubation_monkey
+    - acceptance_oos_test
+    acceptance_stage: acceptance_oos_test
+    methodology:
+      mechanics_validation:
+        selection_mode: latest_eligible_sessions
+        session_count: 10
+        parameter_mode: declared_defaults
+        manual_review_random_sample_size: 5
+        manual_review_seed: 7
+        minimum_trade_samples: 5
+      shortlist_data_window:
+        mode: random_fraction
+        fraction: 0.1
+        avoid_last_fraction: 0.1
+        seed: 31
+        avoid_ranges:
+        - start_date: '2020-02-01'
+          end_date: '2021-06-30'
+      core_grid:
+        objective: MAR
+        retain_iteration_reports: false
+      monkey:
+        seed: 7
+        retain_iteration_reports: false
+        constraints:
+          trade_count_tolerance_pct: 0.05
+          long_short_ratio_tolerance: 0.05
+          average_bars_tolerance_pct: 0.1
+          duration_shape: 0.7
+          rth_only: true
+          enforce_non_overlapping: true
+      wfa_data_window:
+        mode: before_sequential_holdouts
+      walk_forward_analysis:
+        mode: unanchored
+        train_months: 48
+        test_months: 12
+        step_months: 12
+        objective: MAR
+        selection_exclusive_min_trades_per_year: 50
+        early_exit_min_train_profit_factor: 1.0
+      wfa_oos_monte_carlo:
+        runs: 8000
+        seed: 11
+        path_months: 6
+        skip_trade_probability: 0.05
+        cluster_losses: true
+        retain_path_trades: false
+        retain_path_events: false
+      simulated_incubation:
+        train_months: 48
+        test_months: 12
+      acceptance_oos:
+        train_months: 24
+        test_months: 6
+      objective_floors:
+        minimum_evaluation_horizon_months: 12
+        minimum_complete_wfa_windows: 3
+        minimum_wfa_oos_trades: 50
+        minimum_acceptance_oos_trades: 30
+        minimum_mar: 0.4
+        maximum_drawdown_fraction: 0.2
+        minimum_monte_carlo_runs: 8000
+        minimum_monte_carlo_horizon_months: 6
+        minimum_net_profit_probability: 0.7
+        maximum_account_breach_probability: 0.1
+        minimum_forward_incubation_calendar_days: 90
+        minimum_forward_incubation_trades: 30
+        maximum_variants: 5
+prop_rules:
+  schema: alphaquest.prop-profile/v1
+  profile: configured_local_profile
+  profile_fully_specified: true
+  starting_balance: 50000.0
+  daily_loss_limit: 2000.0
+  trailing_drawdown: 2000.0
+  max_contracts: 1
+  max_best_day_profit_percentage: 0.4
+  min_trading_days: 2
+  payout_threshold: 1000.0
+  profit_target_pct: 0.06
+  drawdown_limit_pct: 0.04
+  profit_target_amount: 3000.0
+  drawdown_limit_amount: 2000.0
+  account_lifecycle_enabled: true
+  challenge_fee: 98.0
+  challenge_profit_target_amount: 3000.0
+  challenge_consistency_limit: 0.5
+  trailing_drawdown_lock_balance: 52100.0
+  trailing_drawdown_locked_floor: 50100.0
+  funded_starting_balance: 50000.0
+  funded_initial_drawdown_floor: 48000.0
+  funded_payout_min_profit_day: 150.0
+  funded_payout_required_profit_days: 5
+  funded_payout_profit_fraction: 0.5
+  funded_payout_profit_share: 0.9
+  funded_payout_max_amount: 2000.0
+  max_payouts_per_account: 5
+  no_overnight_positions: true
+  force_flatten_time: '15:55:00'
+  profile_sha256: dc66ec1dc73ec8bc57f6bfc2bc8c16eaa89ed991ec2a1da98c7e9cfc18e82a4e
+account_profile_bindings:
+- schema: alphaquest.account-rule-profile/v1
+  profile_id: apex/eod_50k/funded
+  version: '2026-03-01'
+  name: Apex 50K EOD Performance Account (Sim Funded)
+  description: Reviewed account-specific model for the new Apex 50K EOD Performance Account. It evaluates tiered sizing and
+    DLL, intraday enforcement of the EOD threshold, inactivity, payout consistency, payout caps, and acquisition-cost economics.
+  effective_from: '2026-03-01'
+  effective_until: null
+  novice_visible: true
+  promotable: true
+  identity:
+    provider: Apex Trader Funding
+    program: New EOD Drawdown
+    account_label: 50K EOD Performance Account
+    account_kind: prop_funded
+    nominal_balance: 50000.0
+    currency: USD
+    timezone: America/New_York
+    session_reset_time: '18:00:00'
+    eod_snapshot_time: '16:59:59'
+    simulated_account: true
+  provenance:
+    verification_status: reviewed
+    reviewed_at: '2026-08-14T12:00:00+08:00'
+    reviewer: AlphaQuest engineering review; human re-review required before trading
+    official_sources:
+    - title: EOD Performance Accounts (PA)
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-performance-accounts-pa/
+      accessed_at: '2026-08-14'
+      supports:
+      - sim_funded_identity
+      - eod_drawdown
+      - dll
+      - scaling
+      - contract_limits
+    - title: EOD Drawdown Explained
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-drawdown-explained/
+      accessed_at: '2026-08-14'
+      supports:
+      - eod_calculation
+      - intraday_enforcement
+      - funded_threshold_lock
+    - title: Scaling Levels (PA) Explained
+      url: https://apextraderfunding.com/help-center/additional-helpful-items/scaling-levels-pa-explained/
+      accessed_at: '2026-08-14'
+      supports:
+      - tiered_contract_limits
+      - tiered_daily_loss_limits
+      - eod_tier_changes
+    - title: EOD Payouts
+      url: https://apextraderfunding.com/help-center/eod-trailing-drawdown-accounts/eod-payouts/
+      accessed_at: '2026-08-14'
+      supports:
+      - qualifying_days
+      - consistency
+      - safety_net
+      - payout_caps
+      - payout_count
+    - title: Inactivity Policy on Performance Accounts
+      url: https://apextraderfunding.com/help-center/billing/inactivity-policy-on-performance-accounts-pa/
+      accessed_at: '2026-08-14'
+      supports:
+      - rolling_30_day_activity
+    - title: PA Activation Process and Deadline Explained
+      url: https://apextraderfunding.com/help-center/billing/pa-activation-process-deadline-explained/
+      accessed_at: '2026-08-14'
+      supports:
+      - activation_window
+      - activation_cost
+      - replacement_cost
+    notes:
+    - This is a simulated funded Performance Account, not a live brokerage account.
+    - Dynamic checkout and activation prices must be recorded when the assessment is created.
+    - Prohibited-activity rules requiring intent or cross-account evidence remain a manual review item.
+  rules:
+    permitted_instruments:
+    - ES
+    - MES
+    - NQ
+    - MNQ
+    overnight_positions_allowed: false
+    position_close_deadline: '16:59:00'
+    intraday_equity_required: true
+    eod_drawdown:
+      amount: 2000.0
+      initial_threshold: 48000.0
+      trailing_basis: highest_eod_balance
+      recalculation: end_of_day
+      enforcement: intraday_equity
+      breach_operator: touch_or_below
+      locked_threshold: 50100.0
+      never_moves_down: true
+    fixed_maximum_contracts: null
+    fixed_daily_loss_limit: null
+    scaling_tiers:
+    - minimum_profit: 0.0
+      maximum_profit_exclusive: 1500.0
+      maximum_contracts: 2
+      daily_loss_limit: 1000.0
+    - minimum_profit: 1500.0
+      maximum_profit_exclusive: 3000.0
+      maximum_contracts: 3
+      daily_loss_limit: 1000.0
+    - minimum_profit: 3000.0
+      maximum_profit_exclusive: 6000.0
+      maximum_contracts: 4
+      daily_loss_limit: 2000.0
+    - minimum_profit: 6000.0
+      maximum_profit_exclusive: null
+      maximum_contracts: 4
+      daily_loss_limit: 3000.0
+    evaluation: null
+    payouts:
+      qualifying_profit_days: 5
+      minimum_daily_profit: 250.0
+      consistency_limit: 0.5
+      consistency_operator: strictly_less_than
+      safety_net_balance: 52100.0
+      minimum_request_balance: 52600.0
+      minimum_payout: 500.0
+      maximum_payouts: 6
+      payout_caps:
+      - 1500.0
+      - 1500.0
+      - 2000.0
+      - 2500.0
+      - 2500.0
+      - 3000.0
+      payout_profit_share: 1.0
+      request_policy: maximum_when_eligible
+    inactivity:
+      rolling_calendar_days: 30
+      required_profit_days: 2
+      minimum_daily_profit: 50.0
+      consequence: account_closed
+    acquisition:
+      prerequisite_profile_id: apex/eod_50k/evaluation
+      evaluation_price_mode: assessment_input_required
+      activation_fee_mode: assessment_input_required
+      retry_requires_new_evaluation: true
+    manual_attestations_required:
+    - no_prohibited_trading_activity_or_cross_account_hedging
+  evaluation_policy:
+    minimum_horizon_sessions: 126
+    monte_carlo_runs: 8000
+    monte_carlo_horizon_sessions: 126
+    monte_carlo_block_sessions: 5
+    maximum_account_closure_probability: 0.05
+    maximum_daily_loss_lock_probability: 0.1
+    minimum_first_payout_probability: 0.7
+    minimum_two_payout_probability: 0.5
+    minimum_expected_net_payout_after_costs: 0.0
+    minimum_expected_payout_to_cost_ratio: 3.0
+    maximum_p95_drawdown: 1500.0
+    deterministic_require_no_closure: true
+    deterministic_require_no_daily_loss_lock: true
+    deterministic_require_no_position_rejection: true
+    recommended_tests:
+    - Zero EOD account closures, daily loss locks, and tier-size rejections in stitched WFA and acceptance OOS evidence.
+    - 8000 six-month session-block paths with account state, tier changes, payout withdrawals, and EOD threshold updates preserved.
+    - Account-closure probability no greater than 5 percent and any-DLL-lock probability no greater than 10 percent.
+    - First-payout probability at least 70 percent and two-payout probability at least 50 percent over six months.
+    - Expected approved payouts net of evaluation, activation, and replacement costs remain positive with a payout-to-cost
+      ratio of at least 3.
+    - P95 maximum drawdown no greater than 1500 dollars, leaving a 500 dollar buffer to the 2000 dollar closure threshold.
+    - Stress the first 2100 dollars of profit separately because the EOD threshold is still moving toward its 50100 dollar
+      lock.
+    - Review no-trade calendar days so the rolling 30-day two-profit-day inactivity rule is actually testable.
+  profile_sha256: 385fe2cc0b8c55b9dcf0d6e5dfdbb2d70ebb2f9ca378150aaaec327f6395a1c3
+  profile_source_path: /Users/yx/Desktop/fastlane/alphaquest-research-engine/config/account_profiles/apex/eod_50k/funded/2026-03-01.yaml
+  role: primary
+monte_carlo:
+  trade_source: core
+  runs: 8000
+  seed: 11
+  path_months: 6
+  skip_trade_probability: 0.05
+  adverse_slippage_per_trade: 1.25
+  position_sizing:
+    mode: fixed_contracts
+    contracts: 1
+  cluster_losses: true
+  retain_path_trades: false
+  retain_path_events: false
+test_run_id: run1
+engine_lane: canonical_event_replay
+strategy_certification:
+  strategy_id: yush_adaptive_orderflow_range_v4
+  implementation_version: 1
+  implementation_sha256: c03656880ec4214cf53a7a62edcef31fd6fb4d6f2ed19710dc911fb5316e9489
+  manifest_sha256: 3b2e50dce4ad8315977afca3ffadd8e4fd545f0516bb289e3816b4156b7cbbae
+research_policy:
+  version: 2026-08-14.2
+  path: config/research_settings.yaml
+  hash: eb9063467c6667a5e1476a8cb46428e8bb5722e388d76c72610305c0525235b2
+  stage_order:
+  - limited_core_grid_test
+  - limited_monkey_test
+  - walk_forward_analysis
+  - wfa_oos_monkey_test
+  - wfa_oos_monte_carlo
+  - simulated_incubation_core
+  - simulated_incubation_monkey
+  - acceptance_oos_test
+  acceptance_stage: acceptance_oos_test
+  methodology:
+    mechanics_validation:
+      selection_mode: latest_eligible_sessions
+      session_count: 10
+      parameter_mode: declared_defaults
+      manual_review_random_sample_size: 5
+      manual_review_seed: 7
+      minimum_trade_samples: 5
+    shortlist_data_window:
+      mode: random_fraction
+      fraction: 0.1
+      avoid_last_fraction: 0.1
+      seed: 31
+      avoid_ranges:
+      - start_date: '2020-02-01'
+        end_date: '2021-06-30'
+    core_grid:
+      objective: MAR
+      retain_iteration_reports: false
+    monkey:
+      seed: 7
+      retain_iteration_reports: false
+      constraints:
+        trade_count_tolerance_pct: 0.05
+        long_short_ratio_tolerance: 0.05
+        average_bars_tolerance_pct: 0.1
+        duration_shape: 0.7
+        rth_only: true
+        enforce_non_overlapping: true
+    wfa_data_window:
+      mode: before_sequential_holdouts
+    walk_forward_analysis:
+      mode: unanchored
+      train_months: 48
+      test_months: 12
+      step_months: 12
+      objective: MAR
+      selection_exclusive_min_trades_per_year: 50
+      early_exit_min_train_profit_factor: 1.0
+    wfa_oos_monte_carlo:
+      runs: 8000
+      seed: 11
+      path_months: 6
+      skip_trade_probability: 0.05
+      cluster_losses: true
+      retain_path_trades: false
+      retain_path_events: false
+    simulated_incubation:
+      train_months: 48
+      test_months: 12
+    acceptance_oos:
+      train_months: 24
+      test_months: 6
+    objective_floors:
+      minimum_evaluation_horizon_months: 12
+      minimum_complete_wfa_windows: 3
+      minimum_wfa_oos_trades: 50
+      minimum_acceptance_oos_trades: 30
+      minimum_mar: 0.4
+      maximum_drawdown_fraction: 0.2
+      minimum_monte_carlo_runs: 8000
+      minimum_monte_carlo_horizon_months: 6
+      minimum_net_profit_probability: 0.7
+      maximum_account_breach_probability: 0.1
+      minimum_forward_incubation_calendar_days: 90
+      minimum_forward_incubation_trades: 30
+      maximum_variants: 5

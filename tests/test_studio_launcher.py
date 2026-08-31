@@ -6,11 +6,24 @@ from pathlib import Path
 import shutil
 import signal
 import socket
+import subprocess
+import sys
 import time
+from types import SimpleNamespace
 from urllib.request import urlopen
 
 from alphaquest.cli import _parser
-from alphaquest.studio.launcher import start_studio, stop_studio, studio_status
+from alphaquest.studio.launcher import (
+    _pid_matches_studio,
+    _pid_matches_worker,
+    start_studio,
+    stop_studio,
+    studio_status,
+)
+from alphaquest.studio.process_ownership import (
+    process_group_members,
+    register_process_group,
+)
 
 
 def _free_port() -> int:
@@ -29,11 +42,43 @@ def _web_assets(root: Path) -> Path:
     return assets
 
 
+def test_process_ownership_checks_request_untruncated_command_lines(monkeypatch) -> None:
+    commands: list[list[str]] = []
+    outputs = iter(
+        (
+            "/very/long/python/path -m alphaquest.cli studio worker --project-root /tmp/project",
+            "/very/long/python/path -m streamlit run /tmp/project/apps/research_studio.py",
+        )
+    )
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        return SimpleNamespace(stdout=next(outputs))
+
+    monkeypatch.setattr("alphaquest.studio.launcher._pid_exists", lambda _pid: True)
+    monkeypatch.setattr("alphaquest.studio.launcher.subprocess.run", run)
+
+    assert _pid_matches_worker(101) is True
+    assert _pid_matches_studio(
+        102,
+        "/tmp/project/apps/research_studio.py",
+        "legacy-streamlit",
+    ) is True
+    assert commands == [
+        ["ps", "-ww", "-p", "101", "-o", "command="],
+        ["ps", "-ww", "-p", "102", "-o", "command="],
+    ]
+
+
 def test_background_launcher_starts_ui_and_durable_worker_then_stops(
     tmp_path: Path,
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("ALPHAQUEST_STUDIO_ASSETS_DIR", str(_web_assets(tmp_path)))
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+    monkeypatch.setenv("NO_PROXY", "")
+    monkeypatch.setenv("no_proxy", "")
     port = _free_port()
 
     try:
@@ -50,6 +95,10 @@ def test_background_launcher_starts_ui_and_durable_worker_then_stops(
         assert started["ui_runtime"] == "react-fastapi"
         assert started["url"] == f"http://127.0.0.1:{port}"
         assert studio_status(project_root=tmp_path)["healthy"] is True
+        monkeypatch.delenv("HTTP_PROXY")
+        monkeypatch.delenv("http_proxy")
+        monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+        monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
         with urlopen(f"http://127.0.0.1:{port}/healthz", timeout=2) as response:
             health = json.load(response)
         assert health == {
@@ -62,6 +111,32 @@ def test_background_launcher_starts_ui_and_durable_worker_then_stops(
 
     assert stopped["running"] is False
     assert stopped["worker_running"] is False
+
+
+def test_stop_studio_terminates_registered_job_process_groups(tmp_path: Path) -> None:
+    process = subprocess.Popen(
+        [sys.executable, "-c", "import time; time.sleep(60)"],
+        start_new_session=True,
+    )
+    process_group_id = os.getpgid(process.pid)
+    register_process_group(
+        tmp_path,
+        job_id="owned-campaign",
+        leader_pid=process.pid,
+        process_group_id=process_group_id,
+        owner_pid=os.getpid(),
+        command=[sys.executable, "-c", "import time; time.sleep(60)"],
+    )
+    try:
+        stopped = stop_studio(project_root=tmp_path, timeout_seconds=1.0)
+        process.wait(timeout=3.0)
+
+        assert stopped["running"] is False
+        assert process_group_members(process_group_id) == []
+    finally:
+        if process.poll() is None:
+            os.killpg(process_group_id, signal.SIGKILL)
+            process.wait(timeout=3.0)
 
 
 def test_restart_replaces_orphan_worker_instead_of_launching_a_second_one(

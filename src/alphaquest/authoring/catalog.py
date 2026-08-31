@@ -76,9 +76,7 @@ class CertifiedModuleCatalog:
 
     def all(self, module_type: ModuleType | None = None) -> tuple[ModuleManifestV1, ...]:
         values = [
-            manifest
-            for (kind, _), manifest in self._manifests.items()
-            if module_type is None or kind == module_type
+            manifest for (kind, _), manifest in self._manifests.items() if module_type is None or kind == module_type
         ]
         return tuple(sorted(values, key=lambda item: (item.module_type, item.name)))
 
@@ -110,9 +108,7 @@ class CertifiedModuleCatalog:
             certified = set(dataset.certified_features) if dataset is not None else set()
             supplied_certified = set(normalized.get("certified_features") or [])
             if supplied_certified and supplied_certified != certified:
-                raise ModuleCatalogError(
-                    "safe-rule certified_features must come from the selected dataset manifest"
-                )
+                raise ModuleCatalogError("safe-rule certified_features must come from the selected dataset manifest")
             normalized["certified_features"] = sorted(certified)
             rule = validate_bar_rule(normalized["rule"], certified_features=certified)
             normalized["rule"] = rule.model_dump(mode="json", by_alias=True)
@@ -124,11 +120,7 @@ class CertifiedModuleCatalog:
             for name, definition in declared.items():
                 values.setdefault(name, definition.default)
             normalized["tunable_values"] = values
-            grid_names = {
-                name.split(".", 1)[1]
-                for name in parsed.parameter_grid
-                if name.startswith("tunable_values.")
-            }
+            grid_names = {name.split(".", 1)[1] for name in parsed.parameter_grid if name.startswith("tunable_values.")}
             if grid_names != set(declared):
                 missing = sorted(set(declared) - grid_names)
                 extra = sorted(grid_names - set(declared))
@@ -149,7 +141,9 @@ class CertifiedModuleCatalog:
         for name, values in parsed.parameter_grid.items():
             if parsed.module == "safe_bar_rule" and name.startswith("tunable_values."):
                 tunable_name = name.split(".", 1)[1]
-                rule = validate_bar_rule(normalized["rule"], certified_features=set(dataset.certified_features) if dataset else set())
+                rule = validate_bar_rule(
+                    normalized["rule"], certified_features=set(dataset.certified_features) if dataset else set()
+                )
                 definitions = {item.name: item for item in rule.tunables}
                 if tunable_name not in definitions:
                     raise ModuleCatalogError(f"safe rule does not declare tunable {tunable_name!r}")
@@ -224,10 +218,15 @@ def _manifest(
 CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
     [
         ModuleManifestV1(
-            name="yush_orderflow_range",
+            name="yush_adaptive_orderflow_range_v4",
             module_type="entry",
             certification_status="certified",
-            summary="Causal trade-event AOI, tap, reversal, and order-flow trigger state machine.",
+            summary=(
+                "Causal market/order-flow value-edge AOI, ordered sweep, separate "
+                "post-sweep large-execution or developing three-minute/four-tick "
+                "delta-imprint confirmation, reclaim stop entry, and frozen range "
+                "scale-out."
+            ),
             decision_timing="intrabar_or_event",
             required_columns=[
                 "timestamp",
@@ -241,7 +240,7 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
             parameters={
                 "mechanics": _parameter(
                     "object",
-                    "Complete frozen mechanics mapping for the certified Yush event strategy.",
+                    "Complete frozen mechanics mapping for the certified Yush v04 reversal strategy.",
                     required=True,
                 )
             },
@@ -249,19 +248,19 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
             next_bar_entry=False,
         ),
         ModuleManifestV1(
-            name="event_aoi_structural_stop",
+            name="event_fill_time_sweep_to_entry_extreme_stop",
             module_type="sl",
             certification_status="certified",
-            summary="Use the event strategy's frozen AOI boundary, minimum breathing room, and risk cap.",
+            summary="Resolve the protective stop from the sweep-to-fill path on the causal fill event.",
             decision_timing="entry_price",
             parameters={},
             max_tunable_parameters=0,
         ),
         ModuleManifestV1(
-            name="event_value_area_management",
+            name="event_frozen_midpoint_two_ticks_outside_opposite_value_area_scale_out",
             module_type="tp",
             certification_status="certified",
-            summary="Activate protected profit at the frozen midpoint and target the opposite value edge.",
+            summary="Exit half at the causally frozen value midpoint and the remainder two ticks outside the opposite value-area edge.",
             decision_timing="post_entry",
             parameters={},
             max_tunable_parameters=0,
@@ -289,7 +288,9 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
                 "bar_interval_minutes": _parameter("number", "Bar duration in minutes.", default=1.0, minimum=0.01),
                 "max_trades_per_day": _parameter("integer", "Maximum entries per session.", default=1, minimum=1),
                 "weekday_directions": _parameter("object", "Monday-zero weekday to long/short mapping.", required=True),
-                "setup_mode": _parameter("string", "Report label for the frozen setup.", default="weekday_session_bias"),
+                "setup_mode": _parameter(
+                    "string", "Report label for the frozen setup.", default="weekday_session_bias"
+                ),
             },
             required_columns=["timestamp", "session_date", "is_rth", "open", "high", "low", "close"],
             max_tunables=2,
@@ -330,7 +331,9 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
                     default="close_to_close_trend",
                     choices=["close_to_close_trend", "volatility_normalized_trend", "short_term_alignment"],
                 ),
-                "rth_end": _parameter("string", "Time at which a completed daily close is recorded.", default="16:00:00"),
+                "rth_end": _parameter(
+                    "string", "Time at which a completed daily close is recorded.", default="16:00:00"
+                ),
                 "signal_time": _parameter("string", "Completed-bar signal time.", default="10:00:00"),
                 "bar_interval_minutes": _parameter("number", "Bar duration in minutes.", default=1.0, minimum=0.01),
                 "lookback_sessions": _parameter(
@@ -357,7 +360,9 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
             "sl",
             "Place the stop a fixed number of points from actual entry price.",
             {
-                "stop_points": _parameter("number", "Positive stop distance in points.", default=1.0, minimum=0.000001, tunable=True),
+                "stop_points": _parameter(
+                    "number", "Positive stop distance in points.", default=1.0, minimum=0.000001, tunable=True
+                ),
                 "round_to_tick": _parameter("boolean", "Round away from entry to a legal tick.", default=True),
             },
             max_tunables=1,
@@ -367,7 +372,13 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
             "sl",
             "Place the stop a fixed percentage from actual entry price.",
             {
-                "stop_pct": _parameter("number", "Positive stop distance as a decimal fraction.", default=0.002, minimum=0.000001, tunable=True),
+                "stop_pct": _parameter(
+                    "number",
+                    "Positive stop distance as a decimal fraction.",
+                    default=0.002,
+                    minimum=0.000001,
+                    tunable=True,
+                ),
                 "round_to_tick": _parameter("boolean", "Round away from entry to a legal tick.", default=True),
             },
             max_tunables=1,
@@ -390,7 +401,9 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
             "tp",
             "Place the target at a fixed multiple of initial stop risk.",
             {
-                "target_r_multiple": _parameter("number", "Reward-to-risk multiple.", default=1.5, minimum=1.0, tunable=True),
+                "target_r_multiple": _parameter(
+                    "number", "Reward-to-risk multiple.", default=1.5, minimum=1.0, tunable=True
+                ),
             },
             max_tunables=1,
         ),
@@ -399,10 +412,14 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
             "tp",
             "Place the target at a cost-adjusted multiple of initial stop risk.",
             {
-                "target_r_multiple": _parameter("number", "After-cost reward-to-risk multiple.", default=1.0, minimum=1.0, tunable=True),
+                "target_r_multiple": _parameter(
+                    "number", "After-cost reward-to-risk multiple.", default=1.0, minimum=1.0, tunable=True
+                ),
                 "tick_size": _parameter("number", "Instrument tick size.", default=0.25, minimum=0.000001),
                 "tick_value": _parameter("number", "Instrument tick value.", default=12.5, minimum=0.000001),
-                "commission_per_contract": _parameter("number", "One-way commission per contract.", default=0.0, minimum=0.0),
+                "commission_per_contract": _parameter(
+                    "number", "One-way commission per contract.", default=0.0, minimum=0.0
+                ),
                 "slippage_ticks": _parameter("number", "One-way slippage in ticks.", default=0.0, minimum=0.0),
                 "round_to_tick": _parameter("boolean", "Round target to a legal tick.", default=True),
             },
@@ -436,9 +453,7 @@ def _validate_parameter(name: str, value: Any, spec: ParameterSpecV1) -> None:
 
 
 def _same_typed_values(left: list[Any], right: list[Any]) -> bool:
-    return len(left) == len(right) and all(
-        type(a) is type(b) and a == b for a, b in zip(left, right)
-    )
+    return len(left) == len(right) and all(type(a) is type(b) and a == b for a, b in zip(left, right))
 
 
 def _registered_module_class(module_type: ModuleType, name: str) -> type | None:

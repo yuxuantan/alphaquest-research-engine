@@ -1,0 +1,119 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260813t131027_2c171063",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "cc861ca9a5db7a8fec401a911f633d18ba4d992c93166e389639dc7b16c09463",
+        "implementation_version": 6,
+        "manifest_sha256": "966ec4856e2de3d5b4c551192e84f9e82b84fe6631b634cdd53cc2182a374f9f",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "2d55c8a576ac5856165d2a2e345840035846842fe56b3e2ec8d1c9daa2b4766a",
+        "implementation_version": 5,
+        "manifest_sha256": "ee2c15cc6f16ffad1782a80f5c6317e898495bfa3add048643e7222df8746e00",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "field": "migrated_fixed_certified_defaults",
+      "new": {
+        "big_trade_context_path": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q999_prior20_context.parquet",
+        "big_trade_context_sha256": "e5a4ceafa83dad1f663bb277ae5f5b7d99183e4ea16d0f07cd12b9bd49e610fa",
+        "big_trade_reference_percentile": 0.999,
+        "price_bin_ticks": 1
+      },
+      "old": {
+        "big_trade_context_path": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q995_prior20_context.parquet",
+        "big_trade_context_sha256": "139f53eea8b3808390c891831c659ba8d9e5c659e8ae9b7ea17644d8fa481ca6",
+        "big_trade_reference_percentile": 0.995,
+        "price_bin_ticks": 4
+      },
+      "reviewed": true,
+      "scope": "strategy.event.params",
+      "variant_id": "v03"
+    },
+    {
+      "field": "price_bin_ticks",
+      "new": 1,
+      "old": 4,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "big_trade_reference_percentile",
+      "new": 0.999,
+      "old": 0.995,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "burst_freshness_bars",
+      "new": 2,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "big_trade_context_path",
+      "new": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q999_prior20_context.parquet",
+      "old": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q995_prior20_context.parquet",
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "big_trade_context_sha256",
+      "new": "e5a4ceafa83dad1f663bb277ae5f5b7d99183e4ea16d0f07cd12b9bd49e610fa",
+      "old": "139f53eea8b3808390c891831c659ba8d9e5c659e8ae9b7ea17644d8fa481ca6",
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "80c9a8a748790eb5804650cc46fc870d30a9b87c877723381d9a75e13ce2a10f"
+  },
+  "created_at": "2026-08-13T13:10:27.821884+00:00",
+  "created_by": "Codex at user direction",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260813t131027_2c171063",
+  "parent_attempt_id": "replication_20260813t062833_f97fab79",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Pre-PnL v03 mechanics correction authorized by the researcher: use one-tick MotiveWave Standard profile rows and require a prior-20-session q99.9 100 ms aggressive-volume cell with direction-matched outward location and at most six minutes of freshness; start the independent AOI lifetime when it arms.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "994bf427c9dc99e906f0dcd984a27e44167b53579a780789461fd0a6c5f039a5"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "418113b8e8fa2fe7c841ba0abbda832e213547fc0f36a2fa1bedb68bb6b9d437"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

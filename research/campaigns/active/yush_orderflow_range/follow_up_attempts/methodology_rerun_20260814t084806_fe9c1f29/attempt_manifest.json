@@ -1,0 +1,180 @@
+{
+  "attempt_id": "methodology_rerun_20260814t084806_fe9c1f29",
+  "attempt_kind": "methodology_rerun",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "research_policy",
+      "new": {
+        "acceptance_stage": "acceptance_oos_test",
+        "hash": "c229093d88669e043d2d0de63fdd2832358f71c0f5b174b17c582c4ef2441f9f",
+        "methodology": {
+          "acceptance_oos": {
+            "test_months": 6,
+            "train_months": 24
+          },
+          "core_grid": {
+            "objective": "MAR",
+            "retain_iteration_reports": false
+          },
+          "mechanics_validation": {
+            "manual_review_random_sample_size": 5,
+            "manual_review_seed": 7,
+            "minimum_trade_samples": 5,
+            "parameter_mode": "declared_defaults",
+            "selection_mode": "latest_eligible_sessions",
+            "session_count": 10
+          },
+          "monkey": {
+            "constraints": {
+              "average_bars_tolerance_pct": 0.1,
+              "duration_shape": 0.7,
+              "enforce_non_overlapping": true,
+              "long_short_ratio_tolerance": 0.05,
+              "rth_only": true,
+              "trade_count_tolerance_pct": 0.05
+            },
+            "retain_iteration_reports": false,
+            "seed": 7
+          },
+          "objective_floors": {
+            "maximum_account_breach_probability": 0.1,
+            "maximum_drawdown_fraction": 0.2,
+            "maximum_variants": 5,
+            "minimum_acceptance_oos_trades": 30,
+            "minimum_complete_wfa_windows": 3,
+            "minimum_evaluation_horizon_months": 12,
+            "minimum_forward_incubation_calendar_days": 90,
+            "minimum_forward_incubation_trades": 30,
+            "minimum_mar": 0.4,
+            "minimum_monte_carlo_horizon_months": 6,
+            "minimum_monte_carlo_runs": 8000,
+            "minimum_net_profit_probability": 0.7,
+            "minimum_wfa_oos_trades": 50
+          },
+          "shortlist_data_window": {
+            "avoid_last_fraction": 0.1,
+            "avoid_ranges": [
+              {
+                "end_date": "2021-06-30",
+                "start_date": "2020-02-01"
+              }
+            ],
+            "fraction": 0.1,
+            "mode": "random_fraction",
+            "seed": 31
+          },
+          "simulated_incubation": {
+            "test_months": 12,
+            "train_months": 48
+          },
+          "walk_forward_analysis": {
+            "early_exit_min_train_profit_factor": 1.0,
+            "mode": "unanchored",
+            "objective": "MAR",
+            "selection_exclusive_min_trades_per_year": 50,
+            "step_months": 12,
+            "test_months": 12,
+            "train_months": 48
+          },
+          "wfa_data_window": {
+            "mode": "before_sequential_holdouts"
+          },
+          "wfa_oos_monte_carlo": {
+            "cluster_losses": true,
+            "path_months": 6,
+            "retain_path_events": false,
+            "retain_path_trades": false,
+            "runs": 8000,
+            "seed": 11,
+            "skip_trade_probability": 0.05
+          }
+        },
+        "path": "config/research_settings.yaml",
+        "stage_order": [
+          "limited_core_grid_test",
+          "limited_monkey_test",
+          "walk_forward_analysis",
+          "wfa_oos_monkey_test",
+          "wfa_oos_monte_carlo",
+          "simulated_incubation_core",
+          "simulated_incubation_monkey",
+          "acceptance_oos_test"
+        ],
+        "version": "2026-08-14.1"
+      },
+      "old": {},
+      "reviewed": true,
+      "scope": "repository_methodology",
+      "variant_id": "v03"
+    },
+    {
+      "field": "data_subset",
+      "new": {
+        "end_date": "2026-05-29",
+        "start_date": "2026-05-14"
+      },
+      "old": {
+        "end_date": "2020-02-24",
+        "start_date": "2019-05-06"
+      },
+      "reviewed": true,
+      "scope": "research_metadata.validation_gate",
+      "variant_id": "v03"
+    },
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "099beb76ba35e3248f35859ee82037df25424f462c7b1721b37a3bb093c17a4c",
+        "implementation_version": 11,
+        "manifest_sha256": "0ac7d8035ff33b5b5f52ad8d999fef5562e721b4c481aadad656d77174b44efa",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "dea1247b2e8dc00742db8560849e9d20483aa38f49b1c1c7d65e32454aee76e2",
+        "implementation_version": 9,
+        "manifest_sha256": "906e21b499051e0213b21ba859c8f7e7426de1f7a8b74797f6dd7e01702c9e00",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "85a01399285db5a6838c10b27b703bae80f3a803af3d3cd7ff54774aee7daf41"
+  },
+  "created_at": "2026-08-14T08:48:06.982889+00:00",
+  "created_by": "codex",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/methodology_rerun_20260814t084806_fe9c1f29",
+  "parent_attempt_id": "methodology_rerun_20260813t140112_9c4dd0a8",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Replace the obsolete 200-session 2019-2020 mechanics-review window with the repository-owned latest 10 eligible 2026 sessions, and bind the already-tested v03 certification v11; preserve strategy mechanics, parameters, data, execution rules, and historical evidence.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "5b0047a57713a0d8b6e5482559d5bb1afae625d8b12ad9e1cdc971977d00cf98"
+  },
+  "target_variant_id": null,
+  "variant_mechanic_signatures": {
+    "v03": "418113b8e8fa2fe7c841ba0abbda832e213547fc0f36a2fa1bedb68bb6b9d437"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

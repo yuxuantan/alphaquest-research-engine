@@ -7,6 +7,7 @@ from alphaquest.data.pipeline import prepare_data
 from alphaquest.data.source import data_source_hash
 from alphaquest.data.subset import subset_from_config
 from alphaquest.research.wfa import run_wfa
+from alphaquest.research.storage import project_root_for_path
 from alphaquest.utils.config import config_timeframe, create_run_dir, load_yaml, record_campaign_result, validation_dir, write_json
 from alphaquest.utils.reports import market_timezone, write_report_csv
 
@@ -38,7 +39,11 @@ def main() -> None:
         show_progress=True,
     )
     print(f"Prepared {len(data):,} bars. Starting walk-forward analysis...", flush=True)
-    input_hash = data_source_hash(campaign["data"], subset)
+    input_hash = data_source_hash(
+        campaign["data"],
+        subset,
+        project_root=project_root_for_path(args.config),
+    )
     results, summary, trades = run_wfa(
         data,
         campaign,

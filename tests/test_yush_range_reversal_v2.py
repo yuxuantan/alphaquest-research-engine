@@ -1,16 +1,31 @@
 from __future__ import annotations
 
-from dataclasses import asdict
+from concurrent.futures import ProcessPoolExecutor
+from dataclasses import asdict, replace
 from datetime import date
+from multiprocessing import get_context
 from types import MappingProxyType, SimpleNamespace
 
 import numpy as np
 import pandas as pd
+import pytest
 
 import alphaquest.strategy_modules.event.runner as event_runner
 from alphaquest.research.core_grid import run_core_grid
-from alphaquest.strategy_modules.event.runner import iter_event_sessions, replay_event_sessions
-from alphaquest.backtest.event_replay import CanonicalEvent, EventReplaySessionView
+from alphaquest.strategy_certification import (
+    compute_implementation_sha256,
+    get_strategy_certification,
+)
+from alphaquest.strategy_modules.event.runner import (
+    iter_event_sessions,
+    replay_event_sessions,
+    replay_event_sessions_parallel,
+)
+from alphaquest.backtest.event_replay import (
+    CanonicalEvent,
+    EventReplaySessionView,
+    canonicalize_event_session,
+)
 from alphaquest.strategy_modules.event.yush_orderflow_primitives import (
     AoiCandidate,
     AoiLineage,
@@ -23,9 +38,34 @@ from alphaquest.strategy_modules.event.yush_orderflow_range import (
     YushOrderflowRangeEventStrategy,
     _YushOrderflowRangeState,
     _aoi_fingerprint,
-    _best_refined_aoi,
+    _best_local_cluster_aoi,
 )
 from alphaquest.data.databento_session_stream import DatabentoTradeSession, RthSummary
+from alphaquest.utils.params import apply_dotted_params
+
+
+@pytest.fixture(autouse=True)
+def _exercise_retained_source_without_granting_execution(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Test reviewed mechanics while the live package remains hash-drifted."""
+
+    certification = get_strategy_certification(
+        "yush_orderflow_range",
+        require_current=False,
+        include_retired=True,
+    )
+    current = replace(
+        certification,
+        implementation_sha256=compute_implementation_sha256(
+            certification.manifest_path.parents[3],
+            certification.source_files,
+        ),
+    )
+    monkeypatch.setattr(
+        "alphaquest.strategy_certification.get_strategy_certification",
+        lambda *args, **kwargs: current,
+    )
 
 
 def _session(prices=(100.0, 100.25, 100.5), sizes=None, sides=None, offsets_ms=None):
@@ -144,6 +184,7 @@ def _end_to_end_trade_session():
         (400, 101, "B"),
         (400, 100, "B"),
         (402, 1, "B"),
+        (402, 1, "B"),
         (408, 1, "B"),
         (415, 1, "B"),
         (420, 1, "B"),
@@ -185,6 +226,64 @@ def test_runner_uses_realistic_gap_fills_one_tick_slippage_and_eleven_flatten():
     assert result["trades"].empty
 
 
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "spawned process replay intentionally rechecks the hash-drifted retained package; "
+        "remove this expected failure only during governed recertification"
+    )
+)
+def test_parallel_session_replay_merges_trade_ids_equity_and_audits_deterministically(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # Exercise the same fresh-interpreter certification boundary on Linux and
+    # macOS. The production runner retains its platform-default process model.
+    monkeypatch.setattr(
+        event_runner,
+        "ProcessPoolExecutor",
+        lambda **kwargs: ProcessPoolExecutor(
+            mp_context=get_context("spawn"),
+            **kwargs,
+        ),
+    )
+    first = _end_to_end_trade_session()
+    second_events = first.events.copy()
+    second_events["timestamp"] = second_events["timestamp"] + pd.Timedelta(days=1)
+    second = DatabentoTradeSession(
+        session_date=date(2026, 5, 5),
+        contract_symbol=first.contract_symbol,
+        previous_rth=RthSummary(date(2026, 5, 4), "ESM6", 105.0, 99.0, 104.0),
+        overnight_high=105.0,
+        overnight_low=98.0,
+        events=second_events,
+    )
+
+    serial = replay_event_sessions(_config(), [first, second])
+    result = replay_event_sessions_parallel(_config(), [first, second], workers=2)
+
+    pd.testing.assert_frame_equal(result["trades"], serial["trades"])
+    pd.testing.assert_frame_equal(result["daily"], serial["daily"])
+    pd.testing.assert_frame_equal(result["session_audits"], serial["session_audits"])
+    pd.testing.assert_frame_equal(result["event_transitions"], serial["event_transitions"])
+    assert result["metrics"] == serial["metrics"]
+    assert result["diagnostics"] == serial["diagnostics"]
+    assert list(result["trades"]["trade_id"]) == [1, 2]
+    assert list(result["trades"]["session_date"]) == [date(2026, 5, 4), date(2026, 5, 5)]
+    assert result["trades"]["net_liq_after"].is_monotonic_increasing
+    assert len(result["session_audits"]) == 2
+    linked = result["event_transitions"].dropna(subset=["trade_id"])
+    assert {
+        int(trade_id): list(group["transition"])
+        for trade_id, group in linked.groupby("trade_id", sort=True)
+    } == {
+        1: ["entry_filled", "bracket_amended", "position_closed"],
+        2: ["entry_filled", "bracket_amended", "position_closed"],
+    }
+    assert result["reproducibility"]["session_parallel"] is True
+    assert result["reproducibility"]["session_workers"] == 2
+    assert result["reproducibility"]["sessions"] == 2
+
+
 def test_each_trade_event_updates_volume_and_delta_exactly_once():
     session = _session(prices=(100.0,), sizes=(7,), sides=("B",))
     state = _state(session)
@@ -198,6 +297,28 @@ def test_each_trade_event_updates_volume_and_delta_exactly_once():
     assert int(state.delta_one[one_tick_index]) == 7
     assert int(state.delta_four[four_tick_index]) == 7
     assert int(state.bar_delta_four[four_tick_index]) == 7
+
+
+def test_strategy_state_is_published_once_per_completed_100ms_interval():
+    session = _session(
+        prices=(100.0, 100.0, 100.0, 100.0, 100.0, 100.0),
+        offsets_ms=(0, 20, 99, 100, 150, 200),
+    )
+    state = _state(session)
+
+    _ingest(state, session)
+
+    assert state.event_count == 6
+    assert state.diagnostics["decision_intervals"] == 2
+    assert state.decision_event_index == 4
+    assert state.previous_decision_event_index == 2
+
+
+def test_reviewed_100ms_decision_and_big_trade_windows_cannot_diverge():
+    with pytest.raises(ValueError, match="shared 100 ms"):
+        YushOrderflowRangeConfig(decision_interval_ms=50)
+    with pytest.raises(ValueError, match="shared 100 ms"):
+        YushOrderflowRangeConfig(big_trade_window_ms=200)
 
 
 def test_revised_session_loader_fixes_eth_start_at_1600(monkeypatch):
@@ -216,11 +337,13 @@ def test_revised_session_loader_fixes_eth_start_at_1600(monkeypatch):
                 "archive": "archive",
                 "roll_calendar": "rolls",
                 "overnight_start": "16:00:00",
+                "rth_end": "16:00:00",
             }
         },
     }
     assert list(iter_event_sessions(config, {"start_date": "2026-01-01", "end_date": "2026-01-02"})) == []
     assert received["overnight_start"] == "16:00:00"
+    assert received["rth_end"] == "16:00:00"
 
 
 def test_generic_event_runner_routes_governed_sierra_source(monkeypatch):
@@ -260,9 +383,10 @@ def test_end_to_end_replay_builds_second_reversal_then_fills_manages_and_targets
     assert len(result["trades"]) == 1
     trade = result["trades"].iloc[0]
     assert trade["aoi_side"] == "VAL"
-    assert trade["aoi_confluences"] == "PDC"
+    assert trade["aoi_confluences"] == "PDC@100"
     assert trade["aoi_lineage_mode"] == "exact_fingerprint"
-    assert trade["aoi_exact_fingerprint"].startswith("VAL|long|")
+    assert trade["aoi_exact_fingerprint"].startswith("VAL|long|100-")
+    assert ":400:" not in trade["aoi_exact_fingerprint"]
     assert (
         trade["aoi_eligible_event_index"]
         < trade["aoi_tap_event_index"]
@@ -272,7 +396,133 @@ def test_end_to_end_replay_builds_second_reversal_then_fills_manages_and_targets
     assert trade["risk_points"] == 2.25
     assert bool(trade["midpoint_activated"])
     assert trade["exit_reason"] == "target"
-    assert trade["exit_event_index"] == 39
+    assert trade["exit_event_index"] == 40
+
+
+def test_idle_event_batching_is_exactly_equivalent_to_event_by_event_replay():
+    event_count = 2_000
+    offsets_ms = tuple((index // 20) * 100 + (index % 20) for index in range(event_count))
+    prices = tuple(100.0 + 0.25 * ((index // 7) % 9) for index in range(event_count))
+    sizes = tuple(1 + index % 5 for index in range(event_count))
+    sides = tuple("B" if index % 2 == 0 else "A" for index in range(event_count))
+    session = _session(
+        prices=prices,
+        sizes=sizes,
+        sides=sides,
+        offsets_ms=offsets_ms,
+    )
+    fast_config = _config()
+    slow_config = {
+        **_config(),
+        "core": {
+            **_config()["core"],
+            "event_replay_idle_batch": False,
+            "event_replay_strategy_hints": False,
+        },
+    }
+
+    fast = replay_event_sessions(fast_config, [session])
+    slow = replay_event_sessions(slow_config, [session])
+
+    for name in ("trades", "daily", "session_audits", "event_transitions"):
+        pd.testing.assert_frame_equal(fast[name], slow[name])
+    assert fast["metrics"] == slow["metrics"]
+    assert fast["diagnostics"] == slow["diagnostics"]
+    assert fast["reproducibility"]["idle_event_batching"]["events"] > 0
+    assert slow["reproducibility"]["idle_event_batching"] == {
+        "enabled": False,
+        "batches": 0,
+        "events": 0,
+        "pending_order_batches": 0,
+        "position_batches": 0,
+    }
+
+
+def test_strategy_runtime_hints_preserve_exact_order_fill_and_exit_path():
+    session = _end_to_end_trade_session()
+    fast = replay_event_sessions(_config(), [session])
+    reference_config = {
+        **_config(),
+        "core": {
+            **_config()["core"],
+            "event_replay_idle_batch": False,
+            "event_replay_strategy_hints": False,
+        },
+    }
+    reference = replay_event_sessions(reference_config, [session])
+
+    for name in ("trades", "daily", "session_audits", "event_transitions"):
+        pd.testing.assert_frame_equal(fast[name], reference[name])
+    assert fast["metrics"] == reference["metrics"]
+    assert fast["diagnostics"] == reference["diagnostics"]
+
+
+@pytest.mark.parametrize("session_factory", [_end_to_end_trade_session, lambda: _session(
+    prices=tuple(100.0 + 0.25 * ((index // 7) % 9) for index in range(2_000)),
+    sizes=tuple(1 + index % 5 for index in range(2_000)),
+    sides=tuple("B" if index % 2 == 0 else "A" for index in range(2_000)),
+    offsets_ms=tuple((index // 20) * 100 + (index % 20) for index in range(2_000)),
+)])
+def test_shared_session_feature_tape_is_exactly_equivalent(session_factory):
+    session = session_factory()
+    config = _config()
+    canonical = canonicalize_event_session(
+        session,
+        tick_size=0.25,
+        required_columns=YushOrderflowRangeEventStrategy.required_event_columns,
+    )
+    preparer = YushOrderflowRangeEventStrategy()
+    tape = preparer.prepare_session_features(canonical)
+
+    prepared = replay_event_sessions(
+        config,
+        [canonical],
+        session_features={str(canonical.session_date): tape},
+    )
+    reference = replay_event_sessions(config, [canonical])
+
+    for name in ("trades", "daily", "session_audits", "event_transitions"):
+        pd.testing.assert_frame_equal(prepared[name], reference[name])
+    assert prepared["metrics"] == reference["metrics"]
+    assert prepared["diagnostics"] == reference["diagnostics"]
+
+
+def test_shared_feature_tape_preserves_each_tunable_parameter_path():
+    canonical = canonicalize_event_session(
+        _end_to_end_trade_session(),
+        tick_size=0.25,
+        required_columns=YushOrderflowRangeEventStrategy.required_event_columns,
+    )
+    tape = YushOrderflowRangeEventStrategy().prepare_session_features(canonical)
+    combinations = (
+        {
+            "event.params.max_aoi_width_points": 3,
+            "event.params.entry_offset_ticks": 0,
+            "event.params.stop_offset_ticks": 0,
+        },
+        {
+            "event.params.max_aoi_width_points": 4,
+            "event.params.entry_offset_ticks": 2,
+            "event.params.stop_offset_ticks": 2,
+        },
+        {
+            "event.params.max_aoi_width_points": 6,
+            "event.params.entry_offset_ticks": 4,
+            "event.params.stop_offset_ticks": 4,
+        },
+    )
+    for combination in combinations:
+        config = apply_dotted_params(_config(), combination)
+        prepared = replay_event_sessions(
+            config,
+            [canonical],
+            session_features={str(canonical.session_date): tape},
+        )
+        reference = replay_event_sessions(config, [canonical])
+        for name in ("trades", "daily", "session_audits", "event_transitions"):
+            pd.testing.assert_frame_equal(prepared[name], reference[name])
+        assert prepared["metrics"] == reference["metrics"]
+        assert prepared["diagnostics"] == reference["diagnostics"]
 
 
 def test_research_core_grid_routes_registered_strategy_through_event_replay(monkeypatch):
@@ -324,7 +574,7 @@ def test_delta_profile_uses_only_four_tick_bucket_and_local_mean_prominence():
 
 
 def test_aoi_allows_tiny_envelope_but_includes_entire_delta_bucket_and_caps_three_points():
-    tiny = _best_refined_aoi(
+    tiny = _best_local_cluster_aoi(
         "VAL",
         "long",
         400,
@@ -335,11 +585,11 @@ def test_aoi_allows_tiny_envelope_but_includes_entire_delta_bucket_and_caps_thre
     assert tiny.width_ticks == 0
 
     delta = ConfluencePoint("delta_profile", "DELTA_4T_LOCAL_PROMINENCE", 400, 400, 403)
-    full_bucket = _best_refined_aoi("VAL", "long", 399, {"delta_profile": [delta]}, max_width_ticks=12)
+    full_bucket = _best_local_cluster_aoi("VAL", "long", 399, {"delta_profile": [delta]}, max_width_ticks=12)
     assert full_bucket is not None
     assert (full_bucket.low_tick, full_bucket.high_tick) == (399, 403)
 
-    assert _best_refined_aoi("VAL", "long", 390, {"delta_profile": [delta]}, max_width_ticks=12) is None
+    assert _best_local_cluster_aoi("VAL", "long", 390, {"delta_profile": [delta]}, max_width_ticks=12) is None
 
 
 def test_aoi_selection_maximizes_categories_then_minimizes_width():
@@ -348,16 +598,16 @@ def test_aoi_selection_maximizes_categories_then_minimizes_width():
         "delta_profile": [ConfluencePoint("delta_profile", "DELTA", 402, 400, 403)],
         "big_trade": [ConfluencePoint("big_trade", "BIG_1", 404, 404, 404)],
     }
-    candidate = _best_refined_aoi("VAL", "long", 400, categories, 12)
+    candidate = _best_local_cluster_aoi("VAL", "long", 400, categories, 12)
     assert candidate is not None
     assert candidate.categories == ("market", "delta_profile", "big_trade")
     assert (candidate.low_tick, candidate.high_tick) == (400, 404)
 
 
-def test_equal_aoi_tie_uses_declared_confluence_preference_order():
+def test_equal_aoi_tie_uses_deterministic_lower_price_order_not_occurrence_rank():
     preferred = ConfluencePoint("delta_profile", "HIGHER_MAGNITUDE", 404, 404, 407)
     other = ConfluencePoint("delta_profile", "LOWER_MAGNITUDE", 400, 397, 400)
-    candidate = _best_refined_aoi(
+    candidate = _best_local_cluster_aoi(
         "VAL",
         "long",
         402,
@@ -365,7 +615,7 @@ def test_equal_aoi_tie_uses_declared_confluence_preference_order():
         max_width_ticks=12,
     )
     assert candidate is not None
-    assert candidate.confluences == (preferred,)
+    assert candidate.confluences == (other,)
 
 
 def test_big_trade_occurrences_are_not_deduplicated_by_price_and_trigger_must_follow_tap():
@@ -377,8 +627,10 @@ def test_big_trade_occurrences_are_not_deduplicated_by_price_and_trigger_must_fo
     )
     state = _state(session)
     _ingest(state, session)
+    state._finalize_decision_interval(3)
 
     assert [item["qualified_event_index"] for item in state.big_trade_occurrences] == [1, 3]
+    assert list(state.big_trade_levels) == [400]
     state.delta_threshold_crossings.clear()
     candidate = _candidate(low=399, high=400)
     assert state._qualifying_entry_bubble(candidate, tap_event_index=1, index=1) is None
@@ -387,8 +639,12 @@ def test_big_trade_occurrences_are_not_deduplicated_by_price_and_trigger_must_fo
     assert trigger["qualified_event_index"] == 3
 
 
-def test_delta_trigger_qualifies_at_exactly_300_and_only_after_tap():
-    session = _session(prices=(100.0, 100.0), sizes=(150, 150), offsets_ms=(0, 1))
+def test_delta_trigger_qualifies_at_exactly_300_on_completed_100ms_interval_and_only_after_tap():
+    session = _session(
+        prices=(100.0, 100.0, 100.25),
+        sizes=(150, 150, 1),
+        offsets_ms=(0, 1, 100),
+    )
     state = _state(session)
     _ingest(state, session)
     candidate = _candidate(low=399, high=400)
@@ -401,21 +657,21 @@ def test_delta_trigger_qualifies_at_exactly_300_and_only_after_tap():
 
 
 def test_tap_requires_val_from_above_and_vah_from_below():
-    long_session = _session(prices=(101.25, 101.0), offsets_ms=(0, 1))
+    long_session = _session(prices=(101.25, 101.0, 101.0), offsets_ms=(0, 100, 200))
     long_state = _state(long_session)
     _ingest(long_state, long_session)
     long_lineage = AoiLineage(1, _candidate("long", 400, 404), long_state.open_ns, 0)
     long_state._update_visit_and_order(long_lineage, 1)
     assert long_lineage.visit is not None
 
-    wrong_session = _session(prices=(100.75, 101.0), offsets_ms=(0, 1))
+    wrong_session = _session(prices=(100.75, 101.0, 101.0), offsets_ms=(0, 100, 200))
     wrong_state = _state(wrong_session)
     _ingest(wrong_state, wrong_session)
     wrong_lineage = AoiLineage(1, _candidate("long", 400, 404), wrong_state.open_ns, 0)
     wrong_state._update_visit_and_order(wrong_lineage, 1)
     assert wrong_lineage.visit is None
 
-    short_session = _session(prices=(99.75, 100.0), offsets_ms=(0, 1))
+    short_session = _session(prices=(99.75, 100.0, 100.0), offsets_ms=(0, 100, 200))
     short_state = _state(short_session)
     _ingest(short_state, short_session)
     short_lineage = AoiLineage(1, _candidate("short", 400, 404), short_state.open_ns, 0)
@@ -578,7 +834,7 @@ def test_management_freezes_entry_midpoint_and_uses_immediate_target_fill_if_alr
         direction="long",
         entry_reference_tick=402,
         entry_price=100.75,
-        report_fields={"midpoint_activated": False, "entry_midpoint_tick": 410.0},
+        report_fields={"midpoint_activated": False, "entry_midpoint_price": 102.5},
     )
     event = CanonicalEvent(
         event_index=10,

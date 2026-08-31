@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { api } from "../api";
 import { Icon } from "../components/Icons";
 import { ResultArtifactEvidence } from "./CampaignPage";
@@ -16,12 +16,43 @@ import {
   humanize,
 } from "../components/UI";
 import type { ReviewTask } from "../types";
+import {
+  resolveFrozenSetup,
+  resolveMechanicsComparison,
+  resolveQualifyingFootprint,
+  resolveStrategyEvidencePanels,
+  type FrozenSetupSummary,
+  type MechanicsComparisonSection,
+  type QualifyingFootprintRoute,
+  type QualifyingFootprintSummary,
+} from "../strategyEvidence";
 
 type ReviewGroups = {
   items: ReviewTask[];
   mechanics: ReviewTask[];
   candidate: ReviewTask[];
 };
+
+export const REVIEW_QUEUE_HELP = {
+  mechanics:
+    "Manual trade-by-trade checks that the current attempt follows its frozen entry, exit, and risk rules. Completing this review can unlock performance testing; it does not judge profitability.",
+  candidate:
+    "Independent human sign-off after a strategy completes the research pipeline with PASS. It promotes a candidate for further incubation; it is not approval for live trading.",
+  items:
+    "Historical, stale, or incomplete records flagged by the research index for audit and reconciliation. Resolving them does not unblock the current campaign workflow.",
+} as const;
+
+export const MECHANICS_EVIDENCE_BADGE = "Hash-bound evidence";
+
+export function shouldShowSingleTargetFallback(
+  panels: Array<{ rows: Array<{ key: string }> }>,
+): boolean {
+  return !panels.some((panel) =>
+    panel.rows.some(
+      (row) => row.key === "target_1_price" || row.key === "target_2_price",
+    ),
+  );
+}
 
 export function mechanicsAnnotationFormState(detail: any): {
   status: string;
@@ -45,11 +76,16 @@ export function ReviewsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const requestedType = searchParams.get("type");
+  const requestedCampaign = searchParams.get("campaign");
+  const requestedAttempt = searchParams.get("attempt");
+  const requestedVariant = searchParams.get("variant");
+  const requestedTrade = searchParams.get("trade");
   const [type, setType] = useState<keyof ReviewGroups>(
     requestedType === "candidate" || requestedType === "items"
       ? requestedType
       : "mechanics",
   );
+  const [showMechanicsHistory, setShowMechanicsHistory] = useState(false);
   const [selected, setSelected] = useState(0);
   useEffect(() => {
     api
@@ -68,11 +104,63 @@ export function ReviewsPage() {
     if (requested === "mechanics" || requested === "candidate" || requested === "items")
       setType(requested);
   }, [searchParams]);
+  const currentMechanics = data.mechanics.filter(
+    (task: any) => task.is_current_workflow !== false,
+  );
+  const historicalMechanics = data.mechanics.filter(
+    (task: any) => task.is_current_workflow === false,
+  );
+  const list =
+    type === "mechanics"
+      ? showMechanicsHistory
+        ? historicalMechanics
+        : currentMechanics
+      : data[type];
+  useEffect(() => {
+    if (!requestedCampaign || !requestedVariant) return;
+    const currentIndex = currentMechanics.findIndex(
+      (task) =>
+        task.campaign_id === requestedCampaign &&
+        task.variant_id === requestedVariant &&
+        (!requestedAttempt ||
+          (task.attempt_id || "original") === requestedAttempt),
+    );
+    if (type === "mechanics" && currentIndex >= 0) {
+      setShowMechanicsHistory(false);
+      setSelected(currentIndex);
+      return;
+    }
+    const historyIndex = historicalMechanics.findIndex(
+      (task) =>
+        task.campaign_id === requestedCampaign &&
+        task.variant_id === requestedVariant &&
+        (!requestedAttempt ||
+          (task.attempt_id || "original") === requestedAttempt),
+    );
+    if (type === "mechanics" && historyIndex >= 0) {
+      setShowMechanicsHistory(true);
+      setSelected(historyIndex);
+      return;
+    }
+    const index = data[type].findIndex(
+      (task) =>
+        task.campaign_id === requestedCampaign &&
+        task.variant_id === requestedVariant,
+    );
+    if (index >= 0) setSelected(index);
+  }, [
+    data,
+    type,
+    requestedCampaign,
+    requestedAttempt,
+    requestedVariant,
+    currentMechanics.length,
+    historicalMechanics.length,
+  ]);
   function chooseType(value: keyof ReviewGroups) {
     setType(value);
     setSearchParams({ type: value }, { replace: true });
   }
-  const list = data[type];
   const item = list[selected] as any;
   return (
     <div className="page review-page">
@@ -85,8 +173,9 @@ export function ReviewsPage() {
         <QueueButton
           selected={type === "mechanics"}
           icon="review"
-          count={data.mechanics.length}
-          label="Mechanics reviews"
+          count={currentMechanics.length}
+          label="Current mechanics"
+          description={REVIEW_QUEUE_HELP.mechanics}
           onClick={() => chooseType("mechanics")}
         />
         <QueueButton
@@ -94,6 +183,7 @@ export function ReviewsPage() {
           icon="shield"
           count={data.candidate.length}
           label="Candidate sign-offs"
+          description={REVIEW_QUEUE_HELP.candidate}
           onClick={() => chooseType("candidate")}
         />
         <QueueButton
@@ -101,9 +191,34 @@ export function ReviewsPage() {
           icon="warning"
           count={data.items.length}
           label="Indexed attention"
+          description={REVIEW_QUEUE_HELP.items}
           onClick={() => chooseType("items")}
         />
       </div>
+      {type === "mechanics" && historicalMechanics.length > 0 && (
+        <div className="review-scope-switch" aria-label="Mechanics review scope">
+          <button
+            className={!showMechanicsHistory ? "selected" : ""}
+            aria-pressed={!showMechanicsHistory}
+            onClick={() => {
+              setShowMechanicsHistory(false);
+              setSelected(0);
+            }}
+          >
+            Current workflow ({currentMechanics.length})
+          </button>
+          <button
+            className={showMechanicsHistory ? "selected" : ""}
+            aria-pressed={showMechanicsHistory}
+            onClick={() => {
+              setShowMechanicsHistory(true);
+              setSelected(0);
+            }}
+          >
+            Historical unresolved ({historicalMechanics.length})
+          </button>
+        </div>
+      )}
       {error && <Notice tone="danger">{error}</Notice>}
       {loading ? (
         <Skeleton lines={8} />
@@ -143,7 +258,9 @@ export function ReviewsPage() {
                   </strong>
                   <small>
                     {task.variant_id && `${task.variant_id} · `}
-                    {task.attempt_id || humanize(task.verdict)}
+                    {task.attempt_label ||
+                      task.attempt_id ||
+                      humanize(task.verdict)}
                   </small>
                 </span>
                 <StatusBadge
@@ -169,8 +286,23 @@ export function ReviewsPage() {
                 </h2>
                 <p>
                   {item.variant_id && `${item.variant_id} · `}
-                  {item.attempt_id || item.run_id || "Governed evidence"}
+                  {item.attempt_label ||
+                    item.run_id ||
+                    "Governed immutable evidence"}
                 </p>
+                {item.attempt_id && (
+                  <ExactReviewIdentity attemptId={item.attempt_id} />
+                )}
+                {item.campaign_id && item.variant_id && (
+                  <Link
+                    className="inline-link"
+                    to={`/research/${item.campaign_id}/mechanics?attempt=${encodeURIComponent(
+                      item.attempt_id || "original",
+                    )}&variant=${encodeURIComponent(item.variant_id)}`}
+                  >
+                    View exact frozen variant mechanics →
+                  </Link>
+                )}
               </div>
               <StatusBadge
                 value={
@@ -198,6 +330,7 @@ export function ReviewsPage() {
             ) : type === "mechanics" ? (
               <MechanicsReview
                 item={item}
+                requestedTrade={requestedTrade}
                 onResolved={() =>
                   setData((current) => ({
                     ...current,
@@ -222,30 +355,50 @@ function QueueButton({
   icon,
   count,
   label,
+  description,
   onClick,
 }: {
   selected: boolean;
   icon: "review" | "shield" | "warning";
   count: number;
   label: string;
+  description: string;
   onClick: () => void;
 }) {
+  const helpId = `review-help-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   return (
-    <button className={selected ? "selected" : ""} onClick={onClick}>
-      <span>
-        <Icon name={icon} />
+    <div className={selected ? "review-queue-card selected" : "review-queue-card"}>
+      <button aria-pressed={selected} onClick={onClick}>
+        <span>
+          <Icon name={icon} />
+        </span>
+        <strong>{count}</strong>
+        <small>{label}</small>
+      </button>
+      <span
+        className="review-queue-info"
+        tabIndex={0}
+        role="img"
+        aria-label={`About ${label}`}
+        aria-describedby={helpId}
+      >
+        i
+        <span className="review-queue-tooltip" id={helpId} role="tooltip">
+          <strong>{label}</strong>
+          {description}
+        </span>
       </span>
-      <strong>{count}</strong>
-      <small>{label}</small>
-    </button>
+    </div>
   );
 }
 
 function MechanicsReview({
   item,
+  requestedTrade,
   onResolved,
 }: {
   item: any;
+  requestedTrade?: string | null;
   onResolved: () => void;
 }) {
   const [detail, setDetail] = useState<any>(item);
@@ -256,6 +409,11 @@ function MechanicsReview({
   const [decisionNotes, setDecisionNotes] = useState("");
   const [busy, setBusy] = useState("");
   const [feedback, setFeedback] = useState("");
+  const [chartFile, setChartFile] = useState<File | null>(null);
+  const [reconciliation, setReconciliation] = useState<any>(null);
+  const [reviewFilter, setReviewFilter] = useState<
+    "all" | "outstanding" | "attention"
+  >("outstanding");
   const identity = `${item.campaign_id}:${item.attempt_id || "original"}:${item.variant_id}`;
   useEffect(() => {
     api
@@ -267,14 +425,29 @@ function MechanicsReview({
   }, []);
   useEffect(() => {
     if (!item.campaign_id || !item.variant_id) return;
+    let cancelled = false;
     setFeedback("");
-    api
-      .mechanicsReview(
-        item.campaign_id,
-        item.attempt_id || "original",
-        item.variant_id,
-      )
-      .then((value) => {
+    async function loadEvidence() {
+      try {
+        const base = await api.mechanicsReview(
+          item.campaign_id,
+          item.attempt_id || "original",
+          item.variant_id,
+        );
+        if (cancelled) return;
+        const sampled = new Set(
+          (base.sampled_trade_ids || []).map((value: unknown) => String(value)),
+        );
+        const value =
+          requestedTrade && sampled.has(requestedTrade)
+            ? await api.mechanicsReview(
+                item.campaign_id,
+                item.attempt_id || "original",
+                item.variant_id,
+                requestedTrade,
+              )
+            : base;
+        if (cancelled) return;
         setDetail(value);
         setTrade(
           String(
@@ -286,15 +459,25 @@ function MechanicsReview({
         const form = mechanicsAnnotationFormState(value);
         setStatus(form.status);
         setNotes(form.notes);
-      })
-      .catch((reason) =>
+        if (requestedTrade && !sampled.has(requestedTrade)) {
+          setFeedback(
+            `Trade ${requestedTrade} is outside the deterministic mechanics sample; showing the first governed sample instead.`,
+          );
+        }
+      } catch (reason) {
+        if (cancelled) return;
         setFeedback(
           reason instanceof Error
             ? reason.message
             : "Evidence detail unavailable",
-        ),
-      );
-  }, [identity]);
+        );
+      }
+    }
+    void loadEvidence();
+    return () => {
+      cancelled = true;
+    };
+  }, [identity, requestedTrade]);
   async function selectTrade(value: string) {
     setTrade(value);
     setStatus("Correct");
@@ -331,6 +514,40 @@ function MechanicsReview({
         (detail.non_correct_trade_ids?.length || 0),
     );
   const progress = required ? Math.round((completed / required) * 100) : 0;
+  const sampledTradeIds: string[] = (detail.sampled_trade_ids || []).map(
+    (id: unknown) => String(id),
+  );
+  const selectedTradeIndex = Math.max(0, sampledTradeIds.indexOf(trade));
+  const previousTrade = sampledTradeIds[selectedTradeIndex - 1];
+  const nextTrade = sampledTradeIds[selectedTradeIndex + 1];
+  const unreviewedTradeIds = new Set(
+    (detail.unreviewed_trade_ids || []).map(String),
+  );
+  const attentionTradeIds = new Set(
+    (detail.non_correct_trade_ids || []).map(String),
+  );
+  const tradeReviewState = (id: string) =>
+    unreviewedTradeIds.has(id)
+      ? "unreviewed"
+      : attentionTradeIds.has(id)
+        ? "attention"
+        : "correct";
+  const tradeReviewLabel = (id: string) => {
+    const state = tradeReviewState(id);
+    if (state === "correct") return "Correct";
+    if (state === "attention") return "Needs attention";
+    return "Not reviewed";
+  };
+  const visibleTradeIds = sampledTradeIds.filter((id) => {
+    if (reviewFilter === "attention") return attentionTradeIds.has(id);
+    if (reviewFilter === "outstanding") {
+      return unreviewedTradeIds.has(id) || attentionTradeIds.has(id);
+    }
+    return true;
+  });
+  const nextOutstandingTrade = sampledTradeIds.find(
+    (id) => unreviewedTradeIds.has(id) || attentionTradeIds.has(id),
+  );
   async function saveAnnotation(event: FormEvent) {
     event.preventDefault();
     setBusy("annotation");
@@ -390,6 +607,25 @@ function MechanicsReview({
       setBusy("");
     }
   }
+  async function reconcileChart() {
+    if (!chartFile) return;
+    setBusy("reconciliation");
+    setFeedback("");
+    try {
+      const upload = await api.uploadMechanicsChart(chartFile);
+      const result = await api.reconcileMechanicsChart({
+        campaign_id: item.campaign_id,
+        attempt_id: item.attempt_id || "original",
+        variant_id: item.variant_id,
+        upload_token: upload.upload_token,
+      });
+      setReconciliation(result);
+    } catch (reason) {
+      setFeedback(reason instanceof Error ? reason.message : "Chart reconciliation failed");
+    } finally {
+      setBusy("");
+    }
+  }
   return (
     <>
       <Notice tone="info" title="What you are approving">
@@ -411,11 +647,57 @@ function MechanicsReview({
             {completed} of {required || "—"} trades reviewed correctly
           </h3>
           <p>
-            Every automated check and required category must be resolved before
-            approval.
+            The sample starts with five deterministic hash-ranked trades (or
+            all trades if fewer exist), then adds only the trades needed to
+            cover universal execution lifecycles, warning codes, and resolved
+            ambiguities. Duplicate selections are counted once; this attempt
+            contains {required || "the governed"} unique sampled trades.
           </p>
         </div>
       </div>
+      <Card className="chart-reconciliation-card">
+        <div>
+          <p className="eyebrow">Optional external chart reconciliation</p>
+          <h3>Compare a chart-platform trade export</h3>
+          <p>
+            Upload CSV with trade_id and any of entry_time, exit_time,
+            entry_price, exit_price, or direction. This highlights differences;
+            it never writes annotations or grants approval.
+          </p>
+        </div>
+        <Field label="Chart export CSV">
+          <input
+            type="file"
+            accept=".csv,text/csv"
+            onChange={(event) => {
+              setChartFile(event.target.files?.[0] || null);
+              setReconciliation(null);
+            }}
+          />
+        </Field>
+        <Button
+          type="button"
+          variant="secondary"
+          disabled={!chartFile || busy === "reconciliation"}
+          onClick={() => void reconcileChart()}
+        >
+          {busy === "reconciliation" ? "Comparing…" : "Compare governed samples"}
+        </Button>
+        {reconciliation && (
+          <Notice tone={reconciliation.status === "MATCH" ? "success" : "warning"} title={humanize(reconciliation.status)}>
+            {reconciliation.matched_trades} of {reconciliation.required_trades} governed samples matched. {reconciliation.note}
+            {(reconciliation.comparisons || []).some((row: any) => row.status !== "MATCH") && (
+              <ul>
+                {reconciliation.comparisons
+                  .filter((row: any) => row.status !== "MATCH")
+                  .map((row: any) => (
+                    <li key={row.trade_id}>Trade {row.trade_id}: {(row.mismatches || []).map((mismatch: any) => mismatch.field).join(", ") || "no comparable fields"}</li>
+                  ))}
+              </ul>
+            )}
+          </Notice>
+        )}
+      </Card>
       {(detail.blockers || []).length > 0 && (
         <Notice tone="warning" title="Approval blocked">
           <ul>
@@ -425,30 +707,164 @@ function MechanicsReview({
           </ul>
         </Notice>
       )}
-      <div className="sample-category-grid">
-        {Object.entries(detail.sampling_categories || {}).map(
-          ([name, ids]: [string, any]) => (
-            <Card key={name}>
-              <span className="sample-icon">
-                <Icon name="chart" />
-              </span>
-              <strong>{humanize(name)}</strong>
-              <small>
-                {Array.isArray(ids)
-                  ? `${ids.length} sampled trade${ids.length === 1 ? "" : "s"}`
-                  : "Required sample"}
-              </small>
-              <StatusBadge value="Evidence generated" />
-            </Card>
-          ),
-        )}
-      </div>
+      {(detail.sampled_trade_ids || []).length > 0 && (
+        <Card className="trade-evidence-selector">
+          <div>
+            <p className="eyebrow">Trade inspection</p>
+            <h3>Select a sampled trade</h3>
+            <p>
+              The selection controls the frozen evidence and saved annotation
+              shown below.
+            </p>
+          </div>
+          <Field label="Sampled trade">
+            <select
+              aria-label="Sampled trade"
+              value={trade}
+              disabled={busy === "evidence"}
+              onChange={(event) => void selectTrade(event.target.value)}
+            >
+              {detail.sampled_trade_ids.map((id: unknown) => (
+                <option key={String(id)} value={String(id)}>
+                  Trade {String(id)} · {tradeReviewLabel(String(id))}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <div className="review-exception-toolbar" aria-label="Mechanics review filter">
+            <div className="review-scope-switch">
+              {([
+                ["outstanding", `Outstanding (${unreviewedTradeIds.size + attentionTradeIds.size})`],
+                ["attention", `Exceptions (${attentionTradeIds.size})`],
+                ["all", `All (${sampledTradeIds.length})`],
+              ] as const).map(([value, label]) => (
+                <button
+                  type="button"
+                  key={value}
+                  className={reviewFilter === value ? "active" : ""}
+                  onClick={() => setReviewFilter(value)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!nextOutstandingTrade || busy === "evidence"}
+              onClick={() => nextOutstandingTrade && void selectTrade(nextOutstandingTrade)}
+            >
+              {nextOutstandingTrade ? "Open next outstanding trade" : "All samples resolved"}
+            </Button>
+          </div>
+          <div
+            className="sample-trade-map"
+            aria-label="Sampled trade review status"
+          >
+            {visibleTradeIds.map((id) => {
+              const reviewState = tradeReviewState(id);
+              return (
+                <button
+                  key={id}
+                  type="button"
+                  className={`${reviewState}${id === trade ? " selected" : ""}`}
+                  aria-current={id === trade ? "true" : undefined}
+                  aria-label={`Trade ${id}: ${tradeReviewLabel(id)}`}
+                  title={`Trade ${id} · ${tradeReviewLabel(id)}`}
+                  disabled={busy === "evidence"}
+                  onClick={() => void selectTrade(id)}
+                >
+                  <span aria-hidden="true" />
+                  {id}
+                </button>
+              );
+            })}
+          </div>
+          {visibleTradeIds.length === 0 && (
+            <Notice tone="success">
+              No trades match this exception filter. The complete deterministic
+              sample remains bound to the final approval.
+            </Notice>
+          )}
+          {(detail.sampling_reasons?.[trade] || []).length > 0 && (
+            <div className="sample-selection-reasons">
+              <strong>Why trade {trade} is included</strong>
+              <ul>
+                {detail.sampling_reasons[trade].map((reason: string) => (
+                  <li key={reason}>{humanize(reason)}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+      )}
+      {sampledTradeIds.length > 0 && (
+        <nav className="review-action-bar" aria-label="Sample review navigation">
+          <div>
+            <strong>
+              Trade {selectedTradeIndex + 1} of {sampledTradeIds.length}
+            </strong>
+            <small>{progress}% of required samples approved correctly</small>
+          </div>
+          <div>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!previousTrade || busy === "evidence"}
+              onClick={() => previousTrade && void selectTrade(previousTrade)}
+            >
+              Previous trade
+            </Button>
+            <Button
+              type="button"
+              variant="secondary"
+              disabled={!nextTrade || busy === "evidence"}
+              onClick={() => nextTrade && void selectTrade(nextTrade)}
+            >
+              Next trade
+            </Button>
+            <a className="button button-primary" href="#sample-annotation">
+              Record review
+            </a>
+          </div>
+        </nav>
+      )}
       <TradeEvidence
         evidence={detail.trade_evidence}
         error={detail.trade_evidence_error}
         loading={busy === "evidence"}
       />
-      <Card className="review-placeholder">
+      <details className="sample-category-disclosure">
+        <summary>
+          <span>
+            <strong>Why these trades were sampled</strong>
+            <small>
+              Universal sampler {detail.sampling_policy_version || "policy"} ·{" "}
+              {Object.keys(detail.sampling_categories || {}).length} categories
+            </small>
+          </span>
+          <span>Show categories</span>
+        </summary>
+        <div className="sample-category-grid">
+          {Object.entries(detail.sampling_categories || {}).map(
+            ([name, ids]: [string, any]) => (
+              <Card key={name}>
+                <span className="sample-icon">
+                  <Icon name="chart" />
+                </span>
+                <strong>{humanize(name)}</strong>
+                <small>
+                  {Array.isArray(ids)
+                    ? `${ids.length} sampled trade${ids.length === 1 ? "" : "s"}`
+                    : "Required sample"}
+                </small>
+                <StatusBadge value="Evidence generated" />
+              </Card>
+            ),
+          )}
+        </div>
+      </details>
+      <Card className="review-placeholder" id="sample-annotation">
         <div>
           <Icon name="review" />
           <h3>Required sample annotation</h3>
@@ -459,38 +875,24 @@ function MechanicsReview({
         </div>
         {(detail.sampled_trade_ids || []).length ? (
           <form className="annotation-form" onSubmit={saveAnnotation}>
-            <div className="form-grid two">
-              <Field label="Sampled trade">
-                <select
-                  value={trade}
-                  onChange={(event) => void selectTrade(event.target.value)}
-                >
-                  {detail.sampled_trade_ids.map((id: unknown) => (
-                    <option key={String(id)} value={String(id)}>
-                      Trade {String(id)}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Implementation status">
-                <select
-                  value={status}
-                  onChange={(event) => setStatus(event.target.value)}
-                >
-                  {[
-                    "Correct",
-                    "Bug suspected",
-                    "Data issue",
-                    "Needs deeper review",
-                    "False signal",
-                    "Exit issue",
-                    "Orderflow filter issue",
-                  ].map((value) => (
-                    <option key={value}>{value}</option>
-                  ))}
-                </select>
-              </Field>
-            </div>
+            <Field label="Implementation status">
+              <select
+                value={status}
+                onChange={(event) => setStatus(event.target.value)}
+              >
+                {[
+                  "Correct",
+                  "Bug suspected",
+                  "Data issue",
+                  "Needs deeper review",
+                  "False signal",
+                  "Exit issue",
+                  "Orderflow filter issue",
+                ].map((value) => (
+                  <option key={value}>{value}</option>
+                ))}
+              </select>
+            </Field>
             <Field label="Review notes">
               <textarea
                 rows={3}
@@ -578,6 +980,24 @@ function MechanicsReview({
   );
 }
 
+function ExactReviewIdentity({ attemptId }: { attemptId: string }) {
+  return (
+    <span className="exact-identity review-exact-identity">
+      <span>
+        Exact ID <code>{attemptId}</code>
+      </span>
+      <button
+        type="button"
+        className="copy-id"
+        aria-label={`Copy exact attempt ID ${attemptId}`}
+        onClick={() => void navigator.clipboard?.writeText(attemptId)}
+      >
+        Copy
+      </button>
+    </span>
+  );
+}
+
 function TradeEvidence({
   evidence,
   error,
@@ -603,33 +1023,64 @@ function TradeEvidence({
     );
   const trade = evidence.trade || {};
   const transitions = evidence.event_transitions || [];
-  const strategyContext = evidence.strategy_context || {};
   const eventLane = evidence.metadata?.validation_lane === "event_replay";
   const evidenceTimeZone = evidence.metadata?.timezone || "America/New_York";
-  const traceFields = [
-    "aoi_side",
-    "aoi_box_low",
-    "aoi_box_high",
-    "aoi_width_points",
-    "aoi_categories",
-    "aoi_confluences",
-    "aoi_lineage_mode",
-    "aoi_exact_fingerprint",
-    "aoi_eligible_timestamp",
-    "aoi_tap_timestamp",
-    "trigger_kind",
-    "trigger_value",
-    "bubble_qualified_timestamp",
-    "order_armed_timestamp",
-    "entry_trigger_price",
-    "initial_stop_price",
-    "risk_points",
-    "entry_profile_poc",
-    "entry_profile_vah",
-    "entry_profile_val",
-    "midpoint_activated",
-    "midpoint_activated_at",
-  ].filter((field) => strategyContext[field] !== undefined && strategyContext[field] !== null);
+  const entryTimestamp =
+    trade.entry_time ??
+    trade.entry_timestamp ??
+    transitions.find((row: any) =>
+      /^(entry_filled|position_opened|trade_opened)$/.test(
+        String(row.transition || "").toLowerCase(),
+      ),
+    )?.timestamp;
+  const exitTimestamp =
+    trade.exit_time ??
+    trade.exit_timestamp ??
+    [...transitions]
+      .reverse()
+      .find((row: any) =>
+        /^(trade_closed|position_closed|forced_flatten|exit_filled)$/.test(
+          String(row.transition || "").toLowerCase(),
+        ),
+      )?.timestamp;
+  const evidenceIdentityRows = [
+    {
+      label: "Config SHA-256",
+      value: evidence.metadata?.config_hash,
+    },
+    {
+      label: "Input data SHA-256",
+      value: evidence.metadata?.input_data_hash,
+    },
+    {
+      label: "Strategy implementation version",
+      value: evidence.metadata?.strategy_implementation_version,
+    },
+    {
+      label: "Strategy implementation SHA-256",
+      value: evidence.metadata?.strategy_implementation_sha256,
+    },
+    {
+      label: "Certification manifest SHA-256",
+      value: evidence.metadata?.strategy_certification_manifest_sha256,
+    },
+  ].filter(
+    (row) => row.value !== null && row.value !== undefined && row.value !== "",
+  );
+  const strategyPanels = resolveStrategyEvidencePanels(evidence);
+  const mechanicsComparison = resolveMechanicsComparison(evidence);
+  const frozenSetup = resolveFrozenSetup(evidence);
+  const qualifyingFootprint = resolveQualifyingFootprint(evidence);
+  const showSingleTargetFallback = shouldShowSingleTargetFallback(strategyPanels);
+  const netPnl = trade.pnl_usd ?? trade.net_pnl;
+  const netPnlNumber = Number(netPnl);
+  const netPnlTone = Number.isFinite(netPnlNumber)
+    ? netPnlNumber > 0
+      ? "positive"
+      : netPnlNumber < 0
+        ? "negative"
+        : "neutral"
+    : "neutral";
   return (
     <Card className="trade-evidence-card">
       <div className="evidence-heading">
@@ -642,51 +1093,132 @@ function TradeEvidence({
         </div>
         <StatusBadge value={trade.reviewer_status_display || "Unreviewed"} />
       </div>
+      <section className="trade-time-summary" aria-label="Trade timing">
+        <div className="trade-time-endpoint trade-time-entry">
+          <span className="trade-time-marker" aria-hidden="true">
+            In
+          </span>
+          <div>
+            <small>Entry timestamp</small>
+            <time dateTime={entryTimestamp || undefined}>
+              {formatEvidenceValue(entryTimestamp, evidenceTimeZone)}
+            </time>
+            <span>
+              {trade.entry_order_type
+                ? `${humanize(trade.entry_order_type)} entry`
+                : "Entry fill"}
+              {trade.entry_price !== null && trade.entry_price !== undefined
+                ? ` · ${formatEvidenceValue(trade.entry_price)}`
+                : ""}
+            </span>
+          </div>
+        </div>
+        <div className="trade-time-duration">
+          <small>Time in trade</small>
+          <strong>{formatTradeDuration(entryTimestamp, exitTimestamp)}</strong>
+          <span>
+            {[trade.contract, trade.session_date].filter(Boolean).join(" · ") ||
+              "Session not recorded"}
+          </span>
+        </div>
+        <div className="trade-time-endpoint trade-time-exit">
+          <span className="trade-time-marker" aria-hidden="true">
+            Out
+          </span>
+          <div>
+            <small>Exit timestamp</small>
+            <time dateTime={exitTimestamp || undefined}>
+              {formatEvidenceValue(exitTimestamp, evidenceTimeZone)}
+            </time>
+            <span>
+              {trade.exit_reason ? humanize(trade.exit_reason) : "Exit fill"}
+              {trade.exit_price !== null && trade.exit_price !== undefined
+                ? ` · ${formatEvidenceValue(trade.exit_price)}`
+                : ""}
+            </span>
+          </div>
+        </div>
+      </section>
       <div className="trade-facts">
         <EvidenceFact label="Direction" value={trade.direction} />
         <EvidenceFact label="Entry" value={formatEvidenceValue(trade.entry_price)} />
         <EvidenceFact label="Stop" value={formatEvidenceValue(trade.stop_price)} />
-        <EvidenceFact label="Target" value={formatEvidenceValue(trade.target_price)} />
+        {showSingleTargetFallback && (
+          <EvidenceFact label="Target" value={formatEvidenceValue(trade.target_price)} />
+        )}
         <EvidenceFact label="Exit" value={formatEvidenceValue(trade.exit_price)} />
         <EvidenceFact label="Exit reason" value={trade.exit_reason} />
-      </div>
-      {transitions.length ? (
-        <EvidenceList
-          title="Causal event lifecycle"
-          rows={transitions.map((row: any) => ({
-            label: `${humanize(row.transition || "event")} · event ${formatEvidenceValue(row.event_index)}`,
-            value: [
-              formatEvidenceValue(row.timestamp, evidenceTimeZone),
-              row.price !== null && row.price !== undefined ? `price ${formatEvidenceValue(row.price)}` : null,
-              row.stop_price !== null && row.stop_price !== undefined ? `stop ${formatEvidenceValue(row.stop_price)}` : null,
-              row.target_price !== null && row.target_price !== undefined ? `target ${formatEvidenceValue(row.target_price)}` : null,
-              row.reason,
-            ]
-              .filter(Boolean)
-              .join(" · "),
-          }))}
-          empty="No causal event transitions were generated."
+        <EvidenceFact
+          label="Net P&L (USD · diagnostic only)"
+          value={formatUsdPnl(netPnl)}
+          tone={netPnlTone}
         />
-      ) : (
-        <PriceEvidenceChart
-          bars={evidence.bars || []}
-          trade={trade}
+      </div>
+      {frozenSetup && (
+        <FrozenSetup summary={frozenSetup} timeZone={evidenceTimeZone} />
+      )}
+      {qualifyingFootprint && (
+        <QualifyingFootprint
+          summary={qualifyingFootprint}
           timeZone={evidenceTimeZone}
         />
       )}
-      {traceFields.length > 0 && (
-        <EvidenceList
-          title="AOI and trigger trace"
-          rows={traceFields.map((field) => ({
-            label:
-              field === "aoi_eligible_timestamp"
-                ? "Exact AOI became valid"
-                : humanize(field),
-            value: formatEvidenceValue(strategyContext[field], evidenceTimeZone),
-          }))}
-          empty=""
-        />
+      {mechanicsComparison.length > 0 && (
+        <MechanicsComparison sections={mechanicsComparison} timeZone={evidenceTimeZone} />
       )}
+      <EvidenceDisclosure
+        title="Frozen identity and causal feature context"
+        description={`${evidenceIdentityRows.length + strategyPanels.reduce((total, panel) => total + panel.rows.length, 0)} immutable evidence fields`}
+      >
+        <EvidenceList
+          title="Frozen evidence identity"
+          rows={evidenceIdentityRows.map((row) => ({
+            label: row.label,
+            value: formatEvidenceValue(row.value),
+          }))}
+          empty="Frozen evidence identity was not recorded."
+        />
+        {strategyPanels.map((panel) => (
+          <EvidenceList
+            key={panel.title}
+            title={panel.title}
+            rows={panel.rows.map((row) => ({
+              label: row.label,
+              value: formatEvidenceValue(row.value, evidenceTimeZone),
+            }))}
+            empty=""
+          />
+        ))}
+      </EvidenceDisclosure>
+      <EvidenceReplay
+        bars={evidence.bars || []}
+        transitions={transitions}
+        trade={trade}
+        timeZone={evidenceTimeZone}
+      />
+      {transitions.length ? (
+        <EvidenceDisclosure
+          title="Complete causal event lifecycle"
+          description={`${transitions.length} retained transitions · replay remains visible above`}
+        >
+          <EvidenceList
+            title="Causal event lifecycle"
+            rows={transitions.map((row: any) => ({
+              label: `${humanize(row.transition || "event")} · event ${formatEvidenceValue(row.event_index)}`,
+              value: [
+                formatEvidenceValue(row.timestamp, evidenceTimeZone),
+                row.price !== null && row.price !== undefined ? `price ${formatEvidenceValue(row.price)}` : null,
+                row.stop_price !== null && row.stop_price !== undefined ? `stop ${formatEvidenceValue(row.stop_price)}` : null,
+                row.target_price !== null && row.target_price !== undefined ? `target ${formatEvidenceValue(row.target_price)}` : null,
+                row.reason,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            }))}
+            empty="No causal event transitions were generated."
+          />
+        </EvidenceDisclosure>
+      ) : null}
       <div className={`evidence-panels${eventLane ? " event-evidence-panels" : ""}`}>
         {!eventLane && (
           <EvidenceList
@@ -701,7 +1233,7 @@ function TradeEvidence({
         <EvidenceList
           title="Automated checks"
           rows={(evidence.automated_checks || []).map((row: any) => ({
-            label: row.check_name || row.description,
+            label: humanize(row.check_name || row.description),
             value: `${String(row.status || "UNKNOWN").toUpperCase()}${
               row.actual !== null && row.actual !== undefined && row.actual !== ""
                 ? ` · ${formatAutomatedCheckActual(row.actual)}`
@@ -754,12 +1286,353 @@ function TradeEvidence({
   );
 }
 
-function EvidenceFact({ label, value }: { label: string; value: unknown }) {
+function FrozenSetup({
+  summary,
+  timeZone,
+}: {
+  summary: FrozenSetupSummary;
+  timeZone: string;
+}) {
+  const burstSize = formatFootprintNumber(summary.burstSize);
+  const burstThreshold = formatFootprintNumber(summary.burstThreshold);
+  const burstLow = formatFootprintNumber(summary.burstPriceLow);
+  const burstHigh = formatFootprintNumber(summary.burstPriceHigh);
+  const burstPrice = burstLow === burstHigh ? burstLow : `${burstLow}–${burstHigh}`;
+  const hasBurst =
+    summary.burstSize !== null &&
+    summary.burstSize !== undefined &&
+    summary.burstSize !== "";
   return (
-    <div>
+    <section className="frozen-setup" aria-labelledby="frozen-setup-heading">
+      <div className="frozen-setup-heading">
+        <div>
+          <p className="eyebrow">Setup at the decision boundary</p>
+          <h4 id="frozen-setup-heading">Frozen profile and observed AOI source</h4>
+        </div>
+        <StatusBadge value={`Edge = ${summary.edgeRole}`} />
+      </div>
+      <p className="frozen-setup-help">
+        {summary.sourceDescription ??
+          "These are the immutable profile values used by the trade. The AOI may be armed by a large execution, directional delta, a compatible market level, or more than one source; the exact observed source is shown below."}
+      </p>
+      <dl className="frozen-setup-grid">
+        <div className="frozen-setup-primary">
+          <dt>Observed AOI source</dt>
+          <dd>{formatEvidenceValue(summary.sourceKinds)}</dd>
+        </div>
+        <div className="frozen-setup-primary">
+          <dt>Exact frozen edge ({summary.edgeRole})</dt>
+          <dd>{formatEvidenceValue(summary.edgePrice)}</dd>
+        </div>
+        <div>
+          <dt>Frozen VAH</dt>
+          <dd>{formatEvidenceValue(summary.vahPrice)}</dd>
+        </div>
+        <div>
+          <dt>Frozen POC</dt>
+          <dd>{formatEvidenceValue(summary.pocPrice)}</dd>
+        </div>
+        <div>
+          <dt>Frozen VAL</dt>
+          <dd>{formatEvidenceValue(summary.valPrice)}</dd>
+        </div>
+        {hasBurst && (
+          <>
+            <div>
+              <dt>Selected 100 ms burst</dt>
+              <dd>{burstSize} contracts</dd>
+              <small>Required ≥ {burstThreshold}</small>
+            </div>
+            <div>
+              <dt>Burst location</dt>
+              <dd>{burstPrice}</dd>
+              <small>
+                {summary.burstSide
+                  ? `Aggressor side ${String(summary.burstSide)}`
+                  : "Side not retained"}
+              </small>
+            </div>
+            <div>
+              <dt>Burst qualified at</dt>
+              <dd>{formatEvidenceValue(summary.burstQualifiedAt, timeZone)}</dd>
+            </div>
+          </>
+        )}
+        <div className="frozen-setup-primary">
+          <dt>AOI armed / profile frozen at</dt>
+          <dd>{formatEvidenceValue(summary.aoiArmedAt, timeZone)}</dd>
+        </div>
+      </dl>
+    </section>
+  );
+}
+
+function MechanicsComparison({
+  sections,
+  timeZone,
+}: {
+  sections: MechanicsComparisonSection[];
+  timeZone: string;
+}) {
+  return (
+    <section className="mechanics-comparison" aria-labelledby="mechanics-comparison-heading">
+      <div className="mechanics-comparison-heading">
+        <div>
+          <p className="eyebrow">Implementation review contract</p>
+          <h4 id="mechanics-comparison-heading">Configured rule versus observed trade</h4>
+          <p>
+            Frozen parameters come from the hash-bound variant config. Observed
+            values come from this trade&apos;s retained causal strategy trace.
+          </p>
+        </div>
+        <StatusBadge value={MECHANICS_EVIDENCE_BADGE} />
+      </div>
+      <div className="mechanics-comparison-sections">
+        {sections.map((section) => (
+          <section key={section.title} className="mechanics-comparison-section">
+            <div>
+              <h5>{section.title}</h5>
+              <p>{section.description}</p>
+            </div>
+            <div className="mechanics-comparison-table" role="table" aria-label={section.title}>
+              <div className="mechanics-comparison-row mechanics-comparison-header" role="row">
+                <span role="columnheader">Mechanic</span>
+                <span role="columnheader">Frozen rule / parameter</span>
+                <span role="columnheader">Observed on this trade</span>
+              </div>
+              {section.rows.map((row) => (
+                <div className="mechanics-comparison-row" role="row" key={row.key}>
+                  <strong role="cell">{row.label}</strong>
+                  <span role="cell">{formatEvidenceValue(row.configured, timeZone)}</span>
+                  <span role="cell">{formatEvidenceValue(row.observed, timeZone)}</span>
+                </div>
+              ))}
+            </div>
+          </section>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function EvidenceFact({
+  label,
+  value,
+  tone = "neutral",
+}: {
+  label: string;
+  value: unknown;
+  tone?: "positive" | "negative" | "neutral";
+}) {
+  return (
+    <div className={`evidence-fact evidence-fact-${tone}`}>
       <small>{label}</small>
       <strong>{formatEvidenceValue(value)}</strong>
     </div>
+  );
+}
+
+function QualifyingFootprint({
+  summary,
+  timeZone,
+}: {
+  summary: QualifyingFootprintSummary;
+  timeZone: string;
+}) {
+  const qualified = summary.routes.filter((route) => route.qualified);
+  const outcomeLabel =
+    summary.outcome === "qualified"
+      ? qualified.length > 1
+        ? "Both routes qualified"
+        : `${qualified[0]?.label || "Footprint"} qualified`
+      : summary.outcome === "not_qualified"
+        ? "No route qualified"
+        : "Qualification not fully retained";
+  return (
+    <section className="qualifying-footprint" aria-labelledby="footprint-heading">
+      <div className="qualifying-footprint-heading">
+        <div>
+          <p className="eyebrow">Qualifying footprint</p>
+          <h4 id="footprint-heading">Why this value edge became eligible</h4>
+          <p>
+            The frozen rule is <strong>either route may qualify</strong>. This
+            trade retained the observed value and its predeclared threshold for
+            each route.
+          </p>
+        </div>
+        <StatusBadge value={outcomeLabel} />
+      </div>
+      <div className="footprint-rule">
+        <span>Qualification rule</span>
+        <strong>Large execution</strong>
+        <b>OR</b>
+        <strong>Top-decile delta</strong>
+      </div>
+      <div className="footprint-route-grid">
+        {summary.routes.map((route) => (
+          <FootprintRoute
+            key={route.id}
+            route={route}
+            timeZone={timeZone}
+          />
+        ))}
+      </div>
+      <div className="footprint-freeze-context">
+        <span>
+          <small>Exact frozen edge</small>
+          <strong>{formatEvidenceValue(summary.edgePrice)}</strong>
+        </span>
+        <span>
+          <small>Profile frozen at</small>
+          <strong>{formatEvidenceValue(summary.frozenAt, timeZone)}</strong>
+        </span>
+        <span>
+          <small>Freeze rule</small>
+          <strong>{humanize(summary.definition)}</strong>
+        </span>
+      </div>
+    </section>
+  );
+}
+
+function FootprintRoute({
+  route,
+  timeZone,
+}: {
+  route: QualifyingFootprintRoute;
+  timeZone: string;
+}) {
+  const observed = Number(route.observed);
+  const threshold = Number(route.threshold);
+  const comparisonAvailable =
+    Number.isFinite(observed) && Number.isFinite(threshold);
+  const margin = comparisonAvailable ? observed - threshold : null;
+  const multiple =
+    comparisonAvailable && threshold > 0 ? observed / threshold : null;
+  const routeState =
+    route.qualified === true
+      ? "qualified"
+      : route.qualified === false
+        ? "not-qualified"
+        : "unknown";
+  return (
+    <article className={`footprint-route footprint-route-${routeState}`}>
+      <header>
+        <div>
+          <span className="footprint-route-dot" aria-hidden="true" />
+          <strong>{route.label}</strong>
+        </div>
+        <span>
+          {route.qualified === true
+            ? "Qualified"
+            : route.qualified === false
+              ? "Did not qualify"
+              : "Not retained"}
+        </span>
+      </header>
+      <div className="footprint-comparison">
+        <span>
+          <small>Observed</small>
+          <strong>
+            {formatFootprintNumber(route.observed)}{" "}
+            <em>{route.unit}</em>
+          </strong>
+        </span>
+        <b aria-label="compared with">≥</b>
+        <span>
+          <small>Required</small>
+          <strong>
+            {formatFootprintNumber(route.threshold)}{" "}
+            <em>{route.unit}</em>
+          </strong>
+        </span>
+      </div>
+      {margin !== null && (
+        <p className="footprint-margin">
+          {margin >= 0 ? "Exceeded" : "Missed"} threshold by{" "}
+          <strong>
+            {formatFootprintNumber(Math.abs(margin))} {route.unit}
+          </strong>
+          {multiple !== null
+            ? ` · ${multiple.toFixed(2)}× the required value`
+            : ""}
+        </p>
+      )}
+      <dl>
+        <div>
+          <dt>Frozen percentile</dt>
+          <dd>{formatFootprintPercentile(route.percentile)}</dd>
+        </div>
+        <div>
+          <dt>Price location</dt>
+          <dd>{formatFootprintPriceRange(route)}</dd>
+        </div>
+        {route.side !== undefined && route.side !== null && route.side !== "" && (
+          <div>
+            <dt>Recorded side</dt>
+            <dd>{String(route.side)}</dd>
+          </div>
+        )}
+        {route.qualifiedAt !== undefined &&
+          route.qualifiedAt !== null &&
+          route.qualifiedAt !== "" && (
+            <div>
+              <dt>Qualified at</dt>
+              <dd>{formatEvidenceValue(route.qualifiedAt, timeZone)}</dd>
+            </div>
+          )}
+      </dl>
+      <small className="footprint-reference">{route.referenceDescription}</small>
+    </article>
+  );
+}
+
+function formatFootprintNumber(value: unknown): string {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "Not retained";
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 3,
+  }).format(number);
+}
+
+function formatFootprintPercentile(value: unknown): string {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return "Not retained";
+  const percentage = number <= 1 ? number * 100 : number;
+  return `${new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 3,
+  }).format(percentage)}th percentile`;
+}
+
+function formatFootprintPriceRange(route: QualifyingFootprintRoute): string {
+  const low = formatFootprintNumber(route.priceLow);
+  const high = formatFootprintNumber(route.priceHigh);
+  if (low === "Not retained" && high === "Not retained") return "Not retained";
+  if (low === high || high === "Not retained") return low;
+  if (low === "Not retained") return high;
+  return `${low}–${high}`;
+}
+
+function EvidenceDisclosure({
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <details className="evidence-disclosure">
+      <summary>
+        <span>
+          <strong>{title}</strong>
+          <small>{description}</small>
+        </span>
+        <span className="disclosure-action">Inspect details</span>
+      </summary>
+      <div className="evidence-disclosure-body">{children}</div>
+    </details>
   );
 }
 
@@ -797,10 +1670,12 @@ function PriceEvidenceChart({
   bars,
   trade,
   timeZone,
+  activeTransition,
 }: {
   bars: any[];
   trade: any;
   timeZone: string;
+  activeTransition?: any;
 }) {
   const usable = bars
     .filter(
@@ -819,6 +1694,9 @@ function PriceEvidenceChart({
   const reference = [
     ...usable.flatMap((bar) => [Number(bar.high), Number(bar.low)]),
     ...[trade.entry_price, trade.stop_price, trade.target_price, trade.exit_price]
+      .map(Number)
+      .filter(Number.isFinite),
+    ...[activeTransition?.price, activeTransition?.stop_price, activeTransition?.target_price]
       .map(Number)
       .filter(Number.isFinite),
   ];
@@ -869,6 +1747,223 @@ function PriceEvidenceChart({
             </g>
           );
         })}
+        {activeTransition && Number.isFinite(Number(activeTransition.price)) && (
+          <g>
+            <circle
+              cx={x(usable.length - 1)}
+              cy={y(Number(activeTransition.price))}
+              r="7"
+              fill="#7c3aed"
+              stroke="#fff"
+              strokeWidth="2"
+            />
+            <text
+              x={Math.max(pad, x(usable.length - 1) - 160)}
+              y={Math.max(18, y(Number(activeTransition.price)) - 12)}
+              fill="#6d28d9"
+            >
+              {humanize(activeTransition.transition || "event")}
+            </text>
+          </g>
+        )}
+      </svg>
+    </figure>
+  );
+}
+
+function EvidenceReplay({
+  bars,
+  transitions,
+  trade,
+  timeZone,
+}: {
+  bars: any[];
+  transitions: any[];
+  trade: any;
+  timeZone: string;
+}) {
+  const steps = transitions.length
+    ? transitions
+    : bars.map((bar, index) => ({
+        event_index: index,
+        timestamp: bar.timestamp,
+        transition: "bar_completed",
+        price: bar.close,
+      }));
+  const [step, setStep] = useState(Math.max(0, steps.length - 1));
+  const [playing, setPlaying] = useState(false);
+  useEffect(() => {
+    setStep(Math.max(0, steps.length - 1));
+    setPlaying(false);
+  }, [bars, transitions]);
+  useEffect(() => {
+    if (!playing || !steps.length) return;
+    const timer = window.setInterval(() => {
+      setStep((current) => {
+        if (current >= steps.length - 1) {
+          setPlaying(false);
+          return current;
+        }
+        return current + 1;
+      });
+    }, 550);
+    return () => window.clearInterval(timer);
+  }, [playing, steps.length]);
+  if (!steps.length && !bars.length)
+    return (
+      <Notice tone="warning">
+        Governed bars and event transitions are missing; replay is unavailable.
+      </Notice>
+    );
+  const active = steps[Math.min(step, steps.length - 1)];
+  const activeTime = new Date(String(active?.timestamp || "")).getTime();
+  const visibleBars = Number.isFinite(activeTime)
+    ? bars.filter(
+        (bar) => new Date(String(bar.timestamp || "")).getTime() <= activeTime,
+      )
+    : bars.slice(0, Math.max(1, step + 1));
+  return (
+    <section className="evidence-replay">
+      <div className="replay-toolbar">
+        <div>
+          <p className="eyebrow">Native governed replay</p>
+          <h4>
+            {humanize(active?.transition || "completed bar")} · step{" "}
+            {Math.min(step + 1, steps.length)} of {steps.length}
+          </h4>
+          <small>
+            {formatEvidenceValue(active?.timestamp, timeZone)}
+            {active?.event_index !== undefined
+              ? ` · source event ${formatEvidenceValue(active.event_index)}`
+              : ""}
+          </small>
+        </div>
+        <div className="replay-buttons">
+          <button type="button" onClick={() => setStep(0)} disabled={step === 0}>
+            First
+          </button>
+          <button
+            type="button"
+            onClick={() => setStep((value) => Math.max(0, value - 1))}
+            disabled={step === 0}
+          >
+            Previous
+          </button>
+          <button type="button" onClick={() => setPlaying((value) => !value)}>
+            {playing ? "Pause" : "Play"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setStep((value) => Math.min(steps.length - 1, value + 1))}
+            disabled={step >= steps.length - 1}
+          >
+            Next
+          </button>
+        </div>
+      </div>
+      <input
+        className="replay-slider"
+        aria-label="Replay step"
+        type="range"
+        min="0"
+        max={Math.max(0, steps.length - 1)}
+        value={step}
+        onChange={(event) => {
+          setPlaying(false);
+          setStep(Number(event.target.value));
+        }}
+      />
+      {bars.length ? (
+        <PriceEvidenceChart
+          bars={visibleBars.length ? visibleBars : bars.slice(0, 1)}
+          trade={trade}
+          timeZone={timeZone}
+          activeTransition={active}
+        />
+      ) : (
+        <EventPricePath transitions={steps.slice(0, step + 1)} timeZone={timeZone} />
+      )}
+      {active && (
+        <dl className="core-grid-parameters">
+          {Object.entries(active)
+            .filter(
+              ([name, value]) =>
+                !["timestamp", "transition"].includes(name) &&
+                value !== null &&
+                value !== undefined &&
+                value !== "",
+            )
+            .slice(0, 12)
+            .map(([name, value]) => (
+              <div key={name}>
+                <dt>{humanize(name)}</dt>
+                <dd>{formatEvidenceValue(value, timeZone)}</dd>
+              </div>
+            ))}
+        </dl>
+      )}
+    </section>
+  );
+}
+
+function EventPricePath({
+  transitions,
+  timeZone,
+}: {
+  transitions: any[];
+  timeZone: string;
+}) {
+  const priced = transitions.filter((row) =>
+    Number.isFinite(Number(row.price)),
+  );
+  if (!priced.length)
+    return (
+      <Notice tone="warning">
+        These governed transitions do not retain prices; the event fields below
+        remain available for causal review.
+      </Notice>
+    );
+  const values = priced.map((row) => Number(row.price));
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  const spread = Math.max(high - low, 0.25);
+  const width = 900;
+  const height = 240;
+  const pad = 24;
+  const points = priced
+    .map((row, index) => {
+      const x =
+        pad + (index * (width - 2 * pad)) / Math.max(priced.length - 1, 1);
+      const y = pad + ((high - Number(row.price)) * (height - 2 * pad)) / spread;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  return (
+    <figure className="price-evidence-chart">
+      <figcaption>
+        <strong>Causal trade-event price path</strong>
+        <span>
+          {formatEvidenceValue(priced[0].timestamp, timeZone)} →{" "}
+          {formatEvidenceValue(priced.at(-1).timestamp, timeZone)}
+        </span>
+      </figcaption>
+      <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Causal event price path">
+        <polyline points={points} fill="none" stroke="#0d5962" strokeWidth="3" />
+        {priced.map((row, index) => {
+          const x =
+            pad + (index * (width - 2 * pad)) / Math.max(priced.length - 1, 1);
+          const y =
+            pad + ((high - Number(row.price)) * (height - 2 * pad)) / spread;
+          return (
+            <circle
+              key={`${row.event_index}-${index}`}
+              cx={x}
+              cy={y}
+              r={index === priced.length - 1 ? 6 : 3}
+              fill={index === priced.length - 1 ? "#7c3aed" : "#0d5962"}
+            />
+          );
+        })}
       </svg>
     </figure>
   );
@@ -882,6 +1977,21 @@ function formatEvidenceValue(value: unknown, timeZone?: string): string {
     return formatEvidenceTimestamp(value, timeZone);
   }
   return String(value);
+}
+
+export function formatUsdPnl(value: unknown): string {
+  if (value === null || value === undefined || value === "") return "Not recorded";
+  const amount = Number(value);
+  if (!Number.isFinite(amount)) return "Not recorded";
+  const formatted = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Math.abs(amount));
+  if (amount > 0) return `+${formatted}`;
+  if (amount < 0) return `-${formatted}`;
+  return formatted;
 }
 
 export function formatEvidenceTimestamp(value: string, timeZone: string): string {
@@ -905,6 +2015,25 @@ export function formatEvidenceTimestamp(value: string, timeZone: string): string
   return `${fields.year}-${fields.month}-${fields.day} ${fields.hour}:${fields.minute}:${fields.second}${subsecond} ${
     fields.timeZoneName || timeZone
   }`;
+}
+
+export function formatTradeDuration(
+  entryTimestamp: unknown,
+  exitTimestamp: unknown,
+): string {
+  if (!entryTimestamp || !exitTimestamp) return "Not recorded";
+  const entry = new Date(String(entryTimestamp).replace(" ", "T")).getTime();
+  const exit = new Date(String(exitTimestamp).replace(" ", "T")).getTime();
+  if (!Number.isFinite(entry) || !Number.isFinite(exit) || exit < entry) {
+    return "Not recorded";
+  }
+  const totalSeconds = Math.max(0, Math.round((exit - entry) / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  if (hours) return `${hours}h ${minutes}m ${seconds}s`;
+  if (minutes) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
 }
 
 function formatAutomatedCheckActual(value: unknown): string {
@@ -932,6 +2061,7 @@ function CandidateReview({
   const metrics = item.metrics || result.metrics || {};
   const criteria = item.stage_criteria || result.stage_criteria || [];
   const previews = result.artifact_previews || {};
+  const destinationSpecific = item.eligibility_basis === "destination_specific_pass";
   useEffect(() => {
     api
       .settings()
@@ -968,7 +2098,9 @@ function CandidateReview({
         tone={valid ? "warning" : "danger"}
         title={
           valid
-            ? "PASS remains candidate-only"
+            ? destinationSpecific
+              ? `Profile PASS remains candidate-only · ${item.account_profile_id}@${item.account_profile_version}`
+              : "Generic PASS remains candidate-only"
             : "Finalization is incomplete or hash-invalid"
         }
       >
@@ -980,6 +2112,10 @@ function CandidateReview({
         <h3>Independent sign-off requires</h3>
         <ul>
           {[
+            "Scientific-validity PASS",
+            destinationSpecific
+              ? `PASS for the exact ${item.account_profile_id}@${item.account_profile_version} assessment`
+              : "Generic investment-quality PASS",
             "Strict ResultBundleV2 validation",
             "Complete immutable finalization hashes",
             "A reviewer different from the mechanics researcher",

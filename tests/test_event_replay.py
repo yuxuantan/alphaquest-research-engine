@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
+import json
 
 import pandas as pd
 import pytest
@@ -11,6 +12,7 @@ from alphaquest.backtest.event_replay import (
     CanonicalEventReplayStrategy,
     PositionDirective,
 )
+from alphaquest.backtest.risk import DailyRisk
 from alphaquest.validation import ValidationMetadata, write_validation_run
 from alphaquest.validation.loaders import load_validation_run
 
@@ -20,6 +22,7 @@ class _Session:
     session_date: date
     contract_symbol: str
     events: pd.DataFrame
+    event_replay_metadata: dict = field(default_factory=dict)
 
 
 def _config(*, commission: float = 0.0) -> dict:
@@ -39,6 +42,17 @@ def _config(*, commission: float = 0.0) -> dict:
             "event_stop_market_fill_policy": "exact_requested_price",
         },
     }
+
+
+def test_zero_daily_trade_limit_is_explicitly_unlimited():
+    risk = DailyRisk({"max_trades_per_day": 0})
+    session = date(2026, 5, 4)
+
+    for _ in range(100):
+        assert risk.allow_new_trade(session)
+        risk.record_entry(session)
+
+    assert risk.trades_today(session) == 100
 
 
 def _session(
@@ -67,6 +81,55 @@ def _session(
     return _Session(session_date=session_date, contract_symbol="ESM6", events=events)
 
 
+def test_session_audit_records_hash_governed_canonical_cache_provenance():
+    session = _session((100.0, 100.25))
+    session = _Session(
+        session_date=session.session_date,
+        contract_symbol=session.contract_symbol,
+        events=session.events,
+        event_replay_metadata={
+            "canonical_session_cache": {
+                "schema": "alphaquest.sierra-canonical-session-cache/v1",
+                "cache_key": "a" * 64,
+                "hit": True,
+            }
+        },
+    )
+
+    result = BacktestEngine(_config()).run_event_replay(
+        [session],
+        _RecordingStrategy(),
+    )
+
+    audit = result["session_audits"].iloc[0]
+    assert audit["canonical_session_cache_schema"] == "alphaquest.sierra-canonical-session-cache/v1"
+    assert audit["canonical_session_cache_key"] == "a" * 64
+    assert bool(audit["canonical_session_cache_hit"]) is True
+    assert result["reproducibility"]["canonical_session_cache"] == {
+        "sessions_bound": 1,
+        "hits": 1,
+        "misses": 0,
+        "schemas": ["alphaquest.sierra-canonical-session-cache/v1"],
+    }
+
+
+def test_event_metrics_use_replayed_session_coverage_even_without_trades():
+    result = BacktestEngine(_config()).run_event_replay(
+        [
+            _session((100.0,), session_date=date(2025, 1, 2)),
+            _session((100.0,), session_date=date(2025, 12, 31)),
+        ],
+        _RecordingStrategy(),
+    )
+
+    period = result["metrics"]["evaluation_period"]
+    assert result["metrics"]["annualization_available"] is True
+    assert period["start_date"] == "2025-01-02"
+    assert period["end_date"] == "2025-12-31"
+    assert period["calendar_days"] == 364
+    assert period["eligible_session_count"] == 2
+
+
 class _RecordingStrategy(CanonicalEventReplayStrategy):
     def __init__(self):
         self.seen = []
@@ -85,12 +148,14 @@ class _SubmitOnceStrategy(CanonicalEventReplayStrategy):
         entry_tick: int = 401,
         stop_tick: int = 397,
         target_tick: int = 402,
+        order_type: str = "stop_market",
     ):
         self.submit_on = submit_on
         self.direction = direction
         self.entry_tick = entry_tick
         self.stop_tick = stop_tick
         self.target_tick = target_tick
+        self.order_type = order_type
         self.submitted = False
         self.fills = []
         self.closes = []
@@ -108,6 +173,7 @@ class _SubmitOnceStrategy(CanonicalEventReplayStrategy):
             entry_tick=self.entry_tick,
             stop_tick=self.stop_tick,
             target_tick=self.target_tick,
+            order_type=self.order_type,
         )
         self.submitted = True
 
@@ -118,6 +184,30 @@ class _SubmitOnceStrategy(CanonicalEventReplayStrategy):
     def on_position_closed(self, position, trade, broker) -> None:
         del position, broker
         self.closes.append((trade["exit_event_index"], trade["exit_reason"], trade["exit_price"]))
+
+
+class _DeferredStopStrategy(_SubmitOnceStrategy):
+    def __init__(self, *, resolved_stop_tick: int | None):
+        super().__init__(stop_tick=0)
+        self.resolved_stop_tick = resolved_stop_tick
+        self.stop_resolution_events: list[int] = []
+
+    def after_event(self, event, broker, **_) -> None:
+        if self.submitted or event.event_index != self.submit_on:
+            return
+        broker.submit_or_replace_entry(
+            order_id="entry",
+            direction=self.direction,
+            entry_tick=self.entry_tick,
+            stop_tick=None,
+            target_tick=self.target_tick,
+        )
+        self.submitted = True
+
+    def entry_fill_stop_tick(self, order, event, broker):
+        del order, broker
+        self.stop_resolution_events.append(event.event_index)
+        return self.resolved_stop_tick
 
 
 def test_event_replay_canonicalizes_by_utc_timestamp_then_source_ordinal():
@@ -188,6 +278,81 @@ def test_order_activates_on_next_event_and_equal_timestamp_later_ordinal_can_fil
     trade = result["trades"].iloc[0]
     assert trade["entry_event_index"] == 1
     assert trade["entry_timestamp"] == session.events.loc[0, "timestamp"]
+
+
+def test_deferred_stop_is_resolved_on_fill_event_before_position_creation():
+    strategy = _DeferredStopStrategy(resolved_stop_tick=397)
+
+    result = BacktestEngine(_config()).run_event_replay(
+        [_session((100.25, 100.25, 100.50))],
+        strategy,
+    )
+
+    assert strategy.stop_resolution_events == [1]
+    trade = result["trades"].iloc[0]
+    assert trade["initial_stop_price"] == pytest.approx(99.25)
+    assert trade["risk_points"] == pytest.approx(1.0)
+    filled = result["event_transitions"].query("transition == 'entry_filled'").iloc[0]
+    assert json.loads(filled["state_json"])["stop_price"] == pytest.approx(99.25)
+
+
+def test_deferred_stop_fails_closed_when_strategy_does_not_resolve_it():
+    strategy = _DeferredStopStrategy(resolved_stop_tick=None)
+
+    with pytest.raises(ValueError, match="did not resolve one on the fill event"):
+        BacktestEngine(_config()).run_event_replay(
+            [_session((100.25, 100.25))],
+            strategy,
+        )
+
+
+def test_long_limit_waits_for_a_trade_at_or_below_the_limit():
+    strategy = _SubmitOnceStrategy(
+        direction="long",
+        entry_tick=400,
+        stop_tick=396,
+        target_tick=410,
+        order_type="limit",
+    )
+
+    result = BacktestEngine(_config()).run_event_replay(
+        [_session((101.0, 100.25, 100.0, 102.5))],
+        strategy,
+    )
+
+    assert strategy.fills == [(2, 2, 400)]
+    assert result["trades"].iloc[0]["entry_price"] == 100.0
+
+
+@pytest.mark.parametrize(
+    ("direction", "prices", "entry_tick", "stop_tick", "target_tick", "expected_entry"),
+    [
+        ("long", (101.0, 100.0, 102.5), 400, 396, 410, 100.0),
+        ("short", (99.0, 100.0, 97.5), 400, 404, 390, 100.0),
+    ],
+)
+def test_limit_fill_never_slips_through_its_limit_price(
+    direction,
+    prices,
+    entry_tick,
+    stop_tick,
+    target_tick,
+    expected_entry,
+):
+    config = _config()
+    config["core"]["entry_slippage_ticks"] = 1
+    strategy = _SubmitOnceStrategy(
+        direction=direction,
+        entry_tick=entry_tick,
+        stop_tick=stop_tick,
+        target_tick=target_tick,
+        order_type="limit",
+    )
+
+    trade = BacktestEngine(config).run_event_replay([_session(prices)], strategy)["trades"].iloc[0]
+
+    assert trade["entry_price"] == expected_entry
+    assert trade["entry_trigger_price"] == entry_tick * 0.25
 
 
 def test_immediate_target_directive_fills_crossed_target_on_current_event():
@@ -602,9 +767,36 @@ def test_engine_transitions_round_trip_through_validation_schema(tmp_path):
     assert list(result["event_transitions"].columns)[-2:] == ["state_json", "evidence_json"]
     assert result["event_transitions"]["state_json"].notna().all()
     assert result["event_transitions"]["evidence_json"].notna().all()
+    states = result["event_transitions"]["state_json"].map(json.loads)
+    evidence = result["event_transitions"]["evidence_json"].map(json.loads)
+    assert all("stop_tick" not in item and "target_tick" not in item for item in states)
+    assert all("stop_price" in item and "target_price" in item for item in states)
+    assert all("event_price_tick" not in item for item in evidence)
+    assert all("event_price" in item for item in evidence)
     assert not loaded.event_transitions.empty
     assert set(loaded.event_transitions["contract"].dropna()) == {"ESM6"}
     assert "entry_filled" in set(loaded.event_transitions["transition"])
+
+
+def test_event_transition_collection_can_be_disabled_without_changing_execution_results():
+    full = BacktestEngine(_config()).run_event_replay(
+        [_session((100.0, 100.25, 100.50))],
+        _SubmitOnceStrategy(),
+    )
+    lean_config = _config()
+    lean_config["core"]["event_replay_collect_transitions"] = False
+    lean = BacktestEngine(lean_config).run_event_replay(
+        [_session((100.0, 100.25, 100.50))],
+        _SubmitOnceStrategy(),
+    )
+
+    pd.testing.assert_frame_equal(lean["trades"], full["trades"])
+    pd.testing.assert_frame_equal(lean["daily"], full["daily"])
+    assert lean["metrics"] == full["metrics"]
+    assert lean["diagnostics"] == full["diagnostics"]
+    assert lean["event_transitions"].empty
+    assert list(lean["event_transitions"].columns) == list(full["event_transitions"].columns)
+    assert lean["reproducibility"]["event_transitions_collected"] is False
 
 
 def test_event_lane_fails_closed_for_unimplemented_generic_event_filters():

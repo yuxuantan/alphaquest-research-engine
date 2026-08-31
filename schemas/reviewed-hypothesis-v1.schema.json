@@ -1,0 +1,377 @@
+{
+  "$defs": {
+    "HypothesisHumanAcceptanceV1": {
+      "additionalProperties": false,
+      "description": "Human review of every substantive field in a hypothesis proposal.",
+      "properties": {
+        "decision": {
+          "const": "ACCEPT_FOR_MECHANICS",
+          "default": "ACCEPT_FOR_MECHANICS",
+          "enum": [
+            "ACCEPT_FOR_MECHANICS"
+          ],
+          "title": "Decision",
+          "type": "string"
+        },
+        "execution_cost_awareness": {
+          "const": "PASS",
+          "default": "PASS",
+          "enum": [
+            "PASS"
+          ],
+          "title": "Execution Cost Awareness",
+          "type": "string"
+        },
+        "falsifiability": {
+          "const": "PASS",
+          "default": "PASS",
+          "enum": [
+            "PASS"
+          ],
+          "title": "Falsifiability",
+          "type": "string"
+        },
+        "information_timeline_no_lookahead": {
+          "const": "PASS",
+          "default": "PASS",
+          "enum": [
+            "PASS"
+          ],
+          "title": "Information Timeline No Lookahead",
+          "type": "string"
+        },
+        "notes": {
+          "title": "Notes",
+          "type": "string"
+        },
+        "objective_alignment": {
+          "const": "PASS",
+          "default": "PASS",
+          "enum": [
+            "PASS"
+          ],
+          "title": "Objective Alignment",
+          "type": "string"
+        },
+        "review_id": {
+          "title": "Review Id",
+          "type": "string"
+        },
+        "reviewed_at": {
+          "format": "date-time",
+          "title": "Reviewed At",
+          "type": "string"
+        },
+        "reviewed_fields": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Reviewed Fields",
+          "type": "array"
+        },
+        "reviewer": {
+          "title": "Reviewer",
+          "type": "string"
+        },
+        "source_claim_alignment": {
+          "const": "PASS",
+          "default": "PASS",
+          "enum": [
+            "PASS"
+          ],
+          "title": "Source Claim Alignment",
+          "type": "string"
+        }
+      },
+      "required": [
+        "review_id",
+        "reviewer",
+        "reviewed_at",
+        "reviewed_fields",
+        "notes"
+      ],
+      "title": "HypothesisHumanAcceptanceV1",
+      "type": "object"
+    },
+    "HypothesisProposalV1": {
+      "additionalProperties": false,
+      "description": "Falsifiable economic hypothesis frozen before mechanics selection.",
+      "properties": {
+        "capacity_assumptions": {
+          "minLength": 10,
+          "title": "Capacity Assumptions",
+          "type": "string"
+        },
+        "causal_mechanism": {
+          "minLength": 20,
+          "title": "Causal Mechanism",
+          "type": "string"
+        },
+        "confirmed": {
+          "const": false,
+          "default": false,
+          "enum": [
+            false
+          ],
+          "title": "Confirmed",
+          "type": "boolean"
+        },
+        "confounders": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Confounders",
+          "type": "array"
+        },
+        "counterparty": {
+          "minLength": 10,
+          "title": "Counterparty",
+          "type": "string"
+        },
+        "edge_family_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Edge Family Id",
+          "type": "string"
+        },
+        "expected_holding_horizon": {
+          "minLength": 3,
+          "title": "Expected Holding Horizon",
+          "type": "string"
+        },
+        "expected_regimes": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Expected Regimes",
+          "type": "array"
+        },
+        "falsifying_observations": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Falsifying Observations",
+          "type": "array"
+        },
+        "hypothesis_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Hypothesis Id",
+          "type": "string"
+        },
+        "information_availability_timeline": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Information Availability Timeline",
+          "type": "array"
+        },
+        "instrument": {
+          "minLength": 1,
+          "title": "Instrument",
+          "type": "string"
+        },
+        "market_behavior": {
+          "minLength": 20,
+          "title": "Market Behavior",
+          "type": "string"
+        },
+        "null_hypothesis": {
+          "minLength": 20,
+          "title": "Null Hypothesis",
+          "type": "string"
+        },
+        "persistence_rationale": {
+          "minLength": 20,
+          "title": "Persistence Rationale",
+          "type": "string"
+        },
+        "required_data_fields": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Required Data Fields",
+          "type": "array"
+        },
+        "research_objectives_sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Research Objectives Sha256",
+          "type": "string"
+        },
+        "schema": {
+          "const": "alphaquest.hypothesis-proposal/v1",
+          "default": "alphaquest.hypothesis-proposal/v1",
+          "enum": [
+            "alphaquest.hypothesis-proposal/v1"
+          ],
+          "title": "Schema",
+          "type": "string"
+        },
+        "source_bundle_sha256s": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Source Bundle Sha256S",
+          "type": "array"
+        },
+        "source_claim_ids": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Source Claim Ids",
+          "type": "array"
+        },
+        "status": {
+          "const": "PROPOSAL",
+          "default": "PROPOSAL",
+          "enum": [
+            "PROPOSAL"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "transaction_cost_sensitivity": {
+          "minLength": 10,
+          "title": "Transaction Cost Sensitivity",
+          "type": "string"
+        },
+        "unresolved_questions": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Unresolved Questions",
+          "type": "array"
+        }
+      },
+      "required": [
+        "hypothesis_id",
+        "edge_family_id",
+        "instrument",
+        "market_behavior",
+        "causal_mechanism",
+        "counterparty",
+        "information_availability_timeline",
+        "expected_holding_horizon",
+        "null_hypothesis",
+        "falsifying_observations",
+        "confounders",
+        "persistence_rationale",
+        "expected_regimes",
+        "transaction_cost_sensitivity",
+        "capacity_assumptions",
+        "required_data_fields",
+        "source_bundle_sha256s",
+        "source_claim_ids",
+        "research_objectives_sha256",
+        "unresolved_questions"
+      ],
+      "title": "HypothesisProposalV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Complete hypothesis proposal accepted for non-executable mechanics design.",
+  "properties": {
+    "artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Artifact Sha256",
+      "type": "string"
+    },
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "campaign_mutations_performed": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Campaign Mutations Performed",
+      "type": "boolean"
+    },
+    "human_acceptance": {
+      "$ref": "#/$defs/HypothesisHumanAcceptanceV1"
+    },
+    "hypothesis": {
+      "$ref": "#/$defs/HypothesisProposalV1"
+    },
+    "hypothesis_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Hypothesis Sha256",
+      "type": "string"
+    },
+    "mechanics_approval_granted": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Mechanics Approval Granted",
+      "type": "boolean"
+    },
+    "proposal_id": {
+      "title": "Proposal Id",
+      "type": "string"
+    },
+    "proposal_payload_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Proposal Payload Sha256",
+      "type": "string"
+    },
+    "proposal_validation_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Proposal Validation Sha256",
+      "type": "string"
+    },
+    "reviewed_source_artifact_sha256s": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Reviewed Source Artifact Sha256S",
+      "type": "array"
+    },
+    "schema": {
+      "const": "alphaquest.reviewed-hypothesis/v1",
+      "default": "alphaquest.reviewed-hypothesis/v1",
+      "enum": [
+        "alphaquest.reviewed-hypothesis/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "task_id": {
+      "title": "Task Id",
+      "type": "string"
+    },
+    "testing_authorized": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Testing Authorized",
+      "type": "boolean"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "task_id",
+    "proposal_id",
+    "proposal_payload_sha256",
+    "proposal_validation_sha256",
+    "hypothesis",
+    "hypothesis_sha256",
+    "reviewed_source_artifact_sha256s",
+    "human_acceptance",
+    "artifact_sha256"
+  ],
+  "title": "ReviewedHypothesisArtifactV1",
+  "type": "object"
+}

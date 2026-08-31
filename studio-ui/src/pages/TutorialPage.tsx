@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 import { Icon } from "../components/Icons";
 import {
@@ -41,12 +42,32 @@ const checkpoints = [
     "Reject promising core PnL if randomized entries perform better.",
   ],
 ];
+const productionLinks = [
+  "/research/new",
+  "/research",
+  "/library/data",
+  "/research",
+  "/research",
+  "/reviews?type=mechanics",
+  "/research",
+];
 
 export function TutorialPage() {
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(() => {
+    const saved = Number(window.localStorage.getItem("alphaquest.tutorial.step"));
+    return Number.isFinite(saved) ? Math.max(0, Math.min(6, saved)) : 0;
+  });
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<any>(null);
   const [error, setError] = useState("");
+  useEffect(() => {
+    window.localStorage.setItem("alphaquest.tutorial.step", String(step));
+  }, [step]);
+  function restart() {
+    setResult(null);
+    setStep(0);
+    window.localStorage.removeItem("alphaquest.tutorial.step");
+  }
   async function run() {
     setBusy(true);
     setError("");
@@ -72,6 +93,26 @@ export function TutorialPage() {
         The tutorial has its own source tree, ledger, evidence, approvals, and
         job database. Its intended scientific verdict is FAIL.
       </Notice>
+      {step > 0 && !result && (
+        <div className="tutorial-resume">
+          <span>Progress saved on this browser · checkpoint {step + 1} of 7</span>
+          <button className="text-button" onClick={restart}>
+            Restart walkthrough
+          </button>
+        </div>
+      )}
+      {!result && (
+        <div
+          className="tutorial-progress"
+          role="progressbar"
+          aria-label="Tutorial progress"
+          aria-valuemin={1}
+          aria-valuemax={7}
+          aria-valuenow={step + 1}
+        >
+          <span style={{ width: `${((step + 1) / 7) * 100}%` }} />
+        </div>
+      )}
       <div className="tutorial-layout">
         <aside className="tutorial-steps">
           <ol>
@@ -96,7 +137,9 @@ export function TutorialPage() {
         <section className="tutorial-canvas">
           {!result ? (
             <Card className="tutorial-card">
-              <p className="eyebrow">Checkpoint {step + 1} of 7</p>
+              <p className="eyebrow">
+                Checkpoint {step + 1} of 7 · about 2 minutes
+              </p>
               <h2>{checkpoints[step][0]}</h2>
               <p>{checkpoints[step][1]}</p>
               <div className="teaching-preview">
@@ -112,6 +155,14 @@ export function TutorialPage() {
                   <p>{tutorialPreview(step).body}</p>
                 </div>
               </div>
+              <Link
+                className="inline-link"
+                to={productionLinks[step]}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Open the corresponding live Studio screen ↗
+              </Link>
               {error && <Notice tone="danger">{error}</Notice>}
               <div className="tutorial-actions">
                 {step > 0 && (
@@ -136,8 +187,7 @@ export function TutorialPage() {
             <TutorialResult
               result={result}
               onReset={() => {
-                setResult(null);
-                setStep(0);
+                restart();
               }}
             />
           )}

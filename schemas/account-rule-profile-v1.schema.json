@@ -1,0 +1,854 @@
+{
+  "$defs": {
+    "AccountEvaluationPolicyV1": {
+      "additionalProperties": false,
+      "properties": {
+        "deterministic_require_no_closure": {
+          "default": true,
+          "title": "Deterministic Require No Closure",
+          "type": "boolean"
+        },
+        "deterministic_require_no_daily_loss_lock": {
+          "default": true,
+          "title": "Deterministic Require No Daily Loss Lock",
+          "type": "boolean"
+        },
+        "deterministic_require_no_position_rejection": {
+          "default": true,
+          "title": "Deterministic Require No Position Rejection",
+          "type": "boolean"
+        },
+        "maximum_account_closure_probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Maximum Account Closure Probability",
+          "type": "number"
+        },
+        "maximum_daily_loss_lock_probability": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Maximum Daily Loss Lock Probability",
+          "type": "number"
+        },
+        "maximum_p95_drawdown": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum P95 Drawdown"
+        },
+        "minimum_expected_net_payout_after_costs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum Expected Net Payout After Costs"
+        },
+        "minimum_expected_payout_to_cost_ratio": {
+          "anyOf": [
+            {
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum Expected Payout To Cost Ratio"
+        },
+        "minimum_first_payout_probability": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum First Payout Probability"
+        },
+        "minimum_horizon_sessions": {
+          "minimum": 1,
+          "title": "Minimum Horizon Sessions",
+          "type": "integer"
+        },
+        "minimum_two_payout_probability": {
+          "anyOf": [
+            {
+              "maximum": 1.0,
+              "minimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Minimum Two Payout Probability"
+        },
+        "monte_carlo_block_sessions": {
+          "minimum": 1,
+          "title": "Monte Carlo Block Sessions",
+          "type": "integer"
+        },
+        "monte_carlo_horizon_sessions": {
+          "minimum": 1,
+          "title": "Monte Carlo Horizon Sessions",
+          "type": "integer"
+        },
+        "monte_carlo_runs": {
+          "minimum": 1000,
+          "title": "Monte Carlo Runs",
+          "type": "integer"
+        },
+        "recommended_tests": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Recommended Tests",
+          "type": "array"
+        }
+      },
+      "required": [
+        "minimum_horizon_sessions",
+        "monte_carlo_runs",
+        "monte_carlo_horizon_sessions",
+        "monte_carlo_block_sessions",
+        "maximum_account_closure_probability",
+        "maximum_daily_loss_lock_probability",
+        "recommended_tests"
+      ],
+      "title": "AccountEvaluationPolicyV1",
+      "type": "object"
+    },
+    "AccountIdentityV1": {
+      "additionalProperties": false,
+      "properties": {
+        "account_kind": {
+          "enum": [
+            "prop_challenge",
+            "prop_funded",
+            "live"
+          ],
+          "title": "Account Kind",
+          "type": "string"
+        },
+        "account_label": {
+          "minLength": 1,
+          "title": "Account Label",
+          "type": "string"
+        },
+        "currency": {
+          "default": "USD",
+          "maxLength": 3,
+          "minLength": 3,
+          "title": "Currency",
+          "type": "string"
+        },
+        "eod_snapshot_time": {
+          "pattern": "^\\d{2}:\\d{2}:\\d{2}$",
+          "title": "Eod Snapshot Time",
+          "type": "string"
+        },
+        "nominal_balance": {
+          "exclusiveMinimum": 0.0,
+          "title": "Nominal Balance",
+          "type": "number"
+        },
+        "program": {
+          "minLength": 1,
+          "title": "Program",
+          "type": "string"
+        },
+        "provider": {
+          "minLength": 1,
+          "title": "Provider",
+          "type": "string"
+        },
+        "session_reset_time": {
+          "pattern": "^\\d{2}:\\d{2}:\\d{2}$",
+          "title": "Session Reset Time",
+          "type": "string"
+        },
+        "simulated_account": {
+          "title": "Simulated Account",
+          "type": "boolean"
+        },
+        "timezone": {
+          "minLength": 1,
+          "title": "Timezone",
+          "type": "string"
+        }
+      },
+      "required": [
+        "provider",
+        "program",
+        "account_label",
+        "account_kind",
+        "nominal_balance",
+        "timezone",
+        "session_reset_time",
+        "eod_snapshot_time",
+        "simulated_account"
+      ],
+      "title": "AccountIdentityV1",
+      "type": "object"
+    },
+    "AccountRulesV1": {
+      "additionalProperties": false,
+      "properties": {
+        "acquisition": {
+          "$ref": "#/$defs/AcquisitionRuleV1"
+        },
+        "eod_drawdown": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EodDrawdownRuleV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "evaluation": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/EvaluationRuleV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "fixed_daily_loss_limit": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed Daily Loss Limit"
+        },
+        "fixed_maximum_contracts": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Fixed Maximum Contracts"
+        },
+        "inactivity": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/InactivityRuleV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "intraday_equity_required": {
+          "title": "Intraday Equity Required",
+          "type": "boolean"
+        },
+        "manual_attestations_required": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Manual Attestations Required",
+          "type": "array"
+        },
+        "overnight_positions_allowed": {
+          "title": "Overnight Positions Allowed",
+          "type": "boolean"
+        },
+        "payouts": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/PayoutRuleV1"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "permitted_instruments": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Permitted Instruments",
+          "type": "array"
+        },
+        "position_close_deadline": {
+          "pattern": "^\\d{2}:\\d{2}:\\d{2}$",
+          "title": "Position Close Deadline",
+          "type": "string"
+        },
+        "scaling_tiers": {
+          "items": {
+            "$ref": "#/$defs/ScalingTierV1"
+          },
+          "title": "Scaling Tiers",
+          "type": "array"
+        }
+      },
+      "required": [
+        "permitted_instruments",
+        "overnight_positions_allowed",
+        "position_close_deadline",
+        "intraday_equity_required",
+        "acquisition"
+      ],
+      "title": "AccountRulesV1",
+      "type": "object"
+    },
+    "AcquisitionRuleV1": {
+      "additionalProperties": false,
+      "properties": {
+        "activation_fee_mode": {
+          "enum": [
+            "assessment_input_required",
+            "zero",
+            "not_applicable"
+          ],
+          "title": "Activation Fee Mode",
+          "type": "string"
+        },
+        "evaluation_price_mode": {
+          "enum": [
+            "assessment_input_required",
+            "not_applicable"
+          ],
+          "title": "Evaluation Price Mode",
+          "type": "string"
+        },
+        "prerequisite_profile_id": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Prerequisite Profile Id"
+        },
+        "retry_requires_new_evaluation": {
+          "default": false,
+          "title": "Retry Requires New Evaluation",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "evaluation_price_mode",
+        "activation_fee_mode"
+      ],
+      "title": "AcquisitionRuleV1",
+      "type": "object"
+    },
+    "EodDrawdownRuleV1": {
+      "additionalProperties": false,
+      "properties": {
+        "amount": {
+          "exclusiveMinimum": 0.0,
+          "title": "Amount",
+          "type": "number"
+        },
+        "breach_operator": {
+          "const": "touch_or_below",
+          "default": "touch_or_below",
+          "enum": [
+            "touch_or_below"
+          ],
+          "title": "Breach Operator",
+          "type": "string"
+        },
+        "enforcement": {
+          "const": "intraday_equity",
+          "enum": [
+            "intraday_equity"
+          ],
+          "title": "Enforcement",
+          "type": "string"
+        },
+        "initial_threshold": {
+          "title": "Initial Threshold",
+          "type": "number"
+        },
+        "locked_threshold": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Locked Threshold"
+        },
+        "never_moves_down": {
+          "const": true,
+          "default": true,
+          "enum": [
+            true
+          ],
+          "title": "Never Moves Down",
+          "type": "boolean"
+        },
+        "recalculation": {
+          "const": "end_of_day",
+          "enum": [
+            "end_of_day"
+          ],
+          "title": "Recalculation",
+          "type": "string"
+        },
+        "trailing_basis": {
+          "const": "highest_eod_balance",
+          "enum": [
+            "highest_eod_balance"
+          ],
+          "title": "Trailing Basis",
+          "type": "string"
+        }
+      },
+      "required": [
+        "amount",
+        "initial_threshold",
+        "trailing_basis",
+        "recalculation",
+        "enforcement"
+      ],
+      "title": "EodDrawdownRuleV1",
+      "type": "object"
+    },
+    "EvaluationRuleV1": {
+      "additionalProperties": false,
+      "properties": {
+        "access_period_calendar_days": {
+          "minimum": 1,
+          "title": "Access Period Calendar Days",
+          "type": "integer"
+        },
+        "activation_window_calendar_days": {
+          "anyOf": [
+            {
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Activation Window Calendar Days"
+        },
+        "consistency_limit": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0.0,
+              "maximum": 1.0,
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Consistency Limit"
+        },
+        "minimum_trading_days": {
+          "minimum": 0,
+          "title": "Minimum Trading Days",
+          "type": "integer"
+        },
+        "profit_target": {
+          "exclusiveMinimum": 0.0,
+          "title": "Profit Target",
+          "type": "number"
+        }
+      },
+      "required": [
+        "profit_target",
+        "access_period_calendar_days",
+        "minimum_trading_days"
+      ],
+      "title": "EvaluationRuleV1",
+      "type": "object"
+    },
+    "InactivityRuleV1": {
+      "additionalProperties": false,
+      "properties": {
+        "consequence": {
+          "const": "account_closed",
+          "enum": [
+            "account_closed"
+          ],
+          "title": "Consequence",
+          "type": "string"
+        },
+        "minimum_daily_profit": {
+          "exclusiveMinimum": 0.0,
+          "title": "Minimum Daily Profit",
+          "type": "number"
+        },
+        "required_profit_days": {
+          "minimum": 1,
+          "title": "Required Profit Days",
+          "type": "integer"
+        },
+        "rolling_calendar_days": {
+          "minimum": 1,
+          "title": "Rolling Calendar Days",
+          "type": "integer"
+        }
+      },
+      "required": [
+        "rolling_calendar_days",
+        "required_profit_days",
+        "minimum_daily_profit",
+        "consequence"
+      ],
+      "title": "InactivityRuleV1",
+      "type": "object"
+    },
+    "OfficialSourceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "accessed_at": {
+          "format": "date",
+          "title": "Accessed At",
+          "type": "string"
+        },
+        "supports": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Supports",
+          "type": "array"
+        },
+        "title": {
+          "minLength": 1,
+          "title": "Title",
+          "type": "string"
+        },
+        "url": {
+          "format": "uri",
+          "maxLength": 2083,
+          "minLength": 1,
+          "title": "Url",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title",
+        "url",
+        "accessed_at",
+        "supports"
+      ],
+      "title": "OfficialSourceV1",
+      "type": "object"
+    },
+    "PayoutRuleV1": {
+      "additionalProperties": false,
+      "properties": {
+        "consistency_limit": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Consistency Limit",
+          "type": "number"
+        },
+        "consistency_operator": {
+          "const": "strictly_less_than",
+          "default": "strictly_less_than",
+          "enum": [
+            "strictly_less_than"
+          ],
+          "title": "Consistency Operator",
+          "type": "string"
+        },
+        "maximum_payouts": {
+          "minimum": 1,
+          "title": "Maximum Payouts",
+          "type": "integer"
+        },
+        "minimum_daily_profit": {
+          "exclusiveMinimum": 0.0,
+          "title": "Minimum Daily Profit",
+          "type": "number"
+        },
+        "minimum_payout": {
+          "exclusiveMinimum": 0.0,
+          "title": "Minimum Payout",
+          "type": "number"
+        },
+        "minimum_request_balance": {
+          "exclusiveMinimum": 0.0,
+          "title": "Minimum Request Balance",
+          "type": "number"
+        },
+        "payout_caps": {
+          "items": {
+            "type": "number"
+          },
+          "minItems": 1,
+          "title": "Payout Caps",
+          "type": "array"
+        },
+        "payout_profit_share": {
+          "exclusiveMinimum": 0.0,
+          "maximum": 1.0,
+          "title": "Payout Profit Share",
+          "type": "number"
+        },
+        "qualifying_profit_days": {
+          "minimum": 1,
+          "title": "Qualifying Profit Days",
+          "type": "integer"
+        },
+        "request_policy": {
+          "const": "maximum_when_eligible",
+          "default": "maximum_when_eligible",
+          "enum": [
+            "maximum_when_eligible"
+          ],
+          "title": "Request Policy",
+          "type": "string"
+        },
+        "safety_net_balance": {
+          "exclusiveMinimum": 0.0,
+          "title": "Safety Net Balance",
+          "type": "number"
+        }
+      },
+      "required": [
+        "qualifying_profit_days",
+        "minimum_daily_profit",
+        "consistency_limit",
+        "safety_net_balance",
+        "minimum_request_balance",
+        "minimum_payout",
+        "maximum_payouts",
+        "payout_caps",
+        "payout_profit_share"
+      ],
+      "title": "PayoutRuleV1",
+      "type": "object"
+    },
+    "ProfileProvenanceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "notes": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Notes",
+          "type": "array"
+        },
+        "official_sources": {
+          "items": {
+            "$ref": "#/$defs/OfficialSourceV1"
+          },
+          "title": "Official Sources",
+          "type": "array"
+        },
+        "reviewed_at": {
+          "anyOf": [
+            {
+              "format": "date-time",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewed At"
+        },
+        "reviewer": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reviewer"
+        },
+        "verification_status": {
+          "enum": [
+            "reviewed",
+            "synthetic",
+            "stale",
+            "needs_manual_review"
+          ],
+          "title": "Verification Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "verification_status"
+      ],
+      "title": "ProfileProvenanceV1",
+      "type": "object"
+    },
+    "ScalingTierV1": {
+      "additionalProperties": false,
+      "properties": {
+        "daily_loss_limit": {
+          "exclusiveMinimum": 0.0,
+          "title": "Daily Loss Limit",
+          "type": "number"
+        },
+        "maximum_contracts": {
+          "minimum": 1,
+          "title": "Maximum Contracts",
+          "type": "integer"
+        },
+        "maximum_profit_exclusive": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Maximum Profit Exclusive"
+        },
+        "minimum_profit": {
+          "title": "Minimum Profit",
+          "type": "number"
+        }
+      },
+      "required": [
+        "minimum_profit",
+        "maximum_contracts",
+        "daily_loss_limit"
+      ],
+      "title": "ScalingTierV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "description": {
+      "minLength": 1,
+      "title": "Description",
+      "type": "string"
+    },
+    "effective_from": {
+      "format": "date",
+      "title": "Effective From",
+      "type": "string"
+    },
+    "effective_until": {
+      "anyOf": [
+        {
+          "format": "date",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Effective Until"
+    },
+    "evaluation_policy": {
+      "$ref": "#/$defs/AccountEvaluationPolicyV1"
+    },
+    "identity": {
+      "$ref": "#/$defs/AccountIdentityV1"
+    },
+    "name": {
+      "minLength": 1,
+      "title": "Name",
+      "type": "string"
+    },
+    "novice_visible": {
+      "default": true,
+      "title": "Novice Visible",
+      "type": "boolean"
+    },
+    "profile_id": {
+      "minLength": 1,
+      "title": "Profile Id",
+      "type": "string"
+    },
+    "promotable": {
+      "default": true,
+      "title": "Promotable",
+      "type": "boolean"
+    },
+    "provenance": {
+      "$ref": "#/$defs/ProfileProvenanceV1"
+    },
+    "rules": {
+      "$ref": "#/$defs/AccountRulesV1"
+    },
+    "schema": {
+      "const": "alphaquest.account-rule-profile/v1",
+      "default": "alphaquest.account-rule-profile/v1",
+      "enum": [
+        "alphaquest.account-rule-profile/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "version": {
+      "minLength": 1,
+      "title": "Version",
+      "type": "string"
+    }
+  },
+  "required": [
+    "profile_id",
+    "version",
+    "name",
+    "description",
+    "effective_from",
+    "identity",
+    "provenance",
+    "rules",
+    "evaluation_policy"
+  ],
+  "title": "AccountRuleProfileV1",
+  "type": "object"
+}

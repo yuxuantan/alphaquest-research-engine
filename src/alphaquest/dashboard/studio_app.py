@@ -7,7 +7,7 @@ logic belongs in :mod:`alphaquest.studio.workflow`.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 import json
 import os
 from pathlib import Path
@@ -17,7 +17,7 @@ from typing import Any
 
 PAGES = ("Home", "Campaigns", "Review Queue", "Libraries", "Tutorial", "Settings")
 WIZARD_STEPS = (
-    "1 · Research brief",
+    "1 · Goals and research brief",
     "2 · Duplicate review",
     "3 · Dataset",
     "4 · Execution rules",
@@ -254,6 +254,7 @@ def _wizard_prerequisite_error(
     fingerprint = draft.get("economic_edge_fingerprint")
     brief_ready = all(
         (
+            (draft.get("research_objectives") or {}).get("confirmed") is True,
             draft.get("sources"),
             draft.get("hypothesis"),
             draft.get("expected_mechanism"),
@@ -363,11 +364,105 @@ def _render_frozen_draft(
 
 
 def _wizard_research_brief(st: Any, store: Any, campaign_id: str, draft: dict[str, Any]) -> None:
-    st.subheader("1. Declare the economic edge before seeing PnL")
+    st.subheader("1. Freeze the goals, then declare the economic edge")
     _render_ai_drafting(st, store, campaign_id, draft)
     source = (draft.get("sources") or [{}])[0]
     fingerprint = draft.get("economic_edge_fingerprint") or {}
+    objectives = draft.get("research_objectives") or {}
     with st.form(f"brief_{campaign_id}"):
+        st.markdown("**Pre-PnL development contract**")
+        development_goal = st.text_area(
+            "Development goal",
+            value=str(
+                objectives.get("development_goal")
+                or "Determine whether this candidate survives every frozen research gate."
+            ),
+            key=f"brief_goal_{campaign_id}",
+        )
+        a, b, c = st.columns(3)
+        development_deadline = a.date_input(
+            "Decision deadline",
+            value=date.fromisoformat(
+                str(objectives.get("development_deadline") or (date.today() + timedelta(days=180)).isoformat())
+            ),
+            min_value=date.today(),
+            key=f"brief_deadline_{campaign_id}",
+        )
+        evaluation_months = b.number_input(
+            "Evaluation horizon (months)", min_value=12, value=int(objectives.get("evaluation_horizon_months") or 24)
+        )
+        maximum_variants = c.number_input(
+            "Maximum variants", min_value=1, max_value=5, value=int(objectives.get("maximum_variants") or 5)
+        )
+        a, b, c = st.columns(3)
+        annual_return = a.number_input(
+            "Minimum annualized return (%)",
+            min_value=0.01,
+            value=float(objectives.get("minimum_annualized_return_fraction") or 0.20) * 100,
+        )
+        minimum_mar = b.number_input(
+            "Minimum MAR", min_value=0.40, value=float(objectives.get("minimum_mar") or 0.40)
+        )
+        maximum_drawdown = c.number_input(
+            "Maximum drawdown (%)",
+            min_value=0.01,
+            max_value=20.0,
+            value=float(objectives.get("maximum_drawdown_fraction") or 0.10) * 100,
+        )
+        a, b, c = st.columns(3)
+        wfa_windows = a.number_input(
+            "Complete WFA windows", min_value=3, value=int(objectives.get("minimum_complete_wfa_windows") or 3)
+        )
+        wfa_trades = b.number_input(
+            "Minimum stitched WFA trades", min_value=50, value=int(objectives.get("minimum_wfa_oos_trades") or 50)
+        )
+        acceptance_trades = c.number_input(
+            "Minimum final OOS trades", min_value=30, value=int(objectives.get("minimum_acceptance_oos_trades") or 30)
+        )
+        a, b, c = st.columns(3)
+        mc_runs = a.number_input(
+            "Monte Carlo runs", min_value=8000, value=int(objectives.get("monte_carlo_min_runs") or 8000)
+        )
+        mc_months = b.number_input(
+            "Monte Carlo horizon (months)", min_value=6, value=int(objectives.get("monte_carlo_horizon_months") or 6)
+        )
+        profitable_paths = c.number_input(
+            "Minimum profitable paths (%)",
+            min_value=70.0,
+            max_value=100.0,
+            value=float(objectives.get("minimum_net_profit_probability") or 0.70) * 100,
+        )
+        a, b, c = st.columns(3)
+        breach_paths = a.number_input(
+            "Maximum account breaches (%)",
+            min_value=0.0,
+            max_value=10.0,
+            value=float(objectives.get("maximum_account_breach_probability") or 0.10) * 100,
+        )
+        forward_days = b.number_input(
+            "Forward incubation days", min_value=90, value=int(objectives.get("forward_incubation_min_calendar_days") or 90)
+        )
+        forward_trades = c.number_input(
+            "Forward incubation trades", min_value=30, value=int(objectives.get("forward_incubation_min_trades") or 30)
+        )
+        abandonment = st.text_area(
+            "Abandonment rules · one per line",
+            value="\n".join(
+                objectives.get("abandonment_rules")
+                or ["Stop at the first terminal scientific gate failure; do not tune after OOS."]
+            ),
+        )
+        retirement = st.text_area(
+            "Retirement rules · one per line",
+            value="\n".join(
+                objectives.get("retirement_rules")
+                or ["Retire after a frozen live risk or degradation boundary is breached."]
+            ),
+        )
+        objectives_confirmed = st.checkbox(
+            "I confirm these objectives before inspecting strategy PnL",
+            value=objectives.get("confirmed") is True,
+        )
         title = st.text_input(
             "Campaign title", value=str(draft.get("title") or ""), key=f"brief_title_{campaign_id}"
         )
@@ -451,7 +546,39 @@ def _wizard_research_brief(st: Any, store: Any, campaign_id: str, draft: dict[st
         )
         saved = st.form_submit_button("Save and continue", type="primary")
     if saved:
+        from alphaquest.authoring.models import ResearchObjectivesV1
+        from alphaquest.research.policy import load_research_policy
+
+        objective_payload = {
+            "schema": "alphaquest.research-objectives/v1",
+            "development_goal": development_goal.strip(),
+            "development_deadline": development_deadline.isoformat(),
+            "evaluation_horizon_months": int(evaluation_months),
+            "minimum_annualized_return_fraction": float(annual_return) / 100,
+            "minimum_mar": float(minimum_mar),
+            "maximum_drawdown_fraction": float(maximum_drawdown) / 100,
+            "minimum_complete_wfa_windows": int(wfa_windows),
+            "minimum_wfa_oos_trades": int(wfa_trades),
+            "minimum_acceptance_oos_trades": int(acceptance_trades),
+            "monte_carlo_min_runs": int(mc_runs),
+            "monte_carlo_horizon_months": int(mc_months),
+            "minimum_net_profit_probability": float(profitable_paths) / 100,
+            "maximum_account_breach_probability": float(breach_paths) / 100,
+            "forward_incubation_min_calendar_days": int(forward_days),
+            "forward_incubation_min_trades": int(forward_trades),
+            "maximum_variants": int(maximum_variants),
+            "abandonment_rules": _lines(abandonment),
+            "retirement_rules": _lines(retirement),
+            "confirmed": bool(objectives_confirmed),
+        }
+        try:
+            parsed_objectives = ResearchObjectivesV1.model_validate(objective_payload)
+            load_research_policy().validate_objectives(parsed_objectives.model_dump(mode="json"))
+        except ValueError as exc:
+            st.error(f"Research objectives are not valid: {exc}")
+            return
         updated = {
+                "research_objectives": parsed_objectives.model_dump(mode="json", by_alias=True),
                 "title": title.strip(),
                 "edge_family": _identifier(edge_family),
                 "timeframe": timeframe,
@@ -1313,6 +1440,7 @@ def _render_follow_up_creator(
         target_variant = None
         authorized_by = None
         patches: list[dict[str, Any]] = []
+        refresh_certification = False
         parameter_grid: dict[str, list[Any]] = {}
         if kind == "data_refresh":
             datasets = [
@@ -1338,40 +1466,55 @@ def _render_follow_up_creator(
             )
             config_path = next(path for path in parent_paths if path.parent.name == target_variant)
             config = __import__("yaml").safe_load(config_path.read_text(encoding="utf-8")) or {}
-            component = st.selectbox(
-                "Mechanics component",
-                ("entry", "sl", "tp"),
-                format_func=lambda item: {"entry": "Entry", "sl": "Stop", "tp": "Target"}[item],
-                key=f"follow_component_{campaign_id}",
-            )
-            params = (((config.get("strategy") or {}).get(component) or {}).get("params") or {})
-            scalar_options = _scalar_parameter_options(params)
-            if not scalar_options:
-                st.error("This component has no scalar parameter that Studio can correct safely.")
-            else:
-                parameter = st.selectbox(
-                    "Reviewed parameter",
-                    tuple(scalar_options),
-                    key=f"follow_parameter_{campaign_id}_{component}",
+            if kind == "pre_pnl_mechanics_correction":
+                refresh_certification = st.checkbox(
+                    "Publish the current certified implementation",
+                    help=(
+                        "Use this after source logic was tested and recertified but fixed parameter values "
+                        "did not change. A fresh mechanics review is still mandatory."
+                    ),
+                    key=f"follow_certification_refresh_{campaign_id}",
                 )
-                old_value = scalar_options[parameter]
-                widget_key = f"follow_value_{campaign_id}_{component}_{parameter}"
-                if isinstance(old_value, bool):
-                    new_value = st.selectbox("Corrected value", (True, False), index=int(not old_value), key=widget_key)
-                elif isinstance(old_value, int):
-                    new_value = int(st.number_input("Corrected value", value=old_value, step=1, key=widget_key))
-                elif isinstance(old_value, float):
-                    new_value = float(st.number_input("Corrected value", value=old_value, key=widget_key))
+            if not refresh_certification:
+                component = st.selectbox(
+                    "Mechanics component",
+                    ("entry", "sl", "tp"),
+                    format_func=lambda item: {"entry": "Entry", "sl": "Stop", "tp": "Target"}[item],
+                    key=f"follow_component_{campaign_id}",
+                )
+                params = (((config.get("strategy") or {}).get(component) or {}).get("params") or {})
+                scalar_options = _scalar_parameter_options(params)
+                if not scalar_options:
+                    st.error("This component has no scalar parameter that Studio can correct safely.")
                 else:
-                    new_value = st.text_input("Corrected value", value=str(old_value), key=widget_key)
-                patches = [
-                    {
-                        "variant_id": target_variant,
-                        "component": component,
-                        "parameter_path": parameter,
-                        "value": new_value,
-                    }
-                ]
+                    parameter = st.selectbox(
+                        "Reviewed parameter",
+                        tuple(scalar_options),
+                        key=f"follow_parameter_{campaign_id}_{component}",
+                    )
+                    old_value = scalar_options[parameter]
+                    widget_key = f"follow_value_{campaign_id}_{component}_{parameter}"
+                    if isinstance(old_value, bool):
+                        new_value = st.selectbox(
+                            "Corrected value",
+                            (True, False),
+                            index=int(not old_value),
+                            key=widget_key,
+                        )
+                    elif isinstance(old_value, int):
+                        new_value = int(st.number_input("Corrected value", value=old_value, step=1, key=widget_key))
+                    elif isinstance(old_value, float):
+                        new_value = float(st.number_input("Corrected value", value=old_value, key=widget_key))
+                    else:
+                        new_value = st.text_input("Corrected value", value=str(old_value), key=widget_key)
+                    patches = [
+                        {
+                            "variant_id": target_variant,
+                            "component": component,
+                            "parameter_path": parameter,
+                            "value": new_value,
+                        }
+                    ]
             if kind == "rescue":
                 authorized_by = st.text_input(
                     "Rescue authorizer identity",
@@ -1407,7 +1550,11 @@ def _render_follow_up_creator(
             or not created_by.strip()
             or len(reason.strip()) < 80
             or (kind == "data_refresh" and not dataset_id)
-            or (kind in {"pre_pnl_mechanics_correction", "rescue"} and not patches)
+            or (
+                kind in {"pre_pnl_mechanics_correction", "rescue"}
+                and not patches
+                and not refresh_certification
+            )
             or (kind == "pre_pnl_parameter_declaration" and not parameter_grid)
             or (kind == "rescue" and not str(authorized_by or "").strip())
         )
@@ -1429,6 +1576,7 @@ def _render_follow_up_creator(
                         "target_variant_id": target_variant,
                         "authorized_by": authorized_by,
                         "mechanic_patches": patches,
+                        "refresh_certification": refresh_certification,
                         "parameter_grid": parameter_grid,
                     }
                 )

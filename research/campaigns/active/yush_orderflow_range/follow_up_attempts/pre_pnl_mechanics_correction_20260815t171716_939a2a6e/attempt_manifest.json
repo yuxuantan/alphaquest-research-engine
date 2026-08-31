@@ -1,0 +1,78 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260815t171716_939a2a6e",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "01229bff9a2545d45cbd36394f6c4c36b37e24e79d3d4faf295826696fd09293",
+        "implementation_version": 12,
+        "manifest_sha256": "6d2713cb0a08b80a52b965300d07af6249806d5140c449a4a341e22bd5dbdb00",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "910f77df1fcc493e189e0f8b23b86a8be8885c4e8f09fdf0eec54a8b7d3d5bff",
+        "implementation_version": 11,
+        "manifest_sha256": "ea37784da8ab90f5b84f2e7a62ea41dbc089fe4264a02e692607b061664b8166",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "minimum_poc_reward_r",
+      "new": null,
+      "old": 0.0,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "minimum_net_reward_to_worst_case_loss",
+      "new": 1.0,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "667c4c26d92a5e1199945d77d59b8815a4901e492b2bba4fc77198267b655937"
+  },
+  "created_at": "2026-08-15T17:17:16.805839+00:00",
+  "created_by": "Researcher via Codex",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260815t171716_939a2a6e",
+  "parent_attempt_id": "methodology_rerun_20260815t162359_2ae50158",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Mechanics review rejected v03 because next-event entries could retain only marginal POC reward against a much wider structural stop. Bind certified implementation v12, require actual-fill net target reward to cover the all-in worst-case stop loss, and replace the misleading synthetic entry-trigger presentation with explicit market reference and modeled fill evidence.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "f6ae8af8cf25aede10412d746f58d8f0f87b9da51f00ed5660fd41221a244c1e"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "418113b8e8fa2fe7c841ba0abbda832e213547fc0f36a2fa1bedb68bb6b9d437"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

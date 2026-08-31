@@ -1,0 +1,33 @@
+schema: alphaquest.execution-certification/v1
+profile_id: generic_quote_orders_v1
+implementation_version: 1
+status: certified
+summary: Deterministic market, limit, stop, stop-limit, OCO, partial-fill, and bid/ask quote replay.
+source_files:
+  - src/alphaquest/backtest/order_simulation.py
+implementation_sha256: 24f8d7326c6dea1ced472a268130670e958e87948e5d13cec6f5e190ba380f36
+required_data:
+  - timestamp
+  - source_sequence
+  - trade_price
+  - trade_size
+  - bid
+  - ask
+  - bid_size
+  - ask_size
+required_test_categories:
+  - market
+  - limit
+  - stop
+  - stop_limit
+  - oco
+  - partial_fills
+  - bid_ask_replay
+  - no_lookahead
+required_tests:
+  - tests/test_order_simulation.py
+excluded_capabilities:
+  - MBO queue priority
+  - hidden liquidity
+  - exchange-specific matching priority
+  - live broker routing

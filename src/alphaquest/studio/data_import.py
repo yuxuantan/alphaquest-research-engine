@@ -8,7 +8,7 @@ import hashlib
 import json
 from pathlib import Path
 import shutil
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -29,6 +29,10 @@ class DataImportSpec(BaseModel):
     timezone: str
     exchange_timezone: str = "America/New_York"
     timestamp_semantics: Literal["bar_open", "bar_close"]
+    session_template_id: Literal[
+        "cme_us_equity_rth",
+        "cme_us_equity_morning",
+    ] | None = None
     roll_policy: Literal["single_contract", "explicit_roll_calendar"]
     roll_calendar_path: str | None = None
     timestamp_column: str
@@ -85,6 +89,56 @@ class DatasetImporter:
             return list(pd.read_parquet(path).columns)
         raise ValueError("Studio V1 imports only CSV or Parquet files")
 
+    def inspect_file(self, source_path: str | Path, *, sample_rows: int = 5_000) -> dict[str, Any]:
+        """Return bounded source-discovery facts without making the upload selectable."""
+
+        path = Path(source_path).expanduser().resolve()
+        if path.suffix.lower() == ".csv":
+            frame = pd.read_csv(path, nrows=sample_rows)
+        elif path.suffix.lower() in {".parquet", ".pq"}:
+            frame = pd.read_parquet(path).head(sample_rows)
+        else:
+            raise ValueError("Studio imports only CSV or Parquet files")
+        columns = [str(column) for column in frame.columns]
+        timestamp_candidates: list[dict[str, Any]] = []
+        contract_candidates: list[dict[str, Any]] = []
+        for column in columns:
+            series = frame[column]
+            name = column.casefold()
+            if any(token in name for token in ("time", "date")):
+                parsed = pd.to_datetime(series, errors="coerce", utc=True)
+                valid = parsed.dropna()
+                if len(valid):
+                    timestamp_candidates.append(
+                        {
+                            "column": column,
+                            "valid_sample_rows": int(len(valid)),
+                            "sample_start": valid.min().isoformat(),
+                            "sample_end": valid.max().isoformat(),
+                        }
+                    )
+            if any(token in name for token in ("contract", "symbol", "ticker")):
+                values = (
+                    series.astype("string").str.strip().dropna().loc[lambda value: value != ""]
+                )
+                contract_candidates.append(
+                    {
+                        "column": column,
+                        "distinct_sample_values": int(values.nunique()),
+                        "sample_values": sorted(values.unique().tolist())[:20],
+                    }
+                )
+        return {
+            "columns": columns,
+            "sample_rows": int(len(frame)),
+            "sample_limited": len(frame) >= sample_rows,
+            "timestamp_candidates": timestamp_candidates,
+            "contract_candidates": contract_candidates,
+            "numeric_columns": [
+                column for column in columns if pd.api.types.is_numeric_dtype(frame[column])
+            ],
+        }
+
     def import_file(self, source_path: str | Path, spec: DataImportSpec) -> DataImportResult:
         source = Path(source_path).expanduser().resolve()
         if not source.is_file():
@@ -121,11 +175,28 @@ class DatasetImporter:
             raise ValueError(
                 "numeric timestamps are ambiguous; convert them to ISO date-times before Studio import"
             )
-        parsed = pd.to_datetime(original_timestamp, errors="coerce")
+        parsed = original_timestamp.map(_parse_timestamp_value)
         invalid_timestamp_mask = parsed.isna()
         valid = frame.loc[~invalid_timestamp_mask].copy()
         valid_timestamps = parsed.loc[~invalid_timestamp_mask]
-        if getattr(valid_timestamps.dt, "tz", None) is None:
+        awareness = valid_timestamps.map(
+            lambda value: getattr(value, "tzinfo", None) is not None
+        )
+        if bool(awareness.any()) and not bool(awareness.all()):
+            raise ValueError("timestamps mix timezone-aware and naive values")
+        if bool(awareness.all()):
+            valid_timestamps = pd.to_datetime(
+                valid_timestamps,
+                errors="coerce",
+                format="mixed",
+                utc=True,
+            )
+        else:
+            valid_timestamps = pd.to_datetime(
+                valid_timestamps,
+                errors="coerce",
+                format="mixed",
+            )
             try:
                 valid_timestamps = valid_timestamps.dt.tz_localize(spec.timezone, ambiguous="NaT", nonexistent="NaT")
             except (TypeError, ValueError) as exc:
@@ -295,6 +366,11 @@ class DatasetImporter:
                 f"interpreted source timestamps as {spec.timestamp_semantics} in {spec.timezone}",
                 "normalized valid timestamps to canonical bar-open UTC timestamps",
                 "coerced OHLCV to numeric with invalid rows flagged",
+                *(
+                    [f"recorded certified session reference {spec.session_template_id}"]
+                    if spec.session_template_id
+                    else []
+                ),
             ],
             row_count=row_count,
             dropped_row_count=dropped_row_count,
@@ -462,6 +538,13 @@ def _timeframe_delta(timeframe: str) -> pd.Timedelta:
     number = int(timeframe[:-1])
     unit = timeframe[-1]
     return pd.Timedelta(seconds=number * {"m": 60, "h": 3600, "d": 86400}[unit])
+
+
+def _parse_timestamp_value(value: object) -> object:
+    try:
+        return pd.Timestamp(value)
+    except (TypeError, ValueError, OverflowError):
+        return pd.NaT
 
 
 __all__ = ["DataImportResult", "DataImportSpec", "DatasetImporter"]

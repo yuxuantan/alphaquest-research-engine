@@ -5,6 +5,7 @@ from alphaquest.data.clean import clean_data
 from alphaquest.data.features import build_features
 import alphaquest.research.core_grid as core_grid_module
 from alphaquest.research.core_grid import parameter_combinations, run_core_grid
+from alphaquest.utils.progress import listen_for_progress
 from tests.test_backtest_engine import BASE_CFG
 from tests.test_data_pipeline import DATA_CFG
 
@@ -205,6 +206,45 @@ def test_core_grid_parallel_branch_is_configurable(monkeypatch):
     assert summary["parallel"] == {"enabled": True, "workers": 2, "scope": "grid"}
 
 
+def test_core_grid_process_parallelism_matches_serial_results_exactly():
+    df, _, _ = clean_data(DATA_CFG)
+    data = build_features(df, DATA_CFG)
+    parameters = {
+        "entry.params.reclaim_window_bars": [2, 3],
+        "tp.params.target_r_multiple": [1.0],
+    }
+    benchmarks = {"min_trade_count": 0, "max_drawdown": 99999}
+
+    serial, serial_summary = run_core_grid(
+        data,
+        BASE_CFG,
+        {
+            "parallel": {"enabled": False},
+            "parameters": parameters,
+        },
+        benchmarks,
+    )
+    progress_updates = []
+    with listen_for_progress(progress_updates.append):
+        parallel, parallel_summary = run_core_grid(
+            data,
+            BASE_CFG,
+            {
+                "parallel": {"enabled": True, "workers": 2, "scope": "grid"},
+                "parameters": parameters,
+            },
+            benchmarks,
+        )
+
+    pd.testing.assert_frame_equal(parallel, serial)
+    assert parallel_summary["top_10_combinations"] == serial_summary["top_10_combinations"]
+    assert parallel_summary["stable_parameter_zones"] == serial_summary["stable_parameter_zones"]
+    assert parallel_summary["signal_density"] == serial_summary["signal_density"]
+    assert parallel_summary["parallel"] == {"enabled": True, "workers": 2, "scope": "grid"}
+    assert [item["completed"] for item in progress_updates] == [0, 1, 2]
+    assert all(item["active_workers"] == 2 for item in progress_updates)
+
+
 def test_core_grid_parallel_can_retain_iteration_reports(tmp_path, monkeypatch):
     df, _, _ = clean_data(DATA_CFG)
     data = build_features(df, DATA_CFG)
@@ -242,3 +282,63 @@ def test_core_grid_parallel_can_retain_iteration_reports(tmp_path, monkeypatch):
     assert summary["parallel"] == {"enabled": True, "workers": 2, "scope": "grid"}
     assert (tmp_path / "core_grid_iteration_trades.csv").exists()
     assert (tmp_path / "core_grid_iteration_daily.csv").exists()
+
+
+def test_event_grid_routes_to_shared_session_batch_executor(monkeypatch):
+    df, _, _ = clean_data(DATA_CFG)
+    data = build_features(df, DATA_CFG)
+    calls = []
+
+    monkeypatch.setattr(core_grid_module, "_event_batch_grid_enabled", lambda *_: True)
+
+    def fake_batched(
+        data,
+        base_config,
+        benchmarks,
+        combos,
+        *,
+        workers,
+        include_reports,
+        grid_config,
+    ):
+        calls.append(
+            {
+                "workers": workers,
+                "combos": combos,
+                "include_reports": include_reports,
+            }
+        )
+        values = []
+        for idx, combo in enumerate(combos, start=1):
+            values.append(
+                core_grid_module._evaluate_core_grid_combo(
+                    data,
+                    base_config,
+                    benchmarks,
+                    idx,
+                    combo,
+                )
+            )
+        return values, {
+            "mode": "session_chunk_batch",
+            "shared_session_canonicalization": True,
+            "idle_event_batching": True,
+            "result_cache_hits": 0,
+            "result_cache_misses": len(combos),
+        }
+
+    monkeypatch.setattr(core_grid_module, "_run_batched_event_core_grid", fake_batched)
+    results, summary = run_core_grid(
+        data,
+        BASE_CFG,
+        {
+            "parallel": {"enabled": True, "workers": 2},
+            "parameters": {"entry.params.reclaim_window_bars": [2, 3]},
+        },
+        {"min_trade_count": 0, "max_drawdown": 99999},
+    )
+
+    assert len(results) == 2
+    assert calls[0]["workers"] == 2
+    assert summary["execution"]["mode"] == "session_chunk_batch"
+    assert summary["execution"]["shared_session_canonicalization"] is True

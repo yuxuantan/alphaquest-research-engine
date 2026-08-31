@@ -3,6 +3,11 @@ import { Link, useNavigate } from "react-router-dom";
 import { api, ApiError } from "../api";
 import { Button, Card, Field, Notice, PageHeader } from "../components/UI";
 import { Icon } from "../components/Icons";
+import {
+  OBJECTIVE_TEMPLATES,
+  buildResearchObjectives,
+  type ObjectiveTemplateKey,
+} from "../researchObjectives";
 import { useStudio } from "../state";
 
 export function NewResearchPage() {
@@ -10,6 +15,9 @@ export function NewResearchPage() {
   const { refresh } = useStudio();
   const [title, setTitle] = useState("");
   const [instrument, setInstrument] = useState("ES");
+  const [objectiveTemplate, setObjectiveTemplate] =
+    useState<ObjectiveTemplateKey>("generic_candidate");
+  const [objectivesConfirmed, setObjectivesConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   async function submit(event: FormEvent) {
@@ -21,6 +29,7 @@ export function NewResearchPage() {
         title,
         instrument,
         campaign_id: slugify(title),
+        research_objectives: buildResearchObjectives(objectiveTemplate, title),
       });
       await refresh();
       navigate(`/research/${result.campaign_id}/design/1`);
@@ -97,6 +106,43 @@ export function NewResearchPage() {
               ))}
             </div>
           </fieldset>
+          <Field
+            label="Performance objective"
+            hint="This is frozen before source research or mechanics so AI cannot move the goalposts after seeing results."
+          >
+            <select
+              value={objectiveTemplate}
+              onChange={(event) => {
+                setObjectiveTemplate(event.target.value as ObjectiveTemplateKey);
+                setObjectivesConfirmed(false);
+              }}
+            >
+              {Object.entries(OBJECTIVE_TEMPLATES).map(([key, template]) => (
+                <option key={key} value={key}>
+                  {template.label}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Notice tone="info" title={OBJECTIVE_TEMPLATES[objectiveTemplate].label}>
+            {OBJECTIVE_TEMPLATES[objectiveTemplate].description} Minimum MAR {OBJECTIVE_TEMPLATES[objectiveTemplate].minimum_mar}; maximum drawdown {OBJECTIVE_TEMPLATES[objectiveTemplate].maximum_drawdown_percent}%; at least {OBJECTIVE_TEMPLATES[objectiveTemplate].minimum_complete_wfa_windows} complete WFA windows; {OBJECTIVE_TEMPLATES[objectiveTemplate].monte_carlo_min_runs.toLocaleString()} Monte Carlo paths; maximum {OBJECTIVE_TEMPLATES[objectiveTemplate].maximum_variants} variants.
+          </Notice>
+          <label className="confirmation compact">
+            <input
+              type="checkbox"
+              checked={objectivesConfirmed}
+              onChange={(event) => setObjectivesConfirmed(event.target.checked)}
+            />
+            <span>
+              <Icon name="check" />
+            </span>
+            <div>
+              <strong>
+                I confirm this performance and risk objective before AI source
+                research or PnL.
+              </strong>
+            </div>
+          </label>
           <Notice tone="info" title="No result data is used">
             The next seven steps freeze the source, data, execution, and first
             mechanics before any PnL is visible.
@@ -105,7 +151,11 @@ export function NewResearchPage() {
             <Link className="button button-secondary" to="/research">
               Cancel
             </Link>
-            <Button type="submit" disabled={busy || !title.trim()} icon="arrow">
+            <Button
+              type="submit"
+              disabled={busy || !title.trim() || !objectivesConfirmed}
+              icon="arrow"
+            >
               {busy ? "Creating…" : "Create research draft"}
             </Button>
           </div>

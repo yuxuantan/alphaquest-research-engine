@@ -119,7 +119,7 @@ def test_researcher_can_create_and_reopen_a_draft_through_streamlit_only(
     app.radio[0].set_value("Campaigns").run()
     assert not app.exception
     assert app.selectbox[0].value == "es_no_code_draft"
-    assert app.selectbox[1].value == "1 · Research brief"
+    assert app.selectbox[1].value == "1 · Goals and research brief"
 
 
 def test_out_of_order_variant_navigation_fails_soft_with_prerequisite_guidance(
@@ -169,20 +169,27 @@ def test_no_code_wizard_reaches_atomic_initial_variant_publication_in_fresh_work
     monkeypatch,
 ) -> None:
     source = tmp_path / "administrator-provided-bars.csv"
+    session_starts = pd.bdate_range("2023-06-30", "2026-01-20")
     timestamps = pd.DatetimeIndex(
         [
-            *pd.date_range("2026-01-05 09:30:00", periods=60, freq="min"),
-            *pd.date_range("2026-01-06 09:30:00", periods=60, freq="min"),
-            *pd.date_range("2026-01-07 09:30:00", periods=60, freq="min"),
+            timestamp
+            for session_start in session_starts
+            for timestamp in pd.date_range(
+                f"{session_start.date()} 09:30:00", periods=60, freq="min"
+            )
         ]
     )
-    session_prices = [5000.0] * 120 + [5000.0 + index * 0.25 for index in range(60)]
+    session_prices = [
+        (5000.0 if session_index < 2 else 5000.0 + bar_index * 0.25)
+        for session_index in range(len(session_starts))
+        for bar_index in range(60)
+    ]
     pd.DataFrame(
         {
             "timestamp": timestamps.astype(str),
-            # The deterministic shortlist chooses the first (flat) session,
-            # so every variant fails its first scientific gate quickly. The
-            # Wednesday's third session still creates mechanics-review trades.
+            # The complete business-date coverage makes the frozen 24+6 month
+            # calendar explicit. The latest ten sessions contain deterministic
+            # mechanics trades; downstream performance stages are not executed.
             "open": session_prices,
             "high": [price + 1.0 for price in session_prices],
             "low": [price - 1.0 for price in session_prices],
@@ -251,6 +258,11 @@ def test_no_code_wizard_reaches_atomic_initial_variant_publication_in_fresh_work
     next(item for item in app.text_input if item.label == "Market context").set_value(
         "Highly liquid ES regular trading hours after the opening auction completes."
     )
+    next(
+        item
+        for item in app.checkbox
+        if item.label == "I confirm these objectives before inspecting strategy PnL"
+    ).set_value(True)
     next(item for item in app.button if item.label == "Save and continue").click().run()
     assert not app.exception
     app = reopen_campaigns()
@@ -410,7 +422,7 @@ def test_no_code_wizard_reaches_atomic_initial_variant_publication_in_fresh_work
     performance_jobs = [
         job for job in queue.list_jobs(limit=20) if job.job_type == CAMPAIGN_VARIANT_RUN
     ]
-    assert len(performance_jobs) == 1
+    assert len(performance_jobs) == 1, [item.value for item in app.error]
     assert [job.payload["variant_id"] for job in reversed(performance_jobs)] == ["v01"]
 
     handled = StudioWorker(

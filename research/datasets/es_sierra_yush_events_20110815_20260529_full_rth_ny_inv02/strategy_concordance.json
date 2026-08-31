@@ -1,0 +1,69 @@
+{
+  "blackout_sessions": 24,
+  "checks": {
+    "all_eligible_overlap_event_inputs_prequalified": true,
+    "minimum_trade_coverage_met": true,
+    "sampled_all_internal_diagnostic_counters_exact": true,
+    "sampled_completed_bar_market_levels_exact": true,
+    "sampled_fixed_default_decision_path_exact": true,
+    "sampled_fixed_default_trade_semantics_exact": true
+  },
+  "config": "data/reports/data_quality/ES/yush_sierra_full_rth_event_dataset_candidate_v1/concordance_config_v5.yaml",
+  "config_sha256": "5015cdf4e74815cfb1c7277ca9f72eec0f06d5394867660aff17d8b17e5db640",
+  "generated_at_utc": "2026-07-27T08:00:07.992604+00:00",
+  "outcome": {
+    "databento_trades": 8,
+    "decision_path_mismatches": 0,
+    "level_mismatches": 0,
+    "session_audit_mismatches": 0,
+    "sierra_trades": 8,
+    "trade_mismatches": 0
+  },
+  "parameter_mode": "declared_defaults",
+  "policy": {
+    "entry_window": "use dates with exact reconstructed event equivalence from 09:30-16:00 ET",
+    "first_overlap_session": "excluded from strategy-output concordance because the Databento archive does not include its previous RTH session",
+    "known_non_equivalent_dates": "blackout",
+    "older_history": "permit only intrinsic Sierra structure-pass sessions as an explicit extrapolation",
+    "output_concordance": "replay a deterministic stratified sample including predeclared trade-producing dates; require exact levels, decisions, orders, risk gates, and trades; retain sub-millisecond drift in pre-order exploratory counters as non-passing diagnostics",
+    "outside_entry_window": "compare only PDH/PDL/PDC and ONH/ONL completed-bar levels",
+    "timestamp_inversion": "preserve stored source order and clamp backward timestamps when session inversion rate <= 0.002000"
+  },
+  "schema": "alphaquest.strategy-source-concordance/v1",
+  "scope": {
+    "blackout_sessions": 24,
+    "databento_compared_sessions": 235,
+    "eligible_exact_event_sessions": 211,
+    "end_date": "2026-05-20",
+    "minimum_concordant_trades": 5,
+    "output_concordance_session_dates": [
+      "2025-07-15",
+      "2026-05-12",
+      "2026-05-13",
+      "2026-05-19",
+      "2026-05-20"
+    ],
+    "output_concordance_sessions": 5,
+    "reference_warmup_excluded_sessions": 1,
+    "required_capability": "full_rth_strategy_events_extrapolated",
+    "rth_end": "16:00:00",
+    "rth_start": "09:30:00",
+    "selection": "evenly_spaced_stratified_plus_predeclared_required_dates",
+    "start_date": "2025-07-15"
+  },
+  "source_hashes": {
+    "data/raw/ES/GLBX-20260713-S6XF67C8UA.zip": "144daa86f98f22dae2eada9f86b345bc7e4a92038c058c395630357585298fa1",
+    "data/reference/ES/roll_calendars/motivewave_rithmic_roll_calendar.csv": "4c9ebd0b2222f6621f9763322eaec913ff3a65c0a8141c08c0d242d72c7d03e6",
+    "data/reports/data_quality/ES/databento_sierra_full_session_orderflow_20250714_20260610/summary.json": "a1918029ed18a74a02953f58bcd0f5f96af1c419417c3ad5a72ebe052fe99a49",
+    "data/reports/data_quality/ES/yush_sierra_full_rth_event_dataset_candidate_v1/event_capabilities.csv": "ce31c4c9e48704723e242c8a014d023fed0374b88535c2481c2162e87da671ab",
+    "data/reports/data_quality/ES/yush_sierra_full_rth_event_dataset_candidate_v1/raw_manifest.json": "35bc989f4ba151bf8578a9e9f5e13a30b2d5b115b1667ab140a0429f5a7f7747",
+    "data/reports/data_quality/ES/yush_sierra_full_rth_event_dataset_candidate_v1/session_levels.parquet": "3e4dce824457483b0c8a65e053aa2e711fb99b5602da0c5ced2c9c6a9fb445c1"
+  },
+  "strategy_certification": {
+    "implementation_sha256": "5ea1c011da1cf36ab604891715af05dfdd3e07c19097966f9e2d99d7d59a8bc2",
+    "implementation_version": 5,
+    "manifest_sha256": "5359f233c6b8a936609293d7d1bf9c1c074403d06fb07e74499cf2b61d709f12"
+  },
+  "strategy_id": "yush_adaptive_orderflow_range",
+  "verdict": "PASS"
+}

@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from collections import defaultdict
 from datetime import date
+import hashlib
 import json
 from pathlib import Path
 import re
@@ -23,18 +24,21 @@ if str(SRC_ROOT) not in sys.path:
 from alphaquest.data.clean import apply_continuous_contract, validate_ohlc  # noqa: E402
 from alphaquest.data.load import infer_data_source, load_raw_data  # noqa: E402
 from alphaquest.data.sessions import assign_sessions  # noqa: E402
+from alphaquest.accounts.catalog import resolve_account_profile  # noqa: E402
 from alphaquest.research.storage import (  # noqa: E402
     campaign_definition_paths,
     load_storage_layout,
     resolve_campaign_context,
     resolve_recorded_path,
 )
+from alphaquest.research.policy import load_research_policy  # noqa: E402
 from alphaquest.strategy_modules.entry import ENTRY_MODULES, entry_module_metadata  # noqa: E402
 from alphaquest.strategy_certification import (  # noqa: E402
     StrategyCertificationError,
     get_strategy_certification,
     normalize_certified_event_params,
     strategy_identity_for_config,
+    strategy_package_access_for_config,
     validate_certified_event_parameter_grid,
 )
 from alphaquest.strategy_modules.sl import SL_MODULES  # noqa: E402
@@ -274,6 +278,8 @@ def _validate_config(
     strategy = cfg.get("strategy") if isinstance(cfg.get("strategy"), dict) else {}
     core = cfg.get("core") if isinstance(cfg.get("core"), dict) else {}
     apex = cfg.get("apex_rules") if isinstance(cfg.get("apex_rules"), dict) else {}
+    _validate_fixed_stage_methodology(cfg, prefix, failures)
+    _validate_account_profile_bindings(cfg, prefix, failures, warnings, project_root=project_root)
 
     if not data_cfg:
         failures.append(f"{prefix}: data must be a mapping.")
@@ -303,6 +309,7 @@ def _validate_config(
         failures,
         warnings,
         engine_lane=str(cfg.get("engine_lane") or "bar"),
+        package_access=strategy_package_access_for_config(cfg),
     )
     if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
         try:
@@ -352,6 +359,147 @@ def _validate_config(
     )
 
 
+def _validate_account_profile_bindings(
+    cfg: dict,
+    prefix: str,
+    failures: list[str],
+    warnings: list[str],
+    *,
+    project_root: str | Path | None = None,
+) -> None:
+    """Verify frozen account-rule identities without invalidating legacy configs.
+
+    Older campaign configs predate governed account profiles and remain valid for
+    their original scientific workflow. Once bindings are present, however, every
+    one must resolve to the same versioned profile bytes used at compilation.
+    """
+
+    if "account_profile_bindings" not in cfg:
+        if "destination_benchmark_contract" in cfg:
+            failures.append(
+                f"{prefix}: destination_benchmark_contract requires matching "
+                "account_profile_bindings."
+            )
+        return
+    bindings = cfg.get("account_profile_bindings")
+    if not isinstance(bindings, list):
+        failures.append(f"{prefix}: account_profile_bindings must be a list when configured.")
+        return
+    identities: set[tuple[str, str]] = set()
+    primary_count = 0
+    for index, binding in enumerate(bindings):
+        item_prefix = f"{prefix}: account_profile_bindings[{index}]"
+        if not isinstance(binding, dict):
+            failures.append(f"{item_prefix} must be a mapping.")
+            continue
+        profile_id = str(binding.get("profile_id") or "").strip()
+        version = str(binding.get("version") or "").strip()
+        recorded_sha = str(binding.get("profile_sha256") or "").strip()
+        role = str(binding.get("role") or "").strip()
+        if not profile_id or not version or not recorded_sha:
+            failures.append(f"{item_prefix} requires profile_id, version, and profile_sha256.")
+            continue
+        if role not in {"primary", "comparison"}:
+            failures.append(f"{item_prefix}.role must be primary or comparison.")
+        if role == "primary":
+            primary_count += 1
+        identity = (profile_id, version)
+        if identity in identities:
+            failures.append(f"{item_prefix} duplicates {profile_id}@{version}.")
+            continue
+        identities.add(identity)
+        try:
+            resolved = resolve_account_profile(
+                profile_id,
+                version=version,
+                project_root=_resolved_project_root(project_root),
+            )
+        except ValueError as exc:
+            failures.append(f"{item_prefix} cannot resolve its governed profile: {exc}")
+            continue
+        if recorded_sha != resolved.sha256:
+            failures.append(
+                f"{item_prefix} profile hash drift: config records {recorded_sha}, "
+                f"catalog resolves {resolved.sha256}. Recompile a new governed attempt; do not edit history."
+            )
+        if resolved.profile.effective_from > date.today():
+            failures.append(f"{item_prefix} is not effective until {resolved.profile.effective_from.isoformat()}.")
+        if role == "primary" and not resolved.profile.promotable:
+            failures.append(f"{item_prefix} is synthetic/non-promotable and cannot be the deployment target.")
+        elif not resolved.profile.promotable:
+            warnings.append(f"{item_prefix} is comparison-only and cannot support deployment promotion.")
+    if primary_count > 1:
+        failures.append(f"{prefix}: account_profile_bindings may contain at most one primary profile.")
+    contract = cfg.get("destination_benchmark_contract")
+    if contract is None:
+        return
+    if not isinstance(contract, dict):
+        failures.append(f"{prefix}: destination_benchmark_contract must be a mapping.")
+        return
+    recorded_contract_hash = str(
+        cfg.get("destination_benchmark_contract_sha256") or ""
+    )
+    computed_contract_hash = hashlib.sha256(
+        json.dumps(
+            contract,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    if recorded_contract_hash != computed_contract_hash:
+        failures.append(
+            f"{prefix}: destination benchmark contract hash is missing or drifted."
+        )
+    contract_profiles = contract.get("profiles")
+    if not isinstance(contract_profiles, list) or not contract_profiles:
+        failures.append(
+            f"{prefix}: destination benchmark contract requires declared profiles."
+        )
+        return
+    contract_identities = {
+        (
+            str(item.get("profile_id") or ""),
+            str(item.get("profile_version") or ""),
+            str(item.get("profile_sha256") or ""),
+            str(item.get("role") or ""),
+        )
+        for item in contract_profiles
+        if isinstance(item, dict)
+    }
+    binding_identities = {
+        (
+            str(item.get("profile_id") or ""),
+            str(item.get("version") or ""),
+            str(item.get("profile_sha256") or ""),
+            str(item.get("role") or ""),
+        )
+        for item in bindings
+        if isinstance(item, dict)
+    }
+    if contract_identities != binding_identities:
+        failures.append(
+            f"{prefix}: destination benchmark profiles do not match account_profile_bindings."
+        )
+    if contract.get("scientific_validity_required") is not True:
+        failures.append(
+            f"{prefix}: destination benchmark must require scientific-validity PASS."
+        )
+    if contract.get("generic_objective_pass_required") is not False:
+        failures.append(
+            f"{prefix}: destination benchmark generic-objective policy is invalid."
+        )
+    if contract.get("approval_scope") != "exact_primary_profile_only":
+        failures.append(f"{prefix}: destination benchmark approval scope is invalid.")
+    if sum(
+        isinstance(item, dict) and item.get("role") == "primary"
+        for item in contract_profiles
+    ) != 1:
+        failures.append(
+            f"{prefix}: destination benchmark requires exactly one primary profile."
+        )
+
+
 def _validate_strategy_module_registry(
     strategy: dict,
     prefix: str,
@@ -359,6 +507,7 @@ def _validate_strategy_module_registry(
     warnings: list[str],
     *,
     engine_lane: str = "bar",
+    package_access: str = "new_work",
 ) -> None:
     entry = strategy.get("entry") if isinstance(strategy.get("entry"), dict) else {}
     tp = strategy.get("tp") if isinstance(strategy.get("tp"), dict) else {}
@@ -370,7 +519,11 @@ def _validate_strategy_module_registry(
         event = strategy.get("event") if isinstance(strategy.get("event"), dict) else {}
         event_name = event.get("module")
         try:
-            certification = get_strategy_certification(str(event_name or ""), require_current=True)
+            certification = get_strategy_certification(
+                str(event_name or ""),
+                require_current=True,
+                access=package_access,
+            )
         except StrategyCertificationError as exc:
             failures.append(f"{prefix}: strategy certification failed: {exc}")
             return
@@ -462,6 +615,7 @@ def _validate_parameter_grid(
                 str(event.get("module") or ""),
                 _resolved_project_root(project_root),
                 require_current=True,
+                access=strategy_package_access_for_config(cfg),
             )
             event_params = normalize_certified_event_params(
                 certification,
@@ -817,6 +971,21 @@ def _validate_validation_gate_declaration(
     for field in ("evidence_dir", "approval_path"):
         if not str(gate.get(field) or "").strip():
             failures.append(f"{prefix}: research_metadata.validation_gate.{field} is required.")
+    mechanics = load_research_policy().mechanics_validation
+    for field in (
+        "selection_mode",
+        "session_count",
+        "parameter_mode",
+        "manual_review_random_sample_size",
+        "manual_review_seed",
+        "minimum_trade_samples",
+    ):
+        expected = mechanics.get(field)
+        if gate.get(field) != expected:
+            failures.append(
+                f"{prefix}: validation_gate.{field} must match the repository methodology "
+                f"({expected!r}); found {gate.get(field)!r}."
+            )
     subset = gate.get("data_subset")
     if not isinstance(subset, dict):
         failures.append(f"{prefix}: research_metadata.validation_gate.data_subset must be a deterministic date slice.")
@@ -824,10 +993,255 @@ def _validate_validation_gate_declaration(
         try:
             start = date.fromisoformat(str(subset.get("start_date")))
             end = date.fromisoformat(str(subset.get("end_date")))
-            if end < start or (end - start).days > 14:
-                failures.append(f"{prefix}: validation_gate.data_subset must span 0 to 14 calendar days.")
         except ValueError:
             failures.append(f"{prefix}: validation_gate.data_subset start_date/end_date must be ISO dates.")
+            return
+        if end < start or (end - start).days > 60:
+            failures.append(
+                f"{prefix}: validation_gate.data_subset must span 0 to 60 calendar days."
+            )
+        try:
+            selected_sessions = _latest_eligible_session_dates(
+                cfg,
+                path,
+                project_root=project_root,
+            )
+        except ValueError as exc:
+            failures.append(f"{prefix}: mechanics validation session selection failed: {exc}.")
+            return
+        latest = (
+            (selected_sessions[0], selected_sessions[-1])
+            if selected_sessions is not None
+            else None
+        )
+        if latest is not None and (start, end) != latest:
+            failures.append(
+                f"{prefix}: mechanics validation must use the latest ten eligible sessions "
+                f"({latest[0].isoformat()} through {latest[1].isoformat()}); found "
+                f"{start.isoformat()} through {end.isoformat()}."
+            )
+        if selected_sessions is not None:
+            expected_dates = [value.isoformat() for value in selected_sessions]
+            actual_dates = subset.get("session_dates")
+            if actual_dates != expected_dates:
+                failures.append(
+                    f"{prefix}: validation_gate.data_subset.session_dates must list the exact "
+                    f"latest {len(expected_dates)} eligible sessions; found {actual_dates!r}."
+                )
+
+
+def _validate_fixed_stage_methodology(
+    cfg: dict,
+    prefix: str,
+    failures: list[str],
+) -> None:
+    """Reject strategy-owned changes to repository-wide research procedures."""
+
+    policy = load_research_policy()
+    try:
+        # Local import avoids a module-import cycle: campaign_stages itself
+        # invokes preflight at runtime.  Canonicalization is the single source
+        # for repository policy plus any stricter hash-bound campaign goals.
+        from alphaquest.research.campaign_stages import canonicalize_campaign_config
+
+        expected_config = canonicalize_campaign_config(cfg)
+    except (TypeError, ValueError) as exc:
+        failures.append(f"{prefix}: frozen research methodology is invalid: {exc}.")
+        return
+    research = cfg.get("research_metadata") if isinstance(
+        cfg.get("research_metadata"), dict
+    ) else {}
+    gate = research.get("validation_gate") if isinstance(
+        research.get("validation_gate"), dict
+    ) else {}
+    _require_methodology_values(
+        gate,
+        policy.mechanics_validation,
+        f"{prefix}: validation_gate",
+        failures,
+    )
+    metadata = cfg.get("research_policy") if isinstance(cfg.get("research_policy"), dict) else {}
+    if metadata.get("version") != policy.version or metadata.get("hash") != policy.file_hash:
+        failures.append(
+            f"{prefix}: research_policy must bind the current repository policy "
+            f"{policy.version} ({policy.file_hash}); create a governed methodology attempt."
+        )
+
+    _require_methodology_values(
+        cfg.get("core_grid"), policy.core_grid, f"{prefix}: core_grid", failures
+    )
+    monkey_expected = {**policy.monkey, "runs": policy.monkey_runs}
+    _require_methodology_values(
+        cfg.get("monkey"), monkey_expected, f"{prefix}: monkey", failures
+    )
+    _require_methodology_values(
+        cfg.get("wfa"),
+        policy.walk_forward_analysis,
+        f"{prefix}: wfa",
+        failures,
+    )
+    _require_methodology_values(
+        cfg.get("monte_carlo"),
+        expected_config.get("monte_carlo") or {},
+        f"{prefix}: monte_carlo",
+        failures,
+    )
+
+    tests = cfg.get("campaign_tests") if isinstance(cfg.get("campaign_tests"), dict) else {}
+    if list(tests.get("stage_order") or []) != list(policy.stage_order):
+        failures.append(
+            f"{prefix}: campaign_tests.stage_order must match the repository methodology."
+        )
+    for stage in policy.stage_order:
+        stage_cfg = tests.get(stage) if isinstance(tests.get(stage), dict) else None
+        if stage_cfg is None:
+            failures.append(f"{prefix}: campaign_tests.{stage} is required.")
+            continue
+        if stage_cfg.get("enabled") is not True:
+            failures.append(f"{prefix}: campaign_tests.{stage}.enabled must be true.")
+        expected_stage = (expected_config.get("campaign_tests") or {}).get(stage) or {}
+        if stage_cfg.get("criteria") != expected_stage.get("criteria"):
+            failures.append(
+                f"{prefix}: campaign_tests.{stage}.criteria must match repository policy "
+                "and the frozen research objectives."
+            )
+
+    for stage in ("limited_core_grid_test", "limited_monkey_test"):
+        stage_cfg = tests.get(stage) if isinstance(tests.get(stage), dict) else {}
+        if stage_cfg.get("data_window") != policy.shortlist_data_window:
+            failures.append(
+                f"{prefix}: campaign_tests.{stage}.data_window must match the repository shortlist policy."
+            )
+    wfa_stage = tests.get("walk_forward_analysis") if isinstance(
+        tests.get("walk_forward_analysis"), dict
+    ) else {}
+    expected_wfa_window = {
+        **policy.wfa_data_window,
+        "incubation_test_months": int(policy.simulated_incubation["test_months"]),
+        "acceptance_test_months": int(policy.acceptance_oos["test_months"]),
+    }
+    if wfa_stage.get("data_window") != expected_wfa_window:
+        failures.append(
+            f"{prefix}: campaign_tests.walk_forward_analysis.data_window must match the repository policy."
+        )
+    for stage, threshold in (
+        ("limited_monkey_test", 0.90),
+        ("wfa_oos_monkey_test", 0.80),
+        ("simulated_incubation_monkey", 0.80),
+    ):
+        stage_cfg = tests.get(stage) if isinstance(tests.get(stage), dict) else {}
+        expected = {
+            **policy.monkey,
+            "runs": policy.monkey_runs,
+            "beat_threshold": threshold,
+        }
+        _require_methodology_values(
+            stage_cfg, expected, f"{prefix}: campaign_tests.{stage}", failures
+        )
+    monte_carlo_stage = tests.get("wfa_oos_monte_carlo") if isinstance(
+        tests.get("wfa_oos_monte_carlo"), dict
+    ) else {}
+    expected_monte_carlo_stage = (expected_config.get("campaign_tests") or {}).get(
+        "wfa_oos_monte_carlo"
+    ) or {}
+    _require_methodology_values(
+        monte_carlo_stage,
+        {
+            key: expected_monte_carlo_stage[key]
+            for key in policy.wfa_oos_monte_carlo
+            if key in expected_monte_carlo_stage
+        },
+        f"{prefix}: campaign_tests.wfa_oos_monte_carlo",
+        failures,
+    )
+    incubation = tests.get("simulated_incubation_core") if isinstance(
+        tests.get("simulated_incubation_core"), dict
+    ) else {}
+    _require_methodology_values(
+        incubation,
+        {
+            "train_months": int(policy.simulated_incubation["train_months"]),
+            "test_months": int(policy.simulated_incubation["test_months"]),
+            "holdout_after_test_months": int(policy.acceptance_oos["test_months"]),
+        },
+        f"{prefix}: campaign_tests.simulated_incubation_core",
+        failures,
+    )
+    acceptance = tests.get(policy.acceptance_stage) if isinstance(
+        tests.get(policy.acceptance_stage), dict
+    ) else {}
+    _require_methodology_values(
+        acceptance,
+        {
+            "train_months": int(policy.acceptance_oos["train_months"]),
+            "test_months": int(policy.acceptance_oos["test_months"]),
+        },
+        f"{prefix}: campaign_tests.{policy.acceptance_stage}",
+        failures,
+    )
+
+
+def _require_methodology_values(
+    actual: object,
+    expected: dict,
+    label: str,
+    failures: list[str],
+) -> None:
+    mapping = actual if isinstance(actual, dict) else {}
+    for key, value in expected.items():
+        if mapping.get(key) != value:
+            failures.append(
+                f"{label}.{key} must match the repository methodology "
+                f"({value!r}); found {mapping.get(key)!r}."
+            )
+
+
+def _latest_eligible_session_dates(
+    cfg: dict,
+    config_path: Path,
+    *,
+    project_root: str | Path | None = None,
+) -> list[date] | None:
+    data_cfg = cfg.get("data") if isinstance(cfg.get("data"), dict) else {}
+    source = str(data_cfg.get("source") or "")
+    value = data_cfg.get("raw_parquet") or data_cfg.get("raw_csv")
+    if not value or source not in {"parquet", "csv"}:
+        return None
+    resolved = _resolve_path(value, config_path, project_root=project_root)
+    if not resolved.is_file():
+        return None
+    if source == "parquet":
+        timestamps = pd.read_parquet(resolved, columns=["timestamp"])["timestamp"]
+    else:
+        timestamps = pd.read_csv(resolved, usecols=["timestamp"])["timestamp"]
+    timezone = str(
+        data_cfg.get("exchange_timezone") or data_cfg.get("timezone") or "America/New_York"
+    )
+    sessions = sorted(
+        set(pd.to_datetime(timestamps, utc=True).dt.tz_convert(timezone).dt.date)
+    )
+    required = int(load_research_policy().mechanics_validation["session_count"])
+    if len(sessions) < required:
+        raise ValueError(
+            f"governed dataset contains {len(sessions)} eligible sessions; {required} are required"
+        )
+    return sessions[-required:]
+
+
+def _latest_eligible_session_bounds(
+    cfg: dict,
+    config_path: Path,
+    *,
+    project_root: str | Path | None = None,
+) -> tuple[date, date] | None:
+    selected = _latest_eligible_session_dates(
+        cfg,
+        config_path,
+        project_root=project_root,
+    )
+    if selected is None:
+        return None
+    return selected[0], selected[-1]
 
 
 def _normalized_fingerprint(value: dict) -> str:
@@ -850,7 +1264,18 @@ def _validate_data(
     if not isinstance(data_cfg, dict):
         return False
     prefix = str(_display_path(path, project_root=project_root))
-    _validate_data_paths(data_cfg, path, failures, project_root=project_root)
+    factory_binding = cfg.get("research_factory")
+    require_bound_dataset_hash = (
+        isinstance(factory_binding, dict)
+        and factory_binding.get("schema") == "alphaquest.research-factory-binding/v2"
+    )
+    _validate_data_paths(
+        data_cfg,
+        path,
+        failures,
+        project_root=project_root,
+        require_bound_dataset_hash=require_bound_dataset_hash,
+    )
     if any(item.startswith(f"{prefix}: data path") for item in failures):
         return False
     if str(cfg.get("engine_lane") or "") == "canonical_event_replay":
@@ -863,17 +1288,27 @@ def _validate_data(
             if execution.get("required_capability") not in {
                 "full_strategy_events",
                 "full_strategy_events_extrapolated",
+                "full_rth_strategy_events_extrapolated",
             }:
                 failures.append(f"{prefix}: Sierra event replay requires an approved strategy capability.")
                 return False
             if execution.get("ineligible_session_policy") not in {"error", "blackout"}:
                 failures.append(f"{prefix}: Sierra event replay requires a fail-closed session policy.")
                 return False
+            required_capability = str(execution.get("required_capability") or "")
+            expected_rth_end = (
+                "16:00:00"
+                if required_capability == "full_rth_strategy_events_extrapolated"
+                else "11:00:00"
+            )
             if (
                 str(execution.get("rth_start") or "") != "09:30:00"
-                or str(execution.get("rth_end") or "") != "11:00:00"
+                or str(execution.get("rth_end") or "") != expected_rth_end
             ):
-                failures.append(f"{prefix}: Sierra event replay is certified only for 09:30-11:00 ET.")
+                failures.append(
+                    f"{prefix}: Sierra {required_capability} replay requires "
+                    f"the 09:30-{expected_rth_end[:5]} ET source boundary."
+                )
                 return False
         return True
     load_cfg = _resolved_data_config(data_cfg, path, project_root=project_root)
@@ -978,6 +1413,7 @@ def _validate_data_paths(
     failures: list[str],
     *,
     project_root: str | Path | None = None,
+    require_bound_dataset_hash: bool = False,
 ) -> None:
     prefix = str(_display_path(config_path, project_root=project_root))
     for key in ("raw_csv", "raw_parquet", "raw_dir", "roll_calendar"):
@@ -992,6 +1428,30 @@ def _validate_data_paths(
             failures.append(f"{prefix}: data.roll_calendar_sha256 does not match {roll_calendar}.")
     if not any(data_cfg.get(key) for key in ("raw_csv", "raw_parquet", "raw_dir")):
         failures.append(f"{prefix}: data.raw_csv, data.raw_parquet, or data.raw_dir is required.")
+    if require_bound_dataset_hash:
+        expected_canonical_hash = str(data_cfg.get("canonical_sha256") or "")
+        canonical_source = data_cfg.get("raw_parquet") or data_cfg.get("raw_csv")
+        if not re.fullmatch(r"[0-9a-f]{64}", expected_canonical_hash):
+            failures.append(
+                f"{prefix}: v2 research_factory binding requires data.canonical_sha256."
+            )
+        elif not canonical_source:
+            failures.append(
+                f"{prefix}: v2 research_factory binding requires a hash-verifiable canonical file."
+            )
+        else:
+            resolved_canonical = _resolve_path(
+                canonical_source,
+                config_path,
+                project_root=project_root,
+            )
+            if (
+                resolved_canonical.is_file()
+                and file_sha256(resolved_canonical) != expected_canonical_hash
+            ):
+                failures.append(
+                    f"{prefix}: governed canonical dataset bytes do not match data.canonical_sha256."
+                )
     execution = data_cfg.get("execution_data") if isinstance(data_cfg.get("execution_data"), dict) else {}
     for key in (
         "archive",

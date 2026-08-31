@@ -1,0 +1,61 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260822t092406_25f5d1f4",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "c985094e931929116e3a91fc2f14a5fda0d336ff26e6fec26090340ea869b7fc",
+        "implementation_version": 25,
+        "manifest_sha256": "0f1df86445b509845c7d248a1db6337810510f8e70186ba384ec79f0f10a3345",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "154e701e097e12f9ccd55801e0a80470b0e858cbe6ef925fcd05b43170563e2f",
+        "implementation_version": 24,
+        "manifest_sha256": "638e20c241c3a351c8c02a3ebdfcc98d75faadb82991f5d381e3febcf7b422aa",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "a86442d0f0b843b8cb7a55217cc730f172aa647989e8e1aab6355025af6d45e1"
+  },
+  "created_at": "2026-08-22T09:24:06.622104+00:00",
+  "created_by": "Codex",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260822t092406_25f5d1f4",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260822t022102_f529f023",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "User-directed v03 correction after review of v24 mechanics evidence: allow a qualifying q99.9 exceptional aggressive-volume sequence of either aggressor side, or a qualifying top-decile absolute session-anchored four-tick profile-delta cell of either sign, to form an AOI at either VAH or VAL when within the existing symmetric one-third-ATR radius. Preserve direction-compatible market-level AOIs. Preserve directional separate post-AOI confirmation: buy aggression or positive completed-bar delta for shorts, sell aggression or negative completed-bar delta for longs. Preserve ordered sweep, two-tick-inside reclaim stop entry, two-tick-beyond-sweep stop, targets, timing, risk, data, and validation protocol. Prior evidence remains immutable and fresh manual mechanics approval is required.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "571b5d3d7f4ff9ae4dc7f300d7326631f32c8734d331c8f0cf7c17f55f44a9c6"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "cc8745aefd2f96853f34fc8577326cbb89683dda48cc5603a312308e0ab68b46"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

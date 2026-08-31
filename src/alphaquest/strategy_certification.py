@@ -7,7 +7,10 @@ implementation is allowed to interpret that config.
 
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import dataclass
+from datetime import date
+from enum import Enum
 import hashlib
 import importlib
 from itertools import product
@@ -15,12 +18,15 @@ import json
 from pathlib import Path
 import subprocess
 import sys
-from typing import Any, Callable
+from typing import Any, Callable, Mapping
 
 import yaml
 
 
 CERTIFICATION_SCHEMA = "alphaquest.strategy-certification/v1"
+CERTIFIED_EXECUTION_CONTRACT_SCHEMA = "alphaquest.certified-execution-contract/v1"
+STRATEGY_PACKAGE_AVAILABILITY_SCHEMA = "alphaquest.strategy-package-availability/v2"
+LEGACY_STRATEGY_PACKAGE_AVAILABILITY_SCHEMA = "alphaquest.strategy-package-availability/v1"
 REQUIRED_TEST_CATEGORIES = frozenset(
     {
         "session_logic",
@@ -31,10 +37,298 @@ REQUIRED_TEST_CATEGORIES = frozenset(
         "registry_and_runner",
     }
 )
+CERTIFIED_EXECUTION_DEFAULT_FIELDS = frozenset(
+    {
+        "timeframe",
+        "entry_start",
+        "latest_entry_time",
+        "flatten_time",
+        "max_trades_per_day",
+        "daily_loss_limit",
+        "daily_profit_stop",
+        "commission_per_contract",
+        "point_value",
+        "tick_value",
+        "execution_instrument",
+        "signal_instrument",
+        "executable_start_date",
+        "slippage_ticks",
+        "entry_slippage_ticks",
+        "protective_stop_slippage_ticks",
+        "target_limit_slippage_ticks",
+        "market_exit_slippage_ticks",
+        "event_stop_market_fill_policy",
+        "contracts",
+        "position_sizing",
+        "prop_max_contracts",
+        "monte_carlo_position_sizing",
+    }
+)
 
 
 class StrategyCertificationError(ValueError):
     """Raised when executable strategy code is not currently certified."""
+
+
+class StrategyPackageLifecycle(str, Enum):
+    """Repository lifecycle state, independent of certification currentness."""
+
+    DEVELOPMENT = "development"
+    ACTIVE = "active"
+    DEPRECATED = "deprecated"
+    RETIRED = "retired"
+    QUARANTINED = "quarantined"
+
+
+class StrategyPackageAccess(str, Enum):
+    """The action for which a package manifest is being requested."""
+
+    NEW_WORK = "new_work"
+    ENGINEERING = "engineering"
+    HISTORICAL_REPLAY = "historical_replay"
+    INSPECTION = "inspection"
+
+
+_LIFECYCLES_BY_ACCESS = {
+    StrategyPackageAccess.NEW_WORK: frozenset({StrategyPackageLifecycle.ACTIVE}),
+    StrategyPackageAccess.ENGINEERING: frozenset(
+        {
+            StrategyPackageLifecycle.DEVELOPMENT,
+            StrategyPackageLifecycle.ACTIVE,
+            StrategyPackageLifecycle.DEPRECATED,
+        }
+    ),
+    StrategyPackageAccess.HISTORICAL_REPLAY: frozenset(
+        {StrategyPackageLifecycle.ACTIVE, StrategyPackageLifecycle.DEPRECATED}
+    ),
+    StrategyPackageAccess.INSPECTION: frozenset(StrategyPackageLifecycle),
+}
+
+
+@dataclass(frozen=True)
+class StrategyPackageLifecycleRecord:
+    """One package's repository-owned availability classification."""
+
+    strategy_id: str
+    lifecycle: StrategyPackageLifecycle
+    lifecycle_changed_at: str
+    reason: str
+
+    def allows(self, access: StrategyPackageAccess | str) -> bool:
+        return self.lifecycle in _LIFECYCLES_BY_ACCESS[StrategyPackageAccess(access)]
+
+
+@dataclass(frozen=True)
+class StrategyPackageAvailabilityPolicy:
+    """Repository-owned strategy-package lifecycle classification."""
+
+    policy_version: str
+    packages: dict[str, StrategyPackageLifecycleRecord]
+    historical_evidence_policy: str
+    path: Path
+
+    def ids_for(self, lifecycle: StrategyPackageLifecycle | str) -> frozenset[str]:
+        expected = StrategyPackageLifecycle(lifecycle)
+        return frozenset(
+            strategy_id
+            for strategy_id, record in self.packages.items()
+            if record.lifecycle is expected
+        )
+
+    def ids_allowed_for(self, access: StrategyPackageAccess | str) -> frozenset[str]:
+        requested = StrategyPackageAccess(access)
+        return frozenset(
+            strategy_id
+            for strategy_id, record in self.packages.items()
+            if record.allows(requested)
+        )
+
+    def lifecycle_for(self, strategy_id: str) -> StrategyPackageLifecycle:
+        try:
+            return self.packages[strategy_id].lifecycle
+        except KeyError as exc:
+            raise StrategyCertificationError(
+                f"strategy package {strategy_id!r} is not classified by the lifecycle policy"
+            ) from exc
+
+    def allows(self, strategy_id: str, access: StrategyPackageAccess | str) -> bool:
+        record = self.packages.get(strategy_id)
+        return record is not None and record.allows(access)
+
+    @property
+    def active_strategy_ids(self) -> frozenset[str]:
+        """Compatibility projection used by existing authoring/catalog callers."""
+
+        return self.ids_for(StrategyPackageLifecycle.ACTIVE)
+
+    @property
+    def development_strategy_ids(self) -> frozenset[str]:
+        return self.ids_for(StrategyPackageLifecycle.DEVELOPMENT)
+
+    @property
+    def deprecated_strategy_ids(self) -> frozenset[str]:
+        return self.ids_for(StrategyPackageLifecycle.DEPRECATED)
+
+    @property
+    def retired_strategy_ids(self) -> frozenset[str]:
+        return self.ids_for(StrategyPackageLifecycle.RETIRED)
+
+    @property
+    def quarantined_strategy_ids(self) -> frozenset[str]:
+        return self.ids_for(StrategyPackageLifecycle.QUARANTINED)
+
+
+def load_strategy_package_availability(
+    project_root: str | Path | None = None,
+) -> StrategyPackageAvailabilityPolicy:
+    """Load the execution/publication allowlist and fail closed on ambiguity."""
+
+    root = project_root_for_certifications(project_root)
+    path = root / "config" / "strategy_packages.yaml"
+    try:
+        document = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    except (OSError, yaml.YAMLError) as exc:
+        raise StrategyCertificationError(
+            f"strategy package availability policy is unavailable: {exc}"
+        ) from exc
+    if not isinstance(document, dict) or document.get("schema") not in {
+        STRATEGY_PACKAGE_AVAILABILITY_SCHEMA,
+        LEGACY_STRATEGY_PACKAGE_AVAILABILITY_SCHEMA,
+    }:
+        raise StrategyCertificationError(
+            f"unsupported strategy package availability policy in {path}"
+        )
+    if document.get("schema") == LEGACY_STRATEGY_PACKAGE_AVAILABILITY_SCHEMA:
+        packages = _load_legacy_strategy_package_records(document)
+    else:
+        packages = _load_strategy_package_records(document)
+    if not packages:
+        raise StrategyCertificationError("strategy_packages must classify at least one package")
+    if not any(
+        record.lifecycle is StrategyPackageLifecycle.ACTIVE
+        for record in packages.values()
+    ):
+        raise StrategyCertificationError("strategy package policy must declare at least one active package")
+    historical_policy = str(document.get("historical_evidence_policy") or "")
+    if historical_policy != "preserve_read_only":
+        raise StrategyCertificationError(
+            "historical_evidence_policy must be preserve_read_only"
+        )
+    policy_version = document.get("policy_version")
+    if not isinstance(policy_version, str) or not policy_version.strip():
+        raise StrategyCertificationError(
+            "strategy package policy_version must be a non-empty string"
+        )
+    return StrategyPackageAvailabilityPolicy(
+        policy_version=policy_version.strip(),
+        packages=packages,
+        historical_evidence_policy=historical_policy,
+        path=path.resolve(),
+    )
+
+
+def _load_strategy_package_records(
+    document: dict[str, Any],
+) -> dict[str, StrategyPackageLifecycleRecord]:
+    raw_packages = document.get("strategy_packages")
+    if not isinstance(raw_packages, dict):
+        raise StrategyCertificationError("strategy_packages must be a mapping")
+    records: dict[str, StrategyPackageLifecycleRecord] = {}
+    for raw_strategy_id, raw_record in raw_packages.items():
+        if not isinstance(raw_strategy_id, str) or not raw_strategy_id.strip():
+            raise StrategyCertificationError("strategy_packages keys must be non-empty strings")
+        strategy_id = raw_strategy_id.strip()
+        if strategy_id in records:
+            raise StrategyCertificationError(f"duplicate strategy package {strategy_id!r}")
+        if not isinstance(raw_record, dict):
+            raise StrategyCertificationError(
+                f"lifecycle record for {strategy_id!r} must be a mapping"
+            )
+        try:
+            lifecycle = StrategyPackageLifecycle(str(raw_record.get("lifecycle") or ""))
+        except ValueError as exc:
+            allowed = ", ".join(item.value for item in StrategyPackageLifecycle)
+            raise StrategyCertificationError(
+                f"lifecycle record for {strategy_id!r} must use one of: {allowed}"
+            ) from exc
+        changed_at = raw_record.get("lifecycle_changed_at")
+        reason = raw_record.get("reason")
+        if not isinstance(changed_at, str) or not changed_at.strip():
+            raise StrategyCertificationError(
+                f"lifecycle record for {strategy_id!r} requires string lifecycle_changed_at"
+            )
+        if not isinstance(reason, str) or not reason.strip():
+            raise StrategyCertificationError(
+                f"lifecycle record for {strategy_id!r} requires string reason"
+            )
+        records[strategy_id] = StrategyPackageLifecycleRecord(
+            strategy_id=strategy_id,
+            lifecycle=lifecycle,
+            lifecycle_changed_at=changed_at.strip(),
+            reason=reason.strip(),
+        )
+    return records
+
+
+def _load_legacy_strategy_package_records(
+    document: dict[str, Any],
+) -> dict[str, StrategyPackageLifecycleRecord]:
+    """Read the former active/retired policy without changing its meaning."""
+
+    active = document.get("active_strategy_ids")
+    retired = document.get("retired_strategy_ids")
+    if not isinstance(active, list) or not active:
+        raise StrategyCertificationError("active_strategy_ids must be a non-empty list")
+    if not isinstance(retired, dict):
+        raise StrategyCertificationError("retired_strategy_ids must be a mapping")
+    if not all(isinstance(item, str) and item.strip() for item in active):
+        raise StrategyCertificationError(
+            "active_strategy_ids must contain only non-empty strings"
+        )
+    active_ids = [item.strip() for item in active]
+    if len(set(active_ids)) != len(active_ids):
+        raise StrategyCertificationError("active_strategy_ids must be unique and non-empty")
+    overlap = sorted(set(active_ids) & {str(item).strip() for item in retired})
+    if overlap:
+        raise StrategyCertificationError(
+            "strategy package IDs cannot be both active and retired: " + ", ".join(overlap)
+        )
+    records = {
+        strategy_id: StrategyPackageLifecycleRecord(
+            strategy_id=strategy_id,
+            lifecycle=StrategyPackageLifecycle.ACTIVE,
+            lifecycle_changed_at=str(document.get("policy_version") or "legacy"),
+            reason="Imported from legacy active_strategy_ids policy.",
+        )
+        for strategy_id in active_ids
+    }
+    for raw_strategy_id, retirement in retired.items():
+        if not isinstance(raw_strategy_id, str) or not raw_strategy_id.strip():
+            raise StrategyCertificationError(
+                "retired_strategy_ids keys must be non-empty strings"
+            )
+        strategy_id = raw_strategy_id.strip()
+        if not isinstance(retirement, dict):
+            raise StrategyCertificationError(
+                f"retirement record for {strategy_id!r} must be a mapping"
+            )
+        retired_at = retirement.get("retired_at")
+        reason = retirement.get("reason")
+        if not isinstance(retired_at, str) or not retired_at.strip():
+            raise StrategyCertificationError(
+                f"retirement record for {strategy_id!r} requires string retired_at"
+            )
+        if not isinstance(reason, str) or not reason.strip():
+            raise StrategyCertificationError(
+                f"retirement record for {strategy_id!r} requires string reason"
+            )
+        records[strategy_id] = StrategyPackageLifecycleRecord(
+            strategy_id=strategy_id,
+            lifecycle=StrategyPackageLifecycle.RETIRED,
+            lifecycle_changed_at=retired_at.strip(),
+            reason=reason.strip(),
+        )
+    return records
 
 
 @dataclass(frozen=True)
@@ -109,6 +403,232 @@ class StrategyCertification:
             },
             "studio": dict(self.studio),
         }
+
+
+def certified_execution_defaults(
+    certification: StrategyCertification,
+) -> dict[str, Any]:
+    """Return and validate the manifest-owned executable contract.
+
+    ``studio.execution_defaults`` was historically treated as optional UI
+    metadata by fresh authoring while certification refreshes applied it to
+    configs.  It is now one fixed, manifest-owned contract for every certified
+    event config.  Campaign-owned values that are intentionally variable must
+    therefore stay outside this mapping.
+    """
+
+    raw = certification.studio.get("execution_defaults")
+    if raw is None:
+        return {}
+    if not isinstance(raw, Mapping):
+        raise StrategyCertificationError(
+            "certified studio.execution_defaults must be a mapping"
+        )
+    unknown = sorted(set(raw) - CERTIFIED_EXECUTION_DEFAULT_FIELDS)
+    if unknown:
+        raise StrategyCertificationError(
+            "unsupported certified execution default(s): " + ", ".join(unknown)
+        )
+    defaults = deepcopy(dict(raw))
+    for name in ("position_sizing", "monte_carlo_position_sizing"):
+        if name in defaults and not isinstance(defaults[name], Mapping):
+            raise StrategyCertificationError(
+                f"certified {name} must be a mapping"
+            )
+        if name in defaults:
+            defaults[name] = deepcopy(dict(defaults[name]))
+            _validate_certified_position_sizing(defaults[name], context=name)
+    if "contracts" in defaults and int(defaults["contracts"]) < 1:
+        raise StrategyCertificationError("certified contracts must be at least one")
+    if "prop_max_contracts" in defaults and int(defaults["prop_max_contracts"]) < 1:
+        raise StrategyCertificationError(
+            "certified prop_max_contracts must be at least one"
+        )
+    if "executable_start_date" in defaults:
+        try:
+            date.fromisoformat(str(defaults["executable_start_date"]))
+        except ValueError as exc:
+            raise StrategyCertificationError(
+                "certified executable_start_date must be an ISO date"
+            ) from exc
+    return defaults
+
+
+def _validate_certified_position_sizing(
+    sizing: Mapping[str, Any],
+    *,
+    context: str,
+) -> None:
+    mode = str(sizing.get("mode") or "")
+    if mode not in {
+        "fixed_contracts",
+        "fixed_dollar_risk",
+        "fixed_risk_budget",
+        "risk_percent_net_liq",
+        "risk_percent_initial_balance",
+        "reference",
+    }:
+        raise StrategyCertificationError(
+            f"certified {context}.mode is unsupported: {mode!r}"
+        )
+    if mode == "fixed_contracts" and int(sizing.get("contracts") or 0) < 1:
+        raise StrategyCertificationError(
+            f"certified {context}.contracts must be at least one"
+        )
+    if mode in {"fixed_dollar_risk", "fixed_risk_budget"}:
+        risk_budget = sizing.get("risk_budget")
+        if not isinstance(risk_budget, (int, float)) or float(risk_budget) <= 0:
+            raise StrategyCertificationError(
+                f"certified {context}.risk_budget must be positive"
+            )
+    if mode in {"risk_percent_net_liq", "risk_percent_initial_balance"}:
+        risk_pct = sizing.get("risk_pct")
+        if not isinstance(risk_pct, (int, float)) or not 0 < float(risk_pct) <= 1:
+            raise StrategyCertificationError(
+                f"certified {context}.risk_pct must be in (0, 1]"
+            )
+    if "min_contracts" in sizing and int(sizing["min_contracts"]) < 1:
+        raise StrategyCertificationError(
+            f"certified {context}.min_contracts must be at least one"
+        )
+
+
+def _execution_contract_record(
+    certification: StrategyCertification,
+    defaults: Mapping[str, Any],
+) -> dict[str, Any]:
+    canonical = json.dumps(
+        dict(defaults),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    )
+    return {
+        "schema": CERTIFIED_EXECUTION_CONTRACT_SCHEMA,
+        "strategy_id": certification.strategy_id,
+        "manifest_sha256": certification.manifest_sha256,
+        "execution_defaults_sha256": hashlib.sha256(
+            canonical.encode("utf-8")
+        ).hexdigest(),
+        "resolved_defaults": deepcopy(dict(defaults)),
+    }
+
+
+def apply_certified_execution_contract(
+    config: dict[str, Any],
+    certification: StrategyCertification,
+    *,
+    variant_id: str | None = None,
+) -> list[dict[str, Any]]:
+    """Apply the exact manifest execution contract and record every change."""
+
+    defaults = certified_execution_defaults(certification)
+    if not defaults:
+        return []
+    variant = str(variant_id or config.get("variant_id") or "")
+    core = config.setdefault("core", {})
+    if not isinstance(core, dict):
+        raise StrategyCertificationError("core must be a mapping")
+    changes: list[dict[str, Any]] = []
+
+    def replace(scope: str, owner: dict[str, Any], name: str, value: Any) -> None:
+        new_value = deepcopy(value)
+        old_value = deepcopy(owner.get(name))
+        owner[name] = new_value
+        if old_value != new_value:
+            changes.append(
+                {
+                    "variant_id": variant,
+                    "scope": scope,
+                    "field": name,
+                    "old": old_value,
+                    "new": deepcopy(new_value),
+                    "reviewed": True,
+                    "change_kind": "certified_execution_contract",
+                }
+            )
+
+    for name, value in defaults.items():
+        if name == "executable_start_date":
+            start_date = date.fromisoformat(str(value))
+            for section_name in ("core", "core_grid", "monkey", "wfa"):
+                section = config.get(section_name)
+                if not isinstance(section, dict):
+                    continue
+                subset = section.setdefault("data_subset", {})
+                if not isinstance(subset, dict):
+                    raise StrategyCertificationError(
+                        f"{section_name}.data_subset must be a mapping"
+                    )
+                old_value = subset.get("start_date")
+                if old_value is None or date.fromisoformat(str(old_value)) < start_date:
+                    replace(
+                        f"{section_name}.data_subset",
+                        subset,
+                        "start_date",
+                        start_date.isoformat(),
+                    )
+            continue
+        if name == "monte_carlo_position_sizing":
+            monte_carlo = config.setdefault("monte_carlo", {})
+            if not isinstance(monte_carlo, dict):
+                raise StrategyCertificationError("monte_carlo must be a mapping")
+            replace("monte_carlo", monte_carlo, "position_sizing", value)
+            continue
+        if name == "prop_max_contracts":
+            prop_rules = config.setdefault("prop_rules", {})
+            if not isinstance(prop_rules, dict):
+                raise StrategyCertificationError("prop_rules must be a mapping")
+            replace("prop_rules", prop_rules, "max_contracts", int(value))
+            continue
+        if name == "timeframe":
+            replace("config", config, "timeframe", str(value))
+            continue
+        replace("core", core, name, value)
+
+    flatten = defaults.get("flatten_time")
+    if flatten is not None:
+        strategy = config.setdefault("strategy", {})
+        if not isinstance(strategy, dict):
+            raise StrategyCertificationError("strategy must be a mapping")
+        replace("strategy", strategy, "flatten_time", str(flatten))
+    apex = config.setdefault("apex_rules", {})
+    if not isinstance(apex, dict):
+        raise StrategyCertificationError("apex_rules must be a mapping")
+    for name, value in (
+        ("latest_entry_time", defaults.get("latest_entry_time")),
+        ("force_flatten_time", flatten),
+        ("latest_flat_time", flatten),
+    ):
+        if value is not None:
+            replace("apex_rules", apex, name, str(value))
+
+    replace(
+        "config",
+        config,
+        "certified_execution_contract",
+        _execution_contract_record(certification, defaults),
+    )
+    return changes
+
+
+def require_certified_execution_contract(
+    config: Mapping[str, Any],
+    certification: StrategyCertification,
+) -> None:
+    """Fail closed when a config differs from its manifest execution contract."""
+
+    candidate = deepcopy(dict(config))
+    changes = apply_certified_execution_contract(candidate, certification)
+    if changes:
+        mismatches = ", ".join(
+            f"{change['scope']}.{change['field']}"
+            for change in changes
+        )
+        raise StrategyCertificationError(
+            "config certified execution contract is missing or mismatched: "
+            + mismatches
+        )
 
 
 def validate_certified_parameter_value(
@@ -272,7 +792,18 @@ def load_strategy_certifications(
     project_root: str | Path | None = None,
     *,
     require_current: bool = True,
+    include_retired: bool = False,
+    access: StrategyPackageAccess | str | None = None,
 ) -> dict[str, StrategyCertification]:
+    """Load strategy packages allowed by the repository-owned availability policy.
+
+    The default is the active-only new-work view. ``include_retired=True`` is
+    retained as a compatibility alias for active plus historical (deprecated
+    and retired) manifest inspection; it does not expose development or
+    quarantined packages and does not grant execution authority. New callers
+    should state an explicit ``access`` purpose.
+    """
+
     root = project_root_for_certifications(project_root)
     manifest_root = certification_manifest_root(root)
     result: dict[str, StrategyCertification] = {}
@@ -282,10 +813,40 @@ def load_strategy_certifications(
             raise StrategyCertificationError(
                 f"duplicate strategy certification for {certification.strategy_id!r}"
             )
-        if require_current:
-            require_current_certification(certification, root)
         result[certification.strategy_id] = certification
-    return result
+
+    policy = load_strategy_package_availability(root)
+    manifest_ids = set(result)
+    classified_ids = set(policy.packages)
+    missing_manifests = sorted(classified_ids - manifest_ids)
+    if missing_manifests:
+        raise StrategyCertificationError(
+            "strategy package availability policy references missing manifest(s): "
+            + ", ".join(missing_manifests)
+        )
+    unclassified_manifests = sorted(manifest_ids - classified_ids)
+    if unclassified_manifests:
+        raise StrategyCertificationError(
+            "strategy certification manifest(s) are not classified by the lifecycle policy: "
+            + ", ".join(unclassified_manifests)
+        )
+
+    requested_access = _strategy_package_access(
+        access=access,
+        include_retired=include_retired,
+    )
+    selected_ids = (
+        set(policy.active_strategy_ids)
+        | set(policy.deprecated_strategy_ids)
+        | set(policy.retired_strategy_ids)
+        if include_retired and access is None
+        else set(policy.ids_allowed_for(requested_access))
+    )
+    selected = {strategy_id: result[strategy_id] for strategy_id in sorted(selected_ids)}
+    if require_current:
+        for certification in selected.values():
+            require_current_certification(certification, root)
+    return selected
 
 
 def get_strategy_certification(
@@ -293,12 +854,101 @@ def get_strategy_certification(
     project_root: str | Path | None = None,
     *,
     require_current: bool = True,
+    include_retired: bool = False,
+    access: StrategyPackageAccess | str | None = None,
 ) -> StrategyCertification:
-    certifications = load_strategy_certifications(project_root, require_current=require_current)
+    root = project_root_for_certifications(project_root)
+    policy = load_strategy_package_availability(root)
+    requested_access = _strategy_package_access(
+        access=access,
+        include_retired=include_retired,
+    )
+    if strategy_id not in policy.packages:
+        raise StrategyCertificationError(
+            f"strategy {strategy_id!r} is not classified by the lifecycle policy"
+        )
+    if include_retired and access is None:
+        access_allowed = policy.lifecycle_for(strategy_id) in {
+            StrategyPackageLifecycle.ACTIVE,
+            StrategyPackageLifecycle.DEPRECATED,
+            StrategyPackageLifecycle.RETIRED,
+        }
+    else:
+        access_allowed = policy.allows(strategy_id, requested_access)
+    if not access_allowed:
+        lifecycle = policy.lifecycle_for(strategy_id)
+        if include_retired and access is None:
+            raise StrategyCertificationError(
+                f"strategy {strategy_id!r} is {lifecycle.value} and is not exposed by the "
+                "legacy include_retired compatibility flag; request an explicit access purpose"
+            )
+        raise StrategyCertificationError(
+            _lifecycle_access_error(strategy_id, lifecycle, requested_access)
+        )
+    certifications = load_strategy_certifications(
+        root,
+        require_current=False,
+        access=StrategyPackageAccess.INSPECTION,
+    )
     try:
-        return certifications[strategy_id]
+        certification = certifications[strategy_id]
     except KeyError as exc:
         raise StrategyCertificationError(f"strategy {strategy_id!r} has no certification manifest") from exc
+    if require_current:
+        require_current_certification(certification, root)
+    return certification
+
+
+def _strategy_package_access(
+    *,
+    access: StrategyPackageAccess | str | None,
+    include_retired: bool,
+) -> StrategyPackageAccess:
+    if access is None:
+        return (
+            StrategyPackageAccess.INSPECTION
+            if include_retired
+            else StrategyPackageAccess.NEW_WORK
+        )
+    try:
+        requested = StrategyPackageAccess(access)
+    except ValueError as exc:
+        allowed = ", ".join(item.value for item in StrategyPackageAccess)
+        raise StrategyCertificationError(
+            f"strategy package access must use one of: {allowed}"
+        ) from exc
+    if include_retired and requested is not StrategyPackageAccess.INSPECTION:
+        raise StrategyCertificationError(
+            "include_retired=True is compatible only with access='inspection'"
+        )
+    return requested
+
+
+def _lifecycle_access_error(
+    strategy_id: str,
+    lifecycle: StrategyPackageLifecycle,
+    access: StrategyPackageAccess,
+) -> str:
+    descriptions = {
+        StrategyPackageLifecycle.DEVELOPMENT: (
+            "is in development and available only for engineering and inspection"
+        ),
+        StrategyPackageLifecycle.ACTIVE: "is active but the requested action is not permitted",
+        StrategyPackageLifecycle.DEPRECATED: (
+            "is deprecated and unavailable for new work; only engineering maintenance, "
+            "exact historical replay, replication, and inspection are permitted"
+        ),
+        StrategyPackageLifecycle.RETIRED: (
+            "is retired and available only for historical inspection"
+        ),
+        StrategyPackageLifecycle.QUARANTINED: (
+            "is quarantined and unavailable for execution or certification; inspection only"
+        ),
+    }
+    return (
+        f"strategy {strategy_id!r} {descriptions[lifecycle]} "
+        f"(requested access: {access.value})"
+    )
 
 
 def require_current_certification(
@@ -343,6 +993,10 @@ def audit_strategy_certification(
             validate_certified_parameter_value(parameter, parameter.default)
         except StrategyCertificationError as exc:
             errors.append(str(exc))
+    try:
+        certified_execution_defaults(certification)
+    except StrategyCertificationError as exc:
+        errors.append(str(exc))
     try:
         actual = compute_implementation_sha256(root, certification.source_files)
     except StrategyCertificationError as exc:
@@ -395,13 +1049,20 @@ def strategy_identity_for_config(
     project_root: str | Path | None = None,
     *,
     require_declared_match: bool = True,
+    access: StrategyPackageAccess | str | None = None,
 ) -> StrategyCertification | None:
     if str(config.get("engine_lane") or "") != "canonical_event_replay":
         return None
     strategy = config.get("strategy") if isinstance(config.get("strategy"), dict) else {}
     event = strategy.get("event") if isinstance(strategy.get("event"), dict) else {}
     strategy_id = str(event.get("module") or config.get("strategy_name") or "")
-    certification = get_strategy_certification(strategy_id, project_root, require_current=True)
+    requested_access = access or strategy_package_access_for_config(config)
+    certification = get_strategy_certification(
+        strategy_id,
+        project_root,
+        require_current=True,
+        access=requested_access,
+    )
     declared = config.get("strategy_certification")
     if require_declared_match and declared is not None:
         if not isinstance(declared, dict):
@@ -418,14 +1079,50 @@ def strategy_identity_for_config(
             raise StrategyCertificationError(
                 "config strategy certification is stale or mismatched: " + ", ".join(mismatched)
             )
+    research = config.get("research_metadata")
+    authored_config = (
+        isinstance(research, dict)
+        and research.get("authoring_contract") == "alphaquest.campaign-draft/v1"
+    )
+    if (
+        require_declared_match
+        and StrategyPackageAccess(requested_access) is StrategyPackageAccess.NEW_WORK
+        and (
+            authored_config
+            or config.get("certified_execution_contract") is not None
+        )
+    ):
+        require_certified_execution_contract(config, certification)
     return certification
+
+
+def strategy_package_access_for_config(config: dict[str, Any]) -> StrategyPackageAccess:
+    """Grant deprecated-package replay only to authored exact replications.
+
+    Ordinary publications, corrections, data refreshes, methodology reruns,
+    rescues, and parameter declarations all remain active-package-only.
+    Follow-up lineage validation is responsible for proving that an authored
+    replication is a hash-bound child of an immutable parent.
+    """
+
+    if (
+        str(config.get("attempt_kind") or "") == "replication"
+        and str(config.get("attempt_provenance") or "") == "authored"
+    ):
+        return StrategyPackageAccess.HISTORICAL_REPLAY
+    return StrategyPackageAccess.NEW_WORK
 
 
 def certify_strategy(strategy_id: str, project_root: str | Path) -> StrategyCertification:
     """Run the declared tests, then bind the manifest to the tested source bytes."""
 
     root = project_root_for_certifications(project_root)
-    certification = get_strategy_certification(strategy_id, root, require_current=False)
+    certification = get_strategy_certification(
+        strategy_id,
+        root,
+        require_current=False,
+        access=StrategyPackageAccess.ENGINEERING,
+    )
     if not certification.required_tests:
         raise StrategyCertificationError("certification cannot proceed without required_tests")
     previous = certification.manifest_path.read_bytes()
@@ -443,7 +1140,12 @@ def certify_strategy(strategy_id: str, project_root: str | Path) -> StrategyCert
     if completed.returncode != 0:
         certification.manifest_path.write_bytes(previous)
         raise StrategyCertificationError("required certification tests failed; manifest was restored")
-    return get_strategy_certification(strategy_id, root, require_current=True)
+    return get_strategy_certification(
+        strategy_id,
+        root,
+        require_current=True,
+        access=StrategyPackageAccess.ENGINEERING,
+    )
 
 
 def _load_manifest(path: Path) -> StrategyCertification:
@@ -522,18 +1224,30 @@ def _load_manifest(path: Path) -> StrategyCertification:
 
 __all__ = [
     "CERTIFICATION_SCHEMA",
+    "CERTIFIED_EXECUTION_CONTRACT_SCHEMA",
+    "CERTIFIED_EXECUTION_DEFAULT_FIELDS",
     "REQUIRED_TEST_CATEGORIES",
+    "STRATEGY_PACKAGE_AVAILABILITY_SCHEMA",
     "StrategyCertification",
     "CertifiedStrategyParameter",
     "StrategyCertificationError",
+    "StrategyPackageAccess",
+    "StrategyPackageAvailabilityPolicy",
+    "StrategyPackageLifecycle",
+    "StrategyPackageLifecycleRecord",
     "audit_strategy_certification",
+    "apply_certified_execution_contract",
+    "certified_execution_defaults",
     "certify_strategy",
     "compute_implementation_sha256",
     "get_strategy_certification",
+    "load_strategy_package_availability",
     "load_strategy_certifications",
     "normalize_certified_event_params",
+    "require_certified_execution_contract",
     "resolve_factory",
     "strategy_identity_for_config",
+    "strategy_package_access_for_config",
     "validate_certified_event_parameter_grid",
     "validate_certified_parameter_value",
 ]

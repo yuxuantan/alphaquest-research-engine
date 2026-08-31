@@ -1,0 +1,215 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260810t042430_aa3a3240",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "197441034f859d3a0679f0c829ff26b44ca6af2d2a942e02d0b924811ae952cb",
+        "implementation_version": 3,
+        "manifest_sha256": "09aacf089c6a0401ece4a8a90741975d734ba33a3469c1e5dcf55d2636bad521",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "af3d71006d1c2b6317694c648c78f3f5e28e6af3ab13492287ef7fa93222d4ee",
+        "implementation_version": 2,
+        "manifest_sha256": "2d376ff36de48d8c524953fd0fe77d0baf759355d35a44b49fbce6b0516b7e87",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "certified_execution_default",
+      "field": "contracts",
+      "new": 1,
+      "old": 2,
+      "reviewed": true,
+      "scope": "core",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "certified_execution_default",
+      "field": "position_sizing",
+      "new": {
+        "cost_allowance_per_contract": 28.1,
+        "max_contracts": 1,
+        "min_contracts": 1,
+        "mode": "fixed_dollar_risk",
+        "risk_budget": 200.0,
+        "rounding": "floor"
+      },
+      "old": {
+        "cost_allowance_per_contract": 28.1,
+        "max_contracts": 2,
+        "min_contracts": 2,
+        "mode": "fixed_dollar_risk",
+        "risk_budget": 1600.0,
+        "rounding": "floor"
+      },
+      "reviewed": true,
+      "scope": "core",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "certified_execution_default",
+      "field": "position_sizing",
+      "new": {
+        "contracts": 1,
+        "mode": "fixed_contracts"
+      },
+      "old": {
+        "contracts": 2,
+        "mode": "fixed_contracts"
+      },
+      "reviewed": true,
+      "scope": "monte_carlo",
+      "variant_id": "v03"
+    },
+    {
+      "field": "migrated_fixed_certified_defaults",
+      "new": {
+        "risk_budget_dollars": 200.0,
+        "target_1_fraction": 1.0
+      },
+      "old": {
+        "risk_budget_dollars": 1600.0,
+        "target_1_fraction": 0.5
+      },
+      "reviewed": true,
+      "scope": "strategy.event.params",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "maximum_stop_ticks",
+      "new": null,
+      "old": 60,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_parameter",
+      "field": "minimum_weighted_reward_r",
+      "new": null,
+      "old": 1.0,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "change_kind": "retired_certified_grid_dimension",
+      "field": "event.params.minimum_weighted_reward_r",
+      "new": null,
+      "old": [
+        0.75,
+        1.0,
+        1.25
+      ],
+      "reviewed": true,
+      "scope": "core_grid.parameters,wfa.parameters",
+      "variant_id": "v03"
+    },
+    {
+      "field": "target_1_fraction",
+      "new": 1.0,
+      "old": 0.5,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "risk_budget_dollars",
+      "new": 200.0,
+      "old": 1600.0,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "drawdown_allowance_dollars",
+      "new": 2000.0,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "drawdown_reserve_dollars",
+      "new": 400.0,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "survival_stopouts",
+      "new": 8,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "minimum_poc_reward_r",
+      "new": 1.0,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v01": "9c17ccc52c933ec36588ac7aad44875ddbcf5da387527c28181190ccd5bbfbec",
+    "v02": "b827a0d61ef8a42b15a3e9aadc326d7199b505c65151a149fb013f76263c1639",
+    "v03": "f08de9415f73bd25d256f79be3299ac60feb19484f210b3b5aae6daed8589b90"
+  },
+  "created_at": "2026-08-10T04:24:31.823083+00:00",
+  "created_by": "Codex on user instruction",
+  "dataset_bindings": {
+    "v01": {
+      "dataset_id": "es_databento_trade_events_20250714_20260610_0930_1100_ny",
+      "dataset_manifest_sha256": "1597cc593bc872576070dc1ccbcfc16aaaca01eee078db35d28cf36411b0393c"
+    },
+    "v02": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02",
+      "dataset_manifest_sha256": "6541a29ffd5abcf43bf21cccc1b5deaa587b2bcfb885a794541dca6732b267ff"
+    },
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260810t042430_aa3a3240",
+  "parent_attempt_id": "pre_pnl_parameter_declaration_20260809t044903_a27fb2a0",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Before any v03 performance stage, replace the unsupported sixty-tick absolute stop ceiling and two-ES sixteen-hundred-dollar sizing design. Preserve the structural stop beyond the observed sweep extreme and the causal ATR eligibility ceiling, derive a fixed two-hundred-dollar account-risk cap from a two-thousand-dollar drawdown less a four-hundred-dollar reserve across eight stopouts, size at most one ES contract, reject unaffordable fills, and exit the single contract at frozen POC. Prior mechanics evidence is retired and no PnL result informed this correction.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v01": "52f1fc5fe3bfe06320844620d3ecffbf86c1987caa358c905922dd976da750de",
+    "v02": "67a5bd3170c660d7b2623c802bacd4915dc2fb33f7b910f97652d60f5f81a2d3",
+    "v03": "7ebe2b7a2f03891b408c62d10f3d2423ab4a7fc63ec0043bb54b9c73b440342e"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v01": "40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1",
+    "v02": "2595e548d0eb42bfd6ed029f9b88c07bcc1ca3c0f19573d00387f3019db04da1",
+    "v03": "418113b8e8fa2fe7c841ba0abbda832e213547fc0f36a2fa1bedb68bb6b9d437"
+  },
+  "variant_order": [
+    "v01",
+    "v02",
+    "v03"
+  ]
+}

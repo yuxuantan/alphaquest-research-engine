@@ -1,0 +1,99 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260820t131546_68e5612e",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "ae7ec7b80faf90957b5ad7a5f1e7c0b4bb42325bc5174577c15dcb403e20cfc3",
+        "implementation_version": 23,
+        "manifest_sha256": "18fe1b6da78525887cd814445ea6d602f4b1ce07092eb7fd8027ebe7df41c005",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "4f87102410866c06a629dccb504781244fc9f2e428b2ed942fdb02c3bbe8cd56",
+        "implementation_version": 22,
+        "manifest_sha256": "15431b2043241b3bef0412aa3906fc5c2fb650d95db2167f9f94168fe9899e71",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "field": "migrated_fixed_certified_defaults",
+      "new": {
+        "big_trade_context_path": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_motivewave_consecutive_q999_prior20_context.parquet",
+        "big_trade_context_sha256": "1dec5cfd0b4ed4ca5782298932d833527c80dd8a83e92a75c9f7558db8c4d51f"
+      },
+      "old": {
+        "big_trade_context_path": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q999_prior20_context.parquet",
+        "big_trade_context_sha256": "e5a4ceafa83dad1f663bb277ae5f5b7d99183e4ea16d0f07cd12b9bd49e610fa"
+      },
+      "reviewed": true,
+      "scope": "strategy.event.params",
+      "variant_id": "v03"
+    },
+    {
+      "field": "big_trade_aggregation_mode",
+      "new": "motivewave_consecutive",
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "big_trade_context_path",
+      "new": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_motivewave_consecutive_q999_prior20_context.parquet",
+      "old": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q999_prior20_context.parquet",
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "big_trade_context_sha256",
+      "new": "1dec5cfd0b4ed4ca5782298932d833527c80dd8a83e92a75c9f7558db8c4d51f",
+      "old": "e5a4ceafa83dad1f663bb277ae5f5b7d99183e4ea16d0f07cd12b9bd49e610fa",
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "55ba2f45e189400eddbdbc81fc439b7ebc7af67a00829e90b4f45de12fdcd710"
+  },
+  "created_at": "2026-08-20T13:15:46.613145+00:00",
+  "created_by": "Codex on user instruction and MotiveWave reconciliation",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260820t131546_68e5612e",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260819t130640_73f6942e",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "User-directed pre-PnL v03 implementation correction after MotiveWave reconciliation: exceptional aggressive volume now uses consecutive same-price, same-aggressor executions within 100 ms of the sequence's first execution, and any intervening nonmatching execution terminates the sequence. The causal prior-20-session q99.9 context was rebuilt under the same semantics. All other AOI, confirmation, sweep, entry, stop, target, data, and protocol rules remain unchanged. Prior evidence is preserved.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "394133826f7bb638f860b1316b3bd8e172700dc6a4038217f6e6232cafd45347"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "cc8745aefd2f96853f34fc8577326cbb89683dda48cc5603a312308e0ab68b46"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

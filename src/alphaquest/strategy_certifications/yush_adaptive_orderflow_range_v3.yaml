@@ -1,0 +1,523 @@
+schema: alphaquest.strategy-certification/v1
+strategy_id: yush_adaptive_orderflow_range_v3
+implementation_version: 29
+certification_status: certified
+lane: canonical_event_replay
+factory: alphaquest.strategy_modules.event.yush_adaptive_orderflow_range_v3:build_strategy
+entry_module: yush_adaptive_orderflow_range_v3
+stop_module: event_fill_time_sweep_to_entry_extreme_stop
+target_module: event_frozen_midpoint_opposite_edge_scale_out
+source_files:
+- src/alphaquest/authoring/catalog.py
+- src/alphaquest/authoring/models.py
+- src/alphaquest/strategy_certification.py
+- src/alphaquest/backtest/contracts.py
+- src/alphaquest/backtest/engine.py
+- src/alphaquest/backtest/event_replay.py
+- src/alphaquest/backtest/event_replay_cache.py
+- src/alphaquest/backtest/fills.py
+- src/alphaquest/backtest/risk.py
+- src/alphaquest/backtest/sizing.py
+- src/alphaquest/data/scid_execution.py
+- src/alphaquest/data/sierra_events.py
+- src/alphaquest/data/sierra_session_stream.py
+- src/alphaquest/research/core_grid.py
+- src/alphaquest/strategy_modules/event/__init__.py
+- src/alphaquest/strategy_modules/event/runner.py
+- src/alphaquest/strategy_modules/event/yush_chart_fanatics_range.py
+- src/alphaquest/strategy_modules/event/yush_adaptive_orderflow_range_v3.py
+- src/alphaquest/run_core.py
+- src/alphaquest/utils/params.py
+- src/alphaquest/validation/checks.py
+- tools/build_yush_big_trade_context.py
+implementation_sha256: 5086ee1899b22d4af3c81ff83cee12da3411fb88aa394e67a74391c846c6ff99
+required_test_categories:
+- session_logic
+- entry_timing
+- stop_target_ordering
+- forced_flatten
+- no_lookahead
+- registry_and_runner
+required_tests:
+- tests/test_yush_adaptive_orderflow_range_v3.py
+- tests/test_yush_chart_fanatics_range.py
+- tests/test_yush_big_trade_context.py
+- tests/test_event_replay_partial_exit.py
+- tests/test_event_replay.py
+- tests/test_position_sizing.py
+- tests/test_event_replay_cache.py
+- tests/test_core_grid.py
+- tests/test_scid_execution.py
+- tests/test_sierra_events.py
+- tests/test_sierra_session_stream.py
+- tests/test_validation_checks.py
+- tests/test_strategy_certification.py
+parameters:
+  tick_size:
+    category: entry
+    value_type: number
+    default: 0.25
+    description: ES minimum price increment.
+    tunable: false
+    studio_editable: false
+    minimum: 0.25
+    maximum: 0.25
+  point_value:
+    category: entry
+    value_type: number
+    default: 5.0
+    description: Dollar value of one MES execution point; ES remains the signal and
+      order-flow instrument.
+    tunable: false
+    studio_editable: false
+    minimum: 5.0
+    maximum: 5.0
+  commission_per_contract:
+    category: entry
+    value_type: number
+    default: 0.51
+    description: Reviewed Apex Rithmic per-side MES commission in dollars per contract.
+    tunable: false
+    studio_editable: false
+    minimum: 0.51
+    maximum: 0.51
+  bar_seconds:
+    category: entry
+    value_type: integer
+    default: 180
+    description: Causal profile signal and holding bar duration.
+    tunable: false
+    studio_editable: false
+    minimum: 180
+    maximum: 180
+  price_bin_ticks:
+    category: entry
+    value_type: integer
+    default: 1
+    description: One-tick MotiveWave profile rows built from ordered ES executions.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+    maximum: 1
+  delta_profile_price_bin_ticks:
+    category: entry
+    value_type: integer
+    default: 4
+    description: MotiveWave-style fixed four-tick intervals for the session-anchored
+      AOI delta profile; the globally aligned lower-bound price labels each cell.
+    tunable: false
+    studio_editable: false
+    minimum: 4
+    maximum: 4
+  value_area_fraction:
+    category: entry
+    value_type: number
+    default: 0.7
+    description: MotiveWave Standard value-area volume fraction.
+    tunable: false
+    studio_editable: false
+    minimum: 0.7
+    maximum: 0.7
+  value_area_method:
+    category: entry
+    value_type: string
+    default: motivewave_standard
+    description: Deterministic MotiveWave Standard adjacent-pair value-area expansion.
+    tunable: false
+    studio_editable: false
+    choices:
+    - motivewave_standard
+  context_distance_atr_fraction:
+    category: entry
+    value_type: number
+    default: 0.3333333333333333
+    description: At every completed three-minute boundary, search symmetrically one
+      third of causal ATR above and below the latest VAH and VAL for AOI-qualifying
+      big trades or four-tick delta levels.
+    tunable: false
+    studio_editable: false
+    minimum: 0.3333333333333333
+    maximum: 0.3333333333333333
+  delta_profile_percentile:
+    category: entry
+    value_type: number
+    default: 0.9
+    description: Causal cross-sectional absolute-delta percentile required for a sign-agnostic
+      four-tick session-anchored profile cell to arm an AOI at either value edge.
+    tunable: false
+    studio_editable: false
+    minimum: 0.9
+    maximum: 0.9
+  big_trade_reference_percentile:
+    category: entry
+    value_type: number
+    default: 0.999
+    description: Prior-20-session causal exceptional aggressive-volume percentile.
+    tunable: false
+    studio_editable: false
+    minimum: 0.999
+    maximum: 0.999
+  big_trade_lookback_sessions:
+    category: entry
+    value_type: integer
+    default: 20
+    description: Completed sessions used for the exceptional aggressive-volume threshold.
+    tunable: false
+    studio_editable: false
+    minimum: 20
+    maximum: 20
+  big_trade_interval_ms:
+    category: entry
+    value_type: integer
+    default: 100
+    description: Maximum elapsed time from the first execution in a consecutive same-price,
+      same-aggressor sequence.
+    tunable: false
+    studio_editable: false
+    minimum: 100
+    maximum: 100
+  big_trade_price_bucket_ticks:
+    category: entry
+    value_type: integer
+    default: 1
+    description: Consecutive large-execution sequences isolate one ES tick and aggressor
+      side.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+    maximum: 1
+  big_trade_aggregation_mode:
+    category: entry
+    value_type: string
+    default: motivewave_consecutive
+    description: Match MotiveWave by ending a sequence whenever an intervening execution
+      has a different price or aggressor side, or the 100 ms window from the sequence's
+      first execution is exceeded.
+    tunable: false
+    studio_editable: false
+    choices:
+    - motivewave_consecutive
+  burst_freshness_scope:
+    category: entry
+    value_type: string
+    default: current_rth_session
+    description: Retain every qualifying exceptional-volume burst from the current
+      RTH session; burst state resets only at the next session start.
+    tunable: false
+    studio_editable: false
+    choices:
+    - current_rth_session
+  sweep_minimum_ticks:
+    category: entry
+    value_type: integer
+    default: 2
+    description: Absolute floor under the ATR-normalized sweep distance.
+    tunable: false
+    studio_editable: false
+    minimum: 2
+    maximum: 2
+  morning_entry_start:
+    category: entry
+    value_type: string
+    default: 09:39:00
+    description: Morning entry start after three completed profile bars.
+    tunable: false
+    studio_editable: false
+    choices:
+    - 09:39:00
+  morning_entry_end:
+    category: entry
+    value_type: string
+    default: '11:30:00'
+    description: Morning entry cutoff.
+    tunable: false
+    studio_editable: false
+    choices:
+    - '11:30:00'
+  afternoon_entry_start:
+    category: entry
+    value_type: string
+    default: '13:39:00'
+    description: Afternoon entry start while the continuous RTH profile remains active.
+    tunable: false
+    studio_editable: false
+    choices:
+    - '13:39:00'
+  afternoon_entry_end:
+    category: entry
+    value_type: string
+    default: '15:30:00'
+    description: Afternoon entry cutoff.
+    tunable: false
+    studio_editable: false
+    choices:
+    - '15:30:00'
+  entry_offset_ticks:
+    category: entry
+    value_type: integer
+    default: 2
+    description: 'After an ordered sweep, arm the reclaim stop entry two ticks beyond
+      the AOI-zone boundary: short below zone low and long above zone high.'
+    tunable: false
+    studio_editable: false
+    minimum: 2
+    maximum: 2
+  stop_offset_ticks:
+    category: sl
+    value_type: integer
+    default: 2
+    description: On the fill event, place the stop two ticks beyond the adverse extreme
+      observed from the sweep bar through the entry event, inclusive.
+    tunable: false
+    studio_editable: false
+    minimum: 2
+    maximum: 2
+  minimum_stop_ticks:
+    category: sl
+    value_type: integer
+    default: 2
+    description: Two-tick execution floor that can never exceed the adaptive maximum.
+    tunable: false
+    studio_editable: false
+    minimum: 2
+    maximum: 2
+  maximum_stop_atr_multiple:
+    category: sl
+    value_type: number
+    default: 1.75
+    description: Maximum structural entry risk in causal ATR units.
+    tunable: true
+    studio_editable: true
+    minimum: 1.25
+    maximum: 1.75
+    choices:
+    - 1.25
+    - 1.5
+    - 1.75
+  atr_lookback_bars:
+    category: sl
+    value_type: integer
+    default: 14
+    description: Wilder ATR lookback in completed three-minute bars.
+    tunable: false
+    studio_editable: false
+    minimum: 14
+    maximum: 14
+  target_1_fraction:
+    category: tp
+    value_type: number
+    default: 0.5
+    description: Exit half the position at the value-area midpoint frozen when the
+      AOI is created; the remainder targets the frozen opposite value edge.
+    tunable: false
+    studio_editable: false
+    minimum: 0.5
+    maximum: 0.5
+  maximum_holding_bars:
+    category: tp
+    value_type: integer
+    default: 12
+    description: Maximum hold after entry in completed three-minute bars.
+    tunable: false
+    studio_editable: false
+    minimum: 12
+    maximum: 12
+  maximum_entries_per_aoi:
+    category: entry
+    value_type: integer
+    default: 1
+    description: At most one fill from each swept per-bar AOI identity.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+    maximum: 1
+  max_trades_per_day:
+    category: entry
+    value_type: integer
+    default: 0
+    description: No strategy-level daily entry cap; independent account risk controls
+      remain active.
+    tunable: false
+    studio_editable: false
+    minimum: 0
+    maximum: 0
+  atr_context_path:
+    category: entry
+    value_type: string
+    default: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+    description: Hash-bound prior-session ATR seed context.
+    tunable: false
+    studio_editable: false
+    choices:
+    - research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+  atr_context_sha256:
+    category: entry
+    value_type: string
+    default: 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+    description: SHA-256 of the ATR seed context.
+    tunable: false
+    studio_editable: false
+    choices:
+    - 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+  big_trade_context_path:
+    category: entry
+    value_type: string
+    default: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_motivewave_consecutive_q999_prior20_context.parquet
+    description: Hash-bound prior-session exceptional aggressive-volume context.
+    tunable: false
+    studio_editable: false
+    choices:
+    - research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_motivewave_consecutive_q999_prior20_context.parquet
+  big_trade_context_sha256:
+    category: entry
+    value_type: string
+    default: 1dec5cfd0b4ed4ca5782298932d833527c80dd8a83e92a75c9f7558db8c4d51f
+    description: SHA-256 of the prior-session exceptional aggressive-volume context.
+    tunable: false
+    studio_editable: false
+    choices:
+    - 1dec5cfd0b4ed4ca5782298932d833527c80dd8a83e92a75c9f7558db8c4d51f
+  sweep_atr_fraction:
+    category: entry
+    value_type: number
+    default: 0.2
+    description: Sweep distance as a fraction of causal ATR with a two-tick floor.
+    tunable: true
+    studio_editable: true
+    minimum: 0.1
+    maximum: 0.3
+    choices:
+    - 0.1
+    - 0.15
+    - 0.2
+    - 0.25
+    - 0.3
+  minimum_midpoint_reward_r:
+    category: tp
+    value_type: number
+    default: 1.0
+    description: On the fill event, require gross reward from the gap-aware entry
+      reference to the AOI-time midpoint to be at least equal to sweep-to-entry structural
+      risk.
+    tunable: false
+    studio_editable: false
+    minimum: 1.0
+    maximum: 1.0
+  profile_warmup_bars:
+    category: entry
+    value_type: integer
+    default: 3
+    description: Completed bars required after the RTH open before the continuous
+      session profile may arm.
+    tunable: false
+    studio_editable: false
+    minimum: 3
+    maximum: 3
+  afternoon_profile_reset:
+    category: entry
+    value_type: string
+    default: disabled
+    description: Disable the former 13:30 reset so one causal profile accumulates
+      continuously from 09:30 through the afternoon entry window.
+    tunable: false
+    studio_editable: false
+    choices:
+    - disabled
+studio:
+  visible: true
+  label: Yush Orderflow Range Reversal v03
+  description: Per-bar VAH and VAL AOIs built only from exceptional volume or sign-agnostic
+    four-tick delta within one-third ATR, followed by an ordered sweep, an immediate
+    AOI-zone reclaim stop entry, and a fill-time sweep-to-entry structural stop.
+  timeframe_rationale: Each completed three-minute bar causally republishes the developing
+    profile and ATR, then builds independent VAH and VAL AOIs for the next bar. Ordered
+    events prove the inside-to-outside sweep and later reclaim trigger. No separate
+    post-sweep confirmation is required.
+  execution_defaults:
+    timeframe: 3m
+    entry_start: 09:39:00
+    latest_entry_time: '15:30:00'
+    flatten_time: '15:55:00'
+    max_trades_per_day: 0
+    signal_instrument: ES
+    execution_instrument: MES
+    executable_start_date: '2019-05-06'
+    point_value: 5.0
+    tick_value: 1.25
+    commission_per_contract: 0.51
+    slippage_ticks: 1
+    entry_slippage_ticks: 1
+    protective_stop_slippage_ticks: 1
+    target_limit_slippage_ticks: 0
+    market_exit_slippage_ticks: 1
+    event_stop_market_fill_policy: trade_event_price_on_gap
+    contracts: 1
+    position_sizing:
+      mode: risk_percent_net_liq
+      risk_pct: 0.004
+      cost_allowance_per_contract: 2.27
+      rounding: floor
+      min_contracts: 1
+    monte_carlo_position_sizing:
+      mode: risk_percent_net_liq
+      risk_pct: 0.004
+      cost_allowance_per_contract: 2.27
+      rounding: floor
+      min_contracts: 1
+  mechanics_review:
+    mechanic_expresses_edge: At every completed three-minute boundary, independently
+      attempt a short AOI at the latest VAH and a long AOI at the latest VAL. The
+      AOI exists only when a prior-20-session q99.9 MotiveWave-compatible consecutive
+      aggressive-volume sequence of either side and/or a sign-agnostic top-decile
+      absolute session-anchored four-tick delta cell lies within one third of causal
+      ATR above or below that edge. Market levels do not qualify an AOI.
+    entry_logic_rationale: Each AOI applies only to the next three-minute bar and
+      is rebuilt at the following boundary from the then-latest VAH or VAL and confluences.
+      An ordered event at or inside the edge arms the crossing; a later event at the
+      ATR-normalized sweep distance completes a sweep when that bar closes. The completed
+      sweep immediately arms a stop-market reclaim entry two ticks beyond the reclaim-side
+      AOI-zone boundary. There is no separate three-bar big-trade or delta confirmation,
+      no AOI supersession model, and no intended-stop invalidation before fill. A
+      swept entry order has no clock expiry.
+    stop_loss_rationale: The order is submitted without a predeclared stop. On the
+      exact causal fill event, after that event has updated the path, resolve the
+      stop two ticks beyond the adverse extreme observed from the entire sweep bar
+      through the entry event, inclusive. Validate the minimum and causal-ATR maximum,
+      size from the resolved risk, and create the position only after the stop is
+      valid.
+    target_exit_rationale: When a per-bar AOI is created, retain its value-area midpoint
+      and opposite edge for any setup swept from that AOI. Exit half at the midpoint
+      and the remainder at the opposite edge. The one-to-one gross midpoint reward
+      gate is evaluated on the fill event against the resolved sweep-to-entry stop.
+    profitability_rationale: The candidate edge is rejection of a developing value
+      edge colocated with exceptional executed volume or absolute delta concentration.
+      Per-bar rebuilding keeps the edge current; the ordered sweep and reclaim trigger
+      provide path evidence without requiring a second order-flow observation.
+    known_failure_modes: Per-bar AOIs may churn as developing value moves; session-old
+      bursts may be stale; early cross-sectional delta ranks may be unstable; direction-neutral
+      confluence may be unrelated to reversal direction; a wide AOI zone may reduce
+      fills; removing separate confirmation can admit weak reclaims; a pending order
+      can remain live for a long time; the sweep-to-entry extreme can produce a wide
+      stop; stop-market entry can gap; and the opposite-edge remainder can give back
+      midpoint gains.
+    session_logic_rationale: Build causally from one RTH profile beginning at 09:30
+      without a 13:30 reset. Entries remain restricted to 09:39-11:30 and 13:39-15:30
+      New York, with forced flatten at 15:55. Strategy mechanics have no daily trade
+      cap; account controls remain separate.
+    causal_availability: The latest profile, four-tick delta profile and ATR use completed
+      bars only. Each newly published boundary builds the AOIs visible during the
+      next bar. Large executions must already be causally qualified. Ordered sweep
+      events occur after AOI creation. The stop is resolved only on the actual fill
+      event from extrema accumulated from the sweep bar through that event, before
+      sizing or position creation. Targets come from the AOI-time profile.
+    pre_test_decision: approve_for_testing
+  mechanics_validation:
+    minimum_trade_samples: 5
+    session_count: 10
+    purpose: Use the repository-wide latest-ten-eligible-session mechanics protocol
+      at frozen defaults. Reconcile the deterministic five-trade sample against MotiveWave
+      Standard value area at Tick Interval 1 plus AOI delta at Tick Interval 4, Range
+      70 percent and RTH data only. Frequency and performance over longer history
+      belong to later fixed stages and cannot alter this review window. Prior v03
+      evidence and approval cannot transfer across implementation or research-policy
+      hashes.

@@ -59,6 +59,7 @@ def test_databento_checkpoint_is_hash_and_session_bound(tmp_path) -> None:
         trades=pd.DataFrame({"trade_id": ["1"]}),
         session_audits=pd.DataFrame({"session_date": ["2025-07-15"]}),
         levels=levels,
+        strategy_implementation_sha256="c" * 64,
     )
 
     trades, audits, restored_levels = _load_databento_checkpoint(
@@ -66,6 +67,7 @@ def test_databento_checkpoint_is_hash_and_session_bound(tmp_path) -> None:
         config_sha256="a" * 64,
         capability_sha256="b" * 64,
         session_dates={"2025-07-15"},
+        strategy_implementation_sha256="c" * 64,
     )
 
     assert len(trades) == 1
@@ -77,6 +79,15 @@ def test_databento_checkpoint_is_hash_and_session_bound(tmp_path) -> None:
             config_sha256="c" * 64,
             capability_sha256="b" * 64,
             session_dates={"2025-07-15"},
+            strategy_implementation_sha256="c" * 64,
+        )
+    with pytest.raises(ValueError, match="does not match"):
+        _load_databento_checkpoint(
+            tmp_path,
+            config_sha256="a" * 64,
+            capability_sha256="b" * 64,
+            session_dates={"2025-07-15"},
+            strategy_implementation_sha256="d" * 64,
         )
 
 

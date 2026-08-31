@@ -150,6 +150,92 @@ def test_variant_metadata_path_lives_at_variant_root():
     assert str(variant_metadata_path(config)) == "research/evidence/runs/pdh_pdl_sweep/baseline/variant.yaml"
 
 
+def test_authored_attempt_variant_metadata_is_bound_to_immutable_run_root():
+    config = {
+        "campaign_id": "pdh_pdl_sweep",
+        "variant_id": "baseline",
+        "attempt_id": "pre_pnl_mechanics_correction_20260727t000000_deadbeef",
+        "attempt_provenance": "authored",
+        "strategy_name": "pdh_pdl_sweep",
+        "symbol": "ES",
+        "dataset_id": "1m_20221201_20260529",
+        "timeframe": "5m",
+    }
+    run_root = Path(
+        "research/evidence/runs/pdh_pdl_sweep/baseline/ES/"
+        "mechanics_validation_pre_pnl_mechanics_correction_20260727t000000_deadbeef"
+    )
+
+    assert variant_metadata_path(config, root_path=run_root) == run_root / "variant.yaml"
+
+
+def test_generated_validation_variant_metadata_is_bound_to_immutable_run_root():
+    config = {
+        "campaign_id": "pdh_pdl_sweep",
+        "variant_id": "baseline",
+        "attempt_id": "pre_pnl_mechanics_correction_20260727t000000_deadbeef",
+        "attempt_provenance": "generated_validation",
+        "strategy_name": "pdh_pdl_sweep",
+        "symbol": "ES",
+        "dataset_id": "1m_20221201_20260529",
+        "timeframe": "5m",
+    }
+    run_root = Path(
+        "research/evidence/runs/pdh_pdl_sweep/baseline/ES/"
+        "mechanics_validation_pre_pnl_mechanics_correction_20260727t000000_deadbeef"
+    )
+
+    assert variant_metadata_path(config, root_path=run_root) == run_root / "variant.yaml"
+
+
+def test_authored_attempt_variant_metadata_does_not_collide_with_prior_mechanic(
+    tmp_path,
+    monkeypatch,
+):
+    monkeypatch.chdir(tmp_path)
+    shared_metadata = tmp_path / "research/evidence/runs/pdh_pdl_sweep/baseline/variant.yaml"
+    shared_metadata.parent.mkdir(parents=True)
+    shared_metadata.write_text(
+        "\n".join(
+            [
+                "campaign_id: pdh_pdl_sweep",
+                "variant_id: baseline",
+                "mechanic:",
+                "  entry_module: retired_entry",
+                "  take_profit_module: retired_target",
+                "  stop_loss_module: retired_stop",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    config = {
+        "campaign_id": "pdh_pdl_sweep",
+        "variant_id": "baseline",
+        "attempt_id": "pre_pnl_mechanics_correction_20260727t000000_deadbeef",
+        "attempt_provenance": "authored",
+        "strategy_name": "replacement_entry",
+        "symbol": "ES",
+        "dataset_id": "1m_20221201_20260529",
+        "timeframe": "5m",
+        "strategy": {
+            "entry": {"module": "replacement_entry"},
+            "tp": {"module": "replacement_target"},
+            "sl": {"module": "replacement_stop"},
+        },
+    }
+    run_root = Path(
+        "research/evidence/runs/pdh_pdl_sweep/baseline/ES/"
+        "mechanics_validation_pre_pnl_mechanics_correction_20260727t000000_deadbeef"
+    )
+
+    info = ensure_variant_metadata(config, root_path=run_root)
+
+    assert Path(info["path"]) == run_root / "variant.yaml"
+    attempt_metadata = yaml.safe_load((run_root / "variant.yaml").read_text(encoding="utf-8"))
+    assert attempt_metadata["mechanic"]["entry_module"] == "replacement_entry"
+    assert "retired_entry" in shared_metadata.read_text(encoding="utf-8")
+
+
 def test_ensure_variant_metadata_writes_variant_file_and_campaign_index(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config = {

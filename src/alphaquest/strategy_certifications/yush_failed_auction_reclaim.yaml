@@ -1,0 +1,278 @@
+schema: alphaquest.strategy-certification/v1
+strategy_id: yush_failed_auction_reclaim
+implementation_version: 14
+certification_status: certified
+lane: canonical_event_replay
+factory: alphaquest.strategy_modules.event.yush_failed_auction_reclaim:build_strategy
+entry_module: yush_failed_auction_reclaim
+stop_module: event_excursion_structural_stop
+target_module: event_frozen_poc_time_exit
+source_files:
+- src/alphaquest/backtest/engine.py
+- src/alphaquest/backtest/risk.py
+- src/alphaquest/backtest/event_replay.py
+- src/alphaquest/strategy_certification.py
+- src/alphaquest/strategy_modules/event/__init__.py
+- src/alphaquest/strategy_modules/event/runner.py
+- src/alphaquest/strategy_modules/event/yush_orderflow_primitives.py
+- src/alphaquest/strategy_modules/event/yush_orderflow_range.py
+- src/alphaquest/strategy_modules/event/yush_failed_auction_reclaim.py
+- src/alphaquest/run_core.py
+implementation_sha256: 1c70f4cb09cca491307bda980db02de3c7347b4155fac6310f95b4edaa79b97f
+required_test_categories:
+- session_logic
+- entry_timing
+- stop_target_ordering
+- forced_flatten
+- no_lookahead
+- registry_and_runner
+required_tests:
+- tests/test_yush_failed_auction_reclaim.py
+- tests/test_event_replay.py
+- tests/test_core_grid.py
+parameters:
+  tick_size:
+    category: entry
+    value_type: number
+    default: 0.25
+    description: ES minimum price increment used for every frozen level and event
+      fill.
+    tunable: false
+    studio_editable: false
+    minimum: 0.01
+  point_value:
+    category: entry
+    value_type: number
+    default: 50.0
+    description: Dollar value of one ES point under the execution contract.
+    tunable: false
+    studio_editable: false
+    minimum: 0.01
+  contracts:
+    category: entry
+    value_type: integer
+    default: 1
+    description: Fixed position size used by the certified event strategy.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+  commission_per_contract:
+    category: entry
+    value_type: number
+    default: 2.5
+    description: Per-side commission used by the entry reward-to-risk gate.
+    tunable: false
+    studio_editable: false
+    minimum: 0
+  max_trades_per_day:
+    category: entry
+    value_type: integer
+    default: 3
+    description: Maximum filled failed-auction entries in one session.
+    tunable: false
+    studio_editable: true
+    minimum: 1
+    maximum: 3
+  max_stop_points:
+    category: sl
+    value_type: number
+    default: 5.0
+    description: Maximum entry-to-excursion-stop risk accepted before a fill.
+    tunable: false
+    studio_editable: true
+    minimum: 0.25
+    maximum: 12.0
+  value_area_fraction:
+    category: entry
+    value_type: number
+    default: 0.7
+    description: Causal developing profile fraction used to compute VAL VAH and POC.
+    tunable: false
+    studio_editable: true
+    minimum: 0.5
+    maximum: 0.9
+  delta_aggression_percentile:
+    category: entry
+    value_type: number
+    default: 0.9
+    description: Nearest-rank percentile of completed earlier same-session three-minute
+      four-tick absolute delta required for outward delta aggression.
+    tunable: false
+    studio_editable: false
+    minimum: 0.5
+    maximum: 0.999
+  big_trade_aggression_percentile:
+    category: entry
+    value_type: number
+    default: 0.995
+    description: Nearest-rank percentile of completed earlier same-session 100 millisecond
+      same-price same-side volumes required for large-trade aggression.
+    tunable: false
+    studio_editable: false
+    minimum: 0.9
+    maximum: 0.9999
+  delta_percentile_min_observations:
+    category: entry
+    value_type: integer
+    default: 20
+    description: Minimum completed three-minute four-tick bucket observations before
+      delta percentile aggression becomes available.
+    tunable: false
+    studio_editable: false
+    minimum: 2
+  big_trade_percentile_min_observations:
+    category: entry
+    value_type: integer
+    default: 200
+    description: Minimum completed 100 millisecond same-price same-side aggregates
+      before the large-trade percentile becomes available.
+    tunable: false
+    studio_editable: false
+    minimum: 2
+  big_trade_window_ms:
+    category: entry
+    value_type: integer
+    default: 100
+    description: Causal aggregation interval for same-price same-side aggressive trades.
+    tunable: false
+    studio_editable: false
+    choices:
+    - 100
+  bar_seconds:
+    category: entry
+    value_type: integer
+    default: 180
+    description: Causal clock for local four-tick signed-delta accumulation.
+    tunable: false
+    studio_editable: false
+    choices:
+    - 180
+  initial_balance:
+    category: entry
+    value_type: number
+    default: 50000.0
+    description: Fixed account balance used by the reviewed execution contract.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+  slippage_ticks:
+    category: entry
+    value_type: integer
+    default: 1
+    description: Adverse ticks charged on entry and exit by the generic event engine.
+    tunable: false
+    studio_editable: false
+    minimum: 0
+  delta_neighbour_multiple:
+    category: entry
+    value_type: number
+    default: 2.0
+    description: Required prominence versus the four neighboring delta buckets.
+    tunable: false
+    studio_editable: true
+    minimum: 1.0
+  decision_interval_ms:
+    category: entry
+    value_type: integer
+    default: 100
+    description: Causal market-state publication interval shared with event feature
+      tapes.
+    tunable: false
+    studio_editable: false
+    choices:
+    - 100
+  reference_distance_ticks:
+    category: entry
+    value_type: integer
+    default: 4
+    description: Maximum distance between the developing value edge and a known market
+      reference.
+    tunable: false
+    studio_editable: true
+    minimum: 0
+    maximum: 12
+  excursion_ticks:
+    category: entry
+    value_type: integer
+    default: 4
+    description: Minimum failed continuation distance outside the frozen value boundary.
+    tunable: true
+    studio_editable: true
+    minimum: 1
+    maximum: 12
+  reclaim_window_seconds:
+    category: entry
+    value_type: integer
+    default: 15
+    description: Maximum causal time from outside crossing to one-tick reclaim inside
+      value.
+    tunable: true
+    studio_editable: true
+    minimum: 1
+    maximum: 60
+  stop_buffer_ticks:
+    category: sl
+    value_type: integer
+    default: 2
+    description: Protective-stop displacement beyond the observed excursion extreme.
+    tunable: true
+    studio_editable: true
+    minimum: 1
+    maximum: 8
+  time_exit_seconds:
+    category: tp
+    value_type: integer
+    default: 600
+    description: Maximum holding time before flattening at the next canonical trade
+      event.
+    tunable: false
+    studio_editable: true
+    minimum: 60
+    maximum: 1800
+  minimum_reward_risk:
+    category: tp
+    value_type: number
+    default: 1.0
+    description: Minimum frozen POC reward relative to initial risk before transaction
+      costs.
+    tunable: false
+    studio_editable: true
+    minimum: 1.0
+studio:
+  visible: true
+  label: Yush Failed-Auction Reclaim
+  description: Directional outside aggression must fail and reclaim a frozen value
+    edge before entry.
+  entry_criteria:
+  - criterion: Developing value edge in a balanced auction
+    reason: VAL or VAH defines the auction boundary being tested; the POC-in-middle-third
+      check operationalizes the campaign's predeclared balanced-auction context.
+    support: Core hypothesis
+  - criterion: Prior-session or overnight reference within four ticks
+    reason: The campaign claims absorption near already-known liquidity references.
+      PDH, PDL, PDC, ONH, and ONL are causal before entry; opening-range levels are
+      deliberately excluded because they are not part of the declared v02 input set.
+    support: Research-supported concept; four-tick tolerance is a reviewed heuristic
+  - criterion: At least the declared excursion beyond the frozen value edge
+    reason: A touch is not a failed auction. Price must first demonstrate attempted
+      continuation outside value before a reclaim can falsify that continuation.
+    support: Mechanic definition; distance is predeclared for robustness testing
+  - criterion: Outward one-sided aggressive flow during the excursion
+    reason: This is the attempted continuation that the hypothesis says passive liquidity
+      absorbs. It qualifies only when directional four-tick trade delta reaches the
+      causal 90th percentile of completed earlier session observations or same-price,
+      same-side 100 millisecond volume reaches its causal 99.5th percentile. The reference
+      distribution excludes the active aggregation window and current event.
+    support: Microstructure-supported concept with causal regime-normalized calibration
+  - criterion: First trade at least one tick back inside within the reclaim window
+    reason: One tick is the minimum unambiguous re-entry on ES, and using the first
+      reclaim prevents post-hoc selection of a later favorable event.
+    support: Causality and discrete-price definition
+  - criterion: Frozen POC is favorable and covers declared risk and costs
+    reason: The POC is the pre-entry fair-value objective. Rejecting targets that
+      cannot cover risk and round-trip costs prevents mechanically uneconomic fills.
+    support: Execution safeguard
+  - criterion: Fill only on the next ordered trade event
+    reason: The reclaim event creates the signal and cannot also be used as an assumed
+      fill; the next event preserves causal entry timing.
+    support: No-lookahead requirement

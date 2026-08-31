@@ -16,6 +16,12 @@ from alphaquest.research.catalog import catalog_rows
 from alphaquest.research.run_store import read_run_uid
 from alphaquest.research.storage import resolve_recorded_path
 from alphaquest.maintenance.code_catalog import generate_code_views
+from alphaquest.validation.promotion_gate import (
+    FIXED_MANUAL_RANDOM_SEED,
+    REQUIRED_SAMPLE_CATEGORIES,
+    SAMPLING_POLICY_SHA256,
+    SAMPLING_POLICY_VERSION,
+)
 
 
 SCHEMA_VERSION = "3"
@@ -978,10 +984,25 @@ def _mechanics_review_proven(root: Path, run: dict[str, Any]) -> tuple[bool, str
         return False, "manual mechanics approval is not bound to validation input data"
     if approval.get("validation_schema_version") != metadata.get("schema_version"):
         return False, "manual mechanics approval is not bound to the validation schema"
-    if approval.get("fixed_random_sample_size") != 5 or approval.get("fixed_random_seed") != 0:
-        return False, "manual mechanics approval did not use the fixed five-entry random sample policy"
-    if approval.get("parameter_mode") != "declared_defaults":
+    expected_size = int(gate.get("manual_review_random_sample_size") or 5)
+    expected_seed = int(gate.get("manual_review_seed", FIXED_MANUAL_RANDOM_SEED))
+    if approval.get("fixed_random_sample_size") != expected_size:
+        return False, "manual mechanics approval did not use the declared random sample size"
+    if approval.get("fixed_random_seed") != expected_seed:
+        return False, "manual mechanics approval did not use the declared deterministic sample seed"
+    if approval.get("parameter_mode") != str(gate.get("parameter_mode") or "declared_defaults"):
         return False, "manual mechanics approval did not use declared default parameters"
+    policy_version = str(approval.get("sampling_policy_version") or "")
+    if policy_version:
+        if policy_version != SAMPLING_POLICY_VERSION:
+            return False, "manual mechanics approval sampling policy version is stale or unsupported"
+        if str(approval.get("sampling_policy_sha256") or "") != SAMPLING_POLICY_SHA256:
+            return False, "manual mechanics approval sampling policy hash is stale or mismatched"
+        categories = approval.get("sampling_categories")
+        if not isinstance(categories, dict) or any(
+            name not in categories for name in REQUIRED_SAMPLE_CATEGORIES
+        ):
+            return False, "manual mechanics approval lacks universal sampler categories"
     return True, ""
 
 
@@ -1298,20 +1319,30 @@ def _studio_result_verdict(output_dir: Path, *, project_root: Path) -> str | Non
 
 
 def _critical_artifacts(root: Path, output_dir: Path, summary_path: Path, run_uid: str) -> list[dict[str, Any]]:
-    paths = {summary_path}
+    candidates = {summary_path}
     for name in CRITICAL_ARTIFACTS:
         candidate = output_dir / name
         if candidate.is_file():
-            paths.add(candidate)
+            candidates.add(candidate)
     for pattern in CRITICAL_ARTIFACT_GLOBS:
-        paths.update(path for path in output_dir.glob(pattern) if path.is_file())
+        candidates.update(path for path in output_dir.glob(pattern) if path.is_file())
+
+    # Historical summaries can retain an absolute output_dir from a checkout
+    # that now aliases this workspace.  The lexical source paths differ, but
+    # _display() resolves both to the same durable registry path.  Deduplicate
+    # on that final identity so one run can never emit two rows for the
+    # artifacts(run_uid, path) primary key.
+    paths_by_display: dict[str, Path] = {}
+    for path in sorted(candidates, key=str):
+        paths_by_display.setdefault(_display(root, path), path)
+
     artifacts = []
-    for path in sorted(paths):
+    for display_path, path in sorted(paths_by_display.items()):
         artifacts.append(
             {
                 "run_uid": run_uid,
                 "artifact_kind": path.name,
-                "path": _display(root, path),
+                "path": display_path,
                 "size_bytes": path.stat().st_size if path.is_file() else None,
                 "sha256": _declared_hash(output_dir, path.name) or _file_hash(path),
             }

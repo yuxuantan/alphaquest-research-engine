@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import hashlib
 import json
-from pathlib import Path
 from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
+import zipfile
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -11,9 +14,19 @@ import pytest
 import yaml
 
 from alphaquest.studio.api import (
+    _attempt_mechanics_gate,
+    _campaign_research_progress,
+    _campaign_workflow_context,
+    _follow_up_options,
+    _follow_up_kind_options,
+    _follow_up_parent_options,
     _job_payload,
     _mechanics_event_timeline,
+    _mechanics_frozen_parameters,
     _mechanics_strategy_context,
+    _mechanics_review_summaries,
+    _modules,
+    _resolve_current_work_scope,
     register_api_routes,
 )
 from alphaquest.studio.jobs import SQLiteJobQueue
@@ -21,12 +34,616 @@ from alphaquest.studio.data_import import DataImportSpec, DatasetImporter
 from alphaquest.studio.ai import AIDraftProvenance, ResearchBriefSuggestion
 from alphaquest.studio.settings import StudioSettings, save_settings
 from alphaquest.studio.results import ResultBundleBuilder
+from alphaquest.authoring.catalog import get_certified_module_catalog
+from alphaquest.accounts.catalog import AccountProfileCatalog
+from alphaquest.strategy_certification import StrategyCertificationError
 
 
 LONG_RATIONALE = (
     "This predeclared explanation is intentionally substantive and distinguishes the completed-bar economic "
     "mechanism from every deterministic active, archived, and failed historical match."
 )
+
+
+def test_finalized_exact_attempt_result_outranks_current_mechanics_blocker() -> None:
+    attempt_id = "pre_pnl_protocol_declaration_20260823t021633_94aff48a"
+    workflow = _campaign_workflow_context(
+        {"campaign_id": "yush_orderflow_range"},
+        [
+            {
+                "attempt_id": attempt_id,
+                "attempt_kind": "pre_pnl_protocol_declaration",
+                "target_variant_id": "v03",
+            }
+        ],
+        {
+            attempt_id: {
+                "all_approved": False,
+                "variants": [
+                    {
+                        "variant_id": "v03",
+                        "status": "BLOCKED",
+                        "review_progress": {
+                            "evidence_available": True,
+                            "sampled_count": 6,
+                            "unreviewed_count": 0,
+                        },
+                    }
+                ],
+            }
+        },
+        {attempt_id: {"v03": {"research_verdict": "FAIL"}}},
+    )
+
+    assert workflow["stage"] == "result_review"
+    assert workflow["scientific_status"] == "FAIL"
+    assert workflow["primary_action"]["section"] == "results"
+    assert workflow["primary_action"]["label"] == (
+        "Inspect the exact v03 result for this attempt"
+    )
+
+
+def test_terminal_incomplete_attempt_routes_to_history_not_mechanics_review() -> None:
+    attempt_id = "pre_pnl_mechanics_correction_20260828t074924_a156ce04"
+    workflow = _campaign_workflow_context(
+        {"campaign_id": "yush_orderflow_range"},
+        [
+            {
+                "attempt_id": attempt_id,
+                "attempt_kind": "pre_pnl_mechanics_correction",
+                "target_variant_id": "v04",
+            }
+        ],
+        {
+            attempt_id: {
+                "all_approved": False,
+                "variants": [
+                    {
+                        "variant_id": "v04",
+                        "status": "BLOCKED",
+                        "review_progress": {
+                            "evidence_available": True,
+                            "sampled_count": 7,
+                            "unreviewed_count": 2,
+                        },
+                    }
+                ],
+            }
+        },
+        {},
+        current_scope={
+            "attempt_id": attempt_id,
+            "attempt_kind": "pre_pnl_mechanics_correction",
+            "target_variant_id": "v04",
+            "operational_status": "FAILED",
+            "terminal_research_verdict": "NEEDS MANUAL REVIEW",
+        },
+    )
+
+    assert workflow["stage"] == "terminal_follow_up"
+    assert workflow["scientific_status"] == "NEEDS MANUAL REVIEW"
+    assert workflow["operational_status"] == "FAILED"
+    assert workflow["primary_action"]["section"] == "history"
+
+
+def test_terminal_incomplete_progress_does_not_borrow_an_older_result() -> None:
+    attempt_id = "pre_pnl_mechanics_correction_20260828t074924_a156ce04"
+    workflow = {
+        "current_attempt_id": attempt_id,
+        "target_variant_id": "v04",
+        "stage": "terminal_follow_up",
+        "scientific_status": "NEEDS MANUAL REVIEW",
+        "operational_status": "FAILED",
+        "primary_action": {
+            "label": "Inspect the preserved incomplete attempt and choose a governed follow-up"
+        },
+    }
+    progress = _campaign_research_progress(
+        workflow,
+        [
+            {
+                "variant": "v04",
+                "research verdict": "NEEDS MANUAL REVIEW",
+                "operational state": "FAILED_OPERATIONAL",
+            }
+        ],
+        {},
+        {
+            "v04": {
+                "run_id": "older_finalized_attempt",
+                "research_verdict": "PASS",
+                "scientific_validity_verdict": "PASS",
+            }
+        },
+    )["campaign"]
+
+    assert progress["current_stage_label"] == "Interrupted test suite"
+    assert progress["operational_state"] == "FAILED_OPERATIONAL"
+    assert progress["scientific_status"] == "NEEDS MANUAL REVIEW"
+    assert progress["generic_objective_status"] == "PENDING"
+
+
+def test_fresh_current_attempt_progress_does_not_borrow_an_older_result() -> None:
+    attempt_id = "methodology_rerun_20260829t110101_a78ce6cc"
+    workflow = {
+        "current_attempt_id": attempt_id,
+        "target_variant_id": "v04",
+        "stage": "mechanics_evidence",
+        "scientific_status": "NEEDS MANUAL REVIEW",
+        "primary_action": {"label": "Generate mechanics evidence for v04"},
+    }
+    progress = _campaign_research_progress(
+        workflow,
+        [
+            {
+                "variant": "v04",
+                "research verdict": "NEEDS MANUAL REVIEW",
+                "operational state": "NOT_QUEUED",
+            }
+        ],
+        {},
+        {
+            "v04": {
+                "run_id": "older_finalized_attempt",
+                "research_verdict": "PASS",
+                "scientific_validity_verdict": "PASS",
+            }
+        },
+    )["campaign"]
+
+    assert progress["current_stage_label"] == "Mechanics evidence"
+    assert progress["current_stage_id"] == "mechanics_evidence"
+    assert progress["generic_objective_status"] == "PENDING"
+
+
+def test_new_sequential_variant_is_active_work_over_newer_historical_attempt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeAttempts:
+        def __init__(self, _root):
+            pass
+
+        def target_config_path(self, _campaign_id, attempt_id):
+            variant_id = "v04" if attempt_id == "original" else "v03"
+            return tmp_path / variant_id / "config.yaml"
+
+    attempts = [
+        {
+            "attempt_id": "original",
+            "attempt_kind": "original",
+        },
+        {
+            "attempt_id": "protocol_v03",
+            "attempt_kind": "pre_pnl_protocol_declaration",
+            "target_variant_id": "v03",
+            "created_at": "2026-08-23T02:16:33+00:00",
+        },
+    ]
+    monkeypatch.setattr("alphaquest.studio.api.FollowUpAttemptService", FakeAttempts)
+
+    scope = _resolve_current_work_scope(
+        tmp_path,
+        "yush_orderflow_range",
+        attempts,
+    )
+    workflow = _campaign_workflow_context(
+        {"campaign_id": "yush_orderflow_range"},
+        attempts,
+        {
+            "original": {
+                "all_approved": False,
+                "variants": [
+                    {
+                        "variant_id": "v04",
+                        "status": "BLOCKED",
+                        "review_progress": {},
+                    }
+                ],
+            },
+            "protocol_v03": {
+                "all_approved": True,
+                "variants": [
+                    {
+                        "variant_id": "v03",
+                        "status": "APPROVED_FOR_TESTING",
+                        "review_progress": {},
+                    }
+                ],
+            },
+        },
+        {"protocol_v03": {"v03": {"research_verdict": "FAIL"}}},
+        current_scope=scope,
+    )
+
+    assert scope["attempt_id"] == "original"
+    assert scope["target_variant_id"] == "v04"
+    assert workflow["current_attempt_id"] == "original"
+    assert workflow["latest_attempt_id"] == "protocol_v03"
+    assert workflow["target_variant_id"] == "v04"
+    assert workflow["stage"] == "mechanics_evidence"
+    assert workflow["primary_action"] == {
+        "label": "Generate mechanics evidence for v04",
+        "section": "testing",
+        "campaign_id": "yush_orderflow_range",
+        "attempt_id": "original",
+        "variant_id": "v04",
+    }
+
+
+def test_finalized_current_attempt_uses_historical_approval_and_leaves_mechanics_queue(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt_id = "pre_pnl_protocol_declaration_20260823t021633_94aff48a"
+    config_path = tmp_path / "campaign" / "v03" / "config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        yaml.safe_dump({"campaign_id": "yush_orderflow_range", "variant_id": "v03"}),
+        encoding="utf-8",
+    )
+    attempts = [
+        {
+            "attempt_id": attempt_id,
+            "attempt_kind": "pre_pnl_protocol_declaration",
+            "target_variant_id": "v03",
+            "created_at": "2026-08-23T02:16:33+00:00",
+        }
+    ]
+
+    class FakeAttempts:
+        def __init__(self, _root):
+            pass
+
+        def target_config_path(self, _campaign_id, _attempt_id):
+            return config_path
+
+        def list_attempts(self, _campaign_id, *, include_dataset_bindings=False):
+            assert include_dataset_bindings is False
+            return attempts
+
+        def config_paths(self, _campaign_id, _attempt_id):
+            return (config_path,)
+
+    exact_results = {attempt_id: {"v03": {"research_verdict": "FAIL"}}}
+    monkeypatch.setattr("alphaquest.studio.api.FollowUpAttemptService", FakeAttempts)
+    monkeypatch.setattr("alphaquest.studio.api._attempt_results", lambda *_args: exact_results)
+    monkeypatch.setattr(
+        "alphaquest.validation.promotion_gate.inspect_historical_validation_approval",
+        lambda _cfg, _path: {"status": "APPROVED_FOR_TESTING", "errors": []},
+    )
+    monkeypatch.setattr(
+        "alphaquest.studio.api.list_published_campaigns",
+        lambda _root: [
+            {
+                "campaign_id": "yush_orderflow_range",
+                "title": "Yush Orderflow Range Reversal",
+                "lifecycle": "active",
+                "authored_lifecycle": "active",
+                "studio_managed": True,
+            }
+        ],
+    )
+
+    gate = _attempt_mechanics_gate(tmp_path, "yush_orderflow_range", attempts)
+    queue = _mechanics_review_summaries(tmp_path)
+
+    assert gate[attempt_id]["all_approved"] is True
+    assert gate[attempt_id]["variants"][0]["status"] == "APPROVED_FOR_TESTING"
+    assert queue == []
+
+
+def test_terminal_incomplete_attempt_leaves_active_mechanics_queue(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt_id = "pre_pnl_mechanics_correction_20260828t074924_a156ce04"
+    config_path = tmp_path / "campaign" / "v04" / "config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        yaml.safe_dump({"campaign_id": "yush_orderflow_range", "variant_id": "v04"}),
+        encoding="utf-8",
+    )
+    attempts = [
+        {
+            "attempt_id": attempt_id,
+            "attempt_kind": "pre_pnl_mechanics_correction",
+            "target_variant_id": "v04",
+            "created_at": "2026-08-28T07:49:25+00:00",
+        }
+    ]
+
+    class FakeAttempts:
+        def __init__(self, _root):
+            pass
+
+        def target_config_path(self, _campaign_id, _attempt_id):
+            return config_path
+
+        def list_attempts(self, _campaign_id, *, include_dataset_bindings=False):
+            assert include_dataset_bindings is False
+            return attempts
+
+        def config_paths(self, _campaign_id, _attempt_id):
+            return (config_path,)
+
+    monkeypatch.setattr("alphaquest.studio.api.FollowUpAttemptService", FakeAttempts)
+    monkeypatch.setattr("alphaquest.studio.api._attempt_results", lambda *_args: {})
+    monkeypatch.setattr(
+        "alphaquest.studio.api._experiment_attempt_outcomes",
+        lambda *_args: {
+            (attempt_id, "v04"): {
+                "operational_status": "FAILED",
+                "research_verdict": "NEEDS MANUAL REVIEW",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "alphaquest.studio.api.list_published_campaigns",
+        lambda _root: [
+            {
+                "campaign_id": "yush_orderflow_range",
+                "title": "Yush Orderflow Range Reversal",
+                "lifecycle": "active",
+                "authored_lifecycle": "active",
+                "studio_managed": True,
+            }
+        ],
+    )
+
+    assert _mechanics_review_summaries(tmp_path) == []
+
+
+@pytest.mark.parametrize(
+    ("visible", "audit_errors", "expected_current", "expected_available"),
+    [
+        (True, [], True, True),
+        (True, ["implementation hash has drifted"], False, False),
+        (False, [], True, False),
+    ],
+)
+def test_strategy_package_publication_availability_is_fail_closed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    visible: bool,
+    audit_errors: list[str],
+    expected_current: bool,
+    expected_available: bool,
+) -> None:
+    certification = SimpleNamespace(
+        strategy_id="yush_adaptive_orderflow_range_v4",
+        certification_status="certified",
+        implementation_version=19,
+        implementation_sha256="a" * 64,
+        manifest_sha256="b" * 64,
+        required_test_categories=("no_lookahead",),
+        required_tests=("tests/test_yush_range_reversal_v2.py",),
+        parameters={},
+        studio={
+            "visible": visible,
+            "label": "Yush Orderflow Range Reversal",
+            "description": "Stateful causal AOI and order-flow reversal strategy.",
+        },
+    )
+    monkeypatch.setattr(
+        "alphaquest.strategy_certification.load_strategy_certifications",
+        lambda _root, *, require_current: (
+            {"yush_adaptive_orderflow_range_v4": certification}
+            if require_current is False
+            else {}
+        ),
+    )
+    monkeypatch.setattr(
+        "alphaquest.strategy_certification.audit_strategy_certification",
+        lambda _certification, _root: list(audit_errors),
+    )
+
+    package = next(
+        item
+        for item in _modules(tmp_path)
+        if item.get("strategy_package") is True
+    )
+
+    assert package["name"] == "yush_adaptive_orderflow_range_v4"
+    assert package["certification_current"] is expected_current
+    assert package["certification_errors"] == audit_errors
+    assert package["available_for_publication"] is expected_available
+    assert package["strategy_label"] == "Yush Orderflow Range Reversal"
+    assert package["strategy_description"] == (
+        "Stateful causal AOI and order-flow reversal strategy."
+    )
+
+
+def test_strategy_package_loader_failure_keeps_navigation_but_exposes_no_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unavailable_loader(_root, *, require_current):
+        assert require_current is False
+        raise StrategyCertificationError("availability policy is missing")
+
+    monkeypatch.setattr(
+        "alphaquest.strategy_certification.load_strategy_certifications",
+        unavailable_loader,
+    )
+
+    modules = _modules(tmp_path)
+
+    assert len(modules) == len(get_certified_module_catalog().all())
+    assert not any(item.get("strategy_package") for item in modules)
+
+
+def test_follow_up_options_explain_each_type_and_mark_earlier_branch_points() -> None:
+    kinds = _follow_up_kind_options(rescue_allowed=False)
+
+    assert {item["value"] for item in kinds} == {
+        "replication",
+        "data_refresh",
+        "methodology_rerun",
+        "pre_pnl_mechanics_correction",
+        "pre_pnl_parameter_declaration",
+        "rescue",
+    }
+    for item in kinds:
+        assert item["summary"]
+        assert item["use_when"]
+        assert item["do_not_use_when"]
+        assert item["parent_rule"].startswith("Select")
+    rescue = next(item for item in kinds if item["value"] == "rescue")
+    assert rescue["available"] is False
+    assert "does not authorize" in rescue["unavailable_reason"]
+
+    parents = _follow_up_parent_options(
+        [
+            {
+                "attempt_id": "original",
+                "attempt_kind": "original",
+                "parent_attempt_id": None,
+                "reason": "Frozen original.",
+            },
+            {
+                "attempt_id": "replication_1",
+                "attempt_kind": "replication",
+                "parent_attempt_id": "original",
+                "reason": "Operational retry.",
+            },
+            {
+                "attempt_id": "data_refresh_1",
+                "attempt_kind": "data_refresh",
+                "parent_attempt_id": "replication_1",
+                "reason": "Corrected data.",
+            },
+        ]
+    )
+    original = next(item for item in parents if item["attempt_id"] == "original")
+    latest = next(item for item in parents if item["attempt_id"] == "data_refresh_1")
+    assert original["is_leaf"] is False
+    assert "separate branch" in original["branch_warning"]
+    assert latest["recommended"] is True
+    assert latest["lineage_label"] == "Recommended current leaf"
+
+
+def test_follow_up_options_disable_only_pre_pnl_types_after_performance_evidence() -> None:
+    kinds = _follow_up_kind_options(
+        rescue_allowed=False,
+        has_performance_evidence=True,
+    )
+    by_kind = {item["value"]: item for item in kinds}
+
+    for kind in ("replication", "data_refresh", "methodology_rerun"):
+        assert by_kind[kind]["available"] is True
+    for kind in ("pre_pnl_mechanics_correction", "pre_pnl_parameter_declaration"):
+        assert by_kind[kind]["available"] is False
+        assert "performance evidence" in by_kind[kind]["unavailable_reason"]
+    assert by_kind["rescue"]["available"] is False
+
+
+def test_follow_up_options_are_lightweight_and_lifecycle_aware(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    parent_path = tmp_path / "v03" / "config.yaml"
+    parent_path.parent.mkdir(parents=True)
+    parent_path.write_text(
+        yaml.safe_dump(
+            {
+                "strategy": {
+                    "event": {
+                        "module": "deprecated_v03",
+                        "params": {},
+                    }
+                },
+                "core_grid": {"parameters": {}},
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    attempts = [
+        {
+            "attempt_id": "original",
+            "attempt_kind": "original",
+        },
+        {
+            "attempt_id": "protocol_v03",
+            "attempt_kind": "pre_pnl_protocol_declaration",
+            "target_variant_id": "v03",
+            "parent_attempt_id": "original",
+        },
+    ]
+
+    class FakeAttempts:
+        def __init__(self, _root):
+            pass
+
+        def list_attempts(self, _campaign_id, *, include_dataset_bindings=True):
+            assert include_dataset_bindings is False
+            return attempts
+
+        def target_config_path(self, _campaign_id, attempt_id):
+            if attempt_id == "original":
+                return tmp_path / "v04" / "config.yaml"
+            return parent_path
+
+        def fixed_mechanics_validation_window(self, _config):
+            return {"start_date": "2026-05-01", "end_date": "2026-05-10"}
+
+        def parent_has_performance_evidence(self, _campaign_id, _attempt_id):
+            return True
+
+    def fake_certification(_strategy_id, _root, *, require_current, access):
+        from alphaquest.strategy_certification import (
+            StrategyCertificationError,
+            StrategyPackageAccess,
+        )
+
+        assert require_current is True
+        if access is StrategyPackageAccess.NEW_WORK:
+            raise StrategyCertificationError(
+                "strategy 'deprecated_v03' is deprecated and unavailable for new work"
+            )
+        assert access is StrategyPackageAccess.INSPECTION
+        return SimpleNamespace(strategy_id="deprecated_v03", parameters={})
+
+    monkeypatch.setattr("alphaquest.studio.api.FollowUpAttemptService", FakeAttempts)
+    monkeypatch.setattr(
+        "alphaquest.strategy_certification.get_strategy_certification",
+        fake_certification,
+    )
+    monkeypatch.setattr("alphaquest.studio.api.list_dataset_manifests", lambda _root: [])
+    monkeypatch.setattr(
+        "alphaquest.studio.api.list_published_campaigns",
+        lambda _root: [
+            {"campaign_id": "demo", "rescue_policy": {"allowed": False}}
+        ],
+    )
+
+    value = _follow_up_options(tmp_path, "demo", "protocol_v03")
+    kinds = {item["value"]: item for item in value["attempt_kinds"]}
+
+    assert value["current_work_scope"] == {
+        "attempt_id": "original",
+        "variant_id": "v04",
+        "latest_attempt_id": "protocol_v03",
+    }
+    assert [
+        item["attempt_id"]
+        for item in value["parent_attempts"]
+        if item["recommended"]
+    ] == ["original"]
+    assert list(value["parameters"]) == ["v03"]
+    assert kinds["replication"]["available"] is True
+    for kind in (
+        "data_refresh",
+        "methodology_rerun",
+        "pre_pnl_mechanics_correction",
+        "pre_pnl_parameter_declaration",
+        "rescue",
+    ):
+        assert kinds[kind]["available"] is False
+    assert "deprecated and unavailable for new work" in kinds[
+        "data_refresh"
+    ]["unavailable_reason"]
 
 
 def test_job_api_exposes_durable_progress_elapsed_time_and_eta(tmp_path: Path) -> None:
@@ -48,6 +665,8 @@ def test_job_api_exposes_durable_progress_elapsed_time_and_eta(tmp_path: Path) -
         completed=5,
         total=10,
         unit="sessions",
+        active_workers=2,
+        expected_workers=3,
     )
 
     payload = _job_payload(current)
@@ -58,6 +677,11 @@ def test_job_api_exposes_durable_progress_elapsed_time_and_eta(tmp_path: Path) -
     assert payload["progress_detail"]["total"] == 10
     assert payload["progress_detail"]["elapsed_seconds"] >= 0
     assert payload["progress_detail"]["eta_seconds"] >= 0
+    assert payload["progress_detail"]["active_workers"] == 2
+    assert payload["progress_detail"]["expected_workers"] == 3
+    assert payload["progress_detail"]["throughput_per_hour"] is not None
+    assert payload["progress_detail"]["estimated_finish_at"] is not None
+    assert "Only 2 of 3" in payload["progress_detail"]["parallelism_warning"]
     assert payload["heartbeat_at"] == current.heartbeat_at.isoformat()
 
 
@@ -97,6 +721,284 @@ def _client(root: Path) -> TestClient:
     app = FastAPI()
     register_api_routes(app, root)
     return TestClient(app)
+
+
+def test_browser_explicitly_recovers_finalization_without_queueing_a_rerun(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = tmp_path / "research/campaigns/active/demo/variants/v01/config.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "campaign_id": "demo",
+                "attempt_id": "original",
+                "variant_id": "v01",
+                "test_run_id": "run-1",
+            }
+        ),
+        encoding="utf-8",
+    )
+    run_dir = tmp_path / "research/evidence/runs/demo/v01/ES/run-1"
+    run_dir.mkdir(parents=True)
+    source_job = SimpleNamespace(
+        job_id="failed-job",
+        payload={"output_dir": str(run_dir)},
+    )
+    calls: list[dict[str, object]] = []
+
+    monkeypatch.setattr(
+        "alphaquest.studio.followups.FollowUpAttemptService.target_config_path",
+        lambda _self, campaign_id, attempt_id: config,
+    )
+    monkeypatch.setattr(
+        "alphaquest.studio.api._finalization_recovery_job",
+        lambda *_args, **_kwargs: source_job,
+    )
+    monkeypatch.setattr(
+        "alphaquest.studio.api._recover_experiment_finalization",
+        lambda *_args, **_kwargs: {"status": "COMPLETED"},
+    )
+
+    class Recovered:
+        research_verdict = "FAIL"
+        result_bundle_path = run_dir / "reporting_v2/result_bundle_v2.json"
+
+        def as_job_result(self, *, project_root):
+            return {"result_bundle_path": "research/evidence/result_bundle_v2.json"}
+
+    class Finalizer:
+        def __init__(self, project_root):
+            calls.append({"project_root": project_root})
+            self.registry_refresher = lambda _root: {"runs": 1}
+
+        def recover(self, **kwargs):
+            calls.append(kwargs)
+            return Recovered()
+
+    monkeypatch.setattr("alphaquest.studio.api.RunFinalizer", Finalizer)
+
+    response = _client(tmp_path).post(
+        "/api/campaigns/demo/attempts/original/recover-finalization"
+    )
+
+    assert response.status_code == 200, response.text
+    assert response.json()["recovered"] is True
+    assert response.json()["research_verdict"] == "FAIL"
+    assert calls[-1] == {
+        "job_id": "failed-job",
+        "config_path": config,
+        "run_dir": run_dir,
+    }
+
+
+def test_browser_queues_hash_bound_account_assessment_with_current_costs(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = tmp_path / "research/campaigns/active/demo/variants/v01/config.yaml"
+    config.parent.mkdir(parents=True)
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "campaign_id": "demo",
+                "attempt_id": "original",
+                "variant_id": "v01",
+                "data": {"canonical_sha256": "d" * 64},
+            }
+        ),
+        encoding="utf-8",
+    )
+    bundle = tmp_path / "evidence/result_bundle_v2.json"
+    bundle.parent.mkdir(parents=True)
+    bundle.write_text("{}\n", encoding="utf-8")
+    runtime = tmp_path / "runtime"
+    resolved = AccountProfileCatalog(Path(__file__).resolve().parents[1]).resolve(
+        "apex/eod_50k/funded",
+        "2026-03-01",
+    )
+    monkeypatch.setattr("alphaquest.studio.api._attempt_config", lambda *_args: config)
+    monkeypatch.setattr("alphaquest.studio.api._indexed_result_entry", lambda *_args: {})
+    monkeypatch.setattr(
+        "alphaquest.studio.api._indexed_bundle_path",
+        lambda *_args: bundle,
+    )
+    monkeypatch.setattr(
+        "alphaquest.studio.api._present_indexed_result",
+        lambda *_args, **_kwargs: {
+            "finalization": {"valid": True},
+            "scientific_validity_verdict": "PASS",
+        },
+    )
+    monkeypatch.setattr(
+        "alphaquest.accounts.catalog.resolve_account_profile",
+        lambda *_args, **_kwargs: resolved,
+    )
+    monkeypatch.setattr(
+        "alphaquest.studio.api.load_storage_layout",
+        lambda _root: SimpleNamespace(studio_runtime_root=runtime),
+    )
+
+    response = _client(tmp_path).post(
+        "/api/campaigns/demo/account-assessments",
+        json={
+            "attempt_id": "original",
+            "variant_id": "v01",
+            "profile_id": "apex/eod_50k/funded",
+            "profile_version": "2026-03-01",
+            "evaluation_purchase_price": 37.0,
+            "activation_fee": 85.0,
+            "other_upfront_costs": 0.0,
+            "cost_observed_at": "2026-08-14T12:00:00Z",
+            "cost_source": "Apex checkout observed by researcher",
+            "manual_attestations": [
+                "no_prohibited_trading_activity_or_cross_account_hedging"
+            ],
+        },
+    )
+
+    assert response.status_code == 201, response.text
+    queued = SQLiteJobQueue(runtime / "jobs.sqlite3").get(response.json()["job"]["job_id"])
+    assert queued.job_type == "account_assessment_run"
+    assert queued.payload["attempt_id"] == "original"
+    assert queued.payload["profile_id"] == "apex/eod_50k/funded"
+    assert queued.payload["costs"]["evaluation_purchase_price"] == 37.0
+    assert queued.hash_locks == {
+        "account_profile_hash": resolved.sha256,
+        "config_hash": hashlib.sha256(config.read_bytes()).hexdigest(),
+        "input_data_hash": "d" * 64,
+        "result_bundle_hash": hashlib.sha256(bundle.read_bytes()).hexdigest(),
+    }
+
+    frozen_costs = {
+        "currency": "USD",
+        "evaluation_purchase_price": 19.0,
+        "activation_fee": 75.0,
+        "other_upfront_costs": 0.0,
+        "observed_at": "2026-08-13T12:00:00+00:00",
+        "source": "Frozen pre-PnL checkout observation",
+        "include_as_replacement_cost": True,
+    }
+    contract = {
+        "schema": "alphaquest.destination-benchmark-contract/v1",
+        "declared_at": "2026-08-13T12:01:00+00:00",
+        "declared_pre_pnl": True,
+        "scientific_validity_required": True,
+        "generic_objective_pass_required": False,
+        "approval_scope": "exact_primary_profile_only",
+        "profiles": [
+            {
+                "profile_id": resolved.profile.profile_id,
+                "profile_version": resolved.profile.version,
+                "profile_sha256": resolved.sha256,
+                "role": "primary",
+                "costs": frozen_costs,
+            }
+        ],
+        "confirmed": True,
+    }
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "campaign_id": "demo",
+                "attempt_id": "original",
+                "variant_id": "v01",
+                "data": {"canonical_sha256": "d" * 64},
+                "destination_benchmark_contract": contract,
+                "destination_benchmark_contract_sha256": hashlib.sha256(
+                    json.dumps(
+                        contract,
+                        sort_keys=True,
+                        separators=(",", ":"),
+                        ensure_ascii=False,
+                    ).encode("utf-8")
+                ).hexdigest(),
+            }
+        ),
+        encoding="utf-8",
+    )
+    frozen_response = _client(tmp_path).post(
+        "/api/campaigns/demo/account-assessments",
+        json={
+            "attempt_id": "original",
+            "variant_id": "v01",
+            "profile_id": "apex/eod_50k/funded",
+            "profile_version": "2026-03-01",
+            "evaluation_purchase_price": 999.0,
+            "activation_fee": 999.0,
+            "cost_observed_at": "2026-08-14T12:00:00Z",
+            "cost_source": "A later value that must not replace the declaration",
+            "manual_attestations": [
+                "no_prohibited_trading_activity_or_cross_account_hedging"
+            ],
+        },
+    )
+    assert frozen_response.status_code == 201, frozen_response.text
+    frozen_job = SQLiteJobQueue(runtime / "jobs.sqlite3").get(
+        frozen_response.json()["job"]["job_id"]
+    )
+    assert frozen_job.payload["costs"] == frozen_costs
+
+    undeclared = _client(tmp_path).post(
+        "/api/campaigns/demo/account-assessments",
+        json={
+            "attempt_id": "original",
+            "variant_id": "v01",
+            "profile_id": "apex/eod_50k/evaluation",
+            "profile_version": "2026-03-01",
+            "evaluation_purchase_price": 37.0,
+            "activation_fee": 85.0,
+            "cost_observed_at": "2026-08-14T12:00:00Z",
+            "cost_source": "Apex checkout observed by researcher",
+        },
+    )
+    assert undeclared.status_code == 422
+    assert "not predeclared" in undeclared.text
+
+
+def test_browser_queues_declared_strategy_certification_suite(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    runtime = tmp_path / "runtime"
+    manifest = tmp_path / "certification.yaml"
+    manifest.write_text("strategy_id: demo\n", encoding="utf-8")
+    certification = SimpleNamespace(
+        source_files=("src/demo.py",),
+        manifest_path=manifest,
+        required_tests=("tests/test_demo.py",),
+    )
+    monkeypatch.setattr(
+        "alphaquest.strategy_certification.load_strategy_package_availability",
+        lambda _root: SimpleNamespace(active_strategy_ids=frozenset({"demo"})),
+    )
+    monkeypatch.setattr(
+        "alphaquest.strategy_certification.get_strategy_certification",
+        lambda *_args, **_kwargs: certification,
+    )
+    monkeypatch.setattr(
+        "alphaquest.strategy_certification.compute_implementation_sha256",
+        lambda *_args, **_kwargs: "a" * 64,
+    )
+    monkeypatch.setattr(
+        "alphaquest.studio.api.load_storage_layout",
+        lambda _root: SimpleNamespace(studio_runtime_root=runtime),
+    )
+
+    response = _client(tmp_path).post(
+        "/api/strategies/demo/certify",
+        json={"request_id": "browser-request-001"},
+    )
+
+    assert response.status_code == 201, response.text
+    queued = SQLiteJobQueue(runtime / "jobs.sqlite3").get(response.json()["job"]["job_id"])
+    assert queued.job_type == "strategy_certification_run"
+    assert queued.payload["required_tests"] == ["tests/test_demo.py"]
+    assert queued.hash_locks["implementation_hash"] == "a" * 64
+    assert queued.hash_locks["certification_manifest_hash"] == hashlib.sha256(
+        manifest.read_bytes()
+    ).hexdigest()
 
 
 def test_event_mechanics_detail_includes_prior_submission_and_strategy_trace(tmp_path: Path) -> None:
@@ -156,9 +1058,82 @@ def test_event_mechanics_detail_includes_prior_submission_and_strategy_trace(tmp
     assert context["trigger_kind"] == "delta_4tick_3m"
 
 
+def test_mechanics_review_projects_hash_bound_frozen_parameters(tmp_path: Path) -> None:
+    config = tmp_path / "config.yaml"
+    config.write_text(
+        yaml.safe_dump(
+            {
+                "strategy_name": "yush_adaptive_orderflow_range_v3",
+                "variant_id": "v03",
+                "research_metadata": {
+                    "mechanics_review": {
+                        "entry_logic_rationale": "A distinct post-AOI confirmation is required."
+                    }
+                },
+                "strategy": {
+                    "event": {
+                        "module": "yush_adaptive_orderflow_range_v3",
+                        "params": {
+                            "aoi_level_distance_ticks": 4,
+                            "opening_range_seconds": 30,
+                            "delta_profile_percentile": 0.9,
+                            "target_1_fraction": 0.5,
+                        },
+                    },
+                    "entry": {"module": "yush_adaptive_orderflow_range_v3"},
+                    "sl": {"module": "event_atr_bounded_sweep_structural_stop"},
+                    "tp": {"module": "event_frozen_midpoint_opposite_edge_scale_out"},
+                },
+                "core": {
+                    "tick_size": 0.25,
+                    "point_value": 5.0,
+                    "signal_instrument": "ES",
+                    "execution_instrument": "MES",
+                    "commission_per_contract": 0.51,
+                    "entry_slippage_ticks": 1,
+                    "position_sizing": {
+                        "mode": "risk_percent_net_liq",
+                        "risk_pct": 0.004,
+                        "min_contracts": 1,
+                    },
+                },
+                "apex_rules": {
+                    "force_flatten_time": "15:55:00",
+                    "no_overnight_positions": True,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    frozen = _mechanics_frozen_parameters(config)
+
+    assert frozen["strategy_id"] == "yush_adaptive_orderflow_range_v3"
+    assert frozen["event_parameters"]["aoi_level_distance_ticks"] == 4
+    assert frozen["event_parameters"]["opening_range_seconds"] == 30
+    assert frozen["execution"]["signal_instrument"] == "ES"
+    assert frozen["execution"]["execution_instrument"] == "MES"
+    assert frozen["execution"]["position_sizing"]["risk_pct"] == 0.004
+    assert frozen["execution"]["tick_size"] == 0.25
+    assert frozen["protocol"]["force_flatten_time"] == "15:55:00"
+    assert frozen["specification"]["entry_logic_rationale"].startswith("A distinct")
+
+
 def _governed_dataset(root: Path) -> None:
     source = root / "administrator-bars.csv"
-    timestamps = pd.date_range("2026-01-05 09:30:00", periods=180, freq="min")
+    # The browser publication fixture must satisfy the same frozen 24-month
+    # selection plus terminal 6-month acceptance calendar as a real campaign.
+    # A ten-session toy manifest is useful for isolated importer tests, but it
+    # must not be able to pass full campaign publication preflight.
+    timestamps = pd.DatetimeIndex(
+        timestamp
+        for session in pd.bdate_range("2023-01-02", "2026-01-16")
+        for timestamp in pd.date_range(
+            session.replace(hour=9, minute=30),
+            periods=18,
+            freq="min",
+        )
+    )
     prices = [5000.0 + index * 0.25 for index in range(len(timestamps))]
     pd.DataFrame(
         {
@@ -192,6 +1167,28 @@ def _governed_dataset(root: Path) -> None:
 
 def _brief() -> dict:
     return {
+        "research_objectives": {
+            "schema": "alphaquest.research-objectives/v1",
+            "development_goal": "Reject this candidate unless it survives every frozen research gate.",
+            "development_deadline": "2099-12-31",
+            "evaluation_horizon_months": 24,
+            "minimum_annualized_return_fraction": 0.20,
+            "minimum_mar": 0.40,
+            "maximum_drawdown_fraction": 0.10,
+            "minimum_complete_wfa_windows": 3,
+            "minimum_wfa_oos_trades": 50,
+            "minimum_acceptance_oos_trades": 30,
+            "monte_carlo_min_runs": 8000,
+            "monte_carlo_horizon_months": 6,
+            "minimum_net_profit_probability": 0.70,
+            "maximum_account_breach_probability": 0.10,
+            "forward_incubation_min_calendar_days": 90,
+            "forward_incubation_min_trades": 30,
+            "maximum_variants": 5,
+            "abandonment_rules": ["Stop at the first terminal scientific gate failure."],
+            "retirement_rules": ["Retire after a frozen live risk boundary is breached."],
+            "confirmed": True,
+        },
         "title": "Opening auction continuation after completed imbalance",
         "edge_family": "opening_auction_continuation",
         "timeframe": "1m",
@@ -230,7 +1227,7 @@ def test_bootstrap_is_task_oriented_and_keeps_operational_state_separate(tmp_pat
         "live_drafts": 0,
         "active_campaigns": 0,
         "review_items": 0,
-        "certified_modules": 12,
+        "certified_modules": len(get_certified_module_catalog().all()),
     }
     assert payload["jobs"] == []
 
@@ -326,9 +1323,49 @@ def test_api_completes_the_seven_gate_draft_without_yaml_or_hash_input(
     assert published.status_code == 200, published.text
     campaign = client.get("/api/campaigns/es_web_publication")
     assert campaign.status_code == 200, campaign.text
-    assert campaign.json()["campaign"]["studio_managed"] is True
-    assert len(campaign.json()["stage_matrix"]) == 1
-    assert campaign.json()["next_variant"]["eligible"] is False
+    campaign_payload = campaign.json()
+    assert campaign_payload["campaign"]["studio_managed"] is True
+    assert len(campaign_payload["stage_matrix"]) == 1
+    assert campaign_payload["next_variant"]["eligible"] is False
+    assert campaign_payload["protocol"]["hypothesis"] == LONG_RATIONALE
+    assert campaign_payload["protocol"]["market_behavior"].startswith(
+        "Completed opening-range expansion"
+    )
+    assert campaign_payload["protocol"]["supporting_sources"][0]["year"] == 2025
+    progress = campaign_payload["research_progress"]["campaign"]
+    assert progress["variant_id"] == "v01"
+    assert progress["current_step"] == 2
+    assert progress["total_steps"] == 13
+    assert progress["current_stage_label"] == "Mechanics evidence"
+    assert [item["id"] for item in progress["stages"]][3:] == [
+        "limited_core_grid_test",
+        "limited_monkey_test",
+        "walk_forward_analysis",
+        "wfa_oos_monkey_test",
+        "wfa_oos_monte_carlo",
+        "simulated_incubation_core",
+        "simulated_incubation_monkey",
+        "acceptance_oos_test",
+        "account_suitability",
+        "candidate_review",
+    ]
+    bootstrap_campaign = next(
+        item
+        for item in client.get("/api/bootstrap").json()["campaigns"]
+        if item["campaign_id"] == "es_web_publication"
+    )
+    assert bootstrap_campaign["research_progress"]["campaign"]["current_stage_label"] == (
+        "Mechanics evidence"
+    )
+    mechanics = campaign_payload["mechanics"]
+    assert mechanics["read_only"] is True
+    assert mechanics["variant_ids"] == ["v01"]
+    original = next(
+        item for item in mechanics["attempts"] if item["attempt_id"] == "original"
+    )
+    assert original["target_variant_id"] == "v01"
+    assert original["variants"][0]["rules"]["forced_flatten"]["flatten_time"] == "15:55:00"
+    assert original["variants"][0]["config_sha256"]
 
     failed_result = (
         tmp_path
@@ -339,9 +1376,15 @@ def test_api_completes_the_seven_gate_draft_without_yaml_or_hash_input(
         json.dumps({"campaign_id": "es_web_publication", "variant_id": "v01", "verdict": "FAIL"}),
         encoding="utf-8",
     )
+    (failed_result.parent.parent / "source_config.yaml").write_bytes(
+        (
+            tmp_path
+            / "research/campaigns/active/es_web_publication/variants/v01/config.yaml"
+        ).read_bytes()
+    )
     monkeypatch.setattr(
-        "alphaquest.studio.sequential_variants.MechanicsApprovalService.inspect",
-        lambda _self, _path: {"status": "APPROVED_FOR_TESTING"},
+        "alphaquest.studio.sequential_variants.inspect_historical_validation_approval",
+        lambda _cfg, _path: {"status": "APPROVED_FOR_TESTING"},
     )
     proposal = client.get("/api/campaigns/es_web_publication/next-variant")
     assert proposal.status_code == 200, proposal.text
@@ -392,6 +1435,55 @@ def test_raw_upload_inspection_never_accepts_a_server_side_path(tmp_path: Path) 
     assert payload["filename"] == "bars.csv"
     assert payload["columns"] == ["timestamp", "open", "high", "low", "close", "volume"]
     assert Path(payload["upload_token"]).name == payload["upload_token"]
+    assert payload["discovery"]["timestamp_candidates"][0]["column"] == "timestamp"
+
+
+def test_data_manager_exposes_governed_manifest_and_comparison(tmp_path: Path) -> None:
+    _governed_dataset(tmp_path)
+    source = tmp_path / "comparison-bars.csv"
+    timestamps = pd.date_range("2026-02-02 09:30:00", periods=180, freq="min")
+    pd.DataFrame(
+        {
+            "timestamp": timestamps.astype(str),
+            "open": 5100.0,
+            "high": 5101.0,
+            "low": 5099.0,
+            "close": 5100.25,
+            "volume": 100,
+        }
+    ).to_csv(source, index=False)
+    DatasetImporter(tmp_path).import_file(
+        source,
+        DataImportSpec(
+            dataset_id="governed_es_comparison",
+            symbol="ES",
+            timeframe="1m",
+            timezone="America/New_York",
+            timestamp_semantics="bar_open",
+            roll_policy="single_contract",
+            timestamp_column="timestamp",
+            open_column="open",
+            high_column="high",
+            low_column="low",
+            close_column="close",
+            volume_column="volume",
+            single_contract_confirmed=True,
+        ),
+    )
+    client = _client(tmp_path)
+
+    detail = client.get("/api/datasets/governed_es_1m")
+    templates = client.get("/api/data/session-templates")
+    comparison = client.get(
+        "/api/datasets/compare/governed_es_1m/governed_es_comparison"
+    )
+
+    assert detail.status_code == 200, detail.text
+    assert detail.json()["quality"]["verdict"] == "PASS"
+    assert len(detail.json()["manifest_sha256"]) == 64
+    assert templates.json()["templates"][0]["template_id"] == "cme_us_equity_rth"
+    assert comparison.json()["comparable"] is True
+    assert comparison.json()["comparison"]["canonical_sha256"]["matches"] is False
 
 
 def test_ai_suggestion_persists_hash_only_provenance_on_the_selected_draft(
@@ -403,7 +1495,13 @@ def test_ai_suggestion_persists_hash_only_provenance_on_the_selected_draft(
         "/api/drafts",
         json={"campaign_id": "es_ai_notes", "title": "AI notes", "instrument": "ES"},
     )
-    save_settings(StudioSettings(openai_model="pinned-model"), project_root=tmp_path)
+    save_settings(
+        StudioSettings(
+            assistant_mode="legacy_openai_api",
+            openai_model="pinned-model",
+        ),
+        project_root=tmp_path,
+    )
 
     def suggest(_self, notes: str, *, source_title: str, instrument: str):
         assert notes == "Selected prose only"
@@ -451,6 +1549,27 @@ def test_ai_suggestion_persists_hash_only_provenance_on_the_selected_draft(
     serialized = str(state)
     assert "Selected prose only" not in serialized
     assert "sufficiently falsifiable" not in serialized
+
+
+def test_default_subscription_mode_refuses_metered_ai_endpoint(tmp_path: Path) -> None:
+    client = _client(tmp_path)
+    client.post(
+        "/api/drafts",
+        json={"campaign_id": "es_no_paid_api", "title": "No paid API", "instrument": "ES"},
+    )
+
+    response = client.post(
+        "/api/ai/suggest",
+        json={
+            "campaign_id": "es_no_paid_api",
+            "selected_text": "Selected prose only",
+            "source_title": "Research paper",
+            "instrument": "ES",
+        },
+    )
+
+    assert response.status_code == 422
+    assert "legacy_openai_api" in response.json()["error"]["message"]
 
 
 def test_pdf_pages_are_selected_and_extracted_locally_without_provider_access(
@@ -501,7 +1620,18 @@ def _indexed_bundle_fixture(
     config_path = campaign_root / "variants/v01/config.yaml"
     config_path.parent.mkdir(parents=True)
     config_path.write_text(
-        yaml.safe_dump({"campaign_id": "demo", "variant_id": "v01", "test_run_id": "run1"}),
+        yaml.safe_dump(
+            {
+                "campaign_id": "demo",
+                "variant_id": "v01",
+                "test_run_id": "run1",
+                "strategy": {"entry": {"params": {"lookback": 5}}},
+                "core_grid": {
+                    "parameters": {"entry.params.lookback": [5, 10]},
+                    "retain_iteration_reports": False,
+                },
+            }
+        ),
         encoding="utf-8",
     )
     (campaign_root / "campaign.yaml").write_text(
@@ -515,6 +1645,31 @@ def _indexed_bundle_fixture(
         encoding="utf-8",
     )
     reporting = tmp_path / "research/evidence/runs/demo/v01/ES/run1/reporting_v2"
+    core_grid = reporting.parent / "limited_core_grid_test/core_grid_results.csv"
+    core_grid.parent.mkdir(parents=True)
+    grid_results = pd.DataFrame(
+        [
+            {
+                "run_id": 1,
+                "entry.params.lookback": 5,
+                "total_trades": 4,
+                "net_profit": -50.0,
+                "profit_factor": 0.8,
+                "max_drawdown": 100.0,
+                "mar": -0.5,
+            },
+            {
+                "run_id": 2,
+                "entry.params.lookback": 10,
+                "total_trades": 3,
+                "net_profit": 25.0,
+                "profit_factor": 1.1,
+                "max_drawdown": 75.0,
+                "mar": 0.3,
+            },
+        ]
+    )
+    grid_results.to_csv(core_grid, index=False)
     trades = pd.DataFrame(
         [
             {
@@ -538,6 +1693,7 @@ def _indexed_bundle_fixture(
         variant_id="v01",
         run_id="run1",
         verdict=bundle_verdict,
+        scientific_validity_verdict="PASS",
         stage_criteria=[
             {
                 "stage": "limited_core_grid_test",
@@ -552,11 +1708,24 @@ def _indexed_bundle_fixture(
                     else "actual 0.8 was below required 1.2"
                 ),
                 "evidence_path": "limited_core_grid_test/stage_result.json",
-            }
+                "decision_role": "generic_objective",
+            },
+            {
+                "stage": "limited_core_grid_test",
+                "metric": "summary.percentage_profitable_iterations",
+                "operator": ">=",
+                "threshold": {"value": 0.7, "reason": None},
+                "actual": {"value": 0.8, "reason": None},
+                "result": "PASS",
+                "reason": "parameter neighborhood evidence passed",
+                "evidence_path": "limited_core_grid_test/stage_result.json",
+                "decision_role": "scientific_validity",
+            },
         ],
         initial_balance=50_000,
         prop_rule_outcome="PASS",
         forced_flatten_compliance=True,
+        parameter_neighbors=grid_results,
     )
     bundle_path = reporting / "result_bundle_v2.json"
     (campaign_root / "results_index.yaml").write_text(
@@ -595,6 +1764,11 @@ def test_campaign_result_rejects_schema_valid_bundle_without_complete_finalizati
     assert result["stage_criteria"] == []
     assert result["finalization"]["valid"] is False
     assert any("finalization manifest" in item for item in result["finalization"]["errors"])
+    progress = payload["research_progress"]["campaign"]
+    assert progress["current_step"] == 4
+    assert progress["current_stage_label"] == "Result integrity review"
+    assert progress["stages"][3]["status"] == "blocked"
+    assert progress["stages"][-1]["status"] == "locked"
 
 
 def test_campaign_and_candidate_views_use_validated_bundle_not_index_verdict(
@@ -620,16 +1794,85 @@ def test_campaign_and_candidate_views_use_validated_bundle_not_index_verdict(
     row = next(item for item in campaign["stage_matrix"] if item["variant"] == "v01")
     result = campaign["latest_results"]["v01"]
     assert row["research verdict"] == "FAIL"
+    assert row["operational state"] == "SUCCEEDED"
     assert row["first failed or unresolved gate"] == "limited_core_grid_test"
     assert result["research_verdict"] == "FAIL"
     assert result["source_index_verdict"] == "PASS"
     assert result["metrics"]["total_trades"]["value"] == 1
     assert result["stage_criteria"][0]["actual"]["value"] == 0.8
     assert result["finalization"] == {"valid": True, "errors": []}
+    assert result["core_grid_inspection"] == {
+        "available": True,
+        "reason": None,
+        "default_run_id": 1,
+        "declared_default_parameters": {"entry.params.lookback": 5},
+        "parameter_columns": ["entry.params.lookback"],
+        "iteration_count": 2,
+        "iteration_reports_retained": False,
+        "metrics_source": "limited_core_grid_test/core_grid_results.csv",
+        "default_metrics_scope": "declared_default_fixed_config",
+    }
+    progress = campaign["research_progress"]["campaign"]
+    assert progress["current_step"] == 12
+    assert progress["current_stage_label"] == "Destination account suitability"
+    assert progress["stages"][0]["status"] == "complete"
+    assert progress["stages"][3]["status"] == "complete"
+    assert progress["stages"][4]["status"] == "complete"
+    assert progress["stages"][-1]["status"] == "locked"
 
     assert not any(
         item["campaign_id"] == "demo" for item in client.get("/api/reviews").json()["candidate"]
     )
+
+
+def test_result_artifact_download_is_allowlisted_and_hash_verified(
+    tmp_path: Path,
+    monkeypatch,
+) -> None:
+    config_path, bundle_path, bundle = _indexed_bundle_fixture(tmp_path)
+    index_path = tmp_path / "research/campaigns/active/demo/results_index.yaml"
+    index = yaml.safe_load(index_path.read_text(encoding="utf-8"))
+    index["runs"][0].update(
+        {
+            "attempt_id": "original",
+            "finalization_state": "COMPLETE",
+        }
+    )
+    index_path.write_text(yaml.safe_dump(index), encoding="utf-8")
+
+    def valid_inspection(path, *, config_path=None):
+        return {
+            "valid": True,
+            "errors": [],
+            "bundle": bundle,
+            "manifest": {"source_config": str(config_path or config_path_fixture)},
+        }
+
+    config_path_fixture = config_path
+    monkeypatch.setattr("alphaquest.studio.api.inspect_finalized_result", valid_inspection)
+    client = _client(tmp_path)
+
+    response = client.get(
+        "/api/campaigns/demo/results/original/v01/artifacts/trade_list"
+    )
+    missing = client.get(
+        "/api/campaigns/demo/results/original/v01/artifacts/not_declared"
+    )
+    archive = client.get(
+        "/api/campaigns/demo/results/original/v01/report.zip"
+    )
+
+    assert response.status_code == 200, response.text
+    assert "trade_id" in response.text
+    assert response.headers["content-type"].startswith("text/csv")
+    assert missing.status_code == 404
+    assert archive.status_code == 200, archive.text
+    assert archive.headers["content-type"] == "application/zip"
+    with zipfile.ZipFile(BytesIO(archive.content)) as report:
+        names = set(report.namelist())
+        assert "result_bundle_v2.json" in names
+        assert "trade_list.csv" in names
+        assert "performance_statistics.csv" in names
 
 
 def test_campaign_result_suppresses_bundle_values_when_finalization_hashes_drift(
@@ -684,6 +1927,16 @@ def test_candidate_queue_contains_only_unreviewed_valid_terminal_passes(
     config_path_fixture = config_path
     monkeypatch.setattr("alphaquest.studio.api.inspect_finalized_result", valid_finalization)
     client = _client(tmp_path)
+
+    campaign_progress = client.get("/api/campaigns/demo").json()["research_progress"]["campaign"]
+    assert campaign_progress["current_step"] == 13
+    assert campaign_progress["current_stage_label"] == "Independent candidate review"
+    assert all(
+        item["status"] == "complete"
+        for item in campaign_progress["stages"][:-2]
+    )
+    assert campaign_progress["stages"][-2]["status"] == "not_applicable"
+    assert campaign_progress["stages"][-1]["status"] == "current"
 
     candidates = client.get("/api/reviews").json()["candidate"]
     candidate = next(item for item in candidates if item["campaign_id"] == "demo")

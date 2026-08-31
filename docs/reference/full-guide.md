@@ -1,5 +1,8 @@
 # AlphaQuest Research Engine
 
+For the book-to-control rationale behind the research lifecycle, see
+[Davey methodology alignment](../research/davey-methodology-alignment.md).
+
 Start with [`START_HERE.md`](../../START_HERE.md). Routine research navigation should use the generated registry and `views/`, not direct browsing of the run store.
 
 Deterministic futures research and backtesting engine with fail-closed preflight,
@@ -19,7 +22,7 @@ download/export data
 place raw data under data/raw/
 create or update one campaign
 create one authored config.yaml under campaigns/
-run limited core/monkey, WFA, OOS stress, incubation, and locked acceptance stages
+run limited core/monkey, WFA, OOS stress, secondary historical holdout, and locked acceptance stages
 review campaign_test_summary.json, variant_test_summary.json, and runs_index.csv
 ```
 
@@ -34,7 +37,7 @@ make research-workspace
 make research-status
 ```
 
-This creates a rebuildable SQLite registry, portable CSV exports, short-ID definition indexes, and curated views for active, review, candidate, closed, and recently failed research. A registry `candidate` is still only a candidate strategy requiring manual due diligence and incubation.
+This creates a rebuildable SQLite registry, portable CSV exports, short-ID definition indexes, and curated views for active, review, candidate, closed, and recently failed research. A registry `candidate` is still only a candidate strategy requiring manual due diligence and chronological paper/live forward incubation.
 
 ## Install
 
@@ -43,18 +46,21 @@ python3 -m pip install -e ".[dev]"
 python3 -m pytest
 ```
 
-Run the complete local quality gate and write a durable qualification report:
+Run the complete local engine gate and, only for a clean `main` release
+candidate, write qualification reports:
 
 ```bash
-make quality
+make validate
 make qualify
 ```
 
 `make qualify` writes `research_artifacts/engine_qualification.json` and
-`research_artifacts/engine_qualification.md` with the test result, engine and
-policy hashes, contract version, Git state, control evidence, and model-risk
-limitations. This qualifies the software build only. It does not make a
-candidate strategy tradeable.
+`research_artifacts/engine_qualification.md` with the engine-category result,
+engine and policy hashes, contract version, Git state, environment/build
+identity, control evidence, and model-risk limitations. The replaceable local
+reports are attached to a qualified GitHub release as durable assets. This
+qualifies the software build only. Run `make preflight` separately for current
+research inventory; neither result makes a candidate strategy tradeable.
 
 Audit reproducible generated payloads and superseded error runs without deleting:
 
@@ -1748,7 +1754,10 @@ percent (`max_drawdown_pct`) for each train window.
 `mode: unanchored` keeps the train window length fixed and moves it forward by
 `step_months`, which defaults to `test_months` when omitted. `mode: anchored`
 keeps the first train start fixed and expands the train window through each
-new out-of-sample period.
+new out-of-sample period. `step_months` must be at least `test_months`; AlphaQuest
+rejects overlapping OOS windows. A window is eligible only when source data
+reaches its full half-open `test_end`. Partial trailing windows are not scored
+or stitched.
 
 `parallel.enabled: true` supports two scopes:
 
@@ -1805,7 +1814,11 @@ window_timings_seconds
 ```
 
 `wfa/equity_curve.html` plots the stitched out-of-sample trade log across all
-completed test windows.
+completed test windows. The stitcher validates unique, non-overlapping realized
+intervals and rejects duplicate or out-of-window trades. Annualized metrics use
+the union of these governed OOS intervals, not the span between the first and
+last trade; gaps between windows are excluded and unavailable coverage fails
+closed.
 
 Each `window_###_train_grid.csv` file contains the full in-sample grid for one
 walk-forward train window. Rows are sorted with the same rule WFA uses to pick
@@ -1867,13 +1880,13 @@ Configure Monte Carlo:
 ```yaml
 monte_carlo:
   trade_source: core
-  runs: 1000
+  runs: 8000
   seed: 11
   parallel:
     enabled: true
     workers: 6
     scope: runs
-  path_months: 1
+  path_months: 6
   skip_trade_probability: 0.05
   skip_winning_trade_probability: 0.05
   adverse_slippage_per_trade: 0.0
@@ -1921,16 +1934,18 @@ monte_carlo:
 Monte Carlo mechanics:
 
 ```text
-1. Each run starts from the selected trade log.
-2. The trade order is shuffled without replacement.
-3. Trades can be removed using skip_trade_probability.
-4. Winning trades can also be removed using skip_winning_trade_probability.
-5. If cluster_losses is true, losing trades are moved to the front of the path.
-6. Simulated contracts are chosen from monte_carlo.position_sizing.
-7. If simulated contracts exceed prop_rules.max_contracts, contracts are capped at that max.
-8. adverse_slippage_per_trade is subtracted from each retained trade's simulated PnL.
-9. The stressed path is evaluated against prop_rules.
-10. When account_lifecycle_enabled is true, output net_pnl is external PnL:
+1. Each run groups the selected trade log by required, non-null session_date.
+2. Whole session blocks are shuffled without replacement; order inside each session is preserved.
+3. path_months determines the required number of sampled sessions from the source calendar span.
+4. A requested horizon longer than the source trade-log horizon fails closed.
+5. Trades can be removed using skip_trade_probability.
+6. Winning trades can also be removed using skip_winning_trade_probability.
+7. If cluster_losses is true, whole losing sessions are moved to the front of the path.
+8. Simulated contracts are chosen from monte_carlo.position_sizing.
+9. If simulated contracts exceed prop_rules.max_contracts, contracts are capped at that max.
+10. adverse_slippage_per_trade is subtracted from each retained trade's simulated PnL.
+11. The path receives monotonic simulated-session indices and is evaluated against prop_rules.
+12. When account_lifecycle_enabled is true, output net_pnl is external PnL:
     net payout share minus challenge fees.
 ```
 
@@ -1938,8 +1953,9 @@ With account lifecycle enabled, each sampled path can trade only one account at
 a time. A new $50k challenge account is bought only at path start, after a
 breach, or after five funded payouts terminate the account. Challenge pass
 requires $3,000 account profit and 50% consistency, meaning no single winning
-trade can exceed 50% of total challenge profit. Passing resets the funded
-account balance and drawdown floor.
+trade can exceed 50% of total challenge profit. Challenge passage also requires
+the configured minimum trading days and best-day concentration limit. Passing
+resets the funded account balance and drawdown floor.
 
 The lifecycle drawdown is an EOD trailing floor. The floor starts $2,000 below
 the account balance, moves up only from end-of-day account balance, locks at
@@ -2014,10 +2030,13 @@ Important implementation details:
 ```text
 - runs controls how many independent shuffled/stressed paths are generated.
 - seed makes the run reproducible; each run_id gets a deterministic derived seed.
-- Sampling is permutation/subset based, not bootstrap-with-replacement.
+- Sampling is a session-block permutation/subset, not trade-level bootstrap-with-replacement.
 - The simulation uses trade-log rows, not new bar-level market paths.
-- path_months is currently configured but not used by the Monte Carlo engine.
-- Lifecycle EOD updates use sampled path order and the sampled trades' session_date values.
+- path_months controls sampled session count and cannot exceed source history.
+- Lifecycle EOD updates use monotonic simulated-session indices, so shuffled
+  historical dates cannot create duplicate or reverse end-of-day transitions.
+- Daily-loss, minimum-day, best-day, consistency, drawdown, and payout rules
+  are reported separately as execution compliance and lifecycle success.
 ```
 
 Audit reports are optional because they can get large. Enable them when you
@@ -2357,18 +2376,22 @@ It does not implement:
 broker adapters
 live order routing
 database storage
-tick data
-order-book data
+arbitrary ungoverned tick feeds
+MBO/DOM queue-priority simulation
 machine learning
 broker reconciliation
 ```
 
-Sierra Chart data is supported only through a governed aggregate-cache or
-certified SCID-event lane. Reconstructed Sierra minute OHLCV is acceptable for
-completed-bar research after validation. Print-level features, tick-replay
-fills, intra-minute stop/target ordering, and trade-sequence assumptions require
-an explicit source-quality capability for the exact feature, session, and time
-window; passing one strategy or window does not certify all Sierra order-flow
-uses.
+Sierra Chart data is supported through a governed aggregate-cache or certified
+SCID-event lane. Canonical trade-event replay and the separately certified
+generic quote/trade order simulator support bounded intrabar research when the
+dataset manifest declares the exact required capability. Reconstructed Sierra
+minute OHLCV is acceptable for completed-bar research after validation.
+Print-level features, bid/ask fills, intra-minute stop/target ordering, and
+trade-sequence assumptions require an explicit source-quality and execution
+capability for the exact feature, session, and time window; passing one strategy
+or window does not certify all Sierra order-flow uses. MBO queue position,
+hidden liquidity, live broker routing, and broker reconciliation remain outside
+the engine.
 
 The first trust checkpoint is always manual data and trade validation against your charting platform.

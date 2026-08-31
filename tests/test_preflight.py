@@ -1,3 +1,5 @@
+import hashlib
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -5,28 +7,31 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from research.preflight import _config_paths, _is_archived_path, run_preflight
+from alphaquest.research.campaign_stages import canonicalize_campaign_config
+from alphaquest.accounts.catalog import AccountProfileCatalog
+from research.preflight import (
+    _config_paths,
+    _is_archived_path,
+    _validate_data_paths,
+    run_preflight,
+)
 
 
 def _write_csv(path, *, duplicate: bool = False) -> None:
-    rows = [
-        {
-            "timestamp": "2024-01-03 09:30:00-05:00",
-            "open": 100.0,
-            "high": 101.0,
-            "low": 99.0,
-            "close": 100.5,
-            "volume": 100,
-        },
-        {
-            "timestamp": "2024-01-03 09:31:00-05:00",
-            "open": 100.5,
-            "high": 101.5,
-            "low": 100.0,
-            "close": 101.0,
-            "volume": 120,
-        },
-    ]
+    rows = []
+    for index, session in enumerate(pd.bdate_range("2024-01-03", periods=10)):
+        base = 100.0 + index
+        for minute in (30, 31):
+            rows.append(
+                {
+                    "timestamp": f"{session.date().isoformat()} 09:{minute}:00-05:00",
+                    "open": base,
+                    "high": base + 1.0,
+                    "low": base - 1.0,
+                    "close": base + 0.5,
+                    "volume": 100 + minute,
+                }
+            )
     if duplicate:
         rows.append(dict(rows[-1]))
     pd.DataFrame(rows).to_csv(path, index=False)
@@ -50,6 +55,16 @@ def _config(raw_csv, **overrides):
                 "profitability_rationale": "The variant is approved for testing because the hypothesized edge could create repeated intraday pressure after costs while preserving enough trade density.",
                 "known_failure_modes": "The edge may be too weak after slippage, may concentrate in a few sessions, or may fail when same-bar stop and target ordering is pessimistic.",
                 "pre_test_decision": "approve_for_testing",
+            },
+            "validation_gate": {
+                "required": True,
+                "lane": "bar",
+                "data_subset": {
+                    "start_date": "2024-01-03",
+                    "end_date": "2024-01-16",
+                },
+                "evidence_dir": "evidence/mechanics",
+                "approval_path": "artifacts/approval.json",
             },
         },
         "data": {
@@ -91,6 +106,7 @@ def _config(raw_csv, **overrides):
             "latest_entry_time": "16:45:00",
         },
     }
+    cfg = canonicalize_campaign_config(cfg)
     for key, value in overrides.items():
         if value is None:
             cfg.pop(key, None)
@@ -131,6 +147,128 @@ def test_preflight_accepts_valid_config_and_timezone_aware_data(tmp_path):
 
     assert result["passed"]
     assert result["failures"] == []
+
+
+def test_v2_factory_preflight_rejects_canonical_dataset_byte_drift(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    expected = hashlib.sha256(data.read_bytes()).hexdigest()
+    data_cfg = {
+        "source": "csv",
+        "raw_csv": str(data),
+        "canonical_sha256": expected,
+    }
+
+    failures: list[str] = []
+    _validate_data_paths(
+        data_cfg,
+        config,
+        failures,
+        require_bound_dataset_hash=True,
+    )
+    assert failures == []
+
+    data.write_text(data.read_text(encoding="utf-8") + "\n", encoding="utf-8")
+    failures = []
+    _validate_data_paths(
+        data_cfg,
+        config,
+        failures,
+        require_bound_dataset_hash=True,
+    )
+    assert any("canonical dataset bytes" in item for item in failures)
+
+
+def test_preflight_accepts_matching_account_profile_hash_and_rejects_drift(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    resolved = AccountProfileCatalog(Path(__file__).resolve().parents[1]).resolve(
+        "apex/eod_50k/funded", "2026-03-01"
+    )
+    cfg = _config(data)
+    binding = resolved.snapshot()
+    binding["role"] = "primary"
+    cfg["account_profile_bindings"] = [binding]
+    _write_config(config, cfg)
+
+    matching = run_preflight(config_paths=[config], run_tests=False)
+    assert matching["passed"] is True
+
+    cfg["account_profile_bindings"][0]["profile_sha256"] = "0" * 64
+    _write_config(config, cfg)
+    drifted = run_preflight(config_paths=[config], run_tests=False)
+    assert drifted["passed"] is False
+    assert any("profile hash drift" in item for item in drifted["failures"])
+
+
+def test_preflight_binds_destination_contract_to_exact_account_profiles(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    resolved = AccountProfileCatalog(Path(__file__).resolve().parents[1]).resolve(
+        "apex/eod_50k/funded", "2026-03-01"
+    )
+    cfg = _config(data)
+    binding = resolved.snapshot()
+    binding["role"] = "primary"
+    cfg["account_profile_bindings"] = [binding]
+    contract = {
+        "schema": "alphaquest.destination-benchmark-contract/v1",
+        "profiles": [
+            {
+                "profile_id": resolved.profile.profile_id,
+                "profile_version": resolved.profile.version,
+                "profile_sha256": resolved.sha256,
+                "role": "primary",
+            }
+        ],
+        "scientific_validity_required": True,
+        "generic_objective_pass_required": False,
+        "approval_scope": "exact_primary_profile_only",
+    }
+    cfg["destination_benchmark_contract"] = contract
+    cfg["destination_benchmark_contract_sha256"] = hashlib.sha256(
+        json.dumps(
+            contract,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+        ).encode("utf-8")
+    ).hexdigest()
+    _write_config(config, cfg)
+
+    assert run_preflight(config_paths=[config], run_tests=False)["passed"] is True
+
+    del cfg["account_profile_bindings"]
+    _write_config(config, cfg)
+    unbound = run_preflight(config_paths=[config], run_tests=False)
+    assert unbound["passed"] is False
+    assert any("requires matching account_profile_bindings" in item for item in unbound["failures"])
+
+    cfg["account_profile_bindings"] = [binding]
+    cfg["destination_benchmark_contract"]["profiles"][0]["role"] = "comparison"
+    _write_config(config, cfg)
+    drifted = run_preflight(config_paths=[config], run_tests=False)
+    assert drifted["passed"] is False
+    assert any("contract hash" in item for item in drifted["failures"])
+
+
+def test_preflight_rejects_strategy_specific_stage_methodology(tmp_path):
+    data = tmp_path / "bars.csv"
+    config = tmp_path / "config.yaml"
+    _write_csv(data)
+    cfg = _config(data)
+    cfg["research_metadata"]["validation_gate"]["session_count"] = 200
+    cfg["wfa"]["train_months"] = 12
+    _write_config(config, cfg)
+
+    result = run_preflight(config_paths=[config], run_tests=False)
+
+    assert not result["passed"]
+    assert any("validation_gate.session_count" in item for item in result["failures"])
+    assert any("wfa.train_months" in item for item in result["failures"])
 
 
 def test_preflight_rejects_nonfinite_or_nonpositive_ohlcv_before_runtime_cleaning(tmp_path):

@@ -8,13 +8,25 @@
 
 ## Development Workflow
 
+`main` is the sole stable/default branch. Perform work on a temporary
+`feat/`, `fix/`, or `docs/` branch and integrate it through a pull request after
+the required CI gate succeeds. See [release governance](docs/operations/release-governance.md)
+for branch protection, methodology-version changes, qualification, and tagging.
+The private repository currently has one human developer on GitHub Free, so
+this PR/green-gate rule is procedural rather than mechanically protected and
+requires no external approval. Do not claim otherwise in reviews or releases.
+
 ```bash
 make setup
 pre-commit install
 make smoke
-make test
+make validate
 make preflight
 ```
+
+`make validate` covers both Python test roots and the Studio UI suite. See
+[the complete test surface](TEST_COMMANDS.md) for independent commands and the
+private-data boundary.
 
 Run `pre-commit run --all-files` before opening a pull request. Hooks check basic file hygiene, YAML/JSON syntax, and the repository's Ruff policy.
 
@@ -26,6 +38,7 @@ Add focused tests for behavioral changes. Engine changes must cover entry timing
 - Identify data, config, engine, and artifact-contract changes.
 - Report exact tests and preflight commands.
 - Declare whether historical evidence was rewritten.
+- Require the `Required integration gate` check before merge.
 - Use candidate language; never claim a backtest alone is tradeable.
 
 Do not combine unrelated refactors with strategy mechanics changes. Preserve failed research and ledger history.

@@ -46,6 +46,7 @@ def _simulate_prop_path(
     sizing_config: dict | None = None,
     collect_events: bool = False,
 ) -> tuple[dict, list[dict]]:
+    trades = _prepare_simulation_path(trades)
     if bool(getattr(rules, "account_lifecycle_enabled", False)):
         return _simulate_prop_account_lifecycle_path(
             trades,
@@ -62,6 +63,9 @@ def _simulate_prop_path(
     breached = False
     reason = ""
     daily_pnl = {}
+    daily_source_labels = {}
+    max_contracts_capped_count = 0
+    daily_loss_breach_count = 0
     max_consec = cur = 0
     peak_equity = balance
     max_dd = 0.0
@@ -88,6 +92,8 @@ def _simulate_prop_path(
         path_index = _trade_value(trade, "_path_index")
         source_trade_id = _trade_value(trade, "_source_trade_id", _trade_value(trade, "trade_id"))
         source_session_date = _trade_value(trade, "session_date")
+        simulated_session_index = int(_trade_value(trade, "_simulated_session_index"))
+        daily_source_labels.setdefault(simulated_session_index, source_session_date)
         sim = _simulated_trade_values(trade, balance, sizing_config)
         if sim["sim_contracts"] < 1:
             if collect_events:
@@ -106,6 +112,7 @@ def _simulate_prop_path(
                         "position_size_skip",
                         reason,
                         sim_values=sim,
+                        simulated_session_index=simulated_session_index,
                     )
                 )
             continue
@@ -113,6 +120,7 @@ def _simulate_prop_path(
         if int(sim["sim_contracts"]) > rules.max_contracts:
             sim = _cap_sim_contracts(sim, rules.max_contracts, sizing_config)
             max_contracts_capped = True
+            max_contracts_capped_count += 1
             if sim["sim_contracts"] < 1:
                 if collect_events:
                     events.append(
@@ -130,12 +138,13 @@ def _simulate_prop_path(
                             "position_size_skip",
                             reason,
                             sim_values=sim,
+                            simulated_session_index=simulated_session_index,
                         )
                     )
                 continue
         pnl = float(sim["sim_net_pnl"])
         balance += pnl
-        daily_pnl[source_session_date] = daily_pnl.get(source_session_date, 0.0) + pnl
+        daily_pnl[simulated_session_index] = daily_pnl.get(simulated_session_index, 0.0) + pnl
         high = max(high, balance)
         floor = max(floor, high - rules.trailing_drawdown)
         peak_equity = max(peak_equity, balance)
@@ -148,6 +157,31 @@ def _simulate_prop_path(
         event_names = ["trade"]
         if max_contracts_capped:
             event_names.append("max_contracts_capped")
+        if daily_pnl[simulated_session_index] <= -float(rules.daily_loss_limit):
+            breached, reason = True, "daily_loss_limit"
+            daily_loss_breach_count += 1
+            event_names.append("daily_loss_limit_breach")
+            if collect_events:
+                events.append(
+                    _event_row(
+                        path_index,
+                        source_trade_id,
+                        source_session_date,
+                        balance,
+                        high,
+                        floor,
+                        max_dd,
+                        drawdown_limit,
+                        payout_target,
+                        profit_target,
+                        "|".join(event_names),
+                        reason,
+                        daily_pnl=float(daily_pnl[simulated_session_index]),
+                        sim_values=sim,
+                        simulated_session_index=simulated_session_index,
+                    )
+                )
+            break
         if balance <= floor:
             breached, reason = True, "trailing_drawdown"
             event_names.append("trailing_drawdown_breach")
@@ -167,6 +201,7 @@ def _simulate_prop_path(
                         "|".join(event_names),
                         reason,
                         sim_values=sim,
+                        simulated_session_index=simulated_session_index,
                     )
                 )
             break
@@ -200,21 +235,29 @@ def _simulate_prop_path(
                     "|".join(event_names),
                     reason,
                     sim_values=sim,
+                    simulated_session_index=simulated_session_index,
                 )
             )
 
     daily = pd.Series(daily_pnl, dtype=float)
     worst_day = float(daily.min()) if len(daily) else 0.0
     best_day = float(daily.max()) if len(daily) else 0.0
-    for session_date, pnl in daily.items():
+    for simulated_session_index, pnl in daily.items():
         if pnl <= -rules.daily_loss_limit:
             breached, reason = True, "daily_loss_limit"
             if collect_events:
+                already_logged = any(
+                    row.get("simulated_session_index") == simulated_session_index
+                    and "daily_loss_limit_breach" in str(row.get("event", ""))
+                    for row in events
+                )
+                if already_logged:
+                    break
                 events.append(
                     _event_row(
                         None,
                         None,
-                        session_date,
+                        daily_source_labels.get(simulated_session_index),
                         balance,
                         high,
                         floor,
@@ -225,6 +268,7 @@ def _simulate_prop_path(
                         "daily_loss_limit_breach",
                         reason,
                         daily_pnl=float(pnl),
+                        simulated_session_index=int(simulated_session_index),
                     )
                 )
             break
@@ -244,6 +288,11 @@ def _simulate_prop_path(
         "payout_eligible": payout_eligible,
         "profit_before_drawdown": profit_before_drawdown,
         "drawdown_before_profit": drawdown_before_profit,
+        "execution_rule_compliant": max_contracts_capped_count == 0 and daily_loss_breach_count == 0,
+        "execution_rule_adjustment_count": int(max_contracts_capped_count),
+        "daily_loss_breach_count": int(daily_loss_breach_count),
+        "lifecycle_success": bool(profit_before_drawdown),
+        "simulated_trading_days": int(len(daily)),
     }
     return result, events
 
@@ -271,6 +320,9 @@ def _simulate_prop_account_lifecycle_path(
     payout_count = 0
     first_account_breached_before_challenge_pass = False
     last_breach_reason = ""
+    max_contracts_capped_count = 0
+    daily_loss_breach_count = 0
+    simulated_trading_days = set()
     max_consec = cur = 0
     max_dd = 0.0
     challenge_starting_balance = float(rules.starting_balance)
@@ -289,12 +341,18 @@ def _simulate_prop_account_lifecycle_path(
         sim_values: dict | None = None,
         payout_request: float | None = None,
         payout_net: float | None = None,
+        simulated_session_index: int | None = None,
     ) -> None:
         nonlocal event_sequence
         if not collect_events:
             return
         event_sequence += 1
         active = state or {}
+        effective_session_index = (
+            simulated_session_index
+            if simulated_session_index is not None
+            else active.get("current_simulated_session_index")
+        )
         events.append(
             _event_row(
                 path_index,
@@ -324,13 +382,23 @@ def _simulate_prop_account_lifecycle_path(
                 challenge_total_profit=active.get("challenge_total_profit"),
                 challenge_largest_trade_profit=active.get("challenge_largest_trade_profit"),
                 challenge_consistency_ratio=_challenge_consistency_ratio(active),
+                challenge_trading_days=active.get("challenge_trading_days"),
+                challenge_best_day_profit=_challenge_best_day_profit(active),
+                challenge_best_day_profit_ratio=_challenge_best_day_profit_ratio(active),
                 payout_request=payout_request,
                 payout_net=payout_net,
                 account_breached=bool(breach_reason),
+                simulated_session_index=effective_session_index,
             )
         )
 
-    def purchase_account(path_index, source_trade_id, source_session_date, reason: str) -> None:
+    def purchase_account(
+        path_index,
+        source_trade_id,
+        source_session_date,
+        simulated_session_index,
+        reason: str,
+    ) -> None:
         nonlocal state, accounts_purchased, total_challenge_fees
         accounts_purchased += 1
         total_challenge_fees += float(getattr(rules, "challenge_fee", 0.0))
@@ -340,12 +408,14 @@ def _simulate_prop_account_lifecycle_path(
             source_trade_id,
             source_session_date,
             f"account_purchased|{reason}",
+            simulated_session_index=simulated_session_index,
         )
 
     def close_account_for_breach(
         path_index,
         source_trade_id,
         source_session_date,
+        simulated_session_index,
         reason: str,
         sim_values: dict | None = None,
     ) -> None:
@@ -366,12 +436,13 @@ def _simulate_prop_account_lifecycle_path(
             breach_reason=reason,
             daily_pnl=state.get("current_day_pnl"),
             sim_values=sim_values,
+            simulated_session_index=simulated_session_index,
         )
         if state.get("current_session_date") is not None:
             day_pnls.append(float(state.get("current_day_pnl", 0.0)))
         state = None
 
-    def start_funded_account(source_session_date) -> None:
+    def start_funded_account(source_session_date, simulated_session_index) -> None:
         nonlocal state, funded_accounts_started
         if state is None:
             return
@@ -383,15 +454,22 @@ def _simulate_prop_account_lifecycle_path(
             None,
             source_session_date,
             "funded_account_started_after_challenge_pass",
+            simulated_session_index=simulated_session_index,
         )
 
-    def finalize_current_day(next_session_date=None) -> None:
+    def finalize_current_day(next_session_date=None, next_simulated_session_index=None) -> None:
         nonlocal state, gross_payouts, net_payouts, payout_count, accounts_terminated, max_dd
         if state is None or state.get("current_session_date") is None:
             return
         session_date = state["current_session_date"]
+        simulated_session_index = state["current_simulated_session_index"]
         daily_pnl = float(state.get("current_day_pnl", 0.0))
         day_pnls.append(daily_pnl)
+        if state.get("phase") == "challenge" and bool(state.get("current_day_has_trade")):
+            state["challenge_best_day_profit"] = max(
+                float(state.get("challenge_best_day_profit", 0.0)),
+                daily_pnl if daily_pnl > 0 else 0.0,
+            )
         _update_eod_trailing_floor(state, rules)
         event_names = ["eod_update"]
         payout_request = None
@@ -428,6 +506,7 @@ def _simulate_prop_account_lifecycle_path(
             daily_pnl=daily_pnl,
             payout_request=payout_request,
             payout_net=payout_net,
+            simulated_session_index=simulated_session_index,
         )
         if state is not None and int(state.get("account_payout_count") or 0) >= int(
             getattr(rules, "max_payouts_per_account", 5)
@@ -437,22 +516,42 @@ def _simulate_prop_account_lifecycle_path(
             return
         if state is not None:
             state["current_session_date"] = next_session_date
+            state["current_simulated_session_index"] = next_simulated_session_index
             state["current_day_pnl"] = 0.0
+            state["current_day_has_trade"] = False
 
     for _, trade in trades.iterrows():
         path_index = _trade_value(trade, "_path_index")
         source_trade_id = _trade_value(trade, "_source_trade_id", _trade_value(trade, "trade_id"))
         source_session_date = _trade_value(trade, "session_date")
+        simulated_session_index = int(_trade_value(trade, "_simulated_session_index"))
         if state is None:
-            purchase_account(path_index, source_trade_id, source_session_date, "initial_or_replacement")
-        if state is not None and state.get("current_session_date") is None:
+            purchase_account(
+                path_index,
+                source_trade_id,
+                source_session_date,
+                simulated_session_index,
+                "initial_or_replacement",
+            )
+        if state is not None and state.get("current_simulated_session_index") is None:
             state["current_session_date"] = source_session_date
-        elif state is not None and state.get("current_session_date") != source_session_date:
-            finalize_current_day(next_session_date=source_session_date)
+            state["current_simulated_session_index"] = simulated_session_index
+        elif state is not None and state.get("current_simulated_session_index") != simulated_session_index:
+            finalize_current_day(
+                next_session_date=source_session_date,
+                next_simulated_session_index=simulated_session_index,
+            )
             if state is None:
-                purchase_account(path_index, source_trade_id, source_session_date, "after_termination")
-            if state is not None and state.get("current_session_date") is None:
+                purchase_account(
+                    path_index,
+                    source_trade_id,
+                    source_session_date,
+                    simulated_session_index,
+                    "after_termination",
+                )
+            if state is not None and state.get("current_simulated_session_index") is None:
                 state["current_session_date"] = source_session_date
+                state["current_simulated_session_index"] = simulated_session_index
 
         sim = _simulated_trade_values(trade, float(state["balance"]), sizing_config)
         if sim["sim_contracts"] < 1:
@@ -462,12 +561,14 @@ def _simulate_prop_account_lifecycle_path(
                 source_session_date,
                 "position_size_skip",
                 sim_values=sim,
+                simulated_session_index=simulated_session_index,
             )
             continue
         max_contracts_capped = False
         if int(sim["sim_contracts"]) > rules.max_contracts:
             sim = _cap_sim_contracts(sim, rules.max_contracts, sizing_config)
             max_contracts_capped = True
+            max_contracts_capped_count += 1
             if sim["sim_contracts"] < 1:
                 append_event(
                     path_index,
@@ -475,9 +576,14 @@ def _simulate_prop_account_lifecycle_path(
                     source_session_date,
                     "position_size_skip",
                     sim_values=sim,
+                    simulated_session_index=simulated_session_index,
                 )
                 continue
 
+        simulated_trading_days.add(simulated_session_index)
+        if state.get("phase") == "challenge" and not bool(state.get("current_day_has_trade")):
+            state["challenge_trading_days"] = int(state.get("challenge_trading_days", 0)) + 1
+        state["current_day_has_trade"] = True
         pnl = float(sim["sim_net_pnl"])
         state["balance"] += pnl
         state["current_day_pnl"] = float(state.get("current_day_pnl", 0.0)) + pnl
@@ -497,6 +603,28 @@ def _simulate_prop_account_lifecycle_path(
         if max_contracts_capped:
             event_names.append("max_contracts_capped")
         phase = state.get("phase")
+        if float(state["current_day_pnl"]) <= -float(rules.daily_loss_limit):
+            daily_loss_breach_count += 1
+            event_names.append("daily_loss_limit_breach")
+            append_event(
+                path_index,
+                source_trade_id,
+                source_session_date,
+                "|".join(event_names),
+                breach_reason="daily_loss_limit",
+                daily_pnl=state["current_day_pnl"],
+                sim_values=sim,
+                simulated_session_index=simulated_session_index,
+            )
+            close_account_for_breach(
+                path_index,
+                source_trade_id,
+                source_session_date,
+                simulated_session_index,
+                "daily_loss_limit",
+                sim_values=sim,
+            )
+            continue
         if phase == "challenge":
             state["challenge_largest_trade_profit"] = max(
                 float(state.get("challenge_largest_trade_profit", 0.0)),
@@ -512,10 +640,11 @@ def _simulate_prop_account_lifecycle_path(
                     source_session_date,
                     "|".join(event_names),
                     sim_values=sim,
+                    simulated_session_index=simulated_session_index,
                 )
                 if state.get("current_session_date") is not None:
                     day_pnls.append(float(state.get("current_day_pnl", 0.0)))
-                start_funded_account(source_session_date)
+                start_funded_account(source_session_date, simulated_session_index)
                 continue
             if float(state["balance"]) < float(state["floor"]):
                 event_names.append("trailing_drawdown_breach")
@@ -526,11 +655,13 @@ def _simulate_prop_account_lifecycle_path(
                     "|".join(event_names),
                     breach_reason="trailing_drawdown",
                     sim_values=sim,
+                    simulated_session_index=simulated_session_index,
                 )
                 close_account_for_breach(
                     path_index,
                     source_trade_id,
                     source_session_date,
+                    simulated_session_index,
                     "trailing_drawdown",
                     sim_values=sim,
                 )
@@ -545,11 +676,13 @@ def _simulate_prop_account_lifecycle_path(
                     "|".join(event_names),
                     breach_reason="trailing_drawdown",
                     sim_values=sim,
+                    simulated_session_index=simulated_session_index,
                 )
                 close_account_for_breach(
                     path_index,
                     source_trade_id,
                     source_session_date,
+                    simulated_session_index,
                     "trailing_drawdown",
                     sim_values=sim,
                 )
@@ -561,6 +694,7 @@ def _simulate_prop_account_lifecycle_path(
             source_session_date,
             "|".join(event_names),
             sim_values=sim,
+            simulated_session_index=simulated_session_index,
         )
 
     finalize_current_day()
@@ -596,6 +730,11 @@ def _simulate_prop_account_lifecycle_path(
         "gross_payouts": gross_payouts,
         "net_payouts": net_payouts,
         "total_challenge_fees": total_challenge_fees,
+        "execution_rule_compliant": max_contracts_capped_count == 0 and daily_loss_breach_count == 0,
+        "execution_rule_adjustment_count": int(max_contracts_capped_count),
+        "daily_loss_breach_count": int(daily_loss_breach_count),
+        "lifecycle_success": payout_count > 0,
+        "simulated_trading_days": int(len(simulated_trading_days)),
     }
     return result, events
 
@@ -612,9 +751,13 @@ def _new_challenge_account_state(account_number: int, rules: PropRules) -> dict:
         "floor": floor,
         "max_drawdown": 0.0,
         "current_session_date": None,
+        "current_simulated_session_index": None,
         "current_day_pnl": 0.0,
+        "current_day_has_trade": False,
         "challenge_total_profit": 0.0,
         "challenge_largest_trade_profit": 0.0,
+        "challenge_trading_days": 0,
+        "challenge_best_day_profit": 0.0,
         "profit_target_balance": balance + float(getattr(rules, "challenge_profit_target_amount", 3000.0)),
         "next_payout_target_balance": None,
         "funded_profit_days": None,
@@ -636,9 +779,13 @@ def _new_funded_account_state(account_number: int, rules: PropRules) -> dict:
         "floor": float(floor),
         "max_drawdown": 0.0,
         "current_session_date": None,
+        "current_simulated_session_index": None,
         "current_day_pnl": 0.0,
+        "current_day_has_trade": False,
         "challenge_total_profit": None,
         "challenge_largest_trade_profit": None,
+        "challenge_trading_days": None,
+        "challenge_best_day_profit": None,
         "profit_target_balance": None,
         "next_payout_target_balance": balance + float(getattr(rules, "funded_payout_min_profit_day", 150.0)),
         "funded_profit_days": 0,
@@ -662,8 +809,15 @@ def _challenge_is_passed(state: dict, rules: PropRules) -> bool:
     total_profit = float(state.get("challenge_total_profit", 0.0))
     if total_profit < float(getattr(rules, "challenge_profit_target_amount", 3000.0)):
         return False
+    if int(state.get("challenge_trading_days", 0)) < int(getattr(rules, "min_trading_days", 1)):
+        return False
     ratio = _challenge_consistency_ratio(state)
-    return ratio <= float(getattr(rules, "challenge_consistency_limit", 0.50))
+    if ratio is None or ratio > float(getattr(rules, "challenge_consistency_limit", 0.50)):
+        return False
+    best_day_ratio = _challenge_best_day_profit_ratio(state)
+    return best_day_ratio is not None and best_day_ratio <= float(
+        getattr(rules, "max_best_day_profit_percentage", 0.40)
+    )
 
 
 def _challenge_consistency_ratio(state: dict) -> float | None:
@@ -672,6 +826,22 @@ def _challenge_consistency_ratio(state: dict) -> float | None:
     if total_profit is None or largest_profit is None or float(total_profit) <= 0:
         return None
     return float(largest_profit) / float(total_profit)
+
+
+def _challenge_best_day_profit(state: dict) -> float | None:
+    if state.get("phase") != "challenge":
+        return None
+    completed_best = float(state.get("challenge_best_day_profit", 0.0) or 0.0)
+    current_day = float(state.get("current_day_pnl", 0.0)) if bool(state.get("current_day_has_trade")) else 0.0
+    return max(completed_best, current_day if current_day > 0 else 0.0)
+
+
+def _challenge_best_day_profit_ratio(state: dict) -> float | None:
+    total_profit = state.get("challenge_total_profit")
+    best_day_profit = _challenge_best_day_profit(state)
+    if total_profit is None or best_day_profit is None or float(total_profit) <= 0:
+        return None
+    return float(best_day_profit) / float(total_profit)
 
 
 def _funded_payout_request(state: dict, rules: PropRules) -> float:
@@ -744,19 +914,59 @@ def _trade_value(trade, key: str, default=None):
     return value
 
 
+def _prepare_simulation_path(trades: pd.DataFrame) -> pd.DataFrame:
+    """Return one coherent, monotonically ordered block per simulated session."""
+    out = trades.copy().reset_index(drop=True)
+    if out.empty:
+        return out
+    if "session_date" not in out.columns:
+        raise ValueError("prop simulation requires session_date on every trade")
+
+    source_keys = []
+    for value in out["session_date"].tolist():
+        if value is None or pd.isna(value):
+            raise ValueError("prop simulation requires non-null session_date values")
+        try:
+            timestamp = pd.Timestamp(value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f"invalid prop simulation session_date: {value!r}") from exc
+        if pd.isna(timestamp):
+            raise ValueError("prop simulation requires non-null session_date values")
+        source_keys.append(timestamp.date().isoformat())
+
+    out["_source_session_key"] = source_keys
+    out["_simulation_input_row"] = out.index + 1
+    if "_simulated_session_index" not in out.columns:
+        ordered_keys = list(dict.fromkeys(source_keys))
+        session_indices = {key: index for index, key in enumerate(ordered_keys, start=1)}
+        out["_simulated_session_index"] = out["_source_session_key"].map(session_indices)
+        return out.sort_values(
+            ["_simulated_session_index", "_simulation_input_row"],
+            kind="stable",
+        ).reset_index(drop=True)
+
+    numeric = pd.to_numeric(out["_simulated_session_index"], errors="coerce")
+    if numeric.isna().any() or (numeric <= 0).any() or ((numeric % 1) != 0).any():
+        raise ValueError("_simulated_session_index must contain positive integers")
+    out["_simulated_session_index"] = numeric.astype(int)
+    if not out["_simulated_session_index"].is_monotonic_increasing:
+        raise ValueError("_simulated_session_index must be monotonic in simulated path order")
+    if out.groupby("_source_session_key")["_simulated_session_index"].nunique().max() > 1:
+        raise ValueError("a source session cannot be counted more than once in a simulated path")
+    if out.groupby("_simulated_session_index")["_source_session_key"].nunique().max() > 1:
+        raise ValueError("a simulated session cannot combine different source sessions")
+    return out
+
+
 def _simulated_trade_values(trade, net_liq: float, sizing_config: dict) -> dict:
     source_contracts = int(_trade_value(trade, "contracts", 1) or 1)
-    source_net_pnl = float(
-        _trade_value(trade, "_source_net_pnl", _trade_value(trade, "net_pnl", 0.0)) or 0.0
-    )
+    source_net_pnl = float(_trade_value(trade, "_source_net_pnl", _trade_value(trade, "net_pnl", 0.0)) or 0.0)
     adverse = float(sizing_config.get("adverse_slippage_per_trade", 0.0))
     position_sizing_mode = _normalize_source_position_sizing_mode(
         _trade_value(trade, "position_sizing_mode", "fixed_contracts")
     )
     monte_carlo_sizing = _monte_carlo_position_sizing(sizing_config)
-    monte_carlo_mode = _normalize_monte_carlo_position_sizing_mode(
-        monte_carlo_sizing.get("mode", "reference")
-    )
+    monte_carlo_mode = _normalize_monte_carlo_position_sizing_mode(monte_carlo_sizing.get("mode", "reference"))
 
     if monte_carlo_mode in FIXED_POSITION_SIZING_MODES:
         size = _fixed_path_position_size(monte_carlo_sizing)
@@ -838,9 +1048,7 @@ def _scaled_trade_values(
         "source_net_pnl": source_net_pnl,
         "sim_net_pnl": sim_net_pnl,
         "position_sizing_mode": position_sizing_mode,
-        "position_sizing_net_liq": (
-            None if position_sizing_net_liq is None else float(position_sizing_net_liq)
-        ),
+        "position_sizing_net_liq": (None if position_sizing_net_liq is None else float(position_sizing_net_liq)),
         "target_risk_amount": size.get("target_risk_amount"),
         "dollar_risk_per_contract": size.get("dollar_risk_per_contract"),
         "unrounded_contracts": size.get("unrounded_contracts"),
@@ -878,8 +1086,7 @@ def _should_resize_trade(position_sizing_mode: str, sizing_config: dict) -> bool
         _core_position_sizing(sizing_config).get("mode", "fixed_contracts")
     )
     return (
-        position_sizing_mode in RISK_PERCENT_POSITION_SIZING_MODES
-        and core_mode in RISK_PERCENT_POSITION_SIZING_MODES
+        position_sizing_mode in RISK_PERCENT_POSITION_SIZING_MODES and core_mode in RISK_PERCENT_POSITION_SIZING_MODES
     )
 
 
@@ -890,9 +1097,7 @@ def _path_position_size(
     sizing: dict,
     config_name: str,
 ) -> dict:
-    dollar_risk_per_contract = _dollar_risk_per_contract_from_trade(
-        trade, sizing_config, config_name
-    )
+    dollar_risk_per_contract = _dollar_risk_per_contract_from_trade(trade, sizing_config, config_name)
     if dollar_risk_per_contract <= 0:
         raise ValueError("Risk-percent Monte Carlo resizing requires risk_points or dollar_risk_per_contract.")
     risk_pct = _risk_pct_from_sizing(sizing, sizing_config, config_name)

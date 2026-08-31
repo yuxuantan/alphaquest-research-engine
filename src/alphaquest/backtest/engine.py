@@ -11,7 +11,7 @@ import pandas as pd
 
 from alphaquest.backtest.contracts import ExecutionAssumptions, validate_market_data_contract
 from alphaquest.backtest.fills import entry_price, exit_price, stop_target_hit
-from alphaquest.backtest.metrics import calculate_metrics, daily_results
+from alphaquest.backtest.metrics import EvaluationPeriod, calculate_metrics, daily_results
 from alphaquest.backtest.risk import DailyRisk
 from alphaquest.backtest.sizing import size_position
 from alphaquest.strategy import ModularStrategy
@@ -638,15 +638,22 @@ class BacktestEngine:
         metrics = calculate_metrics(
             trades_df,
             initial_balance=float(self.core_config.get("initial_balance", 0)),
+            evaluation_period=EvaluationPeriod.from_frame(
+                df,
+                source="bar_backtest_market_sessions",
+            ),
         )
         if self.event_filters.enabled:
             metrics["event_no_trade_flatten_trades"] = int(diagnostics["event_filters"]["flatten_trades"])
             metrics["event_no_trade_entry_rejections"] = int(diagnostics["event_filters"]["entry_rejections"])
         if self.apex_rules.enabled:
-            metrics["apex_rule_violations"] = max(
-                int(metrics.get("apex_rule_violations", 0)),
+            compliance_violations = max(
+                int(metrics.get("execution_compliance_violations", 0)),
                 int(diagnostics["apex"]["rule_violations"]),
             )
+            metrics["execution_compliance_violations"] = compliance_violations
+            # Deprecated compatibility alias for repository-owned stage policy.
+            metrics["apex_rule_violations"] = compliance_violations
             metrics["apex_forced_flatten_trades"] = int(diagnostics["apex"]["forced_flatten_trades"])
         output = {
             "trades": trades_df,

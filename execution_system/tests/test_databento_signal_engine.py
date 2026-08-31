@@ -16,6 +16,11 @@ import pytest
 
 ENGINE_PATH = Path(__file__).resolve().parents[1] / "databento_signal_engine.py"
 EXECUTION_DIR = ENGINE_PATH.parent
+ARCHIVED_CAMPAIGN_STRATEGY = (
+    EXECUTION_DIR.parent
+    / "_archived/campaigns/archive_not_benchmark_20260615/bar_orderflow_participation_state"
+    / "variants/ES/1m/dense_rank_value_priority_ensemble.yaml"
+)
 SPEC = importlib.util.spec_from_file_location("databento_signal_engine", ENGINE_PATH)
 engine = importlib.util.module_from_spec(SPEC)
 assert SPEC.loader is not None
@@ -45,6 +50,31 @@ def load_execution_config(name: str) -> dict:
         cost_guard = cfg.setdefault("databento", {}).setdefault("live", {}).setdefault("cost_guard", {})
         cost_guard["allow_live_subscription"] = False
         cost_guard["acknowledge_live_data_may_be_billable"] = False
+        # Readiness tests validate the executable contract, not macOS afplay.
+        # Use a harmless command that exists on both CI Linux and macOS.
+        sound = cfg["engine"].setdefault("operator", {}).setdefault("sound", {})
+        sound.update(
+            {
+                "setup_command": "/bin/echo setup-sound",
+                "entry_command": "/bin/echo entry-sound",
+                "system_command": "/bin/echo system-sound",
+                "command": "/bin/echo sound",
+            }
+        )
+    return cfg
+
+
+def load_archived_campaign_contract_config() -> dict:
+    """Load frozen historical mechanics only for execution data-plan regression."""
+
+    cfg = load_execution_config("signal_engine.example.yaml")
+    cfg["strategies"] = [
+        {
+            "id": "archived_dense_rank_value_priority_ensemble_contract",
+            "enabled": True,
+            "config": str(ARCHIVED_CAMPAIGN_STRATEGY),
+        }
+    ]
     return cfg
 
 
@@ -3145,7 +3175,7 @@ def test_readiness_check_validates_cache_metadata_and_avoids_outbox_writes(
     assert payload["alerts"]["execution_intent_contract"]["probes_checked"] == 2
     assert payload["operator"]["sound"]["ok"] is True
     assert payload["operator"]["sound"]["checks"][0]["reason"] == "sound command executable is available"
-    assert payload["operator"]["sound"]["checks"][0]["executable"] == "/usr/bin/afplay"
+    assert payload["operator"]["sound"]["checks"][0]["executable"] == "/bin/echo"
     assert payload["process_lock"]["ok"] is True
     assert payload["process_lock"]["status"] == "available"
     assert {
@@ -8519,8 +8549,8 @@ def test_invalid_contract_symbol_regex_fails_preflight() -> None:
         engine.SignalEngine(cfg, EXECUTION_DIR / "dummy_delta_signal_engine.example.yaml")
 
 
-def test_active_campaign_data_plan_requires_orderflow_warmup() -> None:
-    cfg = load_execution_config("signal_engine.example.yaml")
+def test_archived_campaign_contract_data_plan_requires_orderflow_warmup() -> None:
+    cfg = load_archived_campaign_contract_config()
     signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "signal_engine.example.yaml")
     plan = signal_engine.data_plan
 
@@ -8633,7 +8663,7 @@ def test_seed_warmup_audit_warns_when_sessions_are_insufficient(capsys: pytest.C
 def test_runtime_warmup_audit_fails_when_live_starts_without_seed(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    cfg = load_execution_config("signal_engine.example.yaml")
+    cfg = load_archived_campaign_contract_config()
     signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "signal_engine.example.yaml")
 
     with pytest.raises(RuntimeError, match="Insufficient warmup history for live_startup"):
@@ -8651,7 +8681,7 @@ def test_runtime_warmup_audit_fails_when_live_starts_without_seed(
 def test_runtime_warmup_audit_can_warn_when_fail_fast_disabled(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    cfg = load_execution_config("signal_engine.example.yaml")
+    cfg = load_archived_campaign_contract_config()
     cfg["engine"]["fail_on_insufficient_warmup"] = False
     signal_engine = engine.SignalEngine(cfg, EXECUTION_DIR / "signal_engine.example.yaml")
 

@@ -4,25 +4,116 @@ on:
   push:
   pull_request:
 
+env:
+  PYTHON_VERSION: "3.12.14"
+
 jobs:
-  test:
+  lint:
+    name: Lint and static checks
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
-      - name: Install
-        # Studio API and PDF-boundary tests are part of the governed baseline,
-        # so CI must install the same local runtime extras those tests exercise.
-        run: python -m pip install -e ".[dev,studio]"
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: constraints/dev.txt
+      - name: Install pinned reference environment
+        run: python -m pip install -c constraints/dev.txt -e ".[dev,studio,dashboard]"
+      - run: make lint
+
+  documentation:
+    name: Documentation validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: make docs-check
+
+  smoke:
+    name: CLI and smoke tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: constraints/dev.txt
+      - name: Install pinned reference environment
+        run: python -m pip install -c constraints/dev.txt -e ".[dev,studio,dashboard]"
+      - run: alphaquest --help
+      - run: make smoke
+
+  python-tests:
+    name: Governed Python suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: constraints/dev.txt
+      - name: Install pinned reference environment
+        run: python -m pip install -c constraints/dev.txt -e ".[dev,studio,dashboard]"
       - name: Install browser for the no-code Studio flow
         run: python -m playwright install --with-deps chromium
-      - name: Lint
-        run: ruff check src research tests tools
-      - name: CLI smoke
-        run: alphaquest --help && make smoke
-      - name: Documentation links
-        run: make docs-check
-      - name: Tests
-        run: python -m pytest
+      - run: python -m pytest -q tests
+
+  execution-system-tests:
+    name: Execution-system suite
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+          cache-dependency-path: constraints/dev.txt
+      - name: Install pinned reference environment
+        run: python -m pip install -c constraints/dev.txt -e ".[dev,studio,dashboard]"
+      - run: python -m pytest -q execution_system/tests
+
+  studio-ui:
+    name: Studio UI typecheck and tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.8.0"
+          cache: npm
+          cache-dependency-path: studio-ui/package-lock.json
+      - run: npm --prefix studio-ui ci
+      - run: make studio-ui-check
+
+  required-integration-gate:
+    name: Required integration gate
+    if: always()
+    needs:
+      - lint
+      - documentation
+      - smoke
+      - python-tests
+      - execution-system-tests
+      - studio-ui
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every independent validation category
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+          PYTHON_TESTS_RESULT: ${{ needs.python-tests.result }}
+          EXECUTION_TESTS_RESULT: ${{ needs.execution-system-tests.result }}
+          STUDIO_UI_RESULT: ${{ needs.studio-ui.result }}
+        run: |
+          test "$LINT_RESULT" = success
+          test "$DOCUMENTATION_RESULT" = success
+          test "$SMOKE_RESULT" = success
+          test "$PYTHON_TESTS_RESULT" = success
+          test "$EXECUTION_TESTS_RESULT" = success
+          test "$STUDIO_UI_RESULT" = success

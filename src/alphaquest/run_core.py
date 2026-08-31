@@ -4,16 +4,23 @@ import argparse
 import csv
 from datetime import date
 import json
+import os
 from pathlib import Path
 from typing import Any, Callable
 import zipfile
 
 from alphaquest.backtest.equity_report import write_equity_report
 from alphaquest.backtest.engine import BacktestEngine
+from alphaquest.backtest.event_replay_cache import (
+    load_event_replay_cache,
+    write_event_replay_cache,
+)
 from alphaquest.backtest.sizing import tick_value_from_core
 from alphaquest.data.pipeline import prepare_data
 from alphaquest.data.source import data_source_hash
 from alphaquest.data.subset import subset_from_config
+from alphaquest.research.policy import load_research_policy
+from alphaquest.research.storage import project_root_for_path
 from alphaquest.utils.config import (
     config_timeframe,
     config_timeframe_minutes,
@@ -102,7 +109,11 @@ def main() -> None:
         timeframe=timeframe,
         include_execution_data=True,
     )
-    input_hash = data_source_hash(cfg["data"], subset)
+    input_hash = data_source_hash(
+        cfg["data"],
+        subset,
+        project_root=project_root_for_path(args.config),
+    )
     detail_data = execution_data if timeframe != "1m" else None
     _report_progress(
         progress_reporter,
@@ -194,7 +205,11 @@ def _run_canonical_event_core(
     """Run a registered event strategy through the governed core entrypoint."""
 
     from alphaquest.strategy_modules.event import build_event_strategy
-    from alphaquest.strategy_modules.event.runner import iter_event_sessions
+    from alphaquest.strategy_modules.event.runner import (
+        _session_independent_sizing,
+        iter_event_sessions,
+        replay_event_sessions_parallel,
+    )
 
     timeframe = config_timeframe(config)
     core_cfg = config.get("core", {})
@@ -206,7 +221,11 @@ def _run_canonical_event_core(
     )
     out = create_run_dir("core", args.config, config)
     subset = subset_from_config(config, "core")
-    input_hash = data_source_hash(config["data"], subset)
+    input_hash = data_source_hash(
+        config["data"],
+        subset,
+        project_root=project_root_for_path(args.config),
+    )
 
     sessions = iter_event_sessions(config, subset)
     total_sessions = _event_session_candidate_count(config, subset)
@@ -214,18 +233,78 @@ def _run_canonical_event_core(
         total_sessions=total_sessions,
         reporter=progress_reporter,
     )
-    tracked_sessions = _tracked_event_sessions(
-        sessions,
-        total=total_sessions,
-        reporter=progress_reporter,
-        progress_tracker=replay_progress,
+    cache_enabled = bool(core_cfg.get("event_replay_result_cache", False))
+    result = (
+        load_event_replay_cache(config, input_hash)
+        if cache_enabled
+        else None
     )
-    strategy = build_event_strategy(config)
-    _instrument_event_strategy_progress(strategy, replay_progress)
-    result = BacktestEngine(config, show_progress=progress_reporter is None).run_event_replay(
-        tracked_sessions,
-        strategy,
-    )
+    if result is not None:
+        _report_progress(
+            progress_reporter,
+            phase="event_replay_cache",
+            message="Loaded immutable mechanics replay cache",
+            percent=85.0,
+            completed=total_sessions,
+            total=total_sessions,
+            unit="sessions",
+        )
+    session_workers = max(1, int(core_cfg.get("event_replay_session_workers", 1)))
+    if not _session_independent_sizing(config):
+        # Current-equity sizing creates a chronological dependency between
+        # sessions. Replaying those sessions independently would size every
+        # day from the same starting equity and silently corrupt results.
+        session_workers = 1
+    if result is None and session_workers > 1:
+        materialized_sessions = list(sessions)
+        total_sessions = len(materialized_sessions)
+        _report_progress(
+            progress_reporter,
+            phase="event_replay",
+            message=f"Replaying {total_sessions} sessions across {min(session_workers, total_sessions)} workers",
+            percent=15.0,
+            completed=0,
+            total=total_sessions,
+            unit="sessions",
+        )
+        completed_sessions = 0
+
+        def session_completed(_index: int, total: int) -> None:
+            nonlocal completed_sessions
+            completed_sessions += 1
+            _report_progress(
+                progress_reporter,
+                phase="event_replay",
+                message=f"Completed {completed_sessions}/{total} parallel sessions",
+                percent=15.0 + 70.0 * completed_sessions / max(total, 1),
+                completed=completed_sessions,
+                total=total,
+                unit="sessions",
+            )
+
+        result = replay_event_sessions_parallel(
+            config,
+            materialized_sessions,
+            workers=session_workers,
+            session_completed=session_completed,
+        )
+    elif result is None:
+        tracked_sessions = _tracked_event_sessions(
+            sessions,
+            total=total_sessions,
+            reporter=progress_reporter,
+            progress_tracker=replay_progress,
+        )
+        strategy = build_event_strategy(config)
+        _instrument_event_strategy_progress(strategy, replay_progress)
+        result = BacktestEngine(config, show_progress=progress_reporter is None).run_event_replay(
+            tracked_sessions,
+            strategy,
+        )
+    if cache_enabled and not bool((result.get("reproducibility") or {}).get("result_cache_hit")):
+        cache_key = write_event_replay_cache(config, input_hash, result)
+        result.setdefault("reproducibility", {})["result_cache_key"] = cache_key
+        result["reproducibility"]["result_cache_hit"] = False
     _report_progress(
         progress_reporter,
         phase="writing_results",
@@ -581,8 +660,22 @@ def _apply_mechanics_validation_contract(config: dict) -> None:
         raise ValueError("validation_gate.data_subset must declare start_date and end_date")
     start = date.fromisoformat(str(subset["start_date"]))
     end = date.fromisoformat(str(subset["end_date"]))
-    if end < start or (end - start).days > 14:
-        raise ValueError("validation_gate.data_subset must span 0 to 14 calendar days")
+    mechanics = load_research_policy().mechanics_validation
+    for field in (
+        "selection_mode",
+        "session_count",
+        "parameter_mode",
+        "manual_review_random_sample_size",
+        "manual_review_seed",
+        "minimum_trade_samples",
+    ):
+        if gate.get(field) != mechanics.get(field):
+            raise ValueError(
+                f"validation_gate.{field} must match repository methodology "
+                f"({mechanics.get(field)!r})"
+            )
+    if end < start or (end - start).days > 60:
+        raise ValueError("validation_gate.data_subset must span 0 to 60 calendar days")
     if config.get("attempt_id"):
         config["attempt_id"] = f"{config['attempt_id']}__mechanics_{authored_config_hash}"
         config["attempt_kind"] = "mechanics_validation"
@@ -591,6 +684,9 @@ def _apply_mechanics_validation_contract(config: dict) -> None:
     config["test_run_id"] = f"mechanics_validation_{authored_config_hash}"
     core = config.setdefault("core", {})
     core["data_subset"] = dict(subset)
+    if lane == "event_replay":
+        core["event_replay_session_workers"] = min(4, os.cpu_count() or 1)
+        core["event_replay_result_cache"] = True
     core["validation_export"] = {
         "enabled": True,
         "output_dir": str(gate.get("evidence_dir")),
@@ -635,6 +731,7 @@ def _validation_metadata(
         _project_root_from_config_path(Path(config_path)),
         require_declared_match=True,
     )
+    gate = validation_gate_config(config) or {}
     return ValidationMetadata(
         run_id=run_dir.parent.name,
         campaign_id=config.get("campaign_id"),
@@ -662,6 +759,7 @@ def _validation_metadata(
         ),
         source_data_path=_source_data_path(config.get("data") or {}),
         source_trade_count=source_trade_count,
+        minimum_trade_samples=int(gate.get("minimum_trade_samples") or 1),
         commission_per_contract=core_cfg.get("commission_per_contract"),
         slippage_ticks=core_cfg.get("slippage_ticks"),
         point_value=core_cfg.get("point_value"),

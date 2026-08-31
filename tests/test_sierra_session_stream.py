@@ -7,7 +7,7 @@ from alphaquest.data.sierra_session_stream import iter_sierra_trade_sessions
 
 
 def _event_part(contract: str = "ESM25") -> pd.DataFrame:
-    return pd.DataFrame(
+    frame = pd.DataFrame(
         {
             "timestamp": pd.to_datetime(
                 ["2025-06-09 09:30:00-04:00", "2025-06-09 09:30:00.001-04:00"],
@@ -21,6 +21,12 @@ def _event_part(contract: str = "ESM25") -> pd.DataFrame:
             "signed_volume": [-2, 3],
         }
     )
+    frame.attrs["canonical_session_cache"] = {
+        "schema": "alphaquest.sierra-canonical-session-cache/v1",
+        "cache_key": "a" * 64,
+        "hit": True,
+    }
+    return frame
 
 
 def _levels(path, *, contract: str = "ESM25") -> None:
@@ -73,6 +79,11 @@ def test_sierra_session_adapter_binds_causal_levels_and_canonical_events(
         {"price": 6000.0, "size": 2, "side": "A", "signed_size": -2},
         {"price": 6000.25, "size": 3, "side": "B", "signed_size": 3},
     ]
+    assert session.event_replay_metadata["canonical_session_cache"] == {
+        "schema": "alphaquest.sierra-canonical-session-cache/v1",
+        "cache_key": "a" * 64,
+        "hit": True,
+    }
 
 
 def test_sierra_session_adapter_fails_closed_on_level_contract_mismatch(

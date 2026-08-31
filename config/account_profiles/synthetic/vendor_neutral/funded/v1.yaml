@@ -1,0 +1,81 @@
+schema: alphaquest.account-rule-profile/v1
+profile_id: synthetic/vendor_neutral/funded
+version: v1
+name: Synthetic vendor-neutral funded lifecycle
+description: Historical compatibility profile; not evidence for any named firm or account.
+effective_from: 2026-01-01
+effective_until: null
+novice_visible: false
+promotable: false
+identity:
+  provider: AlphaQuest
+  program: Synthetic research only
+  account_label: Vendor-neutral funded simulation
+  account_kind: prop_funded
+  nominal_balance: 50000.0
+  currency: USD
+  timezone: America/New_York
+  session_reset_time: "18:00:00"
+  eod_snapshot_time: "16:59:59"
+  simulated_account: true
+provenance:
+  verification_status: synthetic
+  reviewed_at: null
+  reviewer: null
+  official_sources: []
+  notes:
+    - Migrated replacement for configured_local_profile; never label it as firm-specific.
+rules:
+  permitted_instruments: [ES, MES, NQ, MNQ]
+  overnight_positions_allowed: false
+  position_close_deadline: "15:55:00"
+  intraday_equity_required: true
+  eod_drawdown:
+    amount: 2000.0
+    initial_threshold: 48000.0
+    trailing_basis: highest_eod_balance
+    recalculation: end_of_day
+    enforcement: intraday_equity
+    breach_operator: touch_or_below
+    locked_threshold: 50100.0
+    never_moves_down: true
+  fixed_maximum_contracts: 2
+  fixed_daily_loss_limit: 2000.0
+  scaling_tiers: []
+  evaluation: null
+  payouts:
+    qualifying_profit_days: 5
+    minimum_daily_profit: 150.0
+    consistency_limit: 0.50
+    consistency_operator: strictly_less_than
+    safety_net_balance: 50100.0
+    minimum_request_balance: 50600.0
+    minimum_payout: 500.0
+    maximum_payouts: 5
+    payout_caps: [2000.0, 2000.0, 2000.0, 2000.0, 2000.0]
+    payout_profit_share: 0.90
+    request_policy: maximum_when_eligible
+  inactivity: null
+  acquisition:
+    prerequisite_profile_id: null
+    evaluation_price_mode: assessment_input_required
+    activation_fee_mode: assessment_input_required
+    retry_requires_new_evaluation: true
+  manual_attestations_required: []
+evaluation_policy:
+  minimum_horizon_sessions: 126
+  monte_carlo_runs: 8000
+  monte_carlo_horizon_sessions: 126
+  monte_carlo_block_sessions: 5
+  maximum_account_closure_probability: 0.10
+  maximum_daily_loss_lock_probability: 0.10
+  minimum_first_payout_probability: 0.70
+  minimum_two_payout_probability: null
+  minimum_expected_net_payout_after_costs: 0.0
+  minimum_expected_payout_to_cost_ratio: null
+  maximum_p95_drawdown: 1500.0
+  deterministic_require_no_closure: true
+  deterministic_require_no_daily_loss_lock: true
+  deterministic_require_no_position_rejection: true
+  recommended_tests:
+    - Synthetic compatibility only; do not use for a named account decision.

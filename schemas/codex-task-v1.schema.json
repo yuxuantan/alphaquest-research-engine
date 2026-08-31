@@ -1,0 +1,108 @@
+{
+  "$defs": {
+    "CodexTaskType": {
+      "enum": [
+        "SOURCE_RESEARCH",
+        "HYPOTHESIS_PROPOSAL",
+        "DUPLICATE_ASSESSMENT",
+        "MECHANICS_INTENT",
+        "ENGINEERING_HANDOFF",
+        "RESULT_DIAGNOSIS",
+        "NEXT_EXPERIMENT",
+        "SUCCESSOR_MECHANICS_PROPOSAL",
+        "NEW_RESEARCH_GENERATION_PROPOSAL",
+        "CANDIDATE_DUE_DILIGENCE"
+      ],
+      "title": "CodexTaskType",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "artifact_hashes": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Artifact Hashes",
+      "type": "object"
+    },
+    "context_packet_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Context Packet Sha256",
+      "type": "string"
+    },
+    "created_at": {
+      "format": "date-time",
+      "title": "Created At",
+      "type": "string"
+    },
+    "expected_output_schema": {
+      "minLength": 1,
+      "title": "Expected Output Schema",
+      "type": "string"
+    },
+    "inputs_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Inputs Sha256",
+      "type": "string"
+    },
+    "objective": {
+      "minLength": 20,
+      "title": "Objective",
+      "type": "string"
+    },
+    "permitted_action": {
+      "const": "PROPOSE_ONLY",
+      "default": "PROPOSE_ONLY",
+      "enum": [
+        "PROPOSE_ONLY"
+      ],
+      "title": "Permitted Action",
+      "type": "string"
+    },
+    "read_only": {
+      "const": true,
+      "default": true,
+      "enum": [
+        true
+      ],
+      "title": "Read Only",
+      "type": "boolean"
+    },
+    "schema": {
+      "const": "alphaquest.codex-task/v1",
+      "default": "alphaquest.codex-task/v1",
+      "enum": [
+        "alphaquest.codex-task/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "task_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "task_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Task Sha256",
+      "type": "string"
+    },
+    "task_type": {
+      "$ref": "#/$defs/CodexTaskType"
+    }
+  },
+  "required": [
+    "task_id",
+    "task_type",
+    "objective",
+    "context_packet_sha256",
+    "inputs_sha256",
+    "artifact_hashes",
+    "expected_output_schema",
+    "created_at",
+    "task_sha256"
+  ],
+  "title": "CodexTaskV1",
+  "type": "object"
+}

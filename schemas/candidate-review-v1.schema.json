@@ -2,6 +2,66 @@
   "additionalProperties": false,
   "description": "Hash-bound independent decision for a terminal PASS result.",
   "properties": {
+    "account_assessment_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account Assessment Id"
+    },
+    "account_assessment_manifest_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account Assessment Manifest Sha256"
+    },
+    "account_profile_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account Profile Id"
+    },
+    "account_profile_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account Profile Sha256"
+    },
+    "account_profile_version": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Account Profile Version"
+    },
     "campaign_id": {
       "title": "Campaign Id",
       "type": "string"
@@ -17,6 +77,25 @@
         "needs_manual_review"
       ],
       "title": "Decision",
+      "type": "string"
+    },
+    "eligibility_basis": {
+      "default": "generic_scientific_pass",
+      "enum": [
+        "generic_scientific_pass",
+        "destination_specific_pass"
+      ],
+      "title": "Eligibility Basis",
+      "type": "string"
+    },
+    "generic_objective_verdict": {
+      "default": "PASS",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Generic Objective Verdict",
       "type": "string"
     },
     "input_data_hash": {
@@ -48,6 +127,30 @@
       "title": "Result Bundle Sha256",
       "type": "string"
     },
+    "result_bundle_v3_path": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Bundle V3 Path"
+    },
+    "result_bundle_v3_sha256": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Result Bundle V3 Sha256"
+    },
     "review_scope": {
       "const": "independent_candidate_assessment",
       "default": "independent_candidate_assessment",
@@ -77,6 +180,16 @@
         "alphaquest.candidate-review/v1"
       ],
       "title": "Schema",
+      "type": "string"
+    },
+    "scientific_validity_verdict": {
+      "default": "PASS",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Scientific Validity Verdict",
       "type": "string"
     },
     "variant_id": {

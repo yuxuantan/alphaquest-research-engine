@@ -8,18 +8,23 @@ import {
   PageHeader,
   StatusBadge,
 } from "../components/UI";
-import type { StudioSettings } from "../types";
+import type { FactoryStatus, StudioSettings } from "../types";
 
 export function SettingsPage() {
-  const [form, setForm] = useState<StudioSettings>({});
+  const [form, setForm] = useState<StudioSettings>({
+    assistant_mode: "codex_subscription",
+  });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [aiStatus, setAiStatus] = useState<{
     configured: boolean;
     privacy_boundary?: string;
   }>({ configured: false });
+  const [factoryStatus, setFactoryStatus] = useState<FactoryStatus | null>(null);
+  const [factoryError, setFactoryError] = useState("");
   const [apiKey, setApiKey] = useState("");
   const [keyBusy, setKeyBusy] = useState(false);
   useEffect(() => {
@@ -32,11 +37,16 @@ export function SettingsPage() {
         ),
       )
       .finally(() => setLoading(false));
-    api
-      .aiStatus()
-      .then(setAiStatus)
-      .catch(() => undefined);
+    api.factoryStatus().then(setFactoryStatus).catch((reason) =>
+      setFactoryError(
+        reason instanceof Error ? reason.message : "Codex factory status is unavailable.",
+      ),
+    );
   }, []);
+  useEffect(() => {
+    if (form.assistant_mode !== "legacy_openai_api") return;
+    api.aiStatus().then(setAiStatus).catch(() => undefined);
+  }, [form.assistant_mode]);
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
@@ -45,6 +55,7 @@ export function SettingsPage() {
     try {
       const result = await api.saveSettings(form);
       setForm("settings" in result ? result.settings : result);
+      setDirty(false);
       setMessage("Local settings saved.");
     } catch (reason) {
       setError(
@@ -97,11 +108,11 @@ export function SettingsPage() {
       <PageHeader
         eyebrow="Local workstation"
         title="Settings"
-        description="Identity and optional AI controls apply only to this local Research Studio."
+        description="Identity, execution defaults, and the subscription-backed Codex factory apply only to this local Research Studio."
       />
       {error && <Notice tone="danger">{error}</Notice>}
       {message && <Notice tone="success">{message}</Notice>}
-      <form onSubmit={submit}>
+      <form onSubmit={submit} onChangeCapture={() => setDirty(true)}>
         <Card className="form-section">
           <div className="form-section-heading">
             <span>01</span>
@@ -134,7 +145,10 @@ export function SettingsPage() {
             </div>
           </div>
           <div className="form-grid two">
-            <Field label="Commission per contract">
+            <Field
+              label="Commission (USD per contract, per side)"
+              hint="One-way commission. A round trip applies this value twice."
+            >
               <input
                 type="number"
                 min="0"
@@ -148,7 +162,10 @@ export function SettingsPage() {
                 }
               />
             </Field>
-            <Field label="Slippage ticks">
+            <Field
+              label="Slippage (ticks per fill)"
+              hint="Applied independently to entry and exit fills."
+            >
               <input
                 type="number"
                 min="0"
@@ -162,7 +179,7 @@ export function SettingsPage() {
                 }
               />
             </Field>
-            <Field label="Initial balance">
+            <Field label="Initial account balance (USD)">
               <input
                 type="number"
                 min="1"
@@ -176,7 +193,10 @@ export function SettingsPage() {
                 }
               />
             </Field>
-            <Field label="Forced-flatten time">
+            <Field
+              label="Forced-flatten time"
+              hint="Exchange/session time in America/New_York."
+            >
               <input
                 type="time"
                 step="1"
@@ -195,8 +215,133 @@ export function SettingsPage() {
           <div className="form-section-heading">
             <span>03</span>
             <div>
-              <h2>Optional AI drafting</h2>
-              <p>Studio remains fully usable without an API model or key.</p>
+              <h2>Research assistant</h2>
+              <p>
+                The default uses the local Codex CLI authenticated by your
+                existing ChatGPT subscription. Studio never asks for your
+                ChatGPT password, session token, or subscription credential.
+              </p>
+            </div>
+          </div>
+          <Field label="Assistant mode">
+            <select
+              value={form.assistant_mode || "codex_subscription"}
+              onChange={(event) =>
+                setForm({
+                  ...form,
+                  assistant_mode: event.target
+                    .value as StudioSettings["assistant_mode"],
+                })
+              }
+            >
+              <option value="codex_subscription">Codex via ChatGPT subscription</option>
+              <option value="manual_only">Manual research only</option>
+              <option value="legacy_openai_api">Legacy OpenAI API drafting</option>
+            </select>
+          </Field>
+          {form.assistant_mode === "codex_subscription" && (
+            <>
+              <div className="ai-key-status">
+                <div>
+                  <span>Local Codex status</span>
+                  <StatusBadge
+                    value={
+                      factoryStatus?.availability.status || "Checking"
+                    }
+                  />
+                </div>
+                <p>
+                  {factoryStatus?.availability.detail ||
+                    "Checking the local Codex installation and login mode."}
+                </p>
+              </div>
+              {factoryStatus?.availability.authentication_mode === "CHATGPT" &&
+                factoryStatus.availability.authenticated && (
+                  <Notice tone="success">
+                    Codex is authenticated through ChatGPT. No metered OpenAI
+                    API key is used by the factory.
+                  </Notice>
+                )}
+              {factoryStatus?.availability.authentication_mode === "API_KEY" && (
+                <Notice tone="warning" title="Wrong authentication mode">
+                  The research factory refuses API-key authentication. Use the
+                  Codex login flow and choose your ChatGPT subscription.
+                </Notice>
+              )}
+              {factoryError && <Notice tone="warning">{factoryError}</Notice>}
+              <div className="form-grid two">
+                <Field
+                  label="Task timeout (seconds)"
+                  hint="A bounded local runtime guard; allowed range is 60–7200 seconds."
+                >
+                  <input
+                    type="number"
+                    min="60"
+                    max="7200"
+                    value={form.codex_timeout_seconds ?? 1800}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        codex_timeout_seconds: Number(event.target.value),
+                      })
+                    }
+                  />
+                </Field>
+                <Field
+                  label="Maximum AI runs per day"
+                  hint="AlphaQuest enforces this local trial budget before queueing."
+                >
+                  <input
+                    type="number"
+                    min="1"
+                    max="200"
+                    value={form.codex_max_runs_per_day ?? 12}
+                    onChange={(event) =>
+                      setForm({
+                        ...form,
+                        codex_max_runs_per_day: Number(event.target.value),
+                      })
+                    }
+                  />
+                </Field>
+              </div>
+              <Notice tone="info">
+                Codex receives only a bounded, hash-recorded context packet and
+                returns an untrusted proposal. It runs read-only and cannot
+                approve mechanics, certify a strategy, promote a candidate, or
+                authorize deployment.
+              </Notice>
+            </>
+          )}
+          {form.assistant_mode === "manual_only" && (
+            <Notice tone="info">
+              Research remains fully usable without AI. No Codex or provider
+              task will be queued in manual-only mode.
+            </Notice>
+          )}
+        </Card>
+        {form.assistant_mode === "legacy_openai_api" && (
+        <details className="settings-advanced">
+          <summary>
+            <span>
+              <strong>Legacy: OpenAI API drafting</strong>
+              <small>
+                Separate metered API credentials, model pinning, and retention declarations
+              </small>
+            </span>
+            <StatusBadge
+              value={aiStatus.configured ? "Configured" : "Optional"}
+            />
+          </summary>
+        <Card className="form-section">
+          <div className="form-section-heading">
+            <span>04</span>
+            <div>
+              <h2>Legacy OpenAI API drafting</h2>
+              <p>
+                This compatibility path is separate from the subscription-backed
+                Codex factory and may incur API usage charges.
+              </p>
             </div>
           </div>
           <Notice tone="info">
@@ -313,8 +458,13 @@ export function SettingsPage() {
             </div>
           </label>
         </Card>
+        </details>
+        )}
         <div className="form-footer">
-          <Button type="submit" disabled={busy || loading}>
+          <span className={dirty ? "settings-dirty" : "settings-saved"}>
+            {dirty ? "Unsaved settings changes" : "All settings changes saved"}
+          </span>
+          <Button type="submit" disabled={busy || loading || !dirty}>
             {busy ? "Saving…" : "Save local settings"}
           </Button>
         </div>

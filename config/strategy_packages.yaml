@@ -1,0 +1,38 @@
+schema: alphaquest.strategy-package-availability/v2
+policy_version: "2026-08-24.1"
+
+# This policy classifies strategy-package availability; it does not certify an
+# implementation or approve mechanics. yush_adaptive_orderflow_range_v4 is the sole Yush
+# package eligible for future governed work, but its current implementation is
+# unavailable for execution or new publication until the required tests pass,
+# its implementation hashes are recertified, and a fresh hash-bound mechanics
+# review is manually approved. Historical approvals must not be transferred.
+strategy_packages:
+  yush_adaptive_orderflow_range_v4:
+    lifecycle: active
+    lifecycle_changed_at: "2026-08-23"
+    reason: Current certified successor package for new governed Yush Orderflow Range work.
+
+  yush_adaptive_orderflow_range_v3:
+    lifecycle: deprecated
+    lifecycle_changed_at: "2026-08-24"
+    reason: Superseded for new work by v04; exact hash-bound historical replay and replication remain permitted, but new campaigns and mechanics changes are forbidden.
+
+  yush_orderflow_range:
+    lifecycle: retired
+    lifecycle_changed_at: "2026-08-14"
+    reason: Only Yush Orderflow Range Reversal v03 remains eligible for execution and new publication.
+
+  yush_failed_auction_reclaim:
+    lifecycle: retired
+    lifecycle_changed_at: "2026-08-14"
+    reason: Only Yush Orderflow Range Reversal remains eligible for execution and new publication.
+
+  yush_adaptive_orderflow_range:
+    lifecycle: retired
+    lifecycle_changed_at: "2026-08-14"
+    reason: Only Yush Orderflow Range Reversal remains eligible for execution and new publication.
+
+# Deprecated and retired evidence remains immutable. Quarantined packages also
+# remain inspectable, but no lifecycle state ever rewrites historical records.
+historical_evidence_policy: preserve_read_only

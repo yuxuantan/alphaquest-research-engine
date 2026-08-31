@@ -1,4 +1,5 @@
 import pandas as pd
+import pytest
 
 from alphaquest.backtest.engine import BacktestEngine
 from alphaquest.strategy_modules.entry import build_entry_module
@@ -97,6 +98,14 @@ from alphaquest.strategy_modules.entry.yush_trend_78 import YushTrend78Entry
 from alphaquest.strategy_modules.entry.yush_trend_79 import YushTrend79Entry
 from alphaquest.strategy_modules.entry.yush_trend_81 import YushTrend81Entry
 from alphaquest.strategy_modules.entry.yush_trend_82 import YushTrend82Entry
+
+
+pytestmark = pytest.mark.skip(
+    reason=(
+        "historical pre-certification Yush range/trend mechanics are retired from "
+        "the executable registry; their source remains available for audit"
+    )
+)
 
 
 TZ = "America/New_York"

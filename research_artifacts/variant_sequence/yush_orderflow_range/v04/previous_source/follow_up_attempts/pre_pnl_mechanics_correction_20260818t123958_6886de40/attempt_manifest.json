@@ -1,0 +1,77 @@
+{
+  "attempt_id": "pre_pnl_mechanics_correction_20260818t123958_6886de40",
+  "attempt_kind": "pre_pnl_mechanics_correction",
+  "attempt_provenance": "authored",
+  "authorized_by": null,
+  "automatic_replay_permitted": false,
+  "campaign_id": "yush_orderflow_range",
+  "changes": [
+    {
+      "field": "certified_implementation_identity",
+      "new": {
+        "implementation_sha256": "b55a24826b8f7eeea4f208f9ab6010a64d323cc6fc936a58b723a521d29ead03",
+        "implementation_version": 18,
+        "manifest_sha256": "7fba22d3b473060b85e5a362bcec441f80f5343690ec53df3967b46c39d58624",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "old": {
+        "implementation_sha256": "d69404335352c63b1c56e5492ba043a2edf84eebf27a479bea4a974e6d66150e",
+        "implementation_version": 17,
+        "manifest_sha256": "b2483c7697f0bde6294a7d0d2389b8bd3585e3ed35cc6ddc22513dbbb05af558",
+        "strategy_id": "yush_adaptive_orderflow_range_v3"
+      },
+      "reviewed": true,
+      "scope": "strategy_certification",
+      "variant_id": "v03"
+    },
+    {
+      "field": "opening_range_seconds",
+      "new": 30,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    },
+    {
+      "field": "delta_profile_percentile",
+      "new": 0.9,
+      "old": null,
+      "reviewed": true,
+      "scope": "strategy.event.params,strategy.entry.params.mechanics",
+      "variant_id": "v03"
+    }
+  ],
+  "config_sha256": {
+    "v03": "ab21c19766657b10504b296546528ef209e071434c324315a183ae6f706425ff"
+  },
+  "created_at": "2026-08-18T12:39:59.063015+00:00",
+  "created_by": "Codex on user instruction",
+  "dataset_bindings": {
+    "v03": {
+      "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+      "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa"
+    }
+  },
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "dataset_manifest_sha256": "4271dd780606cf0a0c1d550d745826a5a07aa1767861b8f0fd2f343dd4bdcafa",
+  "immutable": true,
+  "ledger_event_stage": "follow_up_attempt/pre_pnl_mechanics_correction_20260818t123958_6886de40",
+  "parent_attempt_id": "pre_pnl_mechanics_correction_20260818t113919_cd2f0d1e",
+  "preflight": {
+    "config_count": 1,
+    "verdict": "PASS",
+    "warnings": []
+  },
+  "reason": "Publish certified v18 before any PnL-bearing test: allow a developing VAH or VAL to form an AOI with a direction-matched exceptional aggressive-volume cell, a direction-aligned top-decile profile-delta row, or a compatible completed PDH/PDL, causal ONH/ONL, or completed ORH/ORL. Require a distinct post-AOI large-execution or later completed-bar delta observation before an event reclaim may arm the existing resting edge-retest limit. Preserve ordered sweep and reclaim causality, value-edge invalidation, stop-first cancellation, frozen midpoint/opposite-edge targets, and all execution-risk gates. No observed PnL informed this correction; fresh mechanics evidence and approval are required.",
+  "schema": "alphaquest.follow-up-attempt/v1",
+  "source_config_sha256": {
+    "v03": "66359ac3f89c20f73389223030108ae379ab60c6012c918e46ceda9a997d8a11"
+  },
+  "target_variant_id": "v03",
+  "variant_mechanic_signatures": {
+    "v03": "cc8745aefd2f96853f34fc8577326cbb89683dda48cc5603a312308e0ab68b46"
+  },
+  "variant_order": [
+    "v03"
+  ]
+}

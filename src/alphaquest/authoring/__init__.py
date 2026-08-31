@@ -27,6 +27,7 @@ from alphaquest.authoring.models import (
     ExecutionSettingsV1,
     ModuleBindingV1,
     ModuleManifestV1,
+    ResearchObjectivesV1,
     VariantDraftV1,
     campaign_confirmation_context_sha256,
 )
@@ -54,6 +55,7 @@ __all__ = [
     "ModuleBindingV1",
     "ModuleCatalogError",
     "ModuleManifestV1",
+    "ResearchObjectivesV1",
     "PublishResult",
     "SafeBarRuleEvaluator",
     "TransactionalCampaignPublisher",

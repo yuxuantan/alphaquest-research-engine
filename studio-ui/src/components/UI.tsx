@@ -213,9 +213,28 @@ export function formatDate(value?: string): string {
       }).format(date);
 }
 
+export function formatMarketDate(value?: string): string {
+  if (!value) return "Not recorded";
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const date = new Date(dateOnly ? `${value}T12:00:00Z` : value);
+  return Number.isNaN(date.getTime())
+    ? value
+    : new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium",
+        ...(dateOnly ? {} : { timeStyle: "short" as const }),
+        timeZone: dateOnly ? "UTC" : "America/New_York",
+      }).format(date);
+}
+
 export function humanize(value?: string): string {
   if (!value) return "Not available";
   return value
     .replaceAll("_", " ")
-    .replace(/\b\w/g, (char) => char.toUpperCase());
+    .replace(/\b\w/g, (char) => char.toUpperCase())
+    .replace(/\bPnl\b/g, "PnL")
+    .replace(/\bWfa\b/g, "WFA")
+    .replace(/\bOos\b/g, "OOS")
+    .replace(/\bSha256\b/g, "SHA-256")
+    .replace(/\bScid\b/g, "SCID")
+    .replace(/\bTpo\b/g, "TPO");
 }

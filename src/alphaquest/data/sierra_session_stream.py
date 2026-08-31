@@ -21,6 +21,9 @@ class SierraTradeSession:
     overnight_high: float | None
     overnight_low: float | None
     events: pd.DataFrame
+    timestamp_reconstruction: dict[str, object]
+    source_quality_label: str
+    canonical_session_cache: dict[str, object]
 
     @property
     def event_replay_metadata(self) -> dict[str, object]:
@@ -28,10 +31,9 @@ class SierraTradeSession:
             "previous_rth": self.previous_rth,
             "overnight_high": self.overnight_high,
             "overnight_low": self.overnight_low,
-            "source_quality_label": (
-                "Governed Sierra SCID events reconstructed from FIRST/LAST groups; "
-                "prior-RTH and ETH confluences use completed-bar OHLC levels."
-            ),
+            "source_quality_label": self.source_quality_label,
+            "timestamp_reconstruction": self.timestamp_reconstruction,
+            "canonical_session_cache": self.canonical_session_cache,
         }
 
 
@@ -107,6 +109,7 @@ def iter_sierra_trade_sessions(
                 "signed_size",
             ]
         ].copy()
+        canonical.attrs.update(part.attrs)
         yield SierraTradeSession(
             session_date=session_date,
             contract_symbol=contract,
@@ -114,6 +117,16 @@ def iter_sierra_trade_sessions(
             overnight_high=float(level["overnight_high"]),
             overnight_low=float(level["overnight_low"]),
             events=canonical,
+            timestamp_reconstruction=dict(
+                part.attrs.get("timestamp_reconstruction") or {}
+            ),
+            source_quality_label=str(
+                part.attrs.get("source_quality_label")
+                or "Governed Sierra SCID events reconstructed from FIRST/LAST groups."
+            ),
+            canonical_session_cache=dict(
+                part.attrs.get("canonical_session_cache") or {}
+            ),
         )
 
 

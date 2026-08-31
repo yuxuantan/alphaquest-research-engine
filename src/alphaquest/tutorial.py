@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import date, timedelta
+from datetime import date
 import hashlib
 import json
 import math
@@ -181,6 +181,28 @@ def _tutorial_draft(dataset: Any) -> CampaignDraftV1:
         "created_at": "2026-01-05",
         "instrument": "ES",
         "timeframe": "1m",
+        "research_objectives": {
+            "schema": "alphaquest.research-objectives/v1",
+            "development_goal": "Demonstrate fail-closed rejection in the isolated synthetic tutorial.",
+            "development_deadline": "2099-12-31",
+            "evaluation_horizon_months": 24,
+            "minimum_annualized_return_fraction": 0.20,
+            "minimum_mar": 0.40,
+            "maximum_drawdown_fraction": 0.10,
+            "minimum_complete_wfa_windows": 3,
+            "minimum_wfa_oos_trades": 50,
+            "minimum_acceptance_oos_trades": 30,
+            "monte_carlo_min_runs": 8000,
+            "monte_carlo_horizon_months": 6,
+            "minimum_net_profit_probability": 0.70,
+            "maximum_account_breach_probability": 0.10,
+            "forward_incubation_min_calendar_days": 90,
+            "forward_incubation_min_trades": 30,
+            "maximum_variants": 1,
+            "abandonment_rules": ["Stop when the randomized-entry control rejects timing skill."],
+            "retirement_rules": ["Never promote this synthetic tutorial to a live candidate."],
+            "confirmed": True,
+        },
         "edge_family": "synthetic_calendar_bias",
         "hypothesis": (
             "On the constructed ES-like teaching series, the completed 09:35 regular-session bar predicts "
@@ -583,27 +605,27 @@ def _workspace_data_config(data_config: dict[str, Any], root: Path) -> dict[str,
 
 def _tutorial_bars() -> pd.DataFrame:
     rows = []
-    session = date(2026, 1, 5)
-    sessions = 0
-    while sessions < 10:
-        if session.weekday() < 5:
-            start = pd.Timestamp(f"{session.isoformat()} 09:30:00", tz="America/New_York")
-            for minute in range(61):
-                timestamp = start + pd.Timedelta(minutes=minute)
-                open_price = 5000.0 + sessions * 4.0 + minute * 2.0
-                rows.append(
-                    {
-                        "timestamp": timestamp,
-                        "open": open_price,
-                        "high": open_price + 2.5,
-                        "low": open_price - 0.5,
-                        "close": open_price + 2.0,
-                        "volume": 1000 + minute * 10,
-                        "symbol": "ES",
-                    }
-                )
-            sessions += 1
-        session += timedelta(days=1)
+    # Sparse synthetic coverage spans every business date required by the
+    # repository's 24+6 month acceptance calendar. Only the latest ten sessions
+    # contain the full teaching window used for mechanics and PnL.
+    session_dates = [item.date() for item in pd.bdate_range(date(2023, 6, 30), date(2026, 1, 16))]
+    complete_sessions = set(session_dates[-10:])
+    for session_index, session in enumerate(session_dates):
+        start = pd.Timestamp(f"{session.isoformat()} 09:30:00", tz="America/New_York")
+        for minute in range(61 if session in complete_sessions else 1):
+            timestamp = start + pd.Timedelta(minutes=minute)
+            open_price = 5000.0 + session_index * 4.0 + minute * 2.0
+            rows.append(
+                {
+                    "timestamp": timestamp,
+                    "open": open_price,
+                    "high": open_price + 2.5,
+                    "low": open_price - 0.5,
+                    "close": open_price + 2.0,
+                    "volume": 1000 + minute * 10,
+                    "symbol": "ES",
+                }
+            )
     return pd.DataFrame(rows)
 
 

@@ -1,0 +1,194 @@
+schema: alphaquest.follow-up-strategy-spec/v1
+campaign_id: yush_orderflow_range
+attempt_id: pre_pnl_mechanics_correction_20260726t071923_c676f368
+attempt_kind: pre_pnl_mechanics_correction
+parent_attempt_id: pre_pnl_mechanics_correction_20260726t071640_e8d0ffba
+reason: Correct v02 to freeze the first causal reclaim event exactly once before applying the reviewed aggression-threshold
+  correction; retain the prior two-tick excursion and thirty-second window, and require fresh certification and mechanics
+  approval.
+created_by: Tan Yu Xuan
+authorized_by: null
+created_at: '2026-07-26T07:19:24.025043+00:00'
+frozen: true
+changes:
+- variant_id: v02
+  scope: strategy_certification
+  field: certified_implementation_identity
+  old:
+    strategy_id: yush_failed_auction_reclaim
+    implementation_version: 2
+    implementation_sha256: c6fca0c25c08d0e94995d9b3da0295c84ee711019ba442288573fa9e30dd677d
+    manifest_sha256: a927663ecf74949c16f328bf51956599190b02830bdb949610c6262151ea8f09
+  new:
+    strategy_id: yush_failed_auction_reclaim
+    implementation_version: 3
+    implementation_sha256: fbdcb81e187432b6791141cfff942a490641bd34e3fe476b27b8101a79502c2c
+    manifest_sha256: 43c518c8d8071c70c616e647baa896fed42f95c82c2f69c616392d9ebc996eb2
+  reviewed: true
+variants:
+- variant_id: v01
+  mechanic_signature: 40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1
+  strategy:
+    entry:
+      module: yush_orderflow_range
+      params:
+        mechanics:
+          tick_size: 0.25
+          point_value: 50.0
+          contracts: 1
+          commission_per_contract: 2.5
+          max_trades_per_day: 3
+          max_aoi_width_points: 3.0
+          entry_offset_ticks: 2
+          stop_offset_ticks: 2
+          max_stop_points: 5.0
+          value_area_fraction: 0.7
+          range_expansion_fraction: 0.2
+          delta_profile_min_abs: 300
+          delta_bubble_threshold: 300
+          big_trade_threshold: 200
+          big_trade_window_ms: 100
+          breakeven_offset_points: 1.25
+          opening_range_seconds: 32
+          bar_seconds: 180
+          breakout_probe_ticks: 2
+          initial_balance: 50000.0
+          minimum_stop_points: 2.0
+          slippage_ticks: 1
+          delta_neighbour_multiple: 2.0
+          aoi_lineage_mode: exact_fingerprint
+    sl:
+      module: event_aoi_structural_stop
+      params: {}
+    tp:
+      module: event_value_area_management
+      params: {}
+    flatten_time: '11:00:00'
+    event:
+      module: yush_orderflow_range
+      params:
+        tick_size: 0.25
+        point_value: 50.0
+        contracts: 1
+        commission_per_contract: 2.5
+        max_trades_per_day: 3
+        max_aoi_width_points: 3.0
+        entry_offset_ticks: 2
+        stop_offset_ticks: 2
+        max_stop_points: 5.0
+        value_area_fraction: 0.7
+        range_expansion_fraction: 0.2
+        delta_profile_min_abs: 300
+        delta_bubble_threshold: 300
+        big_trade_threshold: 200
+        big_trade_window_ms: 100
+        breakeven_offset_points: 1.25
+        opening_range_seconds: 32
+        bar_seconds: 180
+        breakout_probe_ticks: 2
+        initial_balance: 50000.0
+        minimum_stop_points: 2.0
+        slippage_ticks: 1
+        delta_neighbour_multiple: 2.0
+        aoi_lineage_mode: exact_fingerprint
+  parameter_grid: {}
+  dataset_id: es_databento_trade_events_20250714_20260610_0930_1100_ny
+  validation_gate:
+    required: true
+    lane: event_replay
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 0
+    data_subset:
+      start_date: '2025-07-14'
+      end_date: '2025-07-28'
+    evidence_dir: /Users/yx/Desktop/alphaquest-research-engine/research/evidence/runs/yush_orderflow_range/v01/ES/mechanics_validation_pre_pnl_mechanics_correction_20260726t071923_c676f368/validation_runs/core
+    approval_path: /Users/yx/Desktop/alphaquest-research-engine/research_artifacts/validation_approvals/yush_orderflow_range/pre_pnl_mechanics_correction_20260726t071923_c676f368/v01/approval.json
+- variant_id: v02
+  mechanic_signature: 2595e548d0eb42bfd6ed029f9b88c07bcc1ca3c0f19573d00387f3019db04da1
+  strategy:
+    entry:
+      module: yush_failed_auction_reclaim
+      params:
+        mechanics:
+          tick_size: 0.25
+          point_value: 50.0
+          contracts: 1
+          commission_per_contract: 2.5
+          max_trades_per_day: 3
+          max_stop_points: 5.0
+          value_area_fraction: 0.7
+          delta_profile_min_abs: 300
+          delta_bubble_threshold: 300
+          big_trade_threshold: 200
+          big_trade_window_ms: 100
+          opening_range_seconds: 32
+          bar_seconds: 180
+          initial_balance: 50000.0
+          slippage_ticks: 1
+          delta_neighbour_multiple: 2.0
+          decision_interval_ms: 100
+          reference_distance_ticks: 4
+          excursion_ticks: 2
+          reclaim_window_seconds: 30
+          stop_buffer_ticks: 2
+          time_exit_seconds: 600
+          minimum_reward_risk: 1.0
+    sl:
+      module: event_excursion_structural_stop
+      params: {}
+    tp:
+      module: event_frozen_poc_time_exit
+      params: {}
+    flatten_time: '11:00:00'
+    event:
+      module: yush_failed_auction_reclaim
+      params:
+        tick_size: 0.25
+        point_value: 50.0
+        contracts: 1
+        commission_per_contract: 2.5
+        max_trades_per_day: 3
+        max_stop_points: 5.0
+        value_area_fraction: 0.7
+        delta_profile_min_abs: 300
+        delta_bubble_threshold: 300
+        big_trade_threshold: 200
+        big_trade_window_ms: 100
+        opening_range_seconds: 32
+        bar_seconds: 180
+        initial_balance: 50000.0
+        slippage_ticks: 1
+        delta_neighbour_multiple: 2.0
+        decision_interval_ms: 100
+        reference_distance_ticks: 4
+        excursion_ticks: 2
+        reclaim_window_seconds: 30
+        stop_buffer_ticks: 2
+        time_exit_seconds: 600
+        minimum_reward_risk: 1.0
+  parameter_grid:
+    event.params.excursion_ticks:
+    - 2
+    - 4
+    - 6
+    event.params.reclaim_window_seconds:
+    - 5
+    - 15
+    - 30
+    event.params.stop_buffer_ticks:
+    - 1
+    - 2
+    - 3
+  dataset_id: es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02
+  validation_gate:
+    required: true
+    lane: event_replay
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 0
+    data_subset:
+      start_date: '2026-05-15'
+      end_date: '2026-05-29'
+    evidence_dir: /Users/yx/Desktop/alphaquest-research-engine/research/evidence/runs/yush_orderflow_range/v02/ES/mechanics_validation_pre_pnl_mechanics_correction_20260726t071923_c676f368/validation_runs/core
+    approval_path: /Users/yx/Desktop/alphaquest-research-engine/research_artifacts/validation_approvals/yush_orderflow_range/pre_pnl_mechanics_correction_20260726t071923_c676f368/v02/approval.json

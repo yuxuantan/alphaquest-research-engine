@@ -1,0 +1,65 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "edge_family_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Edge Family Id",
+      "type": "string"
+    },
+    "locked_holdout_window_ids": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Locked Holdout Window Ids",
+      "type": "array"
+    },
+    "max_codex_runs": {
+      "minimum": 1,
+      "title": "Max Codex Runs",
+      "type": "integer"
+    },
+    "max_hypotheses": {
+      "minimum": 1,
+      "title": "Max Hypotheses",
+      "type": "integer"
+    },
+    "max_pnl_trials": {
+      "minimum": 1,
+      "title": "Max Pnl Trials",
+      "type": "integer"
+    },
+    "max_rescue_attempts": {
+      "maximum": 1,
+      "minimum": 0,
+      "title": "Max Rescue Attempts",
+      "type": "integer"
+    },
+    "max_variants": {
+      "maximum": 5,
+      "minimum": 1,
+      "title": "Max Variants",
+      "type": "integer"
+    },
+    "schema": {
+      "const": "alphaquest.research-budget/v1",
+      "default": "alphaquest.research-budget/v1",
+      "enum": [
+        "alphaquest.research-budget/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    }
+  },
+  "required": [
+    "edge_family_id",
+    "max_hypotheses",
+    "max_pnl_trials",
+    "max_variants",
+    "max_rescue_attempts",
+    "max_codex_runs",
+    "locked_holdout_window_ids"
+  ],
+  "title": "ResearchBudgetV1",
+  "type": "object"
+}

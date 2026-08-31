@@ -1,0 +1,132 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "campaign_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "causal_timeline": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Causal Timeline",
+      "type": "array"
+    },
+    "confirmed": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Confirmed",
+      "type": "boolean"
+    },
+    "fill_and_ambiguity_rules": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Fill And Ambiguity Rules",
+      "type": "array"
+    },
+    "handoff_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Handoff Id",
+      "type": "string"
+    },
+    "hypothesis_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Hypothesis Sha256",
+      "type": "string"
+    },
+    "mechanics_intent_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Mechanics Intent Sha256",
+      "type": "string"
+    },
+    "proposed_mechanic": {
+      "minLength": 20,
+      "title": "Proposed Mechanic",
+      "type": "string"
+    },
+    "proposed_variant_id": {
+      "pattern": "^v[0-9]{2}$",
+      "title": "Proposed Variant Id",
+      "type": "string"
+    },
+    "reason_unsupported": {
+      "minLength": 20,
+      "title": "Reason Unsupported",
+      "type": "string"
+    },
+    "required_data_granularity": {
+      "minLength": 3,
+      "title": "Required Data Granularity",
+      "type": "string"
+    },
+    "required_module_contract": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Required Module Contract",
+      "type": "array"
+    },
+    "required_tests": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Required Tests",
+      "type": "array"
+    },
+    "reviewed_hypothesis_artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Reviewed Hypothesis Artifact Sha256",
+      "type": "string"
+    },
+    "reviewed_mechanics_artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Reviewed Mechanics Artifact Sha256",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.engineering-handoff-proposal/v1",
+      "default": "alphaquest.engineering-handoff-proposal/v1",
+      "enum": [
+        "alphaquest.engineering-handoff-proposal/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "status": {
+      "const": "NEEDS MANUAL REVIEW",
+      "default": "NEEDS MANUAL REVIEW",
+      "enum": [
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Status",
+      "type": "string"
+    }
+  },
+  "required": [
+    "handoff_id",
+    "campaign_id",
+    "hypothesis_sha256",
+    "reviewed_hypothesis_artifact_sha256",
+    "mechanics_intent_sha256",
+    "reviewed_mechanics_artifact_sha256",
+    "proposed_variant_id",
+    "reason_unsupported",
+    "causal_timeline",
+    "required_data_granularity",
+    "fill_and_ambiguity_rules",
+    "required_module_contract",
+    "required_tests",
+    "proposed_mechanic"
+  ],
+  "title": "EngineeringHandoffProposalV1",
+  "type": "object"
+}

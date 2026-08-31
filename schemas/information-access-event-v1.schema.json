@@ -1,0 +1,144 @@
+{
+  "$defs": {
+    "InformationCategory": {
+      "enum": [
+        "SOURCE",
+        "RESEARCH_INVENTORY",
+        "CERTIFIED_CATALOG",
+        "DATASET_METADATA",
+        "DEVELOPMENT_RESULT",
+        "WFA_RESULT",
+        "LOCKED_HOLDOUT_RESULT",
+        "FORWARD_RESULT",
+        "CAMPAIGN_POLICY"
+      ],
+      "title": "InformationCategory",
+      "type": "string"
+    },
+    "InformationGranularity": {
+      "enum": [
+        "METADATA",
+        "AGGREGATE",
+        "TRADE_LEVEL",
+        "RAW_MARKET_DATA"
+      ],
+      "title": "InformationGranularity",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "access_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Access Id",
+      "type": "string"
+    },
+    "accessed_at": {
+      "format": "date-time",
+      "title": "Accessed At",
+      "type": "string"
+    },
+    "actor": {
+      "minLength": 1,
+      "title": "Actor",
+      "type": "string"
+    },
+    "artifact_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Artifact Sha256",
+      "type": "string"
+    },
+    "campaign_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "category": {
+      "$ref": "#/$defs/InformationCategory"
+    },
+    "data_window_id": {
+      "anyOf": [
+        {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Data Window Id"
+    },
+    "edge_family_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Edge Family Id",
+      "type": "string"
+    },
+    "event_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Event Sha256",
+      "type": "string"
+    },
+    "granularity": {
+      "$ref": "#/$defs/InformationGranularity"
+    },
+    "locked_holdout": {
+      "title": "Locked Holdout",
+      "type": "boolean"
+    },
+    "previous_event_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Previous Event Sha256",
+      "type": "string"
+    },
+    "purpose": {
+      "minLength": 10,
+      "title": "Purpose",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.information-access-event/v1",
+      "default": "alphaquest.information-access-event/v1",
+      "enum": [
+        "alphaquest.information-access-event/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "task_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Task Id",
+      "type": "string"
+    },
+    "variant_id": {
+      "anyOf": [
+        {
+          "pattern": "^v[0-9]{2}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Variant Id"
+    }
+  },
+  "required": [
+    "access_id",
+    "task_id",
+    "edge_family_id",
+    "campaign_id",
+    "accessed_at",
+    "category",
+    "granularity",
+    "locked_holdout",
+    "purpose",
+    "actor",
+    "artifact_sha256",
+    "previous_event_sha256",
+    "event_sha256"
+  ],
+  "title": "InformationAccessEventV1",
+  "type": "object"
+}

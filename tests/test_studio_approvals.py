@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -10,9 +11,17 @@ import yaml
 
 from alphaquest.dashboard.validation_app import save_manual_review_annotation
 from alphaquest.data.source import data_source_hash
-from alphaquest.studio.approvals import APPROVAL_REVIEW_SCOPE, MechanicsApprovalService
+from alphaquest.studio.approvals import (
+    APPROVAL_REVIEW_SCOPE,
+    MechanicsApprovalService,
+    _sample_categories,
+)
 from alphaquest.studio.candidate_review import CandidateReviewService
-from alphaquest.studio.results import ResultBundleBuilder
+from alphaquest.studio.results import (
+    AccountEvaluationBindingV3,
+    ResultBundleBuilder,
+    ResultBundleV3,
+)
 from alphaquest.validation.promotion_gate import (
     REQUIRED_AUTOMATED_CATEGORIES,
     REQUIRED_AUTOMATED_CHECK_NAMES,
@@ -129,6 +138,8 @@ def _validation_fixture(tmp_path):
                 "entry_time": "2025-01-02T14:30:00Z",
                 "exit_time": "2025-01-02T14:35:00Z",
                 "direction": "long",
+                "entry_order_type": "market",
+                "exit_reason": "target",
                 "r_multiple": 1.0,
                 "pnl_ticks": 4,
                 "was_forced_flatten": False,
@@ -138,6 +149,8 @@ def _validation_fixture(tmp_path):
                 "entry_time": "2025-01-03T14:30:00Z",
                 "exit_time": "2025-01-03T14:35:00Z",
                 "direction": "short",
+                "entry_order_type": "market",
+                "exit_reason": "stop",
                 "r_multiple": -1.0,
                 "pnl_ticks": -4,
                 "was_forced_flatten": False,
@@ -147,6 +160,8 @@ def _validation_fixture(tmp_path):
                 "entry_time": "2025-01-04T14:30:00Z",
                 "exit_time": "2025-01-04T14:35:00Z",
                 "direction": "long",
+                "entry_order_type": "market",
+                "exit_reason": "forced_flatten",
                 "r_multiple": 0.5,
                 "pnl_ticks": 2,
                 "was_forced_flatten": True,
@@ -216,7 +231,13 @@ def test_promotion_gate_accepts_request_local_precomputed_input_hash(tmp_path, m
     assert report["input_data_hash"] == "request-local-input-hash"
 
 
-def _write_complete_finalization(result_dir, config_path):
+def _write_complete_finalization(
+    result_dir,
+    config_path,
+    *,
+    run_id="run-1",
+    research_verdict="PASS",
+):
     source_evidence = result_dir.parent / "runner-evidence.json"
     source_evidence.write_text('{"status":"complete"}\n', encoding="utf-8")
     journal_path = result_dir.parent / "candidate-test-job.recovery.json"
@@ -244,8 +265,8 @@ def _write_complete_finalization(result_dir, config_path):
         "job_id": "candidate-test-job",
         "campaign_id": "demo",
         "variant_id": "v01",
-        "run_id": "run-1",
-        "research_verdict": "PASS",
+        "run_id": run_id,
+        "research_verdict": research_verdict,
         "automatic_replay_permitted": False,
         "source_config": str(config_path.resolve()),
         "result_bundle": "result_bundle_v2.json",
@@ -290,6 +311,155 @@ def test_mechanics_service_selects_every_category_and_requires_annotations(tmp_p
     assert report["status"] == "APPROVED_FOR_TESTING"
     assert report["config_hash"] == approval["config_hash"]
     assert report["input_data_hash"] == approval["input_data_hash"]
+
+
+def test_mechanics_random_category_uses_the_fixed_policy_sample_size(tmp_path):
+    config_path, evidence, _approval_path = _validation_fixture(tmp_path)
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    gate = cfg["research_metadata"]["validation_gate"]
+    gate["manual_review_random_sample_size"] = 5
+    gate["manual_review_seed"] = 7
+    config_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    trades = pd.DataFrame(
+        [
+            {
+                "trade_id": trade_id,
+                "entry_time": f"2025-01-{trade_id:02d}T14:30:00Z",
+                "exit_time": f"2025-01-{trade_id:02d}T14:35:00Z",
+                "direction": "long" if trade_id % 2 else "short",
+                "entry_order_type": "market",
+                "exit_reason": "target" if trade_id % 3 else "stop",
+                "r_multiple": float(trade_id - 6),
+                "pnl_ticks": trade_id - 6,
+                "was_forced_flatten": False,
+            }
+            for trade_id in range(1, 13)
+        ]
+    )
+    trades.to_parquet(evidence / "trades.parquet", index=False)
+    pd.DataFrame(
+        [
+            {
+                "trade_id": trade_id,
+                "timestamp": f"2025-01-{trade_id:02d}T14:30:00Z",
+            }
+            for trade_id in range(1, 13)
+        ]
+    ).to_parquet(evidence / "bar_windows.parquet", index=False)
+    metadata_path = evidence / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["config_hash"] = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+
+    plan = MechanicsApprovalService().plan(config_path)
+
+    assert plan.fixed_random_sample_size == 5
+    assert len(plan.sampling_categories["random_trades"]) == 5
+
+
+def test_universal_sampler_is_row_order_stable_and_covers_execution_lifecycles():
+    trades = pd.DataFrame(
+        [
+            {"trade_id": 1, "direction": "long", "entry_order_type": "market", "exit_reason": "stop"},
+            {"trade_id": 2, "direction": "short", "entry_order_type": "limit", "exit_reason": "target"},
+            {
+                "trade_id": 3,
+                "direction": "long",
+                "entry_order_type": "stop_market",
+                "exit_reason": "time_flatten",
+            },
+            {
+                "trade_id": 4,
+                "direction": "short",
+                "entry_order_type": "stop_market",
+                "exit_reason": "post_target_1_stop",
+            },
+            {
+                "trade_id": 5,
+                "direction": "long",
+                "entry_order_type": "market",
+                "exit_reason": "maximum_holding_time_exit",
+            },
+            {
+                "trade_id": 6,
+                "direction": "short",
+                "entry_order_type": "market",
+                "exit_reason": "target",
+                "warning_flags": "late_fill_warning",
+            },
+            {
+                "trade_id": 7,
+                "direction": "long",
+                "entry_order_type": "market",
+                "exit_reason": "stop",
+                "same_bar_ambiguous": True,
+                "ambiguity_resolution": "pessimistic_stop_first",
+            },
+        ]
+    )
+    transitions = pd.DataFrame(
+        [
+            {"trade_id": 4, "transition": "position_partially_closed"},
+            {"trade_id": 4, "transition": "bracket_amended"},
+        ]
+    )
+
+    first = _sample_categories(
+        trades,
+        transitions,
+        random_sample_size=2,
+        random_seed=7,
+        sample_identity="fixed-evidence",
+    )
+    second = _sample_categories(
+        trades.iloc[::-1].reset_index(drop=True),
+        transitions.iloc[::-1].reset_index(drop=True),
+        random_sample_size=2,
+        random_seed=7,
+        sample_identity="fixed-evidence",
+    )
+
+    assert first == second
+    categories, reasons, blockers = first
+    assert blockers == []
+    assert categories["warning_representatives"] == [6]
+    assert categories["resolved_ambiguities"] == [7]
+    selected_reasons = {reason for values in reasons.values() for reason in values}
+    assert "covers exit_lifecycle:forced_flatten" in selected_reasons
+    assert "covers exit_lifecycle:partial_then_stop" in selected_reasons
+    assert "covers order_amendment:bracket" in selected_reasons
+    assert "covers entry_order:limit" in selected_reasons
+
+
+def test_universal_sampler_blocks_missing_required_fields_and_samples_warnings():
+    trades = pd.DataFrame(
+        [
+            {
+                "trade_id": 1,
+                "direction": pd.NA,
+                "entry_order_type": pd.NA,
+                "exit_reason": pd.NA,
+                "same_bar_ambiguous": True,
+                "ambiguity_resolution": pd.NA,
+                "engine_exit_matches_path": False,
+            }
+        ]
+    )
+
+    categories, reasons, blockers = _sample_categories(
+        trades,
+        pd.DataFrame(),
+        random_sample_size=5,
+        random_seed=7,
+        sample_identity="fixed-evidence",
+    )
+
+    assert any("requires direction" in blocker for blocker in blockers)
+    assert any("requires exit_reason" in blocker for blocker in blockers)
+    assert any("unresolved stop/target ambiguities" in blocker for blocker in blockers)
+    assert categories["warning_representatives"] == [1]
+    assert "warning:exit_path_mismatch" in reasons["1"]
+    assert "covers entry_order:unspecified" in reasons["1"]
 
 
 def test_mechanics_plan_reloads_web_string_trade_id_annotations(tmp_path):
@@ -369,6 +539,19 @@ def test_candidate_review_requires_independent_reviewer_and_is_hash_bound(tmp_pa
         variant_id="v01",
         run_id="run-1",
         verdict="PASS",
+        scientific_validity_verdict="PASS",
+        stage_criteria=[
+            {
+                "stage": "acceptance_oos_test",
+                "metric": "metrics.annualization_available",
+                "operator": "==",
+                "threshold": {"value": True},
+                "actual": {"value": True},
+                "result": "PASS",
+                "reason": "governed evaluation coverage is complete",
+                "decision_role": "scientific_validity",
+            }
+        ],
         initial_balance=10_000.0,
         prop_rule_outcome="PASS",
         forced_flatten_compliance=True,
@@ -420,3 +603,169 @@ def test_candidate_review_requires_independent_reviewer_and_is_hash_bound(tmp_pa
         result_bundle_path=bundle_path,
         config_path=config_path,
     ) == "review_required"
+
+
+def test_destination_candidate_review_accepts_generic_fail_with_valid_account_pass(tmp_path):
+    config_path, evidence, _ = _validation_fixture(tmp_path)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    contract = {
+        "schema": "alphaquest.destination-benchmark-contract/v1",
+        "profiles": [
+            {
+                "profile_id": "apex/eod_50k/funded",
+                "profile_version": "2026-08-14.1",
+                "profile_sha256": "a" * 64,
+                "role": "primary",
+            },
+            {
+                "profile_id": "apex/eod_50k/evaluation",
+                "profile_version": "2026-08-14.1",
+                "profile_sha256": "c" * 64,
+                "role": "comparison",
+            },
+        ],
+        "scientific_validity_required": True,
+        "generic_objective_pass_required": False,
+        "approval_scope": "exact_primary_profile_only",
+    }
+    config["destination_benchmark_contract"] = contract
+    config["destination_benchmark_contract_sha256"] = hashlib.sha256(
+        json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    config_path.write_text(yaml.safe_dump(config), encoding="utf-8")
+    metadata_path = evidence / "metadata.json"
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    metadata["config_hash"] = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    metadata_path.write_text(json.dumps(metadata), encoding="utf-8")
+    _approve_all_samples(config_path, evidence)
+    result_dir = tmp_path / "destination-results"
+    trades = pd.DataFrame(
+        [
+            {
+                "trade_id": 1,
+                "direction": "long",
+                "entry_timestamp": "2025-01-02T14:30:00Z",
+                "exit_timestamp": "2025-01-02T14:35:00Z",
+                "net_pnl": 20.0,
+            }
+        ]
+    )
+    ResultBundleBuilder().build_and_write(
+        trades,
+        result_dir,
+        campaign_id="demo",
+        variant_id="v01",
+        run_id="run-destination",
+        verdict="FAIL",
+        scientific_validity_verdict="PASS",
+        stage_criteria=[
+            {
+                "stage": "acceptance_oos_test",
+                "metric": "metrics.annualization_available",
+                "operator": "==",
+                "threshold": {"value": True},
+                "actual": {"value": True},
+                "result": "PASS",
+                "reason": "complete coverage",
+                "decision_role": "scientific_validity",
+            },
+            {
+                "stage": "acceptance_oos_test",
+                "metric": "metrics.mar",
+                "operator": ">=",
+                "threshold": {"value": 1.0},
+                "actual": {"value": 0.5},
+                "result": "FAIL",
+                "reason": "generic MAR objective missed",
+                "decision_role": "generic_objective",
+            },
+        ],
+    )
+    bundle_path = result_dir / "result_bundle_v2.json"
+    _write_complete_finalization(
+        result_dir,
+        config_path,
+        run_id="run-destination",
+        research_verdict="FAIL",
+    )
+    bundle_v3 = ResultBundleV3(
+        campaign_id="demo",
+        variant_id="v01",
+        run_id="run-destination",
+        generated_at=datetime.now(UTC),
+        scientific_verdict="PASS",
+        scientific_verdict_message="Scientific validity passed; generic objective failed.",
+        scientific_validity_verdict="PASS",
+        generic_objective_verdict="FAIL",
+        result_bundle_v2_path=str(bundle_path.resolve()),
+        result_bundle_v2_sha256=hashlib.sha256(bundle_path.read_bytes()).hexdigest(),
+        account_evaluations=[
+            AccountEvaluationBindingV3(
+                assessment_id="assessment-1",
+                profile_id="apex/eod_50k/funded",
+                profile_version="2026-08-14.1",
+                profile_sha256="a" * 64,
+                account_kind="prop_funded",
+                verdict="PASS",
+                deterministic_verdict="PASS",
+                monte_carlo_verdict="PASS",
+                manifest_path="evaluation_manifest.json",
+                manifest_sha256="b" * 64,
+                destination_candidate_eligible=True,
+                eligibility_blockers=[],
+            ),
+            AccountEvaluationBindingV3(
+                assessment_id="assessment-2",
+                profile_id="apex/eod_50k/evaluation",
+                profile_version="2026-08-14.1",
+                profile_sha256="c" * 64,
+                account_kind="prop_challenge",
+                verdict="PASS",
+                deterministic_verdict="PASS",
+                monte_carlo_verdict="PASS",
+                manifest_path="evaluation_manifest_2.json",
+                manifest_sha256="d" * 64,
+                destination_candidate_eligible=True,
+                eligibility_blockers=[],
+            ),
+        ],
+        account_suitability_complete=True,
+        destination_candidate_profile_ids=[
+            "apex/eod_50k/evaluation",
+            "apex/eod_50k/funded",
+        ],
+    )
+    v3_path = result_dir / "result_bundle_v3.json"
+    v3_path.write_text(
+        json.dumps(bundle_v3.model_dump(mode="json", by_alias=True), sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+
+    review = CandidateReviewService().review(
+        result_bundle_path=bundle_path,
+        config_path=config_path,
+        reviewer="destination-reviewer",
+        decision="approved_candidate",
+        notes="Approved only for the bound Apex funded account profile.",
+        eligibility_basis="destination_specific_pass",
+        result_bundle_v3_path=v3_path,
+        account_assessment_id="assessment-1",
+    )
+
+    assert review.lifecycle_state == "candidate"
+    assert review.eligibility_basis == "destination_specific_pass"
+    assert review.generic_objective_verdict == "FAIL"
+    assert review.account_profile_id == "apex/eod_50k/funded"
+    assert (result_dir / "candidate_review__assessment-1.json").is_file()
+
+    with pytest.raises(ValueError, match="exact frozen primary profile"):
+        CandidateReviewService().review(
+            result_bundle_path=bundle_path,
+            config_path=config_path,
+            reviewer="comparison-reviewer",
+            decision="approved_candidate",
+            notes="A passing comparison account cannot replace the primary benchmark.",
+            eligibility_basis="destination_specific_pass",
+            result_bundle_v3_path=v3_path,
+            account_assessment_id="assessment-2",
+        )

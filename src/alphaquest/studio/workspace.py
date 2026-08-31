@@ -130,7 +130,8 @@ def _studio_publication_status(
         return blocked
     return {
         "studio_managed": True,
-        "workflow_status": "STUDIO-MANAGED · READY",
+        "workflow_status": "INTEGRITY VERIFIED",
+        "integrity_status": "STUDIO-MANAGED · INTEGRITY VERIFIED",
         "workflow_blocker": "",
     }
 
@@ -197,7 +198,7 @@ def refresh_generated_indexes_if_stale(
         for pattern in (
             "**/campaign_test_summary.json",
             "**/reporting_v2/result_bundle_v2.json",
-            "**/reporting_v2/candidate_review.json",
+            "**/reporting_v2/candidate_review*.json",
         ):
             index_inputs.extend(evidence_root.glob(pattern))
     latest_source = max((path.stat().st_mtime for path in index_inputs if path.is_file()), default=0.0)

@@ -3,6 +3,7 @@ import {
   useMemo,
   useState,
   type FormEvent,
+  type MouseEvent as ReactMouseEvent,
   type ReactNode,
 } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -19,6 +20,12 @@ import {
   humanize,
 } from "../components/UI";
 import { useStudio } from "../state";
+import {
+  publicationAvailableStrategyPackages,
+  strategyPackageLabel,
+} from "../strategyAvailability";
+import { OBJECTIVE_TEMPLATES } from "../researchObjectives";
+export { OBJECTIVE_TEMPLATES } from "../researchObjectives";
 import type {
   DatasetSummary,
   DraftView,
@@ -28,8 +35,7 @@ import type {
 } from "../types";
 
 const stepDescriptions = [
-  "Source and hypothesis",
-  "Prior research",
+  "Goals, claim, source, and prior research",
   "Governed bars",
   "Costs and compliance",
   "Causal implementation",
@@ -37,14 +43,52 @@ const stepDescriptions = [
   "Preflight and immutable freeze",
 ];
 
+const VISIBLE_STEP_COUNT = 6;
+
+function visibleStepNumber(sourceStep: number): number {
+  return sourceStep <= 2 ? 1 : sourceStep - 1;
+}
+
 export function WizardPage() {
   const { campaignId = "", step = "1" } = useParams();
   const stepNumber = Math.max(1, Math.min(7, Number(step) || 1));
   const [view, setView] = useState<DraftView | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(true);
+  const [dirty, setDirty] = useState(false);
   const { refresh } = useStudio();
   const navigate = useNavigate();
+  useEffect(() => {
+    setDirty(false);
+  }, [campaignId, stepNumber]);
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!dirty) return;
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
+  useEffect(() => {
+    let restoringCancelledNavigation = false;
+    const warn = () => {
+      if (!dirty || restoringCancelledNavigation) {
+        restoringCancelledNavigation = false;
+        return;
+      }
+      if (
+        !window.confirm(
+          "You have unsaved changes on this step. Leave without saving them?",
+        )
+      ) {
+        restoringCancelledNavigation = true;
+        window.history.go(1);
+      }
+    };
+    window.addEventListener("popstate", warn);
+    return () => window.removeEventListener("popstate", warn);
+  }, [dirty]);
   useEffect(() => {
     setLoading(true);
     setError("");
@@ -59,9 +103,24 @@ export function WizardPage() {
       .finally(() => setLoading(false));
   }, [campaignId]);
   function completed(result: DraftView, next?: number) {
+    setDirty(false);
     setView(result);
     void refresh();
     if (next) navigate(`/research/${campaignId}/design/${next}`);
+  }
+  function guardNavigation(event: ReactMouseEvent<HTMLDivElement>) {
+    if (!dirty) return;
+    const target = event.target as HTMLElement;
+    const link = target.closest("a");
+    if (!link) return;
+    if (
+      !window.confirm(
+        "You have unsaved changes on this step. Leave without saving them?",
+      )
+    ) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   }
   if (loading)
     return (
@@ -84,7 +143,12 @@ export function WizardPage() {
   if (requested && !requested.available)
     return <LockedStep view={view} step={requested} />;
   return (
-    <div className="wizard-layout">
+    <div
+      className="wizard-layout"
+      onInput={() => setDirty(true)}
+      onChange={() => setDirty(true)}
+      onClickCapture={guardNavigation}
+    >
       <aside className="wizard-sidebar">
         <Link className="back-link" to="/research">
           ← All research
@@ -98,34 +162,45 @@ export function WizardPage() {
         </div>
         <nav aria-label="Research design steps">
           <ol>
-            {view.steps.map((item) => (
+            {view.steps.filter((item) => item.number !== 2).map((item) => {
+              const planReview = view.steps.find((candidate) => candidate.number === 2);
+              const combinedPlan = item.number === 1;
+              const complete = combinedPlan
+                ? Boolean(item.complete && planReview?.complete)
+                : item.complete;
+              const current = combinedPlan
+                ? stepNumber <= 2
+                : item.number === stepNumber;
+              const target = combinedPlan && item.complete && !planReview?.complete ? 2 : item.number;
+              return (
               <li key={item.number}>
                 <Link
-                  aria-current={item.number === stepNumber ? "step" : undefined}
-                  className={`${item.number === stepNumber ? "current" : ""} ${item.complete ? "complete" : ""} ${!item.available ? "locked" : ""}`}
+                  aria-current={current ? "step" : undefined}
+                  className={`${current ? "current" : ""} ${complete ? "complete" : ""} ${!item.available ? "locked" : ""}`}
                   to={
                     item.available
-                      ? `/research/${campaignId}/design/${item.number}`
+                      ? `/research/${campaignId}/design/${target}`
                       : `#step-${item.number}`
                   }
                   onClick={(event) => !item.available && event.preventDefault()}
                 >
                   <span className="step-marker">
-                    {item.complete ? (
+                    {complete ? (
                       <Icon name="check" />
                     ) : !item.available ? (
                       <Icon name="lock" />
                     ) : (
-                      item.number
+                      visibleStepNumber(item.number)
                     )}
                   </span>
                   <span>
-                    <strong>{item.label}</strong>
-                    <small>{stepDescriptions[item.number - 1]}</small>
+                    <strong>{combinedPlan ? "Research plan" : item.label}</strong>
+                    <small>{stepDescriptions[visibleStepNumber(item.number) - 1]}</small>
                   </span>
                 </Link>
               </li>
-            ))}
+              );
+            })}
           </ol>
         </nav>
         <Notice tone="info">
@@ -133,12 +208,19 @@ export function WizardPage() {
           <br />
           No observed performance is used while you design this protocol.
         </Notice>
+        <div
+          className={`wizard-save-indicator ${dirty ? "unsaved" : "saved"}`}
+          role="status"
+        >
+          <span />
+          {dirty ? "Unsaved changes" : "No unsaved changes"}
+        </div>
       </aside>
       <div className="wizard-main">
         <div className="mobile-step-progress">
-          <span>Step {stepNumber} of 7</span>
+          <span>Step {visibleStepNumber(stepNumber)} of {VISIBLE_STEP_COUNT}</span>
           <div>
-            <i style={{ width: `${(stepNumber / 7) * 100}%` }} />
+            <i style={{ width: `${(visibleStepNumber(stepNumber) / VISIBLE_STEP_COUNT) * 100}%` }} />
           </div>
         </div>
         <div className="wizard-content">
@@ -218,7 +300,7 @@ function StepHeader({
   return (
     <header className="wizard-header">
       <p className="eyebrow">
-        Step {number} of 7 · About {time}
+        Step {number} of {VISIBLE_STEP_COUNT} · About {time}
       </p>
       <h1>{title}</h1>
       <p>{description}</p>
@@ -273,10 +355,55 @@ function FormError({ error }: { error: string }) {
 }
 
 function BriefStep({ view, onComplete }: StepProps) {
+  const { data } = useStudio();
+  const legacyAiDraftingEnabled =
+    data.settings?.assistant_mode === "legacy_openai_api";
   const draft = view.draft;
   const source = draft.sources?.[0] || {};
   const fp = draft.economic_edge_fingerprint || {};
+  const objectives = draft.research_objectives || {};
+  const defaultDeadline = new Date(Date.now() + 180 * 24 * 60 * 60 * 1000)
+    .toISOString()
+    .slice(0, 10);
   const [form, setForm] = useState({
+    development_goal:
+      objectives.development_goal ||
+      "Determine whether this candidate can survive the frozen research protocol.",
+    development_deadline: objectives.development_deadline || defaultDeadline,
+    evaluation_horizon_months: objectives.evaluation_horizon_months || 24,
+    minimum_annualized_return_percent:
+      (objectives.minimum_annualized_return_fraction ?? 0.2) * 100,
+    minimum_mar: objectives.minimum_mar ?? 0.4,
+    maximum_drawdown_percent:
+      (objectives.maximum_drawdown_fraction ?? 0.1) * 100,
+    minimum_complete_wfa_windows:
+      objectives.minimum_complete_wfa_windows || 3,
+    minimum_wfa_oos_trades: objectives.minimum_wfa_oos_trades || 50,
+    minimum_acceptance_oos_trades:
+      objectives.minimum_acceptance_oos_trades || 30,
+    monte_carlo_min_runs: objectives.monte_carlo_min_runs || 8000,
+    monte_carlo_horizon_months:
+      objectives.monte_carlo_horizon_months || 6,
+    minimum_net_profit_probability_percent:
+      (objectives.minimum_net_profit_probability ?? 0.7) * 100,
+    maximum_account_breach_probability_percent:
+      (objectives.maximum_account_breach_probability ?? 0.1) * 100,
+    forward_incubation_min_calendar_days:
+      objectives.forward_incubation_min_calendar_days || 90,
+    forward_incubation_min_trades:
+      objectives.forward_incubation_min_trades || 30,
+    maximum_variants: objectives.maximum_variants || 5,
+    abandonment_rules: (
+      objectives.abandonment_rules || [
+        "Stop when any frozen stage gate fails; do not tune after observing OOS results.",
+      ]
+    ).join("\n"),
+    retirement_rules: (
+      objectives.retirement_rules || [
+        "Retire after a live risk breach or sustained degradation beyond the frozen limits.",
+      ]
+    ).join("\n"),
+    objectives_confirmed: objectives.confirmed === true,
     title: draft.title || "",
     edge_family: draft.edge_family || "",
     timeframe: draft.timeframe || "1m",
@@ -294,6 +421,9 @@ function BriefStep({ view, onComplete }: StepProps) {
     signal_inputs: (fp.signal_inputs || []).join(", "),
     market_context: fp.market_context || "RTH futures",
   });
+  const [objectiveTemplate, setObjectiveTemplate] = useState<
+    keyof typeof OBJECTIVE_TEMPLATES | "custom"
+  >(objectives.confirmed ? "custom" : "generic_candidate");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [showAi, setShowAi] = useState(false);
@@ -307,6 +437,16 @@ function BriefStep({ view, onComplete }: StepProps) {
   const [pdfBusy, setPdfBusy] = useState(false);
   const update = (key: string, value: any) =>
     setForm((old) => ({ ...old, [key]: value }));
+  function applyObjectiveTemplate(key: keyof typeof OBJECTIVE_TEMPLATES) {
+    const { label: _label, description: _description, ...values } =
+      OBJECTIVE_TEMPLATES[key];
+    setObjectiveTemplate(key);
+    setForm((current) => ({
+      ...current,
+      ...values,
+      objectives_confirmed: false,
+    }));
+  }
   async function toggleAi() {
     const next = !showAi;
     setShowAi(next);
@@ -401,6 +541,10 @@ function BriefStep({ view, onComplete }: StepProps) {
   }
   async function submit(event: FormEvent) {
     event.preventDefault();
+    if (!form.objectives_confirmed) {
+      setError("Confirm the pre-PnL development and risk objectives before continuing.");
+      return;
+    }
     if (!form.link.trim() && !form.doi.trim()) {
       setError("Provide either a source link or DOI before continuing.");
       return;
@@ -409,6 +553,42 @@ function BriefStep({ view, onComplete }: StepProps) {
     setError("");
     try {
       const result = await api.saveBrief(view.campaign_id, {
+        research_objectives: {
+          schema: "alphaquest.research-objectives/v1",
+          development_goal: form.development_goal,
+          development_deadline: form.development_deadline,
+          evaluation_horizon_months: Number(form.evaluation_horizon_months),
+          minimum_annualized_return_fraction:
+            Number(form.minimum_annualized_return_percent) / 100,
+          minimum_mar: Number(form.minimum_mar),
+          maximum_drawdown_fraction:
+            Number(form.maximum_drawdown_percent) / 100,
+          minimum_complete_wfa_windows: Number(
+            form.minimum_complete_wfa_windows,
+          ),
+          minimum_wfa_oos_trades: Number(form.minimum_wfa_oos_trades),
+          minimum_acceptance_oos_trades: Number(
+            form.minimum_acceptance_oos_trades,
+          ),
+          monte_carlo_min_runs: Number(form.monte_carlo_min_runs),
+          monte_carlo_horizon_months: Number(
+            form.monte_carlo_horizon_months,
+          ),
+          minimum_net_profit_probability:
+            Number(form.minimum_net_profit_probability_percent) / 100,
+          maximum_account_breach_probability:
+            Number(form.maximum_account_breach_probability_percent) / 100,
+          forward_incubation_min_calendar_days: Number(
+            form.forward_incubation_min_calendar_days,
+          ),
+          forward_incubation_min_trades: Number(
+            form.forward_incubation_min_trades,
+          ),
+          maximum_variants: Number(form.maximum_variants),
+          abandonment_rules: lines(form.abandonment_rules),
+          retirement_rules: lines(form.retirement_rules),
+          confirmed: true,
+        },
         title: form.title,
         edge_family: form.edge_family,
         timeframe: form.timeframe,
@@ -443,11 +623,259 @@ function BriefStep({ view, onComplete }: StepProps) {
     <form onSubmit={submit}>
       <StepHeader
         number={1}
-        time="5 minutes"
-        title="Declare the economic edge"
-        description="Record a falsifiable claim and its source before any performance is visible."
+        time="10 minutes"
+        title="Set the goals, then declare the edge"
+        description="Freeze useful-success, abandonment, and risk limits before mechanics or performance are visible."
       />
       <FormError error={error} />
+      <Card className="form-section">
+        <div className="form-section-heading">
+          <span>00</span>
+          <div>
+            <h2>Pre-PnL development contract</h2>
+            <p>
+              These goals may be stricter than repository policy, never weaker.
+              Publication binds them by hash to every variant.
+            </p>
+          </div>
+        </div>
+        <div className="objective-template-picker">
+          <Field
+            label="Objective template"
+            hint="Templates only populate repository-safe values. The complete expanded contract is still reviewed and frozen."
+          >
+            <select
+              value={objectiveTemplate}
+              onChange={(event) => {
+                const value = event.target.value;
+                if (value === "custom") {
+                  setObjectiveTemplate("custom");
+                  return;
+                }
+                applyObjectiveTemplate(value as keyof typeof OBJECTIVE_TEMPLATES);
+              }}
+            >
+              {Object.entries(OBJECTIVE_TEMPLATES).map(([key, template]) => (
+                <option key={key} value={key}>{template.label}</option>
+              ))}
+              <option value="custom">Custom governed objective</option>
+            </select>
+          </Field>
+          <Notice tone="info">
+            {objectiveTemplate === "custom"
+              ? "Custom values remain subject to every repository policy floor."
+              : OBJECTIVE_TEMPLATES[objectiveTemplate].description}
+          </Notice>
+        </div>
+        <Field label="Development goal">
+          <textarea
+            rows={2}
+            value={form.development_goal}
+            onChange={(e) => update("development_goal", e.target.value)}
+            required
+          />
+        </Field>
+        <div className="form-grid three">
+          <Field label="Decision deadline">
+            <input
+              type="date"
+              value={form.development_deadline}
+              onChange={(e) => update("development_deadline", e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Evaluation horizon (months)">
+            <input
+              type="number"
+              min="12"
+              value={form.evaluation_horizon_months}
+              onChange={(e) => update("evaluation_horizon_months", e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Maximum variants">
+            <input
+              type="number"
+              min="1"
+              max="5"
+              value={form.maximum_variants}
+              onChange={(e) => update("maximum_variants", e.target.value)}
+              required
+            />
+          </Field>
+        </div>
+        <div className="form-grid three">
+          <Field label="Minimum annualized return (%)">
+            <input
+              type="number"
+              min="0.01"
+              step="0.01"
+              value={form.minimum_annualized_return_percent}
+              onChange={(e) =>
+                update("minimum_annualized_return_percent", e.target.value)
+              }
+              required
+            />
+          </Field>
+          <Field label="Minimum MAR">
+            <input
+              type="number"
+              min="0.4"
+              step="0.01"
+              value={form.minimum_mar}
+              onChange={(e) => update("minimum_mar", e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Maximum drawdown (%)">
+            <input
+              type="number"
+              min="0.01"
+              max="20"
+              step="0.01"
+              value={form.maximum_drawdown_percent}
+              onChange={(e) => update("maximum_drawdown_percent", e.target.value)}
+              required
+            />
+          </Field>
+        </div>
+        <details className="advanced-settings objective-policy-details">
+          <summary>Review WFA, Monte Carlo, forward, and retirement policy</summary>
+        <div className="form-grid three">
+          <Field label="Complete WFA windows">
+            <input
+              type="number"
+              min="3"
+              value={form.minimum_complete_wfa_windows}
+              onChange={(e) => update("minimum_complete_wfa_windows", e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Minimum stitched WFA trades">
+            <input
+              type="number"
+              min="50"
+              value={form.minimum_wfa_oos_trades}
+              onChange={(e) => update("minimum_wfa_oos_trades", e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Minimum final OOS trades">
+            <input
+              type="number"
+              min="30"
+              value={form.minimum_acceptance_oos_trades}
+              onChange={(e) =>
+                update("minimum_acceptance_oos_trades", e.target.value)
+              }
+              required
+            />
+          </Field>
+        </div>
+        <div className="form-grid three">
+          <Field label="Monte Carlo runs">
+            <input
+              type="number"
+              min="8000"
+              value={form.monte_carlo_min_runs}
+              onChange={(e) => update("monte_carlo_min_runs", e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Stress horizon (months)">
+            <input
+              type="number"
+              min="6"
+              value={form.monte_carlo_horizon_months}
+              onChange={(e) => update("monte_carlo_horizon_months", e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Minimum profitable paths (%)">
+            <input
+              type="number"
+              min="70"
+              max="100"
+              step="0.1"
+              value={form.minimum_net_profit_probability_percent}
+              onChange={(e) =>
+                update("minimum_net_profit_probability_percent", e.target.value)
+              }
+              required
+            />
+          </Field>
+        </div>
+        <div className="form-grid three">
+          <Field label="Maximum account breaches (%)">
+            <input
+              type="number"
+              min="0"
+              max="10"
+              step="0.1"
+              value={form.maximum_account_breach_probability_percent}
+              onChange={(e) =>
+                update("maximum_account_breach_probability_percent", e.target.value)
+              }
+              required
+            />
+          </Field>
+          <Field label="Forward incubation days">
+            <input
+              type="number"
+              min="90"
+              value={form.forward_incubation_min_calendar_days}
+              onChange={(e) =>
+                update("forward_incubation_min_calendar_days", e.target.value)
+              }
+              required
+            />
+          </Field>
+          <Field label="Forward incubation trades">
+            <input
+              type="number"
+              min="30"
+              value={form.forward_incubation_min_trades}
+              onChange={(e) =>
+                update("forward_incubation_min_trades", e.target.value)
+              }
+              required
+            />
+          </Field>
+        </div>
+        <div className="form-grid two">
+          <Field label="Abandonment rules" hint="One precommitted stop rule per line">
+            <textarea
+              rows={4}
+              value={form.abandonment_rules}
+              onChange={(e) => update("abandonment_rules", e.target.value)}
+              required
+            />
+          </Field>
+          <Field label="Retirement rules" hint="One live degradation or risk rule per line">
+            <textarea
+              rows={4}
+              value={form.retirement_rules}
+              onChange={(e) => update("retirement_rules", e.target.value)}
+              required
+            />
+          </Field>
+        </div>
+        </details>
+        <label className="check-card">
+          <input
+            type="checkbox"
+            checked={form.objectives_confirmed}
+            onChange={(e) => update("objectives_confirmed", e.target.checked)}
+          />
+          <span>
+            <strong>I confirm these objectives before inspecting strategy PnL</strong>
+            <small>
+              A later change invalidates downstream draft confirmations and requires a new frozen protocol.
+            </small>
+          </span>
+        </label>
+      </Card>
+      {legacyAiDraftingEnabled && (
       <Card className="ai-drafting-card">
         <div>
           <span className="ai-drafting-icon">
@@ -610,6 +1038,7 @@ function BriefStep({ view, onComplete }: StepProps) {
           </div>
         )}
       </Card>
+      )}
       <Card className="form-section">
         <div className="form-section-heading">
           <span>01</span>
@@ -845,7 +1274,7 @@ function DuplicateStep({ view, onComplete }: StepProps) {
   return (
     <form onSubmit={submit}>
       <StepHeader
-        number={2}
+        number={1}
         time="4 minutes"
         title="Review prior research"
         description="AlphaQuest scans active definitions, archives, and ledger history. You decide whether the economics are genuinely distinct."
@@ -898,7 +1327,10 @@ function DuplicateStep({ view, onComplete }: StepProps) {
                     </small>
                   </span>
                 </label>
-                <StatusBadge value={match.lifecycle || "Prior research"} />
+                <div className="tag-row">
+                  <StatusBadge value={match.match_band || match.lifecycle || "Prior research"} />
+                  {match.exact_fingerprint && <StatusBadge value="Exact fingerprint" />}
+                </div>
                 {typeof (match.score ?? match.similarity) === "number" && (
                   <div className="similarity">
                     <span
@@ -918,6 +1350,13 @@ function DuplicateStep({ view, onComplete }: StepProps) {
                   <div className="tag-row">
                     {match.match_reasons.map((reason) => (
                       <span key={reason}>{reason}</span>
+                    ))}
+                  </div>
+                )}
+                {(match.matched_dimensions || []).length > 0 && (
+                  <div className="tag-row" aria-label="Matched economic dimensions">
+                    {match.matched_dimensions!.map((dimension) => (
+                      <span key={dimension}>{humanize(dimension)}</span>
                     ))}
                   </div>
                 )}
@@ -1052,15 +1491,18 @@ function DatasetStep({ view, onComplete }: StepProps) {
   const { data } = useStudio();
   const eligible = data.libraries?.datasets || [];
   const draft = view.draft;
-  const [selected, setSelected] = useState(draft.dataset?.dataset_id || "");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
   const filtered = eligible.filter(
     (item) =>
       item.symbol === draft.instrument &&
       item.timeframe === draft.timeframe &&
       item.quality_verdict === "PASS",
   );
+  const [selected, setSelected] = useState(
+    draft.dataset?.dataset_id ||
+      (filtered.length === 1 ? filtered[0].dataset_id : ""),
+  );
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const chosen = filtered.find((item) => item.dataset_id === selected);
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -1077,7 +1519,7 @@ function DatasetStep({ view, onComplete }: StepProps) {
   return (
     <form onSubmit={submit}>
       <StepHeader
-        number={3}
+        number={2}
         time="3 minutes"
         title="Choose governed market data"
         description={`Only ${draft.instrument} ${draft.timeframe} bars with a PASS quality verdict can enter this protocol.`}
@@ -1187,6 +1629,16 @@ function DatasetStep({ view, onComplete }: StepProps) {
               <strong>{chosen.invalid_ohlc_count || 0}</strong>Invalid OHLC
             </span>
           </div>
+          {chosen.research_readiness && (
+            <Notice
+              tone={chosen.research_readiness.status === "READY" ? "success" : "warning"}
+              title={`Research-window forecast: ${humanize(chosen.research_readiness.status)}`}
+            >
+              {chosen.research_readiness.available_months ?? "Unknown"} months available; approximately{" "}
+              {chosen.research_readiness.required_months} required. {chosen.research_readiness.blockers.join(" ")}
+              <br />This forecast does not predict signal count or performance.
+            </Notice>
+          )}
           <TechnicalDetails>
             <pre>{JSON.stringify(chosen, null, 2)}</pre>
           </TechnicalDetails>
@@ -1202,6 +1654,9 @@ function ExecutionStep({ view, onComplete }: StepProps) {
   const draft = view.draft;
   const current = draft.execution || {};
   const settings = data.settings || {};
+  const currentPrimaryAccount = (current.target_account_profiles || []).find(
+    (item: any) => item.role === "primary",
+  );
   const defaults =
     draft.instrument === "NQ"
       ? { tick_size: 0.25, point_value: 20, tick_value: 5 }
@@ -1226,23 +1681,61 @@ function ExecutionStep({ view, onComplete }: StepProps) {
     initial_balance:
       current.initial_balance || settings.default_initial_balance || 150000,
     prop_profile: current.prop_profile || "configured_local_profile",
+    target_account_profile_key: currentPrimaryAccount
+      ? `${currentPrimaryAccount.profile_id}@${currentPrimaryAccount.version || ""}`
+      : "",
   });
   const [confirmed, setConfirmed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const update = (k: string, v: any) => setForm((old) => ({ ...old, [k]: v }));
+  function restoreGovernedDefaults() {
+    setForm((currentForm) => ({
+      ...currentForm,
+      flatten_time: settings.default_flatten_time || "15:55:00",
+      commission_per_contract:
+        settings.default_commission_per_contract ?? 2.5,
+      slippage_ticks: settings.default_slippage_ticks ?? 1,
+      initial_balance: settings.default_initial_balance || 150000,
+      tick_size: defaults.tick_size,
+      point_value: defaults.point_value,
+      tick_value: defaults.tick_value,
+    }));
+    setConfirmed(false);
+  }
   const propProfiles = data.libraries?.prop_profiles || [];
+  const accountProfiles = data.libraries?.account_profiles || [];
   const selectedProfile = propProfiles.find(
     (item: any) => item.profile_id === form.prop_profile,
+  );
+  const selectedAccountProfile = accountProfiles.find(
+    (item: any) =>
+      `${item.profile_id}@${item.version || ""}` === form.target_account_profile_key,
   );
   async function submit(e: FormEvent) {
     e.preventDefault();
     setBusy(true);
     setError("");
     try {
+      const { target_account_profile_key, ...legacyExecution } = form;
+      const [targetProfileId, targetVersion] = target_account_profile_key
+        ? target_account_profile_key.split("@", 2)
+        : ["", ""];
       onComplete(
         await api.saveExecution(view.campaign_id, {
-          execution: { ...form, overnight_allowed: false },
+          execution: {
+            ...legacyExecution,
+            overnight_allowed: false,
+            target_account_profiles: targetProfileId
+              ? [
+                  {
+                    profile_id: targetProfileId,
+                    version: targetVersion || null,
+                    role: "primary",
+                  },
+                ]
+              : [],
+          },
           roll_policy_confirmed: confirmed,
         }),
       );
@@ -1255,7 +1748,7 @@ function ExecutionStep({ view, onComplete }: StepProps) {
   return (
     <form onSubmit={submit}>
       <StepHeader
-        number={4}
+        number={3}
         time="4 minutes"
         title="Confirm realistic execution"
         description="Set costs, session rules, and mandatory flattening before mechanics are designed."
@@ -1263,10 +1756,17 @@ function ExecutionStep({ view, onComplete }: StepProps) {
       <FormError error={error} />
       <Notice
         tone="info"
-        title={`${draft.instrument} instrument defaults applied`}
+        title="Governed values inherited once"
       >
-        Tick size, point value, and tick value are visible for review. Overnight
-        exposure remains prohibited in Studio V1.
+        Studio inherited {draft.instrument} constants plus the commission,
+        slippage, balance, and flatten defaults from Settings. Confirm the
+        resolved contract here; downstream definitions reuse it without asking
+        you to type it again.
+        <div className="notice-actions">
+          <Button type="button" variant="secondary" onClick={restoreGovernedDefaults}>
+            Restore governed defaults
+          </Button>
+        </div>
       </Notice>
       <Card className="form-section">
         <div className="form-section-heading">
@@ -1350,10 +1850,33 @@ function ExecutionStep({ view, onComplete }: StepProps) {
               ))}
             </select>
           </Field>
+          <Field label="Target account assessment">
+            <select
+              value={form.target_account_profile_key}
+              onChange={(e) => update("target_account_profile_key", e.target.value)}
+            >
+              <option value="">No destination selected</option>
+              {accountProfiles
+                .filter((item: any) => item.promotable)
+                .map((item: any) => (
+                  <option
+                    key={`${item.profile_id}@${item.version}`}
+                    value={`${item.profile_id}@${item.version}`}
+                  >
+                    {item.name}
+                  </option>
+                ))}
+            </select>
+          </Field>
         </div>
         {selectedProfile && (
           <Notice tone="info" title={selectedProfile.name}>
             {selectedProfile.description} Challenge target {selectedProfile.challenge_profit_target_pct}% · drawdown limit {selectedProfile.drawdown_limit_pct}% · minimum {selectedProfile.minimum_trading_days} trading days. The complete resolved rules are frozen into every variant config.
+          </Notice>
+        )}
+        {selectedAccountProfile && (
+          <Notice tone="warning" title={selectedAccountProfile.name}>
+            {selectedAccountProfile.description} Rule version {selectedAccountProfile.version}, effective {selectedAccountProfile.effective_from}. {selectedAccountProfile.evaluation_price_input_required && selectedAccountProfile.activation_fee_input_required ? "A timestamped evaluation checkout price and activation fee will be required for cost-adjusted assessment." : selectedAccountProfile.evaluation_price_input_required ? "A timestamped evaluation checkout price will be required for cost-adjusted assessment." : selectedAccountProfile.activation_fee_input_required ? "A timestamped activation fee will be required for cost-adjusted assessment." : "No separate acquisition-cost input is required."}
           </Notice>
         )}
         <details className="advanced-settings">
@@ -1458,9 +1981,8 @@ function MechanicsStep({ view, onComplete }: StepProps) {
     api
       .libraries()
       .then((result) => {
-        const packages = (result.modules || []).filter(
-          (item) =>
-            item.strategy_package && item.certification_status === "certified",
+        const packages = publicationAvailableStrategyPackages(
+          result.modules || [],
         );
         setEventStrategies(packages);
         if (!eventStrategy && packages.length) setEventStrategy(packages[0].name);
@@ -1539,7 +2061,7 @@ function MechanicsStep({ view, onComplete }: StepProps) {
   return (
     <form onSubmit={submit}>
       <StepHeader
-        number={5}
+        number={4}
         time="5 minutes"
         title="Choose how the idea becomes mechanics"
         description="Only representations that preserve the frozen hypothesis and causal timing may proceed."
@@ -2008,9 +2530,12 @@ function MechanicsStep({ view, onComplete }: StepProps) {
                     onChange={() => setEventStrategy(item.name)}
                   />
                   <span>
-                    <strong>{humanize(item.name)}</strong>
+                    <strong>
+                      {strategyPackageLabel(item) || humanize(item.name)}
+                    </strong>
                     <small>
-                      Implementation v{item.implementation_version} · {item.summary}
+                      Implementation v{item.implementation_version} ·{" "}
+                      {item.strategy_description || item.summary}
                     </small>
                   </span>
                   <span className="radio-dot" />
@@ -2250,7 +2775,7 @@ function VariantsStep({ view, onComplete }: StepProps) {
   return (
     <div>
       <StepHeader
-        number={6}
+        number={5}
         time="8 minutes"
         title="Confirm the first expression"
         description="Freeze only the initial mechanic now. A different expression may be proposed later only after this one is manually reviewed and fails."
@@ -2295,24 +2820,8 @@ function VariantsStep({ view, onComplete }: StepProps) {
             <Card className="variant-editor">
               <div className="variant-editor-head">
                 <div>
-                  <p className="eyebrow">Variant {selected + 1} of 5</p>
+                  <p className="eyebrow">Initial variant · 1 of 1</p>
                   <h2>{current.title || `Variant ${selected + 1}`}</h2>
-                </div>
-                <div className="variant-nav">
-                  <button
-                    aria-label="Previous variant"
-                    disabled={selected === 0}
-                    onClick={() => setSelected(selected - 1)}
-                  >
-                    ←
-                  </button>
-                  <button
-                    aria-label="Next variant"
-                    disabled={selected === 4}
-                    onClick={() => setSelected(selected + 1)}
-                  >
-                    →
-                  </button>
                 </div>
               </div>
               <div className="mechanic-strip">
@@ -2338,7 +2847,10 @@ function VariantsStep({ view, onComplete }: StepProps) {
                     onChange={(e) => update("title", e.target.value)}
                   />
                 </Field>
-                <Field label="Material difference from the other four">
+                <Field
+                  label="How this mechanic expresses the edge"
+                  hint="Describe why this causal entry, invalidation, and exit implement the hypothesis. Later variants are not designed now."
+                >
                   <input
                     value={current.material_difference || ""}
                     onChange={(e) =>
@@ -2576,7 +3088,11 @@ function ProtocolStep({ view, onComplete }: StepProps) {
     ["Execution rules", Boolean(draft.execution)],
     [
       "Certified mechanics",
-      ["certified_recipe", "visual_completed_bar_rule"].includes(
+      [
+        "certified_recipe",
+        "visual_completed_bar_rule",
+        "certified_event_replay",
+      ].includes(
         draft.authoring_lane,
       ),
     ],
@@ -2586,23 +3102,15 @@ function ProtocolStep({ view, onComplete }: StepProps) {
         draft.variants.every((v: any) => v.confirmed),
     ],
   ];
-  async function freeze() {
-    setBusy(true);
-    setError("");
-    try {
-      const result = await api.freeze(view.campaign_id);
-      setFrozen(true);
-      onComplete(result);
-    } catch (reason) {
-      setError(message(reason));
-    } finally {
-      setBusy(false);
-    }
-  }
   async function publish() {
     setBusy(true);
     setError("");
     try {
+      if (!frozen) {
+        const result = await api.freeze(view.campaign_id);
+        setFrozen(true);
+        onComplete(result);
+      }
       await api.publish(view.campaign_id);
       setPublished(true);
       window.setTimeout(
@@ -2618,10 +3126,10 @@ function ProtocolStep({ view, onComplete }: StepProps) {
   return (
     <div>
       <StepHeader
-        number={7}
+        number={6}
         time="5 minutes"
-        title="Review and freeze the protocol"
-        description="This is the final pre-PnL checkpoint. A later data or mechanics change requires an explicit governed follow-up."
+        title="Review and publish the frozen protocol"
+        description="One action runs strict validation, freezes the exact contract, and publishes transactionally. A later data or mechanics change still requires an explicit governed follow-up."
       />
       <FormError error={error} />
       {published && (
@@ -2766,8 +3274,8 @@ function ProtocolStep({ view, onComplete }: StepProps) {
         back={6}
         busy={busy}
         disabled={(!frozen && !confirm) || published}
-        label={frozen ? "Publish governed campaign" : "Validate and freeze"}
-        onNext={() => void (frozen ? publish() : freeze())}
+        label="Review and publish governed campaign"
+        onNext={() => void publish()}
       />
     </div>
   );

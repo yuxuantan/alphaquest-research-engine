@@ -1,0 +1,541 @@
+schema: alphaquest.strategy-certification/v1
+strategy_id: yush_adaptive_orderflow_range
+implementation_version: 26
+certification_status: certified
+lane: canonical_event_replay
+factory: alphaquest.strategy_modules.event.yush_chart_fanatics_range:build_strategy
+entry_module: yush_adaptive_orderflow_range
+stop_module: event_sweep_structural_stop
+target_module: event_value_area_scale_out
+source_files:
+- src/alphaquest/authoring/models.py
+- src/alphaquest/strategy_certification.py
+- src/alphaquest/backtest/contracts.py
+- src/alphaquest/backtest/engine.py
+- src/alphaquest/backtest/event_replay.py
+- src/alphaquest/backtest/event_replay_cache.py
+- src/alphaquest/backtest/fills.py
+- src/alphaquest/backtest/risk.py
+- src/alphaquest/backtest/sizing.py
+- src/alphaquest/data/scid_execution.py
+- src/alphaquest/data/sierra_events.py
+- src/alphaquest/data/sierra_session_stream.py
+- src/alphaquest/research/core_grid.py
+- src/alphaquest/strategy_modules/event/__init__.py
+- src/alphaquest/strategy_modules/event/runner.py
+- src/alphaquest/strategy_modules/event/yush_chart_fanatics_range.py
+- src/alphaquest/run_core.py
+- src/alphaquest/utils/params.py
+- src/alphaquest/validation/checks.py
+- tools/build_yush_big_trade_context.py
+implementation_sha256: e5d362fcbabf79e7ac976bc85e92c27e22f79fcc434232ec9fb93d86f60e8a83
+required_test_categories:
+- session_logic
+- entry_timing
+- stop_target_ordering
+- forced_flatten
+- no_lookahead
+- registry_and_runner
+required_tests:
+- tests/test_yush_chart_fanatics_range.py
+- tests/test_yush_big_trade_context.py
+- tests/test_event_replay_partial_exit.py
+- tests/test_event_replay.py
+- tests/test_position_sizing.py
+- tests/test_event_replay_cache.py
+- tests/test_core_grid.py
+- tests/test_scid_execution.py
+- tests/test_sierra_events.py
+- tests/test_sierra_session_stream.py
+- tests/test_validation_checks.py
+parameters:
+  tick_size:
+    category: entry
+    value_type: number
+    default: 0.25
+    description: ES minimum price increment.
+    tunable: false
+    studio_editable: false
+    minimum: 0.25
+    maximum: 0.25
+  point_value:
+    category: entry
+    value_type: number
+    default: 50.0
+    description: Dollar value of one ES point.
+    tunable: false
+    studio_editable: false
+    minimum: 50.0
+    maximum: 50.0
+  commission_per_contract:
+    category: entry
+    value_type: number
+    default: 1.55
+    description: Per-side commission; 3.10 dollars round trip per contract.
+    tunable: false
+    studio_editable: false
+    minimum: 1.55
+    maximum: 1.55
+  bar_seconds:
+    category: entry
+    value_type: integer
+    default: 180
+    description: All signal, profile, regime and holding-period bars are three minutes.
+    tunable: false
+    studio_editable: false
+    minimum: 180
+    maximum: 180
+  price_bin_ticks:
+    category: entry
+    value_type: integer
+    default: 4
+    description: Developing volume and delta profiles use one-point ES bins.
+    tunable: false
+    studio_editable: false
+    minimum: 4
+    maximum: 4
+  value_area_fraction:
+    category: entry
+    value_type: number
+    default: 0.7
+    description: Developing and rolling profiles contain seventy percent of volume.
+    tunable: false
+    studio_editable: false
+    minimum: 0.7
+    maximum: 0.7
+  value_area_method:
+    category: entry
+    value_type: string
+    default: motivewave_standard
+    description: MotiveWave Standard starts at the POC and repeatedly adds the higher-volume
+      adjacent pair of two one-point rows; exact pair-volume ties select the lower
+      pair deterministically. VAL is the lower boundary and VAH the upper boundary
+      displayed by MotiveWave.
+    tunable: false
+    studio_editable: false
+    choices:
+    - motivewave_standard
+  opening_range_seconds:
+    category: entry
+    value_type: integer
+    default: 30
+    description: ORH and ORL use trades from 09:30:00 through 09:30:29 New York.
+    tunable: false
+    studio_editable: false
+    minimum: 30
+    maximum: 30
+  aoi_level_distance_ticks:
+    category: entry
+    value_type: integer
+    default: 4
+    description: AOI categories and candidate edges use a four-tick proximity radius.
+    tunable: false
+    studio_editable: false
+    minimum: 4
+    maximum: 4
+  aoi_big_trade_lookback_minutes:
+    category: entry
+    value_type: integer
+    default: 30
+    description: Only causally completed large-trade bursts from the preceding thirty
+      minutes may establish an institutional footprint at the value edge.
+    tunable: false
+    studio_editable: false
+    minimum: 30
+    maximum: 30
+  big_trade_reference_percentile:
+    category: entry
+    value_type: number
+    default: 0.995
+    description: A completed execution burst qualifies only at or above the causal
+      99.5th percentile of prior-session burst volume.
+    tunable: false
+    studio_editable: false
+    minimum: 0.995
+    maximum: 0.995
+  big_trade_lookback_sessions:
+    category: entry
+    value_type: integer
+    default: 20
+    description: The adaptive large-execution threshold uses exactly the previous
+      twenty completed RTH sessions and never the current session.
+    tunable: false
+    studio_editable: false
+    minimum: 20
+    maximum: 20
+  big_trade_interval_ms:
+    category: entry
+    value_type: integer
+    default: 100
+    description: Large executions aggregate inside fixed one-hundred-millisecond intervals
+      aligned to the RTH open.
+    tunable: false
+    studio_editable: false
+    minimum: 100
+    maximum: 100
+  big_trade_price_bucket_ticks:
+    category: entry
+    value_type: integer
+    default: 1
+    description: Each large-execution aggregation is isolated to one ES price tick.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+    maximum: 1
+  delta_profile_percentile:
+    category: entry
+    value_type: number
+    default: 0.9
+    description: The delta-profile AOI point requires top-decile absolute developing
+      bin delta.
+    tunable: false
+    studio_editable: false
+    minimum: 0.9
+    maximum: 0.9
+  regime_window_bars:
+    category: entry
+    value_type: integer
+    default: 10
+    description: Each rolling regime window contains ten completed three-minute bars.
+    tunable: false
+    studio_editable: false
+    minimum: 10
+    maximum: 10
+  trend_midpoint_shift_ticks:
+    category: entry
+    value_type: integer
+    default: 8
+    description: Trend invalidation requires an eight-tick rolling value-midpoint
+      shift.
+    tunable: false
+    studio_editable: false
+    minimum: 8
+    maximum: 8
+  trend_poc_shift_ticks:
+    category: entry
+    value_type: integer
+    default: 8
+    description: Trend invalidation requires an eight-tick rolling POC shift.
+    tunable: false
+    studio_editable: false
+    minimum: 8
+    maximum: 8
+  trend_overlap_maximum:
+    category: entry
+    value_type: number
+    default: 0.5
+    description: Trend windows may overlap by at most fifty percent.
+    tunable: false
+    studio_editable: false
+    minimum: 0.5
+    maximum: 0.5
+  trend_efficiency_minimum:
+    category: entry
+    value_type: number
+    default: 0.55
+    description: Trend thirty-minute directional efficiency must be at least 0.55.
+    tunable: false
+    studio_editable: false
+    minimum: 0.55
+    maximum: 0.55
+  sweep_minimum_ticks:
+    category: entry
+    value_type: integer
+    default: 2
+    description: A liquidity sweep must extend at least two ticks beyond the frozen
+      edge.
+    tunable: true
+    studio_editable: true
+    minimum: 2
+    maximum: 6
+    choices:
+    - 2
+    - 4
+    - 6
+  failure_confirmation_bars:
+    category: entry
+    value_type: integer
+    default: 3
+    description: Breakout participants must fail within three completed bars after
+      the sweep.
+    tunable: true
+    studio_editable: true
+    minimum: 2
+    maximum: 3
+    choices:
+    - 2
+    - 3
+  morning_entry_start:
+    category: entry
+    value_type: string
+    default: 09:33:00
+    description: First New York entry window begins after the first completed bar.
+    tunable: false
+    studio_editable: false
+  morning_entry_end:
+    category: entry
+    value_type: string
+    default: '11:30:00'
+    description: First New York entry window cutoff.
+    tunable: false
+    studio_editable: false
+  afternoon_entry_start:
+    category: entry
+    value_type: string
+    default: '13:30:00'
+    description: Second New York entry window begins after the midday interval.
+    tunable: false
+    studio_editable: false
+  afternoon_entry_end:
+    category: entry
+    value_type: string
+    default: '15:30:00'
+    description: Second New York entry window cutoff.
+    tunable: false
+    studio_editable: false
+  entry_offset_ticks:
+    category: entry
+    value_type: integer
+    default: 1
+    description: After a completed failure close, the causal entry trigger is fixed
+      one tick inside the frozen AOI edge in the reversal direction.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+    maximum: 1
+  stop_offset_ticks:
+    category: sl
+    value_type: integer
+    default: 2
+    description: Protective stop is two ticks beyond the sweep-to-entry adverse extreme.
+    tunable: false
+    studio_editable: false
+    minimum: 2
+    maximum: 2
+  minimum_stop_ticks:
+    category: sl
+    value_type: integer
+    default: 6
+    description: Reject stops narrower than six ticks.
+    tunable: false
+    studio_editable: false
+    minimum: 6
+    maximum: 6
+  maximum_stop_ticks:
+    category: sl
+    value_type: integer
+    default: 60
+    description: Absolute stop-distance ceiling is sixty ticks.
+    tunable: false
+    studio_editable: false
+    minimum: 60
+    maximum: 60
+  maximum_stop_atr_multiple:
+    category: sl
+    value_type: number
+    default: 1.25
+    description: Stop distance cannot exceed 1.25 times causal three-minute ATR14.
+    tunable: true
+    studio_editable: true
+    minimum: 1.0
+    maximum: 1.5
+    choices:
+    - 1.0
+    - 1.25
+    - 1.5
+  atr_lookback_bars:
+    category: sl
+    value_type: integer
+    default: 14
+    description: Stop volatility context uses Wilder ATR14 on completed three-minute
+      bars.
+    tunable: false
+    studio_editable: false
+    minimum: 14
+    maximum: 14
+  target_1_fraction:
+    category: tp
+    value_type: number
+    default: 0.5
+    description: Exit fifty percent at the frozen developing value midpoint when position
+      size permits.
+    tunable: false
+    studio_editable: false
+    minimum: 0.5
+    maximum: 0.5
+  maximum_holding_bars:
+    category: tp
+    value_type: integer
+    default: 12
+    description: Exit any remainder after twelve completed three-minute bars.
+    tunable: true
+    studio_editable: true
+    minimum: 8
+    maximum: 16
+    choices:
+    - 8
+    - 12
+    - 16
+  entry_expiry_bars:
+    category: entry
+    value_type: integer
+    default: 2
+    description: Cancel an unfilled stop entry after two completed bars.
+    tunable: false
+    studio_editable: false
+    minimum: 2
+    maximum: 2
+  maximum_entries_per_aoi:
+    category: entry
+    value_type: integer
+    default: 1
+    description: A frozen directional AOI price may produce at most one filled entry
+      during the session.
+    tunable: false
+    studio_editable: false
+    minimum: 1
+    maximum: 1
+  risk_budget_dollars:
+    category: entry
+    value_type: number
+    default: 1600.0
+    description: Cap total planned trade risk including estimated costs at 1600 dollars,
+      sufficient for two ES contracts at the largest certified stop after entry slippage.
+    tunable: false
+    studio_editable: false
+    minimum: 1600.0
+    maximum: 1600.0
+  atr_context_path:
+    category: sl
+    value_type: string
+    default: research/datasets/es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02/atr14_3m_eth_context.parquet
+    description: Hash-bound causal ATR seed for the first RTH bar.
+    tunable: false
+    studio_editable: false
+  atr_context_sha256:
+    category: sl
+    value_type: string
+    default: 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+    description: Required SHA-256 of the ATR context artifact.
+    tunable: false
+    studio_editable: false
+  big_trade_context_path:
+    category: entry
+    value_type: string
+    default: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q995_prior20_context.parquet
+    description: Causal session-indexed adaptive large-execution thresholds derived
+      from completed bursts in the previous twenty RTH sessions.
+    tunable: false
+    studio_editable: false
+  big_trade_context_sha256:
+    category: entry
+    value_type: string
+    default: 139f53eea8b3808390c891831c659ba8d9e5c659e8ae9b7ea17644d8fa481ca6
+    description: Required SHA-256 of the adaptive large-execution context artifact.
+    tunable: false
+    studio_editable: false
+studio:
+  visible: true
+  label: Yush Institutional Range-Edge Failure
+  description: A frozen developing value edge becomes eligible only after adaptive
+    large-execution or top-decile delta evidence, then trades a causally confirmed
+    failed excursion unless a direction-aligned breakout trend is present.
+  timeframe_rationale: Three-minute bars define the developing profiles, rolling thirty-minute
+    trend-veto windows, sweep and failure sequence, ATR14, order expiry and maximum
+    hold. Entries are restricted to 09:33-11:30 and 13:30-15:30 New York, and all
+    positions flatten at 15:55.
+  execution_defaults:
+    timeframe: 3m
+    entry_start: 09:33:00
+    latest_entry_time: '15:30:00'
+    flatten_time: '15:55:00'
+    max_trades_per_day: 0
+    daily_loss_limit: 1000000000000.0
+    daily_profit_stop: 1000000000000.0
+    commission_per_contract: 1.55
+    slippage_ticks: 1
+    entry_slippage_ticks: 1
+    protective_stop_slippage_ticks: 1
+    target_limit_slippage_ticks: 0
+    market_exit_slippage_ticks: 1
+    event_stop_market_fill_policy: trade_event_price_on_gap
+    contracts: 2
+    position_sizing:
+      mode: fixed_dollar_risk
+      risk_budget: 1600.0
+      cost_allowance_per_contract: 28.1
+      rounding: floor
+      min_contracts: 2
+      max_contracts: 2
+    prop_max_contracts: 2
+    monte_carlo_position_sizing:
+      mode: fixed_contracts
+      contracts: 2
+  mechanics_review:
+    mechanic_expresses_edge: 'Freeze the exact developing VAH for a potential short
+      or VAL for a potential long only when that edge contains a causal institutional
+      footprint: either an execution burst at or above the prior-twenty-session 99.5th
+      percentile or top-decile absolute developing delta. Trade only after price sweeps
+      the frozen edge and a completed bar closes back inside, unless the completed
+      rolling windows show a direction-aligned breakout trend.'
+    entry_logic_rationale: Market levels remain optional context and never qualify
+      an AOI. A completed value edge needs at least one institutional footprint. Developing
+      volume and delta use four-tick ES rows. Value starts at the lower-tied maximum-volume
+      POC and follows MotiveWave Standard by comparing the next two rows below with
+      the next two above, adding the higher-volume pair until at least seventy percent
+      is included; an exact pair-volume tie selects the lower pair. VAL is the lower
+      boundary of the lowest included row and VAH is the upper boundary of the highest
+      included row. Delta qualification uses the included boundary row rather than
+      the first row outside value. Large executions sum fixed 100 ms cells aligned
+      to 09:30 separately for each price tick and aggressor side. The threshold is
+      the 99.5th percentile of those cells in the prior twenty sessions, so it identifies
+      exceptional activity without an arbitrary contract count and excludes the current
+      session. The alternative footprint is absolute cumulative delta at the edge's
+      one-point bin at or above the nearest-rank ninetieth percentile of observed
+      developing profile bins. A two-tick excursion beyond the frozen edge starts
+      a sweep; within three completed bars, price must close at least one tick back
+      inside. A bullish breakout trend vetoes shorts and a bearish breakout trend
+      vetoes longs; the opposite trend does not veto the reversal. After confirmation,
+      place a fixed trigger one tick inside the frozen edge, active only from the
+      next ordered trade event. Each directional edge price may fill once per session.
+    stop_loss_rationale: Place the protective stop two ticks beyond the highest or
+      lowest price observed from sweep through entry; reject distances below six ticks
+      or above the smaller of sixty ticks and 1.25 times causal ATR14.
+    target_exit_rationale: Require midpoint reward of at least 1R and opposite value-edge
+      reward of at least 2R before entry. Every accepted entry contains exactly two
+      contracts. Exit one at the frozen midpoint, move the remaining contract's stop
+      one tick beyond entry, and exit that contract at the opposite value edge or
+      after twelve bars.
+    profitability_rationale: The proposed edge is that a failed excursion beyond a
+      value boundary carrying evidence of exceptional prior activity reveals rejection;
+      participants caught outside value may help price rotate first to the profile
+      midpoint frozen when the AOI qualified and, conditionally, to its opposite value
+      edge.
+    known_failure_modes: A sweep can be a brief pause before genuine continuation;
+      developing profiles can change after the causal snapshot; burst classification
+      can miss institutionally split execution; percentile estimates can lag abrupt
+      volume-regime changes; the trend veto can confirm only after completed windows;
+      and cost-aware sizing can reduce a valid setup to no executable contract.
+    session_logic_rationale: Evaluate the same predeclared range-edge mechanic in
+      two liquid RTH windows, 09:33-11:30 and 13:30-15:30 New York. Core signal evaluation
+      has no generic daily trade cap, daily-loss gate or cooldown; account and prop-risk
+      controls remain a separate execution layer. Flatten at 15:55.
+    causal_availability: Profiles, trend state, ATR, delta bins and signal bars publish
+      only after the relevant three-minute close. Orders created from a close activate
+      no earlier than the next ordered trade event. Execution bursts become available
+      only when a side, price-range or time-gap break completes them. MotiveWave Standard
+      value-area pairs use only volume published through that completed bar. The AOI
+      and value-profile objectives freeze at the completed bar where the exact displayed
+      VAH or VAL boundary gains a qualifying footprint in its included one-point row.
+      The burst threshold uses only the prior twenty completed RTH sessions. Later
+      developing-profile movement cannot rewrite an existing sweep episode or its
+      objectives.
+    pre_test_decision: approve_for_testing
+  mechanics_validation:
+    minimum_trade_samples: 5
+    session_count: 10
+    purpose: Frequency is a pre-PnL mechanics requirement; fewer than five completed
+      trades cannot support manual entry and exit reconciliation. Profile parity must
+      use MotiveWave Standard, Tick Interval 4, Range 70 percent and RTH data only;
+      the frozen 2026-05-12 13:45 New York fixture must report POC 7373, VAL 7371
+      and VAH 7404.

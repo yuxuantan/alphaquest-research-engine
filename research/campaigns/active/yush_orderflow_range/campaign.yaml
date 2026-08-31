@@ -3,13 +3,18 @@ title: Yush Orderflow Range Reversal
 status: authored_for_testing
 created_at: '2026-07-20'
 instrument: ES
-timeframe: 1m
+timeframe: 3m
 governance_contract_version: 3
 variant_protocol: sequential_failure_informed
 max_variants: 5
 authoring_lane: certified_event_replay
 certified_recipe: null
 event_strategy: yush_orderflow_range
+event_strategies:
+  v01: yush_orderflow_range
+  v02: yush_failed_auction_reclaim
+  v03: yush_adaptive_orderflow_range_v3
+  v04: yush_adaptive_orderflow_range_v4
 edge_family: orderflow_range_reversal
 hypothesis: During balanced ES morning auctions, a retest of a developing value-area edge that overlaps a prior liquidity
   reference and then attracts fresh one-sided trade activity may reverse toward fair value.
@@ -56,7 +61,54 @@ sources:
   relevance: Supports the general microstructure premise that signed order-flow imbalance has short-horizon price impact.
 variants:
 - v01
-sequential_variant_history: []
+- v02
+- v03
+- v04
+sequential_variant_history:
+- schema: alphaquest.sequential-variant-lineage/v1
+  variant_id: v02
+  predecessor_variant_id: v01
+  predecessor_verdict: FAIL
+  predecessor_result_path: research/evidence/runs/yush_orderflow_range/v01/ES/attempt_replication_20260725t012537_78735224/reporting_v2/result_bundle_v2.json
+  predecessor_result_sha256: f40372661dd23a14e89c33316b54431f769f7ec7da3fa2b566169055c79879ed
+  failure_analysis: v01's terminal limited core grid tested all 100 predeclared combinations; none passed and only nine percent
+    were profitable. The reviewed default produced 37 trades, lost $1,110 after costs, and had a 0.479 profit factor, while
+    4,235 of 4,272 submitted orders were cancelled. That evidence suggests the exact AOI-lineage, second-tap, and stop-entry
+    expression was unstable and rarely converted detected state into fills. v02 retains the absorption-to-fair-value economic
+    edge but replaces those mechanics with one frozen failed-auction excursion, explicit outward aggression, and a causal
+    reclaim.
+  created_by: Tan Yu Xuan
+  created_at: '2026-07-26T04:33:47.071480+00:00'
+- schema: alphaquest.sequential-variant-lineage/v1
+  variant_id: v03
+  predecessor_variant_id: v02
+  predecessor_verdict: FAIL
+  predecessor_result_path: research/evidence/runs/yush_orderflow_range/v02/ES/attempt_replication_20260801t182032_f6f41448/reporting_v2/result_bundle_v2.json
+  predecessor_result_sha256: 224260aa831e291edad1fbb1ba780c910c91943ce8baf6a26c1281e6e02a048f
+  failure_analysis: 'The reviewed v02 terminal run failed at the limited core grid: only 12 of 54 declared combinations were
+    profitable, a 22.22 percent profitable-iteration rate versus the predeclared 70 percent gate. The mechanics audit also
+    showed that persistent AOI identity and fixed-distance geometry could suppress new same-session opportunities and behave
+    inconsistently across volatility regimes. v03 retains the same failed-auction return-to-fair-value hypothesis while changing
+    only its causal expression through fresh footprint re-arming, explicit crossings, profile epochs, and ATR-normalized distances.'
+  created_by: Tan Yu Xuan
+  created_at: '2026-08-03T04:46:57.863607+00:00'
+- schema: alphaquest.sequential-variant-lineage/v1
+  variant_id: v04
+  predecessor_variant_id: v03
+  predecessor_verdict: FAIL
+  predecessor_result_path: research/evidence/runs/yush_orderflow_range/v03/ES/attempt_pre_pnl_protocol_declaration_20260823t021633_94aff48a/reporting_v2/result_bundle_v2.json
+  predecessor_result_sha256: 7e43dbe9b2a405026f3198750fe5005d912a2152798745f50a301f64f503f341
+  failure_analysis: "v03 reached a terminal scientific FAIL at the Limited Core Grid Test. All 15 predeclared combinations\
+    \ across sweep ATR fraction 0.10\u20130.30 and maximum stop ATR multiple 1.25\u20131.75 were unprofitable, versus the\
+    \ required 70% profitable-combination threshold. Net profit ranged from -$4,004.51 to -$16,480.02, profit factor from\
+    \ 0.698 to 0.877, expectancy from -0.165R to -0.042R, and maximum drawdown from 13.25% to 34.02%. The frozen fixed-config\
+    \ cross-check produced 467 trades, -$14,435.64 after costs, profit factor 0.687, expectancy -$30.91/-0.164R per trade,\
+    \ 29.55% maximum drawdown, and a 14-trade losing streak. Mechanics approval, execution compliance, and forced-flatten\
+    \ compliance were valid, so the failure is attributable to a broadly negative economic expression rather than an isolated\
+    \ parameter choice or operational defect. Downstream tests were correctly skipped. Do not retune v03; any v04 proposal\
+    \ must preserve the Yush economic hypothesis while expressing it through materially different, predeclared mechanics."
+  created_by: Tan Yu Xuan
+  created_at: '2026-08-25T15:29:27.486205+00:00'
 variant_distinctions:
   v01:
     mechanic: Build a causal AOI around developing VAL or VAH plus the strongest available market, local-delta, and large-trade
@@ -65,6 +117,39 @@ variant_distinctions:
     material_difference: As v01 this is the single frozen baseline mechanic; any later variant is prohibited until this implementation
       passes manual mechanics review and then receives a terminal FAIL in the test suite.
     mechanic_signature: 40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1
+  v02:
+    mechanic: Express the same absorption-to-fair-value hypothesis through a failed auction rather than a repeated AOI tap.
+      Freeze the causal developing value boundary, nearby known reference, and POC before the excursion; require directed
+      aggression outside value to fail and price to reclaim the boundary before considering an entry.
+    material_difference: 'v01 required an exact multi-source AOI fingerprint, a prior reversal, a fresh second tap, and a
+      two-tick stop-entry trigger, then managed toward midpoint and opposite value edge. v02 removes AOI lineage and tap counting
+      entirely: it freezes one value boundary, requires a measurable outside excursion with outward aggression, enters only
+      after a one-tick reclaim, stops beyond the excursion extreme, and targets the frozen POC with a fixed time exit.'
+    mechanic_signature: 2595e548d0eb42bfd6ed029f9b88c07bcc1ca3c0f19573d00387f3019db04da1
+  v03:
+    mechanic: Retain the same failed-auction return-to-fair-value edge while allowing independent opportunities through fresh
+      footprint identities, explicit inside-to-outside crossings, and causal AOI expiry. Normalize sweep, reclaim, structural
+      stop, and trend distances by the ATR known at each completed bar.
+    material_difference: v02 held one AOI identity until the developing edge moved, treated static distances as universal,
+      and could suppress later same-price opportunities after a stale or consumed setup. v03 creates an identity from the
+      fresh footprint generation, edge, side, and profile epoch; retires it after one sweep/fill or thirty minutes; requires
+      a new crossing; adds a separate afternoon profile; and uses ATR-scaled geometry.
+    mechanic_signature: 0ef08b6edfed91fed6a9d345fc80aa12db8f1a44ef8ec31c849c8207a6dd7806
+  v04:
+    mechanic: At every completed three-minute boundary, independently attempt a short AOI at the latest VAH and a long AOI
+      at the latest VAL. The AOI exists only when a prior-20-session q99.9 MotiveWave-compatible consecutive aggressive-volume
+      sequence of either side and/or a sign-agnostic top-decile absolute session-anchored four-tick delta cell, or a PDH,
+      PDL, PDC, ONH, ONL, ORH, or ORL lies within one third of causal ATR above or below that edge. A market level may independently
+      qualify the AOI. The repository availability policy selected this as the sole active, unused certified event successor;
+      observed PnL did not select its parameters.
+    material_difference: 'Replaces certified event entry yush_adaptive_orderflow_range_v3 with yush_adaptive_orderflow_range_v4,
+      stop event_fill_time_sweep_to_entry_extreme_stop, and target event_frozen_midpoint_two_ticks_outside_opposite_value_area_scale_out.
+      Per-bar VAH and VAL AOIs built from a nearby market level, exceptional volume, or sign-agnostic four-tick delta within
+      one-third ATR, followed by an ordered sweep, a separate post-sweep big-trade or delta confirmation, an AOI-zone reclaim
+      stop entry, and a fill-time sweep-to-entry structural stop. The predecessor failed limited_core_grid_test/summary.percentage_profitable_iterations:
+      actual 0.0 did not meet required >= 0.7 This is a newly frozen expression of the same economic edge, not a parameter-only
+      rename or a post-hoc reinterpretation of predecessor PnL.'
+    mechanic_signature: 02cbd4808b202e8245dbc0e1ecb312fc2078000a0221481dab42f45e4d728edd
 rescue_policy:
   allowed: false
   max_rescues_per_failed_variant: 1

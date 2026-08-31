@@ -13,6 +13,7 @@ Start with [START_HERE.md](START_HERE.md), then choose the path that matches you
 | Data engineer | [Data contracts](docs/data/data-contracts.md) |
 | Reviewer | [Verdict semantics](docs/research/verdict-semantics.md) |
 | Operator | [Runbook](docs/operations/runbook.md) |
+| Maintainer | [Release governance](docs/operations/release-governance.md) |
 
 ## Core Model
 
@@ -31,7 +32,7 @@ Active authored definitions live under `research/campaigns/active/`; closed defi
 
 After an administrator completes [installation](docs/getting-started/installation.md), a researcher can double-click **`AlphaQuest Studio.command`**. No terminal, Python, or YAML editing is required inside the research workflow.
 
-Studio's novice interface is a committed React application served by a local FastAPI process. It binds only to the workstation, works without Node.js or a frontend build at runtime, and uses the separate durable Python worker for long research jobs. Except for explicitly enabled optional AI drafting, the Studio workflow does not require an external web service.
+Studio's novice interface is a committed React application served by a local FastAPI process. It binds only to the workstation, works without Node.js or a frontend build at runtime, and uses the separate durable Python worker for long research jobs. The governed workflow remains fully usable offline and manually. An optional second worker can ask a locally installed, ChatGPT-subscription-authenticated Codex CLI for bounded research proposals; it never uses an OpenAI API key, clears no human gate, and remains separate from scientific execution.
 
 Administrator setup:
 
@@ -40,7 +41,7 @@ make studio-setup
 make smoke
 ```
 
-Studio is the novice path. It guides source declaration, duplicate review, governed data intake, execution rules, five frozen variants, mechanics approval, staged execution, and result review. Unsupported intrabar or custom mechanics become a durable `NEEDS MANUAL REVIEW` engineering handoff; Studio never approximates them with bars.
+Studio is the novice path. It freezes development/risk objectives before the idea, then guides source declaration, duplicate review, governed data intake, execution rules, sequential frozen variants, mechanics approval, staged execution, independent review, and true forward incubation. Unsupported intrabar or custom mechanics become a durable `NEEDS MANUAL REVIEW` engineering handoff; Studio never approximates them with bars.
 
 Run the isolated synthetic tutorial from Studio, or use the expert command:
 
@@ -58,9 +59,15 @@ alphaquest campaign show es_video_aoi_lvn_orderflow_playbook
 alphaquest campaign show es_video_aoi_lvn_orderflow_playbook --explain --run <run_uid>
 alphaquest campaign validate <campaign_id>
 make preflight
-make test
+make validate
+# On a clean main commit intended for an engine release only:
 make qualify
 ```
+
+`make preflight` is fail-closed research inventory preflight. `make validate`
+is the hermetic engine validation surface. `make qualify` reruns that engine
+surface under the pinned reference environment and writes commit-bound release
+metadata; it does not approve campaigns or strategies.
 
 ## Repository Map
 
@@ -90,7 +97,10 @@ make qualify
 - Ambiguous same-bar stop/target touches resolve pessimistically without ordered detail data.
 - Costs, session rules, forced flattening, contract values, and roll rules are explicit.
 - Time-series validation is contiguous or purged; final acceptance is locked.
-- A passing result is only a candidate strategy pending independent review and incubation.
+- A passing result is only a candidate strategy pending independent review, chronological forward incubation, portfolio review, and a human deployment decision.
 - Diagnostic or shortened stage sets resolve to `NEEDS MANUAL REVIEW` and cannot create candidate artifacts.
 
-See the [documentation index](docs/README.md) for detailed workflows. The former monolithic guide is preserved as [full-guide.md](docs/reference/full-guide.md).
+See the [documentation index](docs/README.md) for detailed workflows, including
+the [Davey methodology alignment](docs/research/davey-methodology-alignment.md).
+The former monolithic guide is preserved as
+[full-guide.md](docs/reference/full-guide.md).

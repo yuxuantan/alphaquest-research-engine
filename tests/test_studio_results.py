@@ -117,6 +117,12 @@ def test_result_bundle_writes_strict_metrics_and_stable_breakdowns(tmp_path):
         "side_breakdown.csv",
         "equity_curve.csv",
         "drawdown_curve.csv",
+        "trade_list.csv",
+        "pnl_distribution.csv",
+        "duration_distribution.csv",
+        "rolling_metrics.csv",
+        "losing_streaks.csv",
+        "performance_statistics.csv",
         RESULT_BUNDLE_FILENAME,
     ):
         assert (tmp_path / filename).is_file()
@@ -128,6 +134,12 @@ def test_result_bundle_writes_strict_metrics_and_stable_breakdowns(tmp_path):
     assert "NaN" not in raw
     assert json.loads(raw)["schema"] == "alphaquest.result-bundle/v2"
     assert load_result_bundle(tmp_path / RESULT_BUNDLE_FILENAME) == bundle
+    assert bundle.analysis_artifacts.trade_list.available is True
+    assert bundle.analysis_artifacts.rolling_metrics.available is True
+    statistics = pd.read_csv(tmp_path / "performance_statistics.csv")
+    assert len(statistics) == 49
+    assert {"total", "long", "short"} <= set(statistics.columns)
+    assert bundle.analysis_artifacts.performance_statistics.available is True
 
 
 def test_annualized_metrics_use_governed_period_not_first_and_last_trade(tmp_path):
@@ -199,6 +211,58 @@ def test_daily_risk_metrics_include_zero_trade_days_from_governed_coverage(tmp_p
     with pytest.raises(ValidationError, match="string_type"):
         ResultBundleV2.model_validate(coerced)
 
+
+def test_mixed_timestamp_precision_is_valid_across_reporting_outputs(tmp_path):
+    trades = pd.DataFrame(
+        [
+            {
+                "trade_id": 1,
+                "direction": "long",
+                "entry_timestamp": "2021-09-28 15:30:00.123000-04:00",
+                "exit_timestamp": "2021-09-28 15:45:00.123000-04:00",
+                "net_pnl": 100.0,
+                "r_multiple": 1.0,
+            },
+            {
+                "trade_id": 2,
+                "direction": "short",
+                "entry_timestamp": "2021-10-19 15:40:00-04:00",
+                "exit_timestamp": "2021-10-19 15:55:00-04:00",
+                "net_pnl": -50.0,
+                "r_multiple": -0.5,
+            },
+            {
+                "trade_id": 3,
+                "direction": "long",
+                "entry_timestamp": "2021-11-08 10:00:00.123456-05:00",
+                "exit_timestamp": "2021-11-08 10:15:00.123456-05:00",
+                "net_pnl": 25.0,
+                "r_multiple": 0.25,
+            },
+        ]
+    )
+
+    bundle = ResultBundleBuilder().build_and_write(
+        trades,
+        tmp_path,
+        campaign_id="demo",
+        variant_id="v01",
+        run_id="mixed-timestamp-precision",
+        verdict="FAIL",
+        initial_balance=10_000.0,
+        evaluation_start="2021-09-28",
+        evaluation_end="2021-11-08",
+        trading_dates=["2021-09-28", "2021-10-19", "2021-11-08"],
+    )
+
+    assert bundle.metrics.daily_sharpe.value is not None
+    assert bundle.metrics.daily_sortino.value is not None
+    assert bundle.metrics.average_trade_duration_minutes.value == pytest.approx(15.0)
+    assert pd.read_csv(tmp_path / "yearly_breakdown.csv")["trades"].sum() == 3
+    assert pd.read_csv(tmp_path / "entry_session_breakdown.csv")["trades"].sum() == 3
+    assert pd.read_csv(tmp_path / "duration_distribution.csv")["count"].sum() == 3
+    assert pd.read_csv(tmp_path / "equity_curve.csv")["exit_timestamp"].notna().all()
+    assert pd.read_csv(tmp_path / "rolling_metrics.csv")["exit_timestamp"].notna().all()
 
 def test_undefined_profit_factor_is_null_with_reason_never_infinity(tmp_path):
     trades = _trades().iloc[[0, 2]].copy()
@@ -308,8 +372,39 @@ def test_committed_studio_schemas_match_owning_models(tmp_path):
     written = write_studio_schema_documents(tmp_path)
 
     assert {path.name for path in written} == {
+        "account-rule-profile-v1.schema.json",
+        "candidate-due-diligence-summary-v1.schema.json",
         "candidate-review-v1.schema.json",
+        "codex-context-packet-v1.schema.json",
+        "codex-proposal-envelope-v1.schema.json",
+        "codex-proposal-run-provenance-v1.schema.json",
+        "codex-runtime-run-provenance-v1.schema.json",
+        "codex-task-record-v1.schema.json",
+        "codex-task-request-v1.schema.json",
+        "codex-task-v1.schema.json",
+        "deployment-decision-v1.schema.json",
+        "deployment-monitoring-event-v1.schema.json",
+        "engineering-handoff-proposal-v1.schema.json",
+        "failure-diagnosis-v1.schema.json",
+        "forward-incubation-event-v1.schema.json",
+        "forward-incubation-plan-v1.schema.json",
+        "hypothesis-proposal-v1.schema.json",
+        "imported-proposal-v1.schema.json",
+        "information-access-event-v1.schema.json",
+        "information-access-ledger-v1.schema.json",
         "job-record-v1.schema.json",
+        "mechanics-intent-v1.schema.json",
+        "next-action-eligibility-v1.schema.json",
+        "next-action-ranking-proposal-v1.schema.json",
+        "next-experiment-proposal-v1.schema.json",
+        "portfolio-review-v1.schema.json",
+        "research-budget-usage-v1.schema.json",
+        "research-budget-v1.schema.json",
+        "reviewed-engineering-handoff-intent-v1.schema.json",
+        "reviewed-hypothesis-v1.schema.json",
+        "reviewed-source-evidence-v1.schema.json",
         "result-bundle-v2.schema.json",
+        "result-bundle-v3.schema.json",
+        "source-evidence-bundle-v1.schema.json",
     }
     assert stale_studio_schema_documents(tmp_path) == []

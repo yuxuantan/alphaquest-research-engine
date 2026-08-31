@@ -13,7 +13,7 @@ import pandas as pd
 
 from alphaquest.backtest.engine import BacktestEngine
 from alphaquest.backtest.fills import entry_price, exit_price
-from alphaquest.backtest.metrics import benchmark, calculate_metrics, daily_results
+from alphaquest.backtest.metrics import EvaluationPeriod, benchmark, calculate_metrics, daily_results
 from alphaquest.backtest.sizing import size_position, tick_value_from_core
 from alphaquest.research.execution import run_research_backtest
 from alphaquest.utils.progress import progress_bar
@@ -55,6 +55,10 @@ def run_monkey(
     constraints = _constraints(monkey_config)
 
     market = data.sort_values("timestamp").reset_index(drop=True)
+    evaluation_period = EvaluationPeriod.from_frame(
+        market,
+        source="monkey_governed_market_sessions",
+    )
     if core_trades is None:
         core_result = run_research_backtest(
             base_config,
@@ -69,11 +73,13 @@ def run_monkey(
         core_metrics = calculate_metrics(
             core_trades,
             initial_balance=float(base_config.get("core", {}).get("initial_balance", 0)),
+            evaluation_period=evaluation_period,
         )
     if core_trades.empty:
         raise ValueError("Core strategy produced no trades; monkey constraints cannot be derived.")
 
     core_profile = _core_profile(market, core_trades, core_metrics)
+    core_profile["_evaluation_period"] = evaluation_period
     eligible = _eligible_entries(market, base_config, constraints)
     if eligible.empty:
         raise ValueError("No eligible monkey entry bars found for the configured strategy session.")
@@ -462,10 +468,12 @@ def _trade_path_stress_result_row(
     counters: dict,
     base_config: dict,
     benchmarks: dict,
+    evaluation_period: EvaluationPeriod,
 ) -> dict:
     metrics = calculate_metrics(
         trades,
         initial_balance=float(base_config.get("core", {}).get("initial_balance", 0)),
+        evaluation_period=evaluation_period,
     )
     passed, reason = benchmark(metrics, benchmarks)
     return {
@@ -566,7 +574,17 @@ def _run_parallel_monkey(
     with ProcessPoolExecutor(
         max_workers=workers,
         initializer=_init_monkey_worker,
-        initargs=(market, base_config, benchmarks, constraints, core_profile, eligible, max_duration, seed, include_reports),
+        initargs=(
+            market,
+            base_config,
+            benchmarks,
+            constraints,
+            core_profile,
+            eligible,
+            max_duration,
+            seed,
+            include_reports,
+        ),
     ) as executor:
         futures = {
             executor.submit(_run_monkey_batch_worker, batch): len(batch)
@@ -676,6 +694,7 @@ def _evaluate_monkey_run(
     metrics = calculate_metrics(
         trades,
         initial_balance=float(base_config.get("core", {}).get("initial_balance", 0)),
+        evaluation_period=core_profile["_evaluation_period"],
     )
     daily = daily_results(trades)
     passed, reason = benchmark(metrics, benchmarks)

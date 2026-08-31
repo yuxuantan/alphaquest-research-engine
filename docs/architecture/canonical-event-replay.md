@@ -58,9 +58,10 @@ strategy-specific evidence. Strategies submit requests with
 `broker.submit_or_replace_entry(...)` and return `PositionDirective` values for
 dynamic bracket management. They must not calculate fills or P&L themselves.
 
-The v1 contract supports one instrument and one full-size position at a time,
-stop entries, and full-size bracket exits. It does not simulate partial fills,
-queue priority, MBO order identity, or multi-instrument portfolios. A strategy
+The canonical strategy replay contract supports one instrument and one
+position at a time, stop entries, bracket exits, and explicitly directed
+partial position exits. It does not simulate partial entry fills, queue
+priority, MBO order identity, or multi-instrument portfolios. A strategy
 requiring any unsupported behavior must fail closed rather than approximate it.
 Generic bar-lane `apex_rules`, `event_filters.no_trade_windows`, and
 `validation_export` are therefore rejected when enabled; an event strategy must
@@ -97,3 +98,31 @@ engine-state and event-evidence payloads.
 The Yush exact Databento strategy is the first migrated consumer. Its orderflow
 and AOI state live in `ExactYushRangeEventStrategy`; execution goes through
 `BacktestEngine.run_event_replay`.
+
+## Certified execution contract
+
+For a certified event strategy, `studio.execution_defaults` is an enforceable
+execution contract rather than advisory UI metadata. Fresh compilation and
+immutable certification refreshes use the same resolver to apply the declared
+timeframe, instruments, costs, session boundaries, position sizing, and Monte
+Carlo sizing. The compiled config embeds the resolved values, certification
+manifest hash, and execution-defaults hash. New-work preflight and runtime
+reject a config when any bound execution value is missing or differs from that
+contract. A correction therefore requires a new immutable attempt with fresh
+mechanics evidence and approval; historical configs and evidence are not
+rewritten.
+
+## Generic quote/trade execution profile
+
+`alphaquest.backtest.order_simulation` is a separate, certification-gated
+research component for generic market, limit, stop, stop-limit, OCO, partial
+fill, and bid/ask replay behavior. Orders become eligible only after their
+submission event. Market and triggered-stop fills require bid/ask quotes;
+partial fills require observed quote or trade size. A stop-limit trigger becomes
+a working limit on the following event, avoiding an inferred same-event price
+path. Missing required quote/liquidity fields fail closed.
+
+The execution manifest under `src/alphaquest/execution_certifications/` binds
+the profile to exact source bytes and required test categories. It is not
+automatically inherited by existing strategy certifications or approvals.
+MBO/queue simulation remains explicitly rejected.

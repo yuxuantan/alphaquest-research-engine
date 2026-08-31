@@ -18,6 +18,7 @@
 ## Research
 
 - [Campaign authoring](research/campaign-authoring.md)
+- [Davey methodology alignment](research/davey-methodology-alignment.md)
 - [Validation stages](research/validation-stages.md)
 - [Verdict semantics](research/verdict-semantics.md)
 
@@ -27,6 +28,7 @@
 - [Futures rolls](data/futures-rolls.md)
 - [Operations runbook](operations/runbook.md)
 - [Cleanup and recovery](operations/cleanup-and-recovery.md)
+- [Branch, integration, and engine-release governance](operations/release-governance.md)
 
 ## Governance And Reference
 

@@ -10,9 +10,12 @@ Do not edit raw data in place. Every derived cache must document source paths, t
 
 ## ES Sierra SCID event validation
 
-The current tick-reference comparison is
-[`reports/data_quality/ES/databento_sierra_tick_comparison_0930_1100_20250714_20260610/report.md`](reports/data_quality/ES/databento_sierra_tick_comparison_0930_1100_20250714_20260610/report.md).
-It compares Sierra records with the immutable Databento `trades` archive at
+The current tick-reference comparison is a local generated report at
+`data/reports/data_quality/ES/databento_sierra_tick_comparison_0930_1100_20250714_20260610/report.md`.
+It is deliberately ignored because `data/reports/` is reproducible workstation output, not durable onboarding
+documentation. The governed conclusions and remediation boundary are recorded in the
+[Sierra event remediation note](../docs/data/sierra-event-remediation.md). The local report compares Sierra records
+with the immutable Databento `trades` archive at
 `raw/ES/GLBX-20260713-S6XF67C8UA.zip` for the range strategy's 09:30-11:00 ET window.
 
 Sierra FIRST/LAST unbundled-trade marker groups must be reconstructed before any

@@ -74,6 +74,7 @@ class _ValidationChecker:
 
     def run(self) -> pd.DataFrame:
         self._check_metadata_contract()
+        self._check_trade_sample_count()
         self._check_trade_ids_unique()
         for _, trade in self.trades.iterrows():
             trade_id = trade.get("trade_id")
@@ -212,11 +213,22 @@ class _ValidationChecker:
         expected_fill = None
         if reference is not None:
             expected_fill = reference + (tick_size * slippage_ticks if is_long else -tick_size * slippage_ticks)
+            if _normalize_reason(entry_event.get("reason")) == "limit_entry_filled":
+                limit_price = _num(trade.get("entry_trigger_price"))
+                if limit_price is not None:
+                    expected_fill = (
+                        min(expected_fill, limit_price)
+                        if is_long
+                        else max(expected_fill, limit_price)
+                    )
         self._assert(
             entry is not None and expected_fill is not None and _prices_equal(entry, expected_fill, tick_size),
             check_name="event_entry_slippage_reconciled",
             category="price_logic",
-            description="The entry fill applies the declared adverse event-replay slippage.",
+            description=(
+                "The entry fill applies the declared adverse event-replay slippage, "
+                "capped at the submitted limit for limit entries."
+            ),
             trade_id=trade_id,
             expected=expected_fill,
             actual=entry,
@@ -262,7 +274,9 @@ class _ValidationChecker:
             if column in candidates.columns and not _is_missing(entry.get(column)):
                 candidates = candidates[candidates[column].astype(str) == str(entry.get(column))]
         indexes = pd.to_numeric(candidates.get("event_index"), errors="coerce")
-        candidates = candidates[(candidates.get("transition").astype(str) == "order_submitted") & (indexes < entry_index)]
+        candidates = candidates[
+            (candidates.get("transition").astype(str) == "order_submitted") & (indexes < entry_index)
+        ]
         submitted = None if candidates.empty else candidates.sort_values("event_index").iloc[-1]
         active_from = _num(submitted.get("active_from_event_index")) if submitted is not None else None
         submitted_index = _num(submitted.get("event_index")) if submitted is not None else None
@@ -309,7 +323,9 @@ class _ValidationChecker:
         target = _num(close.get("target_price"))
         if _is_stop_reason(trade_reason):
             self._assert(
-                reference is not None and stop is not None and _prices_equal(reference, stop, _num(self.metadata.get("tick_size"))),
+                reference is not None
+                and stop is not None
+                and _prices_equal(reference, stop, _num(self.metadata.get("tick_size"))),
                 check_name="event_stop_exit_has_stop_touch",
                 category="exit_logic",
                 description="A stop exit occurs on an event at the active stop price.",
@@ -319,7 +335,9 @@ class _ValidationChecker:
             )
         if _is_target_reason(trade_reason):
             self._assert(
-                reference is not None and target is not None and _prices_equal(reference, target, _num(self.metadata.get("tick_size"))),
+                reference is not None
+                and target is not None
+                and _prices_equal(reference, target, _num(self.metadata.get("tick_size"))),
                 check_name="event_target_exit_has_target_touch",
                 category="exit_logic",
                 description="A target exit occurs on an event at the active target price.",
@@ -362,14 +380,35 @@ class _ValidationChecker:
             expected="monotonic timestamps and event indexes",
             actual=ordered,
         )
-        duplicated = pd.DataFrame({"timestamp": timestamps, "source_ordinal": ordinals}).duplicated().any()
+        duplicated = (
+            pd.DataFrame(
+                {
+                    "timestamp": timestamps,
+                    "source_ordinal": ordinals,
+                    "order_id": events.get(
+                        "order_id",
+                        pd.Series(dtype=object),
+                    ).astype(str),
+                    "transition": events.get(
+                        "transition",
+                        pd.Series(dtype=object),
+                    ).astype(str),
+                }
+            )
+            .duplicated()
+            .any()
+        )
         self._assert(
             not duplicated,
             check_name="event_transition_keys_unique",
             category="data_quality",
-            description="Per-trade transitions have unique canonical event keys.",
+            description=(
+                "Per-trade transition types are unique for each order within "
+                "a canonical event; one fill event may legitimately cancel "
+                "multiple other pending orders."
+            ),
             trade_id=trade_id,
-            expected="unique timestamp/source_ordinal",
+            expected="unique timestamp/source_ordinal/order_id/transition",
             actual="duplicates" if duplicated else "unique",
         )
         self._assert(
@@ -499,7 +538,7 @@ class _ValidationChecker:
         )
 
     def _check_trade_ids_unique(self) -> None:
-        if self.trades.empty or "trade_id" not in self.trades.columns:
+        if "trade_id" not in self.trades.columns:
             self._add(
                 check_name="unique_trade_id",
                 category="identity",
@@ -508,6 +547,8 @@ class _ValidationChecker:
                 expected="trade_id column present",
                 actual="missing",
             )
+            return
+        if self.trades.empty:
             return
         duplicated = self.trades["trade_id"].astype(str).duplicated(keep=False)
         duplicate_ids = sorted(self.trades.loc[duplicated, "trade_id"].astype(str).unique())
@@ -518,6 +559,21 @@ class _ValidationChecker:
             description="Every trade has a unique trade_id.",
             expected="unique trade_id values",
             actual=", ".join(duplicate_ids) if duplicate_ids else "unique",
+        )
+
+    def _check_trade_sample_count(self) -> None:
+        required = max(1, int(self.metadata.get("minimum_trade_samples") or 1))
+        actual = len(self.trades)
+        self._assert(
+            actual >= required,
+            check_name="mechanics_review_trade_sample_present",
+            category="identity",
+            description=(
+                "The mechanics replay must contain enough completed causal "
+                "trades to reconcile entry and exit behavior."
+            ),
+            expected=f"at least {required} completed trades",
+            actual=actual,
         )
 
     def _check_trade_identity(self, trade: pd.Series, condition: pd.Series | None) -> None:
@@ -555,7 +611,9 @@ class _ValidationChecker:
         timestamps = {
             "sweep_time": _ts(_lookup(condition, ("sweep_time",))),
             "reclaim_time": _ts(_lookup(condition, ("reclaim_time",))),
-            "signal_time": _ts(_first_present(_lookup(condition, ("signal_time",)), _lookup(condition, ("decision_bar_time",)))),
+            "signal_time": _ts(
+                _first_present(_lookup(condition, ("signal_time",)), _lookup(condition, ("decision_bar_time",)))
+            ),
             "entry_time": _ts(trade.get("entry_time")),
             "exit_time": _ts(trade.get("exit_time")),
         }
@@ -740,7 +798,9 @@ class _ValidationChecker:
         if rth_pass is not None:
             exported_rth = _bool_or_none(_lookup(condition, ("is_rth",)))
             if exported_rth is None and not bars.empty and "is_rth" in bars.columns:
-                signal_idx = _bar_index_for_timestamp(bars, _first_present(_lookup(condition, ("signal_time",)), trade.get("entry_time")))
+                signal_idx = _bar_index_for_timestamp(
+                    bars, _first_present(_lookup(condition, ("signal_time",)), trade.get("entry_time"))
+                )
                 if signal_idx is not None:
                     exported_rth = _bool_or_none(bars.iloc[signal_idx].get("is_rth"))
             if exported_rth is not None:
@@ -792,7 +852,11 @@ class _ValidationChecker:
         checks = [
             (("delta_pct", "delta_imbalance"), ("min_delta_pct", "min_delta_imbalance"), "ge"),
             (("delta_pct", "delta_imbalance"), ("max_delta_pct", "max_delta_imbalance"), "le"),
-            (("delta_value", "signed_volume", "absorption_bucket_delta"), ("delta_threshold", "absorption_delta_threshold"), "abs_ge"),
+            (
+                ("delta_value", "signed_volume", "absorption_bucket_delta"),
+                ("delta_threshold", "absorption_delta_threshold"),
+                "abs_ge",
+            ),
         ]
         for actual_aliases, threshold_aliases, mode in checks:
             actual = _num(_lookup(condition, actual_aliases))
@@ -833,7 +897,9 @@ class _ValidationChecker:
             )
             return
         trade_reason = _normalize_reason(trade.get("exit_reason"))
-        audit_reason = _normalize_reason(_first_present(exit_audit.get("exit_reason"), exit_audit.get("first_touch_exit_decision")))
+        audit_reason = _normalize_reason(
+            _first_present(exit_audit.get("exit_reason"), exit_audit.get("first_touch_exit_decision"))
+        )
         if trade_reason and audit_reason:
             self._assert(
                 trade_reason == audit_reason or _same_exit_family(trade_reason, audit_reason),
@@ -846,7 +912,8 @@ class _ValidationChecker:
             )
         if _is_target_reason(trade_reason):
             self._assert(
-                not _is_missing(exit_audit.get("first_touch_tp_time")) or _bool_or_none(exit_audit.get("tp_hit_on_exit_bar")) is True,
+                not _is_missing(exit_audit.get("first_touch_tp_time"))
+                or _bool_or_none(exit_audit.get("tp_hit_on_exit_bar")) is True,
                 check_name="target_exit_has_target_touch",
                 category="exit_logic",
                 description="Target exit is explainable by a target touch.",
@@ -856,7 +923,8 @@ class _ValidationChecker:
             )
         if _is_stop_reason(trade_reason):
             self._assert(
-                not _is_missing(exit_audit.get("first_touch_sl_time")) or _bool_or_none(exit_audit.get("sl_hit_on_exit_bar")) is True,
+                not _is_missing(exit_audit.get("first_touch_sl_time"))
+                or _bool_or_none(exit_audit.get("sl_hit_on_exit_bar")) is True,
                 check_name="stop_exit_has_stop_touch",
                 category="exit_logic",
                 description="Stop exit is explainable by a stop touch.",
@@ -875,7 +943,10 @@ class _ValidationChecker:
                 expected="cutoff context present",
                 actual=cutoff or "missing",
             )
-        both_hit = _bool_or_none(exit_audit.get("tp_hit_on_exit_bar")) is True and _bool_or_none(exit_audit.get("sl_hit_on_exit_bar")) is True
+        both_hit = (
+            _bool_or_none(exit_audit.get("tp_hit_on_exit_bar")) is True
+            and _bool_or_none(exit_audit.get("sl_hit_on_exit_bar")) is True
+        )
         if both_hit:
             resolved_by_tick_path = (
                 str(exit_audit.get("ambiguity_resolution") or "").lower() == "detail_data"
@@ -889,7 +960,9 @@ class _ValidationChecker:
                 status=(
                     PASS
                     if resolved_by_tick_path
-                    else WARNING if _bool_or_none(exit_audit.get("same_bar_ambiguous")) is True else ERROR
+                    else WARNING
+                    if _bool_or_none(exit_audit.get("same_bar_ambiguous")) is True
+                    else ERROR
                 ),
                 description=(
                     "Same-bar TP/SL touch is resolved by ordered tick path."
@@ -898,7 +971,9 @@ class _ValidationChecker:
                 ),
                 trade_id=trade_id,
                 expected="resolved by tick path" if resolved_by_tick_path else "same_bar_ambiguous true",
-                actual=exit_audit.get("warning_flags") if resolved_by_tick_path else exit_audit.get("same_bar_ambiguous"),
+                actual=exit_audit.get("warning_flags")
+                if resolved_by_tick_path
+                else exit_audit.get("same_bar_ambiguous"),
             )
 
     def _check_data_quality(
@@ -936,9 +1011,7 @@ class _ValidationChecker:
                 continue
             parsed = pd.to_datetime(frame["timestamp"], errors="coerce", utc=True)
             if name == "tick" and "source_ordinal" in frame.columns and frame["source_ordinal"].notna().any():
-                duplicate_basis = pd.DataFrame(
-                    {"timestamp": parsed, "source_ordinal": frame["source_ordinal"]}
-                )
+                duplicate_basis = pd.DataFrame({"timestamp": parsed, "source_ordinal": frame["source_ordinal"]})
                 duplicated = duplicate_basis.duplicated().any()
                 duplicate_expected = "no duplicate timestamp/source_ordinal event keys"
             elif name == "tick" and "price_level" in frame.columns and frame["price_level"].notna().any():
@@ -990,7 +1063,11 @@ class _ValidationChecker:
                 if _is_timezone_naive(_lookup(condition, (field,))):
                     naive_fields.append(f"condition.{field}")
         for name, frame in (("bar", bars), ("tick", ticks)):
-            if not frame.empty and "timestamp" in frame.columns and any(_is_timezone_naive(value) for value in frame["timestamp"].dropna().head(100)):
+            if (
+                not frame.empty
+                and "timestamp" in frame.columns
+                and any(_is_timezone_naive(value) for value in frame["timestamp"].dropna().head(100))
+            ):
                 naive_fields.append(f"{name}.timestamp")
         self._add(
             check_name="timestamps_timezone_aware",
@@ -1047,7 +1124,14 @@ def _lookup(condition: pd.Series | None, aliases: tuple[str, ...]) -> Any:
     if condition is None:
         return None
     sources = [condition.to_dict()]
-    for column in ("filter_pass_values", "raw_orderflow_values", "signal_metadata", "signal_report_fields", "decision_context", "entry_trigger_values"):
+    for column in (
+        "filter_pass_values",
+        "raw_orderflow_values",
+        "signal_metadata",
+        "signal_report_fields",
+        "decision_context",
+        "entry_trigger_values",
+    ):
         parsed = _parse_json(condition.get(column))
         if parsed:
             sources.append(parsed)
@@ -1222,6 +1306,8 @@ def _same_exit_family(left: str, right: str) -> bool:
 
 
 def _is_target_reason(value: str) -> bool:
+    if _is_stop_reason(value):
+        return False
     return value in {"target", "tp", "take_profit", "take profit"} or "target" in value
 
 

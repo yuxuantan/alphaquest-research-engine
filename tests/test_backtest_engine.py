@@ -7,7 +7,7 @@ import pytest
 from alphaquest.backtest.engine import BacktestEngine
 from alphaquest.backtest.equity_report import equity_curve_frame
 from alphaquest.backtest.fills import stop_target_hit
-from alphaquest.backtest.metrics import benchmark, calculate_metrics
+from alphaquest.backtest.metrics import EvaluationPeriod, benchmark, calculate_metrics
 from alphaquest.data.clean import clean_data
 from alphaquest.data.features import build_features
 from tests.test_data_pipeline import DATA_CFG
@@ -1386,6 +1386,18 @@ def test_daily_loss_lockout_limits_trades():
     assert "metrics" in result
 
 
+def test_bar_engine_metrics_bind_to_governed_market_sessions():
+    data = _features()
+    result = BacktestEngine(BASE_CFG).run(data)
+
+    sessions = pd.to_datetime(data["session_date"]).dt.date
+    period = result["metrics"]["evaluation_period"]
+    assert period["start_date"] == min(sessions).isoformat()
+    assert period["end_date"] == max(sessions).isoformat()
+    assert period["eligible_session_count"] == len(set(sessions))
+    assert result["metrics"]["annualization_available"] is True
+
+
 def test_max_drawdown_pct_uses_running_equity_peak():
     trades = pd.DataFrame(
             {
@@ -1435,11 +1447,69 @@ def test_cagr_and_mar_penalize_zero_or_negative_ending_balance():
         }
     )
 
-    metrics = calculate_metrics(trades, initial_balance=10000)
+    metrics = calculate_metrics(
+        trades,
+        initial_balance=10000,
+        evaluation_period=EvaluationPeriod.from_bounds("2024-01-01", "2024-12-31"),
+    )
 
     assert metrics["cagr"] == -1.0
     assert metrics["max_drawdown_pct"] == 1.2
     assert round(metrics["mar"], 6) == round(-1.0 / 1.2, 6)
+
+
+def test_annualized_metrics_use_governed_window_not_sparse_trade_span():
+    trades = pd.DataFrame(
+        {
+            "net_pnl": [100.0, -50.0],
+            "gross_pnl": [100.0, -50.0],
+            "r_multiple": [1.0, -0.5],
+            "entry_timestamp": ["2025-06-02 09:30", "2025-06-03 09:30"],
+            "exit_timestamp": ["2025-06-02 10:00", "2025-06-03 10:00"],
+            "session_date": ["2025-06-02", "2025-06-03"],
+            "trade_id": [1, 2],
+        }
+    )
+    period = EvaluationPeriod.from_bounds(
+        "2025-01-01",
+        "2025-12-31",
+        eligible_session_count=252,
+        source="regression_test_window",
+    )
+
+    metrics = calculate_metrics(trades, initial_balance=10_000, evaluation_period=period)
+
+    years = 365 / 365.25
+    expected_cagr = (10_050 / 10_000) ** (1 / years) - 1
+    assert metrics["trades_per_year"] == pytest.approx(2 / years)
+    assert metrics["cagr"] == pytest.approx(expected_cagr)
+    assert metrics["evaluation_period"]["start_date"] == "2025-01-01"
+    assert metrics["evaluation_period"]["end_date"] == "2025-12-31"
+    assert metrics["eligible_session_count"] == 252
+
+
+def test_metrics_without_governed_period_fail_benchmark_closed():
+    trades = pd.DataFrame(
+        {
+            "net_pnl": [100.0],
+            "gross_pnl": [100.0],
+            "r_multiple": [1.0],
+            "entry_timestamp": ["2025-01-02 09:30"],
+            "exit_timestamp": ["2025-01-02 10:00"],
+            "session_date": ["2025-01-02"],
+            "trade_id": [1],
+        }
+    )
+
+    metrics = calculate_metrics(trades, initial_balance=10_000)
+    passed, reason = benchmark(metrics, {})
+
+    assert metrics["annualization_available"] is False
+    assert metrics["trades_per_year"] == 0.0
+    assert metrics["cagr"] == 0.0
+    assert metrics["mar"] == 0.0
+    assert passed is False
+    assert "evaluation_period" in reason
 
 
 def test_max_drawdown_orders_trades_by_exit_timestamp():

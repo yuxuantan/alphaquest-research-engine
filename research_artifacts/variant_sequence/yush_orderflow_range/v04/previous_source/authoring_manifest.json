@@ -1,0 +1,996 @@
+{
+  "authoring_lane": "certified_event_replay",
+  "campaign_id": "yush_orderflow_range",
+  "certified_recipe": null,
+  "compiled_document_sha256": {
+    "campaign.yaml": "e1a2911711ea7f53b9723e57a721c498e1d84aa9582d8c68702494be67838e93",
+    "strategy_spec.yaml": "205c63c2e28617d40c21275a265c8ea6a18b4ba86c909ccfd5e28057d1b9f2f3",
+    "variants/v01/config.yaml": "694b67844098ecdd15b00a322fad01108f6376d55ee06de8bc1a2b4b9be97d49",
+    "variants/v02/config.yaml": "6f855be8075372c5f499833583d65216bb86563b602e077b248732501af1f6e2",
+    "variants/v03/config.yaml": "671bdcfcad29ff6b02317420e032beb474b0f71b31cba0a8271b02631132eb76"
+  },
+  "compiler": "alphaquest.authoring.CampaignCompiler/v1",
+  "created_at": "2026-07-20",
+  "dataset_canonical_sha256": "9e47ffd5b5a98ef49339649620753376f0c5b0f2ed096a61816450f265e46e47",
+  "dataset_id": "es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02",
+  "draft_schema": "alphaquest.campaign-draft/v1",
+  "draft_sha256": "61cb9d4e749724b0108f220f7962e340d7970a1624165d6691451f058c6bfb52",
+  "event_strategy": "yush_orderflow_range",
+  "generated_python_stubs": false,
+  "max_variants": 5,
+  "planned_files": [
+    "campaign.yaml",
+    "strategy_spec.yaml",
+    "authoring_manifest.json",
+    "variants/v01/config.yaml",
+    "variants/v02/config.yaml",
+    "variants/v03/config.yaml"
+  ],
+  "schema": "alphaquest.authoring-manifest/v1",
+  "strategy_certification": {
+    "certification_status": "certified",
+    "entry_module": "yush_orderflow_range",
+    "implementation_sha256": "f74191560103fbe817289f2ebc8d713d6c1b28bac6307410af5d6258733faed5",
+    "implementation_version": 1,
+    "lane": "canonical_event_replay",
+    "manifest_sha256": "c18aa9c12194d6e777d078951d9985ab4c4a2dab4954f20c2363c7388e503ab6",
+    "required_test_categories": [
+      "session_logic",
+      "entry_timing",
+      "stop_target_ordering",
+      "forced_flatten",
+      "no_lookahead",
+      "registry_and_runner"
+    ],
+    "required_tests": [
+      "tests/test_yush_range_reversal_v2.py",
+      "tests/test_event_replay.py"
+    ],
+    "schema": "alphaquest.strategy-certification/v1",
+    "stop_module": "event_aoi_structural_stop",
+    "strategy_id": "yush_orderflow_range",
+    "studio": {
+      "description": "Stateful causal AOI and order-flow reversal strategy for canonical trade-event replay.",
+      "label": "Yush Orderflow Range Reversal",
+      "visible": true
+    },
+    "target_module": "event_value_area_management"
+  },
+  "variant_count": 3,
+  "variant_mechanic_signatures": {
+    "v01": "40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1",
+    "v02": "2595e548d0eb42bfd6ed029f9b88c07bcc1ca3c0f19573d00387f3019db04da1",
+    "v03": "0ef08b6edfed91fed6a9d345fc80aa12db8f1a44ef8ec31c849c8207a6dd7806"
+  },
+  "variant_protocol": "sequential_failure_informed",
+  "variant_strategy_certifications": {
+    "v01": {
+      "certification_status": "certified",
+      "entry_module": "yush_orderflow_range",
+      "implementation_sha256": "f74191560103fbe817289f2ebc8d713d6c1b28bac6307410af5d6258733faed5",
+      "implementation_version": 1,
+      "lane": "canonical_event_replay",
+      "manifest_sha256": "c18aa9c12194d6e777d078951d9985ab4c4a2dab4954f20c2363c7388e503ab6",
+      "required_test_categories": [
+        "session_logic",
+        "entry_timing",
+        "stop_target_ordering",
+        "forced_flatten",
+        "no_lookahead",
+        "registry_and_runner"
+      ],
+      "required_tests": [
+        "tests/test_yush_range_reversal_v2.py",
+        "tests/test_event_replay.py"
+      ],
+      "schema": "alphaquest.strategy-certification/v1",
+      "stop_module": "event_aoi_structural_stop",
+      "strategy_id": "yush_orderflow_range",
+      "studio": {
+        "description": "Stateful causal AOI and order-flow reversal strategy for canonical trade-event replay.",
+        "label": "Yush Orderflow Range Reversal",
+        "visible": true
+      },
+      "target_module": "event_value_area_management"
+    },
+    "v02": {
+      "certification_status": "certified",
+      "entry_module": "yush_failed_auction_reclaim",
+      "implementation_sha256": "2c248c1fdb1ddaa242d70dcd04497c64cf61ed59bb678721a98eb95b41c1e7b5",
+      "implementation_version": 1,
+      "lane": "canonical_event_replay",
+      "manifest_sha256": "2ed03b067e94325e0c3b58d6274c963bcd0a24852be0677ed7d50ea4603952c3",
+      "parameters": {
+        "bar_seconds": {
+          "category": "entry",
+          "choices": [
+            180
+          ],
+          "default": 180,
+          "description": "Causal clock for local four-tick signed-delta accumulation.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "big_trade_threshold": {
+          "category": "entry",
+          "choices": [],
+          "default": 200,
+          "description": "Minimum same-price same-side volume in a causal 100 millisecond interval.",
+          "maximum": null,
+          "minimum": 1.0,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "big_trade_window_ms": {
+          "category": "entry",
+          "choices": [
+            100
+          ],
+          "default": 100,
+          "description": "Causal aggregation interval for same-price same-side aggressive trades.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "commission_per_contract": {
+          "category": "entry",
+          "choices": [],
+          "default": 2.5,
+          "description": "Per-side commission used by the entry reward-to-risk gate.",
+          "maximum": null,
+          "minimum": 0.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "contracts": {
+          "category": "entry",
+          "choices": [],
+          "default": 1,
+          "description": "Fixed position size used by the certified event strategy.",
+          "maximum": null,
+          "minimum": 1.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "decision_interval_ms": {
+          "category": "entry",
+          "choices": [
+            100
+          ],
+          "default": 100,
+          "description": "Causal market-state publication interval shared with event feature tapes.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "delta_bubble_threshold": {
+          "category": "entry",
+          "choices": [],
+          "default": 300,
+          "description": "Reviewed directional delta threshold retained from the campaign fingerprint.",
+          "maximum": null,
+          "minimum": 1.0,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "delta_neighbour_multiple": {
+          "category": "entry",
+          "choices": [],
+          "default": 2.0,
+          "description": "Required prominence versus the four neighboring delta buckets.",
+          "maximum": null,
+          "minimum": 1.0,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "delta_profile_min_abs": {
+          "category": "entry",
+          "choices": [],
+          "default": 300,
+          "description": "Minimum absolute directional four-tick delta during the outside excursion.",
+          "maximum": null,
+          "minimum": 1.0,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "excursion_ticks": {
+          "category": "entry",
+          "choices": [],
+          "default": 4,
+          "description": "Minimum failed continuation distance outside the frozen value boundary.",
+          "maximum": 12.0,
+          "minimum": 1.0,
+          "studio_editable": true,
+          "tunable": true,
+          "value_type": "integer"
+        },
+        "initial_balance": {
+          "category": "entry",
+          "choices": [],
+          "default": 50000.0,
+          "description": "Fixed account balance used by the reviewed execution contract.",
+          "maximum": null,
+          "minimum": 1.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "max_stop_points": {
+          "category": "sl",
+          "choices": [],
+          "default": 5.0,
+          "description": "Maximum entry-to-excursion-stop risk accepted before a fill.",
+          "maximum": 12.0,
+          "minimum": 0.25,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "max_trades_per_day": {
+          "category": "entry",
+          "choices": [],
+          "default": 3,
+          "description": "Maximum filled failed-auction entries in one session.",
+          "maximum": 3.0,
+          "minimum": 1.0,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "minimum_reward_risk": {
+          "category": "tp",
+          "choices": [],
+          "default": 1.0,
+          "description": "Minimum frozen POC reward relative to initial risk before transaction costs.",
+          "maximum": null,
+          "minimum": 1.0,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "opening_range_seconds": {
+          "category": "entry",
+          "choices": [],
+          "default": 32,
+          "description": "Elapsed RTH time required before opening-range references are available.",
+          "maximum": null,
+          "minimum": 1.0,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "point_value": {
+          "category": "entry",
+          "choices": [],
+          "default": 50.0,
+          "description": "Dollar value of one ES point under the execution contract.",
+          "maximum": null,
+          "minimum": 0.01,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "reclaim_window_seconds": {
+          "category": "entry",
+          "choices": [],
+          "default": 15,
+          "description": "Maximum causal time from outside crossing to one-tick reclaim inside value.",
+          "maximum": 60.0,
+          "minimum": 1.0,
+          "studio_editable": true,
+          "tunable": true,
+          "value_type": "integer"
+        },
+        "reference_distance_ticks": {
+          "category": "entry",
+          "choices": [],
+          "default": 4,
+          "description": "Maximum distance between the developing value edge and a known market reference.",
+          "maximum": 12.0,
+          "minimum": 0.0,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "slippage_ticks": {
+          "category": "entry",
+          "choices": [],
+          "default": 1,
+          "description": "Adverse ticks charged on entry and exit by the generic event engine.",
+          "maximum": null,
+          "minimum": 0.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "stop_buffer_ticks": {
+          "category": "sl",
+          "choices": [],
+          "default": 2,
+          "description": "Protective-stop displacement beyond the observed excursion extreme.",
+          "maximum": 8.0,
+          "minimum": 1.0,
+          "studio_editable": true,
+          "tunable": true,
+          "value_type": "integer"
+        },
+        "tick_size": {
+          "category": "entry",
+          "choices": [],
+          "default": 0.25,
+          "description": "ES minimum price increment used for every frozen level and event fill.",
+          "maximum": null,
+          "minimum": 0.01,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "time_exit_seconds": {
+          "category": "tp",
+          "choices": [],
+          "default": 600,
+          "description": "Maximum holding time before flattening at the next canonical trade event.",
+          "maximum": 1800.0,
+          "minimum": 60.0,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "value_area_fraction": {
+          "category": "entry",
+          "choices": [],
+          "default": 0.7,
+          "description": "Causal developing profile fraction used to compute VAL VAH and POC.",
+          "maximum": 0.9,
+          "minimum": 0.5,
+          "studio_editable": true,
+          "tunable": false,
+          "value_type": "number"
+        }
+      },
+      "required_test_categories": [
+        "session_logic",
+        "entry_timing",
+        "stop_target_ordering",
+        "forced_flatten",
+        "no_lookahead",
+        "registry_and_runner"
+      ],
+      "required_tests": [
+        "tests/test_yush_failed_auction_reclaim.py",
+        "tests/test_event_replay.py",
+        "tests/test_core_grid.py"
+      ],
+      "schema": "alphaquest.strategy-certification/v1",
+      "stop_module": "event_excursion_structural_stop",
+      "strategy_id": "yush_failed_auction_reclaim",
+      "studio": {
+        "description": "Directional outside aggression must fail and reclaim a frozen value edge before entry.",
+        "label": "Yush Failed-Auction Reclaim",
+        "visible": true
+      },
+      "target_module": "event_frozen_poc_time_exit"
+    },
+    "v03": {
+      "certification_status": "certified",
+      "entry_module": "yush_adaptive_orderflow_range_v3",
+      "implementation_sha256": "6c83237d491a26f65f10df80567efb13eb76c342112c53894bde4e90cf6ad76d",
+      "implementation_version": 1,
+      "lane": "canonical_event_replay",
+      "manifest_sha256": "33088df480acbffd04bcbd4fdc9309c96874cfe8a852e0eb51742735549e9cee",
+      "parameters": {
+        "afternoon_entry_end": {
+          "category": "entry",
+          "choices": [
+            "15:30:00"
+          ],
+          "default": "15:30:00",
+          "description": "Afternoon entry cutoff.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "string"
+        },
+        "afternoon_entry_start": {
+          "category": "entry",
+          "choices": [
+            "13:45:00"
+          ],
+          "default": "13:45:00",
+          "description": "Afternoon entry start after five completed reset-profile bars.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "string"
+        },
+        "afternoon_profile_reset": {
+          "category": "entry",
+          "choices": [
+            "13:30:00"
+          ],
+          "default": "13:30:00",
+          "description": "Causal afternoon auction-profile and delta reset.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "string"
+        },
+        "aoi_big_trade_lookback_minutes": {
+          "category": "entry",
+          "choices": [],
+          "default": 30,
+          "description": "Fresh large-execution footprint lookback and AOI lifetime.",
+          "maximum": 30.0,
+          "minimum": 30.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "aoi_level_distance_ticks": {
+          "category": "entry",
+          "choices": [],
+          "default": 4,
+          "description": "One profile-row footprint and context proximity radius.",
+          "maximum": 4.0,
+          "minimum": 4.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "aoi_ttl_minutes": {
+          "category": "entry",
+          "choices": [],
+          "default": 30,
+          "description": "Maximum lifetime of one fresh footprint AOI identity.",
+          "maximum": 30.0,
+          "minimum": 30.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "atr_context_path": {
+          "category": "entry",
+          "choices": [
+            "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet"
+          ],
+          "default": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet",
+          "description": "Hash-bound prior-session ATR seed context.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "string"
+        },
+        "atr_context_sha256": {
+          "category": "entry",
+          "choices": [
+            "436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4"
+          ],
+          "default": "436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4",
+          "description": "SHA-256 of the ATR seed context.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "string"
+        },
+        "atr_lookback_bars": {
+          "category": "sl",
+          "choices": [],
+          "default": 14,
+          "description": "Wilder ATR lookback in completed three-minute bars.",
+          "maximum": 14.0,
+          "minimum": 14.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "bar_seconds": {
+          "category": "entry",
+          "choices": [],
+          "default": 180,
+          "description": "Causal profile signal and holding bar duration.",
+          "maximum": 180.0,
+          "minimum": 180.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "big_trade_context_path": {
+          "category": "entry",
+          "choices": [
+            "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q995_prior20_context.parquet"
+          ],
+          "default": "research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q995_prior20_context.parquet",
+          "description": "Hash-bound prior-session large-execution context.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "string"
+        },
+        "big_trade_context_sha256": {
+          "category": "entry",
+          "choices": [
+            "139f53eea8b3808390c891831c659ba8d9e5c659e8ae9b7ea17644d8fa481ca6"
+          ],
+          "default": "139f53eea8b3808390c891831c659ba8d9e5c659e8ae9b7ea17644d8fa481ca6",
+          "description": "SHA-256 of the prior-session large-execution context.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "string"
+        },
+        "big_trade_interval_ms": {
+          "category": "entry",
+          "choices": [],
+          "default": 100,
+          "description": "Fixed wall-clock large-execution cell duration.",
+          "maximum": 100.0,
+          "minimum": 100.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "big_trade_lookback_sessions": {
+          "category": "entry",
+          "choices": [],
+          "default": 20,
+          "description": "Completed sessions used for the large-execution threshold.",
+          "maximum": 20.0,
+          "minimum": 20.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "big_trade_price_bucket_ticks": {
+          "category": "entry",
+          "choices": [],
+          "default": 1,
+          "description": "Large-execution cells isolate one ES tick and aggressor side.",
+          "maximum": 1.0,
+          "minimum": 1.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "big_trade_reference_percentile": {
+          "category": "entry",
+          "choices": [],
+          "default": 0.995,
+          "description": "Prior-session causal large-execution percentile.",
+          "maximum": 0.995,
+          "minimum": 0.995,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "commission_per_contract": {
+          "category": "entry",
+          "choices": [],
+          "default": 1.55,
+          "description": "Per-side commission in dollars per contract.",
+          "maximum": 1.55,
+          "minimum": 1.55,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "delta_profile_percentile": {
+          "category": "entry",
+          "choices": [],
+          "default": 0.9,
+          "description": "Required absolute profile-delta percentile at the exact edge row.",
+          "maximum": 0.9,
+          "minimum": 0.9,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "entry_expiry_bars": {
+          "category": "entry",
+          "choices": [],
+          "default": 1,
+          "description": "Safety expiry for the single-next-event market instruction.",
+          "maximum": 1.0,
+          "minimum": 1.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "entry_offset_ticks": {
+          "category": "entry",
+          "choices": [],
+          "default": 1,
+          "description": "One adverse entry-slippage tick used in causal planning.",
+          "maximum": 1.0,
+          "minimum": 1.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "failure_confirmation_bars": {
+          "category": "entry",
+          "choices": [],
+          "default": 3,
+          "description": "Maximum completed bars allowed for a reclaim.",
+          "maximum": 3.0,
+          "minimum": 3.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "max_trades_per_day": {
+          "category": "entry",
+          "choices": [],
+          "default": 0,
+          "description": "No strategy-level daily entry cap; independent account risk controls remain active.",
+          "maximum": 0.0,
+          "minimum": 0.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "maximum_entries_per_aoi": {
+          "category": "entry",
+          "choices": [],
+          "default": 1,
+          "description": "One fill per fresh footprint identity rather than per price per session.",
+          "maximum": 1.0,
+          "minimum": 1.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "maximum_holding_bars": {
+          "category": "tp",
+          "choices": [],
+          "default": 12,
+          "description": "Maximum hold after entry in completed three-minute bars.",
+          "maximum": 12.0,
+          "minimum": 12.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "maximum_stop_atr_multiple": {
+          "category": "sl",
+          "choices": [
+            1.25,
+            1.75,
+            2.25
+          ],
+          "default": 1.75,
+          "description": "Maximum structural entry risk in causal ATR units.",
+          "maximum": 2.25,
+          "minimum": 1.25,
+          "studio_editable": true,
+          "tunable": true,
+          "value_type": "number"
+        },
+        "maximum_stop_ticks": {
+          "category": "sl",
+          "choices": [],
+          "default": 60,
+          "description": "Catastrophe cap for structural entry risk.",
+          "maximum": 60.0,
+          "minimum": 60.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "minimum_stop_ticks": {
+          "category": "sl",
+          "choices": [],
+          "default": 2,
+          "description": "Two-tick execution floor that can never exceed the adaptive maximum.",
+          "maximum": 2.0,
+          "minimum": 2.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "morning_entry_end": {
+          "category": "entry",
+          "choices": [
+            "11:30:00"
+          ],
+          "default": "11:30:00",
+          "description": "Morning entry cutoff.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "string"
+        },
+        "morning_entry_start": {
+          "category": "entry",
+          "choices": [
+            "09:45:00"
+          ],
+          "default": "09:45:00",
+          "description": "Morning entry start after five completed profile bars.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "string"
+        },
+        "opening_range_seconds": {
+          "category": "entry",
+          "choices": [],
+          "default": 30,
+          "description": "Diagnostic opening-range duration.",
+          "maximum": 30.0,
+          "minimum": 30.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "point_value": {
+          "category": "entry",
+          "choices": [],
+          "default": 50.0,
+          "description": "Dollar value of one ES point.",
+          "maximum": 50.0,
+          "minimum": 50.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "price_bin_ticks": {
+          "category": "entry",
+          "choices": [],
+          "default": 4,
+          "description": "MotiveWave profile row width in ES ticks.",
+          "maximum": 4.0,
+          "minimum": 4.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "profile_warmup_bars": {
+          "category": "entry",
+          "choices": [],
+          "default": 5,
+          "description": "Completed bars required before an auction-epoch profile may arm.",
+          "maximum": 5.0,
+          "minimum": 5.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "reclaim_atr_fraction": {
+          "category": "entry",
+          "choices": [],
+          "default": 0.05,
+          "description": "Required close-back-inside depth as a fraction of causal ATR with a one-tick floor.",
+          "maximum": 0.05,
+          "minimum": 0.05,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "regime_window_bars": {
+          "category": "entry",
+          "choices": [],
+          "default": 10,
+          "description": "Bars in each causal trend-comparison window.",
+          "maximum": 10.0,
+          "minimum": 10.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "risk_budget_dollars": {
+          "category": "entry",
+          "choices": [],
+          "default": 1600.0,
+          "description": "Predeclared maximum planned account risk budget.",
+          "maximum": 1600.0,
+          "minimum": 1600.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "stop_buffer_atr_fraction": {
+          "category": "sl",
+          "choices": [],
+          "default": 0.1,
+          "description": "Stop buffer beyond the sweep extreme in causal ATR units with a one-tick floor.",
+          "maximum": 0.1,
+          "minimum": 0.1,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "stop_offset_ticks": {
+          "category": "sl",
+          "choices": [],
+          "default": 1,
+          "description": "Absolute floor under the ATR-normalized structural-stop buffer.",
+          "maximum": 1.0,
+          "minimum": 1.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "sweep_atr_fraction": {
+          "category": "entry",
+          "choices": [
+            0.1,
+            0.2,
+            0.3
+          ],
+          "default": 0.2,
+          "description": "Sweep distance as a fraction of causal ATR with a two-tick floor.",
+          "maximum": 0.3,
+          "minimum": 0.1,
+          "studio_editable": true,
+          "tunable": true,
+          "value_type": "number"
+        },
+        "sweep_minimum_ticks": {
+          "category": "entry",
+          "choices": [],
+          "default": 2,
+          "description": "Absolute floor under the ATR-normalized sweep distance.",
+          "maximum": 2.0,
+          "minimum": 2.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "target_1_fraction": {
+          "category": "tp",
+          "choices": [],
+          "default": 0.5,
+          "description": "Fraction exited at the frozen POC.",
+          "maximum": 0.5,
+          "minimum": 0.5,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "tick_size": {
+          "category": "entry",
+          "choices": [],
+          "default": 0.25,
+          "description": "ES minimum price increment.",
+          "maximum": 0.25,
+          "minimum": 0.25,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "trend_efficiency_minimum": {
+          "category": "entry",
+          "choices": [],
+          "default": 0.55,
+          "description": "Minimum path efficiency for a directional breakout regime.",
+          "maximum": 0.55,
+          "minimum": 0.55,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "trend_midpoint_shift_ticks": {
+          "category": "entry",
+          "choices": [],
+          "default": 8,
+          "description": "Legacy compatibility field superseded by the ATR-normalized trend shift.",
+          "maximum": 8.0,
+          "minimum": 8.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "trend_overlap_maximum": {
+          "category": "entry",
+          "choices": [],
+          "default": 0.5,
+          "description": "Maximum overlap for a directional breakout regime.",
+          "maximum": 0.5,
+          "minimum": 0.5,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "trend_poc_shift_ticks": {
+          "category": "entry",
+          "choices": [],
+          "default": 8,
+          "description": "Legacy compatibility field superseded by the ATR-normalized trend shift.",
+          "maximum": 8.0,
+          "minimum": 8.0,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "integer"
+        },
+        "trend_shift_atr_fraction": {
+          "category": "entry",
+          "choices": [],
+          "default": 0.5,
+          "description": "Required rolling POC and midpoint migration in causal ATR units.",
+          "maximum": 0.5,
+          "minimum": 0.5,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "value_area_fraction": {
+          "category": "entry",
+          "choices": [],
+          "default": 0.7,
+          "description": "MotiveWave Standard value-area volume fraction.",
+          "maximum": 0.7,
+          "minimum": 0.7,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "number"
+        },
+        "value_area_method": {
+          "category": "entry",
+          "choices": [
+            "motivewave_standard"
+          ],
+          "default": "motivewave_standard",
+          "description": "Deterministic MotiveWave Standard adjacent-pair value-area expansion.",
+          "maximum": null,
+          "minimum": null,
+          "studio_editable": false,
+          "tunable": false,
+          "value_type": "string"
+        }
+      },
+      "required_test_categories": [
+        "session_logic",
+        "entry_timing",
+        "stop_target_ordering",
+        "forced_flatten",
+        "no_lookahead",
+        "registry_and_runner"
+      ],
+      "required_tests": [
+        "tests/test_yush_adaptive_orderflow_range_v3.py",
+        "tests/test_yush_chart_fanatics_range.py",
+        "tests/test_yush_big_trade_context.py",
+        "tests/test_event_replay_partial_exit.py",
+        "tests/test_event_replay.py",
+        "tests/test_position_sizing.py",
+        "tests/test_event_replay_cache.py",
+        "tests/test_core_grid.py",
+        "tests/test_scid_execution.py",
+        "tests/test_sierra_events.py",
+        "tests/test_sierra_session_stream.py",
+        "tests/test_validation_checks.py"
+      ],
+      "schema": "alphaquest.strategy-certification/v1",
+      "stop_module": "event_adaptive_sweep_structural_stop",
+      "strategy_id": "yush_adaptive_orderflow_range_v3",
+      "studio": {
+        "description": "Volatility-normalized re-armable value-edge failure with fresh footprint identities and next-event entry.",
+        "label": "Yush Adaptive Orderflow Range v03",
+        "visible": true
+      },
+      "target_module": "event_frozen_poc_value_area_scale_out"
+    }
+  }
+}

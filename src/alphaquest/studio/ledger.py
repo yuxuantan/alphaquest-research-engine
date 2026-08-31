@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 from tempfile import NamedTemporaryFile
-from typing import Any
+from typing import Any, Mapping
 
 from alphaquest.research.storage import display_path, load_storage_layout
 
@@ -186,7 +186,8 @@ def append_planned_follow_up(
     attempt_kind: str,
     parent_attempt_id: str,
     reason: str,
-    dataset_id: str,
+    dataset_id: str | None = None,
+    dataset_ids: Mapping[str, str] | None = None,
     config_paths: dict[str, str],
     project_root: str | Path = ".",
 ) -> tuple[int, Path]:
@@ -208,6 +209,13 @@ def append_planned_follow_up(
     }
     timestamp = datetime.now(timezone.utc).isoformat()
     campaign_id = str(campaign.get("campaign_id") or "")
+    resolved_dataset_ids = dict(dataset_ids or {})
+    if not resolved_dataset_ids and dataset_id:
+        resolved_dataset_ids = {
+            variant_id: dataset_id for variant_id in config_paths
+        }
+    if set(resolved_dataset_ids) != set(config_paths):
+        raise ValueError("follow-up ledger append requires one dataset identity per variant")
     candidates = [
         {
             "timestamp": timestamp,
@@ -220,7 +228,7 @@ def append_planned_follow_up(
                 f"Explicit {attempt_kind} from {parent_attempt_id}; reviewed reason: {reason}"
             ),
             "parameter_space": "frozen in follow-up strategy_spec.yaml",
-            "data_scope": dataset_id,
+            "data_scope": resolved_dataset_ids[variant_id],
             "config_path": config_path,
             "report_path": "",
             "stage": stage,

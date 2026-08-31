@@ -1,0 +1,347 @@
+{
+  "$defs": {
+    "AccountEvaluationBindingV3": {
+      "additionalProperties": false,
+      "properties": {
+        "account_kind": {
+          "enum": [
+            "prop_challenge",
+            "prop_funded",
+            "live"
+          ],
+          "title": "Account Kind",
+          "type": "string"
+        },
+        "assessment_id": {
+          "title": "Assessment Id",
+          "type": "string"
+        },
+        "destination_candidate_eligible": {
+          "default": false,
+          "title": "Destination Candidate Eligible",
+          "type": "boolean"
+        },
+        "deterministic_verdict": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NEEDS MANUAL REVIEW"
+          ],
+          "title": "Deterministic Verdict",
+          "type": "string"
+        },
+        "eligibility_blockers": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Eligibility Blockers",
+          "type": "array"
+        },
+        "expected_evaluation_fees_per_pass": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Evaluation Fees Per Pass"
+        },
+        "expected_net_payout_after_costs": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Net Payout After Costs"
+        },
+        "expected_net_payout_after_expected_replacement_cost": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Net Payout After Expected Replacement Cost"
+        },
+        "expected_payout_to_cost_ratio": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Payout To Cost Ratio"
+        },
+        "expected_replacement_cost": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Expected Replacement Cost"
+        },
+        "manifest_path": {
+          "title": "Manifest Path",
+          "type": "string"
+        },
+        "manifest_sha256": {
+          "title": "Manifest Sha256",
+          "type": "string"
+        },
+        "monte_carlo_verdict": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NEEDS MANUAL REVIEW"
+          ],
+          "title": "Monte Carlo Verdict",
+          "type": "string"
+        },
+        "p95_maximum_drawdown": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P95 Maximum Drawdown"
+        },
+        "probability_account_closed": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probability Account Closed"
+        },
+        "probability_daily_loss_lock": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probability Daily Loss Lock"
+        },
+        "probability_first_payout": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probability First Payout"
+        },
+        "probability_position_close_violation": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probability Position Close Violation"
+        },
+        "probability_two_payouts": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Probability Two Payouts"
+        },
+        "profile_id": {
+          "title": "Profile Id",
+          "type": "string"
+        },
+        "profile_sha256": {
+          "title": "Profile Sha256",
+          "type": "string"
+        },
+        "profile_version": {
+          "title": "Profile Version",
+          "type": "string"
+        },
+        "verdict": {
+          "enum": [
+            "PASS",
+            "FAIL",
+            "NEEDS MANUAL REVIEW"
+          ],
+          "title": "Verdict",
+          "type": "string"
+        }
+      },
+      "required": [
+        "assessment_id",
+        "profile_id",
+        "profile_version",
+        "profile_sha256",
+        "account_kind",
+        "verdict",
+        "deterministic_verdict",
+        "monte_carlo_verdict",
+        "manifest_path",
+        "manifest_sha256"
+      ],
+      "title": "AccountEvaluationBindingV3",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Scientific result plus zero or more destination-specific verdicts.",
+  "properties": {
+    "account_evaluations": {
+      "items": {
+        "$ref": "#/$defs/AccountEvaluationBindingV3"
+      },
+      "title": "Account Evaluations",
+      "type": "array"
+    },
+    "account_suitability_complete": {
+      "title": "Account Suitability Complete",
+      "type": "boolean"
+    },
+    "campaign_id": {
+      "title": "Campaign Id",
+      "type": "string"
+    },
+    "deployment_authorized": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Deployment Authorized",
+      "type": "boolean"
+    },
+    "destination_candidate_profile_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Destination Candidate Profile Ids",
+      "type": "array"
+    },
+    "generated_at": {
+      "format": "date-time",
+      "title": "Generated At",
+      "type": "string"
+    },
+    "generic_objective_verdict": {
+      "default": "NEEDS MANUAL REVIEW",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Generic Objective Verdict",
+      "type": "string"
+    },
+    "result_bundle_v2_path": {
+      "title": "Result Bundle V2 Path",
+      "type": "string"
+    },
+    "result_bundle_v2_sha256": {
+      "title": "Result Bundle V2 Sha256",
+      "type": "string"
+    },
+    "run_id": {
+      "title": "Run Id",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.result-bundle/v3",
+      "default": "alphaquest.result-bundle/v3",
+      "enum": [
+        "alphaquest.result-bundle/v3"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "scientific_validity_verdict": {
+      "default": "NEEDS MANUAL REVIEW",
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Scientific Validity Verdict",
+      "type": "string"
+    },
+    "scientific_verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Scientific Verdict",
+      "type": "string"
+    },
+    "scientific_verdict_message": {
+      "title": "Scientific Verdict Message",
+      "type": "string"
+    },
+    "universal_tradeability_claim_permitted": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Universal Tradeability Claim Permitted",
+      "type": "boolean"
+    },
+    "variant_id": {
+      "title": "Variant Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "campaign_id",
+    "variant_id",
+    "run_id",
+    "generated_at",
+    "scientific_verdict",
+    "scientific_verdict_message",
+    "result_bundle_v2_path",
+    "result_bundle_v2_sha256",
+    "account_suitability_complete"
+  ],
+  "title": "ResultBundleV3",
+  "type": "object"
+}

@@ -9,16 +9,22 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
+import pandas as pd
 from pydantic import ValidationError
 
 from alphaquest.authoring.catalog import CERTIFIED_MODULE_CATALOG, CertifiedModuleCatalog
 from alphaquest.authoring.models import CampaignDraftV1, ModuleBindingV1, VariantDraftV1
+from alphaquest.accounts.catalog import resolve_account_profile
 from alphaquest.prop.profiles import resolve_prop_profile
+from alphaquest.research.policy import load_research_policy
+from alphaquest.research.factory_policy import research_factory_binding
 from alphaquest.strategy_certification import (
     StrategyCertification,
     StrategyCertificationError,
+    apply_certified_execution_contract,
     get_strategy_certification,
     normalize_certified_event_params,
+    require_certified_execution_contract,
     validate_certified_event_parameter_grid,
 )
 
@@ -73,7 +79,7 @@ class CampaignCompiler:
         except (ValidationError, TypeError, ValueError) as exc:
             raise CampaignCompilationError(f"campaign draft is invalid: {exc}") from exc
         self._validate_publishable(parsed)
-        certification = self._event_certification(parsed)
+        certifications = self._event_certifications(parsed)
 
         normalized: list[tuple[VariantDraftV1, ModuleBindingV1, ModuleBindingV1, ModuleBindingV1]] = []
         for variant in parsed.variants:
@@ -86,11 +92,10 @@ class CampaignCompiler:
                 target = self.catalog.validate_binding("tp", target_input, dataset=parsed.dataset)
             except ValueError as exc:
                 raise CampaignCompilationError(f"variant {variant.variant_id}: {exc}") from exc
+            certification = certifications.get(variant.variant_id)
             if certification is not None:
                 try:
-                    normalize_certified_event_params(
-                        certification, dict(entry.params.get("mechanics") or {})
-                    )
+                    normalize_certified_event_params(certification, dict(entry.params.get("mechanics") or {}))
                     validate_certified_event_parameter_grid(
                         certification,
                         dict(entry.params.get("mechanics") or {}),
@@ -104,10 +109,22 @@ class CampaignCompiler:
         draft_sha256 = _object_sha256(draft_document)
         campaign = self._campaign_document(parsed, normalized)
         variant_configs = {
-            variant.variant_id: self._variant_config(parsed, variant, entry, stop, target, certification)
+            variant.variant_id: self._variant_config(
+                parsed,
+                variant,
+                entry,
+                stop,
+                target,
+                certifications.get(variant.variant_id),
+            )
             for variant, entry, stop, target in normalized
         }
-        strategy_spec = self._strategy_spec(parsed, normalized, draft_sha256, certification)
+        strategy_spec = self._strategy_spec(
+            parsed,
+            normalized,
+            draft_sha256,
+            certifications,
+        )
         manifest = self._authoring_manifest(
             parsed,
             normalized,
@@ -115,7 +132,7 @@ class CampaignCompiler:
             campaign=campaign,
             variant_configs=variant_configs,
             strategy_spec=strategy_spec,
-            certification=certification,
+            certifications=certifications,
         )
         return CompiledCampaign(
             draft=parsed.model_copy(deep=True),
@@ -131,6 +148,18 @@ class CampaignCompiler:
     def _validate_publishable(self, draft: CampaignDraftV1) -> None:
         if not draft.frozen:
             raise CampaignCompilationError("draft must be frozen before compilation")
+        if draft.research_objectives is None:
+            raise CampaignCompilationError("confirmed pre-PnL research objectives are required")
+        try:
+            load_research_policy().validate_objectives(
+                draft.research_objectives.model_dump(mode="json")
+            )
+        except ValueError as exc:
+            raise CampaignCompilationError(str(exc)) from exc
+        if date.fromisoformat(draft.research_objectives.development_deadline) < date.today():
+            raise CampaignCompilationError(
+                "research development deadline has passed; abandon or create an explicit new protocol"
+            )
         if draft.dataset.quality_verdict != "PASS":
             raise CampaignCompilationError("selected dataset must have a PASS quality verdict")
         if draft.dataset.timestamp_semantics != "bar_open":
@@ -162,26 +191,11 @@ class CampaignCompiler:
             raise CampaignCompilationError("every currently declared variant mechanic must be individually confirmed")
         substantive = {
             "duplicate distinction": draft.duplicate_review.substantive_distinction,
-            **{
-                f"{variant.variant_id} mechanic": variant.mechanic_rationale
-                for variant in draft.variants
-            },
-            **{
-                f"{variant.variant_id} material difference": variant.material_difference
-                for variant in draft.variants
-            },
-            **{
-                f"{variant.variant_id} entry rationale": variant.entry_rationale
-                for variant in draft.variants
-            },
-            **{
-                f"{variant.variant_id} stop rationale": variant.stop_rationale
-                for variant in draft.variants
-            },
-            **{
-                f"{variant.variant_id} target rationale": variant.target_rationale
-                for variant in draft.variants
-            },
+            **{f"{variant.variant_id} mechanic": variant.mechanic_rationale for variant in draft.variants},
+            **{f"{variant.variant_id} material difference": variant.material_difference for variant in draft.variants},
+            **{f"{variant.variant_id} entry rationale": variant.entry_rationale for variant in draft.variants},
+            **{f"{variant.variant_id} stop rationale": variant.stop_rationale for variant in draft.variants},
+            **{f"{variant.variant_id} target rationale": variant.target_rationale for variant in draft.variants},
             **{
                 f"{variant.variant_id} known failure modes": " ".join(variant.known_failure_modes)
                 for variant in draft.variants
@@ -203,16 +217,24 @@ class CampaignCompiler:
         if any(len(value.strip()) < 20 for value in fingerprint_values):
             raise CampaignCompilationError("every economic edge fingerprint field must contain at least 20 characters")
 
-    def _event_certification(self, draft: CampaignDraftV1) -> StrategyCertification | None:
+    def _event_certifications(
+        self,
+        draft: CampaignDraftV1,
+    ) -> dict[str, StrategyCertification]:
         if draft.authoring_lane != "certified_event_replay":
-            return None
-        try:
-            certification = get_strategy_certification(
-                str(draft.event_strategy or ""), self.project_root, require_current=True
-            )
-        except StrategyCertificationError as exc:
-            raise CampaignCompilationError(f"event strategy cannot be published: {exc}") from exc
+            return {}
+        certifications: dict[str, StrategyCertification] = {}
         for variant in draft.variants:
+            try:
+                certification = get_strategy_certification(
+                    variant.entry.module,
+                    self.project_root,
+                    require_current=True,
+                )
+            except StrategyCertificationError as exc:
+                raise CampaignCompilationError(
+                    f"variant {variant.variant_id} event strategy cannot be published: {exc}"
+                ) from exc
             if (
                 variant.entry.module != certification.entry_module
                 or variant.stop.module != certification.stop_module
@@ -222,12 +244,18 @@ class CampaignCompiler:
                     f"variant {variant.variant_id} modules do not match certified strategy "
                     f"{certification.strategy_id} version {certification.implementation_version}"
                 )
-        return certification
+            certifications[variant.variant_id] = certification
+        return certifications
 
     def _bind_context(self, draft: CampaignDraftV1, binding: ModuleBindingV1) -> ModuleBindingV1:
         params = deepcopy(binding.params)
         timeframe_minutes = _timeframe_minutes(draft.timeframe)
-        if binding.module in {"safe_bar_rule", "calendar_session_bias", "opening_range_breakout", "daily_time_series_momentum"}:
+        if binding.module in {
+            "safe_bar_rule",
+            "calendar_session_bias",
+            "opening_range_breakout",
+            "daily_time_series_momentum",
+        }:
             if binding.module == "safe_bar_rule":
                 rule = deepcopy(params.get("rule")) if isinstance(params.get("rule"), dict) else {}
                 rule.setdefault("bar_interval_minutes", timeframe_minutes)
@@ -273,6 +301,8 @@ class CampaignCompiler:
         variants: list[tuple[VariantDraftV1, ModuleBindingV1, ModuleBindingV1, ModuleBindingV1]],
     ) -> dict[str, Any]:
         fingerprint = draft.economic_edge_fingerprint
+        objectives = draft.research_objectives.model_dump(mode="json", by_alias=True)
+        factory_binding = _research_factory_binding(draft, objectives)
         return {
             "campaign_id": draft.campaign_id,
             "title": draft.title,
@@ -282,10 +312,16 @@ class CampaignCompiler:
             "timeframe": draft.timeframe,
             "governance_contract_version": 3 if draft.variant_protocol == "sequential_failure_informed" else 2,
             "variant_protocol": draft.variant_protocol,
-            "max_variants": 5,
+            "max_variants": draft.research_objectives.maximum_variants,
+            "research_objectives": objectives,
+            "research_objectives_sha256": _object_sha256(objectives),
+            "research_factory": factory_binding,
             "authoring_lane": draft.authoring_lane,
             "certified_recipe": draft.certified_recipe,
             "event_strategy": draft.event_strategy,
+            "event_strategies": {variant.variant_id: variant.entry.module for variant, *_ in variants}
+            if draft.authoring_lane == "certified_event_replay"
+            else {},
             "edge_family": draft.edge_family,
             "hypothesis": draft.hypothesis,
             "economic_edge_fingerprint": {
@@ -346,6 +382,10 @@ class CampaignCompiler:
             draft.dataset.coverage_start,
             draft.dataset.coverage_end,
             entry=entry,
+            data_path=draft.dataset.path,
+            data_source=draft.dataset.source,
+            exchange_timezone=draft.dataset.exchange_timezone,
+            project_root=self.project_root,
         )
         if certification is None:
             grid = _parameter_grid(entry, stop, target)
@@ -368,8 +408,20 @@ class CampaignCompiler:
             max_contracts=draft.execution.contracts,
             force_flatten_time=draft.execution.flatten_time,
         )
+        account_profile_bindings = []
+        for selection in draft.execution.target_account_profiles:
+            resolved_account = resolve_account_profile(
+                selection.profile_id,
+                version=selection.version,
+                project_root=self.project_root or Path.cwd(),
+            )
+            snapshot = resolved_account.snapshot()
+            snapshot["role"] = selection.role
+            account_profile_bindings.append(snapshot)
         profitability = f"{draft.expected_mechanism} {variant.mechanic_rationale}".strip()
         failures = " ".join(variant.known_failure_modes)
+        objectives = draft.research_objectives.model_dump(mode="json", by_alias=True)
+        factory_binding = _research_factory_binding(draft, objectives)
         config: dict[str, Any] = {
             "campaign_id": draft.campaign_id,
             "variant_id": variant.variant_id,
@@ -380,6 +432,9 @@ class CampaignCompiler:
             "symbol": draft.instrument,
             "dataset_id": draft.dataset.dataset_id,
             "timeframe": draft.timeframe,
+            "research_objectives": objectives,
+            "research_objectives_sha256": _object_sha256(objectives),
+            "research_factory": factory_binding,
             "research_metadata": {
                 "authoring_contract": "alphaquest.campaign-draft/v1",
                 "mechanic_signature": variant.mechanic_signature,
@@ -427,6 +482,8 @@ class CampaignCompiler:
                 ),
                 "source_sha256": draft.dataset.source_sha256,
                 "canonical_sha256": draft.dataset.canonical_sha256,
+                "coverage_start": draft.dataset.coverage_start,
+                "coverage_end": draft.dataset.coverage_end,
                 "roll_policy": draft.dataset.roll_policy,
                 "continuous_contract": draft.dataset.continuous_contract,
                 "contract_column": draft.dataset.contract_column,
@@ -521,6 +578,7 @@ class CampaignCompiler:
                 "acceptance_oos_test": {"enabled": True, "train_months": 24, "test_months": 6},
             },
             "prop_rules": prop_rules,
+            "account_profile_bindings": account_profile_bindings,
             "monte_carlo": {
                 "trade_source": "core",
                 "runs": 300,
@@ -540,19 +598,17 @@ class CampaignCompiler:
             config["data"]["roll_calendar_sha256"] = draft.dataset.roll_calendar_sha256
         if draft.authoring_lane == "certified_event_replay":
             event_source = draft.dataset.event_source
-            if event_source is None or draft.event_strategy is None:
+            if event_source is None or certification is None:
                 raise CampaignCompilationError("certified event replay is missing its frozen event contract")
             execution_data = event_source.model_dump(mode="json", exclude_none=True)
             config["engine_lane"] = "canonical_event_replay"
-            config["strategy_name"] = draft.event_strategy
+            config["strategy_name"] = certification.strategy_id
             config["data"]["execution_data"] = execution_data
             config["research_metadata"]["validation_gate"]["lane"] = "event_replay"
             config["strategy"]["event"] = {
-                "module": draft.event_strategy,
+                "module": certification.strategy_id,
                 "params": deepcopy(event_params or {}),
             }
-            if certification is None:
-                raise CampaignCompilationError("certified event replay is missing implementation identity")
             config["strategy_certification"] = {
                 "strategy_id": certification.strategy_id,
                 "implementation_version": certification.implementation_version,
@@ -562,27 +618,70 @@ class CampaignCompiler:
             config["core"].update(
                 {
                     "contracts": draft.execution.contracts,
-                    "entry_start": draft.execution.session_start,
-                    "latest_entry_time": draft.execution.latest_entry_time,
-                    "max_trades_per_day": int(
-                        (event_params or {}).get("max_trades_per_day", 3)
+                    "entry_start": str(
+                        (event_params or {}).get(
+                            "morning_entry_start",
+                            draft.execution.session_start,
+                        )
                     ),
+                    "latest_entry_time": str(
+                        (event_params or {}).get(
+                            "afternoon_entry_end",
+                            draft.execution.latest_entry_time,
+                        )
+                    ),
+                    "max_trades_per_day": int((event_params or {}).get("max_trades_per_day", 3)),
                     "event_stop_market_fill_policy": "trade_event_price_on_gap",
                 }
             )
-        return config
+            risk_budget = (event_params or {}).get("risk_budget_dollars")
+            if risk_budget is not None:
+                config["core"]["position_sizing"] = {
+                    "mode": "fixed_dollar_risk",
+                    "risk_budget": float(risk_budget),
+                    "cost_allowance_per_contract": float(
+                        2 * draft.execution.commission_per_contract
+                        + 2 * draft.execution.slippage_ticks * draft.execution.tick_value
+                    ),
+                    "rounding": "floor",
+                    "min_contracts": draft.execution.contracts,
+                    "max_contracts": draft.execution.contracts,
+                }
+            try:
+                apply_certified_execution_contract(
+                    config,
+                    certification,
+                    variant_id=variant.variant_id,
+                )
+                require_certified_execution_contract(config, certification)
+            except StrategyCertificationError as exc:
+                raise CampaignCompilationError(
+                    f"variant {variant.variant_id} certified execution contract failed: {exc}"
+                ) from exc
+        # All newly authored strategies receive the same repository-owned
+        # stage methodology. Strategy configs may declare mechanics and
+        # parameter grids, but cannot choose different research procedures.
+        from alphaquest.research.campaign_stages import canonicalize_campaign_config
+
+        return canonicalize_campaign_config(config)
 
     def _strategy_spec(
         self,
         draft: CampaignDraftV1,
         variants: list[tuple[VariantDraftV1, ModuleBindingV1, ModuleBindingV1, ModuleBindingV1]],
         draft_sha256: str,
-        certification: StrategyCertification | None,
+        certifications: Mapping[str, StrategyCertification],
     ) -> dict[str, Any]:
+        first_certification = certifications.get(variants[0][0].variant_id) if variants else None
+        objectives = draft.research_objectives.model_dump(mode="json", by_alias=True)
+        factory_binding = _research_factory_binding(draft, objectives)
         return {
             "schema": STRATEGY_SPEC_SCHEMA,
             "campaign_id": draft.campaign_id,
             "draft_sha256": draft_sha256,
+            "research_objectives": objectives,
+            "research_objectives_sha256": _object_sha256(objectives),
+            "research_factory": factory_binding,
             "frozen": True,
             "hypothesis": draft.hypothesis,
             "expected_mechanism": draft.expected_mechanism,
@@ -591,7 +690,14 @@ class CampaignCompiler:
             "authoring_lane": draft.authoring_lane,
             "certified_recipe": draft.certified_recipe,
             "event_strategy": draft.event_strategy,
-            "strategy_certification": certification.public_record() if certification else None,
+            # Keep the singular field for v1 readers while binding every
+            # failure-informed variant to its own certified implementation.
+            "strategy_certification": (
+                first_certification.public_record() if first_certification is not None else None
+            ),
+            "variant_strategy_certifications": {
+                variant_id: certification.public_record() for variant_id, certification in certifications.items()
+            },
             "dataset": draft.dataset.model_dump(mode="json", by_alias=True),
             "execution": draft.execution.model_dump(mode="json"),
             "variants": [
@@ -624,27 +730,35 @@ class CampaignCompiler:
         campaign: Mapping[str, Any],
         variant_configs: Mapping[str, Mapping[str, Any]],
         strategy_spec: Mapping[str, Any],
-        certification: StrategyCertification | None,
+        certifications: Mapping[str, StrategyCertification],
     ) -> dict[str, Any]:
+        first_certification = certifications.get(variants[0][0].variant_id) if variants else None
+        objectives = draft.research_objectives.model_dump(mode="json", by_alias=True)
+        factory_binding = _research_factory_binding(draft, objectives)
         return {
             "schema": AUTHORING_MANIFEST_SCHEMA,
             "campaign_id": draft.campaign_id,
             "draft_schema": "alphaquest.campaign-draft/v1",
             "draft_sha256": draft_sha256,
+            "research_objectives_sha256": _object_sha256(objectives),
+            "research_factory": factory_binding,
             "dataset_id": draft.dataset.dataset_id,
             "dataset_canonical_sha256": draft.dataset.canonical_sha256,
             "authoring_lane": draft.authoring_lane,
             "certified_recipe": draft.certified_recipe,
             "event_strategy": draft.event_strategy,
-            "strategy_certification": certification.public_record() if certification else None,
+            "strategy_certification": (
+                first_certification.public_record() if first_certification is not None else None
+            ),
+            "variant_strategy_certifications": {
+                variant_id: certification.public_record() for variant_id, certification in certifications.items()
+            },
             "compiler": "alphaquest.authoring.CampaignCompiler/v1",
             "created_at": draft.created_at,
             "variant_count": len(variants),
             "variant_protocol": draft.variant_protocol,
-            "max_variants": 5,
-            "variant_mechanic_signatures": {
-                variant.variant_id: variant.mechanic_signature for variant, *_ in variants
-            },
+            "max_variants": draft.research_objectives.maximum_variants,
+            "variant_mechanic_signatures": {variant.variant_id: variant.mechanic_signature for variant, *_ in variants},
             "compiled_document_sha256": {
                 "campaign.yaml": _object_sha256(campaign),
                 "strategy_spec.yaml": _object_sha256(strategy_spec),
@@ -661,6 +775,27 @@ class CampaignCompiler:
             ],
             "generated_python_stubs": False,
         }
+
+
+def _research_factory_binding(
+    draft: CampaignDraftV1,
+    objectives: Mapping[str, Any],
+) -> dict[str, Any]:
+    policy = load_research_policy()
+    dataset = draft.dataset.model_dump(mode="json", by_alias=True)
+    if draft.authoring_lane != "certified_event_replay":
+        dataset.pop("event_source", None)
+    try:
+        return research_factory_binding(
+            objectives,
+            dataset=dataset,
+            acceptance_train_months=int(policy.acceptance_oos["train_months"]),
+            acceptance_test_months=int(policy.acceptance_oos["test_months"]),
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CampaignCompilationError(
+            f"could not freeze the governed acceptance holdout: {exc}"
+        ) from exc
 
 
 def _executable_binding(binding: ModuleBindingV1) -> dict[str, Any]:
@@ -704,7 +839,11 @@ def mechanics_validation_subset(
     end_value: str,
     *,
     entry: ModuleBindingV1 | None = None,
-) -> dict[str, str]:
+    data_path: str | None = None,
+    data_source: str | None = None,
+    exchange_timezone: str = "America/New_York",
+    project_root: str | Path | None = None,
+) -> dict[str, Any]:
     try:
         start = date.fromisoformat(start_value[:10])
         end = date.fromisoformat(end_value[:10])
@@ -712,18 +851,47 @@ def mechanics_validation_subset(
         raise CampaignCompilationError("dataset coverage must start with ISO dates") from exc
     if end < start:
         raise CampaignCompilationError("dataset coverage_end cannot precede coverage_start")
-    window_days = 14
-    if entry is not None and entry.module == "daily_time_series_momentum":
-        # Mechanics validation must include causal warm-up plus several unseen
-        # decision sessions.  This window depends only on the frozen module
-        # contract, never on PnL or favorable dates.
-        lookback = int(entry.params.get("lookback_sessions", 20))
-        confirmation = int(entry.params.get("confirmation_sessions", 1))
-        required_sessions = lookback + confirmation + 10
-        window_days = max(window_days, (required_sessions * 7 + 4) // 5 + 7)
+    # Materialize the repository-wide latest-ten-session rule whenever the
+    # governed source is available. Causal warm-up is input context, not
+    # additional review sessions, so no strategy receives a longer review.
+    if data_path:
+        resolved = Path(data_path)
+        if not resolved.is_absolute() and project_root is not None:
+            resolved = Path(project_root) / resolved
+        if resolved.is_file() and data_source in {"csv", "parquet"}:
+            try:
+                if data_source == "parquet":
+                    timestamps = pd.read_parquet(resolved, columns=["timestamp"])["timestamp"]
+                else:
+                    timestamps = pd.read_csv(resolved, usecols=["timestamp"])["timestamp"]
+                local_dates = (
+                    pd.to_datetime(timestamps, utc=True)
+                    .dt.tz_convert(exchange_timezone)
+                    .dt.date
+                )
+                sessions = sorted(set(local_dates))
+            except Exception as exc:
+                raise CampaignCompilationError(
+                    f"could not resolve mechanics sessions from governed dataset: {exc}"
+                ) from exc
+            required_sessions = int(
+                load_research_policy().mechanics_validation["session_count"]
+            )
+            if len(sessions) >= required_sessions:
+                selected = sessions[-required_sessions:]
+                return {
+                    "start_date": selected[0].isoformat(),
+                    "end_date": selected[-1].isoformat(),
+                    "session_dates": [value.isoformat() for value in selected],
+                }
+
+    # Pure compiler tests and offline draft inspection may not have the source
+    # mounted. Keep a deterministic provisional trailing bound; publication
+    # preflight later requires exact latest-session materialization.
+    window_days = 21
     return {
-        "start_date": start.isoformat(),
-        "end_date": min(end, start + timedelta(days=window_days)).isoformat(),
+        "start_date": max(start, end - timedelta(days=window_days)).isoformat(),
+        "end_date": end.isoformat(),
     }
 
 

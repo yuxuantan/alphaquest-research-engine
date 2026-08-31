@@ -1,0 +1,196 @@
+schema: alphaquest.follow-up-strategy-spec/v1
+campaign_id: yush_orderflow_range
+attempt_id: pre_pnl_mechanics_correction_20260727t023250_739a6e38
+attempt_kind: pre_pnl_mechanics_correction
+parent_attempt_id: pre_pnl_mechanics_correction_20260727t005130_c323b63d
+reason: Correct the causal aggression percentile population exposed by v6 mechanics review. Standalone mechanics replay previously
+  idle-batched raw events that the live percentile accumulator only receives in on_event_start, reducing Trade 1's big-trade
+  reference population from 16,504 to 8,005 and its nominal 99.5th-percentile threshold from 50 to 20. v7 disables idle batching
+  only when the failed-auction percentile feature tape is not prebound; the precomputed batched core-grid lane remains enabled.
+  Live and precomputed replay must agree before evidence is reviewable. No PnL-based adjustment.
+created_by: Tan Yu Xuan
+authorized_by: null
+created_at: '2026-07-27T02:32:51.578121+00:00'
+frozen: true
+changes:
+- variant_id: v02
+  scope: strategy_certification
+  field: certified_implementation_identity
+  old:
+    strategy_id: yush_failed_auction_reclaim
+    implementation_version: 6
+    implementation_sha256: a9e174b6294ad50284fb2b393759543d97974dc74fac95255c20c09de08bc960
+    manifest_sha256: 0c4bc50edfac2957bfb9c221cdbca70848675b874761b31cc42cde4c5b038349
+  new:
+    strategy_id: yush_failed_auction_reclaim
+    implementation_version: 7
+    implementation_sha256: 871af3dc4687ccf616d1444794d7b003808d2de01f9ddf4abc9a4c93ac3e1fe1
+    manifest_sha256: 4aa8d11a1680480743ea1bb62f2b552cddc0d8cba2973b0381e4d2b7479dfc97
+  reviewed: true
+variants:
+- variant_id: v01
+  mechanic_signature: 40196dae316c39929e8caf69137bbb9efae1f95af75d1994bda2375a37580fb1
+  strategy:
+    entry:
+      module: yush_orderflow_range
+      params:
+        mechanics:
+          tick_size: 0.25
+          point_value: 50.0
+          contracts: 1
+          commission_per_contract: 2.5
+          max_trades_per_day: 3
+          max_aoi_width_points: 3.0
+          entry_offset_ticks: 2
+          stop_offset_ticks: 2
+          max_stop_points: 5.0
+          value_area_fraction: 0.7
+          range_expansion_fraction: 0.2
+          delta_profile_min_abs: 300
+          delta_bubble_threshold: 300
+          big_trade_threshold: 200
+          big_trade_window_ms: 100
+          breakeven_offset_points: 1.25
+          opening_range_seconds: 32
+          bar_seconds: 180
+          breakout_probe_ticks: 2
+          initial_balance: 50000.0
+          minimum_stop_points: 2.0
+          slippage_ticks: 1
+          delta_neighbour_multiple: 2.0
+          aoi_lineage_mode: exact_fingerprint
+    sl:
+      module: event_aoi_structural_stop
+      params: {}
+    tp:
+      module: event_value_area_management
+      params: {}
+    flatten_time: '11:00:00'
+    event:
+      module: yush_orderflow_range
+      params:
+        tick_size: 0.25
+        point_value: 50.0
+        contracts: 1
+        commission_per_contract: 2.5
+        max_trades_per_day: 3
+        max_aoi_width_points: 3.0
+        entry_offset_ticks: 2
+        stop_offset_ticks: 2
+        max_stop_points: 5.0
+        value_area_fraction: 0.7
+        range_expansion_fraction: 0.2
+        delta_profile_min_abs: 300
+        delta_bubble_threshold: 300
+        big_trade_threshold: 200
+        big_trade_window_ms: 100
+        breakeven_offset_points: 1.25
+        opening_range_seconds: 32
+        bar_seconds: 180
+        breakout_probe_ticks: 2
+        initial_balance: 50000.0
+        minimum_stop_points: 2.0
+        slippage_ticks: 1
+        delta_neighbour_multiple: 2.0
+        aoi_lineage_mode: exact_fingerprint
+  parameter_grid: {}
+  dataset_id: es_databento_trade_events_20250714_20260610_0930_1100_ny
+  validation_gate:
+    required: true
+    lane: event_replay
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 0
+    data_subset:
+      start_date: '2025-07-14'
+      end_date: '2025-07-28'
+    evidence_dir: /Users/yx/Desktop/alphaquest-research-engine/research/evidence/runs/yush_orderflow_range/v01/ES/mechanics_validation_pre_pnl_mechanics_correction_20260727t023250_739a6e38/validation_runs/core
+    approval_path: /Users/yx/Desktop/alphaquest-research-engine/research_artifacts/validation_approvals/yush_orderflow_range/pre_pnl_mechanics_correction_20260727t023250_739a6e38/v01/approval.json
+- variant_id: v02
+  mechanic_signature: 2595e548d0eb42bfd6ed029f9b88c07bcc1ca3c0f19573d00387f3019db04da1
+  strategy:
+    entry:
+      module: yush_failed_auction_reclaim
+      params:
+        mechanics:
+          tick_size: 0.25
+          point_value: 50.0
+          contracts: 1
+          commission_per_contract: 2.5
+          max_trades_per_day: 3
+          max_stop_points: 5.0
+          value_area_fraction: 0.7
+          delta_aggression_percentile: 0.9
+          big_trade_aggression_percentile: 0.995
+          delta_percentile_min_observations: 20
+          big_trade_percentile_min_observations: 200
+          big_trade_window_ms: 100
+          bar_seconds: 180
+          initial_balance: 50000.0
+          slippage_ticks: 1
+          delta_neighbour_multiple: 2.0
+          decision_interval_ms: 100
+          reference_distance_ticks: 4
+          excursion_ticks: 2
+          reclaim_window_seconds: 30
+          stop_buffer_ticks: 2
+          time_exit_seconds: 600
+          minimum_reward_risk: 1.0
+    sl:
+      module: event_excursion_structural_stop
+      params: {}
+    tp:
+      module: event_frozen_poc_time_exit
+      params: {}
+    flatten_time: '11:00:00'
+    event:
+      module: yush_failed_auction_reclaim
+      params:
+        tick_size: 0.25
+        point_value: 50.0
+        contracts: 1
+        commission_per_contract: 2.5
+        max_trades_per_day: 3
+        max_stop_points: 5.0
+        value_area_fraction: 0.7
+        delta_aggression_percentile: 0.9
+        big_trade_aggression_percentile: 0.995
+        delta_percentile_min_observations: 20
+        big_trade_percentile_min_observations: 200
+        big_trade_window_ms: 100
+        bar_seconds: 180
+        initial_balance: 50000.0
+        slippage_ticks: 1
+        delta_neighbour_multiple: 2.0
+        decision_interval_ms: 100
+        reference_distance_ticks: 4
+        excursion_ticks: 2
+        reclaim_window_seconds: 30
+        stop_buffer_ticks: 2
+        time_exit_seconds: 600
+        minimum_reward_risk: 1.0
+  parameter_grid:
+    event.params.excursion_ticks:
+    - 2
+    - 4
+    - 6
+    event.params.reclaim_window_seconds:
+    - 5
+    - 15
+    - 30
+    event.params.stop_buffer_ticks:
+    - 1
+    - 2
+    - 3
+  dataset_id: es_sierra_yush_events_20110815_20260529_0930_1100_ny_inv02
+  validation_gate:
+    required: true
+    lane: event_replay
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 0
+    data_subset:
+      start_date: '2026-05-15'
+      end_date: '2026-05-29'
+    evidence_dir: /Users/yx/Desktop/alphaquest-research-engine/research/evidence/runs/yush_orderflow_range/v02/ES/mechanics_validation_pre_pnl_mechanics_correction_20260727t023250_739a6e38/validation_runs/core
+    approval_path: /Users/yx/Desktop/alphaquest-research-engine/research_artifacts/validation_approvals/yush_orderflow_range/pre_pnl_mechanics_correction_20260727t023250_739a6e38/v02/approval.json

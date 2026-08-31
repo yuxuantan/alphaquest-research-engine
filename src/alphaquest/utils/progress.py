@@ -1,8 +1,34 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 import sys
 import time
 from collections.abc import Callable
+
+
+ProgressListener = Callable[[dict[str, object]], None]
+_PROGRESS_LISTENER: ContextVar[ProgressListener | None] = ContextVar(
+    "alphaquest_progress_listener",
+    default=None,
+)
+
+
+@contextmanager
+def listen_for_progress(listener: ProgressListener | None) -> Iterator[None]:
+    """Forward progress-bar updates to an optional structured listener.
+
+    Console progress remains unchanged. Campaign orchestration uses this hook
+    to persist the real counters already maintained by grids, WFA, monkey, and
+    Monte Carlo loops without introducing a second timing-based progress model.
+    """
+
+    token = _PROGRESS_LISTENER.set(listener)
+    try:
+        yield
+    finally:
+        _PROGRESS_LISTENER.reset(token)
 
 
 class ProgressBar:
@@ -25,7 +51,15 @@ class ProgressBar:
         self.last_percent = -1
         self.last_line_length = 0
 
-    def update(self, current: int, force: bool = False, detail: str | None = None) -> None:
+    def update(
+        self,
+        current: int,
+        force: bool = False,
+        detail: str | None = None,
+        *,
+        active_workers: int | None = None,
+        expected_workers: int | None = None,
+    ) -> None:
         if not self.enabled:
             return
         current = min(max(int(current), 0), self.total)
@@ -40,6 +74,20 @@ class ProgressBar:
             line = f"{line} | {_timing_text(self.clock() - self.started_at, current, self.total)}"
         if detail:
             line = f"{line} | {detail}"
+        listener = _PROGRESS_LISTENER.get()
+        if listener is not None:
+            payload: dict[str, object] = {
+                "label": self.label,
+                "completed": current,
+                "total": self.total,
+                "percent": float(current / self.total * 100.0),
+                "detail": detail,
+            }
+            if active_workers is not None:
+                payload["active_workers"] = max(0, int(active_workers))
+            if expected_workers is not None:
+                payload["expected_workers"] = max(0, int(expected_workers))
+            listener(payload)
         padding = " " * max(0, self.last_line_length - len(line))
         self.last_line_length = len(line)
         sys.stdout.write(f"\r{line}{padding}")

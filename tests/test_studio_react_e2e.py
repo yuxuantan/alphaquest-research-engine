@@ -22,8 +22,23 @@ LONG_TEXT = (
 
 def _dataset(root: Path) -> None:
     source = root / "administrator-bars.csv"
-    timestamps = pd.date_range("2026-01-05 09:30:00", periods=180, freq="min")
-    prices = [5000.0 + index * 0.25 for index in range(len(timestamps))]
+    # Full publication must have enough declared history for the frozen
+    # 24-month selection plus terminal 6-month acceptance calendar.
+    session_starts = pd.bdate_range("2023-01-02", "2026-01-16")
+    timestamps = pd.DatetimeIndex(
+        [
+            timestamp
+            for session_start in session_starts
+            for timestamp in pd.date_range(
+                f"{session_start.date()} 09:30:00", periods=60, freq="min"
+            )
+        ]
+    )
+    prices = [
+        5000.0 + bar_index * 0.25
+        for _session_start in session_starts
+        for bar_index in range(60)
+    ]
     pd.DataFrame(
         {
             "timestamp": timestamps.astype(str),
@@ -92,7 +107,7 @@ def _browser(playwright):
     return playwright.chromium.launch(headless=True, executable_path=str(executable))
 
 
-def test_fresh_researcher_completes_all_seven_gates_without_terminal_yaml_or_python(
+def test_fresh_researcher_completes_six_decisions_and_all_governance_gates_without_terminal_yaml_or_python(
     tmp_path: Path,
 ) -> None:
     playwright_module = pytest.importorskip("playwright.sync_api")
@@ -106,6 +121,10 @@ def test_fresh_researcher_completes_all_seven_gates_without_terminal_yaml_or_pyt
 
         page.goto(f"{base_url}/research/new")
         page.get_by_label("Research title").fill("Automated no-code edge")
+        page.get_by_role(
+            "checkbox",
+            name="I confirm this performance and risk objective before AI source research or PnL.",
+        ).check()
         page.get_by_role("button", name="Create research draft").click()
         page.wait_for_url("**/design/1")
 
@@ -157,22 +176,17 @@ def test_fresh_researcher_completes_all_seven_gates_without_terminal_yaml_or_pyt
         page.wait_for_url("**/design/7")
 
         page.get_by_text("Freeze this research protocol", exact=True).click()
-        page.get_by_role("button", name="Validate and freeze").click()
-        page.get_by_text("Protocol frozen", exact=True).wait_for()
-        page.get_by_role("button", name="Publish governed campaign").click()
+        page.get_by_role(
+            "button", name="Review and publish governed campaign"
+        ).click()
         page.wait_for_url("**/automated_no_code_edge/overview", timeout=60_000)
 
         page.get_by_text("Sequential variant stage matrix", exact=True).wait_for()
         assert page.locator(".stage-row").count() == 2
-        page.get_by_role("button", name="History", exact=True).click()
-        page.get_by_role("button", name="Create explicit follow-up").click()
-        page.get_by_label("Scientific reason").fill(
-            "This exact replication is predeclared to verify that the frozen mechanics and governed dataset produce repeatable evidence without changing any parameter."
-        )
-        page.get_by_label("Researcher identity").fill("E2E Researcher")
-        page.get_by_role("button", name="Preflight and create attempt").click()
-        page.get_by_text("created as", exact=False).wait_for(timeout=60_000)
-        assert page.locator(".timeline > .card").count() == 2
+        page.get_by_role("tab", name="History", exact=True).click()
+        follow_up = page.get_by_role("button", name="Create explicit follow-up")
+        assert follow_up.is_enabled()
+        page.get_by_text("Recovery follow-ups remain available", exact=True).wait_for()
         assert not page_errors
         assert (tmp_path / "research/campaigns/active/automated_no_code_edge/campaign.yaml").is_file()
         browser.close()

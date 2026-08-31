@@ -14,10 +14,14 @@ import sys
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 import webbrowser
 
 from alphaquest.research.storage import load_storage_layout
+from alphaquest.studio.process_ownership import (
+    terminate_process_group,
+    terminate_registered_process_groups,
+)
 
 
 STATE_FILENAME = "studio-process.json"
@@ -25,6 +29,10 @@ LOG_FILENAME = "studio.log"
 WORKER_LOG_FILENAME = "worker.log"
 REACT_FASTAPI_RUNTIME = "react-fastapi"
 LEGACY_STREAMLIT_RUNTIME = "legacy-streamlit"
+
+# Studio is deliberately loopback-only.  Do not let workstation or CI proxy
+# settings route lifecycle health checks away from the local process.
+_LOOPBACK_OPENER = build_opener(ProxyHandler({}))
 
 
 def studio_status(*, project_root: str | Path = ".") -> dict[str, Any]:
@@ -148,6 +156,14 @@ def _start_studio_locked(
         ]
 
     current = studio_status(project_root=root)
+    if not current["worker_running"]:
+        orphan_outcomes = terminate_registered_process_groups(root)
+        failures = [item for item in orphan_outcomes if not item["terminated"]]
+        if failures:
+            raise RuntimeError(
+                "could not terminate orphaned Studio job processes before startup: "
+                + "; ".join(str(item["error"]) for item in failures)
+            )
 
     state_path, log_path, worker_log_path = _runtime_paths(root)
     state_path.parent.mkdir(parents=True, exist_ok=True)
@@ -296,6 +312,12 @@ def _stop_studio_locked(*, project_root: str | Path, timeout_seconds: float) -> 
     pid = _integer(state.get("pid"))
     worker_pid = _integer(state.get("worker_pid"))
     errors: list[str] = []
+    owned_outcomes = terminate_registered_process_groups(
+        root,
+        term_timeout=timeout_seconds,
+        kill_timeout=timeout_seconds,
+    )
+    errors.extend(str(item["error"]) for item in owned_outcomes if not item["terminated"] and item.get("error"))
     if pid and _pid_matches_studio(pid, state.get("app_path"), _state_ui_runtime(state)):
         try:
             _terminate_pid(pid, label="Research Studio", timeout_seconds=timeout_seconds)
@@ -358,7 +380,10 @@ def _studio_http_health(address: Any, port: Any, ui_runtime: str) -> bool:
         headers={"Accept": "application/json"},
     )
     try:
-        with urlopen(request, timeout=0.35) as response:  # noqa: S310 - validated localhost-only URL
+        with _LOOPBACK_OPENER.open(  # noqa: S310 - validated localhost-only URL
+            request,
+            timeout=0.35,
+        ) as response:
             if response.status != 200:
                 return False
             if ui_runtime == LEGACY_STREAMLIT_RUNTIME:
@@ -399,10 +424,33 @@ def _wait_for_background_start(
             return status
         time.sleep(0.1)
     state = studio_status(project_root=project_root)
+    diagnostic = {
+        key: state.get(key)
+        for key in (
+            "running",
+            "ui_healthy",
+            "worker_running",
+            "stale_state",
+            "pid",
+            "worker_pid",
+            "ui_runtime",
+            "url",
+        )
+    }
+    diagnostic["studio_log_tail"] = _log_tail(Path(state["log_path"]))
+    diagnostic["worker_log_tail"] = _log_tail(Path(state["worker_log_path"]))
     raise RuntimeError(
         f"Research Studio did not become healthy at {state.get('url') or 'its local URL'} "
-        f"within {timeout_seconds:g}s"
+        f"within {timeout_seconds:g}s; startup_diagnostic={json.dumps(diagnostic, sort_keys=True)}"
     )
+
+
+def _log_tail(path: Path, *, limit: int = 4000) -> str:
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return f"<{type(exc).__name__}: {exc}>"
+    return content[-limit:]
 
 
 def _read_state(path: Path) -> dict[str, Any]:
@@ -446,16 +494,7 @@ def _pid_exists(pid: int) -> bool:
 def _pid_matches_studio(pid: int, app_path: Any, ui_runtime: str) -> bool:
     if not _pid_exists(pid):
         return False
-    try:
-        output = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "command="],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        ).stdout
-    except (OSError, subprocess.SubprocessError):
-        return False
+    output = _process_command(pid)
     if ui_runtime == LEGACY_STREAMLIT_RUNTIME:
         return "streamlit" in output and (not app_path or str(app_path) in output)
     return "alphaquest.studio.web" in output
@@ -464,21 +503,39 @@ def _pid_matches_studio(pid: int, app_path: Any, ui_runtime: str) -> bool:
 def _pid_matches_worker(pid: int) -> bool:
     if not _pid_exists(pid):
         return False
+    output = _process_command(pid)
+    return "alphaquest.cli" in output and "studio worker" in output
+
+
+def _process_command(pid: int) -> str:
     try:
-        output = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "command="],
+        return subprocess.run(
+            ["ps", "-ww", "-p", str(pid), "-o", "command="],
             check=False,
             capture_output=True,
             text=True,
             timeout=2,
         ).stdout
     except (OSError, subprocess.SubprocessError):
-        return False
-    return "alphaquest.cli" in output and "studio worker" in output
+        return ""
 
 
 def _terminate_pid(pid: int, *, label: str, timeout_seconds: float) -> None:
     if not _pid_exists(pid):
+        return
+    try:
+        process_group_id = os.getpgid(pid)
+    except ProcessLookupError:
+        return
+    if process_group_id == pid and process_group_id != os.getpgrp():
+        try:
+            terminate_process_group(
+                process_group_id,
+                term_timeout=timeout_seconds,
+                kill_timeout=timeout_seconds,
+            )
+        except RuntimeError as exc:
+            raise RuntimeError(f"{label} {exc}") from exc
         return
     os.kill(pid, signal.SIGTERM)
     deadline = time.monotonic() + max(0.1, timeout_seconds)
@@ -491,7 +548,7 @@ def _terminate_pid(pid: int, *, label: str, timeout_seconds: float) -> None:
 def _terminate_process(process: subprocess.Popen, *, label: str, timeout_seconds: float) -> None:
     if process.poll() is not None:
         return
-    process.terminate()
+    _terminate_pid(process.pid, label=label, timeout_seconds=timeout_seconds)
     try:
         process.wait(timeout=max(0.1, timeout_seconds))
     except subprocess.TimeoutExpired as exc:

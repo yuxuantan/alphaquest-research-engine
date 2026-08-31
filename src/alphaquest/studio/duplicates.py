@@ -15,13 +15,20 @@ from alphaquest.research.storage import campaign_definition_paths, load_storage_
 
 
 _WORDS = re.compile(r"[a-z0-9]+")
+_FINGERPRINT_FIELDS = (
+    "market_behavior",
+    "causal_mechanism",
+    "signal_inputs",
+    "market_context",
+    "holding_period",
+)
 
 
 def edge_fingerprint(value: dict[str, Any] | str) -> str:
     if isinstance(value, dict):
         selected = {
             key: _fingerprint_value(key, value.get(key))
-            for key in ("market_behavior", "causal_mechanism", "signal_inputs", "market_context", "holding_period")
+            for key in _FINGERPRINT_FIELDS
         }
         text = json.dumps(selected, sort_keys=True, separators=(",", ":"), default=str)
     else:
@@ -70,6 +77,7 @@ def duplicate_matches(
         stored_fp = payload.get("economic_edge_fingerprint")
         exact = edge_fingerprint(stored_fp if isinstance(stored_fp, dict) else other_text) == query_fp
         score = _jaccard(query_tokens, _tokens(other_text))
+        taxonomy = _taxonomy_match(fingerprint, stored_fp if isinstance(stored_fp, dict) else None)
         candidates[other_id] = {
             "campaign_id": other_id,
             "title": payload.get("title") or other_id,
@@ -77,6 +85,7 @@ def duplicate_matches(
             "path": str(path.relative_to(root)) if path.is_relative_to(root) else str(path),
             "exact_fingerprint": exact,
             "similarity": round(score, 4),
+            **taxonomy,
             "verdict": payload.get("verdict"),
         }
 
@@ -118,17 +127,35 @@ def duplicate_matches(
                 "path": str(ledger.relative_to(root)) if ledger.is_relative_to(root) else str(ledger),
                 "exact_fingerprint": bool(current and current["exact_fingerprint"]),
                 "similarity": round(max(score, float(current["similarity"]) if current else 0.0), 4),
+                "taxonomy_schema": "alphaquest.duplicate-taxonomy/v1",
+                "taxonomy_score": float((current or {}).get("taxonomy_score") or 0.0),
+                "matched_dimensions": list((current or {}).get("matched_dimensions") or []),
                 "verdict": row.get("verdict") or row.get("result") or row.get("status"),
             }
             candidates[other_id] = {**(current or {}), **ledger_row}
+    for item in candidates.values():
+        structured = float(item.get("taxonomy_score") or 0.0)
+        lexical = float(item.get("similarity") or 0.0)
+        item["match_band"] = _match_band(
+            exact=bool(item.get("exact_fingerprint")),
+            structured=structured,
+            lexical=lexical,
+        )
     eligible = [
         item
         for item in candidates.values()
-        if item["exact_fingerprint"] or float(item["similarity"]) >= float(minimum_similarity)
+        if item["exact_fingerprint"]
+        or float(item["similarity"]) >= float(minimum_similarity)
+        or float(item.get("taxonomy_score") or 0.0) >= 0.3
     ]
     ranked = sorted(
         eligible,
-        key=lambda item: (not bool(item["exact_fingerprint"]), -float(item["similarity"]), item["campaign_id"]),
+        key=lambda item: (
+            not bool(item["exact_fingerprint"]),
+            -float(item.get("taxonomy_score") or 0.0),
+            -float(item["similarity"]),
+            item["campaign_id"],
+        ),
     )
     if limit is None:
         return ranked
@@ -166,6 +193,41 @@ def _fingerprint_value(key: str, value: Any) -> Any:
             parts = [str(value or "")]
         return sorted(" ".join(_WORDS.findall(item.casefold())) for item in parts if item.strip())
     return " ".join(_WORDS.findall(str(value or "").casefold()))
+
+
+def _taxonomy_match(
+    query: dict[str, Any] | None,
+    candidate: dict[str, Any] | None,
+) -> dict[str, Any]:
+    if not isinstance(query, dict) or not isinstance(candidate, dict):
+        return {
+            "taxonomy_schema": "alphaquest.duplicate-taxonomy/v1",
+            "taxonomy_score": 0.0,
+            "matched_dimensions": [],
+            "dimension_scores": {},
+        }
+    scores: dict[str, float] = {}
+    for field in _FINGERPRINT_FIELDS:
+        left = _tokens(json.dumps(_fingerprint_value(field, query.get(field))))
+        right = _tokens(json.dumps(_fingerprint_value(field, candidate.get(field))))
+        scores[field] = round(_jaccard(left, right), 4)
+    matched = [field for field, score in scores.items() if score >= 0.6]
+    return {
+        "taxonomy_schema": "alphaquest.duplicate-taxonomy/v1",
+        "taxonomy_score": round(sum(scores.values()) / len(_FINGERPRINT_FIELDS), 4),
+        "matched_dimensions": matched,
+        "dimension_scores": scores,
+    }
+
+
+def _match_band(*, exact: bool, structured: float, lexical: float) -> str:
+    if exact:
+        return "EXACT_FINGERPRINT"
+    if structured >= 0.6:
+        return "HIGH_STRUCTURED_SIMILARITY"
+    if structured >= 0.3 or lexical >= 0.3:
+        return "POSSIBLE_RELATED_EDGE"
+    return "LEXICAL_REVIEW"
 
 
 __all__ = ["duplicate_matches", "edge_fingerprint"]

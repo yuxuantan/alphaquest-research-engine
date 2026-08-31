@@ -10,6 +10,7 @@ from alphaquest.authoring.models import (
     CampaignDraftV1,
     DatasetManifestV1,
     ModuleManifestV1,
+    ResearchObjectivesV1,
     VariantDraftV1,
 )
 
@@ -20,6 +21,7 @@ _SCHEMA_MODELS = {
     "module-manifest-v1.schema.json": ModuleManifestV1,
     "dataset-manifest-v1.schema.json": DatasetManifestV1,
     "bar-rule-v1.schema.json": BarRuleV1,
+    "research-objectives-v1.schema.json": ResearchObjectivesV1,
 }
 
 

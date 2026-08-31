@@ -1,21 +1,28 @@
 from __future__ import annotations
 
+from contextlib import contextmanager
 from datetime import datetime, timedelta
 from functools import lru_cache
 import hashlib
 import json
+import os
 from pathlib import Path
+import tempfile
 from zoneinfo import ZoneInfo
 
+import fcntl
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+import alphaquest.data.sierra_events as sierra_events_module
 from alphaquest.data.sierra_events import (
     SIERRA_EVENT_PRICE_PATH_SEMANTICS,
     SIERRA_TIMESTAMP_PRECISION_NS,
     reconstruct_sierra_trade_events,
 )
+from alphaquest.research.storage import load_storage_layout
+from alphaquest.utils.hashing import object_sha256
 
 SCID_EPOCH = datetime(1899, 12, 30)
 ET = ZoneInfo("America/New_York")
@@ -33,6 +40,7 @@ SCID_RECORD_COLUMNS = [
 ]
 
 SCID_RECORD_PRICE_PATH_SEMANTICS = SIERRA_EVENT_PRICE_PATH_SEMANTICS
+SIERRA_CANONICAL_SESSION_CACHE_SCHEMA = "alphaquest.sierra-canonical-session-cache/v1"
 
 _SCID_EXECUTION_COLUMNS = [
     "timestamp",
@@ -50,6 +58,8 @@ _SCID_EXECUTION_COLUMNS = [
     "num_trades",
     "scid_datetime_us",
     "last_scid_datetime_us",
+    "source_scid_datetime_us",
+    "source_last_scid_datetime_us",
     "source_ordinal",
     "side",
     "component_rows",
@@ -87,7 +97,9 @@ def load_scid_record_execution_data(
     out.attrs["price_path_semantics"] = SCID_RECORD_PRICE_PATH_SEMANTICS
     out.attrs["source_quality_label"] = (
         "Databento-compared Sierra trade-event replay after FIRST/LAST unbundled-trade "
-        "reconstruction; source order retained; not exchange MBO sequencing."
+        "reconstruction; source order retained; "
+        f"timestamp inversion policy={config.get('timestamp_inversion_policy', 'reject')}; "
+        "not exchange MBO sequencing."
     )
     out.attrs["required_capability"] = str(config.get("required_capability", "full_strategy_events"))
     out.attrs["timestamp_precision_ns"] = SIERRA_TIMESTAMP_PRECISION_NS
@@ -110,10 +122,22 @@ def iter_scid_record_execution_sessions(
     rth_start_minute = _time_to_minute(config.get("rth_start", "09:30:00"))
     rth_end_minute = _time_to_minute(config.get("rth_end", "16:00:00"))
     verified_start_minute = _time_to_minute(config.get("verified_window_start", "09:30:00"))
-    verified_end_minute = _time_to_minute(config.get("verified_window_end", "11:00:00"))
+    required_capability = str(
+        config.get("required_capability", "full_strategy_events")
+    )
+    default_verified_end = (
+        "16:00:00"
+        if required_capability == "full_rth_strategy_events_extrapolated"
+        else "11:00:00"
+    )
+    verified_end_minute = _time_to_minute(
+        config.get("verified_window_end", default_verified_end)
+    )
     if rth_start_minute < verified_start_minute or rth_end_minute > verified_end_minute:
         raise ValueError(
-            "Sierra event replay window exceeds the independently verified 09:30-11:00 ET scope."
+            "Sierra event replay window exceeds the declared independently "
+            f"verified {config.get('verified_window_start', '09:30:00')}-"
+            f"{config.get('verified_window_end', default_verified_end)} ET scope."
         )
     quality_manifest = Path(
         config.get(
@@ -121,11 +145,25 @@ def iter_scid_record_execution_sessions(
             "data/reference/ES/event_quality/sierra_event_capabilities_0930_1100.csv",
         )
     )
-    required_capability = str(config.get("required_capability", "full_strategy_events"))
     ineligible_policy = str(config.get("ineligible_session_policy", "error")).lower()
+    timestamp_inversion_policy = str(
+        config.get("timestamp_inversion_policy", "reject")
+    )
+    max_timestamp_inversion_rate = float(
+        config.get("max_timestamp_inversion_rate", 0.0)
+    )
     allow_unverified_for_tests = bool(config.get("allow_unverified_for_tests", False))
     raw_manifest_path = Path(str(config.get("raw_manifest") or ""))
     raw_manifest = _load_raw_manifest(raw_manifest_path, raw_dir, allow_unverified_for_tests)
+    cache_enabled = _canonical_session_cache_enabled(
+        config,
+        allow_unverified_for_tests=allow_unverified_for_tests,
+    )
+    cache_root = (
+        _canonical_session_cache_root(config, raw_dir)
+        if cache_enabled
+        else None
+    )
 
     files = {path.stem.replace("-CME", ""): path for path in raw_dir.glob("*.parquet")}
     if not files:
@@ -152,18 +190,271 @@ def iter_scid_record_execution_sessions(
         period = period_by_symbol.get(str(row.contract))
         if period is None:
             continue
-        _verify_raw_contract_file(period["path"], raw_manifest)
-        part = _load_session_events(
-            period["path"],
-            session_date=str(row.session_date),
-            root_symbol=root_symbol,
-            contract_symbol=str(row.contract),
-            rth_start_minute=rth_start_minute,
-            rth_end_minute=rth_end_minute,
-            required_capability=required_capability,
+        raw_file_sha256 = _verify_raw_contract_file(period["path"], raw_manifest)
+        load_kwargs = {
+            "path": period["path"],
+            "session_date": str(row.session_date),
+            "root_symbol": root_symbol,
+            "contract_symbol": str(row.contract),
+            "rth_start_minute": rth_start_minute,
+            "rth_end_minute": rth_end_minute,
+            "required_capability": required_capability,
+            "timestamp_inversion_policy": timestamp_inversion_policy,
+            "max_timestamp_inversion_rate": max_timestamp_inversion_rate,
+        }
+        part = (
+            _load_cached_session_events(
+                **load_kwargs,
+                raw_file_sha256=raw_file_sha256,
+                cache_root=cache_root,
+                timezone=timezone,
+            )
+            if cache_root is not None
+            else _load_session_events(**load_kwargs)
         )
         if not part.empty:
             yield str(row.session_date), part
+
+
+def _canonical_session_cache_enabled(
+    config: dict,
+    *,
+    allow_unverified_for_tests: bool,
+) -> bool:
+    raw = config.get("canonical_session_cache")
+    explicitly_configured = raw is not None
+    if isinstance(raw, dict):
+        enabled = bool(raw.get("enabled", True))
+    elif raw is None:
+        enabled = True
+    else:
+        enabled = bool(raw)
+    # Unit-test fixtures and ungoverned sources should not create persistent
+    # cache state unless the caller explicitly requests that behavior.
+    if allow_unverified_for_tests and not explicitly_configured:
+        return False
+    return enabled
+
+
+def _canonical_session_cache_root(config: dict, raw_dir: Path) -> Path:
+    raw = config.get("canonical_session_cache")
+    if isinstance(raw, dict) and raw.get("directory"):
+        path = Path(str(raw["directory"]))
+        return path if path.is_absolute() else (_project_root_for_path(raw_dir) / path).resolve()
+    project_root = _project_root_for_path(raw_dir)
+    return load_storage_layout(project_root).run_store_root / "sierra-canonical-session-cache"
+
+
+def _project_root_for_path(path: Path) -> Path:
+    resolved = path.resolve()
+    for candidate in (resolved, *resolved.parents):
+        if (candidate / "config" / "storage_layout.yaml").is_file():
+            return candidate
+    return Path.cwd().resolve()
+
+
+def _load_cached_session_events(
+    *,
+    path: Path,
+    session_date: str,
+    root_symbol: str,
+    contract_symbol: str,
+    rth_start_minute: int,
+    rth_end_minute: int,
+    required_capability: str,
+    timestamp_inversion_policy: str,
+    max_timestamp_inversion_rate: float,
+    raw_file_sha256: str,
+    cache_root: Path,
+    timezone: str,
+) -> pd.DataFrame:
+    identity = {
+        "schema": SIERRA_CANONICAL_SESSION_CACHE_SCHEMA,
+        "raw_file": path.name,
+        "raw_file_sha256": str(raw_file_sha256),
+        "session_date": str(session_date),
+        "root_symbol": str(root_symbol),
+        "contract_symbol": str(contract_symbol),
+        "timezone": str(timezone),
+        "rth_start_minute": int(rth_start_minute),
+        "rth_end_minute": int(rth_end_minute),
+        "required_capability": str(required_capability),
+        "timestamp_inversion_policy": str(timestamp_inversion_policy),
+        "max_timestamp_inversion_rate": float(max_timestamp_inversion_rate),
+        "timestamp_precision_ns": int(SIERRA_TIMESTAMP_PRECISION_NS),
+        "price_path_semantics": str(SCID_RECORD_PRICE_PATH_SEMANTICS),
+        "reconstruction_implementation_sha256": _reconstruction_implementation_sha256(),
+    }
+    key = object_sha256(identity)
+    cached = _read_canonical_session_cache(cache_root, key, identity)
+    if cached is not None:
+        return cached
+
+    cache_root.mkdir(parents=True, exist_ok=True)
+    lock_root = cache_root / ".locks"
+    lock_root.mkdir(parents=True, exist_ok=True)
+    with _exclusive_cache_lock(lock_root / f"{key}.lock"):
+        cached = _read_canonical_session_cache(cache_root, key, identity)
+        if cached is not None:
+            return cached
+        result = _load_session_events(
+            path,
+            session_date=session_date,
+            root_symbol=root_symbol,
+            contract_symbol=contract_symbol,
+            rth_start_minute=rth_start_minute,
+            rth_end_minute=rth_end_minute,
+            required_capability=required_capability,
+            timestamp_inversion_policy=timestamp_inversion_policy,
+            max_timestamp_inversion_rate=max_timestamp_inversion_rate,
+        )
+        if result.empty:
+            return result
+        _write_canonical_session_cache(cache_root, key, identity, result)
+        result.attrs["canonical_session_cache"] = {
+            "schema": SIERRA_CANONICAL_SESSION_CACHE_SCHEMA,
+            "cache_key": key,
+            "hit": False,
+        }
+        return result
+
+
+def _read_canonical_session_cache(
+    cache_root: Path,
+    key: str,
+    identity: dict,
+) -> pd.DataFrame | None:
+    entry = cache_root / key[:2] / key
+    manifest_path = entry / "manifest.json"
+    events_path = entry / "events.parquet"
+    if not manifest_path.is_file() or not events_path.is_file():
+        return None
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    if (
+        manifest.get("schema") != SIERRA_CANONICAL_SESSION_CACHE_SCHEMA
+        or manifest.get("cache_key") != key
+        or manifest.get("source_identity") != identity
+    ):
+        return None
+    stat = events_path.stat()
+    actual_hash = _cached_file_sha256(
+        str(events_path.resolve()),
+        stat.st_size,
+        stat.st_mtime_ns,
+    )
+    if actual_hash != str(manifest.get("events_sha256") or ""):
+        return None
+    try:
+        frame = pd.read_parquet(events_path)
+    except (OSError, ValueError):
+        return None
+    if (
+        len(frame) != int(manifest.get("row_count") or -1)
+        or list(frame.columns) != list(manifest.get("columns") or [])
+    ):
+        return None
+    attrs = manifest.get("frame_attrs")
+    if isinstance(attrs, dict):
+        frame.attrs.update(attrs)
+    frame.attrs["canonical_session_cache"] = {
+        "schema": SIERRA_CANONICAL_SESSION_CACHE_SCHEMA,
+        "cache_key": key,
+        "hit": True,
+    }
+    return frame
+
+
+def _write_canonical_session_cache(
+    cache_root: Path,
+    key: str,
+    identity: dict,
+    frame: pd.DataFrame,
+) -> None:
+    entry = cache_root / key[:2] / key
+    entry.mkdir(parents=True, exist_ok=True)
+    events_path = entry / "events.parquet"
+    manifest_path = entry / "manifest.json"
+    data_fd, data_name = tempfile.mkstemp(prefix=".events-", suffix=".parquet", dir=entry)
+    manifest_fd, manifest_name = tempfile.mkstemp(prefix=".manifest-", suffix=".json", dir=entry)
+    os.close(data_fd)
+    os.close(manifest_fd)
+    temporary_events = Path(data_name)
+    temporary_manifest = Path(manifest_name)
+    try:
+        frame.to_parquet(temporary_events, index=False)
+        event_stat = temporary_events.stat()
+        events_sha256 = _cached_file_sha256(
+            str(temporary_events.resolve()),
+            event_stat.st_size,
+            event_stat.st_mtime_ns,
+        )
+        manifest = {
+            "schema": SIERRA_CANONICAL_SESSION_CACHE_SCHEMA,
+            "cache_key": key,
+            "source_identity": identity,
+            "events_sha256": events_sha256,
+            "row_count": int(len(frame)),
+            "columns": list(frame.columns),
+            "frame_attrs": _json_safe_mapping(frame.attrs),
+        }
+        temporary_manifest.write_text(
+            json.dumps(manifest, sort_keys=True, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        os.replace(temporary_events, events_path)
+        os.replace(temporary_manifest, manifest_path)
+    finally:
+        temporary_events.unlink(missing_ok=True)
+        temporary_manifest.unlink(missing_ok=True)
+
+
+@contextmanager
+def _exclusive_cache_lock(path: Path):
+    with path.open("a+b") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _json_safe_mapping(value: dict) -> dict:
+    def convert(item):
+        if isinstance(item, dict):
+            return {str(key): convert(child) for key, child in item.items()}
+        if isinstance(item, (list, tuple)):
+            return [convert(child) for child in item]
+        if isinstance(item, np.generic):
+            return item.item()
+        if isinstance(item, (pd.Timestamp, datetime)):
+            return item.isoformat()
+        if item is None or isinstance(item, (str, int, float, bool)):
+            return item
+        return str(item)
+
+    return convert(dict(value))
+
+
+@lru_cache(maxsize=1)
+def _reconstruction_implementation_sha256() -> str:
+    paths = [Path(__file__), Path(str(sierra_events_module.__file__))]
+    records = []
+    for path in paths:
+        stat = path.stat()
+        records.append(
+            {
+                "path": path.name,
+                "sha256": _cached_file_sha256(
+                    str(path.resolve()),
+                    stat.st_size,
+                    stat.st_mtime_ns,
+                ),
+            }
+        )
+    return object_sha256(records)
 
 
 def _load_raw_manifest(path: Path, raw_dir: Path, allow_unverified_for_tests: bool) -> dict[str, dict]:
@@ -190,9 +481,10 @@ def _load_raw_manifest(path: Path, raw_dir: Path, allow_unverified_for_tests: bo
     return records
 
 
-def _verify_raw_contract_file(path: Path, manifest: dict[str, dict]) -> None:
+def _verify_raw_contract_file(path: Path, manifest: dict[str, dict]) -> str:
     if not manifest:
-        return
+        stat = path.stat()
+        return _cached_file_sha256(str(path.resolve()), stat.st_size, stat.st_mtime_ns)
     record = manifest.get(path.name)
     if record is None:
         raise ValueError(f"Sierra raw-file manifest does not declare {path.name}")
@@ -202,6 +494,7 @@ def _verify_raw_contract_file(path: Path, manifest: dict[str, dict]) -> None:
     actual = _cached_file_sha256(str(path.resolve()), stat.st_size, stat.st_mtime_ns)
     if actual != str(record.get("sha256") or ""):
         raise ValueError(f"Sierra raw contract file hash drift: {path}")
+    return actual
 
 
 @lru_cache(maxsize=128)
@@ -223,6 +516,8 @@ def _load_session_events(
     rth_start_minute: int,
     rth_end_minute: int,
     required_capability: str,
+    timestamp_inversion_policy: str,
+    max_timestamp_inversion_rate: float,
 ) -> pd.DataFrame:
     day = pd.Timestamp(session_date, tz=ET)
     start_et = day + pd.Timedelta(minutes=rth_start_minute)
@@ -241,7 +536,11 @@ def _load_session_events(
     if raw.empty:
         return pd.DataFrame(columns=_SCID_EXECUTION_COLUMNS)
     raw["source_ordinal"] = np.arange(len(raw), dtype=np.int64)
-    events, _ = reconstruct_sierra_trade_events(raw)
+    events, reconstruction_stats = reconstruct_sierra_trade_events(
+        raw,
+        timestamp_inversion_policy=timestamp_inversion_policy,
+        max_timestamp_inversion_rate=max_timestamp_inversion_rate,
+    )
     in_window = events["scid_datetime_us"].between(
         _datetime_to_scid_us(start_utc), _datetime_to_scid_us(end_utc), inclusive="left"
     )
@@ -269,6 +568,12 @@ def _load_session_events(
             "num_trades": np.ones(len(events), dtype=np.int64),
             "scid_datetime_us": events["scid_datetime_us"].to_numpy(dtype=np.int64),
             "last_scid_datetime_us": events["last_scid_datetime_us"].to_numpy(dtype=np.int64),
+            "source_scid_datetime_us": events["source_scid_datetime_us"].to_numpy(
+                dtype=np.int64
+            ),
+            "source_last_scid_datetime_us": events[
+                "source_last_scid_datetime_us"
+            ].to_numpy(dtype=np.int64),
             "source_ordinal": events["source_ordinal"].to_numpy(dtype=np.int64),
             "side": events["side"].to_numpy(),
             "component_rows": events["component_rows"].to_numpy(dtype=np.int64),
@@ -283,7 +588,13 @@ def _load_session_events(
             "raw_scid_close": price,
         }
     )
-    return result[_SCID_EXECUTION_COLUMNS]
+    result = result[_SCID_EXECUTION_COLUMNS]
+    result.attrs["timestamp_reconstruction"] = reconstruction_stats
+    result.attrs["source_quality_label"] = (
+        "Governed Sierra SCID events reconstructed in stored source order with "
+        f"timestamp inversion policy={timestamp_inversion_policy}."
+    )
+    return result
 
 
 def _load_quality_manifest(

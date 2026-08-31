@@ -116,7 +116,10 @@ class JobProgressV1(BaseModel):
     completed: int | None = Field(default=None, ge=0)
     total: int | None = Field(default=None, ge=0)
     unit: str | None = None
+    active_workers: int | None = Field(default=None, ge=0)
+    expected_workers: int | None = Field(default=None, ge=0)
     phase_started_at: datetime
+    work_started_at: datetime | None = None
     updated_at: datetime
 
     @field_validator("phase", "message")
@@ -134,10 +137,10 @@ class JobProgressV1(BaseModel):
         normalized = value.strip()
         return normalized or None
 
-    @field_validator("phase_started_at", "updated_at")
+    @field_validator("phase_started_at", "work_started_at", "updated_at")
     @classmethod
-    def _progress_timezone_aware(cls, value: datetime) -> datetime:
-        if value.tzinfo is None or value.utcoffset() is None:
+    def _progress_timezone_aware(cls, value: datetime | None) -> datetime | None:
+        if value is not None and (value.tzinfo is None or value.utcoffset() is None):
             raise ValueError("progress timestamps must be timezone-aware")
         return value
 
@@ -404,6 +407,8 @@ class SQLiteJobQueue:
         completed: int | None = None,
         total: int | None = None,
         unit: str | None = None,
+        active_workers: int | None = None,
+        expected_workers: int | None = None,
     ) -> JobRecordV1:
         """Persist monotonic operational progress for an active owned job."""
 
@@ -422,9 +427,20 @@ class SQLiteJobQueue:
             if record.progress is not None and normalized_percent < record.progress.percent:
                 raise ValueError("job progress percentage cannot move backwards")
             normalized_phase = str(phase).strip()
+            normalized_unit = str(unit).strip() if unit is not None else None
             phase_started_at = (
                 record.progress.phase_started_at
                 if record.progress is not None and record.progress.phase == normalized_phase
+                else now
+            )
+            same_work_unit = (
+                record.progress is not None
+                and record.progress.phase == normalized_phase
+                and record.progress.unit == normalized_unit
+            )
+            work_started_at = (
+                (record.progress.work_started_at or record.progress.phase_started_at)
+                if same_work_unit
                 else now
             )
             progress = JobProgressV1.model_validate(
@@ -435,8 +451,11 @@ class SQLiteJobQueue:
                     "percent": normalized_percent,
                     "completed": completed,
                     "total": total,
-                    "unit": unit,
+                    "unit": normalized_unit,
+                    "active_workers": active_workers,
+                    "expected_workers": expected_workers,
                     "phase_started_at": phase_started_at,
+                    "work_started_at": work_started_at,
                     "updated_at": now,
                 }
             )
@@ -761,6 +780,8 @@ class JobExecutionContext:
         completed: int | None = None,
         total: int | None = None,
         unit: str | None = None,
+        active_workers: int | None = None,
+        expected_workers: int | None = None,
     ) -> JobRecordV1:
         return self.queue.update_progress(
             self.job_id,
@@ -771,6 +792,8 @@ class JobExecutionContext:
             completed=completed,
             total=total,
             unit=unit,
+            active_workers=active_workers,
+            expected_workers=expected_workers,
         )
 
     def cancellation_requested(self) -> bool:
@@ -845,6 +868,7 @@ def _progress_record(value: str | None) -> JobProgressV1 | None:
         return None
     payload = json.loads(value)
     payload["phase_started_at"] = _database_datetime(payload.get("phase_started_at"))
+    payload["work_started_at"] = _database_datetime(payload.get("work_started_at"))
     payload["updated_at"] = _database_datetime(payload.get("updated_at"))
     return JobProgressV1.model_validate(payload)
 

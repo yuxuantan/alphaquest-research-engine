@@ -404,7 +404,7 @@ moment.
 - `databento_signal_engine.py`: main engine, Databento ingestion, replay, live
   loop, strategy runtime, alert building, and CLI.
 - `signal_engine.example.yaml`: example production-style config using a
-  campaign YAML from `configs/campaigns`.
+  campaign YAML from `research/campaigns/active`.
 - `dummy_delta_signal_engine.example.yaml`: simple built-in strategy for
   verifying the live/replay path.
 - `morning_orderflow_momentum_signal_engine.example.yaml`: live-alert config
@@ -1008,17 +1008,22 @@ Important `databento.live` keys:
 visible before a live subscription is opened.
 
 `strategies` is a list of selected strategies. A campaign strategy points at a
-YAML under `configs/campaigns`. A built-in dummy strategy uses `type:
+current governed YAML under `research/campaigns/active`. An archived strategy
+must never be selected for a live run merely to satisfy an old path. A built-in dummy strategy uses `type:
 builtin_delta_interval` and defines params directly in the execution config.
 
 Campaign strategy entry:
 
 ```yaml
 strategies:
-  - id: dense_rank_value_priority_ensemble
+  - id: reviewed_current_variant
     enabled: true
-    config: configs/campaigns/bar_orderflow_participation_state/variants/ES/1m/dense_rank_value_priority_ensemble.yaml
+    config: research/campaigns/active/<campaign_id>/variants/<variant_id>/config.yaml
 ```
+
+The committed `signal_engine.example.yaml` deliberately selects a built-in
+diagnostic strategy so a clean checkout does not activate an archived research
+candidate or depend on a removed campaign path.
 
 Built-in dummy strategy entry:
 

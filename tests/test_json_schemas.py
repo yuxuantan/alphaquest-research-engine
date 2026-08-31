@@ -47,3 +47,10 @@ def test_storage_layout_schema_accepts_repository_configuration():
     config = yaml.safe_load(Path("config/storage_layout.yaml").read_text(encoding="utf-8"))
 
     assert list(Draft202012Validator(schema).iter_errors(config)) == []
+
+
+def test_research_settings_schema_accepts_frozen_objective_policy():
+    schema = _schema("research-settings.schema.json")
+    config = yaml.safe_load(Path("config/research_settings.yaml").read_text(encoding="utf-8"))
+
+    assert list(Draft202012Validator(schema).iter_errors(config)) == []

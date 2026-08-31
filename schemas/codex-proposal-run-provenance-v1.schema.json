@@ -1,0 +1,136 @@
+{
+  "additionalProperties": false,
+  "properties": {
+    "authentication_mode": {
+      "const": "CHATGPT_SUBSCRIPTION",
+      "default": "CHATGPT_SUBSCRIPTION",
+      "enum": [
+        "CHATGPT_SUBSCRIPTION"
+      ],
+      "title": "Authentication Mode",
+      "type": "string"
+    },
+    "codex_version": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Codex Version"
+    },
+    "dirty_tree_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Dirty Tree Sha256",
+      "type": "string"
+    },
+    "exit_status": {
+      "enum": [
+        "SUCCEEDED",
+        "REFUSED",
+        "FAILED",
+        "USAGE_UNAVAILABLE"
+      ],
+      "title": "Exit Status",
+      "type": "string"
+    },
+    "external_writes_permitted": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "External Writes Permitted",
+      "type": "boolean"
+    },
+    "finished_at": {
+      "format": "date-time",
+      "title": "Finished At",
+      "type": "string"
+    },
+    "model": {
+      "anyOf": [
+        {
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Model"
+    },
+    "output_schema_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Output Schema Sha256",
+      "type": "string"
+    },
+    "prompt_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Prompt Sha256",
+      "type": "string"
+    },
+    "repository_revision": {
+      "minLength": 1,
+      "title": "Repository Revision",
+      "type": "string"
+    },
+    "run_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Run Id",
+      "type": "string"
+    },
+    "runtime_request_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Runtime Request Sha256",
+      "type": "string"
+    },
+    "sandbox": {
+      "const": "READ_ONLY",
+      "default": "READ_ONLY",
+      "enum": [
+        "READ_ONLY"
+      ],
+      "title": "Sandbox",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.codex-proposal-run-provenance/v1",
+      "default": "alphaquest.codex-proposal-run-provenance/v1",
+      "enum": [
+        "alphaquest.codex-proposal-run-provenance/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "started_at": {
+      "format": "date-time",
+      "title": "Started At",
+      "type": "string"
+    },
+    "task_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Task Id",
+      "type": "string"
+    }
+  },
+  "required": [
+    "run_id",
+    "task_id",
+    "runtime_request_sha256",
+    "prompt_sha256",
+    "output_schema_sha256",
+    "repository_revision",
+    "dirty_tree_sha256",
+    "started_at",
+    "finished_at",
+    "exit_status"
+  ],
+  "title": "CodexRunProvenanceV1",
+  "type": "object"
+}

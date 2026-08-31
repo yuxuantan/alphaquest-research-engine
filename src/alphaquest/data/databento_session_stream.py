@@ -55,6 +55,7 @@ def iter_databento_trade_sessions(
     root_symbol: str = "ES",
     reset_previous_levels_on_roll: bool = True,
     overnight_start: str = "18:00:00",
+    rth_end: str = "11:00:00",
 ):
     """Yield active-contract RTH trade sessions from a full-day Databento ZIP.
 
@@ -72,6 +73,11 @@ def iter_databento_trade_sessions(
     rth: dict[date, RthSummary] = {}
     previous_rth_dates: list[date] = []
     overnight_start_time = pd.Timestamp(overnight_start).time()
+    rth_end_time = pd.Timestamp(rth_end).time()
+    if not pd.Timestamp("09:30:00").time() < rth_end_time <= pd.Timestamp(
+        "16:00:00"
+    ).time():
+        raise ValueError("Databento event rth_end must be after 09:30 and no later than 16:00")
 
     with zipfile.ZipFile(archive_path) as archive:
         metadata = json.loads(archive.read("metadata.json"))
@@ -151,7 +157,7 @@ def iter_databento_trade_sessions(
             if current_session < start:
                 continue
             entry_mask = (time_values >= pd.Timestamp("09:30:00").time()) & (
-                time_values < pd.Timestamp("11:00:00").time()
+                time_values < rth_end_time
             )
             events = _normalized_events(current.loc[entry_mask], root_symbol, contract)
             if events.empty:

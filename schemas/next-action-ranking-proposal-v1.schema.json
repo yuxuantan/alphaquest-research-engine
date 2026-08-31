@@ -1,0 +1,128 @@
+{
+  "$defs": {
+    "NextAction": {
+      "enum": [
+        "REPAIR_SAME_VARIANT",
+        "OBTAIN_MANUAL_REVIEW",
+        "ABANDON_EDGE",
+        "PROPOSE_SUCCESSOR",
+        "START_NEW_RESEARCH_GENERATION",
+        "ASSESS_OTHER_DESTINATION",
+        "BEGIN_CANDIDATE_REVIEW",
+        "BEGIN_FORWARD_INCUBATION",
+        "STOP_NO_FRESH_HOLDOUT"
+      ],
+      "title": "NextAction",
+      "type": "string"
+    },
+    "RankedNextActionV1": {
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "$ref": "#/$defs/NextAction"
+        },
+        "evidence_refs": {
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "title": "Evidence Refs",
+          "type": "array"
+        },
+        "expected_information_gain": {
+          "minLength": 20,
+          "title": "Expected Information Gain",
+          "type": "string"
+        },
+        "rank": {
+          "minimum": 1,
+          "title": "Rank",
+          "type": "integer"
+        },
+        "rationale": {
+          "minLength": 30,
+          "title": "Rationale",
+          "type": "string"
+        }
+      },
+      "required": [
+        "rank",
+        "action",
+        "rationale",
+        "evidence_refs",
+        "expected_information_gain"
+      ],
+      "title": "RankedNextActionV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Unconfirmed ranking over controller-approved actions only.\n\nThis proposal deliberately carries no successor mechanics.  A later\n``NextExperimentProposalV1`` remains the hash-bound artifact that may name\nsuccessor mechanics after human review and a separate mechanics proposal.",
+  "properties": {
+    "confirmed": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Confirmed",
+      "type": "boolean"
+    },
+    "diagnosis_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Diagnosis Sha256",
+      "type": "string"
+    },
+    "eligibility_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Eligibility Sha256",
+      "type": "string"
+    },
+    "predecessor_result_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Predecessor Result Sha256",
+      "type": "string"
+    },
+    "predecessor_verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Predecessor Verdict",
+      "type": "string"
+    },
+    "proposal_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Proposal Id",
+      "type": "string"
+    },
+    "recommendations": {
+      "items": {
+        "$ref": "#/$defs/RankedNextActionV1"
+      },
+      "minItems": 1,
+      "title": "Recommendations",
+      "type": "array"
+    },
+    "schema": {
+      "const": "alphaquest.next-action-ranking-proposal/v1",
+      "default": "alphaquest.next-action-ranking-proposal/v1",
+      "enum": [
+        "alphaquest.next-action-ranking-proposal/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    }
+  },
+  "required": [
+    "proposal_id",
+    "eligibility_sha256",
+    "diagnosis_sha256",
+    "predecessor_result_sha256",
+    "predecessor_verdict",
+    "recommendations"
+  ],
+  "title": "NextActionRankingProposalV1",
+  "type": "object"
+}

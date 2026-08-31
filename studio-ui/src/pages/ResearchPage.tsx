@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Icon } from "../components/Icons";
+import { progressPosition } from "../components/ResearchProgress";
 import {
   EmptyState,
   PageHeader,
@@ -9,10 +10,29 @@ import {
 } from "../components/UI";
 import { useStudio } from "../state";
 
+export function researchRecordHref(item: any): string {
+  if (item.kind === "draft") {
+    return `/research/${item.campaign_id}/design/${item.wizard_step || 1}`;
+  }
+
+  const workflow = item.workflow_context || {};
+  const action = workflow.primary_action || {};
+  const attemptId = workflow.current_attempt_id || action.attempt_id || "";
+  const variantId = workflow.target_variant_id || action.variant_id || "";
+  const query = new URLSearchParams();
+  if (attemptId) query.set("attempt", attemptId);
+  if (variantId) query.set("variant", variantId);
+
+  const suffix = query.size ? `?${query.toString()}` : "";
+  return `/research/${item.campaign_id}/overview${suffix}`;
+}
+
 export function ResearchPage() {
   const { data, loading } = useStudio();
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState("all");
+  const [verdict, setVerdict] = useState("all");
+  const [sort, setSort] = useState("attention");
   const rows = useMemo(() => {
     const drafts = data.drafts.map((item) => ({
       ...item,
@@ -23,19 +43,49 @@ export function ResearchPage() {
       ...item,
       kind: "campaign",
     }));
-    return [...drafts, ...campaigns].filter((item) => {
-      const matches = `${item.title} ${item.campaign_id} ${item.instrument}`
-        .toLowerCase()
-        .includes(query.toLowerCase());
-      return (
-        matches &&
-        (filter === "all" ||
-          (filter === "drafts"
-            ? item.kind === "draft"
-            : item.kind === "campaign"))
-      );
-    });
-  }, [data, query, filter]);
+    return [...drafts, ...campaigns]
+      .filter((item) => {
+        const matches = `${item.title} ${item.campaign_id} ${item.instrument}`
+          .toLowerCase()
+          .includes(query.toLowerCase());
+        const workflow = (item as any).workflow_context || {};
+        const scientificStatus = String(
+          workflow.scientific_status || item.lifecycle || "",
+        ).toLowerCase();
+        return (
+          matches &&
+          (filter === "all" ||
+            (filter === "drafts"
+              ? item.kind === "draft"
+              : item.kind === "campaign")) &&
+          (verdict === "all" ||
+            (verdict === "attention"
+              ? scientificStatus.includes("manual") ||
+                scientificStatus.includes("pending")
+              : scientificStatus === verdict))
+        );
+      })
+      .sort((left, right) => {
+        if (sort === "title")
+          return String(left.title || left.campaign_id).localeCompare(
+            String(right.title || right.campaign_id),
+          );
+        if (sort === "updated")
+          return String(right.updated_at || "").localeCompare(
+            String(left.updated_at || ""),
+          );
+        const priority = (item: any) => {
+          const status = String(
+            item.workflow_context?.scientific_status || item.lifecycle || "",
+          );
+          if (status.includes("NEEDS MANUAL REVIEW")) return 0;
+          if (item.kind === "draft") return 1;
+          if (status === "FAIL") return 3;
+          return 2;
+        };
+        return priority(left) - priority(right);
+      });
+  }, [data, query, filter, verdict, sort]);
   return (
     <div className="page">
       <PageHeader
@@ -75,6 +125,26 @@ export function ResearchPage() {
           ))}
         </div>
       </div>
+      <div className="research-view-controls" aria-label="Research view controls">
+        <label>
+          <span>Scientific status</span>
+          <select value={verdict} onChange={(event) => setVerdict(event.target.value)}>
+            <option value="all">All statuses</option>
+            <option value="attention">Needs attention</option>
+            <option value="pass">PASS</option>
+            <option value="fail">FAIL</option>
+          </select>
+        </label>
+        <label>
+          <span>Sort by</span>
+          <select value={sort} onChange={(event) => setSort(event.target.value)}>
+            <option value="attention">Next action</option>
+            <option value="updated">Recently updated</option>
+            <option value="title">Title</option>
+          </select>
+        </label>
+        <span>{rows.length} visible research records</span>
+      </div>
       {loading ? (
         <div className="research-list loading-list">
           <span />
@@ -101,10 +171,11 @@ export function ResearchPage() {
       ) : (
         <div className="research-list" role="list">
           {rows.map((item) => {
-            const url =
-              item.kind === "draft"
-                ? `/research/${item.campaign_id}/design/${item.wizard_step || 1}`
-                : `/research/${item.campaign_id}/overview`;
+            const workflow = (item as any).workflow_context || {};
+            const progress =
+              (item as any).research_progress?.campaign || workflow.progress;
+            const action = workflow.primary_action || {};
+            const url = researchRecordHref(item);
             return (
               <Link
                 className="research-row"
@@ -121,16 +192,26 @@ export function ResearchPage() {
                   <small>
                     {item.kind === "draft"
                       ? `Step ${item.wizard_step || 1} of 7 · ${nextLabel(item.wizard_step || 1)}`
-                      : (item as any).workflow_blocker || item.campaign_id}
+                      : `${progressPosition(progress)} · ${progress?.current_stage_label || "Stage unavailable"} · ${progress?.variant_id || workflow.target_variant_id || "Variant unavailable"}`}
                   </small>
+                  {item.kind === "campaign" && (
+                    <small className="research-next-action">
+                      {(item as any).workflow_blocker ? "Blocked" : "Next"}:{" "}
+                      {(item as any).workflow_blocker ||
+                        progress?.next_action ||
+                        action.label ||
+                        "Inspect governed campaign"}
+                    </small>
+                  )}
                 </div>
                 <div className="research-status">
                   <StatusBadge
                     value={
-                      item.workflow_status ||
+                      workflow.scientific_status ||
                       item.lifecycle ||
                       (item.kind === "draft" ? "Draft" : "Active")
                     }
+                    kind={item.kind === "campaign" ? "scientific" : undefined}
                   />
                   <small>Updated {formatDate(item.updated_at)}</small>
                 </div>
@@ -146,11 +227,11 @@ export function ResearchPage() {
 
 const nextLabel = (step: number) =>
   [
-    "Research brief",
+    "Goals and research brief",
     "Duplicate review",
     "Dataset",
     "Execution rules",
     "Mechanics lane",
     "Sequential variants",
     "Protocol and freeze",
-  ][step - 1] || "Research brief";
+  ][step - 1] || "Goals and research brief";

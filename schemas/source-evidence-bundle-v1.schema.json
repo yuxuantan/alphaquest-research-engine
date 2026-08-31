@@ -1,0 +1,209 @@
+{
+  "$defs": {
+    "SourceClaimV1": {
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+          "title": "Claim Id",
+          "type": "string"
+        },
+        "evidence_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[0-9a-f]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Evidence Sha256"
+        },
+        "source_location": {
+          "minLength": 1,
+          "title": "Source Location",
+          "type": "string"
+        },
+        "statement": {
+          "minLength": 20,
+          "title": "Statement",
+          "type": "string"
+        },
+        "support": {
+          "enum": [
+            "DIRECT",
+            "CONFLICTING",
+            "INFERENCE"
+          ],
+          "title": "Support",
+          "type": "string"
+        }
+      },
+      "required": [
+        "claim_id",
+        "statement",
+        "source_location",
+        "support"
+      ],
+      "title": "SourceClaimV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "description": "Verified source identity plus claim-level support; never a campaign.",
+  "properties": {
+    "authors": {
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Authors",
+      "type": "array"
+    },
+    "bundle_id": {
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$",
+      "title": "Bundle Id",
+      "type": "string"
+    },
+    "claims": {
+      "items": {
+        "$ref": "#/$defs/SourceClaimV1"
+      },
+      "minItems": 1,
+      "title": "Claims",
+      "type": "array"
+    },
+    "confirmed": {
+      "const": false,
+      "default": false,
+      "enum": [
+        false
+      ],
+      "title": "Confirmed",
+      "type": "boolean"
+    },
+    "conflicting_evidence": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Conflicting Evidence",
+      "type": "array"
+    },
+    "content_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Content Sha256"
+    },
+    "created_by": {
+      "minLength": 1,
+      "title": "Created By",
+      "type": "string"
+    },
+    "inference_notes": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Inference Notes",
+      "type": "array"
+    },
+    "locator": {
+      "minLength": 4,
+      "title": "Locator",
+      "type": "string"
+    },
+    "publication_type": {
+      "enum": [
+        "PEER_REVIEWED",
+        "WORKING_PAPER",
+        "EXCHANGE_RESEARCH",
+        "PRACTITIONER_RESEARCH",
+        "PRIMARY_DATA_DOCUMENTATION",
+        "OTHER"
+      ],
+      "title": "Publication Type",
+      "type": "string"
+    },
+    "retraction_status": {
+      "enum": [
+        "NOT_RETRACTED",
+        "RETRACTED",
+        "CORRECTED",
+        "UNKNOWN"
+      ],
+      "title": "Retraction Status",
+      "type": "string"
+    },
+    "retrieved_at": {
+      "format": "date-time",
+      "title": "Retrieved At",
+      "type": "string"
+    },
+    "schema": {
+      "const": "alphaquest.source-evidence-bundle/v1",
+      "default": "alphaquest.source-evidence-bundle/v1",
+      "enum": [
+        "alphaquest.source-evidence-bundle/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 3,
+      "title": "Title",
+      "type": "string"
+    },
+    "venue": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Venue"
+    },
+    "verification_status": {
+      "enum": [
+        "PARTIAL",
+        "REJECTED"
+      ],
+      "title": "Verification Status",
+      "type": "string"
+    },
+    "year": {
+      "maximum": 2100,
+      "minimum": 1800,
+      "title": "Year",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "bundle_id",
+    "title",
+    "authors",
+    "year",
+    "locator",
+    "publication_type",
+    "venue",
+    "retrieved_at",
+    "verification_status",
+    "retraction_status",
+    "claims",
+    "conflicting_evidence",
+    "inference_notes",
+    "created_by"
+  ],
+  "title": "SourceEvidenceBundleV1",
+  "type": "object"
+}

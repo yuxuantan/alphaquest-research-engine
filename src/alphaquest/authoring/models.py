@@ -139,8 +139,17 @@ class EventExecutionSourceV1(StrictAuthoringModel):
     quality_manifest_sha256: Sha256 | None = None
     concordance_report: Annotated[str, Field(min_length=1)] | None = None
     concordance_report_sha256: Sha256 | None = None
-    required_capability: Literal["full_strategy_events", "full_strategy_events_extrapolated"] | None = None
+    required_capability: (
+        Literal[
+            "full_strategy_events",
+            "full_strategy_events_extrapolated",
+            "full_rth_strategy_events_extrapolated",
+        ]
+        | None
+    ) = None
     ineligible_session_policy: Literal["error", "blackout"] = "error"
+    timestamp_inversion_policy: Literal["reject", "preserve_source_order_clamp"] = "reject"
+    max_timestamp_inversion_rate: Annotated[float, Field(ge=0.0, le=0.002)] = 0.0
     roll_calendar: Annotated[str, Field(min_length=1)]
     roll_calendar_sha256: Sha256
     root_symbol: Literal["ES", "NQ"]
@@ -171,6 +180,8 @@ class EventExecutionSourceV1(StrictAuthoringModel):
                 raise ValueError("Databento event execution cannot declare Sierra source artifacts")
             if self.rth_end != "16:00:00":
                 raise ValueError("Databento event execution must retain the reviewed 16:00 RTH boundary")
+            if self.timestamp_inversion_policy != "reject" or self.max_timestamp_inversion_rate != 0.0:
+                raise ValueError("Databento event execution cannot declare Sierra timestamp repair")
             return self
 
         required = {
@@ -190,8 +201,17 @@ class EventExecutionSourceV1(StrictAuthoringModel):
             raise ValueError("Sierra event execution is missing governed artifacts: " + ", ".join(missing))
         if self.archive is not None or self.archive_sha256 is not None:
             raise ValueError("Sierra event execution cannot declare a Databento archive")
-        if self.rth_end != "11:00:00":
-            raise ValueError("Sierra event replay is certified only for the 09:30-11:00 entry window")
+        if self.rth_end == "16:00:00" and self.required_capability != "full_rth_strategy_events_extrapolated":
+            raise ValueError(
+                "Sierra full-RTH replay requires the dedicated " "full_rth_strategy_events_extrapolated capability"
+            )
+        if self.rth_end == "11:00:00" and self.required_capability == "full_rth_strategy_events_extrapolated":
+            raise ValueError("the full-RTH Sierra capability must retain the 16:00 RTH boundary")
+        if self.timestamp_inversion_policy == "reject":
+            if self.max_timestamp_inversion_rate != 0.0:
+                raise ValueError("reject timestamp policy requires max_timestamp_inversion_rate=0")
+        elif self.max_timestamp_inversion_rate <= 0.0:
+            raise ValueError("preserve_source_order_clamp requires a positive inversion-rate ceiling")
         return self
 
 
@@ -247,10 +267,7 @@ class DatasetManifestV1(StrictAuthoringModel):
     @model_validator(mode="after")
     def fail_closed_quality(self) -> "DatasetManifestV1":
         defects = (
-            self.duplicate_count
-            + self.out_of_order_count
-            + self.invalid_ohlc_count
-            + self.cadence_violation_count
+            self.duplicate_count + self.out_of_order_count + self.invalid_ohlc_count + self.cadence_violation_count
         )
         if self.quality_verdict == "PASS" and defects:
             raise ValueError("a dataset with duplicate, unordered, or invalid OHLC rows cannot have PASS quality")
@@ -431,9 +448,7 @@ class BarRuleV1(StrictAuthoringModel):
 class ModuleBindingV1(StrictAuthoringModel):
     module: Identifier
     params: dict[str, Any] = Field(default_factory=dict)
-    parameter_grid: dict[str, Annotated[list[Scalar], Field(min_length=2, max_length=20)]] = Field(
-        default_factory=dict
-    )
+    parameter_grid: dict[str, Annotated[list[Scalar], Field(min_length=2, max_length=20)]] = Field(default_factory=dict)
 
     @field_validator("parameter_grid")
     @classmethod
@@ -522,6 +537,50 @@ class SequentialVariantLineageV1(StrictAuthoringModel):
     created_at: Annotated[str, Field(min_length=1)]
 
 
+class ResearchObjectivesV1(StrictAuthoringModel):
+    """Pre-PnL success, abandonment, and live-incubation contract.
+
+    These values are deliberately campaign-level.  They describe what would
+    make the research useful before mechanics are selected; they are not an
+    alternate path for changing repository-owned stage topology or seeds.
+    """
+
+    schema_version: Literal["alphaquest.research-objectives/v1"] = Field(
+        default="alphaquest.research-objectives/v1", alias="schema"
+    )
+    development_goal: Annotated[str, Field(min_length=20)]
+    development_deadline: Annotated[str, Field(pattern=r"^\d{4}-\d{2}-\d{2}$")]
+    evaluation_horizon_months: Annotated[int, Field(ge=6, le=120)]
+    minimum_annualized_return_fraction: Annotated[float, Field(gt=0.0, le=5.0)]
+    minimum_mar: Annotated[float, Field(ge=0.0, le=20.0)]
+    maximum_drawdown_fraction: Annotated[float, Field(gt=0.0, le=1.0)]
+    minimum_complete_wfa_windows: Annotated[int, Field(ge=2, le=100)]
+    minimum_wfa_oos_trades: Annotated[int, Field(ge=1)]
+    minimum_acceptance_oos_trades: Annotated[int, Field(ge=1)]
+    monte_carlo_min_runs: Annotated[int, Field(ge=1000, le=1_000_000)]
+    monte_carlo_horizon_months: Annotated[int, Field(ge=1, le=120)]
+    minimum_net_profit_probability: Annotated[float, Field(ge=0.0, le=1.0)]
+    maximum_account_breach_probability: Annotated[float, Field(ge=0.0, le=1.0)]
+    forward_incubation_min_calendar_days: Annotated[int, Field(ge=30, le=1095)]
+    forward_incubation_min_trades: Annotated[int, Field(ge=1)]
+    maximum_variants: Annotated[int, Field(ge=1, le=5)] = 5
+    abandonment_rules: Annotated[list[str], Field(min_length=1)]
+    retirement_rules: Annotated[list[str], Field(min_length=1)]
+    confirmed: Literal[True]
+
+    @field_validator("development_deadline")
+    @classmethod
+    def valid_deadline(cls, value: str) -> str:
+        date.fromisoformat(value)
+        return value
+
+
+class TargetAccountProfileSelectionV1(StrictAuthoringModel):
+    profile_id: Annotated[str, Field(min_length=1)]
+    version: Annotated[str, Field(min_length=1)] | None = None
+    role: Literal["primary", "comparison"] = "primary"
+
+
 class ExecutionSettingsV1(StrictAuthoringModel):
     session_start: str = "09:30:00"
     session_end: str = "16:00:00"
@@ -537,6 +596,9 @@ class ExecutionSettingsV1(StrictAuthoringModel):
     slippage_ticks: Annotated[float, Field(ge=0)]
     contracts: Annotated[int, Field(ge=1)] = 1
     prop_profile: Annotated[str, Field(min_length=1)]
+    target_account_profiles: Annotated[
+        list[TargetAccountProfileSelectionV1], Field(max_length=8)
+    ] = Field(default_factory=list)
 
     @field_validator("session_start", "session_end", "latest_entry_time", "flatten_time", "latest_flat_time")
     @classmethod
@@ -548,16 +610,17 @@ class ExecutionSettingsV1(StrictAuthoringModel):
     @model_validator(mode="after")
     def validate_timeline(self) -> "ExecutionSettingsV1":
         if not (
-            self.session_start
-            < self.latest_entry_time
-            < self.flatten_time
-            <= self.latest_flat_time
-            <= self.session_end
+            self.session_start < self.latest_entry_time < self.flatten_time <= self.latest_flat_time <= self.session_end
         ):
             raise ValueError("session/entry/flatten times are not in causal order")
         expected_tick_value = self.tick_size * self.point_value
         if not math.isclose(self.tick_value, expected_tick_value, rel_tol=1e-9, abs_tol=1e-9):
             raise ValueError("tick_value must equal tick_size multiplied by point_value")
+        identities = [(item.profile_id, item.version) for item in self.target_account_profiles]
+        if len(identities) != len(set(identities)):
+            raise ValueError("target account profiles must be unique")
+        if sum(item.role == "primary" for item in self.target_account_profiles) > 1:
+            raise ValueError("at most one target account profile may be primary")
         return self
 
 
@@ -570,6 +633,7 @@ class CampaignDraftV1(StrictAuthoringModel):
     created_at: str = Field(default_factory=lambda: date.today().isoformat(), pattern=r"^\d{4}-\d{2}-\d{2}$")
     instrument: Literal["ES", "NQ"]
     timeframe: Annotated[str, Field(pattern=r"^[1-9]\d*[mhd]$")]
+    research_objectives: ResearchObjectivesV1 | None = None
     edge_family: Identifier
     hypothesis: Annotated[str, Field(min_length=1)]
     expected_mechanism: Annotated[str, Field(min_length=1)]
@@ -589,13 +653,16 @@ class CampaignDraftV1(StrictAuthoringModel):
         "certified_event_replay",
         "engineering_handoff",
     ] = "certified_recipe"
-    certified_recipe: Literal[
-        "calendar_session_bias",
-        "opening_range_breakout",
-        "daily_tsm_close_to_close",
-        "daily_tsm_volatility_normalized",
-        "daily_tsm_short_term_alignment",
-    ] | None = None
+    certified_recipe: (
+        Literal[
+            "calendar_session_bias",
+            "opening_range_breakout",
+            "daily_tsm_close_to_close",
+            "daily_tsm_volatility_normalized",
+            "daily_tsm_short_term_alignment",
+        ]
+        | None
+    ) = None
     event_strategy: Identifier | None = None
     engineering_handoff_path: str | None = None
     confirmation_context_sha256: Sha256 | None = None
@@ -603,9 +670,16 @@ class CampaignDraftV1(StrictAuthoringModel):
 
     @model_validator(mode="after")
     def enforce_campaign_invariants(self) -> "CampaignDraftV1":
+        if self.frozen and self.research_objectives is None:
+            raise ValueError("a frozen campaign requires confirmed pre-PnL research objectives")
+        if self.research_objectives is not None:
+            if self.research_objectives.development_deadline < self.created_at:
+                raise ValueError("the research development deadline cannot precede campaign creation")
+            if len(self.variants) > self.research_objectives.maximum_variants:
+                raise ValueError("declared variants exceed the frozen research-objective limit")
         if self.dataset.symbol != self.instrument:
             raise ValueError("dataset symbol must match campaign instrument")
-        if self.dataset.timeframe != self.timeframe:
+        if self.dataset.timeframe != self.timeframe and self.authoring_lane != "certified_event_replay":
             raise ValueError("dataset timeframe must match campaign timeframe")
         ids = [variant.variant_id for variant in self.variants]
         if len(set(ids)) != len(ids):
@@ -613,10 +687,10 @@ class CampaignDraftV1(StrictAuthoringModel):
         signatures = [variant.mechanic_signature for variant in self.variants]
         if len(set(signatures)) != len(signatures):
             raise ValueError("campaign variants must have materially distinct, value-independent mechanics")
-        if self.variant_protocol == "sequential_failure_informed" and len(self.sequential_variant_history) != max(0, len(ids) - 1):
-            raise ValueError(
-                "every variant after v01 requires one failure-informed sequential lineage record"
-            )
+        if self.variant_protocol == "sequential_failure_informed" and len(self.sequential_variant_history) != max(
+            0, len(ids) - 1
+        ):
+            raise ValueError("every variant after v01 requires one failure-informed sequential lineage record")
         if self.variant_protocol == "legacy_predeclared" and self.sequential_variant_history:
             raise ValueError("legacy predeclared campaigns cannot contain sequential variant lineage")
         for index, lineage in enumerate(self.sequential_variant_history, start=1):
@@ -640,9 +714,7 @@ class CampaignDraftV1(StrictAuthoringModel):
                             "all certified-recipe variants must express one edge through the selected entry recipe"
                         )
                     if setup_mode is not None and variant.entry.params.get("setup_mode") != setup_mode:
-                        raise ValueError(
-                            "all certified-recipe variants must use the selected frozen trend mechanic"
-                        )
+                        raise ValueError("all certified-recipe variants must use the selected frozen trend mechanic")
             elif self.authoring_lane == "visual_completed_bar_rule":
                 if self.certified_recipe is not None:
                     raise ValueError("visual-rule campaigns cannot also declare a certified recipe")
@@ -653,15 +725,15 @@ class CampaignDraftV1(StrictAuthoringModel):
                     raise ValueError("event-replay campaigns cannot also declare a completed-bar recipe")
                 if not self.event_strategy or self.dataset.event_source is None:
                     raise ValueError("certified event replay requires event_strategy and dataset.event_source")
-                for variant in self.variants:
-                    if variant.entry.module != self.event_strategy:
-                        raise ValueError("event-replay entry module must match the certified event strategy")
-                    if variant.stop.module != "event_aoi_structural_stop":
-                        raise ValueError("event-replay variants require the certified structural AOI stop")
-                    if variant.target.module != "event_value_area_management":
-                        raise ValueError("event-replay variants require certified value-area management")
+                if self.variants[0].entry.module != self.event_strategy:
+                    raise ValueError(
+                        "event_strategy must identify the first frozen event variant; "
+                        "failure-informed later variants may declare another certified event strategy"
+                    )
             if not all(variant.confirmed for variant in self.variants):
-                raise ValueError("a frozen campaign requires every currently declared variant to be explicitly confirmed")
+                raise ValueError(
+                    "a frozen campaign requires every currently declared variant to be explicitly confirmed"
+                )
             expected = campaign_confirmation_context_sha256(self)
             if self.confirmation_context_sha256 != expected:
                 raise ValueError(

@@ -1,0 +1,177 @@
+schema: alphaquest.follow-up-strategy-spec/v1
+campaign_id: yush_orderflow_range
+attempt_id: pre_pnl_mechanics_correction_20260815t171716_939a2a6e
+attempt_kind: pre_pnl_mechanics_correction
+parent_attempt_id: methodology_rerun_20260815t162359_2ae50158
+reason: Mechanics review rejected v03 because next-event entries could retain only marginal POC reward against a much wider
+  structural stop. Bind certified implementation v12, require actual-fill net target reward to cover the all-in worst-case
+  stop loss, and replace the misleading synthetic entry-trigger presentation with explicit market reference and modeled fill
+  evidence.
+created_by: Researcher via Codex
+authorized_by: null
+created_at: '2026-08-15T17:17:16.805839+00:00'
+frozen: true
+changes:
+- variant_id: v03
+  scope: strategy_certification
+  field: certified_implementation_identity
+  old:
+    strategy_id: yush_adaptive_orderflow_range_v3
+    implementation_version: 11
+    implementation_sha256: 910f77df1fcc493e189e0f8b23b86a8be8885c4e8f09fdf0eec54a8b7d3d5bff
+    manifest_sha256: ea37784da8ab90f5b84f2e7a62ea41dbc089fe4264a02e692607b061664b8166
+  new:
+    strategy_id: yush_adaptive_orderflow_range_v3
+    implementation_version: 12
+    implementation_sha256: 01229bff9a2545d45cbd36394f6c4c36b37e24e79d3d4faf295826696fd09293
+    manifest_sha256: 6d2713cb0a08b80a52b965300d07af6249806d5140c449a4a341e22bd5dbdb00
+  reviewed: true
+- variant_id: v03
+  scope: strategy.event.params,strategy.entry.params.mechanics
+  field: minimum_poc_reward_r
+  old: 0.0
+  new: null
+  reviewed: true
+  change_kind: retired_certified_parameter
+- variant_id: v03
+  scope: strategy.event.params,strategy.entry.params.mechanics
+  field: minimum_net_reward_to_worst_case_loss
+  old: null
+  new: 1.0
+  reviewed: true
+variants:
+- variant_id: v03
+  mechanic_signature: 418113b8e8fa2fe7c841ba0abbda832e213547fc0f36a2fa1bedb68bb6b9d437
+  strategy:
+    entry:
+      module: yush_adaptive_orderflow_range_v3
+      params:
+        mechanics:
+          tick_size: 0.25
+          point_value: 5.0
+          commission_per_contract: 0.51
+          bar_seconds: 180
+          price_bin_ticks: 1
+          value_area_fraction: 0.7
+          value_area_method: motivewave_standard
+          aoi_level_distance_ticks: 4
+          big_trade_reference_percentile: 0.999
+          big_trade_lookback_sessions: 20
+          big_trade_interval_ms: 100
+          big_trade_price_bucket_ticks: 1
+          burst_freshness_bars: 2
+          sweep_minimum_ticks: 2
+          failure_confirmation_bars: 3
+          morning_entry_start: 09:39:00
+          morning_entry_end: '11:30:00'
+          afternoon_entry_start: '13:39:00'
+          afternoon_entry_end: '15:30:00'
+          entry_offset_ticks: 1
+          stop_offset_ticks: 1
+          minimum_stop_ticks: 2
+          maximum_stop_atr_multiple: 1.75
+          atr_lookback_bars: 14
+          target_1_fraction: 1.0
+          maximum_holding_bars: 12
+          entry_expiry_bars: 1
+          maximum_entries_per_aoi: 1
+          max_trades_per_day: 0
+          atr_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+          atr_context_sha256: 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+          big_trade_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q999_prior20_context.parquet
+          big_trade_context_sha256: e5a4ceafa83dad1f663bb277ae5f5b7d99183e4ea16d0f07cd12b9bd49e610fa
+          sweep_atr_fraction: 0.2
+          aoi_ttl_minutes: 30
+          minimum_net_reward_to_worst_case_loss: 1.0
+          profile_warmup_bars: 3
+          afternoon_profile_reset: '13:30:00'
+    sl:
+      module: event_atr_bounded_sweep_structural_stop
+      params: {}
+    tp:
+      module: event_frozen_poc_single_exit
+      params: {}
+    flatten_time: '15:55:00'
+    event:
+      module: yush_adaptive_orderflow_range_v3
+      params:
+        tick_size: 0.25
+        point_value: 5.0
+        commission_per_contract: 0.51
+        bar_seconds: 180
+        price_bin_ticks: 1
+        value_area_fraction: 0.7
+        value_area_method: motivewave_standard
+        aoi_level_distance_ticks: 4
+        big_trade_reference_percentile: 0.999
+        big_trade_lookback_sessions: 20
+        big_trade_interval_ms: 100
+        big_trade_price_bucket_ticks: 1
+        burst_freshness_bars: 2
+        sweep_minimum_ticks: 2
+        failure_confirmation_bars: 3
+        morning_entry_start: 09:39:00
+        morning_entry_end: '11:30:00'
+        afternoon_entry_start: '13:39:00'
+        afternoon_entry_end: '15:30:00'
+        entry_offset_ticks: 1
+        stop_offset_ticks: 1
+        minimum_stop_ticks: 2
+        maximum_stop_atr_multiple: 1.75
+        atr_lookback_bars: 14
+        target_1_fraction: 1.0
+        maximum_holding_bars: 12
+        entry_expiry_bars: 1
+        maximum_entries_per_aoi: 1
+        max_trades_per_day: 0
+        atr_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/atr14_3m_eth_context.parquet
+        atr_context_sha256: 436529d23c3c1fd172139d945e080fab49e6c4eca092700fd18c9c07d6624de4
+        big_trade_context_path: research/datasets/es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02/big_trade_100ms_q999_prior20_context.parquet
+        big_trade_context_sha256: e5a4ceafa83dad1f663bb277ae5f5b7d99183e4ea16d0f07cd12b9bd49e610fa
+        sweep_atr_fraction: 0.2
+        aoi_ttl_minutes: 30
+        minimum_net_reward_to_worst_case_loss: 1.0
+        profile_warmup_bars: 3
+        afternoon_profile_reset: '13:30:00'
+  parameter_grid:
+    event.params.burst_freshness_bars:
+    - 2
+    - 3
+    - 4
+    - 5
+    event.params.sweep_atr_fraction:
+    - 0.1
+    - 0.15
+    - 0.2
+    - 0.25
+    - 0.3
+    event.params.maximum_stop_atr_multiple:
+    - 1.25
+    - 1.5
+    - 1.75
+  dataset_id: es_sierra_yush_events_20110815_20260529_full_rth_ny_inv02
+  validation_gate:
+    required: true
+    lane: event_replay
+    parameter_mode: declared_defaults
+    manual_review_random_sample_size: 5
+    manual_review_seed: 7
+    data_subset:
+      start_date: '2026-05-14'
+      end_date: '2026-05-29'
+      session_dates:
+      - '2026-05-14'
+      - '2026-05-15'
+      - '2026-05-19'
+      - '2026-05-20'
+      - '2026-05-21'
+      - '2026-05-22'
+      - '2026-05-26'
+      - '2026-05-27'
+      - '2026-05-28'
+      - '2026-05-29'
+    evidence_dir: /Users/yx/Desktop/fastlane/alphaquest-research-engine/research/evidence/runs/yush_orderflow_range/v03/ES/mechanics_validation_pre_pnl_mechanics_correction_20260815t171716_939a2a6e/validation_runs/core
+    approval_path: /Users/yx/Desktop/fastlane/alphaquest-research-engine/research_artifacts/validation_approvals/yush_orderflow_range/pre_pnl_mechanics_correction_20260815t171716_939a2a6e/v03/approval.json
+    minimum_trade_samples: 5
+    session_count: 10
+    selection_mode: latest_eligible_sessions

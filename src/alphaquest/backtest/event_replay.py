@@ -14,7 +14,7 @@ import pandas as pd
 
 from alphaquest.backtest.contracts import ExecutionAssumptions
 from alphaquest.backtest.fills import entry_price, exit_price
-from alphaquest.backtest.metrics import calculate_metrics, daily_results
+from alphaquest.backtest.metrics import EvaluationPeriod, calculate_metrics, daily_results
 from alphaquest.backtest.risk import DailyRisk
 from alphaquest.backtest.sizing import size_position
 from alphaquest.utils.hashing import object_sha256
@@ -98,6 +98,29 @@ class CanonicalEvent:
 
 
 @dataclass(frozen=True)
+class CanonicalEventBatch:
+    """Contiguous canonical events that a strategy may ingest without execution.
+
+    The engine only offers this fast path while there are no live orders or
+    positions. Strategies must return the first unsafe boundary from
+    ``idle_batch_stop`` so decisions, fills, and risk controls remain on the
+    authoritative event-by-event path.
+    """
+
+    start_event_index: int
+    stop_event_index: int
+    timestamp_ns: np.ndarray
+    price_ticks: np.ndarray
+    sizes: np.ndarray | None
+    sides: np.ndarray | None
+    signed_sizes: np.ndarray | None
+
+    @property
+    def event_count(self) -> int:
+        return int(self.stop_event_index - self.start_event_index)
+
+
+@dataclass(frozen=True)
 class CanonicalEventSession:
     """Engine-private source session normalized into canonical order."""
 
@@ -105,6 +128,11 @@ class CanonicalEventSession:
     events: pd.DataFrame
     input_was_canonically_sorted: bool
     metadata: Mapping[str, Any]
+    timestamp_cache: dict[int, pd.Timestamp] = field(
+        default_factory=dict,
+        compare=False,
+        repr=False,
+    )
 
     @property
     def session_date(self) -> Any:
@@ -138,8 +166,9 @@ class EventEntryOrder:
     order_id: str
     direction: str
     entry_tick: int
-    stop_tick: int
+    stop_tick: int | None
     target_tick: int | None = None
+    order_type: str = "stop_market"
     priority: int = 0
     active_from_event_index: int = 0
     submitted_event_index: int = -1
@@ -162,6 +191,7 @@ class EventPosition:
     stop_tick: int
     target_tick: int | None
     contracts: int
+    initial_contracts: int
     risk_points: float
     order_id: str
     stop_exit_reason: str = "initial_stop"
@@ -170,6 +200,11 @@ class EventPosition:
     min_price_tick: int = 0
     report_fields: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
+    partial_gross_pnl: float = 0.0
+    partial_gross_pnl_before_slippage: float = 0.0
+    partial_slippage_cost: float = 0.0
+    partial_commission: float = 0.0
+    partial_exit_legs: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -195,6 +230,7 @@ class EventPositionView:
     min_price_tick: int
     report_fields: Mapping[str, Any]
     metadata: Mapping[str, Any]
+    initial_contracts: int = 1
 
 
 @dataclass(frozen=True)
@@ -213,6 +249,9 @@ class PositionDirective:
     flatten_reason: str | None = None
     flatten_tick: int | None = None
     immediate_target_tick: int | None = None
+    partial_exit_contracts: int | None = None
+    partial_exit_tick: int | None = None
+    partial_exit_reason: str | None = None
     report_fields: Mapping[str, Any] = field(default_factory=dict)
     allow_inverted_oco: bool = False
     allow_marketable_bracket: bool = False
@@ -235,11 +274,83 @@ class CanonicalEventReplayStrategy:
     def on_session_start(self, session: EventReplaySessionView, broker: "EventReplayBroker") -> None:
         pass
 
+    def prepare_session_features(self, session: CanonicalEventSession) -> Any | None:
+        del session
+        return None
+
+    def bind_session_features(self, values: Mapping[str, Any]) -> None:
+        if values:
+            raise ValueError("strategy does not support prepared session features")
+
     def on_event_start(self, event: CanonicalEvent, broker: "EventReplayBroker") -> None:
         pass
 
+    def idle_batch_stop(
+        self,
+        timestamp_ns: np.ndarray,
+        *,
+        start: int,
+        stop: int,
+    ) -> int:
+        """Return an exclusive safe batch boundary, or ``start`` to decline."""
+
+        del timestamp_ns, stop
+        return start
+
+    def on_idle_event_batch(
+        self,
+        batch: CanonicalEventBatch,
+        broker: "EventReplayBroker",
+    ) -> None:
+        """Ingest a proven execution-idle batch without emitting actions."""
+
+        del batch, broker
+        raise NotImplementedError("strategy declared an idle batch without implementing ingestion")
+
+    def pending_order_batch_stop(
+        self,
+        price_ticks: np.ndarray,
+        *,
+        start: int,
+        stop: int,
+        orders: tuple[EventEntryOrder, ...],
+    ) -> int:
+        """Return a safe exclusive boundary while entry orders are pending."""
+
+        del price_ticks, stop, orders
+        return start
+
+    def position_batch_stop(
+        self,
+        price_ticks: np.ndarray,
+        *,
+        start: int,
+        stop: int,
+        position: EventPositionView,
+    ) -> int:
+        """Return a safe exclusive boundary while a position is open."""
+
+        del price_ticks, stop, position
+        return start
+
     def pre_execution(self, event: CanonicalEvent, broker: "EventReplayBroker") -> EventPreExecution:
         return EventPreExecution()
+
+    def pre_execution_required(self, event: CanonicalEvent) -> bool:
+        """Return false only when pre-execution controls are provably inert."""
+
+        del event
+        return True
+
+    def validate_entry_order_without_crossing(
+        self,
+        order: EventEntryOrder,
+        event: CanonicalEvent,
+    ) -> bool:
+        """Whether a non-crossing order still needs live/suspension callbacks."""
+
+        del order, event
+        return True
 
     def entry_order_is_live(
         self,
@@ -266,6 +377,23 @@ class CanonicalEventReplayStrategy:
         broker: "EventReplayBroker",
     ) -> bool:
         return True
+
+    def entry_fill_stop_tick(
+        self,
+        order: EventEntryOrder,
+        event: CanonicalEvent,
+        broker: "EventReplayBroker",
+    ) -> int | None:
+        """Resolve a deferred protective stop on the causal fill event.
+
+        Strategies that submit an order without ``stop_tick`` must return a
+        valid stop here. The engine resolves and validates it before position
+        sizing and before committing the fill, so no unprotected position is
+        ever exposed to a later event.
+        """
+
+        del event, broker
+        return order.stop_tick
 
     def on_order_cancelled(
         self,
@@ -311,6 +439,17 @@ class CanonicalEventReplayStrategy:
         entries_blocked: bool,
     ) -> None:
         pass
+
+    def after_event_required(
+        self,
+        event: CanonicalEvent,
+        *,
+        closed_this_event: bool,
+        opened_this_event: bool,
+        entries_blocked: bool,
+    ) -> bool:
+        del event, closed_this_event, opened_this_event, entries_blocked
+        return True
 
     def finish_session(self, session: EventReplaySessionView, broker: "EventReplayBroker") -> None:
         pass
@@ -358,8 +497,9 @@ class EventReplayBroker:
         order_id: str,
         direction: str,
         entry_tick: int,
-        stop_tick: int,
+        stop_tick: int | None,
         target_tick: int | None = None,
+        order_type: str = "stop_market",
         priority: int = 0,
         report_fields: Mapping[str, Any] | None = None,
         metadata: Mapping[str, Any] | None = None,
@@ -371,6 +511,7 @@ class EventReplayBroker:
             entry_tick=entry_tick,
             stop_tick=stop_tick,
             target_tick=target_tick,
+            order_type=order_type,
             priority=priority,
             report_fields=copy.deepcopy(dict(report_fields or {})),
             metadata=copy.deepcopy(dict(metadata or {})),
@@ -410,6 +551,7 @@ class CanonicalEventReplay:
         self._current_session_view: EventReplaySessionView | None = None
         self._current_entry_start_ns: int | None = None
         self._current_latest_entry_ns: int | None = None
+        self._current_latest_entry_stop_index: int | None = None
         self._phase = "engine"
         self.stop_market_fill_policy = str(self.core.get("event_stop_market_fill_policy") or "")
         if self.stop_market_fill_policy not in {"exact_requested_price", "trade_event_price_on_gap"}:
@@ -425,6 +567,13 @@ class CanonicalEventReplay:
         self._net_liq = float(self.core.get("initial_balance", 0.0))
         self._session_open_trade_count = 0
         self._diagnostics = self._new_diagnostics()
+        self._idle_batch_enabled = bool(self.core.get("event_replay_idle_batch", True))
+        self._strategy_hints_enabled = bool(self.core.get("event_replay_strategy_hints", True))
+        self._collect_transitions = bool(self.core.get("event_replay_collect_transitions", True))
+        self._idle_batches = 0
+        self._idle_batched_events = 0
+        self._pending_order_batches = 0
+        self._position_batches = 0
 
     def run(
         self,
@@ -448,10 +597,45 @@ class CanonicalEventReplay:
 
         trades = pd.DataFrame(self._trades)
         initial_balance = float(self.core.get("initial_balance", 0.0))
+        evaluation_period = (
+            EvaluationPeriod.from_session_dates(
+                (row["session_date"] for row in self._session_audits),
+                source="canonical_event_replay_sessions",
+            )
+            if self._session_audits
+            else None
+        )
+        cache_audits = [
+            row
+            for row in self._session_audits
+            if row.get("canonical_session_cache_key")
+        ]
+        cache_reproducibility = {
+            "sessions_bound": len(cache_audits),
+            "hits": sum(
+                bool(row.get("canonical_session_cache_hit"))
+                for row in cache_audits
+            ),
+            "misses": sum(
+                not bool(row.get("canonical_session_cache_hit"))
+                for row in cache_audits
+            ),
+            "schemas": sorted(
+                {
+                    str(row["canonical_session_cache_schema"])
+                    for row in cache_audits
+                    if row.get("canonical_session_cache_schema")
+                }
+            ),
+        }
         return {
             "trades": trades,
             "daily": daily_results(trades),
-            "metrics": calculate_metrics(trades, initial_balance=initial_balance),
+            "metrics": calculate_metrics(
+                trades,
+                initial_balance=initial_balance,
+                evaluation_period=evaluation_period,
+            ),
             "session_audits": pd.DataFrame(self._session_audits),
             "event_transitions": pd.DataFrame(self._transitions, columns=EVENT_TRANSITION_COLUMNS),
             "diagnostics": dict(self._diagnostics),
@@ -465,6 +649,16 @@ class CanonicalEventReplay:
                 "execution_assumptions": self.execution.as_dict(),
                 "sessions": int(len(self._session_audits)),
                 "events": int(self._diagnostics["events"]),
+                "canonical_session_cache": cache_reproducibility,
+                "idle_event_batching": {
+                    "enabled": self._idle_batch_enabled,
+                    "batches": int(self._idle_batches),
+                    "events": int(self._idle_batched_events),
+                    "pending_order_batches": int(self._pending_order_batches),
+                    "position_batches": int(self._position_batches),
+                },
+                "strategy_runtime_hints_enabled": self._strategy_hints_enabled,
+                "event_transitions_collected": self._collect_transitions,
             },
         }
 
@@ -476,6 +670,7 @@ class CanonicalEventReplay:
         self._current_session_view = None
         self._current_entry_start_ns = None
         self._current_latest_entry_ns = None
+        self._current_latest_entry_stop_index = None
         self._phase = "engine"
         self._risk = DailyRisk(self.core)
         self._trades = []
@@ -484,6 +679,10 @@ class CanonicalEventReplay:
         self._next_trade_id = 1
         self._net_liq = float(self.core.get("initial_balance", 0.0))
         self._session_open_trade_count = 0
+        self._idle_batches = 0
+        self._idle_batched_events = 0
+        self._pending_order_batches = 0
+        self._position_batches = 0
         self._diagnostics = self._new_diagnostics()
 
     @staticmethod
@@ -496,6 +695,7 @@ class CanonicalEventReplay:
             "orders_cancelled": 0,
             "entry_gate_rejections": 0,
             "position_sizing_rejections": 0,
+            "position_sizing_stop_too_wide_rejections": 0,
             "risk_rejections": 0,
             "positions_opened": 0,
             "positions_closed": 0,
@@ -525,11 +725,20 @@ class CanonicalEventReplay:
             raise RuntimeError("Canonical event replay cannot carry a position between sessions.")
         self._orders.clear()
         self._session_open_trade_count = len(self._trades)
-        session = canonicalize_event_session(
-            source_session,
-            tick_size=self.execution.tick_size,
-            required_columns=tuple(self._strategy.required_event_columns if self._strategy else ()),
-        )
+        if isinstance(source_session, CanonicalEventSession):
+            session = source_session
+            missing = sorted(
+                set(self._strategy.required_event_columns if self._strategy else ())
+                - set(session.events.columns)
+            )
+            if missing:
+                raise ValueError(f"Canonical event session is missing required column(s): {missing}.")
+        else:
+            session = canonicalize_event_session(
+                source_session,
+                tick_size=self.execution.tick_size,
+                required_columns=tuple(self._strategy.required_event_columns if self._strategy else ()),
+            )
         self._current_session = session
         self._current_session_view = session.public_view()
         self._diagnostics["sessions"] += 1
@@ -538,6 +747,7 @@ class CanonicalEventReplay:
 
         events = session.events
         timestamp_values = events["timestamp"].array
+        timestamp_cache = session.timestamp_cache
         timestamp_ns = events["_canonical_timestamp_ns"].to_numpy(dtype=np.int64, copy=False)
         source_ordinals = events["source_ordinal"].to_numpy(dtype=np.int64, copy=False)
         prices = pd.to_numeric(events["price"], errors="raise").to_numpy(dtype=float, copy=False)
@@ -548,16 +758,89 @@ class CanonicalEventReplay:
         cursor = CanonicalEvent()
         last_processed_event: CanonicalEvent | None = None
         cutoff_ns = self._session_cutoff_ns(session)
+        cutoff_stop_index = int(np.searchsorted(timestamp_ns, cutoff_ns, side="left"))
         self._current_entry_start_ns = self._session_entry_start_ns(session)
         self._current_latest_entry_ns = self._session_latest_entry_ns(session)
+        self._current_latest_entry_stop_index = (
+            None
+            if self._current_latest_entry_ns is None
+            else int(
+                np.searchsorted(
+                    timestamp_ns,
+                    self._current_latest_entry_ns,
+                    side="right",
+                )
+            )
+        )
         processed_events = 0
 
-        for index in range(len(events)):
+        index = 0
+        while index < len(events):
             if int(timestamp_ns[index]) >= cutoff_ns:
                 self._diagnostics["events_at_or_after_cutoff_skipped"] += len(events) - index
                 break
+            batch_stop = self._idle_batch_stop(
+                timestamp_ns,
+                price_ticks,
+                start=index,
+                stop=cutoff_stop_index,
+            )
+            if batch_stop > index:
+                position = self._position
+                if position is not None:
+                    skipped_prices = price_ticks[index:batch_stop]
+                    position.max_price_tick = max(
+                        position.max_price_tick,
+                        int(skipped_prices.max()),
+                    )
+                    position.min_price_tick = min(
+                        position.min_price_tick,
+                        int(skipped_prices.min()),
+                    )
+                batch = CanonicalEventBatch(
+                    start_event_index=index,
+                    stop_event_index=batch_stop,
+                    timestamp_ns=timestamp_ns[index:batch_stop],
+                    price_ticks=price_ticks[index:batch_stop],
+                    sizes=None if sizes is None else sizes[index:batch_stop],
+                    sides=None if sides is None else sides[index:batch_stop],
+                    signed_sizes=None if signed is None else signed[index:batch_stop],
+                )
+                with self._strategy_phase("on_idle_event_batch"):
+                    self._strategy.on_idle_event_batch(batch, self._broker)
+                batch_count = batch.event_count
+                self._diagnostics["events"] += batch_count
+                self._idle_batches += 1
+                self._idle_batched_events += batch_count
+                if self._orders:
+                    self._pending_order_batches += 1
+                if position is not None:
+                    self._position_batches += 1
+                processed_events += batch_count
+                last_index = batch_stop - 1
+                last_timestamp = timestamp_cache.get(last_index)
+                if last_timestamp is None:
+                    last_timestamp = pd.Timestamp(timestamp_values[last_index])
+                    timestamp_cache[last_index] = last_timestamp
+                last_processed_event = CanonicalEvent(
+                    event_index=last_index,
+                    timestamp=last_timestamp,
+                    timestamp_ns=int(timestamp_ns[last_index]),
+                    source_ordinal=int(source_ordinals[last_index]),
+                    price=float(prices[last_index]),
+                    price_tick=int(price_ticks[last_index]),
+                    size=None if sizes is None else sizes[last_index],
+                    side=None if sides is None else str(sides[last_index]),
+                    signed_size=None if signed is None else signed[last_index],
+                )
+                index = batch_stop
+                continue
             cursor.event_index = index
-            cursor.timestamp = pd.Timestamp(timestamp_values[index])
+            event_timestamp = timestamp_cache.get(index)
+            if event_timestamp is None:
+                event_timestamp = pd.Timestamp(timestamp_values[index])
+                timestamp_cache[index] = event_timestamp
+            cursor.timestamp = event_timestamp
             cursor.timestamp_ns = int(timestamp_ns[index])
             cursor.source_ordinal = int(source_ordinals[index])
             cursor.price = float(prices[index])
@@ -570,6 +853,7 @@ class CanonicalEventReplay:
             self._process_event(cursor)
             last_processed_event = cursor
             processed_events += 1
+            index += 1
 
         cutoff_event = self._cutoff_event(session, last_processed_event)
         if cutoff_event is not None:
@@ -592,12 +876,73 @@ class CanonicalEventReplay:
             "input_was_canonically_sorted": bool(session.input_was_canonically_sorted),
             "canonical_event_order": CANONICAL_EVENT_ORDER,
         }
+        cache_metadata = session.metadata.get("canonical_session_cache")
+        if isinstance(cache_metadata, Mapping) and cache_metadata:
+            audit.update(
+                {
+                    "canonical_session_cache_schema": cache_metadata.get("schema"),
+                    "canonical_session_cache_key": cache_metadata.get("cache_key"),
+                    "canonical_session_cache_hit": bool(cache_metadata.get("hit", False)),
+                }
+            )
         self._session_audits.append(audit)
         self._current_event = None
         self._current_session = None
         self._current_session_view = None
         self._current_entry_start_ns = None
         self._current_latest_entry_ns = None
+        self._current_latest_entry_stop_index = None
+
+    def _idle_batch_stop(
+        self,
+        timestamp_ns: np.ndarray,
+        price_ticks: np.ndarray,
+        *,
+        start: int,
+        stop: int,
+    ) -> int:
+        if (
+            not self._idle_batch_enabled
+            or self._strategy is None
+            or start >= stop
+        ):
+            return start
+        if self._position is None and self._current_latest_entry_stop_index is not None:
+            stop = min(stop, self._current_latest_entry_stop_index)
+            if start >= stop:
+                return start
+        candidate = int(self._strategy.idle_batch_stop(timestamp_ns, start=start, stop=stop))
+        if candidate < start or candidate > stop:
+            raise ValueError("strategy idle_batch_stop returned a boundary outside the offered event range")
+        if self._orders and candidate > start:
+            pending_limit = candidate
+            candidate = int(
+                self._strategy.pending_order_batch_stop(
+                    price_ticks,
+                    start=start,
+                    stop=pending_limit,
+                    orders=tuple(self._orders.values()),
+                )
+            )
+            if candidate < start or candidate > pending_limit:
+                raise ValueError(
+                    "strategy pending_order_batch_stop returned a boundary outside the offered event range"
+                )
+        if self._position is not None and candidate > start:
+            position_limit = candidate
+            candidate = int(
+                self._strategy.position_batch_stop(
+                    price_ticks,
+                    start=start,
+                    stop=position_limit,
+                    position=self._position_view(self._position),
+                )
+            )
+            if candidate < start or candidate > position_limit:
+                raise ValueError(
+                    "strategy position_batch_stop returned a boundary outside the offered event range"
+                )
+        return candidate
 
     def _process_event(self, event: CanonicalEvent) -> None:
         strategy = self._strategy
@@ -605,9 +950,12 @@ class CanonicalEventReplay:
         with self._strategy_phase("on_event_start"):
             strategy.on_event_start(event, self._broker)
         _assert_event_unchanged(event, event_identity)
-        with self._strategy_phase("pre_execution"):
-            pre = strategy.pre_execution(event, self._broker)
-        _assert_event_unchanged(event, event_identity)
+        if not self._strategy_hints_enabled or strategy.pre_execution_required(event):
+            with self._strategy_phase("pre_execution"):
+                pre = strategy.pre_execution(event, self._broker)
+            _assert_event_unchanged(event, event_identity)
+        else:
+            pre = EventPreExecution()
         if pre.cancel_entry_orders:
             self._cancel_all_orders("pre_execution_cancel", notify=True)
 
@@ -641,14 +989,20 @@ class CanonicalEventReplay:
         if not entries_blocked and not closed and self._position is None:
             opened = self._evaluate_entry_orders(event)
 
-        with self._strategy_phase("after_event"):
-            strategy.after_event(
-                event,
-                self._broker,
-                closed_this_event=closed,
-                opened_this_event=opened,
-                entries_blocked=entries_blocked,
-            )
+        if not self._strategy_hints_enabled or strategy.after_event_required(
+            event,
+            closed_this_event=closed,
+            opened_this_event=opened,
+            entries_blocked=entries_blocked,
+        ):
+            with self._strategy_phase("after_event"):
+                strategy.after_event(
+                    event,
+                    self._broker,
+                    closed_this_event=closed,
+                    opened_this_event=opened,
+                    entries_blocked=entries_blocked,
+                )
         if after_latest_entry:
             self._cancel_all_orders("latest_entry_time", notify=True)
         _assert_event_unchanged(event, event_identity)
@@ -694,6 +1048,58 @@ class CanonicalEventReplay:
             directive = self._strategy.position_directive(event, self._position_view(), self._broker)
         _assert_event_unchanged(event, event_identity)
         _validate_report_fields(directive.report_fields)
+        if directive.partial_exit_contracts is not None:
+            if directive.partial_exit_tick is None:
+                raise ValueError(
+                    "A partial exit requires partial_exit_tick."
+                )
+            quantity = int(directive.partial_exit_contracts)
+            if quantity < 1 or quantity > position.contracts:
+                raise ValueError(
+                    "Partial-exit contracts must be between one and the "
+                    "open position size."
+                )
+            partial_tick = int(directive.partial_exit_tick)
+            crossed = (
+                event.price_tick >= partial_tick
+                if position.direction == "long"
+                else event.price_tick <= partial_tick
+            )
+            favorable = (
+                partial_tick > position.entry_reference_tick
+                if position.direction == "long"
+                else partial_tick < position.entry_reference_tick
+            )
+            if not crossed or not favorable:
+                raise ValueError(
+                    "A partial target must be favorable to entry and crossed "
+                    "by the current event."
+                )
+            position.report_fields.update(
+                copy.deepcopy(dict(directive.report_fields))
+            )
+            partial_reason = str(
+                directive.partial_exit_reason or "partial_target"
+            )
+            if quantity == position.contracts:
+                position.target_tick = partial_tick
+                self._close_position(
+                    exit_tick=partial_tick,
+                    exit_timestamp=event.timestamp,
+                    exit_event_index=event.event_index,
+                    exit_reason=partial_reason,
+                )
+                return True
+            self._partially_close_position(
+                contracts=quantity,
+                exit_tick=partial_tick,
+                exit_timestamp=event.timestamp,
+                exit_event_index=event.event_index,
+                exit_reason=partial_reason,
+            )
+            position = self._position
+            if position is None:
+                return True
         if directive.immediate_target_tick is not None:
             target_tick = int(directive.immediate_target_tick)
             target_crossed = (
@@ -767,6 +1173,8 @@ class CanonicalEventReplay:
         return False
 
     def _evaluate_entry_orders(self, event: CanonicalEvent) -> bool:
+        if not self._orders:
+            return False
         session_date = self._current_session.session_date
         if not self._risk.allow_new_trade(session_date):
             self._diagnostics["risk_rejections"] += 1
@@ -774,6 +1182,18 @@ class CanonicalEventReplay:
         ordered = sorted(tuple(self._orders.values()), key=lambda item: (item.priority, item.order_id))
         for order in ordered:
             if order.active_from_event_index > event.event_index:
+                continue
+            crossed = _entry_crossed(
+                order.direction,
+                order.entry_tick,
+                event.price_tick,
+                order_type=order.order_type,
+            )
+            if (
+                not crossed
+                and self._strategy_hints_enabled
+                and not self._strategy.validate_entry_order_without_crossing(order, event)
+            ):
                 continue
             order_view = copy.deepcopy(order)
             event_identity = _event_fingerprint(event)
@@ -789,7 +1209,7 @@ class CanonicalEventReplay:
                 self._cancel_order(order.order_id, reason="order_not_live", notify=True)
                 continue
             _assert_event_unchanged(event, event_identity)
-            if not _entry_crossed(order.direction, order.entry_tick, event.price_tick):
+            if not crossed:
                 continue
             with self._strategy_phase("entry_fill_allowed"):
                 fill_allowed = self._strategy.entry_fill_allowed(order_view, event, self._broker)
@@ -809,8 +1229,36 @@ class CanonicalEventReplay:
         tick_size = self.execution.tick_size
         fill_reference_tick = self._entry_fill_reference_tick(order, event)
         reference_price = fill_reference_tick * tick_size
-        filled_price = entry_price(reference_price, order.direction, tick_size, self.execution.slippage_ticks)
-        stop_price = order.stop_tick * tick_size
+        filled_price = entry_price(
+            reference_price,
+            order.direction,
+            tick_size,
+            self.execution.entry_slippage_ticks,
+        )
+        if order.order_type == "limit":
+            limit_price = order.entry_tick * tick_size
+            filled_price = (
+                min(filled_price, limit_price)
+                if order.direction == "long"
+                else max(filled_price, limit_price)
+            )
+        resolved_stop_tick = order.stop_tick
+        if resolved_stop_tick is None:
+            event_identity = _event_fingerprint(event)
+            with self._strategy_phase("entry_fill_stop_tick"):
+                resolved_stop_tick = self._strategy.entry_fill_stop_tick(
+                    copy.deepcopy(order),
+                    event,
+                    self._broker,
+                )
+            _assert_event_unchanged(event, event_identity)
+            if resolved_stop_tick is None:
+                raise ValueError(
+                    "Event entry order has no protective stop and the strategy "
+                    "did not resolve one on the fill event."
+                )
+        resolved_stop_tick = int(resolved_stop_tick)
+        stop_price = resolved_stop_tick * tick_size
         if order.direction == "long" and stop_price >= filled_price:
             raise ValueError("Long event entry slippage moved the fill to or below its protective stop distance.")
         if order.direction == "short" and stop_price <= filled_price:
@@ -831,6 +1279,8 @@ class CanonicalEventReplay:
         )
         if sizing.contracts < 1:
             self._diagnostics["position_sizing_rejections"] += 1
+            if sizing.rejection_reason == "stop_too_wide_for_minimum_contract":
+                self._diagnostics["position_sizing_stop_too_wide_rejections"] += 1
             return False
         position = EventPosition(
             trade_id=self._next_trade_id,
@@ -842,10 +1292,11 @@ class CanonicalEventReplay:
             entry_trigger_tick=order.entry_tick,
             entry_reference_tick=fill_reference_tick,
             entry_price=filled_price,
-            initial_stop_tick=order.stop_tick,
-            stop_tick=order.stop_tick,
+            initial_stop_tick=resolved_stop_tick,
+            stop_tick=resolved_stop_tick,
             target_tick=order.target_tick,
             contracts=sizing.contracts,
+            initial_contracts=sizing.contracts,
             risk_points=risk_points,
             order_id=order.order_id,
             bracket_active_from_event_index=event.event_index + 1,
@@ -865,13 +1316,15 @@ class CanonicalEventReplay:
             direction=order.direction,
             price_tick=fill_reference_tick,
             active_from_event_index=event.event_index,
-            stop_tick=order.stop_tick,
+            stop_tick=resolved_stop_tick,
             target_tick=order.target_tick,
-            reason="stop_entry_triggered",
+            reason=("limit_entry_filled" if order.order_type == "limit" else "stop_entry_triggered"),
         )
         event_identity = _event_fingerprint(event)
+        filled_order = copy.deepcopy(order)
+        filled_order.stop_tick = resolved_stop_tick
         with self._strategy_phase("on_entry_filled"):
-            self._strategy.on_entry_filled(copy.deepcopy(order), self._position_view(), event, self._broker)
+            self._strategy.on_entry_filled(filled_order, self._position_view(), event, self._broker)
         _assert_event_unchanged(event, event_identity)
         return True
 
@@ -894,24 +1347,40 @@ class CanonicalEventReplay:
             reference_exit_price,
             position.direction,
             tick_size,
-            self.execution.slippage_ticks,
+            self._exit_slippage_ticks(exit_reason),
         )
         direction_sign = 1.0 if position.direction == "long" else -1.0
         point_value = tick_value / tick_size
-        gross_before_slippage = (
+        remaining_gross_before_slippage = (
             (reference_exit_price - reference_entry_price)
             * direction_sign
             * point_value
             * position.contracts
         )
-        gross = (
+        remaining_gross = (
             (filled_exit_price - position.entry_price)
             * direction_sign
             * point_value
             * position.contracts
         )
-        slippage_cost = gross_before_slippage - gross
-        commission = self.execution.commission_per_contract * 2.0 * position.contracts
+        remaining_slippage_cost = (
+            remaining_gross_before_slippage - remaining_gross
+        )
+        remaining_commission = (
+            self.execution.commission_per_contract
+            * 2.0
+            * position.contracts
+        )
+        remaining_net = remaining_gross - remaining_commission
+        gross_before_slippage = (
+            position.partial_gross_pnl_before_slippage
+            + remaining_gross_before_slippage
+        )
+        gross = position.partial_gross_pnl + remaining_gross
+        slippage_cost = (
+            position.partial_slippage_cost + remaining_slippage_cost
+        )
+        commission = position.partial_commission + remaining_commission
         net = gross - commission
         mfe_ticks = (
             position.max_price_tick - position.entry_reference_tick
@@ -945,25 +1414,34 @@ class CanonicalEventReplay:
             "gross_pnl_before_slippage": gross_before_slippage,
             "net_pnl": net,
             "r_multiple": (
-                ((filled_exit_price - position.entry_price) * direction_sign) / position.risk_points
-                if position.risk_points
+                gross
+                / (
+                    position.risk_points
+                    * point_value
+                    * position.initial_contracts
+                )
+                if position.risk_points and position.initial_contracts
                 else 0.0
             ),
             "commission": commission,
             "slippage_cost": slippage_cost,
             "total_transaction_cost": commission + slippage_cost,
             "cost_accounting_error": gross_before_slippage - slippage_cost - commission - net,
-            "net_liq_after": self._net_liq + net,
-            "contracts": position.contracts,
+            "net_liq_after": self._net_liq + remaining_net,
+            "contracts": position.initial_contracts,
             "entry_event_index": position.entry_event_index,
             "exit_event_index": int(exit_event_index),
             "max_favorable_excursion": mfe_ticks * tick_size,
             "max_adverse_excursion": mae_ticks * tick_size,
+            "partial_exit_legs": json.dumps(
+                position.partial_exit_legs,
+                sort_keys=True,
+            ),
             **position.report_fields,
         }
         self._trades.append(trade)
-        self._net_liq += net
-        self._risk.record_exit(position.session_date, net)
+        self._net_liq += remaining_net
+        self._risk.record_exit(position.session_date, remaining_net)
         self._diagnostics["positions_closed"] += 1
         self._record_transition(
             transition="position_closed",
@@ -983,6 +1461,89 @@ class CanonicalEventReplay:
                 self._broker,
             )
 
+    def _partially_close_position(
+        self,
+        *,
+        contracts: int,
+        exit_tick: int,
+        exit_timestamp: pd.Timestamp | None,
+        exit_event_index: int,
+        exit_reason: str,
+    ) -> None:
+        position = self._position
+        if position is None:
+            return
+        quantity = int(contracts)
+        if quantity < 1 or quantity >= position.contracts:
+            raise ValueError(
+                "Engine partial exits must leave at least one contract open."
+            )
+        tick_size = self.execution.tick_size
+        tick_value = self.execution.tick_value
+        reference_entry_price = position.entry_reference_tick * tick_size
+        reference_exit_price = int(exit_tick) * tick_size
+        filled_exit_price = exit_price(
+            reference_exit_price,
+            position.direction,
+            tick_size,
+            self._exit_slippage_ticks(exit_reason),
+        )
+        direction_sign = 1.0 if position.direction == "long" else -1.0
+        point_value = tick_value / tick_size
+        gross_before_slippage = (
+            (reference_exit_price - reference_entry_price)
+            * direction_sign
+            * point_value
+            * quantity
+        )
+        gross = (
+            (filled_exit_price - position.entry_price)
+            * direction_sign
+            * point_value
+            * quantity
+        )
+        slippage_cost = gross_before_slippage - gross
+        commission = (
+            self.execution.commission_per_contract * 2.0 * quantity
+        )
+        net = gross - commission
+        position.partial_gross_pnl_before_slippage += gross_before_slippage
+        position.partial_gross_pnl += gross
+        position.partial_slippage_cost += slippage_cost
+        position.partial_commission += commission
+        position.partial_exit_legs.append(
+            {
+                "contracts": quantity,
+                "exit_event_index": int(exit_event_index),
+                "exit_price": filled_exit_price,
+                "exit_reason": str(exit_reason),
+                "exit_timestamp": str(pd.Timestamp(exit_timestamp)),
+                "gross_pnl": gross,
+                "net_pnl": net,
+            }
+        )
+        position.contracts -= quantity
+        self._net_liq += net
+        self._risk.record_exit(position.session_date, net)
+        self._record_transition(
+            transition="position_partially_closed",
+            order_id=position.order_id,
+            direction=position.direction,
+            price_tick=int(exit_tick),
+            active_from_event_index=exit_event_index,
+            stop_tick=position.stop_tick,
+            target_tick=position.target_tick,
+            reason=str(exit_reason),
+        )
+
+    def _exit_slippage_ticks(self, exit_reason: str) -> float:
+        reason = str(exit_reason).lower()
+        if "target" in reason:
+            return self.execution.target_limit_slippage_ticks
+        if "stop" in reason:
+            return self.execution.protective_stop_slippage_ticks
+        return self.execution.market_exit_slippage_ticks
+
     def _position_view(self, position: EventPosition | None = None) -> EventPositionView | None:
         state = self._position if position is None else position
         if state is None:
@@ -1001,6 +1562,7 @@ class CanonicalEventReplay:
             stop_tick=state.stop_tick,
             target_tick=state.target_tick,
             contracts=state.contracts,
+            initial_contracts=state.initial_contracts,
             risk_points=state.risk_points,
             order_id=state.order_id,
             stop_exit_reason=state.stop_exit_reason,
@@ -1068,6 +1630,11 @@ class CanonicalEventReplay:
         return int(pd.Timestamp.combine(pd.Timestamp(session.session_date), latest_entry).tz_localize(timezone).value)
 
     def _entry_fill_reference_tick(self, order: EventEntryOrder, event: CanonicalEvent) -> int:
+        if order.order_type == "limit":
+            return min(order.entry_tick, event.price_tick) if order.direction == "long" else max(
+                order.entry_tick,
+                event.price_tick,
+            )
         if self.stop_market_fill_policy == "exact_requested_price":
             return order.entry_tick
         return max(order.entry_tick, event.price_tick) if order.direction == "long" else min(
@@ -1089,8 +1656,9 @@ class CanonicalEventReplay:
         order_id: str,
         direction: str,
         entry_tick: int,
-        stop_tick: int,
+        stop_tick: int | None,
         target_tick: int | None,
+        order_type: str,
         priority: int,
         report_fields: dict[str, Any],
         metadata: dict[str, Any],
@@ -1099,8 +1667,11 @@ class CanonicalEventReplay:
             raise RuntimeError("Entry orders may only be submitted during an event callback.")
         direction = str(direction).lower()
         entry_tick = int(entry_tick)
-        stop_tick = int(stop_tick)
+        stop_tick = None if stop_tick is None else int(stop_tick)
         target_tick = None if target_tick is None else int(target_tick)
+        order_type = str(order_type).lower()
+        if order_type not in {"limit", "stop_market"}:
+            raise ValueError("Event entry order_type must be 'limit' or 'stop_market'.")
         _validate_bracket(direction, entry_tick, stop_tick, target_tick)
         _validate_report_fields(report_fields)
         order_id = str(order_id)
@@ -1110,8 +1681,9 @@ class CanonicalEventReplay:
             current.entry_tick,
             current.stop_tick,
             current.target_tick,
+            current.order_type,
             current.priority,
-        ) == (direction, entry_tick, stop_tick, target_tick, int(priority)):
+        ) == (direction, entry_tick, stop_tick, target_tick, order_type, int(priority)):
             current.report_fields = report_fields
             current.metadata = metadata
             return current
@@ -1122,6 +1694,7 @@ class CanonicalEventReplay:
             entry_tick=entry_tick,
             stop_tick=stop_tick,
             target_tick=target_tick,
+            order_type=order_type,
             priority=int(priority),
             active_from_event_index=active_from,
             submitted_event_index=self._current_event.event_index,
@@ -1183,6 +1756,8 @@ class CanonicalEventReplay:
         target_tick: int | None,
         reason: str,
     ) -> None:
+        if not self._collect_transitions:
+            return
         event = self._current_event
         session = self._current_session
         position = self._position
@@ -1191,8 +1766,16 @@ class CanonicalEventReplay:
             "transition": transition,
             "direction": direction,
             "active_from_event_index": active_from_event_index,
-            "stop_tick": stop_tick,
-            "target_tick": target_tick,
+            "stop_price": (
+                None
+                if stop_tick is None
+                else stop_tick * self.execution.tick_size
+            ),
+            "target_price": (
+                None
+                if target_tick is None
+                else target_tick * self.execution.tick_size
+            ),
             "position_trade_id": None if position is None else position.trade_id,
         }
         evidence = None
@@ -1201,7 +1784,7 @@ class CanonicalEventReplay:
                 "timestamp_ns": event.timestamp_ns,
                 "source_ordinal": event.source_ordinal,
                 "event_index": event.event_index,
-                "event_price_tick": event.price_tick,
+                "event_price": event.price_tick * self.execution.tick_size,
                 "event_size": None if event.size is None else int(event.size),
                 "event_side": event.side,
                 "event_signed_size": None if event.signed_size is None else int(event.signed_size),
@@ -1388,7 +1971,15 @@ def _normalized_session_date(source_session: Any):
     return value.date()
 
 
-def _entry_crossed(direction: str, entry_tick: int, price_tick: int) -> bool:
+def _entry_crossed(
+    direction: str,
+    entry_tick: int,
+    price_tick: int,
+    *,
+    order_type: str = "stop_market",
+) -> bool:
+    if order_type == "limit":
+        return price_tick <= entry_tick if direction == "long" else price_tick >= entry_tick
     return price_tick >= entry_tick if direction == "long" else price_tick <= entry_tick
 
 
@@ -1414,15 +2005,16 @@ def _assert_event_unchanged(event: CanonicalEvent, expected: tuple[Any, ...]) ->
 def _validate_bracket(
     direction: str,
     entry_tick: int,
-    stop_tick: int,
+    stop_tick: int | None,
     target_tick: int | None,
 ) -> None:
     if direction not in {"long", "short"}:
         raise ValueError("Event entry direction must be 'long' or 'short'.")
-    if direction == "long" and stop_tick >= entry_tick:
-        raise ValueError("A long event entry stop must be below its entry trigger.")
-    if direction == "short" and stop_tick <= entry_tick:
-        raise ValueError("A short event entry stop must be above its entry trigger.")
+    if stop_tick is not None:
+        if direction == "long" and stop_tick >= entry_tick:
+            raise ValueError("A long event entry stop must be below its entry trigger.")
+        if direction == "short" and stop_tick <= entry_tick:
+            raise ValueError("A short event entry stop must be above its entry trigger.")
     if target_tick is not None:
         _validate_target(direction, entry_tick, target_tick)
 

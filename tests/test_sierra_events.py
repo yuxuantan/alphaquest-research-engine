@@ -44,3 +44,56 @@ def test_reconstruction_rejects_timestamp_inversion_instead_of_sorting() -> None
 
     with pytest.raises(ValueError, match="refusing to reorder"):
         reconstruct_sierra_trade_events(frame)
+
+
+def test_reconstruction_can_clamp_governed_tiny_inversions_without_reordering() -> None:
+    row_count = 1001
+    timestamps = list(range(10_000, 10_000 + row_count))
+    timestamps[500] = timestamps[499] - 3
+    frame = pd.DataFrame(
+        {
+            "scid_datetime_us": timestamps,
+            "open": [0.0] * row_count,
+            "close": [6000.0] * row_count,
+            "volume": [1] * row_count,
+            "bid_volume": [0] * row_count,
+            "ask_volume": [1] * row_count,
+            "source_ordinal": list(range(row_count)),
+        }
+    )
+
+    events, stats = reconstruct_sierra_trade_events(
+        frame,
+        timestamp_inversion_policy="preserve_source_order_clamp",
+        max_timestamp_inversion_rate=0.002,
+    )
+
+    assert events["source_ordinal"].tolist() == list(range(row_count))
+    assert events["scid_datetime_us"].is_monotonic_increasing
+    assert events.loc[500, "source_scid_datetime_us"] == timestamps[500]
+    assert events.loc[500, "scid_datetime_us"] == timestamps[499]
+    assert stats["timestamp_inversion_count"] == 1
+    assert stats["timestamp_inversion_rate"] == pytest.approx(1 / row_count)
+    assert stats["clamped_timestamp_count"] == 1
+    assert stats["maximum_backward_jump_us"] == 3
+
+
+def test_reconstruction_rejects_inversions_above_governed_ceiling() -> None:
+    frame = pd.DataFrame(
+        {
+            "scid_datetime_us": [10, 9, 12, 11, 14, 13, 16, 17, 18, 19, 20],
+            "open": [0.0] * 11,
+            "close": [6000.0] * 11,
+            "volume": [1] * 11,
+            "bid_volume": [0] * 11,
+            "ask_volume": [1] * 11,
+            "source_ordinal": list(range(11)),
+        }
+    )
+
+    with pytest.raises(ValueError, match="exceeds the governed ceiling"):
+        reconstruct_sierra_trade_events(
+            frame,
+            timestamp_inversion_policy="preserve_source_order_clamp",
+            max_timestamp_inversion_rate=0.002,
+        )

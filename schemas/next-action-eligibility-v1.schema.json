@@ -1,0 +1,76 @@
+{
+  "$defs": {
+    "NextAction": {
+      "enum": [
+        "REPAIR_SAME_VARIANT",
+        "OBTAIN_MANUAL_REVIEW",
+        "ABANDON_EDGE",
+        "PROPOSE_SUCCESSOR",
+        "START_NEW_RESEARCH_GENERATION",
+        "ASSESS_OTHER_DESTINATION",
+        "BEGIN_CANDIDATE_REVIEW",
+        "BEGIN_FORWARD_INCUBATION",
+        "STOP_NO_FRESH_HOLDOUT"
+      ],
+      "title": "NextAction",
+      "type": "string"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "blocked_actions": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "title": "Blocked Actions",
+      "type": "object"
+    },
+    "diagnosis_sha256": {
+      "pattern": "^[0-9a-f]{64}$",
+      "title": "Diagnosis Sha256",
+      "type": "string"
+    },
+    "eligible_actions": {
+      "items": {
+        "$ref": "#/$defs/NextAction"
+      },
+      "minItems": 1,
+      "title": "Eligible Actions",
+      "type": "array"
+    },
+    "fresh_locked_holdout_window_ids": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Fresh Locked Holdout Window Ids",
+      "type": "array"
+    },
+    "schema": {
+      "const": "alphaquest.next-action-eligibility/v1",
+      "default": "alphaquest.next-action-eligibility/v1",
+      "enum": [
+        "alphaquest.next-action-eligibility/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "verdict": {
+      "enum": [
+        "PASS",
+        "FAIL",
+        "NEEDS MANUAL REVIEW"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    }
+  },
+  "required": [
+    "diagnosis_sha256",
+    "verdict",
+    "eligible_actions",
+    "blocked_actions",
+    "fresh_locked_holdout_window_ids"
+  ],
+  "title": "NextActionEligibilityV1",
+  "type": "object"
+}

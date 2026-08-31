@@ -19,6 +19,10 @@ class ExecutionAssumptions:
     point_value: float | None
     commission_per_contract: float
     slippage_ticks: float
+    entry_slippage_ticks: float
+    protective_stop_slippage_ticks: float
+    target_limit_slippage_ticks: float
+    market_exit_slippage_ticks: float
     tick_value_source: str
     commission_source: str
     slippage_source: str
@@ -47,12 +51,36 @@ class ExecutionAssumptions:
             minimum=0.0,
         )
         slippage = _finite_number(core.get("slippage_ticks", 1.0), "core.slippage_ticks", minimum=0.0)
+        entry_slippage = _finite_number(
+            core.get("entry_slippage_ticks", slippage),
+            "core.entry_slippage_ticks",
+            minimum=0.0,
+        )
+        protective_stop_slippage = _finite_number(
+            core.get("protective_stop_slippage_ticks", slippage),
+            "core.protective_stop_slippage_ticks",
+            minimum=0.0,
+        )
+        target_limit_slippage = _finite_number(
+            core.get("target_limit_slippage_ticks", slippage),
+            "core.target_limit_slippage_ticks",
+            minimum=0.0,
+        )
+        market_exit_slippage = _finite_number(
+            core.get("market_exit_slippage_ticks", slippage),
+            "core.market_exit_slippage_ticks",
+            minimum=0.0,
+        )
         return cls(
             tick_size=tick_size,
             tick_value=tick_value,
             point_value=point_value,
             commission_per_contract=commission,
             slippage_ticks=slippage,
+            entry_slippage_ticks=entry_slippage,
+            protective_stop_slippage_ticks=protective_stop_slippage,
+            target_limit_slippage_ticks=target_limit_slippage,
+            market_exit_slippage_ticks=market_exit_slippage,
             tick_value_source=(
                 "tick_value" if core.get("tick_value") is not None else "point_value" if point_value is not None else "legacy_default"
             ),
@@ -67,6 +95,12 @@ class ExecutionAssumptions:
             "point_value": self.point_value,
             "commission_per_contract": self.commission_per_contract,
             "slippage_ticks": self.slippage_ticks,
+            "entry_slippage_ticks": self.entry_slippage_ticks,
+            "protective_stop_slippage_ticks": (
+                self.protective_stop_slippage_ticks
+            ),
+            "target_limit_slippage_ticks": self.target_limit_slippage_ticks,
+            "market_exit_slippage_ticks": self.market_exit_slippage_ticks,
             "commission_basis": "per_contract_per_side",
             "slippage_basis": "adverse_ticks_per_side",
             "tick_value_source": self.tick_value_source,
