@@ -12,6 +12,9 @@
 `feat/`, `fix/`, or `docs/` branch and integrate it through a pull request after
 the required CI gate succeeds. See [release governance](docs/operations/release-governance.md)
 for branch protection, methodology-version changes, qualification, and tagging.
+The private repository currently has one human developer on GitHub Free, so
+this PR/green-gate rule is procedural rather than mechanically protected and
+requires no external approval. Do not claim otherwise in reviews or releases.
 
 ```bash
 make setup

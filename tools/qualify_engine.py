@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime, timezone
+import hashlib
 import json
 from pathlib import Path
 import platform
@@ -21,29 +22,10 @@ from alphaquest.utils.hashing import file_sha256  # noqa: E402
 from alphaquest.version import ENGINE_CONTRACT_VERSION  # noqa: E402
 
 
-QUALIFICATION_SCHEMA_VERSION = 2
-METHODOLOGY_REGRESSION_COMMAND = (
-    "python -m pytest -q tests/test_research_policy.py tests/test_research_governance.py "
-    "tests/test_campaign_stages.py tests/test_wfa.py tests/test_monte_carlo.py "
-    "tests/test_research_execution.py tests/test_run_store.py tests/test_experiment_registry.py "
-    "tests/test_strategy_certification.py tests/test_execution_certification.py "
-    "tests/test_validation_promotion_gate.py tests/test_data_source_hash.py"
-)
-CAUSAL_EXECUTION_REGRESSION_COMMAND = (
-    "python -m pytest -q tests/test_backtest_contracts.py tests/test_backtest_engine.py "
-    "tests/test_order_simulation.py tests/test_sessions.py tests/test_event_replay.py "
-    "tests/test_event_replay_partial_exit.py tests/test_position_sizing.py "
-    "tests/test_backtest_live_parity.py tests/test_forward_reconciliation.py "
-    "tests/test_studio_execution_contract.py"
-)
-CANONICAL_VALIDATION_COMMANDS = (
-    "make smoke",
-    METHODOLOGY_REGRESSION_COMMAND,
-    CAUSAL_EXECUTION_REGRESSION_COMMAND,
-    "make validate",
-    "make preflight",
-    "make qualify",
-)
+QUALIFICATION_SCHEMA_VERSION = 3
+CANONICAL_ENGINE_VALIDATION_COMMAND = "make validate"
+CANONICAL_VALIDATION_COMMANDS = (CANONICAL_ENGINE_VALIDATION_COMMAND, "make qualify")
+RESEARCH_INVENTORY_PREFLIGHT_COMMAND = "make preflight"
 
 
 CONTROL_EVIDENCE = (
@@ -95,22 +77,26 @@ def main() -> int:
     args = parser.parse_args()
 
     started = datetime.now(timezone.utc)
-    test_result = _run_tests(skip=args.skip_tests)
+    validation_result = _run_validation(skip=args.skip_tests)
     finished = datetime.now(timezone.utc)
     git_commit = _command_output(["git", "rev-parse", "HEAD"])
     output_dir = PROJECT_ROOT / args.output_dir
     dirty_paths = _dirty_paths(output_dir)
     status = _qualification_status(
         skip_tests=args.skip_tests,
-        test_return_code=test_result["return_code"],
+        validation_return_code=validation_result["return_code"],
         dirty_paths=dirty_paths,
+        python_version=platform.python_version(),
+        reference_python_version=_reference_python_version(),
     )
     policy = load_research_policy()
     qualification_reasons = []
-    if test_result["return_code"] not in {0, None}:
-        qualification_reasons.append("canonical Python test surface failed")
+    if validation_result["return_code"] not in {0, None}:
+        qualification_reasons.append("canonical engine validation surface failed")
     if dirty_paths:
         qualification_reasons.append("worktree is not clean")
+    if platform.python_version() != _reference_python_version():
+        qualification_reasons.append("qualification did not run under the pinned reference Python")
     report = {
         "qualification_schema_version": QUALIFICATION_SCHEMA_VERSION,
         "engine_software_status": status,
@@ -119,6 +105,7 @@ def main() -> int:
         "package_version": PACKAGE_VERSION,
         "engine_contract_version": ENGINE_CONTRACT_VERSION,
         "git_commit": git_commit,
+        "git_tree": _command_output(["git", "rev-parse", "HEAD^{tree}"]),
         "worktree_dirty": bool(dirty_paths),
         "dirty_paths": dirty_paths,
         "python_version": platform.python_version(),
@@ -142,9 +129,30 @@ def main() -> int:
             "constraints_path": "constraints/dev.txt",
             "constraints_sha256": file_sha256(PROJECT_ROOT / "constraints" / "dev.txt"),
             "pyproject_sha256": file_sha256(PROJECT_ROOT / "pyproject.toml"),
+            "npm_lock_sha256": file_sha256(PROJECT_ROOT / "studio-ui" / "package-lock.json"),
+            "ci_workflow_sha256": file_sha256(PROJECT_ROOT / ".github" / "workflows" / "ci.yml"),
+            "makefile_sha256": file_sha256(PROJECT_ROOT / "Makefile"),
+        },
+        "build_identity": {
+            "package_source_sha256": _tracked_tree_sha256("src/alphaquest"),
+            "studio_web_assets_sha256": _tracked_tree_sha256("src/alphaquest/studio/web_assets"),
         },
         "canonical_validation_commands": list(CANONICAL_VALIDATION_COMMANDS),
-        "test_result": test_result,
+        "validation_components": [
+            "lint and static checks",
+            "documentation validation",
+            "smoke tests",
+            "methodology regression",
+            "causal and execution regression",
+            "complete Python surface (tests/ and execution_system/tests/)",
+            "Studio UI typecheck and tests",
+        ],
+        "validation_result": validation_result,
+        "research_inventory_preflight": {
+            "command": RESEARCH_INVENTORY_PREFLIGHT_COMMAND,
+            "included_in_engine_software_status": False,
+            "scope": "authored campaign executability; fail-closed and reported separately",
+        },
         "control_evidence": list(CONTROL_EVIDENCE),
         "model_limitations": list(MODEL_LIMITATIONS),
     }
@@ -159,8 +167,8 @@ def main() -> int:
     return 0 if status in {"PASS", "NOT_RUN"} else 1
 
 
-def _run_tests(*, skip: bool) -> dict:
-    command = [sys.executable, "-m", "pytest", "-q"]
+def _run_validation(*, skip: bool) -> dict:
+    command = ["make", "validate", f"PYTHON={sys.executable}"]
     if skip:
         return {"command": command, "return_code": None, "duration_seconds": 0.0, "output": "not run"}
     started = time.monotonic()
@@ -178,6 +186,22 @@ def _run_tests(*, skip: bool) -> dict:
         "duration_seconds": time.monotonic() - started,
         "output": completed.stdout[-12000:].strip(),
     }
+
+
+def _reference_python_version() -> str:
+    return (PROJECT_ROOT / ".python-version").read_text(encoding="utf-8").strip()
+
+
+def _tracked_tree_sha256(path: str) -> str:
+    tracked = _command_output(["git", "ls-files", "-z", "--", path]).encode("utf-8")
+    digest = hashlib.sha256()
+    for relative in sorted(item for item in tracked.split(b"\0") if item):
+        relative_path = relative.decode("utf-8")
+        digest.update(relative)
+        digest.update(b"\0")
+        digest.update((PROJECT_ROOT / relative_path).read_bytes())
+        digest.update(b"\0")
+    return digest.hexdigest()
 
 
 def _command_output(command: list[str]) -> str:
@@ -212,10 +236,17 @@ def _dirty_paths(output_dir: Path) -> list[str]:
     return dirty
 
 
-def _qualification_status(*, skip_tests: bool, test_return_code: int | None, dirty_paths: list[str]) -> str:
+def _qualification_status(
+    *,
+    skip_tests: bool,
+    validation_return_code: int | None,
+    dirty_paths: list[str],
+    python_version: str,
+    reference_python_version: str,
+) -> str:
     if skip_tests:
         return "NOT_RUN"
-    if test_return_code == 0 and not dirty_paths:
+    if validation_return_code == 0 and not dirty_paths and python_version == reference_python_version:
         return "PASS"
     return "FAIL"
 
@@ -247,7 +278,22 @@ def _markdown(report: dict) -> str:
     lines.extend(f"- `{item}`" for item in report["canonical_validation_commands"])
     lines.extend(["", "## Model Limitations", ""])
     lines.extend(f"- {item}" for item in report["model_limitations"])
-    lines.extend(["", "## Test Output", "", "```text", report["test_result"]["output"], "```", ""])
+    lines.extend(
+        [
+            "",
+            "## Research Inventory Boundary",
+            "",
+            f"`{report['research_inventory_preflight']['command']}` is fail-closed research-inventory preflight. ",
+            "Its result is reported separately and does not alter the engine software status.",
+            "",
+            "## Validation Output",
+            "",
+            "```text",
+            report["validation_result"]["output"],
+            "```",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 

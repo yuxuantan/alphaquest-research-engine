@@ -46,18 +46,21 @@ python3 -m pip install -e ".[dev]"
 python3 -m pytest
 ```
 
-Run the complete local quality gate and write a durable qualification report:
+Run the complete local engine gate and, only for a clean `main` release
+candidate, write qualification reports:
 
 ```bash
-make quality
+make validate
 make qualify
 ```
 
 `make qualify` writes `research_artifacts/engine_qualification.json` and
-`research_artifacts/engine_qualification.md` with the test result, engine and
-policy hashes, contract version, Git state, control evidence, and model-risk
-limitations. This qualifies the software build only. It does not make a
-candidate strategy tradeable.
+`research_artifacts/engine_qualification.md` with the engine-category result,
+engine and policy hashes, contract version, Git state, environment/build
+identity, control evidence, and model-risk limitations. The replaceable local
+reports are attached to a qualified GitHub release as durable assets. This
+qualifies the software build only. Run `make preflight` separately for current
+research inventory; neither result makes a candidate strategy tradeable.
 
 Audit reproducible generated payloads and superseded error runs without deleting:
 

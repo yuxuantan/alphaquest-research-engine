@@ -33,8 +33,10 @@ make smoke             # 65 fast CLI, registry, preflight, and engine tests
 make test-python       # every test collected under tests/
 make test-execution    # every test under execution_system/tests/
 make test              # complete Python surface: both directories above
+make methodology-regression # focused methodology policy/governance surface
+make causal-execution-regression # focused causality/fill/session/parity surface
 make studio-ui-check   # TypeScript build check plus locked Vitest suite
-make validate          # lint, docs, smoke, complete Python, and Studio UI
+make validate          # every hermetic engine category above plus lint/docs/smoke
 ```
 
 `python -m pytest` is also a complete Python command because `pyproject.toml`
@@ -65,21 +67,8 @@ This focused, hermetic command covers frozen policy, WFA/OOS selection, Monte
 Carlo, attempt/run lineage and immutability, strategy certification, validation
 promotion, and data identity:
 
-```bash
-python -m pytest -q \
-  tests/test_research_policy.py \
-  tests/test_research_governance.py \
-  tests/test_campaign_stages.py \
-  tests/test_wfa.py \
-  tests/test_monte_carlo.py \
-  tests/test_research_execution.py \
-  tests/test_run_store.py \
-  tests/test_experiment_registry.py \
-  tests/test_strategy_certification.py \
-  tests/test_execution_certification.py \
-  tests/test_validation_promotion_gate.py \
-  tests/test_data_source_hash.py
-```
+Run `make methodology-regression`. The Makefile is the canonical executable
+list; do not maintain a second copied test list in documentation.
 
 ## Causal and execution regression
 
@@ -88,26 +77,19 @@ timing, fills and costs, pessimistic stop/target ordering, sessions, roll
 handling, forced flatten, event replay, position sizing, and backtest/live
 parity:
 
-```bash
-python -m pytest -q \
-  tests/test_backtest_contracts.py \
-  tests/test_backtest_engine.py \
-  tests/test_order_simulation.py \
-  tests/test_sessions.py \
-  tests/test_event_replay.py \
-  tests/test_event_replay_partial_exit.py \
-  tests/test_position_sizing.py \
-  tests/test_backtest_live_parity.py \
-  tests/test_forward_reconciliation.py \
-  tests/test_studio_execution_contract.py
-```
+Run `make causal-execution-regression`. The Makefile is the canonical
+executable list.
 
 ## Workstation and data qualification
 
 `make preflight` audits the currently authored campaign configs without
-rerunning research. `make qualify` runs the complete Python surface and rewrites
+rerunning research. It is fail-closed research inventory preflight and is not
+part of engine software qualification. `make qualify` runs `make validate` and rewrites
 the durable software-qualification report under `research_artifacts/`. The
-report fails release qualification for a dirty worktree and binds the exact
+local reports are replaceable and ignored by Git because committing them would
+change the commit they identify; a qualified release attaches them as durable
+release assets. The report fails software qualification for a dirty worktree,
+a non-reference Python interpreter, or any failed engine category, and binds the exact
 commit, package and engine versions, methodology version and hashes, reference
 environment hashes, commands, and test result. Run it only when intentionally
 recording qualification for a reviewed revision.

@@ -9,12 +9,10 @@ research throughput second.
 
 ## P0: engineering-baseline blockers
 
-1. **[Governance and scientific integrity] Enforce the documented `main`
-   protection policy remotely.** GitHub currently rejects ruleset and classic
-   branch-protection APIs for this private repository under its plan. Upgrade
-   the private repository plan, then require pull requests and the `Required
-   integration gate`, apply the rule to administrators, and disallow force
-   pushes and deletion. Until then the policy is documented but not enforced.
+None currently recorded. GitHub Free cannot mechanically enforce the desired
+rules on this private single-developer repository, but P0 accepts the documented
+PR-only/green-gate operating policy. Paid enforcement is recommended, not a P0
+requirement.
 
 The prior sequential CI gate, incomplete test discovery, ignored documentation
 target, stale execution example path, incomplete CI dependencies,
@@ -74,35 +72,43 @@ runtime/temp state are addressed by P0A/P0B engineering changes.
 
 ## P2: maintainability and operational risk
 
-1. **[Maintainability] Decompose high-coupling modules behind parity tests.** Current line counts
+1. **[Governance and scientific integrity] Optionally enforce the documented
+   `main` policy through a future paid GitHub plan.** Until then, do not claim
+   the private branch is protected: the one developer must use PRs, require the
+   green integration gate before merge, and avoid direct/force pushes under the
+   documented operating rule. A future enforcement change should require PRs,
+   the `Required integration gate`, administrators, and protection from force
+   push or deletion without altering the zero-external-approval model.
+
+2. **[Maintainability] Decompose high-coupling modules behind parity tests.** Current line counts
    include approximately 13,954 lines in the standalone signal engine, 6,007 in
    the Studio API, 4,611 in factory service, 3,662 in follow-ups, 3,221 in
    campaign stages, and 2,879 in the bar backtest engine. Split by existing
    contracts and prove differential behavior before and after each extraction.
 
-2. **[Maintainability] Retire duplicate compatibility surfaces deliberately.** The React/FastAPI
+3. **[Maintainability] Retire duplicate compatibility surfaces deliberately.** The React/FastAPI
    Studio is primary, while the Streamlit shell, legacy OpenAI API mode, legacy
    storage prefixes, report readers, and retired strategy source remain for
    migration or audit. Each removal needs usage evidence, route/artifact parity,
    a migration plan, and explicit approval; bulk deletion would damage lineage.
 
-3. **[Maintainability] Ratchet static analysis beyond fatal Ruff families.** The current gate
+4. **[Maintainability] Ratchet static analysis beyond fatal Ruff families.** The current gate
    catches parser/name failures only. Add rule families in small batches after
    cleaning the affected files, with no mass formatting of immutable evidence
    or strategy code mixed into functional changes.
 
-4. **[Reproducibility] Add a supported-Python compatibility matrix or narrow the package claim.**
+5. **[Reproducibility] Add a supported-Python compatibility matrix or narrow the package claim.**
    Packaging declares Python 3.10+, while the reproducible qualification lane is
    Python 3.12.14. Either exercise supported minors independently or document a
    narrower supported range after compatibility review.
 
-5. **[Research throughput] Reduce the cost of tracked historical bulk without deleting evidence.**
+6. **[Research throughput] Reduce the cost of tracked historical bulk without deleting evidence.**
    Large archived generations, datasets, and immutable run evidence materially
    increase clone and audit cost. Any future object-store or Git LFS migration
    must preserve hashes, manifests, offline auditability, and historical paths
    or verified redirects.
 
-6. **[Operational reliability] Move GitHub Actions off deprecated Node 20 action runtimes.**
+7. **[Operational reliability] Move GitHub Actions off deprecated Node 20 action runtimes.**
    GitHub currently warns that `actions/checkout@v4`, `actions/setup-python@v5`,
    and `actions/setup-node@v4` target Node 20 and are being forced onto Node 24.
    Review supported successor action majors in a dedicated dependency change,

@@ -43,7 +43,7 @@ Complete the deterministic mechanics export and hash-bound `approved_for_testing
 make research-workspace
 alphaquest campaign show <campaign_id>
 alphaquest campaign show <campaign_id> --explain --run <run_uid> --write-card
-make qualify
+make preflight
 ```
 
 ## Failure Handling

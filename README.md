@@ -59,9 +59,15 @@ alphaquest campaign show es_video_aoi_lvn_orderflow_playbook
 alphaquest campaign show es_video_aoi_lvn_orderflow_playbook --explain --run <run_uid>
 alphaquest campaign validate <campaign_id>
 make preflight
-make test
+make validate
+# On a clean main commit intended for an engine release only:
 make qualify
 ```
+
+`make preflight` is fail-closed research inventory preflight. `make validate`
+is the hermetic engine validation surface. `make qualify` reruns that engine
+surface under the pinned reference environment and writes commit-bound release
+metadata; it does not approve campaigns or strategies.
 
 ## Repository Map
 
