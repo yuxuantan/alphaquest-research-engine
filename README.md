@@ -13,6 +13,7 @@ Start with [START_HERE.md](START_HERE.md), then choose the path that matches you
 | Data engineer | [Data contracts](docs/data/data-contracts.md) |
 | Reviewer | [Verdict semantics](docs/research/verdict-semantics.md) |
 | Operator | [Runbook](docs/operations/runbook.md) |
+| Maintainer | [Release governance](docs/operations/release-governance.md) |
 
 ## Core Model
 

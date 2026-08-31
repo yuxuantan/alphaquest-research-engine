@@ -89,3 +89,31 @@ jobs:
           cache-dependency-path: studio-ui/package-lock.json
       - run: npm --prefix studio-ui ci
       - run: make studio-ui-check
+
+  required-integration-gate:
+    name: Required integration gate
+    if: always()
+    needs:
+      - lint
+      - documentation
+      - smoke
+      - python-tests
+      - execution-system-tests
+      - studio-ui
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every independent validation category
+        env:
+          LINT_RESULT: ${{ needs.lint.result }}
+          DOCUMENTATION_RESULT: ${{ needs.documentation.result }}
+          SMOKE_RESULT: ${{ needs.smoke.result }}
+          PYTHON_TESTS_RESULT: ${{ needs.python-tests.result }}
+          EXECUTION_TESTS_RESULT: ${{ needs.execution-system-tests.result }}
+          STUDIO_UI_RESULT: ${{ needs.studio-ui.result }}
+        run: |
+          test "$LINT_RESULT" = success
+          test "$DOCUMENTATION_RESULT" = success
+          test "$SMOKE_RESULT" = success
+          test "$PYTHON_TESTS_RESULT" = success
+          test "$EXECUTION_TESTS_RESULT" = success
+          test "$STUDIO_UI_RESULT" = success

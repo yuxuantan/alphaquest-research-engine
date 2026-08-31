@@ -50,6 +50,17 @@ def load_execution_config(name: str) -> dict:
         cost_guard = cfg.setdefault("databento", {}).setdefault("live", {}).setdefault("cost_guard", {})
         cost_guard["allow_live_subscription"] = False
         cost_guard["acknowledge_live_data_may_be_billable"] = False
+        # Readiness tests validate the executable contract, not macOS afplay.
+        # Use a harmless command that exists on both CI Linux and macOS.
+        sound = cfg["engine"].setdefault("operator", {}).setdefault("sound", {})
+        sound.update(
+            {
+                "setup_command": "/bin/echo setup-sound",
+                "entry_command": "/bin/echo entry-sound",
+                "system_command": "/bin/echo system-sound",
+                "command": "/bin/echo sound",
+            }
+        )
     return cfg
 
 
@@ -3164,7 +3175,7 @@ def test_readiness_check_validates_cache_metadata_and_avoids_outbox_writes(
     assert payload["alerts"]["execution_intent_contract"]["probes_checked"] == 2
     assert payload["operator"]["sound"]["ok"] is True
     assert payload["operator"]["sound"]["checks"][0]["reason"] == "sound command executable is available"
-    assert payload["operator"]["sound"]["checks"][0]["executable"] == "/usr/bin/afplay"
+    assert payload["operator"]["sound"]["checks"][0]["executable"] == "/bin/echo"
     assert payload["process_lock"]["ok"] is True
     assert payload["process_lock"]["status"] == "available"
     assert {

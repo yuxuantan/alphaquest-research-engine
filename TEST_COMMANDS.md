@@ -52,6 +52,8 @@ prevent unrelated qualification from running:
 4. the governed Python suite under `tests/`;
 5. the execution-system suite;
 6. Studio UI typechecking and Vitest.
+7. the required integration gate, which fails unless all six categories above
+   succeeded.
 
 Every Python CI job installs through `constraints/dev.txt`. The governed Python
 job also installs Chromium because the no-code browser flow is part of that
@@ -104,8 +106,14 @@ python -m pytest -q \
 
 `make preflight` audits the currently authored campaign configs without
 rerunning research. `make qualify` runs the complete Python surface and rewrites
-the durable software-qualification report under `research_artifacts/`. Run the
-latter only when intentionally recording qualification for a reviewed revision.
+the durable software-qualification report under `research_artifacts/`. The
+report fails release qualification for a dirty worktree and binds the exact
+commit, package and engine versions, methodology version and hashes, reference
+environment hashes, commands, and test result. Run it only when intentionally
+recording qualification for a reviewed revision.
+
+The branch, protection, methodology-change, and annotated-tag procedure is in
+[release governance](docs/operations/release-governance.md).
 
 A repository preflight failure on frozen historical attempts or a drifted
 strategy certification is a governed research/manual-review result, not an

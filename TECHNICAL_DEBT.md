@@ -9,14 +9,21 @@ research throughput second.
 
 ## P0: engineering-baseline blockers
 
-No known P0 item remains after the P0A changes, subject to the final clean
-checkout verification. The prior sequential CI gate, incomplete test discovery,
-ignored documentation target, stale execution example path, empty queue-lock
-values, and tracked runtime/temp state are addressed in this phase.
+1. **[Governance and scientific integrity] Enforce the documented `main`
+   protection policy remotely.** GitHub currently rejects ruleset and classic
+   branch-protection APIs for this private repository under its plan. Upgrade
+   the private repository plan, then require pull requests and the `Required
+   integration gate`, apply the rule to administrators, and disallow force
+   pushes and deletion. Until then the policy is documented but not enforced.
+
+The prior sequential CI gate, incomplete test discovery, ignored documentation
+target, stale execution example path, incomplete CI dependencies,
+platform-specific readiness fixture, empty queue-lock values, and tracked
+runtime/temp state are addressed by P0A/P0B engineering changes.
 
 ## P1: correctness and reproducibility risk
 
-1. **Bind the standalone execution system to governed certification identity.**
+1. **[Live/research parity] Bind the standalone execution system to governed certification identity.**
    `execution_system/databento_signal_engine.py` validates campaign YAML shape
    and warns about path ownership, but it is not the same fail-closed
    certification/preflight bridge used by governed campaign runtime. A future
@@ -24,14 +31,14 @@ values, and tracked runtime/temp state are addressed in this phase.
    approval identity, and an explicit active-package lifecycle before a live
    campaign strategy can start. Preserve the built-in diagnostic lane.
 
-2. **Resolve the retained hash-drift expected failure only through governed
+2. **[Scientific correctness] Resolve the retained hash-drift expected failure only through governed
    recertification.** `tests/test_yush_range_reversal_v2.py` contains one strict
    xfail because a spawned replay correctly rechecks a hash-drifted retained
    package. The package must remain unavailable until its source, manifest,
    required tests, certification, validation, and manual mechanics approval are
    reconciled together. Do not remove the xfail in isolation.
 
-3. **Close the active Yush preflight backlog through governed lifecycle
+3. **[Scientific correctness] Close the active Yush preflight backlog through governed lifecycle
    actions.** Repository-wide `make preflight` currently rejects historical
    follow-up configs that predate current policy bindings and also reports a
    stale/mismatched v04 implementation certification. Preserve those frozen
@@ -40,50 +47,56 @@ values, and tracked runtime/temp state are addressed in this phase.
    recertification, fresh validation evidence, and manual mechanics approval;
    repository stabilization must not backfill the old files.
 
-4. **Create a machine-readable workstation-qualification inventory.** The
+4. **[Reproducibility] Create a machine-readable workstation-qualification inventory.** The
    hermetic suite distinguishes optional browser/PDF/plotting dependencies and
    retired source from executable research, but private DBN/SCID and large-data
    qualification remains distributed across tests and runbooks. Record required
    data identity, expected skip/block reason, owner, and exact command without
    converting missing private data into a CI skip.
 
-5. **Make authored-campaign preflight incremental.** `make preflight` performs a
+5. **[Research throughput] Make authored-campaign preflight incremental.** `make preflight` performs a
    broad repository audit and can remain CPU-bound for many minutes as the
    campaign inventory grows. Add content-addressed, fail-closed caching with
    differential parity tests; never cache across policy, code, config, dataset,
    certification, or approval hash changes.
 
-6. **Add a repeatable lock-generation and Linux verification procedure.** P0A
+6. **[Reproducibility] Add a repeatable lock-generation and Linux verification procedure.** P0A
    pins the complete Python 3.12.14 reference resolution and the Node/npm
    environment, but the Python constraints are still maintained manually and do
    not carry artifact hashes. Introduce a reviewed lock-generation command and
    verify it on the CI platform before dependency modernization.
 
+7. **[Operational security] Review the locked Studio UI dependency advisories.**
+   `npm ci` currently reports one moderate and three high advisories. Audit the
+   dependency paths, reachable runtime exposure, and available non-breaking
+   upgrades in a dedicated dependency change; do not run an unreviewed
+   `npm audit fix --force` as part of stabilization.
+
 ## P2: maintainability and operational risk
 
-1. **Decompose high-coupling modules behind parity tests.** Current line counts
+1. **[Maintainability] Decompose high-coupling modules behind parity tests.** Current line counts
    include approximately 13,954 lines in the standalone signal engine, 6,007 in
    the Studio API, 4,611 in factory service, 3,662 in follow-ups, 3,221 in
    campaign stages, and 2,879 in the bar backtest engine. Split by existing
    contracts and prove differential behavior before and after each extraction.
 
-2. **Retire duplicate compatibility surfaces deliberately.** The React/FastAPI
+2. **[Maintainability] Retire duplicate compatibility surfaces deliberately.** The React/FastAPI
    Studio is primary, while the Streamlit shell, legacy OpenAI API mode, legacy
    storage prefixes, report readers, and retired strategy source remain for
    migration or audit. Each removal needs usage evidence, route/artifact parity,
    a migration plan, and explicit approval; bulk deletion would damage lineage.
 
-3. **Ratchet static analysis beyond fatal Ruff families.** The current gate
+3. **[Maintainability] Ratchet static analysis beyond fatal Ruff families.** The current gate
    catches parser/name failures only. Add rule families in small batches after
    cleaning the affected files, with no mass formatting of immutable evidence
    or strategy code mixed into functional changes.
 
-4. **Add a supported-Python compatibility matrix or narrow the package claim.**
+4. **[Reproducibility] Add a supported-Python compatibility matrix or narrow the package claim.**
    Packaging declares Python 3.10+, while the reproducible qualification lane is
    Python 3.12.14. Either exercise supported minors independently or document a
    narrower supported range after compatibility review.
 
-5. **Reduce the cost of tracked historical bulk without deleting evidence.**
+5. **[Research throughput] Reduce the cost of tracked historical bulk without deleting evidence.**
    Large archived generations, datasets, and immutable run evidence materially
    increase clone and audit cost. Any future object-store or Git LFS migration
    must preserve hashes, manifests, offline auditability, and historical paths
@@ -91,11 +104,11 @@ values, and tracked runtime/temp state are addressed in this phase.
 
 ## P3: non-urgent quality improvements
 
-1. Extend documentation validation from file existence to anchors and selected
+1. **[Cosmetic]** Extend documentation validation from file existence to anchors and selected
    generated-command examples. Keep the deliberate exclusion of the very large
    historical full guide documented.
-2. Add summary timing telemetry for CI jobs and the slowest test modules so
+2. **[Operational quality]** Add summary timing telemetry for CI jobs and the slowest test modules so
    throughput work is evidence-led.
-3. Consolidate repeated compatibility terminology after the corresponding
+3. **[Cosmetic]** Consolidate repeated compatibility terminology after the corresponding
    lifecycle is actually retired; naming cleanup alone is not a correctness
    improvement.

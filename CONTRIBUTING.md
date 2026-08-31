@@ -8,6 +8,11 @@
 
 ## Development Workflow
 
+`main` is the sole stable/default branch. Perform work on a temporary
+`feat/`, `fix/`, or `docs/` branch and integrate it through a pull request after
+the required CI gate succeeds. See [release governance](docs/operations/release-governance.md)
+for branch protection, methodology-version changes, qualification, and tagging.
+
 ```bash
 make setup
 pre-commit install
@@ -30,6 +35,7 @@ Add focused tests for behavioral changes. Engine changes must cover entry timing
 - Identify data, config, engine, and artifact-contract changes.
 - Report exact tests and preflight commands.
 - Declare whether historical evidence was rewritten.
+- Require the `Required integration gate` check before merge.
 - Use candidate language; never claim a backtest alone is tradeable.
 
 Do not combine unrelated refactors with strategy mechanics changes. Preserve failed research and ledger history.
