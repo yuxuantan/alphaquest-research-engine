@@ -6,6 +6,7 @@ from collections.abc import Iterable
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import copy
 import json
+from multiprocessing import get_context
 from typing import Any
 
 import pandas as pd
@@ -96,7 +97,13 @@ def replay_event_sessions_parallel(
         return replay_event_sessions(config, materialized)
     _require_session_independent_sizing(config)
     ordered: list[dict[str, Any] | None] = [None] * len(materialized)
-    with ProcessPoolExecutor(max_workers=min(int(workers), len(materialized))) as executor:
+    # Use one process model on every supported platform.  In particular, fork
+    # would inherit temporary in-process registry/certification state on Linux,
+    # while spawn re-imports and revalidates the governed strategy package.
+    with ProcessPoolExecutor(
+        max_workers=min(int(workers), len(materialized)),
+        mp_context=get_context("spawn"),
+    ) as executor:
         futures = {
             executor.submit(_replay_one_event_session, config, session): index
             for index, session in enumerate(materialized)

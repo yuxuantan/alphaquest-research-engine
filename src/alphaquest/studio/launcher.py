@@ -14,7 +14,7 @@ import sys
 import time
 from typing import Any
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, urlopen
+from urllib.request import ProxyHandler, Request, build_opener
 import webbrowser
 
 from alphaquest.research.storage import load_storage_layout
@@ -29,6 +29,10 @@ LOG_FILENAME = "studio.log"
 WORKER_LOG_FILENAME = "worker.log"
 REACT_FASTAPI_RUNTIME = "react-fastapi"
 LEGACY_STREAMLIT_RUNTIME = "legacy-streamlit"
+
+# Studio is deliberately loopback-only.  Do not let workstation or CI proxy
+# settings route lifecycle health checks away from the local process.
+_LOOPBACK_OPENER = build_opener(ProxyHandler({}))
 
 
 def studio_status(*, project_root: str | Path = ".") -> dict[str, Any]:
@@ -376,7 +380,10 @@ def _studio_http_health(address: Any, port: Any, ui_runtime: str) -> bool:
         headers={"Accept": "application/json"},
     )
     try:
-        with urlopen(request, timeout=0.35) as response:  # noqa: S310 - validated localhost-only URL
+        with _LOOPBACK_OPENER.open(  # noqa: S310 - validated localhost-only URL
+            request,
+            timeout=0.35,
+        ) as response:
             if response.status != 200:
                 return False
             if ui_runtime == LEGACY_STREAMLIT_RUNTIME:

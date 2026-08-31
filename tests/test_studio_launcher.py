@@ -40,6 +40,10 @@ def test_background_launcher_starts_ui_and_durable_worker_then_stops(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("ALPHAQUEST_STUDIO_ASSETS_DIR", str(_web_assets(tmp_path)))
+    monkeypatch.setenv("HTTP_PROXY", "http://127.0.0.1:1")
+    monkeypatch.setenv("http_proxy", "http://127.0.0.1:1")
+    monkeypatch.setenv("NO_PROXY", "")
+    monkeypatch.setenv("no_proxy", "")
     port = _free_port()
 
     try:
@@ -56,6 +60,10 @@ def test_background_launcher_starts_ui_and_durable_worker_then_stops(
         assert started["ui_runtime"] == "react-fastapi"
         assert started["url"] == f"http://127.0.0.1:{port}"
         assert studio_status(project_root=tmp_path)["healthy"] is True
+        monkeypatch.delenv("HTTP_PROXY")
+        monkeypatch.delenv("http_proxy")
+        monkeypatch.setenv("NO_PROXY", "127.0.0.1,localhost")
+        monkeypatch.setenv("no_proxy", "127.0.0.1,localhost")
         with urlopen(f"http://127.0.0.1:{port}/healthz", timeout=2) as response:
             health = json.load(response)
         assert health == {
