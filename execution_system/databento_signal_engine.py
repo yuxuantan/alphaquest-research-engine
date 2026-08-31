@@ -11678,8 +11678,8 @@ def validate_strategy_variant(config: dict[str, Any], path: Path, project_root: 
         warnings.append(f"strategy config is outside project_root: {path}")
     else:
         parts = relative.parts
-        if len(parts) < 3 or parts[0] != "configs" or parts[1] != "campaigns":
-            warnings.append(f"strategy config is not under configs/campaigns: {relative}")
+        if len(parts) < 4 or parts[:3] != ("research", "campaigns", "active"):
+            warnings.append(f"strategy config is not under research/campaigns/active: {relative}")
     if not config.get("timeframe"):
         errors.append("top-level timeframe is required")
     if not config.get("symbol"):

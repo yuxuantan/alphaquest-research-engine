@@ -420,19 +420,27 @@ def _require_queueable_performance_job(job: JobRecordV1, *, attempt_id: str) -> 
 
 def _performance_hash_locks(gate: Mapping[str, Any]) -> dict[str, str]:
     approval_path = Path(str(gate.get("approval_path") or ""))
-    return {
+    locks = {
         "config_hash": str(gate.get("config_hash") or ""),
         "input_data_hash": str(gate.get("input_data_hash") or ""),
         "mechanics_approval_sha256": (
             _file_sha256(approval_path) if approval_path.is_file() else ""
         ),
-        "strategy_implementation_sha256": str(
-            gate.get("strategy_implementation_sha256") or ""
-        ),
-        "strategy_certification_manifest_sha256": str(
-            gate.get("strategy_certification_manifest_sha256") or ""
-        ),
     }
+    missing = sorted(name for name, value in locks.items() if not value)
+    if missing:
+        raise ValueError(
+            "Performance submission is missing mandatory hash locks: "
+            + ", ".join(missing)
+        )
+    for name in (
+        "strategy_implementation_sha256",
+        "strategy_certification_manifest_sha256",
+    ):
+        value = str(gate.get(name) or "")
+        if value:
+            locks[name] = value
+    return locks
 
 
 def _is_legacy_unreserved_preflight_only_job(job: JobRecordV1) -> bool:

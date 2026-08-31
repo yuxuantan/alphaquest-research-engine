@@ -347,26 +347,27 @@ def test_multi_contract_import_preserves_lineage_and_governed_roll_selection(
     tmp_path: Path,
 ) -> None:
     source = tmp_path / "multi_contract.csv"
-    pd.DataFrame(
-        {
-            "when": [
-                "2026-01-02 09:30:00",
-                "2026-01-02 09:30:00",
-                "2026-01-02 09:31:00",
-                "2026-01-02 09:31:00",
-            ],
-            "o": [6000.0, 6001.0, 6000.5, 6001.5],
-            "h": [6001.0, 6002.0, 6001.5, 6002.5],
-            "l": [5999.0, 6000.0, 5999.5, 6000.5],
-            "c": [6000.5, 6001.5, 6001.0, 6002.0],
-            "v": [10, 100, 10, 100],
-            "outright": ["ESH26", "ESM26", "ESH26", "ESM26"],
-        }
-    ).to_csv(source, index=False)
+    session_dates = pd.bdate_range("2023-06-30", "2026-01-02")
+    rows = []
+    for index, session in enumerate(session_dates):
+        for contract, offset, volume in (("ESH26", 0.0, 10), ("ESM26", 1.0, 100)):
+            opening = 6000.0 + index * 0.25 + offset
+            rows.append(
+                {
+                    "when": f"{session.date()} 09:30:00",
+                    "o": opening,
+                    "h": opening + 1.0,
+                    "l": opening - 1.0,
+                    "c": opening + 0.5,
+                    "v": volume,
+                    "outright": contract,
+                }
+            )
+    pd.DataFrame(rows).to_csv(source, index=False)
     roll_calendar = tmp_path / "roll_calendar.csv"
     pd.DataFrame(
         {
-            "start_timestamp": ["2026-01-02 09:00:00"],
+            "start_timestamp": ["2023-06-30 09:00:00"],
             "contract_symbol": ["ESM26"],
         }
     ).to_csv(roll_calendar, index=False)
@@ -399,7 +400,7 @@ def test_multi_contract_import_preserves_lineage_and_governed_roll_selection(
     assert result.manifest.continuous_contract == "explicit_roll_calendar"
     assert result.manifest.roll_calendar_sha256
     assert result.roll_calendar_path is not None and result.roll_calendar_path.is_file()
-    assert canonical["contract_symbol"].tolist() == ["ESH26", "ESM26", "ESH26", "ESM26"]
+    assert canonical["contract_symbol"].iloc[:4].tolist() == ["ESH26", "ESM26", "ESH26", "ESM26"]
 
     from tests.test_authoring_core import _draft_document, _reconfirm
 
@@ -415,7 +416,7 @@ def test_multi_contract_import_preserves_lineage_and_governed_roll_selection(
     cleaned, report, _missing = clean_data(data_config)
     assert report["duplicate_count"] == 0
     assert cleaned["contract_symbol"].unique().tolist() == ["ESM26"]
-    assert len(cleaned) == 2
+    assert len(cleaned) == len(session_dates)
 
 
 def test_import_and_compiler_reject_unsupported_or_ambiguous_multi_contract_rolls(
@@ -517,6 +518,79 @@ def test_import_rejects_ambiguous_numeric_timestamps(tmp_path: Path) -> None:
             source,
             DataImportSpec(
                 dataset_id="epoch",
+                symbol="ES",
+                timeframe="1m",
+                timezone="America/New_York",
+                timestamp_semantics="bar_open",
+                roll_policy="single_contract",
+                timestamp_column="timestamp",
+                open_column="open",
+                high_column="high",
+                low_column="low",
+                close_column="close",
+                volume_column="volume",
+                single_contract_confirmed=True,
+            ),
+        )
+
+
+def test_import_normalizes_timezone_aware_rows_across_dst_offsets(tmp_path: Path) -> None:
+    source = tmp_path / "dst_offsets.csv"
+    pd.DataFrame(
+        {
+            "timestamp": ["2025-07-01T09:30:00-04:00", "2026-01-02T09:30:00-05:00"],
+            "open": [10, 10],
+            "high": [11, 11],
+            "low": [9, 9],
+            "close": [10, 10],
+            "volume": [1, 1],
+        }
+    ).to_csv(source, index=False)
+
+    result = DatasetImporter(tmp_path).import_file(
+        source,
+        DataImportSpec(
+            dataset_id="dst_offsets",
+            symbol="ES",
+            timeframe="1m",
+            timezone="America/New_York",
+            timestamp_semantics="bar_open",
+            roll_policy="single_contract",
+            timestamp_column="timestamp",
+            open_column="open",
+            high_column="high",
+            low_column="low",
+            close_column="close",
+            volume_column="volume",
+            single_contract_confirmed=True,
+        ),
+    )
+
+    canonical = pd.read_csv(result.canonical_path)
+    assert canonical["timestamp"].tolist() == [
+        "2025-07-01 13:30:00+00:00",
+        "2026-01-02 14:30:00+00:00",
+    ]
+
+
+def test_import_rejects_mixed_aware_and_naive_timestamps(tmp_path: Path) -> None:
+    source = tmp_path / "mixed_awareness.csv"
+    pd.DataFrame(
+        {
+            "timestamp": ["2026-01-02 09:30:00", "2026-01-02T09:31:00-05:00"],
+            "open": [10, 10],
+            "high": [11, 11],
+            "low": [9, 9],
+            "close": [10, 10],
+            "volume": [1, 1],
+        }
+    ).to_csv(source, index=False)
+
+    with pytest.raises(ValueError, match="mix timezone-aware and naive"):
+        DatasetImporter(tmp_path).import_file(
+            source,
+            DataImportSpec(
+                dataset_id="mixed_awareness",
                 symbol="ES",
                 timeframe="1m",
                 timezone="America/New_York",

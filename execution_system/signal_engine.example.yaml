@@ -180,6 +180,40 @@ databento:
     bar_flush_delay_seconds: 2
 
 strategies:
-  - id: dense_rank_value_priority_ensemble
+  # The shipped example is diagnostic-only and has no dependency on an
+  # archived or workstation-local campaign definition.
+  - id: diagnostic_delta_every_5m_1r
+    type: builtin_delta_interval
     enabled: true
-    config: configs/campaigns/bar_orderflow_participation_state/variants/ES/1m/dense_rank_value_priority_ensemble.yaml
+    symbol: ES
+    timeframe: 1m
+    data:
+      source_timeframe: 1m
+      feature_set: none
+      warmup_days: 0
+      symbol: ES
+      timezone: America/New_York
+      exchange_timezone: America/New_York
+      rth_start: "09:30:00"
+      rth_end: "15:59:00"
+    params:
+      interval_bars: 5
+      delta_window_bars: 5
+      delta_mode: current_bar
+      delta_column: signed_volume
+      min_abs_delta: 0
+      stop_mode: bar_extreme
+      stop_points: 1.0
+      target_r_multiple: 1.0
+      tick_size: 0.25
+      tick_value: 12.5
+      contracts: 1
+      max_trades_per_day: 100000
+    core:
+      initial_balance: 150000
+      tick_size: 0.25
+      tick_value: 12.5
+      slippage_ticks: 0
+      position_sizing:
+        mode: fixed_contracts
+        contracts: 1

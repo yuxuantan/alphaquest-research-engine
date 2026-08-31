@@ -2,7 +2,7 @@
 
 ## Requirements
 
-- Python 3.12 is the CI reference version; the package supports Python 3.10 or newer.
+- Python 3.12.14 is the pinned CI reference version; the package supports Python 3.10 or newer.
 - Local market data is optional for unit tests and the synthetic tutorial.
 - Real campaign execution requires the data paths declared by that campaign.
 - Node.js is not a researcher or Studio runtime dependency. It is needed only by developers who rebuild the committed React assets.
@@ -12,8 +12,8 @@
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
-python -m pip install --upgrade pip
-python -m pip install -c constraints/dev.txt -e ".[dev,studio]"
+make setup
+python -m playwright install chromium
 ```
 
 Verify the installation:
@@ -61,7 +61,7 @@ The previous OpenAI API drafting adapter remains available only as an explicit l
 The editable React/TypeScript source lives under `studio-ui/`. A current Node.js LTS release and npm are required only when changing that source. Install its development dependencies once, then validate and rebuild:
 
 ```bash
-npm --prefix studio-ui install
+make studio-ui-setup
 make studio-ui-check
 make studio-ui-build
 ```

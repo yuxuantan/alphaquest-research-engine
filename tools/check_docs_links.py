@@ -3,6 +3,7 @@ from __future__ import annotations
 import argparse
 from pathlib import Path
 import re
+import subprocess
 
 
 LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
@@ -36,6 +37,7 @@ def main(argv: list[str] | None = None) -> int:
 
 def validate_links(paths: list[str] | tuple[str, ...]) -> list[str]:
     failures = []
+    repository_root, tracked_paths = _tracked_repository_paths()
     for document in _markdown_files(paths):
         if document.name == "full-guide.md":
             continue
@@ -50,6 +52,12 @@ def validate_links(paths: list[str] | tuple[str, ...]) -> list[str]:
             resolved = (document.parent / path_part).resolve()
             if not resolved.exists():
                 failures.append(f"{document}: missing local target {target}")
+            elif repository_root is not None and not _target_available_in_clean_checkout(
+                resolved,
+                repository_root=repository_root,
+                tracked_paths=tracked_paths,
+            ):
+                failures.append(f"{document}: local target is not tracked for a clean checkout {target}")
     return failures
 
 
@@ -62,6 +70,49 @@ def _markdown_files(paths: list[str] | tuple[str, ...]) -> list[Path]:
         elif path.is_file():
             files.append(path)
     return sorted(set(files))
+
+
+def _tracked_repository_paths() -> tuple[Path | None, frozenset[Path]]:
+    root_result = subprocess.run(
+        ["git", "rev-parse", "--show-toplevel"],
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if root_result.returncode != 0:
+        return None, frozenset()
+    repository_root = Path(root_result.stdout.strip()).resolve()
+    tracked_result = subprocess.run(
+        ["git", "ls-files", "-z"],
+        cwd=repository_root,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        check=False,
+    )
+    if tracked_result.returncode != 0:
+        return None, frozenset()
+    tracked_paths = frozenset(
+        (repository_root / raw.decode("utf-8")).resolve()
+        for raw in tracked_result.stdout.split(b"\0")
+        if raw
+    )
+    return repository_root, tracked_paths
+
+
+def _target_available_in_clean_checkout(
+    target: Path,
+    *,
+    repository_root: Path,
+    tracked_paths: frozenset[Path],
+) -> bool:
+    try:
+        target.relative_to(repository_root)
+    except ValueError:
+        return True
+    if target.is_file():
+        return target in tracked_paths
+    return any(target == tracked or target in tracked.parents for tracked in tracked_paths)
 
 
 if __name__ == "__main__":

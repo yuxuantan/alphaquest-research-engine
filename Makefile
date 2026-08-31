@@ -4,12 +4,13 @@ SAMPLE_VALIDATION_RUN_DIR ?= examples/validation_runs/sample_core
 STUDIO_PORT ?= 8501
 NPM ?= npm
 
-.PHONY: help setup studio-setup studio studio-status studio-stop studio-ui-check studio-ui-build smoke tutorial docs-check test lint quality qualify cleanup-generated research-audit remediation-review preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit storage-migration-verify research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
+.PHONY: help setup studio-setup studio-ui-setup studio studio-status studio-stop studio-ui-check studio-ui-build smoke tutorial docs-check test-python test-execution test lint quality validate qualify cleanup-generated research-audit remediation-review preflight run-catalog research-registry research-status research-definitions run-uids run-store storage-audit storage-migration-verify research-workspace validation-dashboard sample-validation-run validation-dashboard-sample
 
 help:
 	@printf '%s\n' \
-	  'setup                 Install the package with development dependencies' \
-	  'studio-setup          Install development and Research Studio dependencies' \
+	  'setup                 Install the pinned Python reference environment' \
+	  'studio-setup          Compatibility alias for setup' \
+	  'studio-ui-setup       Install the locked React developer dependencies' \
 	  'studio                Launch the local Research Studio in the browser' \
 	  'studio-status         Show the local Research Studio process status' \
 	  'studio-stop           Stop the background Research Studio process' \
@@ -18,8 +19,11 @@ help:
 	  'smoke                 Run fast CLI, registry, preflight, and engine tests' \
 	  'tutorial              Generate and execute the isolated synthetic tutorial' \
 	  'docs-check            Validate local links in onboarding documentation' \
-	  'test                  Run the complete test suite' \
-	  'quality               Run lint and the complete test suite' \
+	  'test-python           Run the governed Python suite under tests/' \
+	  'test-execution        Run execution_system/tests independently' \
+	  'test                  Run the complete Python test surface' \
+	  'quality               Run lint and the complete Python test surface' \
+	  'validate              Run every hermetic engineering CI category' \
 	  'preflight             Audit all authored campaign configs without rerunning tests' \
 	  'research-workspace    Rebuild registry, exports, views, run UIDs, and storage audit' \
 	  'research-status       Print the registry summary' \
@@ -30,10 +34,12 @@ help:
 	  'storage-migration-verify Verify the manifest, historical paths, and run UIDs'
 
 setup:
-	python3 -m pip install -c constraints/dev.txt -e ".[dev]"
+	python3 -m pip install -c constraints/dev.txt -e ".[dev,studio,dashboard]"
 
-studio-setup:
-	python3 -m pip install -c constraints/dev.txt -e ".[dev,studio]"
+studio-setup: setup
+
+studio-ui-setup:
+	$(NPM) --prefix studio-ui ci
 
 studio:
 	PYTHONPATH=src python3 -m alphaquest.cli studio start --port $(STUDIO_PORT)
@@ -60,13 +66,21 @@ tutorial:
 docs-check:
 	PYTHONPATH=src python3 tools/check_docs_links.py
 
+test-python:
+	PYTHONPATH=src python3 -m pytest tests
+
+test-execution:
+	PYTHONPATH=src python3 -m pytest execution_system/tests
+
 test:
 	PYTHONPATH=src python3 -m pytest
 
 lint:
-	PYTHONPATH=src python3 -m ruff check src research tests tools
+	PYTHONPATH=src python3 -m ruff check src research tests tools apps execution_system
 
 quality: lint test
+
+validate: lint docs-check smoke test studio-ui-check
 
 qualify:
 	PYTHONPATH=src python3 tools/qualify_engine.py

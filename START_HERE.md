@@ -17,6 +17,7 @@ Open `alphaquest-research.code-workspace` for the curated VS Code surface. It ex
 ## Daily Entry Points
 
 - `make help`: list supported repository commands.
+- `make setup`: install the pinned Python reference environment.
 - `make studio`: launch Research Studio.
 - `make studio-status`: inspect its local web process and durable worker.
 - `make studio-stop`: stop the managed local process pair.
@@ -28,6 +29,7 @@ Open `alphaquest-research.code-workspace` for the curated VS Code surface. It ex
 - `alphaquest campaign show <campaign_id> --explain --run <run_uid>`: trace hypothesis, mechanics, data, validation, stages, artifacts, and verdict.
 - `views/`: disposable, human-facing working sets.
 - `docs/README.md`: role-based documentation index.
+- `make validate`: run the complete hermetic engineering baseline; see [test commands](TEST_COMMANDS.md).
 
 ## Ownership Boundaries
 

@@ -175,11 +175,28 @@ class DatasetImporter:
             raise ValueError(
                 "numeric timestamps are ambiguous; convert them to ISO date-times before Studio import"
             )
-        parsed = pd.to_datetime(original_timestamp, errors="coerce")
+        parsed = original_timestamp.map(_parse_timestamp_value)
         invalid_timestamp_mask = parsed.isna()
         valid = frame.loc[~invalid_timestamp_mask].copy()
         valid_timestamps = parsed.loc[~invalid_timestamp_mask]
-        if getattr(valid_timestamps.dt, "tz", None) is None:
+        awareness = valid_timestamps.map(
+            lambda value: getattr(value, "tzinfo", None) is not None
+        )
+        if bool(awareness.any()) and not bool(awareness.all()):
+            raise ValueError("timestamps mix timezone-aware and naive values")
+        if bool(awareness.all()):
+            valid_timestamps = pd.to_datetime(
+                valid_timestamps,
+                errors="coerce",
+                format="mixed",
+                utc=True,
+            )
+        else:
+            valid_timestamps = pd.to_datetime(
+                valid_timestamps,
+                errors="coerce",
+                format="mixed",
+            )
             try:
                 valid_timestamps = valid_timestamps.dt.tz_localize(spec.timezone, ambiguous="NaT", nonexistent="NaT")
             except (TypeError, ValueError) as exc:
@@ -521,6 +538,13 @@ def _timeframe_delta(timeframe: str) -> pd.Timedelta:
     number = int(timeframe[:-1])
     unit = timeframe[-1]
     return pd.Timedelta(seconds=number * {"m": 60, "h": 3600, "d": 86400}[unit])
+
+
+def _parse_timestamp_value(value: object) -> object:
+    try:
+        return pd.Timestamp(value)
+    except (TypeError, ValueError, OverflowError):
+        return pd.NaT
 
 
 __all__ = ["DataImportResult", "DataImportSpec", "DatasetImporter"]

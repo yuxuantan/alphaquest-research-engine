@@ -36,6 +36,7 @@ from alphaquest.studio.followups import (
     _config_mechanic_signature,
     _is_legacy_unreserved_preflight_only_job,
     _is_proven_pre_performance_incomplete_run,
+    _performance_hash_locks,
     _rebase_relocated_project_paths,
     _require_queueable_performance_job,
     _resolve_project_owned_path,
@@ -56,6 +57,26 @@ from alphaquest.studio.jobs import OperationalState, SQLiteJobQueue
 
 VARIANTS = tuple(f"v{index:02d}" for index in range(1, 6))
 FIXED_NOW = datetime(2026, 7, 15, 12, 30, tzinfo=UTC)
+
+
+def test_performance_hash_locks_require_core_identity_and_allow_certified_recipe(tmp_path):
+    approval = tmp_path / "approval.json"
+    approval.write_text("{}\n", encoding="utf-8")
+    locks = _performance_hash_locks(
+        {
+            "approval_path": str(approval),
+            "config_hash": "a" * 64,
+            "input_data_hash": "b" * 64,
+        }
+    )
+
+    assert locks == {
+        "config_hash": "a" * 64,
+        "input_data_hash": "b" * 64,
+        "mechanics_approval_sha256": _sha(approval),
+    }
+    with pytest.raises(ValueError, match="mandatory hash locks"):
+        _performance_hash_locks({"approval_path": str(approval)})
 
 
 def _synthetic_current_yush_certification(

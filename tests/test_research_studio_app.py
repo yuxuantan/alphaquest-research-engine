@@ -169,7 +169,7 @@ def test_no_code_wizard_reaches_atomic_initial_variant_publication_in_fresh_work
     monkeypatch,
 ) -> None:
     source = tmp_path / "administrator-provided-bars.csv"
-    session_starts = pd.bdate_range("2026-01-05", periods=12)
+    session_starts = pd.bdate_range("2023-06-30", "2026-01-20")
     timestamps = pd.DatetimeIndex(
         [
             timestamp
@@ -187,9 +187,9 @@ def test_no_code_wizard_reaches_atomic_initial_variant_publication_in_fresh_work
     pd.DataFrame(
         {
             "timestamp": timestamps.astype(str),
-            # The latest ten governed sessions contain deterministic mechanics
-            # trades. The small dataset remains intentionally incapable of
-            # satisfying the complete downstream methodology.
+            # The complete business-date coverage makes the frozen 24+6 month
+            # calendar explicit. The latest ten sessions contain deterministic
+            # mechanics trades; downstream performance stages are not executed.
             "open": session_prices,
             "high": [price + 1.0 for price in session_prices],
             "low": [price - 1.0 for price in session_prices],
@@ -422,7 +422,7 @@ def test_no_code_wizard_reaches_atomic_initial_variant_publication_in_fresh_work
     performance_jobs = [
         job for job in queue.list_jobs(limit=20) if job.job_type == CAMPAIGN_VARIANT_RUN
     ]
-    assert len(performance_jobs) == 1
+    assert len(performance_jobs) == 1, [item.value for item in app.error]
     assert [job.payload["variant_id"] for job in reversed(performance_jobs)] == ["v01"]
 
     handled = StudioWorker(

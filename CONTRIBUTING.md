@@ -12,9 +12,13 @@
 make setup
 pre-commit install
 make smoke
-make test
+make validate
 make preflight
 ```
+
+`make validate` covers both Python test roots and the Studio UI suite. See
+[the complete test surface](TEST_COMMANDS.md) for independent commands and the
+private-data boundary.
 
 Run `pre-commit run --all-files` before opening a pull request. Hooks check basic file hygiene, YAML/JSON syntax, and the repository's Ruff policy.
 
