@@ -9,10 +9,17 @@ import socket
 import subprocess
 import sys
 import time
+from types import SimpleNamespace
 from urllib.request import urlopen
 
 from alphaquest.cli import _parser
-from alphaquest.studio.launcher import start_studio, stop_studio, studio_status
+from alphaquest.studio.launcher import (
+    _pid_matches_studio,
+    _pid_matches_worker,
+    start_studio,
+    stop_studio,
+    studio_status,
+)
 from alphaquest.studio.process_ownership import (
     process_group_members,
     register_process_group,
@@ -33,6 +40,34 @@ def _web_assets(root: Path) -> Path:
         encoding="utf-8",
     )
     return assets
+
+
+def test_process_ownership_checks_request_untruncated_command_lines(monkeypatch) -> None:
+    commands: list[list[str]] = []
+    outputs = iter(
+        (
+            "/very/long/python/path -m alphaquest.cli studio worker --project-root /tmp/project",
+            "/very/long/python/path -m streamlit run /tmp/project/apps/research_studio.py",
+        )
+    )
+
+    def run(command, **_kwargs):
+        commands.append(command)
+        return SimpleNamespace(stdout=next(outputs))
+
+    monkeypatch.setattr("alphaquest.studio.launcher._pid_exists", lambda _pid: True)
+    monkeypatch.setattr("alphaquest.studio.launcher.subprocess.run", run)
+
+    assert _pid_matches_worker(101) is True
+    assert _pid_matches_studio(
+        102,
+        "/tmp/project/apps/research_studio.py",
+        "legacy-streamlit",
+    ) is True
+    assert commands == [
+        ["ps", "-ww", "-p", "101", "-o", "command="],
+        ["ps", "-ww", "-p", "102", "-o", "command="],
+    ]
 
 
 def test_background_launcher_starts_ui_and_durable_worker_then_stops(

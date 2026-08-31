@@ -424,10 +424,33 @@ def _wait_for_background_start(
             return status
         time.sleep(0.1)
     state = studio_status(project_root=project_root)
+    diagnostic = {
+        key: state.get(key)
+        for key in (
+            "running",
+            "ui_healthy",
+            "worker_running",
+            "stale_state",
+            "pid",
+            "worker_pid",
+            "ui_runtime",
+            "url",
+        )
+    }
+    diagnostic["studio_log_tail"] = _log_tail(Path(state["log_path"]))
+    diagnostic["worker_log_tail"] = _log_tail(Path(state["worker_log_path"]))
     raise RuntimeError(
         f"Research Studio did not become healthy at {state.get('url') or 'its local URL'} "
-        f"within {timeout_seconds:g}s"
+        f"within {timeout_seconds:g}s; startup_diagnostic={json.dumps(diagnostic, sort_keys=True)}"
     )
+
+
+def _log_tail(path: Path, *, limit: int = 4000) -> str:
+    try:
+        content = path.read_text(encoding="utf-8", errors="replace")
+    except OSError as exc:
+        return f"<{type(exc).__name__}: {exc}>"
+    return content[-limit:]
 
 
 def _read_state(path: Path) -> dict[str, Any]:
@@ -471,16 +494,7 @@ def _pid_exists(pid: int) -> bool:
 def _pid_matches_studio(pid: int, app_path: Any, ui_runtime: str) -> bool:
     if not _pid_exists(pid):
         return False
-    try:
-        output = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "command="],
-            check=False,
-            capture_output=True,
-            text=True,
-            timeout=2,
-        ).stdout
-    except (OSError, subprocess.SubprocessError):
-        return False
+    output = _process_command(pid)
     if ui_runtime == LEGACY_STREAMLIT_RUNTIME:
         return "streamlit" in output and (not app_path or str(app_path) in output)
     return "alphaquest.studio.web" in output
@@ -489,17 +503,21 @@ def _pid_matches_studio(pid: int, app_path: Any, ui_runtime: str) -> bool:
 def _pid_matches_worker(pid: int) -> bool:
     if not _pid_exists(pid):
         return False
+    output = _process_command(pid)
+    return "alphaquest.cli" in output and "studio worker" in output
+
+
+def _process_command(pid: int) -> str:
     try:
-        output = subprocess.run(
-            ["ps", "-p", str(pid), "-o", "command="],
+        return subprocess.run(
+            ["ps", "-ww", "-p", str(pid), "-o", "command="],
             check=False,
             capture_output=True,
             text=True,
             timeout=2,
         ).stdout
     except (OSError, subprocess.SubprocessError):
-        return False
-    return "alphaquest.cli" in output and "studio worker" in output
+        return ""
 
 
 def _terminate_pid(pid: int, *, label: str, timeout_seconds: float) -> None:
