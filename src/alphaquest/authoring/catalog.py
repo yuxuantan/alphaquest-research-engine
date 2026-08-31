@@ -223,8 +223,9 @@ CERTIFIED_MODULE_CATALOG = CertifiedModuleCatalog(
             certification_status="certified",
             summary=(
                 "Causal market/order-flow value-edge AOI, ordered sweep, separate "
-                "post-sweep order-flow confirmation, reclaim stop entry, and frozen "
-                "range scale-out."
+                "post-sweep large-execution or developing three-minute/four-tick "
+                "delta-imprint confirmation, reclaim stop entry, and frozen range "
+                "scale-out."
             ),
             decision_timing="intrabar_or_event",
             required_columns=[

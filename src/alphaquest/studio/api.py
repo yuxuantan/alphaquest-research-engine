@@ -2723,6 +2723,43 @@ def _attempt_results(root: Path, campaign_id: str) -> dict[str, dict[str, dict[s
     return result
 
 
+def _experiment_attempt_outcomes(
+    root: Path,
+    campaign_id: str,
+) -> dict[tuple[str, str], dict[str, Any]]:
+    """Return terminal/in-flight experiment state without presenting it as a result."""
+
+    layout = load_storage_layout(root)
+    registry = ExperimentRegistry(
+        layout.research_artifact_root / "governance" / "experiment_registry.jsonl"
+    )
+    try:
+        attempts = registry.attempts()
+    except ExperimentRegistryError:
+        return {}
+    outcomes: dict[tuple[str, str], dict[str, Any]] = {}
+    for attempt in attempts:
+        if str(attempt.get("campaign_id") or "") != campaign_id:
+            continue
+        attempt_id = str(attempt.get("attempt_id") or "")
+        variant_id = str(attempt.get("variant_id") or "")
+        if not attempt_id or not variant_id:
+            continue
+        resolution = (
+            dict(attempt.get("resolution"))
+            if isinstance(attempt.get("resolution"), Mapping)
+            else {}
+        )
+        outcomes[(attempt_id, variant_id)] = {
+            "operational_status": str(attempt.get("current_status") or ""),
+            "research_verdict": str(
+                resolution.get("research_verdict") or "NEEDS MANUAL REVIEW"
+            ),
+            "resolution": resolution,
+        }
+    return outcomes
+
+
 def _indexed_result_entry(
     root: Path,
     campaign_id: str,
@@ -2899,6 +2936,12 @@ def _resolve_current_work_scope(
         latest.get("attempt_kind") or "original"
     )
     selected["latest_attempt_label"] = _friendly_attempt_label(latest)
+    outcome = _experiment_attempt_outcomes(root, campaign_id).get(
+        (str(selected.get("attempt_id") or "original"), selected["target_variant_id"]),
+        {},
+    )
+    selected["operational_status"] = outcome.get("operational_status")
+    selected["terminal_research_verdict"] = outcome.get("research_verdict")
     return selected
 
 
@@ -2972,6 +3015,8 @@ def _campaign_workflow_context(
     # gate is historical evidence. Never send a terminal attempt backwards to
     # mechanics review merely because its package later became unavailable for
     # new work.
+    operational_status = str(current.get("operational_status") or "").upper()
+    terminal_attempt = operational_status in {"COMPLETED", "FAILED", "CANCELLED"}
     if exact_result:
         status = str(
             exact_result.get("research_verdict")
@@ -2981,6 +3026,13 @@ def _campaign_workflow_context(
         label = f"Inspect the exact {target_variant} result for this attempt"
         section = "results"
         stage = "result_review"
+    elif terminal_attempt:
+        status = str(
+            current.get("terminal_research_verdict") or "NEEDS MANUAL REVIEW"
+        )
+        label = "Inspect the preserved incomplete attempt and choose a governed follow-up"
+        section = "history"
+        stage = "terminal_follow_up"
     elif not approved:
         has_evidence = bool(progress.get("evidence_available")) and sampled > 0
         if has_evidence:
@@ -3014,6 +3066,7 @@ def _campaign_workflow_context(
         "target_variant_id": target_variant,
         "mechanics_status": target_gate.get("status") or "NEEDS_REVIEW",
         "review_progress": dict(progress),
+        "operational_status": operational_status or None,
         "stage": stage,
         "scientific_status": status,
         "primary_action": {
@@ -3307,6 +3360,16 @@ def _variant_research_progress(
             statuses["candidate_review"] = "locked"
             statuses["account_suitability"] = "locked"
             current_stage_id = DEFAULT_STAGE_ORDER[0]
+        elif workflow_stage == "terminal_follow_up":
+            statuses["mechanics_evidence"] = "complete"
+            statuses["mechanics_review"] = "complete"
+            statuses[DEFAULT_STAGE_ORDER[0]] = "blocked"
+            for stage_id in DEFAULT_STAGE_ORDER[1:]:
+                statuses[stage_id] = "locked"
+            statuses["candidate_review"] = "locked"
+            statuses["account_suitability"] = "locked"
+            current_stage_id = DEFAULT_STAGE_ORDER[0]
+            current_stage_label_override = "Interrupted test suite"
         else:
             statuses["mechanics_evidence"] = "blocked"
             statuses["mechanics_review"] = "locked"
@@ -3395,11 +3458,14 @@ def _campaign_research_progress(
         if not variant_id:
             continue
         is_current = bool(selected_variant) and variant_id == selected_variant
-        result = (
-            exact_results.get(variant_id)
-            if is_current and isinstance(exact_results, Mapping) and exact_results
-            else latest_results.get(variant_id)
-        )
+        if is_current and current_attempt and current_attempt != "original":
+            # A current follow-up without an exact finalized ResultBundle must
+            # never inherit a different attempt's latest variant result. The
+            # original authored scope predates attempt-keyed result indexes, so
+            # its own variant result continues to use the latest-result view.
+            result = exact_results.get(variant_id)
+        else:
+            result = latest_results.get(variant_id)
         variants.append(
             _variant_research_progress(
                 row,
@@ -4415,6 +4481,7 @@ def _mechanics_review_summaries(root: Path) -> list[dict[str, Any]]:
         )
         current_attempt_id = str(current_scope.get("attempt_id") or "")
         current_variant_id = str(current_scope.get("target_variant_id") or "")
+        experiment_outcomes = _experiment_attempt_outcomes(root, campaign_id)
         paths_by_attempt: dict[str, tuple[Path, ...]] = {}
         for attempt in attempts:
             attempt_id = str(attempt["attempt_id"])
@@ -4445,6 +4512,15 @@ def _mechanics_review_summaries(root: Path) -> list[dict[str, Any]]:
             )
             for path in target_paths[-1:]:
                 if (attempt_id, path.parent.name) in superseded_scopes:
+                    continue
+                experiment = experiment_outcomes.get((attempt_id, path.parent.name)) or {}
+                if str(experiment.get("operational_status") or "").upper() in {
+                    "COMPLETED",
+                    "FAILED",
+                    "CANCELLED",
+                }:
+                    # A terminal experiment belongs to immutable History even
+                    # when finalization failed before a ResultBundle existed.
                     continue
                 if (
                     isinstance(finalized_results.get(attempt_id), Mapping)
@@ -4551,6 +4627,7 @@ def _workflow_stage_matrix(
             else "mechanics review"
         ),
         "ready_for_testing": "mechanics approved · performance testing not run",
+        "terminal_follow_up": "terminal incomplete attempt · governed follow-up required",
         "engineering_review": "engineering review",
     }
     current_row = {
@@ -4558,7 +4635,11 @@ def _workflow_stage_matrix(
         "research verdict": str(
             workflow.get("scientific_status") or "NEEDS MANUAL REVIEW"
         ),
-        "operational state": "NOT_QUEUED",
+        "operational state": (
+            "FAILED_OPERATIONAL"
+            if str(workflow.get("operational_status") or "").upper() == "FAILED"
+            else str(workflow.get("operational_status") or "NOT_QUEUED")
+        ),
         "first failed or unresolved gate": gate_labels.get(stage, stage or "not run"),
         "diagnostic only": False,
         "run": workflow.get("current_attempt_id"),

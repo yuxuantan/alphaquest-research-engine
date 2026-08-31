@@ -1,6 +1,6 @@
 schema: alphaquest.strategy-certification/v1
 strategy_id: yush_adaptive_orderflow_range_v4
-implementation_version: 1
+implementation_version: 3
 certification_status: certified
 lane: canonical_event_replay
 factory: alphaquest.strategy_modules.event.yush_adaptive_orderflow_range_v4:build_strategy
@@ -31,7 +31,7 @@ source_files:
 - src/alphaquest/utils/params.py
 - src/alphaquest/validation/checks.py
 - tools/build_yush_big_trade_context.py
-implementation_sha256: e539187edf92be77588235ccfa53daf4254134dfa62fe404b45a302259032351
+implementation_sha256: 406c98753a30ce090f595063a5b6de4274f1455fdaf63e02ee588e7a4baea5b6
 required_test_categories:
 - session_logic
 - entry_timing
@@ -106,8 +106,9 @@ parameters:
     category: entry
     value_type: integer
     default: 4
-    description: MotiveWave-style fixed four-tick intervals for the session-anchored
-      AOI delta profile; the globally aligned lower-bound price labels each cell.
+    description: MotiveWave-style globally aligned four-tick intervals used both by
+      the session-anchored AOI delta profile and by each three-minute confirmation
+      imprint; the lower-bound price labels each cell.
     tunable: false
     studio_editable: false
     minimum: 4
@@ -145,8 +146,10 @@ parameters:
     category: entry
     value_type: number
     default: 0.9
-    description: Causal cross-sectional absolute-delta percentile required for a sign-agnostic
-      four-tick session-anchored profile cell to arm an AOI at either value edge.
+    description: Fixed nearest-rank 90th percentile. AOI qualification applies it
+      cross-sectionally to absolute session-anchored profile cells; trade confirmation
+      separately requires a developing three-minute/four-tick imprint to be strictly
+      greater than the distribution of all earlier completed RTH bar-cell imprints.
     tunable: false
     studio_editable: false
     minimum: 0.9
@@ -260,8 +263,9 @@ parameters:
     value_type: integer
     default: 2
     description: 'After an ordered sweep and a separate valid post-sweep big-trade
-      or delta confirmation, arm the reclaim stop entry two ticks beyond the AOI-zone
-      boundary: short below zone low and long above zone high.'
+      or developing three-minute/four-tick delta-imprint confirmation, arm the reclaim
+      stop entry two ticks beyond the AOI-zone boundary: short below zone low and
+      long above zone high.'
     tunable: false
     studio_editable: false
     minimum: 2
@@ -433,13 +437,15 @@ studio:
   label: Yush Orderflow Range Reversal v04
   description: Per-bar VAH and VAL AOIs built from a nearby market level, exceptional
     volume, or sign-agnostic four-tick delta within one-third ATR, followed by an
-    ordered sweep, a separate post-sweep big-trade or delta confirmation, an AOI-zone
-    reclaim stop entry, and a fill-time sweep-to-entry structural stop.
+    ordered sweep, a separate post-sweep big-trade or developing three-minute/four-tick
+    delta-imprint confirmation, an AOI-zone reclaim stop entry, and a fill-time sweep-to-entry
+    structural stop.
   timeframe_rationale: Each completed three-minute bar causally republishes the developing
     profile and ATR, then builds independent VAH and VAL AOIs for the next bar. Ordered
-    events prove the inside-to-outside sweep. A distinct big-trade or newly accumulated
-    delta observation after the sweep event must confirm at the required side of the
-    AOI zone before the reclaim stop order can exist.
+    events prove the inside-to-outside sweep. A distinct big trade or a causal observation
+    after the sweep that the whole developing three-minute/four-tick imprint strictly
+    exceeds q90 of all earlier completed RTH bar-cell imprints must confirm at the
+    required side of the AOI zone before the reclaim stop order can exist.
   execution_defaults:
     timeframe: 3m
     entry_start: 09:39:00
@@ -483,12 +489,16 @@ studio:
       is rebuilt at the following boundary from the then-latest VAH or VAL and confluences.
       An ordered event at or inside the edge arms the crossing; a later event at the
       ATR-normalized sweep distance completes a sweep when that bar closes. The completed
-      sweep waits for a distinct later q99.9 large execution or newly accumulated
-      top-decile absolute four-tick delta cell. For a short the confirmation label
-      must be strictly above the frozen AOI-zone bottom; for a long it must be strictly
-      below the frozen AOI-zone top. Only then is the stop-market reclaim entry armed
-      two ticks beyond that boundary. There is no AOI supersession model or intended-stop
-      invalidation before fill, and the confirmed entry order has no clock expiry.
+      sweep waits for a distinct later q99.9 large execution or a later observation
+      that an eligible cell in the whole developing three-minute bar has absolute
+      four-tick delta strictly greater than nearest-rank q90 of every cell imprint
+      from all earlier completed RTH three-minute bars. The imprint begins at the
+      bar boundary rather than the sweep, while the current bar is excluded from its
+      own reference distribution. For a short the confirmation label must be strictly
+      above the frozen AOI-zone bottom; for a long it must be strictly below the frozen
+      AOI-zone top. Only then is the stop-market reclaim entry armed two ticks beyond
+      that boundary. There is no AOI supersession model or intended-stop invalidation
+      before fill, and the confirmed entry order has no clock expiry.
     stop_loss_rationale: The order is submitted without a predeclared stop. On the
       exact causal fill event, after that event has updated the path, resolve the
       stop two ticks beyond the adverse extreme observed from the entire sweep bar
@@ -504,8 +514,8 @@ studio:
     profitability_rationale: The candidate edge is rejection of a developing value
       edge colocated with exceptional executed volume or absolute delta concentration.
       Per-bar rebuilding keeps the edge current; the ordered sweep plus a separate
-      post-sweep order-flow observation requires fresh evidence before the reclaim
-      trigger becomes executable.
+      post-sweep observation of a qualifying whole-bar delta imprint or newly started
+      large execution is required before the reclaim trigger becomes executable.
     known_failure_modes: Per-bar AOIs may churn as developing value moves; session-old
       bursts may be stale; early cross-sectional delta ranks may be unstable; direction-neutral
       confluence may be unrelated to reversal direction; a market level alone may
@@ -518,23 +528,26 @@ studio:
       without a 13:30 reset. Entries remain restricted to 09:39-11:30 and 13:39-15:30
       New York, with forced flatten at 15:55. Strategy mechanics have no daily trade
       cap; account controls remain separate.
-    causal_availability: The latest profile, four-tick delta profile and ATR use completed
-      bars only. Each newly published boundary builds the AOIs visible during the
-      next bar. Large executions must already be causally qualified. Ordered sweep
-      events occur after AOI creation. Confirmation cannot reuse an observation at
-      or before the ordered sweep event. A later same-bar observation may qualify,
-      but the stop-entry order cannot exist until that sweep bar completes. The stop
-      is resolved only on the actual fill event from extrema accumulated from the
-      sweep bar through that event, before sizing or position creation. Targets come
-      from the AOI-time profile.
+    causal_availability: The latest profile, AOI four-tick delta profile and ATR use
+      completed bars only. Each newly published boundary builds the AOIs visible during
+      the next bar. The confirmation threshold uses every populated four-tick cell
+      imprint from earlier completed RTH three-minute bars and excludes the currently
+      developing bar. The candidate confirmation value uses the whole developing three-minute
+      bar from its boundary through the current event and is not reset at the sweep.
+      Large executions must already be causally qualified. Ordered sweep events occur
+      after AOI creation. Confirmation cannot be decided at or before the ordered
+      sweep event. A later same-bar observation may qualify, but the stop-entry order
+      cannot exist until that sweep bar completes. The stop is resolved only on the
+      actual fill event from extrema accumulated from the sweep bar through that event,
+      before sizing or position creation. Targets come from the AOI-time profile.
     pre_test_decision: approve_for_testing
   mechanics_validation:
     minimum_trade_samples: 5
     session_count: 10
     purpose: Use the repository-wide latest-ten-eligible-session mechanics protocol
       at frozen defaults. Reconcile the deterministic five-trade sample against MotiveWave
-      Standard value area at Tick Interval 1 plus AOI delta at Tick Interval 4, Range
-      70 percent and RTH data only. Frequency and performance over longer history
-      belong to later fixed stages and cannot alter this review window. Prior v03
-      evidence and approval cannot transfer across implementation or research-policy
+      Standard value area at Tick Interval 1 plus AOI and confirmation delta at Tick
+      Interval 4, Range 70 percent and RTH data only. Frequency and performance over
+      longer history belong to later fixed stages and cannot alter this review window.
+      Prior v03 evidence and approval cannot transfer across implementation or research-policy
       hashes.

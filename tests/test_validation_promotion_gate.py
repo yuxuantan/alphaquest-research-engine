@@ -248,6 +248,59 @@ def test_historical_approval_uses_frozen_declared_certification_identity(tmp_pat
     assert "older than the current generator" in report["warnings"][0]
 
 
+def test_historical_approval_rebases_missing_absolute_governed_paths(tmp_path):
+    project_root = tmp_path / "current-project"
+    (project_root / "config").mkdir(parents=True)
+    (project_root / "config/storage_layout.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "schema": "alphaquest.storage-layout/v1",
+                "evidence_roots": ["research/evidence/runs"],
+                "research_artifact_root": "research_artifacts",
+            },
+            sort_keys=False,
+        ),
+        encoding="utf-8",
+    )
+    cfg, config_path, original_evidence, original_approval = _fixture(
+        project_root,
+        lane="bar",
+    )
+    evidence = project_root / "research/evidence/runs/demo/v01/validation/core"
+    evidence.parent.mkdir(parents=True)
+    original_evidence.rename(evidence)
+    approval_path = (
+        project_root
+        / "research_artifacts/validation_approvals/demo/original/v01/approval.json"
+    )
+    approval_path.parent.mkdir(parents=True)
+    (evidence / original_approval.name).rename(approval_path)
+
+    gate = cfg["research_metadata"]["validation_gate"]
+    gate["evidence_dir"] = (
+        "/former/workspace/alphaquest-research-engine/"
+        "research/evidence/runs/demo/v01/validation/core"
+    )
+    gate["approval_path"] = (
+        "/former/workspace/alphaquest-research-engine/"
+        "research_artifacts/validation_approvals/demo/original/v01/approval.json"
+    )
+    config_path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    config_hash = hashlib.sha256(config_path.read_bytes()).hexdigest()
+    metadata = json.loads((evidence / "metadata.json").read_text(encoding="utf-8"))
+    metadata["config_hash"] = config_hash
+    (evidence / "metadata.json").write_text(json.dumps(metadata), encoding="utf-8")
+    approval = json.loads(approval_path.read_text(encoding="utf-8"))
+    approval["config_hash"] = config_hash
+    approval_path.write_text(json.dumps(approval), encoding="utf-8")
+
+    report = inspect_historical_validation_approval(cfg, config_path)
+
+    assert report["status"] == "APPROVED_FOR_TESTING"
+    assert report["evidence_dir"] == str(evidence)
+    assert report["approval_path"] == str(approval_path)
+
+
 def test_staged_performance_run_blocks_before_missing_validation_approval(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     config_path = tmp_path / "campaigns/demo/variants/v01/config.yaml"

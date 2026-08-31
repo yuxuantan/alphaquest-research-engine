@@ -17,8 +17,8 @@ import {
 } from "../components/UI";
 import type { ReviewTask } from "../types";
 import {
-  resolveAdaptiveV18MechanicsComparison,
   resolveFrozenSetup,
+  resolveMechanicsComparison,
   resolveQualifyingFootprint,
   resolveStrategyEvidencePanels,
   type FrozenSetupSummary,
@@ -41,6 +41,18 @@ export const REVIEW_QUEUE_HELP = {
   items:
     "Historical, stale, or incomplete records flagged by the research index for audit and reconciliation. Resolving them does not unblock the current campaign workflow.",
 } as const;
+
+export const MECHANICS_EVIDENCE_BADGE = "Hash-bound evidence";
+
+export function shouldShowSingleTargetFallback(
+  panels: Array<{ rows: Array<{ key: string }> }>,
+): boolean {
+  return !panels.some((panel) =>
+    panel.rows.some(
+      (row) => row.key === "target_1_price" || row.key === "target_2_price",
+    ),
+  );
+}
 
 export function mechanicsAnnotationFormState(detail: any): {
   status: string;
@@ -1056,14 +1068,10 @@ function TradeEvidence({
     (row) => row.value !== null && row.value !== undefined && row.value !== "",
   );
   const strategyPanels = resolveStrategyEvidencePanels(evidence);
-  const mechanicsComparison = resolveAdaptiveV18MechanicsComparison(evidence);
+  const mechanicsComparison = resolveMechanicsComparison(evidence);
   const frozenSetup = resolveFrozenSetup(evidence);
   const qualifyingFootprint = resolveQualifyingFootprint(evidence);
-  const hasExplicitTargetEvidence = strategyPanels.some((panel) =>
-    panel.rows.some(
-      (row) => row.key === "target_1_price" || row.key === "target_2_price",
-    ),
-  );
+  const showSingleTargetFallback = shouldShowSingleTargetFallback(strategyPanels);
   const netPnl = trade.pnl_usd ?? trade.net_pnl;
   const netPnlNumber = Number(netPnl);
   const netPnlTone = Number.isFinite(netPnlNumber)
@@ -1135,7 +1143,7 @@ function TradeEvidence({
         <EvidenceFact label="Direction" value={trade.direction} />
         <EvidenceFact label="Entry" value={formatEvidenceValue(trade.entry_price)} />
         <EvidenceFact label="Stop" value={formatEvidenceValue(trade.stop_price)} />
-        {!hasExplicitTargetEvidence && (
+        {showSingleTargetFallback && (
           <EvidenceFact label="Target" value={formatEvidenceValue(trade.target_price)} />
         )}
         <EvidenceFact label="Exit" value={formatEvidenceValue(trade.exit_price)} />
@@ -1304,9 +1312,8 @@ function FrozenSetup({
         <StatusBadge value={`Edge = ${summary.edgeRole}`} />
       </div>
       <p className="frozen-setup-help">
-        These are the immutable profile values used by the trade. The AOI may be
-        armed by a large execution, directional delta, a compatible market level,
-        or more than one source; the exact observed source is shown below.
+        {summary.sourceDescription ??
+          "These are the immutable profile values used by the trade. The AOI may be armed by a large execution, directional delta, a compatible market level, or more than one source; the exact observed source is shown below."}
       </p>
       <dl className="frozen-setup-grid">
         <div className="frozen-setup-primary">
@@ -1378,7 +1385,7 @@ function MechanicsComparison({
             values come from this trade&apos;s retained causal strategy trace.
           </p>
         </div>
-        <StatusBadge value="v18 evidence" />
+        <StatusBadge value={MECHANICS_EVIDENCE_BADGE} />
       </div>
       <div className="mechanics-comparison-sections">
         {sections.map((section) => (

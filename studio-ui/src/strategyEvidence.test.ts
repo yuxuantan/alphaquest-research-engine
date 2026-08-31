@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   resolveAdaptiveV18MechanicsComparison,
   resolveFrozenSetup,
+  resolveMechanicsComparison,
   resolveQualifyingFootprint,
   resolveStrategyEvidencePanels,
 } from "./strategyEvidence";
@@ -591,6 +592,185 @@ describe("strategy-specific mechanics evidence panels", () => {
     expect(panelKeys).not.toContain("entry_confirmation_threshold");
   });
 
+  it("shows the complete v04 contract when a market level alone qualifies the AOI", () => {
+    const evidence = {
+      metadata: {
+        strategy_id: "yush_adaptive_orderflow_range_v4",
+        variant_id: "v04",
+        strategy_implementation_version: 3,
+      },
+      frozen_mechanics: {
+        event_parameters: {
+          context_distance_atr_fraction: 1 / 3,
+          delta_profile_price_bin_ticks: 4,
+          delta_profile_percentile: 0.9,
+          big_trade_reference_percentile: 0.999,
+          big_trade_lookback_sessions: 20,
+          big_trade_interval_ms: 100,
+          sweep_minimum_ticks: 2,
+          sweep_atr_fraction: 0.2,
+          entry_offset_ticks: 2,
+          stop_offset_ticks: 2,
+          minimum_stop_ticks: 2,
+          maximum_stop_atr_multiple: 1.75,
+          minimum_midpoint_reward_r: 1,
+          target_1_fraction: 0.5,
+          value_area_method: "motivewave_standard",
+          value_area_fraction: 0.7,
+          morning_entry_start: "09:39:00",
+          morning_entry_end: "11:30:00",
+          afternoon_entry_start: "13:39:00",
+          afternoon_entry_end: "15:30:00",
+        },
+        execution: {
+          signal_instrument: "ES",
+          execution_instrument: "MES",
+          commission_per_contract: 0.51,
+          entry_slippage_ticks: 1,
+          protective_stop_slippage_ticks: 1,
+          flatten_time: "15:55:00",
+          position_sizing: {
+            mode: "risk_percent_net_liq",
+            risk_pct: 0.004,
+            rounding: "floor",
+            min_contracts: 1,
+          },
+        },
+        protocol: { force_flatten_time: "15:55:00" },
+      },
+      trade: {
+        direction: "short",
+        contract: "ESM26",
+        entry_time: "2026-05-14T09:50:58.275-04:00",
+        exit_time: "2026-05-14T10:02:03.220-04:00",
+      },
+      strategy_context: {
+        aoi_source_kinds: "market_level",
+        aoi_identity: "rth:asof_bar=4:short:sources=market=ONH",
+        aoi_edge_price: 7498,
+        aoi_zone_low_price: 7498,
+        aoi_zone_high_price: 7499.25,
+        aoi_frozen_at: "2026-05-14T09:45:00-04:00",
+        value_area_vah_price: 7498,
+        value_area_poc_price: 7491.75,
+        value_area_val_price: 7480.25,
+        context_distance_ticks: 5,
+        market_level_qualified: true,
+        selected_market_level_type: "ONH",
+        selected_market_level_price: 7499.25,
+        institutional_big_trade_qualified: false,
+        institutional_delta_qualified: false,
+        sweep_distance_ticks: 3,
+        sweep_high_price: 7502.25,
+        sweep_low_price: 7497.75,
+        sweep_bar_index: 5,
+        entry_confirmation_kind: "delta_imprint",
+        entry_confirmation_id: "bar=6:event=35102:cell=30008",
+        entry_confirmation_at: "2026-05-14T09:49:34.101-04:00",
+        entry_confirmation_price: 7502.25,
+        entry_confirmation_bin_low_price: 7502,
+        entry_confirmation_bin_high_price: 7502.75,
+        entry_confirmation_value: 210,
+        entry_confirmation_threshold: 200,
+        entry_confirmation_bar_index: 6,
+        entry_confirmation_bar_start: "2026-05-14T09:48:00-04:00",
+        entry_confirmation_bar_end: "2026-05-14T09:51:00-04:00",
+        entry_confirmation_reference_count: 184,
+        entry_confirmation_percentile_method: "nearest_rank",
+        entry_confirmation_comparison: "strict_absolute_greater_than",
+        entry_zone_boundary_price: 7498,
+        entry_order_type: "reclaim_side_aoi_zone_stop_market",
+        entry_reference_price: 7497.5,
+        entry_price: 7497.25,
+        entry_fill_model: "no intended-stop invalidation exists before fill",
+        sweep_to_entry_high_price: 7503.25,
+        sweep_to_entry_low_price: 7496.25,
+        resolved_stop_price: 7503.75,
+        stop_resolution_event_index: 35336,
+        risk_points: 6.5,
+        midpoint_reward_r: 1.23,
+        target_1_price: 7489.25,
+        target_1_definition: "frozen_value_area_midpoint_half_exit",
+        target_1_fraction: 0.5,
+        target_2_price: 7479.75,
+        target_2_definition:
+          "frozen_opposite_value_area_edge_plus_two_ticks_outside",
+        final_target_outside_ticks: 2,
+        position_sizing_mode: "risk_percent_net_liq",
+        position_sizing_net_liq: 50_000,
+        target_risk_amount: 200,
+        dollar_risk_per_contract: 34.77,
+        planned_dollar_risk: 173.85,
+        contracts: 5,
+        signal_instrument: "ES",
+        execution_instrument: "MES",
+      },
+      event_transitions: [
+        { transition: "order_submitted" },
+        { transition: "entry_filled" },
+        { transition: "position_partially_closed" },
+      ],
+    };
+
+    const sections = resolveMechanicsComparison(evidence);
+    expect(sections.map((section) => section.title)).toEqual([
+      "Per-bar VAH / VAL AOI",
+      "Ordered sweep, developing-imprint confirmation and reclaim entry",
+      "Fill-time structural stop",
+      "AOI-time two-stage targets",
+      "Sizing and execution assumptions",
+    ]);
+    const rows = sections.flatMap((section) => section.rows);
+    expect(rows.find((row) => row.key === "market_level_source")).toMatchObject({
+      configured: expect.stringContaining("without a large execution or delta"),
+      observed: expect.stringContaining("ONH"),
+    });
+    expect(rows.find((row) => row.key === "separate_confirmation")?.observed).toContain(
+      "delta_imprint",
+    );
+    expect(rows.find((row) => row.key === "separate_confirmation")?.configured).toContain(
+      "whole developing three-minute bar",
+    );
+    expect(rows.find((row) => row.key === "separate_confirmation")?.observed).toContain(
+      "completed references 184",
+    );
+    expect(rows.find((row) => row.key === "reclaim_entry")?.configured).toContain(
+      "2 ticks beyond",
+    );
+    expect(rows.find((row) => row.key === "stop")?.configured).toContain(
+      "through the fill event",
+    );
+    expect(rows.find((row) => row.key === "target_2")?.configured).toContain(
+      "2 ticks outside",
+    );
+    expect(rows.find((row) => row.key === "position_sizing")?.configured).toContain(
+      "0.4%",
+    );
+
+    const panelKeys = resolveStrategyEvidencePanels(evidence).flatMap((panel) =>
+      panel.rows.map((row) => row.key),
+    );
+    expect(panelKeys).toEqual(
+      expect.arrayContaining([
+        "market_level_qualified",
+        "entry_confirmation_kind",
+        "resolved_stop_price",
+        "target_1_price",
+        "target_2_price",
+        "position_sizing_mode",
+      ]),
+    );
+    expect(resolveFrozenSetup(evidence)).toMatchObject({
+      sourceKinds: "market_level",
+      edgeRole: "VAH",
+      edgePrice: 7498,
+      sourceDescription: expect.stringContaining(
+        "sign-agnostic absolute four-tick delta",
+      ),
+    });
+    expect(resolveQualifyingFootprint(evidence)).toBeNull();
+  });
+
   it("renders failed-auction evidence for v02 without leaking AOI fields", () => {
     const panels = resolveStrategyEvidencePanels({
       metadata: {
@@ -700,6 +880,12 @@ describe("strategy-specific mechanics evidence panels", () => {
         ],
       },
     ]);
+    expect(
+      resolveMechanicsComparison({
+        metadata: { strategy_id: "future_strategy", variant_id: "v07" },
+        strategy_context: { trigger_kind: "reclaim" },
+      }),
+    ).toEqual([]);
   });
 
   it("shows only mechanics-validation evidence for institutional v02", () => {

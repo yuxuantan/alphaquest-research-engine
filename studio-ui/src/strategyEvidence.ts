@@ -66,6 +66,7 @@ export type FrozenSetupSummary = {
   burstSide: unknown;
   burstPriceLow: unknown;
   burstPriceHigh: unknown;
+  sourceDescription?: string;
 };
 
 type EvidenceIdentity = {
@@ -589,6 +590,103 @@ const ADAPTIVE_RANGE_V27_PANELS: StrategyEvidencePanelDefinition[] = [
   },
 ];
 
+const ADAPTIVE_RANGE_V04_PANELS: StrategyEvidencePanelDefinition[] = [
+  {
+    title: "Per-bar AOI sources and frozen profile",
+    fields: [
+      { key: "aoi_identity", label: "Per-bar AOI identity" },
+      { key: "aoi_source_kinds", label: "Qualifying AOI sources" },
+      { key: "aoi_edge_price", label: "Bar-start value edge" },
+      { key: "aoi_zone_low_price", label: "AOI zone low" },
+      { key: "aoi_zone_high_price", label: "AOI zone high" },
+      { key: "aoi_frozen_bar_index", label: "Source profile bar" },
+      { key: "aoi_frozen_at", label: "AOI built at" },
+      { key: "market_level_qualified", label: "Market level qualified" },
+      { key: "selected_market_level_type", label: "Selected market level" },
+      { key: "selected_market_level_price", label: "Market-level price" },
+      { key: "institutional_big_trade_qualified", label: "Large execution qualified" },
+      { key: "selected_big_trade_side", label: "Selected burst side" },
+      { key: "selected_big_trade_low_price", label: "Selected burst low" },
+      { key: "selected_big_trade_high_price", label: "Selected burst high" },
+      { key: "selected_big_trade_size", label: "Selected burst contracts" },
+      { key: "big_trade_threshold_contracts", label: "Large-execution threshold" },
+      { key: "institutional_delta_qualified", label: "Four-tick delta qualified" },
+      { key: "selected_delta_bin_low_price", label: "Selected delta cell low" },
+      { key: "selected_delta_bin_high_price", label: "Selected delta cell high" },
+      { key: "selected_delta_signed_delta", label: "Selected signed delta" },
+      { key: "selected_delta_bin_abs_delta", label: "Selected absolute delta" },
+      { key: "selected_delta_bin_threshold", label: "Delta threshold" },
+      { key: "value_area_vah_price", label: "AOI-time VAH" },
+      { key: "value_area_poc_price", label: "AOI-time POC" },
+      { key: "value_area_val_price", label: "AOI-time VAL" },
+    ],
+  },
+  {
+    title: "Ordered sweep, developing-imprint confirmation and reclaim entry",
+    fields: [
+      { key: "sweep_bar_index", label: "Sweep bar" },
+      { key: "sweep_high_price", label: "Sweep-bar high" },
+      { key: "sweep_low_price", label: "Sweep-bar low" },
+      { key: "sweep_distance_ticks", label: "Applied sweep distance" },
+      { key: "sweep_crossing_rule", label: "Ordered crossing rule" },
+      { key: "entry_confirmation_kind", label: "Separate confirmation kind" },
+      { key: "entry_confirmation_id", label: "Confirmation identity" },
+      { key: "entry_confirmation_at", label: "Confirmation qualified at" },
+      { key: "entry_confirmation_price", label: "Confirmation label" },
+      { key: "entry_confirmation_value", label: "Signed developing imprint" },
+      { key: "entry_confirmation_threshold", label: "Completed-imprint q90" },
+      { key: "entry_confirmation_bin_low_price", label: "Confirmation cell low" },
+      { key: "entry_confirmation_bin_high_price", label: "Confirmation cell high" },
+      { key: "entry_confirmation_bar_index", label: "Developing 3-minute bar" },
+      { key: "entry_confirmation_bar_start", label: "Developing bar start" },
+      { key: "entry_confirmation_bar_end", label: "Developing bar end" },
+      {
+        key: "entry_confirmation_reference_count",
+        label: "Completed bar-cell reference count",
+      },
+      { key: "entry_confirmation_percentile_method", label: "Percentile method" },
+      { key: "entry_confirmation_comparison", label: "Threshold comparison" },
+      { key: "entry_zone_boundary_price", label: "Reclaim-side boundary" },
+      { key: "entry_trigger_rule", label: "Reclaim-entry rule" },
+      { key: "entry_order_type", label: "Entry order type" },
+      { key: "order_activation_at", label: "Order armed at" },
+      { key: "order_activation_event_index", label: "Order activation event" },
+      { key: "entry_reference_price", label: "Fill-event reference" },
+      { key: "entry_price", label: "Modeled fill" },
+      { key: "entry_event_index", label: "Entry event" },
+      { key: "entry_fill_model", label: "Pending-order lifecycle" },
+    ],
+  },
+  {
+    title: "Fill-time stop, both frozen targets and sizing",
+    fields: [
+      { key: "stop_determined_at_entry", label: "Stop resolved at entry" },
+      { key: "stop_resolution_event_index", label: "Stop-resolution event" },
+      { key: "sweep_to_entry_high_price", label: "Sweep-to-entry high" },
+      { key: "sweep_to_entry_low_price", label: "Sweep-to-entry low" },
+      { key: "resolved_stop_price", label: "Resolved protective stop" },
+      { key: "initial_stop_price", label: "Engine initial stop" },
+      { key: "risk_points", label: "Filled-price risk" },
+      { key: "midpoint_reward_r", label: "Midpoint reward/risk" },
+      { key: "target_1_price", label: "T1: AOI-time midpoint" },
+      { key: "target_1_definition", label: "T1 rule" },
+      { key: "target_1_fraction", label: "T1 position fraction" },
+      { key: "target_2_price", label: "T2: two ticks outside opposite edge" },
+      { key: "target_2_definition", label: "T2 rule" },
+      { key: "final_target_outside_ticks", label: "T2 outside-edge offset" },
+      { key: "target_1_activated", label: "T1 reached" },
+      { key: "target_1_activated_at", label: "T1 reached at" },
+      { key: "position_sizing_mode", label: "Sizing mode" },
+      { key: "position_sizing_net_liq", label: "Net liquidation before sizing" },
+      { key: "target_risk_amount", label: "Target dollar risk" },
+      { key: "dollar_risk_per_contract", label: "Risk plus costs per contract" },
+      { key: "planned_dollar_risk", label: "Planned total risk" },
+      { key: "contracts", label: "Contracts" },
+      { key: "execution_instrument", label: "Execution instrument" },
+    ],
+  },
+];
+
 const GENERIC_EVENT_PANELS: StrategyEvidencePanelDefinition[] = [
   {
     title: "Strategy decision trace",
@@ -612,6 +710,7 @@ const VARIANT_PANEL_REGISTRY: Record<
   "yush_failed_auction_reclaim:v02": FAILED_AUCTION_V02_PANELS,
   "yush_adaptive_orderflow_range:v02": RANGE_EDGE_TRAP_V02_PANELS,
   "yush_adaptive_orderflow_range_v3:v03": ADAPTIVE_RANGE_V03_PANELS,
+  "yush_adaptive_orderflow_range_v4:v04": ADAPTIVE_RANGE_V04_PANELS,
 };
 
 const STRATEGY_PANEL_REGISTRY: Record<
@@ -622,6 +721,7 @@ const STRATEGY_PANEL_REGISTRY: Record<
   yush_failed_auction_reclaim: FAILED_AUCTION_V02_PANELS,
   yush_adaptive_orderflow_range: RANGE_EDGE_TRAP_V02_PANELS,
   yush_adaptive_orderflow_range_v3: ADAPTIVE_RANGE_V03_PANELS,
+  yush_adaptive_orderflow_range_v4: ADAPTIVE_RANGE_V04_PANELS,
 };
 
 function identityValue(
@@ -683,6 +783,10 @@ function joinedEvidence(parts: unknown[], separator = " · "): string {
     .filter((value) => hasEvidenceValue(value))
     .map((value) => String(value));
   return retained.length ? retained.join(separator) : "Not recorded";
+}
+
+function labeledEvidence(label: string, value: unknown): string | undefined {
+  return hasEvidenceValue(value) ? `${label} ${String(value)}` : undefined;
 }
 
 function percentValue(value: unknown): string {
@@ -784,8 +888,12 @@ function resolveAdaptiveV27MechanicsComparison(
         {
           key: "order_lifecycle",
           label: "Observed lifecycle",
-          configured: context.entry_fill_model,
-          observed: lifecycle,
+          configured: joinedEvidence([
+            execution.event_stop_market_fill_policy,
+            "no clock expiry",
+            "no pre-fill intended-stop invalidation",
+          ]),
+          observed: joinedEvidence([context.entry_fill_model, lifecycle]),
         },
       ],
     },
@@ -843,6 +951,331 @@ function resolveAdaptiveV27MechanicsComparison(
             `${execution.protective_stop_slippage_ticks} stop-slippage tick`,
           ]),
           observed: joinedEvidence([context.signal_instrument, context.execution_instrument]),
+        },
+      ],
+    },
+  ];
+}
+
+function resolveAdaptiveV04MechanicsComparison(
+  evidence: EvidenceIdentity,
+): MechanicsComparisonSection[] {
+  const frozen = recordValue(evidence.frozen_mechanics);
+  const params = recordValue(frozen.event_parameters);
+  const execution = recordValue(frozen.execution);
+  const sizing = recordValue(execution.position_sizing);
+  const protocol = recordValue(frozen.protocol);
+  const context = evidence.strategy_context ?? {};
+  const trade = evidence.trade ?? {};
+  const transitions = evidence.event_transitions ?? [];
+  if (!Object.keys(params).length || !Object.keys(context).length) return [];
+
+  const lifecycle = transitions.length
+    ? transitions
+        .map((row) => row.transition)
+        .filter(hasEvidenceValue)
+        .map(String)
+        .join(" → ")
+    : "Not recorded";
+  const outsideTargetTicks = 2;
+
+  return [
+    {
+      title: "Per-bar VAH / VAL AOI",
+      description:
+        "Each completed three-minute profile independently attempts a short VAH AOI and a long VAL AOI for the next bar.",
+      rows: [
+        {
+          key: "aoi_source",
+          label: "Eligible AOI sources",
+          configured: joinedEvidence([
+            "any nearby PDH, PDL, PDC, ONH, ONL, ORH or ORL may independently qualify",
+            `${percentValue(params.big_trade_reference_percentile)} prior-${params.big_trade_lookback_sessions}-session large execution of either aggressor side`,
+            `sign-agnostic top-${percentValue(params.delta_profile_percentile)} absolute four-tick developing-profile delta`,
+          ]),
+          observed: joinedEvidence([
+            context.aoi_source_kinds,
+            context.aoi_identity,
+          ]),
+        },
+        {
+          key: "market_level_source",
+          label: "Market-level route",
+          configured:
+            "A nearby market level can qualify the AOI without a large execution or delta cell.",
+          observed: joinedEvidence([
+            labeledEvidence("qualified", context.market_level_qualified),
+            context.selected_market_level_type,
+            context.selected_market_level_price,
+          ]),
+        },
+        {
+          key: "large_execution_source",
+          label: "Large-execution route",
+          configured: `${percentValue(params.big_trade_reference_percentile)} MotiveWave-compatible consecutive executions at one price and aggressor side within ${params.big_trade_interval_ms} ms; either side can qualify`,
+          observed: joinedEvidence([
+            labeledEvidence(
+              "qualified",
+              context.institutional_big_trade_qualified,
+            ),
+            labeledEvidence("contracts", context.selected_big_trade_size),
+            labeledEvidence("threshold", context.big_trade_threshold_contracts),
+            joinedEvidence(
+              [
+                context.selected_big_trade_low_price,
+                context.selected_big_trade_high_price,
+              ],
+              "–",
+            ),
+            context.selected_big_trade_side,
+          ]),
+        },
+        {
+          key: "delta_source",
+          label: "Four-tick delta route",
+          configured: `Sign-agnostic absolute developing-profile delta at or above ${percentValue(params.delta_profile_percentile)} across MotiveWave-style ${params.delta_profile_price_bin_ticks}-tick cells`,
+          observed: joinedEvidence([
+            labeledEvidence(
+              "qualified",
+              context.institutional_delta_qualified,
+            ),
+            labeledEvidence("signed", context.selected_delta_signed_delta),
+            labeledEvidence("absolute", context.selected_delta_bin_abs_delta),
+            labeledEvidence("threshold", context.selected_delta_bin_threshold),
+            joinedEvidence(
+              [
+                context.selected_delta_bin_low_price,
+                context.selected_delta_bin_high_price,
+              ],
+              "–",
+            ),
+          ]),
+        },
+        {
+          key: "source_location",
+          label: "Causal search radius",
+          configured: `${params.context_distance_atr_fraction} ATR above or below the latest VAH / VAL at every completed three-minute boundary`,
+          observed: joinedEvidence([
+            labeledEvidence("applied ticks", context.context_distance_ticks),
+            labeledEvidence("edge", context.aoi_edge_price),
+            joinedEvidence(
+              [context.aoi_zone_low_price, context.aoi_zone_high_price],
+              "–",
+            ),
+          ]),
+        },
+        {
+          key: "profile_snapshot",
+          label: "AOI-time profile",
+          configured: `${params.value_area_method}; ${percentValue(params.value_area_fraction)} value area; one RTH profile rebuilt each completed three-minute bar without an afternoon reset`,
+          observed: joinedEvidence([
+            context.aoi_frozen_at,
+            labeledEvidence("VAH", context.value_area_vah_price),
+            labeledEvidence("POC", context.value_area_poc_price),
+            labeledEvidence("VAL", context.value_area_val_price),
+          ]),
+        },
+      ],
+    },
+    {
+      title: "Ordered sweep, developing-imprint confirmation and reclaim entry",
+      description:
+        "After the ordered sweep, a distinct later big trade or a causal observation of a qualifying whole developing three-minute/four-tick imprint is required before the reclaim stop order can exist.",
+      rows: [
+        {
+          key: "sweep",
+          label: "Ordered sweep",
+          configured: `inside-edge event followed by a later outward event at max(${params.sweep_minimum_ticks} ticks, ${params.sweep_atr_fraction} ATR) during the AOI's next bar`,
+          observed: joinedEvidence([
+            labeledEvidence("applied ticks", context.sweep_distance_ticks),
+            labeledEvidence("high", context.sweep_high_price),
+            labeledEvidence("low", context.sweep_low_price),
+            labeledEvidence("bar", context.sweep_bar_index),
+          ]),
+        },
+        {
+          key: "separate_confirmation",
+          label: "Post-sweep confirmation",
+          configured:
+            `Required: a distinct q99.9 large execution started after the sweep, or an eligible cell in the whole developing three-minute bar whose absolute ${params.delta_profile_price_bin_ticks}-tick delta is strictly greater than nearest-rank ${percentValue(params.delta_profile_percentile)} of every earlier completed RTH three-minute bar-cell imprint. The developing imprint starts at the bar boundary, not the sweep, and the current bar is excluded from its reference distribution.`,
+          observed: joinedEvidence([
+            context.entry_confirmation_kind,
+            context.entry_confirmation_id,
+            context.entry_confirmation_at,
+            labeledEvidence("bar", context.entry_confirmation_bar_index),
+            joinedEvidence(
+              [
+                context.entry_confirmation_bar_start,
+                context.entry_confirmation_bar_end,
+              ],
+              "–",
+            ),
+            labeledEvidence("label", context.entry_confirmation_price),
+            labeledEvidence("signed imprint", context.entry_confirmation_value),
+            labeledEvidence("q90", context.entry_confirmation_threshold),
+            labeledEvidence(
+              "completed references",
+              context.entry_confirmation_reference_count,
+            ),
+          ]),
+        },
+        {
+          key: "confirmation_location",
+          label: "Confirmation location",
+          configured:
+            "Short confirmation label must be strictly above the frozen AOI-zone bottom; long confirmation label must be strictly below the frozen AOI-zone top.",
+          observed: joinedEvidence([
+            labeledEvidence("confirmation", context.entry_confirmation_price),
+            joinedEvidence(
+              [
+                context.entry_confirmation_bin_low_price,
+                context.entry_confirmation_bin_high_price,
+              ],
+              "–",
+            ),
+            labeledEvidence("zone boundary", context.entry_zone_boundary_price),
+          ]),
+        },
+        {
+          key: "reclaim_entry",
+          label: "AOI-zone reclaim stop",
+          configured: `${params.entry_offset_ticks} ticks beyond the reclaim-side AOI-zone boundary after confirmation; no clock expiry and no pre-fill intended-stop invalidation`,
+          observed: joinedEvidence([
+            context.entry_order_type,
+            labeledEvidence("boundary", context.entry_zone_boundary_price),
+            labeledEvidence("reference", context.entry_reference_price),
+            labeledEvidence("fill", context.entry_price),
+          ]),
+        },
+        {
+          key: "order_lifecycle",
+          label: "Observed lifecycle",
+          configured: context.entry_fill_model,
+          observed: lifecycle,
+        },
+      ],
+    },
+    {
+      title: "Fill-time structural stop",
+      description:
+        "The order has no guessed stop; the exact fill event resolves and validates the full sweep-to-entry path before sizing.",
+      rows: [
+        {
+          key: "stop",
+          label: "Sweep-to-entry stop",
+          configured: `${params.stop_offset_ticks} ticks beyond the adverse extreme from the entire sweep bar through the fill event; minimum ${params.minimum_stop_ticks} ticks; maximum ${params.maximum_stop_atr_multiple} ATR`,
+          observed: joinedEvidence([
+            joinedEvidence(
+              [
+                context.sweep_to_entry_low_price,
+                context.sweep_to_entry_high_price,
+              ],
+              "–",
+            ),
+            labeledEvidence(
+              "stop",
+              context.resolved_stop_price ?? context.initial_stop_price,
+            ),
+            labeledEvidence("event", context.stop_resolution_event_index),
+            labeledEvidence("risk points", context.risk_points),
+          ]),
+        },
+        {
+          key: "payoff_gate",
+          label: "Fill-time midpoint gate",
+          configured: `gross midpoint reward / resolved structural risk at least ${params.minimum_midpoint_reward_r}`,
+          observed: labeledEvidence("midpoint R", context.midpoint_reward_r),
+        },
+      ],
+    },
+    {
+      title: "AOI-time two-stage targets",
+      description:
+        "Both targets remain bound to the profile that created the swept AOI.",
+      rows: [
+        {
+          key: "target_1",
+          label: "T1 frozen midpoint",
+          configured: `${percentValue(params.target_1_fraction)} of the position exits at the AOI-time value-area midpoint`,
+          observed: joinedEvidence([
+            labeledEvidence("T1", context.target_1_price),
+            context.target_1_definition,
+            labeledEvidence("reached", context.target_1_activated),
+            context.target_1_activated_at,
+          ]),
+        },
+        {
+          key: "target_2",
+          label: "T2 outside opposite edge",
+          configured: `remainder exits ${outsideTargetTicks} ticks outside the AOI-time opposite value edge: below frozen VAL for a short, above frozen VAH for a long`,
+          observed: joinedEvidence([
+            labeledEvidence("T2", context.target_2_price),
+            context.target_2_definition,
+            labeledEvidence(
+              "outside ticks",
+              context.final_target_outside_ticks,
+            ),
+          ]),
+        },
+      ],
+    },
+    {
+      title: "Sizing and execution assumptions",
+      description:
+        "The validated fill-time stop determines integer MES sizing under the certified risk and cost policy.",
+      rows: [
+        {
+          key: "position_sizing",
+          label: "Position sizing",
+          configured: `${sizing.mode}; ${percentValue(sizing.risk_pct)} current net-liquidation risk; ${sizing.rounding}; minimum ${sizing.min_contracts} contract`,
+          observed: joinedEvidence([
+            labeledEvidence("mode", context.position_sizing_mode),
+            labeledEvidence("net liq", context.position_sizing_net_liq),
+            labeledEvidence("target risk", context.target_risk_amount),
+            labeledEvidence(
+              "per contract",
+              context.dollar_risk_per_contract,
+            ),
+            labeledEvidence("planned risk", context.planned_dollar_risk),
+            labeledEvidence("contracts", context.contracts),
+          ]),
+        },
+        {
+          key: "minimum_contract",
+          label: "Minimum-contract affordability",
+          configured:
+            "Reject only when one MES including modeled stop slippage and round-turn commission exceeds the certified risk budget.",
+          observed: context.minimum_contract_affordability_rule,
+        },
+        {
+          key: "execution",
+          label: "Execution model",
+          configured: joinedEvidence([
+            `${execution.signal_instrument} signal / ${execution.execution_instrument} execution`,
+            labeledEvidence("entry slippage ticks", execution.entry_slippage_ticks),
+            labeledEvidence(
+              "protective-stop slippage ticks",
+              execution.protective_stop_slippage_ticks,
+            ),
+            labeledEvidence(
+              "commission per contract per side",
+              execution.commission_per_contract,
+            ),
+          ]),
+          observed: joinedEvidence([
+            context.signal_instrument,
+            context.execution_instrument,
+            trade.contract,
+          ]),
+        },
+        {
+          key: "session",
+          label: "Entry and forced-flat boundaries",
+          configured: `${configuredEntryWindows(params)}; flatten ${protocol.force_flatten_time ?? execution.flatten_time}`,
+          observed: joinedEvidence([
+            trade.entry_time ?? trade.entry_timestamp,
+            trade.exit_time ?? trade.exit_timestamp,
+          ]),
         },
       ],
     },
@@ -1249,6 +1682,18 @@ export function resolveAdaptiveV18MechanicsComparison(
   ];
 }
 
+export function resolveMechanicsComparison(
+  evidence: EvidenceIdentity,
+): MechanicsComparisonSection[] {
+  if (
+    identityValue(evidence, "strategy_id") ===
+    "yush_adaptive_orderflow_range_v4"
+  ) {
+    return resolveAdaptiveV04MechanicsComparison(evidence);
+  }
+  return resolveAdaptiveV18MechanicsComparison(evidence);
+}
+
 function retainedBoolean(value: unknown): boolean | null {
   return typeof value === "boolean" ? value : null;
 }
@@ -1263,9 +1708,10 @@ function compactNumber(value: unknown): string {
 export function resolveFrozenSetup(
   evidence: EvidenceIdentity,
 ): FrozenSetupSummary | null {
+  const strategyId = identityValue(evidence, "strategy_id");
   if (
-    identityValue(evidence, "strategy_id") !==
-    "yush_adaptive_orderflow_range_v3"
+    strategyId !== "yush_adaptive_orderflow_range_v3" &&
+    strategyId !== "yush_adaptive_orderflow_range_v4"
   ) {
     return null;
   }
@@ -1301,6 +1747,12 @@ export function resolveFrozenSetup(
     burstSide: context.selected_big_trade_side,
     burstPriceLow: context.selected_big_trade_low_price,
     burstPriceHigh: context.selected_big_trade_high_price,
+    ...(strategyId === "yush_adaptive_orderflow_range_v4"
+      ? {
+          sourceDescription:
+            "The AOI may be independently qualified by a nearby market level, a direction-neutral large execution, or sign-agnostic absolute four-tick delta. Entry still requires a distinct later large execution or a qualifying whole developing three-minute/four-tick delta imprint.",
+        }
+      : {}),
   };
 }
 

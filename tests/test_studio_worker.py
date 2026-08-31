@@ -621,6 +621,37 @@ def test_worker_observes_hashes_from_explicit_project_root(tmp_path, monkeypatch
     assert Path.cwd() == outside
 
 
+def test_worker_observes_complete_campaign_identity_locks(tmp_path):
+    campaign, _base = _workspace(tmp_path)
+    queue = SQLiteJobQueue(tmp_path / "runtime/jobs.sqlite3")
+    job = _submit(queue, campaign / "variants/v01/config.yaml")
+    approval_path = tmp_path / "approval.json"
+    approval_path.write_text('{"status":"approved_for_testing"}\n', encoding="utf-8")
+
+    def gate(cfg, path):
+        return {
+            **_gate(cfg, path),
+            "approval_path": str(approval_path),
+            "strategy_implementation_sha256": "a" * 64,
+            "strategy_certification_manifest_sha256": "b" * 64,
+        }
+
+    worker = StudioWorker(
+        queue,
+        project_root=tmp_path,
+        worker_id="worker-1",
+        gate_inspector=gate,
+        finalizer=_FakeFinalizer(tmp_path),
+    )
+
+    observed = worker._observed_hashes(job)
+    assert observed["mechanics_approval_sha256"] == hashlib.sha256(
+        approval_path.read_bytes()
+    ).hexdigest()
+    assert observed["strategy_implementation_sha256"] == "a" * 64
+    assert observed["strategy_certification_manifest_sha256"] == "b" * 64
+
+
 def test_bounded_worker_drain_runs_later_variant_after_scientific_failure(tmp_path):
     campaign, _base = _workspace(tmp_path)
     queue = SQLiteJobQueue(tmp_path / "runtime/jobs.sqlite3")

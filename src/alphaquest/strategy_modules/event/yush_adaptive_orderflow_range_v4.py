@@ -8,8 +8,12 @@ boundaries only:
   qualify a value-edge AOI when it lies inside the same causal one-third-ATR
   context window used by the order-flow sources; and
 * completing an ordered sweep creates a waiting episode, not an entry order.
-  A distinct large execution or four-tick delta observation must occur after
-  the ordered sweep event before the reclaim stop order is armed.
+  A distinct large execution or a qualifying developing three-minute,
+  four-tick delta imprint must be observed after the ordered sweep event before
+  the reclaim stop order is armed.  The delta imprint covers the whole current
+  three-minute bar and is compared with the absolute imprints of every
+  four-tick cell from earlier completed RTH bars; it is never reset at the
+  sweep.
   For shorts its labelled price must be strictly above the frozen AOI-zone
   bottom; for longs it must be strictly below the frozen AOI-zone top.
 
@@ -20,8 +24,7 @@ the order still cannot exist before that sweep bar completes.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field, fields
-import math
+from dataclasses import dataclass, fields
 from typing import Any
 
 from alphaquest.backtest.event_replay import (
@@ -73,8 +76,10 @@ MARKET_LEVEL_DEFINITION = (
 )
 POST_SWEEP_CONFIRMATION_DEFINITION = (
     "After the ordered sweep event, require a newly started and causally qualified "
-    "q99.9 MotiveWave-compatible large execution or a newly accumulated sign-agnostic "
-    "top-decile absolute four-tick delta cell; "
+    "q99.9 MotiveWave-compatible large execution or observe a sign-agnostic developing "
+    "three-minute, four-tick delta imprint whose absolute value strictly exceeds the "
+    "nearest-rank 90th percentile of all earlier completed three-minute, four-tick "
+    "RTH imprints; the developing imprint begins at the bar boundary, not the sweep; "
     "the confirmation label must be strictly above the AOI-zone bottom for a "
     "short and strictly below the AOI-zone top for a long"
 )
@@ -128,10 +133,7 @@ _ACCEPTED_PARAMETERS = {item.name for item in fields(AdaptiveOrderflowRangeV4Con
 def build_strategy(params: dict[str, Any]) -> "AdaptiveOrderflowRangeV4EventStrategy":
     unknown = sorted(set(params) - _ACCEPTED_PARAMETERS)
     if unknown:
-        raise ValueError(
-            "unknown yush_adaptive_orderflow_range_v4 parameter(s): "
-            + ", ".join(unknown)
-        )
+        raise ValueError("unknown yush_adaptive_orderflow_range_v4 parameter(s): " + ", ".join(unknown))
     return AdaptiveOrderflowRangeV4EventStrategy(AdaptiveOrderflowRangeV4Config(**params))
 
 
@@ -151,7 +153,10 @@ class AdaptiveSweepEpisodeV4(AdaptiveSweepEpisode):
     confirmation_bin_high_tick: int | None = None
     confirmation_value: int | None = None
     confirmation_threshold: int | None = None
-    post_sweep_delta_by_cell: dict[int, int] = field(default_factory=dict)
+    confirmation_bar_index: int | None = None
+    confirmation_bar_start_ns: int | None = None
+    confirmation_bar_end_ns: int | None = None
+    confirmation_reference_count: int | None = None
 
 
 @dataclass
@@ -168,7 +173,10 @@ class AdaptiveFrozenAoiV4(AdaptiveFrozenAoi):
     confirmation_bin_high_tick: int | None = None
     confirmation_value: int | None = None
     confirmation_threshold: int | None = None
-    post_sweep_delta_by_cell: dict[int, int] = field(default_factory=dict)
+    confirmation_bar_index: int | None = None
+    confirmation_bar_start_ns: int | None = None
+    confirmation_bar_end_ns: int | None = None
+    confirmation_reference_count: int | None = None
 
 
 class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
@@ -179,11 +187,15 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
     ) -> None:
         super().__init__(session, config)
         self.cfg = config
+        self.completed_delta_imprints: list[int] = []
         self.diagnostics.update(
             {
                 "sweeps_awaiting_separate_confirmation": 0,
                 "confirmation_level_rejections": 0,
                 "confirmation_before_or_at_sweep_rejections": 0,
+                "completed_delta_imprint_observations": 0,
+                "developing_delta_confirmation_evaluations": 0,
+                "entry_confirmations_delta_imprint": 0,
             }
         )
 
@@ -202,10 +214,7 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
         for direction, candidate in self.frozen_aois.items():
             if not isinstance(candidate, AdaptiveFrozenAoiV4):
                 continue
-            if (
-                before.get(direction) is None
-                and candidate.sweep_observed_bar_index is not None
-            ):
+            if before.get(direction) is None and candidate.sweep_observed_bar_index is not None:
                 candidate.sweep_observed_at_ns = int(event.timestamp_ns)
                 candidate.sweep_observed_event_index = int(event.event_index)
                 candidate.last_burst_id_at_sweep = int(self.burst_counter)
@@ -215,19 +224,17 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
 
     def _publish_bar(self, bar: CompletedBar) -> None:
         super()._publish_bar(bar)
-        self._observe_delta_confirmations(bar)
+        completed_cells = _motivewave_delta_cells(bar.bin_delta, self.cfg.delta_profile_price_bin_ticks)
+        self.completed_delta_imprints.extend(int(value) for value in completed_cells.values())
+        self.diagnostics["completed_delta_imprint_observations"] = len(self.completed_delta_imprints)
 
     def _advance_waiting_episode_extremes(self, event: CanonicalEvent) -> None:
         price_tick = int(event.price_tick)
         for episode in self.episodes.values():
             if not isinstance(episode, AdaptiveSweepEpisodeV4) or episode.expired:
                 continue
-            episode.highest_tick_since_sweep = max(
-                int(episode.highest_tick_since_sweep), price_tick
-            )
-            episode.lowest_tick_since_sweep = min(
-                int(episode.lowest_tick_since_sweep), price_tick
-            )
+            episode.highest_tick_since_sweep = max(int(episode.highest_tick_since_sweep), price_tick)
+            episode.lowest_tick_since_sweep = min(int(episode.lowest_tick_since_sweep), price_tick)
 
     def _advance_frozen_aois(self, bar: CompletedBar) -> None:
         profile = self.published_profile
@@ -276,9 +283,7 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
                 aoi_low_tick=aoi_low,
                 aoi_high_tick=aoi_high,
                 source_fingerprint=_aoi_source_fingerprint(current_aoi),
-                source_observed_at_ns=_aoi_source_observed_at_ns(
-                    current_aoi, fallback_ns=bar.end_ns
-                ),
+                source_observed_at_ns=_aoi_source_observed_at_ns(current_aoi, fallback_ns=bar.end_ns),
             )
             self.diagnostics["frozen_aoi_candidates"] += 1
             source_kinds = _aoi_source_kinds(current_aoi)
@@ -286,9 +291,7 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
                 self.diagnostics[f"aoi_armed_{source_kind}"] += 1
             if len(source_kinds) > 1:
                 self.diagnostics["aoi_armed_multi_source"] += 1
-            self.diagnostics["aoi_rearms"] += int(
-                bar.index > self.cfg.profile_warmup_bars - 1
-            )
+            self.diagnostics["aoi_rearms"] += int(bar.index > self.cfg.profile_warmup_bars - 1)
 
     def _current_aoi_identity(
         self,
@@ -336,11 +339,7 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
             for name, level in self._market_levels()
             if abs(int(level) - int(tick)) <= context_distance_ticks
         ]
-        nearest = (
-            min(nearby_levels, key=lambda item: (abs(item[1] - tick), item[0]))
-            if nearby_levels
-            else None
-        )
+        nearest = min(nearby_levels, key=lambda item: (abs(item[1] - tick), item[0])) if nearby_levels else None
         source_names: list[str] = []
         if nearest is not None:
             source_names.append("market_level")
@@ -350,9 +349,7 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
             source_names.append("sign_agnostic_top_decile_delta")
         return AoiScore(
             edge_tick=base.edge_tick,
-            institutional_footprint_kind=(
-                "_and_".join(source_names) if source_names else "none"
-            ),
+            institutional_footprint_kind=("_and_".join(source_names) if source_names else "none"),
             market_level_point=nearest is not None,
             big_trade_point=base.big_trade_point,
             delta_profile_point=base.delta_profile_point,
@@ -386,11 +383,7 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
             and int(burst.started_at_ns) > candidate.sweep_observed_at_ns
         ]
         for burst in sorted(newly_qualified, key=lambda item: item.burst_id):
-            level_tick = (
-                int(burst.price_low_tick)
-                if candidate.direction == "short"
-                else int(burst.price_high_tick)
-            )
+            level_tick = int(burst.price_low_tick) if candidate.direction == "short" else int(burst.price_high_tick)
             if not _confirmation_level_is_valid(candidate, level_tick):
                 self.diagnostics["confirmation_level_rejections"] += 1
                 continue
@@ -407,44 +400,60 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
                 threshold=int(self.big_trade_seed.threshold_volume),
             )
             return
-        self._accumulate_and_stage_delta(candidate, event)
+        self._stage_developing_delta_confirmation(candidate, event)
 
-    def _accumulate_and_stage_delta(
+    def _stage_developing_delta_confirmation(
         self,
         holder: AdaptiveFrozenAoiV4 | AdaptiveSweepEpisodeV4,
         event: CanonicalEvent,
     ) -> None:
+        working = self.working_bar
+        if working is None:
+            return
         threshold = _nearest_rank(
-            [abs(value) for value in self.profile_delta.values()],
+            [abs(value) for value in self.completed_delta_imprints],
             self.cfg.delta_profile_percentile,
         )
-        if threshold is None or threshold <= 0:
+        if threshold is None:
             return
-        low_tick = (
-            math.floor(int(event.price_tick) / self.cfg.delta_profile_price_bin_ticks)
-            * self.cfg.delta_profile_price_bin_ticks
+        self.diagnostics["developing_delta_confirmation_evaluations"] += 1
+        bar_cells = _motivewave_delta_cells(working.bin_delta, self.cfg.delta_profile_price_bin_ticks)
+        candidates = [
+            (
+                int(low_tick),
+                int(low_tick) + self.cfg.delta_profile_price_bin_ticks - 1,
+                int(value),
+            )
+            for low_tick, value in bar_cells.items()
+            if abs(int(value)) > int(threshold) and _confirmation_level_is_valid(holder, int(low_tick))
+        ]
+        if not candidates:
+            if any(abs(int(value)) > int(threshold) for value in bar_cells.values()):
+                self.diagnostics["confirmation_level_rejections"] += 1
+            return
+        selected = max(
+            candidates,
+            key=lambda item: (
+                abs(item[2]),
+                -abs(item[0] - holder.aoi.edge_tick),
+                -item[0],
+            ),
         )
-        holder.post_sweep_delta_by_cell[low_tick] = (
-            holder.post_sweep_delta_by_cell.get(low_tick, 0)
-            + int(event.signed_size or 0)
-        )
-        value = holder.post_sweep_delta_by_cell[low_tick]
-        if abs(value) < int(threshold):
-            return
-        if not _confirmation_level_is_valid(holder, low_tick):
-            self.diagnostics["confirmation_level_rejections"] += 1
-            return
         _store_confirmation(
             holder,
-            kind="delta_profile",
-            confirmation_id=f"event={event.event_index}:cell={low_tick}",
+            kind="delta_imprint",
+            confirmation_id=(f"bar={working.index}:event={event.event_index}:cell={selected[0]}"),
             observed_at_ns=int(event.timestamp_ns),
             event_index=int(event.event_index),
-            level_tick=low_tick,
-            bin_low_tick=low_tick,
-            bin_high_tick=low_tick + self.cfg.delta_profile_price_bin_ticks - 1,
-            value=int(value),
+            level_tick=selected[0],
+            bin_low_tick=selected[0],
+            bin_high_tick=selected[1],
+            value=selected[2],
             threshold=int(threshold),
+            bar_index=int(working.index),
+            bar_start_ns=int(working.start_ns),
+            bar_end_ns=int(working.end_ns),
+            reference_count=len(self.completed_delta_imprints),
         )
 
     def _detect_frozen_aoi_sweep(
@@ -466,18 +475,10 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
                 if candidate.direction == "short"
                 else bar.low_tick <= candidate.aoi.edge_tick - candidate.sweep_distance_ticks
             )
-            self.diagnostics[
-                "sweep_crossing_misses"
-                if geometric_sweep
-                else "qualified_aoi_without_sweep"
-            ] += 1
+            self.diagnostics["sweep_crossing_misses" if geometric_sweep else "qualified_aoi_without_sweep"] += 1
             return
-        sweep_high_tick = max(
-            bar.high_tick, int(candidate.sweep_event_high_tick or bar.high_tick)
-        )
-        sweep_low_tick = min(
-            bar.low_tick, int(candidate.sweep_event_low_tick or bar.low_tick)
-        )
+        sweep_high_tick = max(bar.high_tick, int(candidate.sweep_event_high_tick or bar.high_tick))
+        sweep_low_tick = min(bar.low_tick, int(candidate.sweep_event_low_tick or bar.low_tick))
         self.episode_counter += 1
         episode = AdaptiveSweepEpisodeV4(
             episode_id=self.episode_counter,
@@ -500,9 +501,7 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
             sweep_observed_at_ns=int(candidate.sweep_observed_at_ns),
             sweep_observed_event_index=int(candidate.sweep_observed_event_index),
             sweep_completed_at_ns=int(bar.end_ns),
-            sweep_completed_event_index=int(
-                self.last_event.event_index if self.last_event is not None else 0
-            ),
+            sweep_completed_event_index=int(self.last_event.event_index if self.last_event is not None else 0),
             last_burst_id_at_sweep=int(candidate.last_burst_id_at_sweep),
             confirmation_kind=candidate.confirmation_kind,
             confirmation_id=candidate.confirmation_id,
@@ -513,7 +512,10 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
             confirmation_bin_high_tick=candidate.confirmation_bin_high_tick,
             confirmation_value=candidate.confirmation_value,
             confirmation_threshold=candidate.confirmation_threshold,
-            post_sweep_delta_by_cell=dict(candidate.post_sweep_delta_by_cell),
+            confirmation_bar_index=candidate.confirmation_bar_index,
+            confirmation_bar_start_ns=candidate.confirmation_bar_start_ns,
+            confirmation_bar_end_ns=candidate.confirmation_bar_end_ns,
+            confirmation_reference_count=candidate.confirmation_reference_count,
         )
         self.episodes[candidate.direction] = episode
         self.diagnostics["sweep_episodes"] += 1
@@ -522,7 +524,9 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
             episode,
             bar,
             event="sweep_waiting_confirmation",
-            reason="completed_ordered_sweep_requires_new_post_sweep_orderflow",
+            reason=(
+                "completed_ordered_sweep_requires_later_big_trade_or_" "qualifying_developing_delta_imprint_observation"
+            ),
             entry_window_open=True,
             observed_event_ns=bar.end_ns,
         )
@@ -538,14 +542,14 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
                 bin_high_tick=int(episode.confirmation_bin_high_tick or 0),
                 value=int(episode.confirmation_value or 0),
                 threshold=int(episode.confirmation_threshold or 0),
+                bar_index=episode.confirmation_bar_index,
+                bar_start_ns=episode.confirmation_bar_start_ns,
+                bar_end_ns=episode.confirmation_bar_end_ns,
+                reference_count=episode.confirmation_reference_count,
             )
 
     def _observe_big_trade_confirmations(self, event: CanonicalEvent) -> None:
-        newly_qualified = [
-            burst
-            for burst in self.bursts
-            if int(burst.qualified_at_ns) == int(event.timestamp_ns)
-        ]
+        newly_qualified = [burst for burst in self.bursts if int(burst.qualified_at_ns) == int(event.timestamp_ns)]
         for episode in tuple(self.episodes.values()):
             if not isinstance(episode, AdaptiveSweepEpisodeV4) or episode.expired:
                 continue
@@ -555,11 +559,7 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
                 ):
                     self.diagnostics["confirmation_before_or_at_sweep_rejections"] += 1
                     continue
-                level_tick = (
-                    int(burst.price_low_tick)
-                    if episode.direction == "short"
-                    else int(burst.price_high_tick)
-                )
+                level_tick = int(burst.price_low_tick) if episode.direction == "short" else int(burst.price_high_tick)
                 if not _confirmation_level_is_valid(episode, level_tick):
                     self.diagnostics["confirmation_level_rejections"] += 1
                     continue
@@ -577,7 +577,7 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
                 )
                 break
             if not episode.expired and episode.confirmation_kind is None:
-                self._accumulate_and_stage_delta(episode, event)
+                self._stage_developing_delta_confirmation(episode, event)
                 if episode.confirmation_kind is not None:
                     self._activate_confirmed_episode(
                         episode,
@@ -590,50 +590,11 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
                         bin_high_tick=int(episode.confirmation_bin_high_tick or 0),
                         value=int(episode.confirmation_value or 0),
                         threshold=int(episode.confirmation_threshold or 0),
+                        bar_index=episode.confirmation_bar_index,
+                        bar_start_ns=episode.confirmation_bar_start_ns,
+                        bar_end_ns=episode.confirmation_bar_end_ns,
+                        reference_count=episode.confirmation_reference_count,
                     )
-
-    def _observe_delta_confirmations(self, bar: CompletedBar) -> None:
-        bar_cells = _motivewave_delta_cells(
-            bar.bin_delta, self.cfg.delta_profile_price_bin_ticks
-        )
-        threshold = _nearest_rank(
-            [abs(value) for value in self.profile_delta.values()],
-            self.cfg.delta_profile_percentile,
-        )
-        if threshold is None or threshold <= 0:
-            return
-        for episode in tuple(self.episodes.values()):
-            if not isinstance(episode, AdaptiveSweepEpisodeV4) or episode.expired:
-                continue
-            if bar.index <= episode.sweep_bar_index:
-                continue
-            candidates = [
-                (int(low), int(low) + self.cfg.delta_profile_price_bin_ticks - 1, int(value))
-                for low, value in bar_cells.items()
-                if abs(int(value)) >= int(threshold)
-                and _confirmation_level_is_valid(episode, int(low))
-            ]
-            if not candidates:
-                if any(abs(int(value)) >= int(threshold) for value in bar_cells.values()):
-                    self.diagnostics["confirmation_level_rejections"] += 1
-                continue
-            selected = max(
-                candidates,
-                key=lambda item: (abs(item[2]), -abs(item[0] - episode.aoi.edge_tick), -item[0]),
-            )
-            event_index = int(self.last_event.event_index if self.last_event is not None else 0)
-            self._activate_confirmed_episode(
-                episode,
-                kind="delta_profile",
-                confirmation_id=f"bar={bar.index}:cell={selected[0]}",
-                observed_at_ns=int(bar.end_ns),
-                event_index=event_index,
-                level_tick=selected[0],
-                bin_low_tick=selected[0],
-                bin_high_tick=selected[1],
-                value=selected[2],
-                threshold=int(threshold),
-            )
 
     def _activate_confirmed_episode(
         self,
@@ -648,12 +609,14 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
         bin_high_tick: int,
         value: int,
         threshold: int,
+        bar_index: int | None = None,
+        bar_start_ns: int | None = None,
+        bar_end_ns: int | None = None,
+        reference_count: int | None = None,
     ) -> None:
         if episode.expired:
             return
-        if event_index <= episode.sweep_observed_event_index or (
-            observed_at_ns <= episode.sweep_observed_at_ns
-        ):
+        if event_index <= episode.sweep_observed_event_index or (observed_at_ns <= episode.sweep_observed_at_ns):
             self.diagnostics["confirmation_before_or_at_sweep_rejections"] += 1
             return
         if not self._within_signal_window(observed_at_ns):
@@ -668,6 +631,10 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
         episode.confirmation_bin_high_tick = bin_high_tick
         episode.confirmation_value = value
         episode.confirmation_threshold = threshold
+        episode.confirmation_bar_index = bar_index
+        episode.confirmation_bar_start_ns = bar_start_ns
+        episode.confirmation_bar_end_ns = bar_end_ns
+        episode.confirmation_reference_count = reference_count
         decision_bar = self.completed_bars[-1]
         signal = self._build_pending_signal(episode, decision_bar)
         episode.expired = True
@@ -677,19 +644,11 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
             return
         activation_timestamp_ns = max(
             observed_at_ns,
-            int(
-                self.last_event.timestamp_ns
-                if self.last_event is not None
-                else observed_at_ns
-            ),
+            int(self.last_event.timestamp_ns if self.last_event is not None else observed_at_ns),
         )
         activation_event_index = max(
             event_index,
-            int(
-                self.last_event.event_index
-                if self.last_event is not None
-                else event_index
-            ),
+            int(self.last_event.event_index if self.last_event is not None else event_index),
         )
         signal.activation_timestamp_ns = activation_timestamp_ns
         signal.activation_event_index = activation_event_index
@@ -768,9 +727,7 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
                     if typed is None or typed.confirmation_at_ns is None
                     else _timestamp_label(typed.confirmation_at_ns)
                 ),
-                "next_observed_event": (
-                    None if next_event_ns is None else _timestamp_label(next_event_ns)
-                ),
+                "next_observed_event": (None if next_event_ns is None else _timestamp_label(next_event_ns)),
                 "entry_window_open": entry_window_open,
                 "risk_ticks": risk_ticks,
                 "maximum_stop_ticks": maximum_stop_ticks,
@@ -788,6 +745,19 @@ class AdaptiveOrderflowRangeV4State(AdaptiveOrderflowRangeV3State):
                     else typed.confirmation_price_tick * self.cfg.tick_size
                 ),
                 "confirmation_value": None if typed is None else typed.confirmation_value,
+                "confirmation_threshold": (None if typed is None else typed.confirmation_threshold),
+                "confirmation_bar_index": (None if typed is None else typed.confirmation_bar_index),
+                "confirmation_bar_start": (
+                    None
+                    if typed is None or typed.confirmation_bar_start_ns is None
+                    else _timestamp_label(typed.confirmation_bar_start_ns)
+                ),
+                "confirmation_bar_end": (
+                    None
+                    if typed is None or typed.confirmation_bar_end_ns is None
+                    else _timestamp_label(typed.confirmation_bar_end_ns)
+                ),
+                "confirmation_reference_count": (None if typed is None else typed.confirmation_reference_count),
             }
         )
 
@@ -813,9 +783,7 @@ class AdaptiveOrderflowRangeV4EventStrategy(AdaptiveOrderflowRangeV3EventStrateg
         broker: EventReplayBroker,
     ) -> None:
         signal = self._state().pending.get(order.order_id)
-        if not isinstance(signal, AdaptivePendingSignal) or not isinstance(
-            signal.episode, AdaptiveSweepEpisodeV4
-        ):
+        if not isinstance(signal, AdaptivePendingSignal) or not isinstance(signal.episode, AdaptiveSweepEpisodeV4):
             raise AssertionError("v04 fill has no confirmed adaptive pending signal")
         episode = signal.episode
         super().on_entry_filled(order, position, event, broker)
@@ -826,9 +794,7 @@ class AdaptiveOrderflowRangeV4EventStrategy(AdaptiveOrderflowRangeV3EventStrateg
             entry_confirmation_kind=episode.confirmation_kind,
             entry_confirmation_id=episode.confirmation_id,
             entry_confirmation_at=(
-                None
-                if episode.confirmation_at_ns is None
-                else _timestamp_label(episode.confirmation_at_ns)
+                None if episode.confirmation_at_ns is None else _timestamp_label(episode.confirmation_at_ns)
             ),
             entry_confirmation_price=(
                 None
@@ -847,6 +813,18 @@ class AdaptiveOrderflowRangeV4EventStrategy(AdaptiveOrderflowRangeV3EventStrateg
             ),
             entry_confirmation_value=episode.confirmation_value,
             entry_confirmation_threshold=episode.confirmation_threshold,
+            entry_confirmation_bar_index=episode.confirmation_bar_index,
+            entry_confirmation_bar_start=(
+                None
+                if episode.confirmation_bar_start_ns is None
+                else _timestamp_label(episode.confirmation_bar_start_ns)
+            ),
+            entry_confirmation_bar_end=(
+                None if episode.confirmation_bar_end_ns is None else _timestamp_label(episode.confirmation_bar_end_ns)
+            ),
+            entry_confirmation_reference_count=episode.confirmation_reference_count,
+            entry_confirmation_percentile_method="nearest_rank",
+            entry_confirmation_comparison="strict_absolute_greater_than",
             market_level_definition=MARKET_LEVEL_DEFINITION,
             failure_confirmation_rule=POST_SWEEP_CONFIRMATION_DEFINITION,
             burst_direction_rule=(
@@ -854,7 +832,8 @@ class AdaptiveOrderflowRangeV4EventStrategy(AdaptiveOrderflowRangeV3EventStrateg
                 "the confirmation must be a distinct sequence started after the sweep"
             ),
             entry_trigger_rule=(
-                "Only after a separate post-sweep big-trade or delta confirmation, "
+                "Only after a separate post-sweep big-trade or developing three-minute "
+                "four-tick delta-imprint confirmation, "
                 "arm a stop-market entry two ticks beyond the reclaim-side AOI-zone "
                 "boundary; short uses zone low minus two ticks and long uses zone "
                 "high plus two ticks"
@@ -867,15 +846,15 @@ class AdaptiveOrderflowRangeV4EventStrategy(AdaptiveOrderflowRangeV3EventStrateg
             burst_definition=BURST_DEFINITION,
             delta_profile_definition=DELTA_PROFILE_DEFINITION,
             delta_aggregation_method=DELTA_AGGREGATION_METHOD,
-            target_2_definition=(
-                "frozen_opposite_value_area_edge_plus_two_ticks_outside"
-            ),
+            target_2_definition=("frozen_opposite_value_area_edge_plus_two_ticks_outside"),
             final_target_outside_ticks=FINAL_TARGET_OUTSIDE_TICKS,
             profile_snapshot_timing=(
                 "One RTH profile accumulates continuously from 09:30; VAH and VAL "
                 "AOIs are rebuilt at each completed three-minute boundary; exact "
-                "event ordering permits a later same-bar confirmation but never "
-                "submits its stop entry before the sweep bar completes"
+                "event ordering permits a later same-bar confirmation from the whole "
+                "developing bar imprint but never submits its stop entry before the "
+                "sweep bar completes; completed-bar imprint history excludes the "
+                "currently developing bar"
             ),
         )
 
@@ -890,11 +869,7 @@ def _confirmation_level_is_valid(
     level_tick: int,
 ) -> bool:
     zone_low, zone_high = _score_bounds(episode.aoi)
-    return (
-        int(level_tick) > zone_low
-        if episode.direction == "short"
-        else int(level_tick) < zone_high
-    )
+    return int(level_tick) > zone_low if episode.direction == "short" else int(level_tick) < zone_high
 
 
 def _store_confirmation(
@@ -909,6 +884,10 @@ def _store_confirmation(
     bin_high_tick: int,
     value: int,
     threshold: int,
+    bar_index: int | None = None,
+    bar_start_ns: int | None = None,
+    bar_end_ns: int | None = None,
+    reference_count: int | None = None,
 ) -> None:
     holder.confirmation_kind = kind
     holder.confirmation_id = confirmation_id
@@ -919,6 +898,10 @@ def _store_confirmation(
     holder.confirmation_bin_high_tick = bin_high_tick
     holder.confirmation_value = value
     holder.confirmation_threshold = threshold
+    holder.confirmation_bar_index = bar_index
+    holder.confirmation_bar_start_ns = bar_start_ns
+    holder.confirmation_bar_end_ns = bar_end_ns
+    holder.confirmation_reference_count = reference_count
 
 
 def _score_bounds(score: AoiScore) -> tuple[int, int]:
@@ -954,17 +937,12 @@ def _aoi_source_kinds(score: AoiScore) -> tuple[str, ...]:
 def _aoi_source_fingerprint(score: AoiScore) -> str:
     values: list[str] = []
     if score.market_level_point:
-        values.append(
-            f"market={score.nearest_market_level_type}:{score.nearest_market_level_tick}"
-        )
+        values.append(f"market={score.nearest_market_level_type}:{score.nearest_market_level_tick}")
     if score.big_trade_point:
         values.append(f"burst={score.big_trade_burst_id or 0}")
     if score.delta_profile_point:
         sign = "positive" if int(score.delta_profile_signed_delta or 0) > 0 else "negative"
-        values.append(
-            "delta="
-            f"{score.delta_profile_bin_low_tick}:{score.delta_profile_bin_high_tick}:{sign}"
-        )
+        values.append("delta=" f"{score.delta_profile_bin_low_tick}:{score.delta_profile_bin_high_tick}:{sign}")
     return "+".join(values)
 
 

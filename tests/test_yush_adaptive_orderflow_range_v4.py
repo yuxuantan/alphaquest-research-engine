@@ -23,6 +23,7 @@ from alphaquest.strategy_modules.event.yush_chart_fanatics_range import (
     CompletedBar,
     ProfileSnapshot,
     RegimeSnapshot,
+    WorkingBar,
 )
 
 
@@ -32,9 +33,7 @@ def _view() -> EventReplaySessionView:
         contract_symbol="ESM26",
         metadata=MappingProxyType(
             {
-                "previous_rth": RthSummary(
-                    date(2026, 5, 13), "ESM26", 107.0, 93.0, 101.0
-                ),
+                "previous_rth": RthSummary(date(2026, 5, 13), "ESM26", 107.0, 93.0, 101.0),
                 "overnight_high": 106.0,
                 "overnight_low": 94.0,
             }
@@ -51,9 +50,7 @@ def _bar(
     high: int,
     delta_cells: dict[int, int] | None = None,
 ) -> CompletedBar:
-    start = pd.Timestamp("2026-05-14 09:30:00", tz="America/New_York") + pd.Timedelta(
-        minutes=3 * index
-    )
+    start = pd.Timestamp("2026-05-14 09:30:00", tz="America/New_York") + pd.Timedelta(minutes=3 * index)
     return CompletedBar(
         index=index,
         start_ns=int(start.value),
@@ -147,9 +144,7 @@ def _episode(direction: str = "short") -> AdaptiveSweepEpisodeV4:
         sweep_distance_ticks=2,
         context_distance_ticks=7,
         profile_epoch="rth",
-        sweep_observed_at_ns=int(
-            pd.Timestamp("2026-05-14 09:50:30", tz="America/New_York").value
-        ),
+        sweep_observed_at_ns=int(pd.Timestamp("2026-05-14 09:50:30", tz="America/New_York").value),
         sweep_observed_event_index=9,
         sweep_completed_at_ns=sweep_bar.end_ns,
         sweep_completed_event_index=10,
@@ -204,9 +199,7 @@ def test_v04_completed_sweep_waits_without_creating_an_entry_signal() -> None:
         sweep_event_low_tick=418,
         aoi_low_tick=418,
         aoi_high_tick=420,
-        sweep_observed_at_ns=int(
-            pd.Timestamp("2026-05-14 09:50:30", tz="America/New_York").value
-        ),
+        sweep_observed_at_ns=int(pd.Timestamp("2026-05-14 09:50:30", tz="America/New_York").value),
         sweep_observed_event_index=9,
         last_burst_id_at_sweep=1,
     )
@@ -274,9 +267,7 @@ def test_v04_separate_confirmation_later_in_sweep_bar_is_staged_until_bar_comple
 
     state.completed_bars.append(_bar(6, close=422, low=418, high=423))
     state.last_event = _event("2026-05-14 09:51:00", 422, 20)
-    state._detect_frozen_aoi_sweep(
-        _bar(6, close=422, low=418, high=423), candidate
-    )
+    state._detect_frozen_aoi_sweep(_bar(6, close=422, low=418, high=423), candidate)
 
     signal = state.pending.get("short_1")
     assert isinstance(signal, AdaptivePendingSignal)
@@ -328,27 +319,190 @@ def test_v04_new_big_trade_after_sweep_arms_signal_but_equal_boundary_does_not()
     assert state.diagnostics["entry_confirmations_big_trade"] == 1
 
 
-def test_v04_later_bar_delta_can_confirm_a_long_below_zone_top() -> None:
+def _working_bar(
+    index: int,
+    *,
+    close: int,
+    low: int,
+    high: int,
+    delta_cells: dict[int, int],
+) -> WorkingBar:
+    completed = _bar(
+        index,
+        close=close,
+        low=low,
+        high=high,
+        delta_cells=delta_cells,
+    )
+    return WorkingBar(
+        index=completed.index,
+        start_ns=completed.start_ns,
+        end_ns=completed.end_ns,
+        open_tick=completed.open_tick,
+        high_tick=completed.high_tick,
+        low_tick=completed.low_tick,
+        close_tick=completed.close_tick,
+        volume=completed.volume,
+        delta=completed.delta,
+        bin_volume=dict(completed.bin_volume),
+        bin_delta=dict(completed.bin_delta),
+    )
+
+
+def test_v04_developing_bar_delta_uses_completed_bar_cell_imprints_only() -> None:
     state = AdaptiveOrderflowRangeV4State(_view(), AdaptiveOrderflowRangeV4Config())
     episode = _episode("long")
     state.episodes["long"] = episode
     state.completed_bars.append(_bar(6, close=378, low=377, high=382))
-    state.profile_delta = {380: 1_200, 400: 50}
-    state.last_event = _event("2026-05-14 09:54:00", 381, 20)
-    confirmation_bar = _bar(
+    state.completed_delta_imprints = list(range(1, 11))
+    state.working_bar = _working_bar(
         7,
-        close=381,
+        close=380,
         low=379,
         high=383,
-        delta_cells={380: -1_200},
+        delta_cells={380: -10},
     )
+    state.last_event = _event("2026-05-14 09:51:02", 380, 20)
 
-    state._observe_delta_confirmations(confirmation_bar)
+    state._observe_big_trade_confirmations(state.last_event)
 
     signal = state.pending.get("long_1")
     assert isinstance(signal, AdaptivePendingSignal)
     assert signal.entry_tick == 384
     assert signal.target_2_tick == 422
-    assert episode.confirmation_kind == "delta_profile"
+    assert episode.confirmation_kind == "delta_imprint"
     assert episode.confirmation_price_tick == 380
-    assert state.diagnostics["entry_confirmations_delta_profile"] == 1
+    assert episode.confirmation_value == -10
+    assert episode.confirmation_threshold == 9
+    assert episode.confirmation_id == "bar=7:event=20:cell=380"
+    assert episode.confirmation_bar_index == 7
+    assert episode.confirmation_reference_count == 10
+    assert state.diagnostics["entry_confirmations_delta_imprint"] == 1
+
+
+def test_v04_delta_confirmation_is_strictly_greater_than_nearest_rank_threshold() -> None:
+    state = AdaptiveOrderflowRangeV4State(_view(), AdaptiveOrderflowRangeV4Config())
+    episode = _episode("long")
+    state.episodes["long"] = episode
+    state.completed_bars.append(_bar(6, close=378, low=377, high=382))
+    state.completed_delta_imprints = list(range(1, 11))
+    state.working_bar = _working_bar(
+        7,
+        close=380,
+        low=379,
+        high=383,
+        delta_cells={380: -9},
+    )
+    equal_event = _event("2026-05-14 09:51:02", 380, 20)
+    state.last_event = equal_event
+
+    state._observe_big_trade_confirmations(equal_event)
+
+    assert state.pending == {}
+    assert episode.confirmation_kind is None
+
+    state.working_bar.bin_delta[380] = -10
+    state.working_bar.delta = -10
+    greater_event = _event("2026-05-14 09:51:03", 380, 21)
+    state.last_event = greater_event
+    state._observe_big_trade_confirmations(greater_event)
+
+    assert isinstance(state.pending.get("long_1"), AdaptivePendingSignal)
+    assert episode.confirmation_value == -10
+    assert episode.confirmation_threshold == 9
+
+
+def test_v04_delta_confirmation_uses_whole_developing_bar_not_post_sweep_delta() -> None:
+    state = AdaptiveOrderflowRangeV4State(_view(), AdaptiveOrderflowRangeV4Config())
+    episode = _episode("short")
+    state.episodes["short"] = episode
+    state.completed_bars.append(_bar(6, close=422, low=418, high=423))
+    state.completed_delta_imprints = [20, 30, 40, 50, 60, 70, 80, 90, 100, 110]
+    state.working_bar = _working_bar(
+        7,
+        close=424,
+        low=419,
+        high=425,
+        delta_cells={424: 120},
+    )
+    # Only one contract is observed after the sweep, but the whole developing
+    # bar imprint is already 120 and strictly exceeds q90=100.
+    confirmation_event = _event("2026-05-14 09:51:02", 424, 20)
+    state.last_event = confirmation_event
+
+    state._observe_big_trade_confirmations(confirmation_event)
+
+    assert isinstance(state.pending.get("short_1"), AdaptivePendingSignal)
+    assert episode.confirmation_value == 120
+    assert episode.confirmation_threshold == 100
+
+
+def test_v04_developing_delta_cannot_confirm_on_the_ordered_sweep_event() -> None:
+    state = AdaptiveOrderflowRangeV4State(_view(), AdaptiveOrderflowRangeV4Config())
+    sweep_event = _event("2026-05-14 09:50:30", 424, 20)
+    candidate = AdaptiveFrozenAoiV4(
+        direction="short",
+        aoi=_market_aoi("short"),
+        profile=_profile(),
+        regime=_regime(),
+        frozen_bar_index=5,
+        frozen_at_ns=_bar(5, close=400, low=390, high=410).end_ns,
+        aoi_id="short-market-aoi",
+        sweep_distance_ticks=2,
+        context_distance_ticks=7,
+        profile_epoch="rth",
+        crossing_armed=True,
+        sweep_observed_bar_index=6,
+        sweep_event_high_tick=424,
+        sweep_event_low_tick=418,
+        aoi_low_tick=418,
+        aoi_high_tick=420,
+        sweep_observed_at_ns=sweep_event.timestamp_ns,
+        sweep_observed_event_index=sweep_event.event_index,
+        last_burst_id_at_sweep=1,
+    )
+    state.completed_delta_imprints = list(range(1, 11))
+    state.working_bar = _working_bar(
+        6,
+        close=424,
+        low=418,
+        high=424,
+        delta_cells={424: 10},
+    )
+
+    state._stage_candidate_confirmation(candidate, sweep_event)
+    assert candidate.confirmation_kind is None
+
+    later_event = _event("2026-05-14 09:50:31", 424, 21)
+    state._stage_candidate_confirmation(candidate, later_event)
+
+    assert candidate.confirmation_kind == "delta_imprint"
+    assert candidate.confirmation_event_index == 21
+    assert candidate.confirmation_value == 10
+    assert candidate.confirmation_threshold == 9
+
+
+def test_v04_completed_bar_cells_are_retained_as_separate_reference_observations() -> None:
+    state = AdaptiveOrderflowRangeV4State(_view(), AdaptiveOrderflowRangeV4Config())
+    first = _bar(
+        0,
+        close=384,
+        low=380,
+        high=387,
+        delta_cells={380: 10, 381: -5, 384: 7},
+    )
+    second = _bar(
+        1,
+        close=384,
+        low=380,
+        high=387,
+        delta_cells={380: -3, 382: -4, 384: 9},
+    )
+
+    state._publish_bar(first)
+    state._publish_bar(second)
+
+    # The 380-383 cell appears once per completed bar: +5, then -7.  The
+    # 384-387 cell likewise contributes +7 and +9 as distinct observations.
+    assert state.completed_delta_imprints == [5, 7, -7, 9]
+    assert state.diagnostics["completed_delta_imprint_observations"] == 4

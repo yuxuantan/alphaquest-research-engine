@@ -4,9 +4,12 @@ import {
   formatEvidenceTimestamp,
   formatTradeDuration,
   formatUsdPnl,
+  MECHANICS_EVIDENCE_BADGE,
   mechanicsAnnotationFormState,
   REVIEW_QUEUE_HELP,
+  shouldShowSingleTargetFallback,
 } from "./ReviewsPage";
+import { resolveStrategyEvidencePanels } from "../strategyEvidence";
 
 describe("review queue explanations", () => {
   it("separates mechanics, candidate, and indexed governance scopes", () => {
@@ -65,6 +68,33 @@ describe("mechanics annotation form state", () => {
       status: "Correct",
       notes: "",
     });
+  });
+});
+
+describe("strategy-neutral mechanics evidence presentation", () => {
+  it("uses a hash-bound badge rather than naming a historical implementation", () => {
+    expect(MECHANICS_EVIDENCE_BADGE).toBe("Hash-bound evidence");
+    expect(MECHANICS_EVIDENCE_BADGE).not.toContain("v18");
+  });
+
+  it("suppresses the single-target fallback when v04 retains T1 and T2", () => {
+    const panels = resolveStrategyEvidencePanels({
+      metadata: {
+        strategy_id: "yush_adaptive_orderflow_range_v4",
+        variant_id: "v04",
+      },
+      strategy_context: {
+        target_1_price: 7489.25,
+        target_2_price: 7479.75,
+      },
+    });
+
+    expect(shouldShowSingleTargetFallback(panels)).toBe(false);
+    expect(
+      shouldShowSingleTargetFallback([
+        { rows: [{ key: "entry_trigger_price" }] },
+      ]),
+    ).toBe(true);
   });
 });
 

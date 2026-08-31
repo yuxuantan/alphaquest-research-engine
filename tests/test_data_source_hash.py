@@ -89,3 +89,50 @@ def test_databento_execution_hash_is_independent_of_relative_path_spelling(tmp_p
     }
 
     assert data_source_hash(relative, {}) == data_source_hash(absolute, {})
+
+
+def test_governed_source_hash_resolves_relative_paths_against_project_root(
+    tmp_path,
+    monkeypatch,
+):
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    bars = project_root / "bars.parquet"
+    archive = project_root / "events.zip"
+    calendar = project_root / "roll.csv"
+    manifest = project_root / "contracts.csv"
+    bars.write_bytes(b"bars")
+    archive.write_bytes(b"events")
+    calendar.write_bytes(b"roll")
+    manifest.write_bytes(b"manifest")
+    relative = {
+        "source": "parquet",
+        "raw_parquet": "bars.parquet",
+        "execution_data": {
+            "source": "databento_zip_trades",
+            "archive": "events.zip",
+            "roll_calendar": "roll.csv",
+            "contract_manifest": "contracts.csv",
+            "root_symbol": "ES",
+        },
+    }
+    absolute = {
+        "source": "parquet",
+        "raw_parquet": str(bars),
+        "execution_data": {
+            "source": "databento_zip_trades",
+            "archive": str(archive),
+            "roll_calendar": str(calendar),
+            "contract_manifest": str(manifest),
+            "root_symbol": "ES",
+        },
+    }
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+
+    assert data_source_hash(
+        relative,
+        {},
+        project_root=project_root,
+    ) == data_source_hash(absolute, {})

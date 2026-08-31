@@ -10,7 +10,6 @@ inspectable, but an absent or disabled gate cannot authorize testing.
 from __future__ import annotations
 
 from datetime import datetime
-from copy import deepcopy
 import hashlib
 import json
 from pathlib import Path
@@ -25,6 +24,7 @@ from alphaquest.data.source import data_source_hash
 from alphaquest.research.storage import (
     display_path,
     load_storage_layout,
+    project_root_for_path,
     resolve_campaign_context,
     resolve_recorded_path,
 )
@@ -160,8 +160,9 @@ def inspect_validation_gate(
             subset = gate.get("data_subset") if isinstance(gate.get("data_subset"), dict) else None
             project_root = _storage_project_root(source_path)
             input_hash = data_source_hash(
-                _resolved_data_config(cfg.get("data") or {}, project_root),
+                cfg.get("data") or {},
                 subset,
+                project_root=project_root,
             )
         except (FileNotFoundError, KeyError, OSError, ValueError) as exc:
             report["errors"].append(f"input data hash could not be computed: {exc}")
@@ -660,8 +661,6 @@ def _resolve_path(value: Any, config_path: Path) -> Path | None:
     if not value:
         return None
     path = Path(str(value))
-    if path.is_absolute():
-        return path
     project_root = _storage_project_root(config_path)
     layout = load_storage_layout(project_root)
     configured_roots = (
@@ -676,6 +675,15 @@ def _resolve_path(value: Any, config_path: Path) -> Path | None:
         layout.handoff_root,
         layout.studio_runtime_root,
     )
+    if path.is_absolute():
+        if path.exists():
+            return path
+        relocated = _relocated_governed_path(
+            path,
+            project_root=project_root,
+            configured_roots=configured_roots,
+        )
+        return relocated if relocated is not None else path
     text = path.as_posix()
     for root in configured_roots:
         recorded = display_path(root, project_root)
@@ -691,62 +699,39 @@ def _resolve_path(value: Any, config_path: Path) -> Path | None:
     return config_path.parent / path
 
 
-def _storage_project_root(config_path: Path) -> Path:
-    resolved = config_path.resolve()
-    for parent in (resolved.parent, *resolved.parents):
-        if (parent / "config" / "storage_layout.yaml").is_file():
-            return parent
-    for parent in (resolved.parent, *resolved.parents):
-        for campaign_root in (
-            parent / "research" / "campaigns" / "active",
-            parent / "research" / "campaigns" / "archive",
-        ):
-            try:
-                resolved.relative_to(campaign_root)
-            except ValueError:
-                continue
-            return parent
-    for parent in (resolved.parent, *resolved.parents):
-        if parent.name == "research":
-            continue
+def _relocated_governed_path(
+    recorded: Path,
+    *,
+    project_root: Path,
+    configured_roots: tuple[Path, ...],
+) -> Path | None:
+    """Rebase a missing absolute artifact path after the repository moves.
+
+    Only configured storage-root suffixes are eligible.  The rebased target
+    must already exist, so an arbitrary external absolute path can never be
+    redirected into the repository merely because part of its name matches.
+    """
+
+    recorded_parts = recorded.parts
+    for root in configured_roots:
         try:
-            resolved.relative_to(parent / "campaigns")
+            marker = root.resolve().relative_to(project_root.resolve()).parts
         except ValueError:
             continue
-        return parent
-    return Path.cwd().resolve()
+        if not marker:
+            continue
+        width = len(marker)
+        for index in range(len(recorded_parts) - width + 1):
+            if recorded_parts[index : index + width] != marker:
+                continue
+            candidate = root.joinpath(*recorded_parts[index + width :])
+            if candidate.exists():
+                return candidate
+    return None
 
 
-def _resolved_data_config(data_config: dict[str, Any], project_root: Path) -> dict[str, Any]:
-    """Resolve recorded local inputs for hashing without mutating the config contract."""
-
-    resolved = deepcopy(data_config)
-    path_keys = {
-        "raw_csv",
-        "raw_parquet",
-        "raw_dir",
-        "roll_calendar",
-        "archive",
-        "contract_manifest",
-        "quality_manifest",
-        "raw_manifest",
-        "session_levels",
-        "concordance_report",
-    }
-
-    def visit(value: Any) -> None:
-        if not isinstance(value, dict):
-            return
-        for key, item in tuple(value.items()):
-            if key in path_keys and isinstance(item, str) and item:
-                path = Path(item)
-                if not path.is_absolute():
-                    value[key] = str(project_root / path)
-            elif isinstance(item, dict):
-                visit(item)
-
-    visit(resolved)
-    return resolved
+def _storage_project_root(config_path: Path) -> Path:
+    return project_root_for_path(config_path)
 
 
 def _read_json(path: Path | None) -> dict[str, Any]:

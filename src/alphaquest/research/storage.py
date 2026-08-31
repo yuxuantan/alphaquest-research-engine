@@ -55,6 +55,27 @@ class CampaignContext:
         return self.campaign_root / "results_index.yaml"
 
 
+def project_root_for_path(value: str | Path) -> Path:
+    """Resolve the repository root for an authored or generated local path."""
+
+    resolved = Path(value).expanduser().resolve(strict=False)
+    start = resolved if resolved.is_dir() else resolved.parent
+    for parent in (start, *start.parents):
+        if (parent / "config" / "storage_layout.yaml").is_file():
+            return parent
+    for parent in (start, *start.parents):
+        for campaign_root in (
+            parent / "research" / "campaigns" / "active",
+            parent / "research" / "campaigns" / "archive",
+        ):
+            try:
+                resolved.relative_to(campaign_root)
+            except ValueError:
+                continue
+            return parent
+    return Path.cwd().resolve()
+
+
 def load_storage_layout(
     project_root: str | Path = ".", layout_path: str | Path | None = None
 ) -> StorageLayout:

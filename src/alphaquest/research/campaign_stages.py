@@ -24,7 +24,7 @@ from alphaquest.backtest.event_replay_cache import (
 )
 from alphaquest.backtest.metrics import EvaluationPeriod, calculate_metrics
 from alphaquest.data.pipeline import prepare_data
-from alphaquest.data.source import data_source_hash
+from alphaquest.data.source import data_source_hash, resolve_data_source_paths
 from alphaquest.prop.rules import PropRules
 from alphaquest.research.core_grid import run_core_grid
 from alphaquest.research.execution import run_research_backtest, uses_canonical_event_replay
@@ -2326,7 +2326,11 @@ def _prepare_stage_data(
     else:
         market, quality, execution_data = prepared
         detail = execution_data if timeframe != "1m" else None
-    input_hash = data_source_hash(cfg["data"], subset)
+    hash_data_config = resolve_data_source_paths(
+        cfg["data"],
+        project_root=_storage_project_root(stage_dir),
+    )
+    input_hash = data_source_hash(hash_data_config, subset)
     quality = {
         **quality,
         "prepare_data_duration_seconds": round(time.perf_counter() - started, 6),

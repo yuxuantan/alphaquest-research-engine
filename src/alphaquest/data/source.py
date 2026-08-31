@@ -1,13 +1,22 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from pathlib import Path
+from typing import Any
 
 from alphaquest.data.load import infer_data_source, list_databento_dbn_files
 from alphaquest.data.subset import load_bounds_with_warmup, subset_from_data_config
 from alphaquest.utils.hashing import file_sha256, object_sha256
 
 
-def data_source_hash(data_config: dict, subset_config: dict | None = None) -> str:
+def data_source_hash(
+    data_config: dict,
+    subset_config: dict | None = None,
+    *,
+    project_root: str | Path | None = None,
+) -> str:
+    if project_root is not None:
+        data_config = resolve_data_source_paths(data_config, project_root=project_root)
     subset_config = subset_config or subset_from_data_config(data_config)
     source = infer_data_source(data_config)
     execution_config = data_config.get("execution_data")
@@ -66,6 +75,47 @@ def data_source_hash(data_config: dict, subset_config: dict | None = None) -> st
             payload["execution_data"] = execution_payload
         return object_sha256(payload)
     raise ValueError(f"Unsupported data source: {source}")
+
+
+def resolve_data_source_paths(
+    data_config: dict,
+    *,
+    project_root: str | Path,
+) -> dict:
+    """Resolve every governed local source path against one project root.
+
+    Runners and promotion gates may execute from different working directories.
+    Hash identity must therefore never depend on the process cwd.
+    """
+
+    root = Path(project_root).expanduser().resolve(strict=False)
+    resolved = deepcopy(data_config)
+    path_keys = {
+        "raw_csv",
+        "raw_parquet",
+        "raw_dir",
+        "roll_calendar",
+        "archive",
+        "contract_manifest",
+        "quality_manifest",
+        "raw_manifest",
+        "session_levels",
+        "concordance_report",
+    }
+
+    def visit(value: Any) -> None:
+        if not isinstance(value, dict):
+            return
+        for key, item in tuple(value.items()):
+            if key in path_keys and isinstance(item, str) and item:
+                path = Path(item).expanduser()
+                if not path.is_absolute():
+                    value[key] = str(root / path)
+            elif isinstance(item, dict):
+                visit(item)
+
+    visit(resolved)
+    return resolved
 
 
 def _roll_source_payload(data_config: dict) -> dict:

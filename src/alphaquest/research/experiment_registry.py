@@ -359,6 +359,91 @@ class AttemptFinalizationRecovery:
             ) from exc
 
 
+@dataclass(frozen=True)
+class AttemptPrePerformanceRetry:
+    """Explicit continuation after a proven zero-PnL operational failure."""
+
+    campaign_id: str
+    variant_id: str
+    attempt_id: str
+    prior_resolution_sha256: str
+    pre_performance_proof_sha256: str
+    failed_job_id: str
+    retry_job_id: str
+    recorded_at: str
+    reason: str
+    retry_index: int = 1
+    from_status: str = "FAILED"
+    to_status: str = RUNNING
+
+    def __post_init__(self) -> None:
+        for label, value in (
+            ("campaign_id", self.campaign_id),
+            ("variant_id", self.variant_id),
+            ("attempt_id", self.attempt_id),
+            ("failed_job_id", self.failed_job_id),
+            ("retry_job_id", self.retry_job_id),
+        ):
+            _require_identifier(value, label)
+        if (self.from_status, self.to_status) != ("FAILED", RUNNING):
+            raise ExperimentTransitionError(
+                "Pre-performance retry is limited to FAILED -> RUNNING."
+            )
+        if self.retry_index != 1:
+            raise ExperimentTransitionError(
+                "Only one explicit pre-performance operational retry is permitted."
+            )
+        _require_sha256(self.prior_resolution_sha256, "prior_resolution_sha256")
+        _require_sha256(
+            self.pre_performance_proof_sha256,
+            "pre_performance_proof_sha256",
+        )
+        _require_aware_timestamp(self.recorded_at, "recorded_at")
+        _require_reason(self.reason)
+
+    def event_payload(self) -> dict[str, Any]:
+        return {
+            "schema": EXPERIMENT_EVENT_SCHEMA,
+            "event_type": "ATTEMPT_PRE_PERFORMANCE_RETRY",
+            "campaign_id": self.campaign_id,
+            "variant_id": self.variant_id,
+            "attempt_id": self.attempt_id,
+            "from_status": self.from_status,
+            "to_status": self.to_status,
+            "prior_resolution_sha256": self.prior_resolution_sha256,
+            "pre_performance_proof_sha256": self.pre_performance_proof_sha256,
+            "failed_job_id": self.failed_job_id,
+            "retry_job_id": self.retry_job_id,
+            "retry_index": self.retry_index,
+            "recorded_at": self.recorded_at,
+            "reason": self.reason,
+        }
+
+    @classmethod
+    def from_event(cls, event: Mapping[str, Any]) -> "AttemptPrePerformanceRetry":
+        try:
+            return cls(
+                campaign_id=str(event["campaign_id"]),
+                variant_id=str(event["variant_id"]),
+                attempt_id=str(event["attempt_id"]),
+                from_status=str(event["from_status"]),
+                to_status=str(event["to_status"]),
+                prior_resolution_sha256=str(event["prior_resolution_sha256"]),
+                pre_performance_proof_sha256=str(
+                    event["pre_performance_proof_sha256"]
+                ),
+                failed_job_id=str(event["failed_job_id"]),
+                retry_job_id=str(event["retry_job_id"]),
+                retry_index=int(event["retry_index"]),
+                recorded_at=str(event["recorded_at"]),
+                reason=str(event["reason"]),
+            )
+        except (KeyError, TypeError, ValueError) as exc:
+            raise ExperimentIntegrityError(
+                f"Malformed pre-performance retry record: {exc}."
+            ) from exc
+
+
 def reservation_from_campaign_config(
     config: Mapping[str, Any],
     *,
@@ -442,6 +527,11 @@ class ExperimentRegistry:
                 return exact
             key = _attempt_key(payload)
             if key in state["reservations"]:
+                retained = state["reservations"][key]
+                if _reservation_immutable_identity(retained) == (
+                    _reservation_immutable_identity(payload)
+                ):
+                    return retained
                 raise ExperimentConflictError(
                     f"Attempt {reservation.campaign_id}/{reservation.variant_id}/{reservation.attempt_id} "
                     "is already reserved with different immutable inputs."
@@ -529,6 +619,44 @@ class ExperimentRegistry:
                 )
             return self._append(payload, events)
 
+    def retry_pre_performance(
+        self,
+        retry: AttemptPrePerformanceRetry,
+    ) -> dict[str, Any]:
+        """Record one explicit retry without creating another scientific trial."""
+
+        payload = retry.event_payload()
+        with self._write_lock():
+            events, state = self._load_and_replay()
+            exact = _event_by_fingerprint(events, _event_fingerprint(payload))
+            if exact is not None:
+                return exact
+            key = _attempt_key(payload)
+            _require_reserved_key(state, key)
+            if state["statuses"][key] != retry.from_status:
+                raise ExperimentTransitionError(
+                    f"Attempt {_format_key(key)} is {state['statuses'][key]}, "
+                    f"not {retry.from_status}."
+                )
+            prior = state["resolutions"].get(key)
+            if not isinstance(prior, Mapping):
+                raise ExperimentTransitionError(
+                    "Pre-performance retry requires a prior failed resolution."
+                )
+            if str(prior.get("record_sha256") or "") != retry.prior_resolution_sha256:
+                raise ExperimentTransitionError(
+                    "Pre-performance retry does not bind the current failed resolution."
+                )
+            if prior.get("result_sha256") is not None:
+                raise ExperimentTransitionError(
+                    "A failed experiment that already binds a result cannot be retried."
+                )
+            if int(state["pre_performance_retries"].get(key, 0)) >= 1:
+                raise ExperimentTransitionError(
+                    "Only one explicit pre-performance operational retry is permitted."
+                )
+            return self._append(payload, events)
+
     def events(self) -> list[dict[str, Any]]:
         events, _ = self._load_and_replay()
         return events
@@ -546,6 +674,9 @@ class ExperimentRegistry:
                     "resolution": (
                         None if key not in state["resolutions"] else _event_core(state["resolutions"][key])
                     ),
+                    "pre_performance_retry_count": int(
+                        state["pre_performance_retries"].get(key, 0)
+                    ),
                 }
             )
         return sorted(rows, key=lambda item: (item["campaign_id"], item["variant_id"], item["attempt_id"]))
@@ -555,6 +686,20 @@ class ExperimentRegistry:
         key = (campaign_id, variant_id, attempt_id)
         _require_reserved_key(state, key)
         return str(state["statuses"][key])
+
+    def current_resolution_event(
+        self,
+        campaign_id: str,
+        variant_id: str,
+        attempt_id: str,
+    ) -> dict[str, Any] | None:
+        """Return the current terminal event, including its chain hash."""
+
+        _, state = self._load_and_replay()
+        key = (campaign_id, variant_id, attempt_id)
+        _require_reserved_key(state, key)
+        resolution = state["resolutions"].get(key)
+        return None if resolution is None else _canonical_copy(resolution)
 
     def trial_count(self, economic_edge_fingerprint_sha256: str) -> int:
         """Count all reservations for an edge, including failed/cancelled work."""
@@ -577,7 +722,12 @@ class ExperimentRegistry:
 
     def _load_and_replay(self) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         events = _read_events(self.path, self.head_path)
-        state: dict[str, Any] = {"reservations": {}, "statuses": {}, "resolutions": {}}
+        state: dict[str, Any] = {
+            "reservations": {},
+            "statuses": {},
+            "resolutions": {},
+            "pre_performance_retries": {},
+        }
         seen_fingerprints: set[str] = set()
         for event in events:
             fingerprint = event["event_fingerprint_sha256"]
@@ -648,6 +798,31 @@ class ExperimentRegistry:
                         )
                     state["statuses"][key] = recovery.terminal_status
                     state["resolutions"][key] = event
+                elif event_type == "ATTEMPT_PRE_PERFORMANCE_RETRY":
+                    retry = AttemptPrePerformanceRetry.from_event(event)
+                    _require_reserved_key(state, key, integrity=True)
+                    prior = state["resolutions"].get(key)
+                    if state["statuses"][key] != retry.from_status:
+                        raise ExperimentIntegrityError(
+                            f"Attempt {_format_key(key)} retry starts from stale status "
+                            f"{retry.from_status}."
+                        )
+                    if not isinstance(prior, Mapping) or str(
+                        prior.get("record_sha256") or ""
+                    ) != retry.prior_resolution_sha256:
+                        raise ExperimentIntegrityError(
+                            f"Attempt {_format_key(key)} retry does not bind its failed resolution."
+                        )
+                    if prior.get("result_sha256") is not None:
+                        raise ExperimentIntegrityError(
+                            f"Attempt {_format_key(key)} retry follows a hash-bound result."
+                        )
+                    if int(state["pre_performance_retries"].get(key, 0)) >= 1:
+                        raise ExperimentIntegrityError(
+                            f"Attempt {_format_key(key)} has multiple pre-performance retries."
+                        )
+                    state["pre_performance_retries"][key] = 1
+                    state["statuses"][key] = retry.to_status
                 else:
                     raise ExperimentIntegrityError(f"Unknown experiment event_type {event_type!r}.")
             except ExperimentIntegrityError:
@@ -815,6 +990,16 @@ def _event_fingerprint(payload: Mapping[str, Any]) -> str:
     return _sha256_json(_event_core(payload))
 
 
+def _reservation_immutable_identity(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Return reservation inputs while excluding its first-write timestamp."""
+
+    return {
+        key: value
+        for key, value in _event_core(payload).items()
+        if key != "recorded_at"
+    }
+
+
 def _event_by_fingerprint(events: Iterable[dict[str, Any]], fingerprint: str) -> dict[str, Any] | None:
     return next((event for event in events if event["event_fingerprint_sha256"] == fingerprint), None)
 
@@ -901,6 +1086,8 @@ __all__ = [
     "STRICT_RESEARCH_VERDICTS",
     "TERMINAL_STATUSES",
     "AttemptReservation",
+    "AttemptFinalizationRecovery",
+    "AttemptPrePerformanceRetry",
     "AttemptResolution",
     "AttemptStatusTransition",
     "ExperimentConflictError",

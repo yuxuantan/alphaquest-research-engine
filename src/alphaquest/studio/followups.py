@@ -48,6 +48,7 @@ from alphaquest.research.campaign_stages import (
 )
 from alphaquest.research.policy import load_research_policy
 from alphaquest.research.factory_policy import research_factory_binding
+from alphaquest.research.experiment_registry import ExperimentRegistry
 from alphaquest.research.preflight import run_preflight
 from alphaquest.research.schemas import validate_campaign_config_contract
 from alphaquest.research.storage import load_storage_layout
@@ -415,6 +416,23 @@ def _require_queueable_performance_job(job: JobRecordV1, *, attempt_id: str) -> 
         "Open Research > History, create an Exact replication from this attempt, complete its "
         "hash-bound mechanics approval, then run the full test suite for the new attempt."
     )
+
+
+def _performance_hash_locks(gate: Mapping[str, Any]) -> dict[str, str]:
+    approval_path = Path(str(gate.get("approval_path") or ""))
+    return {
+        "config_hash": str(gate.get("config_hash") or ""),
+        "input_data_hash": str(gate.get("input_data_hash") or ""),
+        "mechanics_approval_sha256": (
+            _file_sha256(approval_path) if approval_path.is_file() else ""
+        ),
+        "strategy_implementation_sha256": str(
+            gate.get("strategy_implementation_sha256") or ""
+        ),
+        "strategy_certification_manifest_sha256": str(
+            gate.get("strategy_certification_manifest_sha256") or ""
+        ),
+    }
 
 
 def _is_legacy_unreserved_preflight_only_job(job: JobRecordV1) -> bool:
@@ -1168,24 +1186,133 @@ class FollowUpAttemptService:
             if gate.get("required") is not True or not config_hash or not data_hash:
                 errors = "; ".join(str(item) for item in gate.get("errors") or [])
                 raise ValueError(f"mechanics hashes are unresolved for {config_path.parent.name}: {errors}")
-            jobs.append(
-                queue.submit(
+            base_idempotency_key = (
+                f"{campaign_id}:{cfg['variant_id']}:{attempt_id}:mechanics_validation:"
+                f"{config_hash}:{data_hash}"
+            )
+            matching_jobs = [
+                prior
+                for prior in queue.list_jobs(limit=10_000)
+                if prior.job_type == MECHANICS_VALIDATION_RUN
+                and prior.campaign_id == campaign_id
+                and str(prior.payload.get("attempt_id") or "") == attempt_id
+                and str(prior.payload.get("variant_id") or "")
+                == str(cfg["variant_id"])
+                and prior.hash_locks
+                == {"config_hash": config_hash, "input_data_hash": data_hash}
+                and (
+                    prior.idempotency_key == base_idempotency_key
+                    or prior.idempotency_key.startswith(
+                        f"{base_idempotency_key}:retry:"
+                    )
+                )
+            ]
+            latest = matching_jobs[0] if matching_jobs else None
+            if latest is not None and latest.state not in {
+                OperationalState.FAILED_OPERATIONAL,
+                OperationalState.CANCELLED,
+            }:
+                jobs.append(latest)
+                continue
+            failed_attempts = [
+                prior
+                for prior in matching_jobs
+                if prior.state
+                in {OperationalState.FAILED_OPERATIONAL, OperationalState.CANCELLED}
+            ]
+            if len(failed_attempts) >= 3:
+                raise ValueError(
+                    "mechanics evidence reached its three-attempt operational retry limit; "
+                    "inspect the preserved failures before creating another governed follow-up"
+                )
+            idempotency_key = (
+                f"{base_idempotency_key}:retry:{len(failed_attempts)}"
+                if latest is not None
+                else base_idempotency_key
+            )
+            payload = {
+                "campaign_id": campaign_id,
+                "variant_id": str(cfg["variant_id"]),
+                "attempt_id": attempt_id,
+                "config_path": str(config_path),
+            }
+            if latest is not None:
+                payload["retry_of_job_id"] = latest.job_id
+            archived_run = (
+                self._archive_failed_mechanics_run(
+                    cfg,
+                    source_config_path=config_path,
+                    failed_job_ids=[prior.job_id for prior in failed_attempts],
+                )
+                if latest is not None
+                else None
+            )
+            try:
+                submitted = queue.submit(
                     job_type=MECHANICS_VALIDATION_RUN,
                     campaign_id=campaign_id,
-                    payload={
-                        "campaign_id": campaign_id,
-                        "variant_id": str(cfg["variant_id"]),
-                        "attempt_id": attempt_id,
-                        "config_path": str(config_path),
-                    },
-                    idempotency_key=(
-                        f"{campaign_id}:{cfg['variant_id']}:{attempt_id}:mechanics_validation:"
-                        f"{config_hash}:{data_hash}"
-                    ),
+                    payload=payload,
+                    idempotency_key=idempotency_key,
                     hash_locks={"config_hash": config_hash, "input_data_hash": data_hash},
                 )
-            )
+            except Exception:
+                if archived_run is not None:
+                    source, archive = archived_run
+                    source.parent.mkdir(parents=True, exist_ok=True)
+                    os.replace(archive, source)
+                raise
+            jobs.append(submitted)
         return jobs
+
+    def _archive_failed_mechanics_run(
+        self,
+        cfg: dict[str, Any],
+        *,
+        source_config_path: Path,
+        failed_job_ids: list[str],
+    ) -> tuple[Path, Path] | None:
+        """Preserve an incomplete run root before an explicit operational retry."""
+
+        from alphaquest.run_core import _apply_mechanics_validation_contract
+
+        generated = deepcopy(cfg)
+        _apply_mechanics_validation_contract(generated)
+        run_root = (
+            self.layout.evidence_roots[0]
+            / str(generated["campaign_id"])
+            / str(generated["variant_id"])
+            / str(generated["symbol"])
+            / str(generated["test_run_id"])
+        )
+        if not run_root.exists():
+            return None
+        archive_root = (
+            self.layout.studio_runtime_root
+            / "failed-mechanics-runs"
+            / failed_job_ids[-1]
+        )
+        archive = archive_root / run_root.name
+        if archive.exists() or archive.is_symlink():
+            raise FileExistsError(
+                f"failed mechanics-run archive already exists: {archive}"
+            )
+        archive_root.mkdir(parents=True, exist_ok=False)
+        os.replace(run_root, archive)
+        _write_json(
+            archive_root / "recovery.json",
+            {
+                "schema": "alphaquest.failed-mechanics-run-recovery/v1",
+                "failed_job_ids": failed_job_ids,
+                "source_config_path": str(source_config_path),
+                "source_run_root": str(run_root),
+                "archived_run_root": str(archive),
+                "reason": (
+                    "Preserved incomplete generated-validation evidence before "
+                    "an explicit hash-identical operational retry."
+                ),
+            },
+        )
+        return run_root, archive
 
     def queue_performance(self, campaign_id: str, attempt_id: str) -> list[JobRecordV1]:
         paths = (self.target_config_path(campaign_id, attempt_id),)
@@ -1204,8 +1331,6 @@ class FollowUpAttemptService:
                 and str(prior.payload.get("attempt_id") or "") == attempt_id
                 and str(prior.payload.get("variant_id") or "")
                 == str(cfg["variant_id"])
-                and prior.payload.get("execution_scope")
-                != TARGET_VARIANT_PERFORMANCE_SCOPE
             ]
             for prior in prior_jobs:
                 if prior.state in {
@@ -1214,11 +1339,6 @@ class FollowUpAttemptService:
                     OperationalState.CANCEL_REQUESTED,
                 }:
                     return [prior]
-                if not _is_legacy_unreserved_preflight_only_job(prior):
-                    _require_queueable_performance_job(
-                        prior,
-                        attempt_id=attempt_id,
-                    )
             output_dir = (
                 self.layout.evidence_roots[0]
                 / campaign_id
@@ -1226,29 +1346,215 @@ class FollowUpAttemptService:
                 / str(cfg.get("symbol") or (cfg.get("data") or {}).get("symbol"))
                 / str(cfg["test_run_id"])
             )
+            terminal = [
+                prior
+                for prior in prior_jobs
+                if not _is_legacy_unreserved_preflight_only_job(prior)
+                and not (
+                    prior.payload.get("pre_performance_retry") is not None
+                    and not prior.attempt_reserved
+                    and prior.state
+                    in {
+                        OperationalState.BLOCKED,
+                        OperationalState.FAILED_OPERATIONAL,
+                    }
+                )
+            ]
+            abandoned_retry_submissions = [
+                prior
+                for prior in prior_jobs
+                if prior.payload.get("pre_performance_retry") is not None
+                and not prior.attempt_reserved
+                and prior.state
+                in {
+                    OperationalState.BLOCKED,
+                    OperationalState.FAILED_OPERATIONAL,
+                }
+            ]
+            if len(abandoned_retry_submissions) > 2:
+                raise ValueError(
+                    "Pre-performance retry submission blocked after three audited "
+                    "pre-reservation submission failures"
+                )
+            retry_contract: dict[str, Any] | None = None
+            if terminal:
+                if len(terminal) != 1:
+                    _require_queueable_performance_job(
+                        terminal[0],
+                        attempt_id=attempt_id,
+                    )
+                failed = terminal[0]
+                retry_contract = self._archive_preperformance_campaign_run(
+                    failed,
+                    config_path=config_path,
+                    cfg=cfg,
+                    gate=gate,
+                    output_dir=output_dir,
+                )
+                for abandoned in abandoned_retry_submissions:
+                    prior_contract = abandoned.payload.get("pre_performance_retry")
+                    if not isinstance(prior_contract, Mapping) or any(
+                        str(prior_contract.get(key) or "")
+                        != str(retry_contract.get(key) or "")
+                        for key in (
+                            "failed_job_id",
+                            "recovery_path",
+                            "proof_sha256",
+                            "prior_resolution_sha256",
+                        )
+                    ):
+                        raise ValueError(
+                            "Pre-performance retry submission proof has changed since "
+                            "the prior pre-reservation failure"
+                        )
+            base_idempotency_key = (
+                f"{campaign_id}:{cfg['variant_id']}:{attempt_id}:"
+                f"{TARGET_VARIANT_PERFORMANCE_SCOPE}"
+            )
+            payload = {
+                "campaign_id": campaign_id,
+                "variant_id": str(cfg["variant_id"]),
+                "attempt_id": attempt_id,
+                "execution_scope": TARGET_VARIANT_PERFORMANCE_SCOPE,
+                "config_path": str(config_path),
+                "output_dir": str(output_dir),
+            }
+            hash_locks = _performance_hash_locks(gate)
+            idempotency_key = base_idempotency_key
+            if retry_contract is not None:
+                payload["pre_performance_retry"] = retry_contract
+                payload["retry_of_job_id"] = retry_contract["failed_job_id"]
+                idempotency_key = f"{base_idempotency_key}:retry:1"
+                if abandoned_retry_submissions:
+                    idempotency_key += (
+                        f":submission:{len(abandoned_retry_submissions) + 1}"
+                    )
+                hash_locks["pre_performance_proof_sha256"] = str(
+                    retry_contract["proof_sha256"]
+                )
             job = queue.submit(
                 job_type="campaign_variant_run",
                 campaign_id=campaign_id,
-                payload={
-                    "campaign_id": campaign_id,
-                    "variant_id": str(cfg["variant_id"]),
-                    "attempt_id": attempt_id,
-                    "execution_scope": TARGET_VARIANT_PERFORMANCE_SCOPE,
-                    "config_path": str(config_path),
-                    "output_dir": str(output_dir),
-                },
-                idempotency_key=(
-                    f"{campaign_id}:{cfg['variant_id']}:{attempt_id}:"
-                    f"{TARGET_VARIANT_PERFORMANCE_SCOPE}"
-                ),
-                hash_locks={
-                    "config_hash": str(gate.get("config_hash") or ""),
-                    "input_data_hash": str(gate.get("input_data_hash") or ""),
-                },
+                payload=payload,
+                idempotency_key=idempotency_key,
+                hash_locks=hash_locks,
             )
             _require_queueable_performance_job(job, attempt_id=attempt_id)
             jobs.append(job)
         return jobs
+
+    def _archive_preperformance_campaign_run(
+        self,
+        failed: JobRecordV1,
+        *,
+        config_path: Path,
+        cfg: Mapping[str, Any],
+        gate: Mapping[str, Any],
+        output_dir: Path,
+    ) -> dict[str, Any]:
+        """Preserve a zero-PnL failed run before one explicit continuation."""
+
+        attempt_id = str(cfg.get("attempt_id") or "")
+        variant_id = str(cfg.get("variant_id") or "")
+        campaign_id = str(cfg.get("campaign_id") or "")
+        if (
+            failed.state not in {OperationalState.FAILED_OPERATIONAL, OperationalState.CANCELLED}
+            or not failed.attempt_reserved
+            or failed.payload.get("pre_performance_retry") is not None
+            or str(failed.payload.get("config_path") or "") != str(config_path)
+            or Path(str(failed.payload.get("output_dir") or "")).resolve()
+            != output_dir.resolve()
+        ):
+            _require_queueable_performance_job(failed, attempt_id=attempt_id)
+        if failed.hash_locks.get("config_hash") != str(gate.get("config_hash") or ""):
+            raise ValueError("Pre-performance retry blocked: failed job config hash has drifted")
+        if failed.hash_locks.get("input_data_hash") != str(gate.get("input_data_hash") or ""):
+            raise ValueError("Pre-performance retry blocked: failed job input hash has drifted")
+
+        registry = ExperimentRegistry(
+            self.layout.research_artifact_root / "governance/experiment_registry.jsonl"
+        )
+        if registry.current_status(campaign_id, variant_id, attempt_id) != "FAILED":
+            raise ValueError(
+                "Pre-performance retry requires a terminal FAILED experiment reservation"
+            )
+        resolution = registry.current_resolution_event(campaign_id, variant_id, attempt_id)
+        if not isinstance(resolution, Mapping) or resolution.get("result_sha256") is not None:
+            raise ValueError(
+                "Pre-performance retry requires an unbound operational failure resolution"
+            )
+        prior_resolution_sha256 = str(resolution.get("record_sha256") or "")
+
+        archive_root = (
+            self.layout.studio_runtime_root / "failed-campaign-runs" / failed.job_id
+        )
+        archive = archive_root / output_dir.name
+        recovery_path = archive_root / "recovery.json"
+        if recovery_path.is_file():
+            recovery = _read_json(recovery_path)
+        else:
+            if not _is_proven_pre_performance_incomplete_run(output_dir, attempt_id):
+                _require_queueable_performance_job(failed, attempt_id=attempt_id)
+            approval_path = Path(str(gate.get("approval_path") or ""))
+            if not approval_path.is_file():
+                raise ValueError("Pre-performance retry requires the current approval artifact")
+            files = {
+                path.relative_to(output_dir).as_posix(): _file_sha256(path)
+                for path in sorted(output_dir.rglob("*"))
+                if path.is_file()
+            }
+            recovery = {
+                "schema": "alphaquest.pre-performance-campaign-retry/v1",
+                "campaign_id": campaign_id,
+                "variant_id": variant_id,
+                "attempt_id": attempt_id,
+                "retry_index": 1,
+                "failed_job_id": failed.job_id,
+                "source_config_path": str(config_path),
+                "source_run_root": str(output_dir),
+                "archived_run_root": str(archive),
+                "source_file_sha256": files,
+                "config_hash": str(gate.get("config_hash") or ""),
+                "input_data_hash": str(gate.get("input_data_hash") or ""),
+                "approval_path": str(approval_path),
+                "approval_sha256": _file_sha256(approval_path),
+                "strategy_implementation_sha256": str(
+                    gate.get("strategy_implementation_sha256") or ""
+                ),
+                "strategy_certification_manifest_sha256": str(
+                    gate.get("strategy_certification_manifest_sha256") or ""
+                ),
+                "prior_resolution_sha256": prior_resolution_sha256,
+                "reason": (
+                    "Explicit user-authorized continuation after preserved evidence proved "
+                    "that no PnL-bearing campaign stage began."
+                ),
+            }
+            archive_root.mkdir(parents=True, exist_ok=False)
+            _write_json(recovery_path, recovery)
+        if str(recovery.get("failed_job_id") or "") != failed.job_id:
+            raise ValueError("Pre-performance retry recovery belongs to a different failed job")
+        if str(recovery.get("prior_resolution_sha256") or "") != prior_resolution_sha256:
+            raise ValueError("Pre-performance retry recovery resolution hash has drifted")
+        if output_dir.exists() and not archive.exists():
+            os.replace(output_dir, archive)
+        if output_dir.exists() or not archive.is_dir():
+            raise ValueError("Pre-performance retry could not preserve the incomplete run root")
+        recorded_files = recovery.get("source_file_sha256")
+        if not isinstance(recorded_files, Mapping) or any(
+            not (archive / str(relative)).is_file()
+            or _file_sha256(archive / str(relative)) != str(expected)
+            for relative, expected in recorded_files.items()
+        ):
+            raise ValueError("Pre-performance retry archived evidence hash mismatch")
+        return {
+            "schema": str(recovery["schema"]),
+            "retry_index": 1,
+            "failed_job_id": failed.job_id,
+            "recovery_path": str(recovery_path),
+            "proof_sha256": _file_sha256(recovery_path),
+            "prior_resolution_sha256": prior_resolution_sha256,
+        }
 
     def _campaign(self, campaign_id: str) -> tuple[Path, dict[str, Any], tuple[str, ...]]:
         if re.fullmatch(r"[a-z0-9][a-z0-9_]*", campaign_id) is None:
@@ -1725,7 +2031,7 @@ def _rebase_relocated_project_paths(
     except ValueError:
         return []
     execution["raw_dir"] = portable
-    return [
+    changes = [
         {
             "variant_id": variant_id,
             "scope": "operational_storage",
@@ -1735,6 +2041,45 @@ def _rebase_relocated_project_paths(
             "reviewed": True,
         }
     ]
+    factory = cfg.get("research_factory")
+    objectives = cfg.get("research_objectives")
+    if (
+        isinstance(factory, dict)
+        and factory.get("schema") == "alphaquest.research-factory-binding/v2"
+        and isinstance(objectives, dict)
+    ):
+        old_factory = deepcopy(factory)
+        policy = load_research_policy()
+        cfg["research_factory"] = research_factory_binding(
+            objectives,
+            dataset={
+                "dataset_id": cfg.get("dataset_id") or data.get("dataset_id"),
+                "canonical_sha256": data.get("canonical_sha256"),
+                "source_sha256": data.get("source_sha256"),
+                "coverage_start": data.get("coverage_start"),
+                "coverage_end": data.get("coverage_end"),
+                "roll_calendar_sha256": data.get("roll_calendar_sha256"),
+                "execution_data": execution,
+            },
+            acceptance_train_months=int(policy.acceptance_oos["train_months"]),
+            acceptance_test_months=int(policy.acceptance_oos["test_months"]),
+        )
+        changes.append(
+            {
+                "variant_id": variant_id,
+                "scope": "research_factory",
+                "field": "dataset.event_execution_contract_sha256",
+                "old": old_factory["dataset"].get(
+                    "event_execution_contract_sha256"
+                ),
+                "new": cfg["research_factory"]["dataset"].get(
+                    "event_execution_contract_sha256"
+                ),
+                "reviewed": True,
+                "change_kind": "operational_path_rebind",
+            }
+        )
+    return changes
 
 
 def _validate_context_bound_module_values(cfg: Mapping[str, Any]) -> None:

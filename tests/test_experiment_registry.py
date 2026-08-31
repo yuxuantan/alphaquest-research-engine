@@ -6,6 +6,7 @@ import pytest
 
 from alphaquest.research.experiment_registry import (
     AttemptFinalizationRecovery,
+    AttemptPrePerformanceRetry,
     AttemptReservation,
     AttemptResolution,
     AttemptStatusTransition,
@@ -63,8 +64,12 @@ def test_experiment_reservation_is_idempotent_conflict_safe_and_counted_by_edge(
 
     first = registry.reserve(reservation)
     retried = registry.reserve(reservation)
+    rebuilt_payload = reservation.event_payload()
+    rebuilt_payload["recorded_at"] = "2026-08-14T09:00:00+00:00"
+    rebuilt = registry.reserve(AttemptReservation.from_event(rebuilt_payload))
 
     assert first == retried
+    assert rebuilt == first
     assert len(path.read_text(encoding="utf-8").splitlines()) == 1
     receipt = json.loads(path.with_suffix(".jsonl.head.json").read_text(encoding="utf-8"))
     assert receipt["record_count"] == 1
@@ -178,6 +183,73 @@ def test_finalization_recovery_amends_only_unbound_operational_failure(tmp_path)
     attempt = registry.attempts()[0]
     assert attempt["resolution"]["event_type"] == "ATTEMPT_FINALIZATION_RECOVERED"
     assert attempt["resolution"]["research_verdict"] == "FAIL"
+    assert attempt["resolution"]["result_sha256"] == "f" * 64
+    assert registry.trial_count("a" * 64) == 1
+
+
+def test_one_pre_performance_retry_continues_same_counted_trial(tmp_path):
+    registry = ExperimentRegistry(tmp_path / "experiment_registry.jsonl")
+    registry.reserve(_reservation())
+    registry.transition(
+        AttemptStatusTransition(
+            campaign_id="demo",
+            variant_id="v01",
+            attempt_id="attempt_001",
+            from_status="RESERVED",
+            to_status="RUNNING",
+            recorded_at="2026-08-14T08:01:00+00:00",
+            reason="Runner accepted the reservation.",
+        )
+    )
+    failed = registry.resolve(
+        AttemptResolution(
+            campaign_id="demo",
+            variant_id="v01",
+            attempt_id="attempt_001",
+            from_status="RUNNING",
+            terminal_status="FAILED",
+            recorded_at="2026-08-14T08:02:00+00:00",
+            reason="The sequencing gate failed before a PnL stage began.",
+            research_verdict="NEEDS MANUAL REVIEW",
+        )
+    )
+    retry = AttemptPrePerformanceRetry(
+        campaign_id="demo",
+        variant_id="v01",
+        attempt_id="attempt_001",
+        prior_resolution_sha256=failed["record_sha256"],
+        pre_performance_proof_sha256="9" * 64,
+        failed_job_id="failed-job-001",
+        retry_job_id="retry-job-001",
+        recorded_at="2026-08-14T08:03:00+00:00",
+        reason="User explicitly retried after zero-PnL evidence was archived.",
+    )
+
+    first = registry.retry_pre_performance(retry)
+    repeated = registry.retry_pre_performance(retry)
+
+    assert first == repeated
+    assert registry.current_status("demo", "v01", "attempt_001") == "RUNNING"
+    assert registry.trial_count("a" * 64) == 1
+    attempt = registry.attempts()[0]
+    assert attempt["pre_performance_retry_count"] == 1
+    assert registry.current_resolution_event("demo", "v01", "attempt_001") == failed
+
+    registry.resolve(
+        AttemptResolution(
+            campaign_id="demo",
+            variant_id="v01",
+            attempt_id="attempt_001",
+            from_status="RUNNING",
+            terminal_status="COMPLETED",
+            recorded_at="2026-08-14T09:00:00+00:00",
+            reason="The explicit retry completed the reserved methodology.",
+            research_verdict="FAIL",
+            result_sha256="f" * 64,
+        )
+    )
+    assert registry.current_status("demo", "v01", "attempt_001") == "COMPLETED"
+    attempt = registry.attempts()[0]
     assert attempt["resolution"]["result_sha256"] == "f" * 64
     assert registry.trial_count("a" * 64) == 1
 

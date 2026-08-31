@@ -20,6 +20,7 @@ from alphaquest.data.pipeline import prepare_data
 from alphaquest.data.source import data_source_hash
 from alphaquest.data.subset import subset_from_config
 from alphaquest.research.policy import load_research_policy
+from alphaquest.research.storage import project_root_for_path
 from alphaquest.utils.config import (
     config_timeframe,
     config_timeframe_minutes,
@@ -108,7 +109,11 @@ def main() -> None:
         timeframe=timeframe,
         include_execution_data=True,
     )
-    input_hash = data_source_hash(cfg["data"], subset)
+    input_hash = data_source_hash(
+        cfg["data"],
+        subset,
+        project_root=project_root_for_path(args.config),
+    )
     detail_data = execution_data if timeframe != "1m" else None
     _report_progress(
         progress_reporter,
@@ -216,7 +221,11 @@ def _run_canonical_event_core(
     )
     out = create_run_dir("core", args.config, config)
     subset = subset_from_config(config, "core")
-    input_hash = data_source_hash(config["data"], subset)
+    input_hash = data_source_hash(
+        config["data"],
+        subset,
+        project_root=project_root_for_path(args.config),
+    )
 
     sessions = iter_event_sessions(config, subset)
     total_sessions = _event_session_candidate_count(config, subset)

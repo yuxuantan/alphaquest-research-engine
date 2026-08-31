@@ -15,6 +15,7 @@ import yaml
 
 from alphaquest.studio.api import (
     _attempt_mechanics_gate,
+    _campaign_research_progress,
     _campaign_workflow_context,
     _follow_up_options,
     _follow_up_kind_options,
@@ -80,6 +81,119 @@ def test_finalized_exact_attempt_result_outranks_current_mechanics_blocker() -> 
     assert workflow["primary_action"]["label"] == (
         "Inspect the exact v03 result for this attempt"
     )
+
+
+def test_terminal_incomplete_attempt_routes_to_history_not_mechanics_review() -> None:
+    attempt_id = "pre_pnl_mechanics_correction_20260828t074924_a156ce04"
+    workflow = _campaign_workflow_context(
+        {"campaign_id": "yush_orderflow_range"},
+        [
+            {
+                "attempt_id": attempt_id,
+                "attempt_kind": "pre_pnl_mechanics_correction",
+                "target_variant_id": "v04",
+            }
+        ],
+        {
+            attempt_id: {
+                "all_approved": False,
+                "variants": [
+                    {
+                        "variant_id": "v04",
+                        "status": "BLOCKED",
+                        "review_progress": {
+                            "evidence_available": True,
+                            "sampled_count": 7,
+                            "unreviewed_count": 2,
+                        },
+                    }
+                ],
+            }
+        },
+        {},
+        current_scope={
+            "attempt_id": attempt_id,
+            "attempt_kind": "pre_pnl_mechanics_correction",
+            "target_variant_id": "v04",
+            "operational_status": "FAILED",
+            "terminal_research_verdict": "NEEDS MANUAL REVIEW",
+        },
+    )
+
+    assert workflow["stage"] == "terminal_follow_up"
+    assert workflow["scientific_status"] == "NEEDS MANUAL REVIEW"
+    assert workflow["operational_status"] == "FAILED"
+    assert workflow["primary_action"]["section"] == "history"
+
+
+def test_terminal_incomplete_progress_does_not_borrow_an_older_result() -> None:
+    attempt_id = "pre_pnl_mechanics_correction_20260828t074924_a156ce04"
+    workflow = {
+        "current_attempt_id": attempt_id,
+        "target_variant_id": "v04",
+        "stage": "terminal_follow_up",
+        "scientific_status": "NEEDS MANUAL REVIEW",
+        "operational_status": "FAILED",
+        "primary_action": {
+            "label": "Inspect the preserved incomplete attempt and choose a governed follow-up"
+        },
+    }
+    progress = _campaign_research_progress(
+        workflow,
+        [
+            {
+                "variant": "v04",
+                "research verdict": "NEEDS MANUAL REVIEW",
+                "operational state": "FAILED_OPERATIONAL",
+            }
+        ],
+        {},
+        {
+            "v04": {
+                "run_id": "older_finalized_attempt",
+                "research_verdict": "PASS",
+                "scientific_validity_verdict": "PASS",
+            }
+        },
+    )["campaign"]
+
+    assert progress["current_stage_label"] == "Interrupted test suite"
+    assert progress["operational_state"] == "FAILED_OPERATIONAL"
+    assert progress["scientific_status"] == "NEEDS MANUAL REVIEW"
+    assert progress["generic_objective_status"] == "PENDING"
+
+
+def test_fresh_current_attempt_progress_does_not_borrow_an_older_result() -> None:
+    attempt_id = "methodology_rerun_20260829t110101_a78ce6cc"
+    workflow = {
+        "current_attempt_id": attempt_id,
+        "target_variant_id": "v04",
+        "stage": "mechanics_evidence",
+        "scientific_status": "NEEDS MANUAL REVIEW",
+        "primary_action": {"label": "Generate mechanics evidence for v04"},
+    }
+    progress = _campaign_research_progress(
+        workflow,
+        [
+            {
+                "variant": "v04",
+                "research verdict": "NEEDS MANUAL REVIEW",
+                "operational state": "NOT_QUEUED",
+            }
+        ],
+        {},
+        {
+            "v04": {
+                "run_id": "older_finalized_attempt",
+                "research_verdict": "PASS",
+                "scientific_validity_verdict": "PASS",
+            }
+        },
+    )["campaign"]
+
+    assert progress["current_stage_label"] == "Mechanics evidence"
+    assert progress["current_stage_id"] == "mechanics_evidence"
+    assert progress["generic_objective_status"] == "PENDING"
 
 
 def test_new_sequential_variant_is_active_work_over_newer_historical_attempt(
@@ -217,6 +331,67 @@ def test_finalized_current_attempt_uses_historical_approval_and_leaves_mechanics
     assert gate[attempt_id]["all_approved"] is True
     assert gate[attempt_id]["variants"][0]["status"] == "APPROVED_FOR_TESTING"
     assert queue == []
+
+
+def test_terminal_incomplete_attempt_leaves_active_mechanics_queue(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    attempt_id = "pre_pnl_mechanics_correction_20260828t074924_a156ce04"
+    config_path = tmp_path / "campaign" / "v04" / "config.yaml"
+    config_path.parent.mkdir(parents=True)
+    config_path.write_text(
+        yaml.safe_dump({"campaign_id": "yush_orderflow_range", "variant_id": "v04"}),
+        encoding="utf-8",
+    )
+    attempts = [
+        {
+            "attempt_id": attempt_id,
+            "attempt_kind": "pre_pnl_mechanics_correction",
+            "target_variant_id": "v04",
+            "created_at": "2026-08-28T07:49:25+00:00",
+        }
+    ]
+
+    class FakeAttempts:
+        def __init__(self, _root):
+            pass
+
+        def target_config_path(self, _campaign_id, _attempt_id):
+            return config_path
+
+        def list_attempts(self, _campaign_id, *, include_dataset_bindings=False):
+            assert include_dataset_bindings is False
+            return attempts
+
+        def config_paths(self, _campaign_id, _attempt_id):
+            return (config_path,)
+
+    monkeypatch.setattr("alphaquest.studio.api.FollowUpAttemptService", FakeAttempts)
+    monkeypatch.setattr("alphaquest.studio.api._attempt_results", lambda *_args: {})
+    monkeypatch.setattr(
+        "alphaquest.studio.api._experiment_attempt_outcomes",
+        lambda *_args: {
+            (attempt_id, "v04"): {
+                "operational_status": "FAILED",
+                "research_verdict": "NEEDS MANUAL REVIEW",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        "alphaquest.studio.api.list_published_campaigns",
+        lambda _root: [
+            {
+                "campaign_id": "yush_orderflow_range",
+                "title": "Yush Orderflow Range Reversal",
+                "lifecycle": "active",
+                "authored_lifecycle": "active",
+                "studio_managed": True,
+            }
+        ],
+    )
+
+    assert _mechanics_review_summaries(tmp_path) == []
 
 
 @pytest.mark.parametrize(

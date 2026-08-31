@@ -40,6 +40,7 @@ from alphaquest.research.experiment_registry import (
     RUNNING as EXPERIMENT_RUNNING,
     STRICT_RESEARCH_VERDICTS,
     AttemptReservation,
+    AttemptPrePerformanceRetry,
     AttemptResolution,
     AttemptStatusTransition,
     ExperimentRegistry,
@@ -280,6 +281,35 @@ class StudioWorker:
             approval_hash = _file_sha256(Path(str(approval_path)))
             values["approval_hash"] = approval_hash
             values["approval_sha256"] = approval_hash
+            values["mechanics_approval_sha256"] = approval_hash
+        strategy_implementation_sha256 = str(
+            gate.get("strategy_implementation_sha256") or ""
+        )
+        if strategy_implementation_sha256:
+            values["strategy_implementation_sha256"] = (
+                strategy_implementation_sha256
+            )
+        strategy_certification_manifest_sha256 = str(
+            gate.get("strategy_certification_manifest_sha256") or ""
+        )
+        if strategy_certification_manifest_sha256:
+            values["strategy_certification_manifest_sha256"] = (
+                strategy_certification_manifest_sha256
+            )
+        if job.job_type == CAMPAIGN_VARIANT_RUN and job.payload.get(
+            "pre_performance_retry"
+        ) is not None:
+            output_dir = self._output_dir(job, cfg, config_path)
+            retry_contract = _validate_preperformance_retry(
+                job,
+                project_root=self.project_root,
+                output_dir=output_dir,
+                gate=gate,
+            )
+            assert retry_contract is not None
+            values["pre_performance_proof_sha256"] = str(
+                retry_contract["proof_sha256"]
+            )
         return values
 
     def _execute(self, context: JobExecutionContext, job: JobRecordV1) -> dict[str, Any]:
@@ -370,6 +400,12 @@ class StudioWorker:
             }
 
         output_dir = self._output_dir(job, cfg, config_path)
+        retry_contract = _validate_preperformance_retry(
+            job,
+            project_root=self.project_root,
+            output_dir=output_dir,
+            gate=gate,
+        )
         # This repeats the runner's immutable-attempt guard before reservation.
         # The runner repeats it after reservation to catch the remaining race.
         self.attempt_validator(cfg, config_path, out_dir=output_dir)
@@ -412,25 +448,48 @@ class StudioWorker:
             experiment_event = self.experiment_registry.reserve(experiment_reservation)
             registry_reserved = True
             context.reserve_attempt()
+            if retry_contract is not None:
+                experiment_event = self.experiment_registry.retry_pre_performance(
+                    AttemptPrePerformanceRetry(
+                        campaign_id=experiment_reservation.campaign_id,
+                        variant_id=experiment_reservation.variant_id,
+                        attempt_id=experiment_reservation.attempt_id,
+                        prior_resolution_sha256=str(
+                            retry_contract["prior_resolution_sha256"]
+                        ),
+                        pre_performance_proof_sha256=str(
+                            retry_contract["proof_sha256"]
+                        ),
+                        failed_job_id=str(retry_contract["failed_job_id"]),
+                        retry_job_id=job.job_id,
+                        recorded_at=_now_iso(),
+                        reason=(
+                            "User explicitly continued the same reserved methodology after "
+                            "hash-bound evidence proved that no PnL-bearing stage began."
+                        ),
+                    )
+                )
             self.finalizer.record_recovery_phase(
                 job.job_id,
                 "ATTEMPT_RESERVED",
                 details={
                     "output_dir": str(output_dir),
                     "experiment_record_sha256": experiment_event["record_sha256"],
+                    "pre_performance_retry": retry_contract is not None,
                 },
             )
-            self.experiment_registry.transition(
-                AttemptStatusTransition(
-                    campaign_id=experiment_reservation.campaign_id,
-                    variant_id=experiment_reservation.variant_id,
-                    attempt_id=experiment_reservation.attempt_id,
-                    from_status=EXPERIMENT_RESERVED,
-                    to_status=EXPERIMENT_RUNNING,
-                    recorded_at=_now_iso(),
-                    reason="Studio queue reserved the immutable attempt and accepted runner ownership.",
+            if retry_contract is None:
+                self.experiment_registry.transition(
+                    AttemptStatusTransition(
+                        campaign_id=experiment_reservation.campaign_id,
+                        variant_id=experiment_reservation.variant_id,
+                        attempt_id=experiment_reservation.attempt_id,
+                        from_status=EXPERIMENT_RESERVED,
+                        to_status=EXPERIMENT_RUNNING,
+                        recorded_at=_now_iso(),
+                        reason="Studio queue reserved the immutable attempt and accepted runner ownership.",
+                    )
                 )
-            )
             context.raise_if_cancelled()
             with _heartbeat_pump(context):
                 runner_kwargs = {
@@ -1498,12 +1557,109 @@ def _gate_drift(hash_locks: Mapping[str, str], gate: Mapping[str, Any]) -> str |
         "config_hash": str(gate.get("config_hash") or ""),
         "input_data_hash": str(gate.get("input_data_hash") or ""),
     }
+    approval_path = Path(str(gate.get("approval_path") or ""))
+    optional = {
+        "mechanics_approval_sha256": (
+            _file_sha256(approval_path) if approval_path.is_file() else ""
+        ),
+        "strategy_implementation_sha256": str(
+            gate.get("strategy_implementation_sha256") or ""
+        ),
+        "strategy_certification_manifest_sha256": str(
+            gate.get("strategy_certification_manifest_sha256") or ""
+        ),
+    }
+    expected.update({key: value for key, value in optional.items() if key in hash_locks})
     mismatches = [
         f"{key}: queued={hash_locks.get(key, '<missing>')}, current={value or '<missing>'}"
         for key, value in expected.items()
         if hash_locks.get(key) != value
     ]
     return "; ".join(mismatches) if mismatches else None
+
+
+def _validate_preperformance_retry(
+    job: JobRecordV1,
+    *,
+    project_root: Path,
+    output_dir: Path,
+    gate: Mapping[str, Any],
+) -> dict[str, Any] | None:
+    raw = job.payload.get("pre_performance_retry")
+    if raw is None:
+        return None
+    if not isinstance(raw, Mapping) or raw.get("schema") != (
+        "alphaquest.pre-performance-campaign-retry/v1"
+    ):
+        raise ValueError("campaign retry payload has an unsupported proof contract")
+    if int(raw.get("retry_index") or 0) != 1:
+        raise ValueError("campaign retry payload exceeds the single permitted retry")
+    failed_job_id = str(raw.get("failed_job_id") or "")
+    if not failed_job_id or str(job.payload.get("retry_of_job_id") or "") != failed_job_id:
+        raise ValueError("campaign retry payload does not bind its failed job")
+    recovery_path = Path(str(raw.get("recovery_path") or ""))
+    recovery_path = (
+        recovery_path.resolve()
+        if recovery_path.is_absolute()
+        else (project_root / recovery_path).resolve()
+    )
+    runtime_root = load_storage_layout(project_root).studio_runtime_root.resolve()
+    expected_root = runtime_root / "failed-campaign-runs" / failed_job_id
+    if not recovery_path.is_relative_to(expected_root) or not recovery_path.is_file():
+        raise ValueError("campaign retry proof is outside its governed recovery root")
+    proof_sha256 = _file_sha256(recovery_path)
+    if proof_sha256 != str(raw.get("proof_sha256") or "") or proof_sha256 != str(
+        job.hash_locks.get("pre_performance_proof_sha256") or ""
+    ):
+        raise ValueError("campaign retry proof hash has drifted")
+    try:
+        recovery = json.loads(recovery_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"campaign retry proof could not be read: {exc}") from exc
+    if not isinstance(recovery, Mapping):
+        raise ValueError("campaign retry proof must be a mapping")
+    expected = {
+        "schema": "alphaquest.pre-performance-campaign-retry/v1",
+        "campaign_id": str(job.payload.get("campaign_id") or ""),
+        "variant_id": str(job.payload.get("variant_id") or ""),
+        "attempt_id": str(job.payload.get("attempt_id") or ""),
+        "retry_index": 1,
+        "failed_job_id": failed_job_id,
+        "config_hash": str(gate.get("config_hash") or ""),
+        "input_data_hash": str(gate.get("input_data_hash") or ""),
+        "strategy_implementation_sha256": str(
+            gate.get("strategy_implementation_sha256") or ""
+        ),
+        "strategy_certification_manifest_sha256": str(
+            gate.get("strategy_certification_manifest_sha256") or ""
+        ),
+        "prior_resolution_sha256": str(raw.get("prior_resolution_sha256") or ""),
+    }
+    mismatches = [
+        key for key, value in expected.items() if recovery.get(key) != value
+    ]
+    if mismatches:
+        raise ValueError(
+            "campaign retry proof identity mismatch: " + ", ".join(sorted(mismatches))
+        )
+    approval_path = Path(str(recovery.get("approval_path") or ""))
+    if not approval_path.is_file() or _file_sha256(approval_path) != str(
+        recovery.get("approval_sha256") or ""
+    ):
+        raise ValueError("campaign retry mechanics approval hash has drifted")
+    archive = Path(str(recovery.get("archived_run_root") or "")).resolve()
+    if not archive.is_relative_to(expected_root) or not archive.is_dir():
+        raise ValueError("campaign retry archived run is missing or outside recovery root")
+    if output_dir.exists():
+        raise ValueError("campaign retry output path is not fresh")
+    files = recovery.get("source_file_sha256")
+    if not isinstance(files, Mapping) or any(
+        not (archive / str(relative)).is_file()
+        or _file_sha256(archive / str(relative)) != str(expected_hash)
+        for relative, expected_hash in files.items()
+    ):
+        raise ValueError("campaign retry archived evidence hash mismatch")
+    return dict(raw)
 
 
 def _mechanics_gate_drift(

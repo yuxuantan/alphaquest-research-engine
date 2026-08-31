@@ -16,6 +16,12 @@ from alphaquest.research.campaign_stages import (
     canonicalize_campaign_config,
 )
 from alphaquest.research.factory_policy import research_factory_binding
+from alphaquest.research.experiment_registry import (
+    AttemptReservation,
+    AttemptResolution,
+    AttemptStatusTransition,
+    ExperimentRegistry,
+)
 from alphaquest.studio.followups import (
     DestinationBenchmarkSelectionV1,
     FollowUpAttemptRequestV1,
@@ -45,7 +51,7 @@ from alphaquest.strategy_certification import (
     compute_implementation_sha256,
     get_strategy_certification,
 )
-from alphaquest.studio.jobs import SQLiteJobQueue
+from alphaquest.studio.jobs import OperationalState, SQLiteJobQueue
 
 
 VARIANTS = tuple(f"v{index:02d}" for index in range(1, 6))
@@ -918,6 +924,56 @@ def test_relocated_project_paths_are_resolved_and_made_portable(tmp_path: Path) 
             "reviewed": True,
         }
     ]
+
+
+def test_relocated_event_path_rebinds_v2_research_factory(tmp_path: Path) -> None:
+    current = tmp_path / "data/raw/ES/sierra-es-trades"
+    current.mkdir(parents=True)
+    recorded = Path(
+        "/former/workspace/alphaquest-research-engine/data/raw/ES/sierra-es-trades"
+    )
+    objectives = _research_objectives().model_dump(mode="json", by_alias=True)
+    data = {
+        "dataset_id": "events_v1",
+        "canonical_sha256": "1" * 64,
+        "source_sha256": "2" * 64,
+        "coverage_start": "2020-01-01T00:00:00+00:00",
+        "coverage_end": "2025-12-31T00:00:00+00:00",
+        "execution_data": {
+            "source": "sierra_scid_records",
+            "raw_dir": str(recorded),
+            "raw_manifest_sha256": "3" * 64,
+        },
+    }
+    cfg = {
+        "dataset_id": "events_v1",
+        "data": data,
+        "research_objectives": objectives,
+        "research_factory": research_factory_binding(objectives, dataset=data),
+    }
+    old_contract = cfg["research_factory"]["dataset"][
+        "event_execution_contract_sha256"
+    ]
+
+    changes = _rebase_relocated_project_paths(
+        cfg,
+        variant_id="v04",
+        project_root=tmp_path,
+    )
+
+    assert cfg["data"]["execution_data"]["raw_dir"] == (
+        "data/raw/ES/sierra-es-trades"
+    )
+    assert cfg["research_factory"] == research_factory_binding(
+        objectives,
+        dataset=cfg["data"],
+    )
+    assert (
+        cfg["research_factory"]["dataset"]["event_execution_contract_sha256"]
+        != old_contract
+    )
+    assert changes[-1]["scope"] == "research_factory"
+    assert changes[-1]["change_kind"] == "operational_path_rebind"
 
 
 def test_methodology_rerun_revalidates_only_the_selected_variant(
@@ -2114,6 +2170,71 @@ def test_queueing_one_attempt_is_idempotent_but_different_attempts_are_distinct(
     assert first[0].payload["variant_id"] == "v05"
 
 
+def test_failed_unreserved_mechanics_job_allows_bounded_explicit_retry(
+    tmp_path,
+    monkeypatch,
+):
+    _workspace(tmp_path)
+    service = _service(tmp_path, monkeypatch)
+    attempt = service.create(_request("replication"))
+
+    def gate(_cfg, path):
+        return {
+            "required": True,
+            "config_hash": _sha(Path(path)),
+            "input_data_hash": "d" * 64,
+            "errors": ["fresh approval not written"],
+        }
+
+    monkeypatch.setattr("alphaquest.studio.followups.inspect_validation_gate", gate)
+    first = service.queue_mechanics_validation("demo", attempt.attempt_id)[0]
+    queue = SQLiteJobQueue(service.layout.studio_runtime_root / "jobs.sqlite3")
+    failed = queue.run_once(
+        worker_id="worker",
+        executor=lambda _context, _job: (_ for _ in ()).throw(
+            RuntimeError("missing operational path")
+        ),
+        observed_hashes=first.hash_locks,
+    )
+    assert failed is not None
+    assert failed.job_id == first.job_id
+    assert failed.state == OperationalState.FAILED_OPERATIONAL
+    assert failed.attempt_reserved is False
+
+    config_path = service.target_config_path("demo", attempt.attempt_id)
+    config = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    from alphaquest.run_core import _apply_mechanics_validation_contract
+
+    generated = deepcopy(config)
+    _apply_mechanics_validation_contract(generated)
+    failed_run = (
+        service.layout.evidence_roots[0]
+        / generated["campaign_id"]
+        / generated["variant_id"]
+        / generated["symbol"]
+        / generated["test_run_id"]
+    )
+    failed_run.mkdir(parents=True)
+    (failed_run / "run_manifest.json").write_text("{}\n", encoding="utf-8")
+
+    retry = service.queue_mechanics_validation("demo", attempt.attempt_id)[0]
+    repeated = service.queue_mechanics_validation("demo", attempt.attempt_id)[0]
+
+    assert retry.job_id != failed.job_id
+    assert retry.idempotency_key.endswith(":retry:1")
+    assert retry.payload["retry_of_job_id"] == failed.job_id
+    assert repeated.job_id == retry.job_id
+    archive_root = (
+        service.layout.studio_runtime_root
+        / "failed-mechanics-runs"
+        / failed.job_id
+    )
+    assert not failed_run.exists()
+    assert (archive_root / failed_run.name / "run_manifest.json").is_file()
+    recovery = json.loads((archive_root / "recovery.json").read_text(encoding="utf-8"))
+    assert recovery["failed_job_ids"] == [failed.job_id]
+
+
 def test_terminal_idempotent_performance_submission_requires_explicit_replication(tmp_path):
     queue = SQLiteJobQueue(tmp_path / "jobs.sqlite3")
     queued = queue.submit(
@@ -2134,6 +2255,145 @@ def test_terminal_idempotent_performance_submission_requires_explicit_replicatio
 
     with pytest.raises(ValueError, match="Exact replication"):
         _require_queueable_performance_job(failed, attempt_id="attempt_one")
+
+
+def test_reserved_zero_pnl_campaign_failure_allows_one_explicit_retry(
+    tmp_path,
+    monkeypatch,
+):
+    _workspace(tmp_path)
+    service = _service(tmp_path, monkeypatch)
+    attempt = service.create(_request("replication"))
+    config_path = service.target_config_path("demo", attempt.attempt_id)
+    cfg = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+    approval_path = tmp_path / "research_artifacts/validation_approvals/demo/approval.json"
+    approval_path.parent.mkdir(parents=True)
+    approval_path.write_text('{"status":"approved_for_testing"}\n', encoding="utf-8")
+    gate = {
+        "status": "APPROVED_FOR_TESTING",
+        "config_path": str(config_path),
+        "config_hash": _sha(config_path),
+        "input_data_hash": "d" * 64,
+        "approval_path": str(approval_path),
+        "strategy_implementation_sha256": "a" * 64,
+        "strategy_certification_manifest_sha256": "b" * 64,
+    }
+    monkeypatch.setattr(
+        "alphaquest.studio.followups.require_all_variant_mechanics_approved",
+        lambda _paths: [gate],
+    )
+
+    first = service.queue_performance("demo", attempt.attempt_id)[0]
+    queue = SQLiteJobQueue(service.layout.studio_runtime_root / "jobs.sqlite3")
+
+    def reserve_then_fail(context, _job):
+        context.reserve_attempt()
+        raise RuntimeError("sequencing gate failed before stage one")
+
+    failed = queue.run_once(
+        worker_id="worker",
+        executor=reserve_then_fail,
+        observed_hashes=first.hash_locks,
+    )
+    assert failed is not None and failed.attempt_reserved is True
+
+    output_dir = Path(str(first.payload["output_dir"]))
+    output_dir.mkdir(parents=True)
+    (output_dir / "campaign_test_summary.json").write_text(
+        json.dumps(
+            {
+                "attempt_id": attempt.attempt_id,
+                "status": "incomplete",
+                "halted": True,
+                "stages": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    (output_dir / "studio_incomplete_attempt.json").write_text(
+        json.dumps(
+            {
+                "attempt_id": attempt.attempt_id,
+                "attempt_reserved": True,
+                "operational_state": "FAILED_OPERATIONAL",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    registry = ExperimentRegistry(
+        service.layout.research_artifact_root / "governance/experiment_registry.jsonl"
+    )
+    registry.reserve(
+        AttemptReservation(
+            campaign_id="demo",
+            variant_id=str(cfg["variant_id"]),
+            attempt_id=attempt.attempt_id,
+            kind="replication",
+            economic_edge_fingerprint_sha256="1" * 64,
+            research_objectives_sha256="2" * 64,
+            config_sha256=gate["config_hash"],
+            data_sha256=gate["input_data_hash"],
+            parameter_grid_sha256="3" * 64,
+            stages=("limited_core_grid_test",),
+            reserved_at="2026-07-15T12:30:00+00:00",
+        )
+    )
+    registry.transition(
+        AttemptStatusTransition(
+            campaign_id="demo",
+            variant_id=str(cfg["variant_id"]),
+            attempt_id=attempt.attempt_id,
+            from_status="RESERVED",
+            to_status="RUNNING",
+            recorded_at="2026-07-15T12:31:00+00:00",
+            reason="Runner accepted the reservation.",
+        )
+    )
+    registry.resolve(
+        AttemptResolution(
+            campaign_id="demo",
+            variant_id=str(cfg["variant_id"]),
+            attempt_id=attempt.attempt_id,
+            from_status="RUNNING",
+            terminal_status="FAILED",
+            recorded_at="2026-07-15T12:32:00+00:00",
+            reason="Sequencing gate failed before stage one.",
+            research_verdict="NEEDS MANUAL REVIEW",
+        )
+    )
+
+    retry = service.queue_performance("demo", attempt.attempt_id)[0]
+    repeated = service.queue_performance("demo", attempt.attempt_id)[0]
+
+    assert retry.job_id != failed.job_id
+    assert retry.idempotency_key.endswith(":retry:1")
+    assert retry.payload["retry_of_job_id"] == failed.job_id
+    assert repeated.job_id == retry.job_id
+    assert not output_dir.exists()
+    recovery_path = Path(
+        str(retry.payload["pre_performance_retry"]["recovery_path"])
+    )
+    recovery = json.loads(recovery_path.read_text(encoding="utf-8"))
+    archive = Path(str(recovery["archived_run_root"]))
+    assert (archive / "campaign_test_summary.json").is_file()
+    assert retry.hash_locks["pre_performance_proof_sha256"] == _sha(recovery_path)
+
+    blocked = queue.claim_next(worker_id="worker", observed_hashes={})
+    assert blocked is None
+    first_submission = queue.get(retry.job_id)
+    assert first_submission.state == OperationalState.BLOCKED
+    assert first_submission.attempt_reserved is False
+
+    replacement = service.queue_performance("demo", attempt.attempt_id)[0]
+    repeated_replacement = service.queue_performance("demo", attempt.attempt_id)[0]
+
+    assert replacement.job_id != retry.job_id
+    assert replacement.idempotency_key.endswith(":retry:1:submission:2")
+    assert replacement.payload["pre_performance_retry"] == retry.payload[
+        "pre_performance_retry"
+    ]
+    assert repeated_replacement.job_id == replacement.job_id
 
 
 def test_unreserved_legacy_campaign_preflight_is_not_a_performance_replay(tmp_path):
