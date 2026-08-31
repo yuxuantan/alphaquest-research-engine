@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import asdict, replace
 from datetime import date
+from multiprocessing import get_context
 from types import MappingProxyType, SimpleNamespace
 
 import numpy as np
@@ -231,7 +233,19 @@ def test_runner_uses_realistic_gap_fills_one_tick_slippage_and_eleven_flatten():
         "remove this expected failure only during governed recertification"
     )
 )
-def test_parallel_session_replay_merges_trade_ids_equity_and_audits_deterministically():
+def test_parallel_session_replay_merges_trade_ids_equity_and_audits_deterministically(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    # Exercise the same fresh-interpreter certification boundary on Linux and
+    # macOS. The production runner retains its platform-default process model.
+    monkeypatch.setattr(
+        event_runner,
+        "ProcessPoolExecutor",
+        lambda **kwargs: ProcessPoolExecutor(
+            mp_context=get_context("spawn"),
+            **kwargs,
+        ),
+    )
     first = _end_to_end_trade_session()
     second_events = first.events.copy()
     second_events["timestamp"] = second_events["timestamp"] + pd.Timedelta(days=1)
