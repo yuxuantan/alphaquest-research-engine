@@ -27,7 +27,7 @@ def test_canonical_operating_model_is_runnable_and_separate_from_methodology() -
     policy = load_operating_model()
 
     assert policy["schema"] == OPERATING_MODEL_SCHEMA
-    assert policy["policy_version"] == "2026-09-01.1"
+    assert policy["policy_version"] == "2026-09-01.2"
     assert policy["identity"]["current_engine_contract"] == "2026.08.14.1"
     assert policy["identity"]["current_methodology_version"] == "2026-08-14.2"
     assert policy["identity"]["methodology_changed_by_p1"] is False
@@ -54,6 +54,24 @@ def test_account_suitability_cannot_create_scientific_validity() -> None:
         validate_operating_model(policy)
 
 
+def test_candidate_and_account_suitability_dependencies_must_be_acyclic() -> None:
+    policy = _policy()
+    account = _item(policy["research_objects"], "ACCOUNT_SUITABILITY_ASSESSMENT")
+    account["downstream"].append("CANDIDATE_STRATEGY")
+
+    with pytest.raises(OperatingModelError, match="dependencies must be acyclic"):
+        validate_operating_model(policy)
+
+
+def test_candidate_approval_cannot_depend_on_account_suitability() -> None:
+    policy = _policy()
+    approval = _item(policy["transitions"], "APPROVE_HISTORICAL_CANDIDATE")
+    approval["evidence_required"].append("account_suitability_pass")
+
+    with pytest.raises(OperatingModelError, match="candidate approval cannot depend"):
+        validate_operating_model(policy)
+
+
 def test_historical_candidate_cannot_directly_imply_live_authorization() -> None:
     policy = _policy()
     shortcut = deepcopy(_item(policy["transitions"], "START_FORWARD_INCUBATION"))
@@ -75,6 +93,22 @@ def test_forward_incubation_cannot_use_historical_backfill() -> None:
     policy["forward_evidence_policy"]["prohibited_sources"].remove("historical_backfill")
 
     with pytest.raises(OperatingModelError, match="historical backfill must be prohibited"):
+        validate_operating_model(policy)
+
+
+def test_forward_observation_is_alphaquest_custodied_external_source_evidence() -> None:
+    policy = _policy()
+    observation = _item(policy["research_objects"], "FORWARD_OBSERVATION")
+    observation["owner"] = "EXTERNAL_SYSTEM"
+
+    with pytest.raises(OperatingModelError, match="AlphaQuest must own canonical"):
+        validate_operating_model(policy)
+
+    policy = _policy()
+    policy["forward_evidence_policy"]["invalid_missing_or_ambiguous_evidence"] = (
+        "append_with_warning"
+    )
+    with pytest.raises(OperatingModelError, match="must fail closed"):
         validate_operating_model(policy)
 
 
@@ -108,6 +142,27 @@ def test_material_data_change_requires_distinguishable_lineage() -> None:
         validate_operating_model(policy)
 
 
+def test_same_contract_data_append_is_automatic_but_cannot_rebind_frozen_research() -> None:
+    policy = _policy()
+    append = _item(
+        policy["change_governance"]["data"]["categories"],
+        "ADD_ROWS_SAME_CERTIFIED_DATASET",
+    )
+    append["human_review"] = "required_for_ingestion"
+
+    with pytest.raises(OperatingModelError, match="cannot require human approval"):
+        validate_operating_model(policy)
+
+    policy = _policy()
+    append = _item(
+        policy["change_governance"]["data"]["categories"],
+        "ADD_ROWS_SAME_CERTIFIED_DATASET",
+    )
+    append["locked_window_effect"] = "expand_boundaries_automatically"
+    with pytest.raises(OperatingModelError, match="cannot leak into frozen"):
+        validate_operating_model(policy)
+
+
 def test_semantic_implementation_change_invalidates_certification_and_approval() -> None:
     policy = _policy()
     mechanics = _item(
@@ -121,12 +176,61 @@ def test_semantic_implementation_change_invalidates_certification_and_approval()
         validate_operating_model(policy)
 
 
+def test_uncertain_implementation_equivalence_fails_closed() -> None:
+    policy = _policy()
+    policy["change_governance"]["implementation"]["equivalence_policy"][
+        "default_when_missing_failed_or_uncertain"
+    ] = "reuse_existing_evidence"
+
+    with pytest.raises(OperatingModelError, match="uncertain implementation equivalence"):
+        validate_operating_model(policy)
+
+
+def test_proven_nonsemantic_change_does_not_permanently_require_full_rerun() -> None:
+    policy = _policy()
+    refactor = _item(
+        policy["change_governance"]["implementation"]["categories"],
+        "REFACTOR_PROVEN_BEHAVIOR_IDENTICAL",
+    )
+    refactor["full_scientific_rerun_unconditionally_required"] = True
+
+    with pytest.raises(OperatingModelError, match="cannot always require a full scientific rerun"):
+        validate_operating_model(policy)
+
+
 def test_red_team_evaluation_is_separate_from_implementation_ownership() -> None:
     policy = _policy()
     separation = _item(policy["separation_of_duties"], "EVALUATION_VS_RED_TEAM")
     separation["reviewer_or_consumer_role"] = separation["producer_role"]
 
     with pytest.raises(OperatingModelError, match="red-team ownership must differ"):
+        validate_operating_model(policy)
+
+
+def test_independence_remains_satisfiable_by_one_human_owner() -> None:
+    policy = _policy()
+    policy["independence_policy"]["distinct_human_identities_required"] = True
+
+    with pytest.raises(OperatingModelError, match="cannot require a second human"):
+        validate_operating_model(policy)
+
+
+def test_deterministic_campaign_stop_needs_no_human_approval() -> None:
+    policy = _policy()
+    stop = _item(policy["transitions"], "STOP_CAMPAIGN_ON_PREDECLARED_RULE")
+    stop["human_approval_required"] = True
+    stop["alphaquest_automatic"] = False
+
+    with pytest.raises(OperatingModelError, match="automatic without human approval"):
+        validate_operating_model(policy)
+
+
+def test_discretionary_abandonment_and_revisit_remain_human_gated() -> None:
+    policy = _policy()
+    revisit = _item(policy["transitions"], "REVISIT_FAILED_EDGE")
+    revisit["human_approval_required"] = False
+
+    with pytest.raises(OperatingModelError, match="REVISIT_FAILED_EDGE must remain human-gated"):
         validate_operating_model(policy)
 
 

@@ -2,7 +2,7 @@
 
 Status: canonical P1 policy
 
-Operating-model policy: `2026-09-01.1`
+Operating-model policy: `2026-09-01.2`
 
 Engine contract: `2026.08.14.1` (unchanged)
 
@@ -45,7 +45,7 @@ separate bounded services:
 - strategy package states `development`, `active`, `deprecated`, `retired`, and
   `quarantined`, separate from certification currentness;
 - hash-bound manual mechanics approval before PnL;
-- independent candidate review after a qualifying historical result;
+- candidate review after a separate red-team task and qualifying historical result;
 - append-only forward incubation with `ACTIVE`, `ELIGIBLE_FOR_REVIEW`, `FAILED`,
   `RETIRED`, and `NEEDS MANUAL REVIEW`;
 - exact-profile account assessment separated from scientific validity;
@@ -65,8 +65,8 @@ The inconsistencies are naming and scope, not missing historical evidence:
    results. A bare `PASS` therefore needs its axis and bound object.
 3. Factory `TERMINAL_PASS` is terminal only for its bound factory result. It is
    not terminal for research, forward incubation, or deployment.
-4. Registry `candidate` is a navigation projection after independent candidate
-   review. It does not mean deployable or tradeable.
+4. Registry `candidate` is a navigation projection after a separately tasked
+   review. It does not mean account-suitable, deployable, or tradeable.
 5. `FROZEN` describes mutability. It is not a scientific, lifecycle, or
    deployment state.
 6. The unqualified word `PROMOTED` is ambiguous and is not canonical for new
@@ -84,7 +84,7 @@ Compatibility values remain readable and unchanged. P1 normalizes their axis:
 | --- | --- | --- |
 | registry `active` | lifecycle navigation plus active disposition | no terminal campaign decision |
 | registry `review_queue` | blocked disposition | missing, ambiguous, or pending evidence |
-| registry `candidate` | historical-candidate-review stage | independently reviewed candidate only |
+| registry `candidate` | historical-candidate-review stage | separately reviewed candidate only |
 | registry `closed` | abandoned or retired disposition | closure reason remains in source evidence |
 | run `PASS/FAIL/NEEDS MANUAL REVIEW` | scientific state | immutable per-run result |
 | package lifecycle | implementation state | availability is separate from certification freshness |
@@ -103,8 +103,12 @@ observation
   -> campaign -> strategy variant -> attempt -> run
   -> historical validation result -> candidate strategy
   -> forward-incubation plan -> forward observations
-  -> portfolio candidate -> account-suitability assessment
-  -> deployment package -> live strategy instance
+  -> portfolio candidate -> deployment package -> live strategy instance
+
+historical validation result
+  -- scientific PASS + sufficient unseen evidence + exact profile
+  -> account-suitability assessment
+  -- deployment prerequisite only -> deployment package
 ```
 
 Objects do not merge merely because they share an identifier or appear on one
@@ -121,11 +125,11 @@ screen.
 | Run | One execution of one attempt | Immutable after completion; deterministic-engine owner | run UID, engine, methodology, config/data hashes, artifacts |
 | Mechanics approval | Human implementation-fidelity decision, never profit approval | Immutable and hash-bound; human owner | sample, config/data/implementation/certification hashes; any bound semantic drift stales it |
 | Historical validation result | Scientific and objective outcomes under exact identities | Immutable; deterministic-engine owner | ResultBundle, finalization, stages, OOS evidence |
-| Candidate strategy | Historically supported result with independent review | Immutable review; currentness recomputed; human owner | candidate review, result, mechanics approval, independent reviewer |
+| Candidate strategy | Historically supported result with a separate red-team task and human disposition | Immutable review; currentness recomputed; human owner | candidate review, result, mechanics approval, task context and provenance |
 | Forward plan | Frozen true-forward duration, sample, and abandonment contract | Immutable plan plus append-only events; human owner | candidate/config/objective hashes and start time |
-| Forward observation | Genuinely later paper, shadow, or market evidence | Append-only; external observation source | event chain, timestamp, attachment and reconciliation |
+| Forward observation | Canonical record of genuinely later paper, shadow, or market evidence | Append-only; AlphaQuest custodian, external source | source identity, event chain, timestamp, attachment and reconciliation |
 | Portfolio candidate | Forward-reviewed candidate eligible for interaction analysis | Immutable input binding; human owner | current candidate, forward journal, acceptance-OOS inputs |
-| Account-suitability assessment | Exact-profile rule and payoff result | Immutable; deterministic-engine owner | profile/version/hash, trades, costs, seeds, attestations |
+| Account-suitability assessment | Independent side-axis exact-profile rule and payoff result | Immutable; deterministic-engine owner | scientific PASS, appropriate unseen evidence, profile/version/hash, trades, costs, seeds, attestations |
 | Deployment package | Human-authorized allocation and monitoring contract | Immutable; new package for any change; human owner | candidates, forward evidence, limits, sizing, kill rules |
 | Live strategy instance | One externally activated shadow/small-live/live instance | Append-only operations; human owner | deployment hash, instance ID, mode, monitoring journal |
 
@@ -159,15 +163,19 @@ DISCOVERY
 -> MONITORING
 ```
 
-Account assessment may currently be computed earlier, after scientific `PASS`,
-to support a destination-specific candidate review. That is an operation on the
-account-suitability axis, not a shortcut in lifecycle stage. It still cannot
-create scientific validity or deployment authorization.
+`ACCOUNT_SUITABILITY_REVIEW` names where a current suitability result is required
+on the normal deployment path; it does not restrict when the calculation may
+run. Account suitability is an independent side axis and may be computed whenever
+scientific validity is `PASS`, sufficient appropriate unseen evidence exists, and
+an exact profile exists. It writes only account-suitability state. It cannot
+create scientific `PASS`, Candidate Strategy, forward or portfolio acceptance,
+or deployment authorization.
 
-Lifecycle disposition is independent: `ACTIVE`, `BLOCKED`, `ABANDONED`,
-`PAUSED`, `RETIRED`, or `SUPERSEDED`. `ABANDONED` and `RETIRED` are terminal for
-that object lineage. `PAUSED` is reversible. `SUPERSEDED` preserves the old
-lineage while naming a newer one.
+Lifecycle disposition is independent: `ACTIVE`, `BLOCKED`, `EXHAUSTED`,
+`ABANDONED`, `PAUSED`, `RETIRED`, or `SUPERSEDED`. `EXHAUSTED` is an automatic
+terminal disposition caused by a predeclared objective rule; `ABANDONED` is a
+human scientific disposition. `RETIRED` is also terminal. `PAUSED` is reversible,
+and `SUPERSEDED` preserves the old lineage while naming a newer one.
 
 ### Independent decision axes
 
@@ -210,7 +218,8 @@ The four actor classes are deliberately asymmetric:
   high-information/high-irreversibility transitions, and owns risk. Human
   approval cannot override missing or failed objective prerequisites.
 - External systems provide data, time, broker, market, and execution events.
-  They do not approve research or deployment.
+  They are observation sources, not canonical research custodians, and do not
+  approve research or deployment.
 
 ### Transition authority matrix
 
@@ -227,20 +236,23 @@ means that Codex may invent inputs.
 | Run historical screening/stages | AlphaQuest | preflight, stages, one-run-per-attempt | no trivial click | request an authored run only | no |
 | Open locked acceptance OOS | human | all prior gates, unopened holdout, frozen identities | required | prohibited | no |
 | Record historical verdict | AlphaQuest | recomputation and artifact integrity | no | cannot decide | no |
-| Approve historical candidate | independent human role | eligibility, hashes, reviewer separation | required | cannot approve | no; may stale |
+| Approve historical candidate | human owner after separate red-team task | eligibility, hashes, task/provenance separation | required | cannot approve | no; may stale |
 | Start forward incubation | human | current candidate, plan, start time | required | prohibited | no |
-| Append forward observation | external/human capture | chronology, hashes, reconciliation | no per-event approval after confirmation | summarize only | no |
+| Append forward observation | AlphaQuest from external source | source identity, chronology, hashes, reconciliation | no | summarize only | no |
 | Mark forward eligible | AlphaQuest | days, trades, no failure | no | cannot decide | no; later failure can block |
 | Accept forward review | human | current journal and thresholds | required | cannot approve | no |
 | Create portfolio review | AlphaQuest | exact OOS inputs and statistics | no | interpret only | no |
 | Record portfolio disposition | human | current inputs | required | propose only | no |
-| Assess account suitability | AlphaQuest | scientific `PASS`, profile, rules, simulations | attestations only when external facts require them | request/summarize only | no |
+| Assess account suitability side axis | AlphaQuest | scientific `PASS`, unseen evidence, exact profile, rules | attestations only when external facts require them | request/summarize only | no; does not advance lifecycle |
+| Enter deployment review | AlphaQuest | forward, portfolio, and current account prerequisites | no new click | cannot decide facts | no |
 | Authorize deployment | human | all prerequisites, limits, separation | required | prohibited | authorization can be withdrawn |
 | Shadow -> small live -> live | human | current monitoring, limits, authorization | required at each mode change | prohibited | can pause/roll back |
 | Append monitoring | external/AlphaQuest | chronology, thresholds, alerts | no per-period approval | analyze only | no |
 | Safety pause | AlphaQuest | predeclared hard rule | no | cannot override | yes after human review |
 | Retire/re-enable | human | instance and evidence identity | required | cannot decide | retirement terminal; re-enable uses new authorization |
-| Abandon/revisit | human | complete lineage and allowed trigger | required | propose only | abandonment preserved; revisit is new lineage |
+| Stop campaign on predeclared rule | AlphaQuest | objective rule, reason, evidence, complete lineage | no | cannot override/restart | terminal `EXHAUSTED`; revisit is new lineage |
+| Discretionarily abandon campaign / edge family | human | complete evidence and scientific rationale | required | propose only | abandonment preserved |
+| Revisit failed edge | human | material trigger, old lineage, new identity | required | propose only | new lineage |
 
 ## Codex autonomy policy
 
@@ -263,8 +275,9 @@ Codex output never becomes approval merely because it validates against a
 schema. Human approval is required for hypothesis admission, mechanics,
 locked-acceptance opening, candidate/red-team disposition, forward start and
 review, portfolio disposition, deployment, sizing/risk, semantic methodology,
-data or implementation changes, abandonment/revisit, and retirement or
-re-enablement.
+data or implementation changes, discretionary abandonment/revisit, and
+retirement or re-enablement. Objective campaign exhaustion, valid forward-event
+capture, and routine same-contract data append do not need trivial approval.
 
 Codex is explicitly prohibited from:
 
@@ -287,10 +300,11 @@ Codex is explicitly prohibited from:
 
 AlphaQuest owns exact facts whenever software can decide them: byte hashes,
 certification currentness, data/roll/methodology binding, predeclared numerical
-gates, WFA selection, stitched OOS, Monte Carlo, sample/calendar sufficiency,
-one-run-per-attempt, legal prerequisites, artifact immutability, stale approval
-invalidation, forward chronology, portfolio statistics, account rules,
-allocation limits, and monitoring/safety rules.
+gates and campaign stops, WFA selection, stitched OOS, Monte Carlo,
+sample/calendar sufficiency, one-run-per-attempt, legal prerequisites, artifact
+immutability, canonical forward-event capture, routine same-contract data
+append validation, stale approval invalidation, portfolio statistics, account
+rules, allocation limits, and monitoring/safety rules.
 
 Neither Codex nor a human may override missing or failed objective evidence. A
 human may make a named judgment only after objective prerequisites pass—for
@@ -308,8 +322,8 @@ intent.
 2. Implementation and evaluation are separate. Implementers may not change
    gates, objectives, or data windows. AlphaQuest computes verdicts.
 3. Evaluation and red-team review are separate. A promising result requires a
-   separately recorded adversarial task before candidate approval. Red-team
-   findings are advisory until a human disposition.
+   fresh separately recorded adversarial task with provenance distinct from the
+   implementation task. Red-team findings are advisory until a human disposition.
 4. Historical validation and forward incubation are separate. Forward events
    must be later than the immutable start, strictly ordered, and content
    addressed. Historical OOS cannot be uploaded as forward evidence.
@@ -320,9 +334,13 @@ intent.
 7. Live observation and research are separate. Live facts may seed a new
    observation or hypothesis but never mutate old lineage.
 
-The repository already enforces distinct recorded identities between mechanics,
-candidate, and deployment reviewers. P1 additionally requires a separate
-red-team task. It does not add trivial human confirmations to deterministic
+AlphaQuest is a single-human repository. “Independent” means distinct task and
+context, recorded provenance, implementation ownership, deterministic evaluation
+ownership, and red-team ownership—not a second human identity. A valid sequence
+is Codex implementation task A, deterministic AlphaQuest evaluation, fresh Codex
+red-team task B, then the sole human owner's final disposition. Codex still
+cannot approve its own work, and neither task nor the human may override an
+objective gate. P1 does not add trivial human confirmations to deterministic
 checks.
 
 ## Attempt and search governance
@@ -355,21 +373,28 @@ immutable. Renaming cannot reset budgets, failures, or consumed holdouts.
 
 ### Individual campaign
 
-Campaign abandonment is supported when current evidence shows insufficient
-opportunity frequency, broad core-grid unprofitability, unstable parameter
-neighborhoods, unrealistic execution dependence, inadequate attainable sample,
-failure across materially different valid expressions, contradiction of the
-economic claim, unavailable fidelity, repeated robustness/unseen failure, or
-exhausted budget/fresh holdouts.
+Campaign termination has two paths:
 
-Abandonment blocks new attempts without a revisit decision, removes the campaign
-from active execution surfaces, and records actor, time, reason, and evidence
-hashes. It never deletes ledger entries, definitions, attempts, runs, or
-verdicts.
+1. **Deterministic stop/exhaustion.** AlphaQuest automatically sets disposition
+   `EXHAUSTED` and blocks further attempts when a predeclared objective condition
+   is satisfied. Conditions include insufficient opportunity frequency,
+   objectively unavailable fidelity, failed core screening, inadequate sample,
+   exhausted search or fresh-holdout budget, deterministic stage-gate failure,
+   or objectively established execution infeasibility. This requires no human
+   approval click.
+2. **Discretionary abandonment.** The human records `ABANDONED` when interpretation
+   is required—for example, evaluating materially distinct expressions,
+   contradictory causal evidence, unstable neighborhoods, or whether further
+   research spending is warranted.
+
+Both paths record the exact reason and bound evidence, block new attempts without
+a governed revisit, remove the campaign from active execution surfaces, and
+preserve every ledger entry, definition, attempt, run, search, and verdict.
 
 ### Edge family
 
-One campaign `FAIL` does not prove a family false. The family decision considers
+One campaign `FAIL` or `EXHAUSTED` disposition does not prove a family false. The
+human-owned family decision considers
 whether failed expressions are genuinely independent, whether they test the
 same causal mechanism, sample adequacy, data and execution fidelity,
 contradictory evidence, external support, and consumed budget/holdouts. Cosmetic
@@ -417,7 +442,7 @@ results are not destroyed; they remain evidence for the old dataset.
 
 | Change | Identity and rerun | Human/certification consequence |
 | --- | --- | --- |
-| More rows, same source contract | new dataset version/hash; explicit data-refresh attempt for new evidence | review coverage and holdout effect; recertify only if semantics changed |
+| More rows, same certified source contract | automatic capture, validation, and new content/data identity; no automatic rerun | no human needed to ingest/version; frozen-campaign rebind, locked-boundary change, or new evidence claim remains governed |
 | New instrument | new identity and justified new campaign/transfer generation | human review; recertify if support/execution changes |
 | Vendor/source change | new identity and data-refresh attempt | human review; recertify if source semantics affect execution |
 | Roll methodology | new identity; data or methodology rerun as classified | human review |
@@ -428,21 +453,31 @@ results are not destroyed; they remain evidence for the old dataset.
 | Corrupt-data repair | new identity; rerun current claims | human review |
 | Session definition | new identity; rerun dependent results | human review and session-dependent certification |
 
-Uncertain equivalence is material and fail-closed.
+Routine append is automatic only when vendor/source, schema, normalization,
+session, timestamp, roll, and field semantics are unchanged. It preserves the
+old dataset and evidence identities. Appended rows cannot silently enter a frozen
+OOS, holdout, attempt, run, or evidence binding. Uncertain equivalence is material
+and fail-closed.
 
 ### Implementation
 
 | Change | Certification/approval | Results and forward consequence |
 | --- | --- | --- |
 | Comment/docs only | unchanged only if execution bytes and declared files are unchanged | no rerun; all bound hashes must remain current |
-| Proven behavior-identical refactor | new implementation hash; stale then recertify after parity/tests; fresh mechanics approval | old results remain old-identity evidence; new attempt for current evidence; forward path stale |
-| Behavior-unchanged bug fix | same fail-closed treatment as refactor | same as refactor |
+| Proven behavior-identical refactor | new byte identity and fresh certification with approved equivalence evidence | old evidence may remain admissible through explicit equivalence lineage; mechanics may remain current or be re-bound; forward may continue |
+| Behavior-unchanged bug fix | same proven-equivalence path only when an approved standard establishes unchanged relevant behavior | same conditional evidence reuse and forward continuity |
 | Behavior-changing bug fix | new version review, recertification, mechanics approval | new attempt/variant as scope dictates; restart forward from a new candidate |
-| Performance-only optimization | new hash, parity proof, recertification, approval | new attempt for current evidence; old evidence preserved |
+| Performance-only optimization | same proven-equivalence path; new hash and fresh certification always | no unconditional full scientific rerun after approved equivalence; deployment remains blocked until certification/bindings are current |
 | Mechanics change | new version/certification/approval | old results cannot support new mechanics; new variant/generation and attempt; restart forward |
 | Dependency semantic change | new hash/version review/certification/approval | old environment evidence preserved; new current evidence and forward path required |
 
-The default is semantic change when equivalence is uncertain.
+There are two paths. Semantic, failed-equivalence, or uncertain changes stale
+certification and mechanics approval, require new evidence as appropriate, and
+block forward/deployment currentness. A proven non-semantic path exists only
+when an approved deterministic equivalence standard demonstrates unchanged
+relevant behavior and records old-to-new lineage. P1 does not claim that this
+equivalence-certification capability exists yet. Until it does, the conservative
+semantic/uncertain path applies.
 
 ## Invalidation cascades
 
@@ -453,9 +488,16 @@ artifacts.
 strategy source change
   -> implementation identity changes
   -> certification stale
-  -> mechanics approval stale
-  -> candidate and forward currentness fail
-  -> execution and promotion blocked
+  -> classify with an approved deterministic equivalence standard
+  -> semantic, failed, or uncertain equivalence stales approval/candidate/forward
+  -> execution and promotion blocked until classification/certification are current
+
+proven non-semantic implementation change
+  -> fresh certification plus old-to-new equivalence lineage
+  -> historical evidence may remain admissible
+  -> mechanics approval may remain current or be mechanically re-bound
+  -> forward incubation may continue without automatic restart
+  -> deployment blocked until certification and all bindings are current
 
 methodology change
   -> old evidence remains valid under old methodology
@@ -496,12 +538,14 @@ deterministic plumbing.
 | hashes, schemas, identities | source discovery | source/hypothesis admission |
 | certification currentness | hypothesis/mechanics proposals | mechanics interpretation |
 | preflight and stage gates | authorized code/tests | locked acceptance OOS opening |
-| WFA/OOS/Monte Carlo | evidence and failure summaries | candidate/red-team disposition |
-| account/portfolio calculations | separate red-team analysis | forward start/review |
-| forward chronology/eligibility | review-package preparation | portfolio disposition |
-| stale-approval invalidation | forward/live diagnostics | deployment, mode, sizing, risk |
-| monitoring alerts/safety pause | | semantic methodology/data/code changes |
-| | | abandonment, revisit, retirement, re-enablement |
+| objective campaign exhaustion | evidence and failure summaries | candidate disposition after separate red-team task |
+| WFA/OOS/Monte Carlo | separate red-team analysis | forward start/review |
+| account/portfolio calculations | review-package preparation | portfolio disposition |
+| canonical forward capture/eligibility | forward evidence summaries | deployment, mode, sizing, risk |
+| same-contract data append/versioning | forward/live diagnostics | frozen campaign rebind or locked-boundary change |
+| stale-approval invalidation | forward/live diagnostics | semantic methodology/data/code changes |
+| monitoring alerts/safety pause | | retirement or re-enablement |
+| | | discretionary abandonment, edge-family disposition, revisit |
 
 ## Non-negotiable shortcuts
 
@@ -510,7 +554,10 @@ The following paths do not exist:
 ```text
 historical PASS -> live
 account suitability PASS -> scientific PASS
+account suitability PASS -> Candidate Strategy
 historical OOS -> forward observation
+external event source -> canonical evidence ownership
+same-contract appended rows -> frozen OOS/holdout expansion
 candidate -> deployment authorization
 human approval -> override missing objective evidence
 Codex proposal -> approval

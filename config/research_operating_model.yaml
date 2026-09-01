@@ -1,5 +1,5 @@
 schema: alphaquest.research-operating-model/v1
-policy_version: "2026-09-01.1"
+policy_version: "2026-09-01.2"
 status: canonical
 objective: >-
   Maximize the probability that an apparent historical edge survives unseen live
@@ -34,6 +34,7 @@ actors:
   HUMAN_OWNER_RESEARCHER:
     kind: accountable_scientific_and_risk_owner
     authority: high_information_high_irreversibility_decisions
+    single_human_repository_supported: true
     may_override_missing_objective_evidence: false
     may_override_deterministic_gate_failure: false
   EXTERNAL_SYSTEM:
@@ -182,8 +183,9 @@ research_objects:
     invalidated_by:
       - config_change
       - validation_data_change
-      - semantic_implementation_change
-      - certification_change
+      - semantic_or_uncertain_implementation_change
+      - uncertified_implementation_identity
+      - failed_equivalence_rebind
       - sampling_policy_change
     downstream:
       - HISTORICAL_VALIDATION_RESULT
@@ -205,18 +207,21 @@ research_objects:
       - finalization_reconciliation_failure
     downstream:
       - CANDIDATE_STRATEGY
+      - ACCOUNT_SUITABILITY_ASSESSMENT
       - CAMPAIGN_DISPOSITION
       - EDGE_FAMILY_DISPOSITION
   - id: CANDIDATE_STRATEGY
-    represents: A historically supported, independently reviewed candidate; never deployment authorization.
-    created_when: Scientific PASS and eligible objective/account evidence receive independent candidate review.
+    represents: A historically supported candidate approved after separate red-team task review; never account suitability or deployment authorization.
+    created_when: Scientific PASS and generic objective eligibility where applicable receive a separate red-team task and human candidate disposition.
     mutability: immutable_review_with_currentness_recomputed
     owner: HUMAN_OWNER_RESEARCHER
     evidence:
       - candidate_review_hash
       - result_bundle_hash
       - mechanics_approval_hash
-      - independent_reviewer
+      - red_team_task_provenance
+      - candidate_review_task_context
+      - human_disposition
     invalidated_by:
       - any_bound_evidence_drift
       - certification_staleness
@@ -224,6 +229,7 @@ research_objects:
     downstream:
       - FORWARD_INCUBATION_PLAN
       - PORTFOLIO_CANDIDATE
+      - ACCOUNT_SUITABILITY_ASSESSMENT
   - id: FORWARD_INCUBATION_PLAN
     represents: Frozen chronological duration, sample, and abandonment contract for one candidate.
     created_when: A human starts incubation from one current approved candidate.
@@ -244,10 +250,11 @@ research_objects:
       - FORWARD_OBSERVATION
       - PORTFOLIO_CANDIDATE
   - id: FORWARD_OBSERVATION
-    represents: A genuinely later market or paper/shadow observation appended in chronological order.
-    created_when: Post-start evidence is captured, reconciled, hashed, and appended.
+    represents: The canonical AlphaQuest-custodied record of a genuinely later externally sourced market or paper/shadow observation.
+    created_when: AlphaQuest validates source identity, post-start chronology, hashes, attachments, and reconciliation fields, then appends the record.
     mutability: append_only
-    owner: EXTERNAL_SYSTEM
+    owner: ALPHAQUEST_DETERMINISTIC_ENGINE
+    source_actor: EXTERNAL_SYSTEM
     evidence:
       - event_hash
       - previous_event_hash
@@ -279,8 +286,8 @@ research_objects:
       - ACCOUNT_SUITABILITY_ASSESSMENT
       - DEPLOYMENT_PACKAGE
   - id: ACCOUNT_SUITABILITY_ASSESSMENT
-    represents: Exact-profile rule and payoff assessment; it cannot determine scientific validity.
-    created_when: The deterministic simulator evaluates scientifically valid unseen evidence against a versioned account profile.
+    represents: Independent side-axis exact-profile rule and payoff assessment; it cannot determine scientific validity or candidate status.
+    created_when: The deterministic simulator has scientific PASS, sufficient appropriate unseen evidence, and an exact versioned account profile.
     mutability: immutable
     owner: ALPHAQUEST_DETERMINISTIC_ENGINE
     evidence:
@@ -290,11 +297,11 @@ research_objects:
       - simulation_seed_and_count
       - attestations
     invalidated_by:
+      - scientific_evidence_drift
       - profile_hash_drift
       - trade_evidence_drift
       - missing_required_attestation
     downstream:
-      - CANDIDATE_STRATEGY
       - DEPLOYMENT_PACKAGE
   - id: DEPLOYMENT_PACKAGE
     represents: Human-authorized, hash-bound allocation and monitoring contract for a separate execution process.
@@ -356,15 +363,17 @@ state_axes:
       - LIVE
       - MONITORING
   LIFECYCLE_DISPOSITION:
-    question: Is work active, blocked, paused, or terminal without changing other axes?
+    question: Is work active, blocked, objectively exhausted, paused, or terminal without changing other axes?
     values:
       - ACTIVE
       - BLOCKED
+      - EXHAUSTED
       - ABANDONED
       - PAUSED
       - RETIRED
       - SUPERSEDED
     terminal_values:
+      - EXHAUSTED
       - ABANDONED
       - RETIRED
   SCIENTIFIC_STATE:
@@ -527,6 +536,41 @@ terminology_mapping:
     compatibility: avoid_for_new_contracts
     note: The unqualified word is ambiguous across candidate, forward, portfolio, and deployment boundaries.
 
+account_suitability_policy:
+  relationship_to_lifecycle: independent_side_axis
+  normal_deployment_gate_stage: ACCOUNT_SUITABILITY_REVIEW
+  may_be_computed_before_normal_gate: true
+  prerequisites:
+    - scientific_pass
+    - sufficient_appropriate_unseen_evidence
+    - exact_versioned_account_profile
+  writes_only: ACCOUNT_SUITABILITY_STATE
+  cannot_create:
+    - SCIENTIFIC_STATE
+    - CANDIDATE_STRATEGY
+    - FORWARD_STATE
+    - PORTFOLIO_STATE
+    - DEPLOYMENT_STATE
+  interpretation: It may measure destination-specific usefulness but cannot establish generic scientific or candidate validity.
+
+independence_policy:
+  repository_model: single_human_owner
+  distinct_human_identities_required: false
+  minimum_human_identities_required: 1
+  separation_basis:
+    - task_context
+    - provenance
+    - implementation_ownership
+    - deterministic_evaluation_ownership
+    - red_team_task
+  required_sequence:
+    - bounded_implementation_task
+    - deterministic_alphaquest_evaluation
+    - fresh_separate_red_team_task
+    - human_owner_final_disposition
+  codex_may_approve_own_work: false
+  deterministic_results_overridable: false
+
 transitions:
   - id: RECORD_RESEARCH_LEAD
     from_stage: DISCOVERY
@@ -628,8 +672,8 @@ transitions:
     from_stage: HISTORICAL_CANDIDATE_REVIEW
     to_stage: HISTORICAL_CANDIDATE_REVIEW
     initiator: HUMAN_OWNER_RESEARCHER
-    evidence_required: [scientific_pass, eligible_objective_or_account_pass, independent_red_team, current_mechanics_approval]
-    deterministic_checks: [candidate_eligibility, reviewer_separation, hash_currentness]
+    evidence_required: [scientific_pass, generic_objective_eligibility_when_applicable, separate_red_team_task, current_mechanics_approval]
+    deterministic_checks: [candidate_eligibility, task_and_provenance_separation, hash_currentness]
     codex: PROHIBITED_TO_APPROVE
     human_approval_required: true
     alphaquest_automatic: false
@@ -651,12 +695,13 @@ transitions:
   - id: APPEND_FORWARD_OBSERVATION
     from_stage: FORWARD_INCUBATION
     to_stage: FORWARD_INCUBATION
-    initiator: EXTERNAL_SYSTEM
-    evidence_required: [post_start_attachment, trade_reconciliation, timestamp]
-    deterministic_checks: [strict_chronology, hash_chain, attachment_hash, rule_fields_complete]
+    initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
+    source_actor: EXTERNAL_SYSTEM
+    evidence_required: [source_identity, post_start_attachment, trade_reconciliation, timestamp, previous_event_hash]
+    deterministic_checks: [source_identity_valid, strict_chronology, hash_chain, attachment_hash, rule_fields_complete]
     codex: ALLOWED_TO_SUMMARIZE_ONLY
     human_approval_required: false
-    alphaquest_automatic: false
+    alphaquest_automatic: true
     reversible: false
     invalidated_by: [historical_backfill, chronology_failure, hash_drift]
     implementation_status: existing
@@ -710,22 +755,37 @@ transitions:
     implementation_status: policy_only
   - id: ASSESS_ACCOUNT_SUITABILITY
     from_stage: ACCOUNT_SUITABILITY_REVIEW
-    to_stage: DEPLOYMENT_REVIEW
+    to_stage: ACCOUNT_SUITABILITY_REVIEW
     initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
     evidence_required: [scientific_pass, exact_profile, unseen_trade_evidence, cost_snapshot, attestations]
     deterministic_checks: [scientific_pass_first, profile_hash, replay_and_monte_carlo, evidence_completeness]
+    side_axis: ACCOUNT_SUITABILITY_STATE
+    applicable_stages: [HISTORICAL_CANDIDATE_REVIEW, FORWARD_INCUBATION, FORWARD_REVIEW, PORTFOLIO_REVIEW, ACCOUNT_SUITABILITY_REVIEW, DEPLOYMENT_REVIEW]
+    cannot_create: [SCIENTIFIC_STATE, CANDIDATE_STRATEGY, FORWARD_STATE, PORTFOLIO_STATE, DEPLOYMENT_STATE]
     codex: ALLOWED_TO_REQUEST_AND_SUMMARIZE_ONLY
     human_approval_required: false
     alphaquest_automatic: true
     reversible: false
     invalidated_by: [profile_or_trade_evidence_drift]
     implementation_status: existing
+  - id: ENTER_DEPLOYMENT_REVIEW
+    from_stage: ACCOUNT_SUITABILITY_REVIEW
+    to_stage: DEPLOYMENT_REVIEW
+    initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
+    evidence_required: [accepted_forward_review, portfolio_disposition, current_account_suitability]
+    deterministic_checks: [all_normal_path_prerequisites_current]
+    codex: PROHIBITED_TO_DECIDE
+    human_approval_required: false
+    alphaquest_automatic: true
+    reversible: false
+    invalidated_by: [candidate_forward_portfolio_or_account_drift]
+    implementation_status: policy_only
   - id: AUTHORIZE_DEPLOYMENT
     from_stage: DEPLOYMENT_REVIEW
     to_stage: SHADOW
     initiator: HUMAN_OWNER_RESEARCHER
     evidence_required: [current_candidate, accepted_forward_review, suitability, portfolio_disposition, limits, allocation, kill_rules]
-    deterministic_checks: [all_prerequisites_current, allocation_within_limits, reviewer_separation]
+    deterministic_checks: [all_prerequisites_current, allocation_within_limits, task_and_provenance_separation]
     codex: PROHIBITED
     human_approval_required: true
     alphaquest_automatic: false
@@ -792,11 +852,27 @@ transitions:
     reversible: false
     invalidated_by: []
     implementation_status: policy_only
-  - id: ABANDON_CAMPAIGN
+  - id: STOP_CAMPAIGN_ON_PREDECLARED_RULE
+    from_stage: HISTORICAL_SCREENING
+    to_stage: HISTORICAL_SCREENING
+    applicable_stages: [APPROVED_FOR_IMPLEMENTATION, IMPLEMENTATION, MECHANICS_CAUSAL_REVIEW, HISTORICAL_SCREENING, FULL_HISTORICAL_VALIDATION]
+    lifecycle_effect: set_disposition_EXHAUSTED_and_block_new_attempts
+    initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
+    evidence_required: [predeclared_termination_rule, immutable_attempt_lineage, exact_stop_reason, deterministic_stop_evidence]
+    deterministic_checks: [termination_rule_was_predeclared, objective_condition_satisfied, evidence_current, lineage_complete]
+    codex: PROHIBITED_TO_OVERRIDE_OR_RESTART
+    human_approval_required: false
+    alphaquest_automatic: true
+    reversible: false
+    invalidated_by: []
+    implementation_status: policy_only
+  - id: DISCRETIONARILY_ABANDON_CAMPAIGN
     from_stage: FULL_HISTORICAL_VALIDATION
     to_stage: FULL_HISTORICAL_VALIDATION
+    applicable_stages: [APPROVED_FOR_IMPLEMENTATION, IMPLEMENTATION, MECHANICS_CAUSAL_REVIEW, HISTORICAL_SCREENING, FULL_HISTORICAL_VALIDATION]
+    lifecycle_effect: set_disposition_ABANDONED_and_block_new_attempts
     initiator: HUMAN_OWNER_RESEARCHER
-    evidence_required: [campaign_failure_summary, immutable_attempt_lineage, abandonment_reason]
+    evidence_required: [campaign_evidence_summary, immutable_attempt_lineage, scientific_judgment_reason]
     deterministic_checks: [failure_evidence_current, no_unrecorded_attempt]
     codex: PROPOSAL_ONLY
     human_approval_required: true
@@ -873,7 +949,7 @@ codex_policy:
     - APPROVE_SEMANTIC_METHODOLOGY_CHANGE
     - APPROVE_SEMANTIC_DATA_CHANGE
     - APPROVE_SEMANTIC_IMPLEMENTATION_CHANGE
-    - ABANDON_CAMPAIGN
+    - DISCRETIONARILY_ABANDON_CAMPAIGN
     - ABANDON_EDGE_FAMILY
     - REVISIT_FAILED_EDGE
   prohibitions:
@@ -923,6 +999,9 @@ deterministic_authority:
     - ONE_RUN_PER_ATTEMPT
     - LEGAL_TRANSITION_PREREQUISITES
     - IMMUTABLE_ARTIFACT_CREATION_AND_HASH_CHAIN_VALIDATION
+    - CANONICAL_FORWARD_EVENT_CAPTURE_AFTER_SOURCE_VALIDATION
+    - PREDECLARED_CAMPAIGN_STOP_AND_ATTEMPT_BLOCKING
+    - SAME_CONTRACT_DATA_APPEND_IDENTITY_AND_VALIDATION
     - STALE_APPROVAL_INVALIDATION
     - CANDIDATE_AND_FORWARD_CURRENTNESS
     - FORWARD_CHRONOLOGY_AND_THRESHOLD_ELIGIBILITY
@@ -947,12 +1026,17 @@ separation_of_duties:
     required_separate_task: true
   - id: EVALUATION_VS_RED_TEAM
     producer_role: deterministic_evaluator
-    reviewer_or_consumer_role: red_team_owner
-    rule: Promising results require a separately recorded adversarial review before candidate approval.
+    reviewer_or_consumer_role: separate_red_team_task_owner
+    rule: Promising results require a fresh separately recorded adversarial task before the human owner records candidate disposition.
+    required_separate_task: true
+  - id: IMPLEMENTATION_VS_RED_TEAM
+    producer_role: implementation_task_owner
+    reviewer_or_consumer_role: separate_red_team_task_owner
+    rule: The red-team task uses fresh context and distinct provenance from implementation; it need not require a second human identity.
     required_separate_task: true
   - id: HISTORICAL_VS_FORWARD
     producer_role: historical_evaluator
-    reviewer_or_consumer_role: forward_record_owner
+    reviewer_or_consumer_role: alphaquest_forward_evidence_custodian
     rule: Forward evidence must occur after the frozen start and cannot be backfilled from historical periods.
     required_separate_task: true
   - id: SCIENTIFIC_VALIDITY_VS_ACCOUNT_SUITABILITY
@@ -961,8 +1045,8 @@ separation_of_duties:
     rule: Account assessment requires scientific PASS and cannot modify SCIENTIFIC_STATE.
     required_separate_task: true
   - id: CANDIDATE_VS_DEPLOYMENT
-    producer_role: candidate_reviewer
-    reviewer_or_consumer_role: deployment_authorizer
+    producer_role: candidate_disposition_task
+    reviewer_or_consumer_role: deployment_authorization_task
     rule: Candidate status supplies evidence only; deployment requires a separate human decision and current forward evidence.
     required_separate_task: true
   - id: LIVE_OBSERVATION_VS_RETROACTIVE_RESEARCH
@@ -995,27 +1079,39 @@ attempt_and_search_governance:
     - abandonment_and_revisit_decisions
   anti_reset_rule: Campaign, variant, or edge-family renaming cannot reset lineage, budgets, failures, or consumed holdouts.
 
-campaign_abandonment:
-  outcome: ABANDONED
-  evidence_remains_durable: true
-  criteria:
-    - insufficient_opportunity_frequency_under_predeclared_requirements
-    - broadly_unprofitable_core_grid
-    - unstable_parameter_neighborhood
-    - unrealistic_execution_or_data_dependency
-    - inadequate_sample_size_without_a_legitimate_new_data_path
-    - failure_across_materially_distinct_valid_expressions
-    - evidence_contradicts_the_economic_hypothesis
-    - required_data_or_fidelity_unavailable
-    - repeated_robustness_or_unseen_evidence_failure
-    - research_budget_or_fresh_holdout_exhausted
-  effects:
+campaign_termination_policy:
+  shared_effects:
     - no_more_attempts_without_revisit_decision
     - preserve_ledger_configs_attempts_runs_and_verdicts
     - remove_from_active_execution_surfaces_without_deleting_history
     - record_reason_actor_timestamp_and_bound_evidence_hashes
+  deterministic_stop:
+    outcome: EXHAUSTED
+    authority: ALPHAQUEST_DETERMINISTIC_ENGINE
+    requires_human_approval: false
+    rule_must_be_predeclared: true
+    criteria:
+      - insufficient_opportunity_frequency_under_predeclared_requirement
+      - required_data_or_fidelity_objectively_unavailable
+      - failed_predeclared_core_screening_gate
+      - inadequate_sample_under_predeclared_minimum
+      - exhausted_predeclared_search_budget
+      - exhausted_fresh_holdout_budget
+      - deterministic_stage_gate_failure
+      - execution_infeasibility_objectively_established
+  discretionary_abandonment:
+    outcome: ABANDONED
+    authority: HUMAN_OWNER_RESEARCHER
+    requires_human_approval: true
+    criteria:
+      - unstable_parameter_neighborhood_requires_scientific_judgment
+      - failure_across_materially_distinct_valid_expressions
+      - evidence_contradicts_the_economic_hypothesis
+      - repeated_robustness_or_unseen_evidence_failure_requires_interpretation
+      - discretionary_research_budget_priority_decision
 
 edge_family_abandonment:
+  requires_human_approval: true
   outcomes: [CONTINUE, LOWER_PRIORITY, SUSPEND, ABANDON, REVISITABLE]
   decision_factors:
     - independence_of_mechanical_expressions
@@ -1082,12 +1178,15 @@ change_governance:
   data:
     categories:
       - id: ADD_ROWS_SAME_CERTIFIED_DATASET
-        materiality: potentially_material
+        materiality: non_semantic_when_certified_contract_is_unchanged
         preserves_dataset_identity: false
         new_version_or_hash: true
         invalidates_old_results: false
-        rerun: explicit_data_refresh_attempt_for_new_evidence
-        human_review: required_for_coverage_and_holdout_effect
+        ingestion: automatic_after_unchanged_contract_validation
+        rerun: not_automatic_explicit_data_refresh_attempt_required_to_claim_new_research_evidence
+        human_review: not_required_for_ingestion_or_content_versioning
+        campaign_rebind: human_or_governed_research_decision
+        locked_window_effect: cannot_change_or_leak_into_frozen_OOS_or_holdout_boundaries
         recertification: no_unless_feature_or_execution_semantics_change
       - id: ADD_NEW_INSTRUMENT
         materiality: material
@@ -1161,58 +1260,120 @@ change_governance:
         rerun: required_for_dependent_results
         human_review: required
         recertification: required_for_session_dependent_logic
+    same_contract_append_policy:
+      unchanged_contract_dimensions:
+        - vendor_and_source
+        - schema
+        - normalization
+        - session_semantics
+        - timestamp_semantics
+        - roll_methodology
+        - field_semantics
+      automatic_actions:
+        - capture_rows
+        - create_new_content_and_data_identity
+        - validate_unchanged_contract
+        - preserve_prior_dataset_and_evidence_identity
+      governed_research_decisions:
+        - rebind_frozen_campaign_to_expanded_dataset
+        - change_locked_historical_or_holdout_boundary
+        - create_data_refresh_attempt
+        - claim_new_research_evidence_from_expanded_sample
+      frozen_boundary_rule: Appended rows cannot silently enter a frozen OOS, holdout, attempt, run, or evidence binding.
     default: Uncertain semantic equivalence is material and fail-closed.
   implementation:
+    equivalence_policy:
+      approved_deterministic_standard_required: true
+      current_capability: not_claimed_by_P1
+      default_when_missing_failed_or_uncertain: semantic_or_uncertain_path
+      required_evidence:
+        - old_and_new_implementation_identities
+        - approved_equivalence_standard_identity
+        - deterministic_equivalence_results
+        - fresh_implementation_certification
+      proven_non_semantic_allowances:
+        - historical_evidence_may_remain_admissible_through_explicit_equivalence_lineage
+        - mechanics_approval_may_remain_current_or_be_mechanically_rebound_under_approved_policy
+        - forward_incubation_may_continue_without_automatic_restart
+      deployment_rule: Deployment remains blocked until the new implementation certification and all required bindings are current.
     categories:
       - id: COMMENT_OR_DOCS_ONLY
+        equivalence_class: no_execution_byte_change
         new_implementation_hash: only_if_certification_manifest_declares_file_execution_affecting
         certification: unchanged_if_execution_bytes_unchanged
         mechanics_approval: unchanged_if_bound_execution_identity_unchanged
         historical_results: remain_under_original_identity
         rerun: no
         forward_incubation: unchanged_if_all_bound_hashes_current
+        deployment: unchanged_if_all_bound_execution_identities_are_current
+        requires_approved_equivalence_standard: false
+        full_scientific_rerun_unconditionally_required: false
       - id: REFACTOR_PROVEN_BEHAVIOR_IDENTICAL
+        equivalence_class: proven_non_semantic
         new_implementation_hash: true
-        certification: stale_then_recertify_after_differential_and_required_tests
-        mechanics_approval: stale_because_bound_implementation_hash_changed
-        historical_results: remain_under_original_identity
-        rerun: new_attempt_required_for_current_evidence
-        forward_incubation: existing_plan_stale_for_current_promotion
+        certification: stale_until_fresh_certification_records_approved_equivalence_evidence
+        mechanics_approval: may_remain_current_or_be_rebound_only_as_approved_equivalence_policy_allows
+        historical_results: may_remain_admissible_via_explicit_old_to_new_equivalence_lineage
+        rerun: not_intrinsically_required_after_approved_equivalence_certification
+        forward_incubation: may_continue_without_restart_after_approved_equivalence_certification
+        deployment: blocked_until_new_implementation_certification_and_bindings_are_current
+        requires_approved_equivalence_standard: true
+        full_scientific_rerun_unconditionally_required: false
       - id: BUG_FIX_BEHAVIOR_UNCHANGED
+        equivalence_class: proven_non_semantic
         new_implementation_hash: true
-        certification: stale_then_recertify_with_proof
-        mechanics_approval: stale
-        historical_results: remain_under_original_identity
-        rerun: new_attempt_required_for_current_evidence
-        forward_incubation: existing_plan_stale_for_current_promotion
+        certification: stale_until_fresh_certification_records_approved_equivalence_evidence
+        mechanics_approval: may_remain_current_or_be_rebound_only_as_approved_equivalence_policy_allows
+        historical_results: may_remain_admissible_via_explicit_old_to_new_equivalence_lineage
+        rerun: not_intrinsically_required_after_approved_equivalence_certification
+        forward_incubation: may_continue_without_restart_after_approved_equivalence_certification
+        deployment: blocked_until_new_implementation_certification_and_bindings_are_current
+        requires_approved_equivalence_standard: true
+        full_scientific_rerun_unconditionally_required: false
       - id: BUG_FIX_BEHAVIOR_CHANGED
+        equivalence_class: semantic
         new_implementation_hash: true
         certification: stale_new_version_review_and_recertification
         mechanics_approval: stale_new_review_required
         historical_results: remain_historical_not_current_for_changed_code
         rerun: required_new_attempt_or_variant_as_causal_scope_dictates
         forward_incubation: stop_and_restart_from_new_candidate
+        deployment: blocked_until_new_evidence_certification_and_approval_are_current
+        requires_approved_equivalence_standard: false
+        full_scientific_rerun_unconditionally_required: true
       - id: PERFORMANCE_ONLY_OPTIMIZATION
+        equivalence_class: proven_non_semantic
         new_implementation_hash: true
-        certification: stale_until_parity_and_required_tests_pass
-        mechanics_approval: stale_due_to_hash_change
-        historical_results: remain_under_original_identity
-        rerun: required_for_current_evidence
-        forward_incubation: existing_plan_stale_for_current_promotion
+        certification: stale_until_fresh_certification_records_approved_equivalence_evidence
+        mechanics_approval: may_remain_current_or_be_rebound_only_as_approved_equivalence_policy_allows
+        historical_results: may_remain_admissible_via_explicit_old_to_new_equivalence_lineage
+        rerun: not_intrinsically_required_after_approved_equivalence_certification
+        forward_incubation: may_continue_without_restart_after_approved_equivalence_certification
+        deployment: blocked_until_new_implementation_certification_and_bindings_are_current
+        requires_approved_equivalence_standard: true
+        full_scientific_rerun_unconditionally_required: false
       - id: MECHANICS_CHANGE
+        equivalence_class: semantic
         new_implementation_hash: true
         certification: old_certification_stale_then_new_version_review_and_recertification
         mechanics_approval: new_approval_required
         historical_results: cannot_support_changed_mechanics
         rerun: new_variant_or_new_generation_and_new_attempt_required
         forward_incubation: terminate_old_path_and_restart_only_after_new_candidate
+        deployment: blocked_until_new_evidence_certification_and_approval_are_current
+        requires_approved_equivalence_standard: false
+        full_scientific_rerun_unconditionally_required: true
       - id: DEPENDENCY_SEMANTIC_CHANGE
+        equivalence_class: semantic
         new_implementation_hash: true
         certification: stale_new_version_review_and_recertification
         mechanics_approval: stale
         historical_results: remain_under_original_environment_identity
         rerun: required_for_current_evidence
         forward_incubation: existing_plan_stale_for_current_promotion
+        deployment: blocked_until_new_evidence_certification_and_approval_are_current
+        requires_approved_equivalence_standard: false
+        full_scientific_rerun_unconditionally_required: true
     default: Uncertain behavior equivalence is semantic, invalidates certification and approval, and requires new evidence.
 
 invalidation_cascades:
@@ -1221,10 +1382,20 @@ invalidation_cascades:
     cascade:
       - implementation_identity_changes
       - certification_becomes_stale
-      - mechanics_approval_becomes_stale
-      - candidate_and_forward_currentness_fail
-      - dependent_execution_and_promotion_block
+      - classify_change_with_approved_equivalence_standard
+      - semantic_uncertain_or_failed_equivalence_stales_mechanics_approval_candidate_and_forward_currentness
+      - dependent_execution_and_promotion_block_until_classification_and_certification_are_current
     historical_treatment: Old evidence remains immutable under the old implementation identity.
+  - id: PROVEN_NON_SEMANTIC_IMPLEMENTATION_CHANGE
+    trigger: approved_deterministic_equivalence_standard_proves_relevant_behavior_unchanged
+    cascade:
+      - new_implementation_identity_and_fresh_certification
+      - explicit_old_to_new_equivalence_lineage
+      - mechanics_approval_remains_current_or_is_mechanically_rebound_only_under_approved_policy
+      - historical_evidence_may_remain_admissible
+      - forward_incubation_may_continue_without_automatic_restart
+      - deployment_blocked_until_certification_and_bindings_current
+    historical_treatment: Old evidence is never rewritten and equivalence is an additional immutable lineage claim.
   - id: METHODOLOGY_CHANGE
     trigger: semantic_methodology_version_or_hash_changes
     cascade:
@@ -1263,6 +1434,17 @@ invalidation_cascades:
     historical_treatment: Research results and scientific state are unchanged.
 
 forward_evidence_policy:
+  event_source_actor: EXTERNAL_SYSTEM
+  canonical_evidence_owner: ALPHAQUEST_DETERMINISTIC_ENGINE
+  automatic_append_after_validation: true
+  required_capture_validation:
+    - source_identity
+    - strict_post_start_chronology
+    - event_hash
+    - previous_event_hash
+    - attachment_hashes
+    - reconciliation_fields
+  invalid_missing_or_ambiguous_evidence: fail_closed_without_append
   allowed_sources:
     - paper_execution_after_plan_start
     - shadow_execution_after_plan_start
@@ -1289,6 +1471,9 @@ human_intervention_map:
     - WFA_OOS_and_Monte_Carlo_calculation
     - account_rule_and_portfolio_calculation
     - forward_chronology_and_threshold_eligibility
+    - canonical_forward_event_capture_after_source_validation
+    - deterministic_predeclared_campaign_stop_and_attempt_blocking
+    - same_contract_data_append_validation_and_content_identity
     - stale_approval_invalidation
     - monitoring_alerts_and_predeclared_safety_pause
   CODEX_ASSISTED:
@@ -1302,12 +1487,13 @@ human_intervention_map:
     - source_and_hypothesis_admission
     - mechanics_interpretation
     - locked_acceptance_OOS_opening
-    - independent_candidate_and_red_team_disposition
+    - candidate_disposition_after_separate_red_team_task
     - forward_start_and_forward_review
     - portfolio_disposition
     - deployment_mode_sizing_and_risk
-    - methodology_data_and_semantic_implementation_changes
-    - campaign_or_edge_family_abandonment_and_revisit
+    - semantic_methodology_data_and_implementation_changes
+    - frozen_campaign_data_rebind_or_locked_boundary_change
+    - discretionary_campaign_and_edge_family_abandonment_and_revisit
     - retirement_or_reenablement
 
 invariants:
@@ -1315,10 +1501,16 @@ invariants:
     rule: AUTHORIZE_DEPLOYMENT and all live promotions require human initiation and prohibit Codex.
   - id: ACCOUNT_SUITABILITY_CANNOT_CREATE_SCIENTIFIC_VALIDITY
     rule: Account assessment requires scientific PASS and writes only ACCOUNT_SUITABILITY_STATE.
+  - id: ACCOUNT_SUITABILITY_CANNOT_CREATE_CANDIDATE_STATUS
+    rule: Candidate creation has no account-suitability prerequisite and account assessment cannot create CANDIDATE_STRATEGY.
+  - id: RESEARCH_OBJECT_DEPENDENCIES_ARE_ACYCLIC
+    rule: Downstream research-object dependencies contain no cycle, including Candidate Strategy and Account Suitability.
   - id: HISTORICAL_CANDIDATE_CANNOT_IMPLY_LIVE_AUTHORIZATION
     rule: No direct transition exists from HISTORICAL_CANDIDATE_REVIEW to SHADOW, SMALL_LIVE, LIVE, or MONITORING.
   - id: FORWARD_INCUBATION_CANNOT_BE_HISTORICALLY_BACKFILLED
     rule: Forward observations must occur after plan start and historical_backfill is prohibited.
+  - id: FORWARD_EVIDENCE_IS_ALPHAQUEST_CUSTODIED
+    rule: External systems source events; AlphaQuest validates and owns canonical append-only Forward Observation records.
   - id: FAILED_RESEARCH_CANNOT_BE_DELETED_OR_RELABELED_PASS
     rule: Failed evidence is durable and the original run verdict is immutable.
   - id: METHODOLOGY_CHANGE_REQUIRES_DISTINGUISHABLE_IDENTITY
@@ -1327,8 +1519,20 @@ invariants:
     rule: Material data change creates a new dataset identity or hash and new evidence lineage.
   - id: SEMANTIC_IMPLEMENTATION_CHANGE_INVALIDATES_DEPENDENCIES
     rule: Certification and mechanics approval become stale and current execution is blocked.
+  - id: UNCERTAIN_IMPLEMENTATION_EQUIVALENCE_FAILS_CLOSED
+    rule: Missing, failed, or uncertain equivalence follows the semantic path and blocks dependent currentness.
+  - id: PROVEN_NONSEMANTIC_CHANGE_MAY_REUSE_EVIDENCE
+    rule: An approved deterministic equivalence standard may preserve evidence admissibility and forward continuity through explicit lineage without claiming current machinery exists.
   - id: RED_TEAM_IS_SEPARATE_FROM_IMPLEMENTATION_OWNERSHIP
     rule: Red-team review is a separately recorded task and cannot approve implementation work.
+  - id: SINGLE_HUMAN_INDEPENDENCE_IS_TASK_BASED
+    rule: Independence requires separate context, task, provenance, and ownership, not a second human identity.
+  - id: DETERMINISTIC_CAMPAIGN_STOP_REQUIRES_NO_HUMAN
+    rule: AlphaQuest automatically marks EXHAUSTED and blocks attempts when a predeclared objective stop rule is satisfied.
+  - id: DISCRETIONARY_ABANDONMENT_AND_REVISIT_REQUIRE_HUMAN
+    rule: Scientific campaign abandonment, edge-family abandonment, and revisit remain human-gated.
+  - id: SAME_CONTRACT_DATA_APPEND_CANNOT_REBIND_FROZEN_RESEARCH
+    rule: Routine append and content versioning are automatic, while frozen campaign rebinding and boundary changes remain governed decisions.
   - id: CODEX_CANNOT_OVERRIDE_DETERMINISTIC_GATE_FAILURE
     rule: Objective gate failures are owned by AlphaQuest and are not Codex-overridable.
   - id: HUMAN_CANNOT_OVERRIDE_MISSING_OBJECTIVE_EVIDENCE
