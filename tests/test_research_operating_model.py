@@ -27,7 +27,7 @@ def test_canonical_operating_model_is_runnable_and_separate_from_methodology() -
     policy = load_operating_model()
 
     assert policy["schema"] == OPERATING_MODEL_SCHEMA
-    assert policy["policy_version"] == "2026-09-01.3"
+    assert policy["policy_version"] == "2026-09-01.4"
     assert policy["identity"]["identity_fields"] == [
         "schema",
         "policy_version",
@@ -61,7 +61,7 @@ def test_codex_cannot_authorize_or_promote_live_deployment() -> None:
     authorization = _item(policy["transitions"], "AUTHORIZE_DEPLOYMENT")
     authorization["codex"] = "ALLOWED"
 
-    with pytest.raises(OperatingModelError, match="Codex must be prohibited"):
+    with pytest.raises(OperatingModelError, match="Codex authority mode|cannot approve"):
         validate_operating_model(policy)
 
 
@@ -290,7 +290,7 @@ def test_campaign_exhaustion_requires_campaign_level_condition() -> None:
     stop = policy["campaign_termination_policy"]["deterministic_stop"]
     stop["criteria"].append("deterministic_stage_gate_failure")
 
-    with pytest.raises(OperatingModelError, match="single variant stage failure cannot exhaust"):
+    with pytest.raises(OperatingModelError, match="incomplete or unexpected"):
         validate_operating_model(policy)
 
 
@@ -325,10 +325,307 @@ def test_policy_only_states_do_not_claim_future_live_orchestration_exists() -> N
     policy = load_operating_model()
     transitions = {item["id"]: item for item in policy["transitions"]}
 
-    assert transitions["PROMOTE_SHADOW_TO_SMALL_LIVE"]["implementation_status"] == "policy_only"
-    assert transitions["PROMOTE_SMALL_LIVE_TO_LIVE"]["implementation_status"] == "policy_only"
-    assert transitions["SAFETY_PAUSE"]["implementation_status"] == "policy_only"
+    assert transitions["PROMOTE_SHADOW_TO_SMALL_LIVE"]["implementation_status"] == "POLICY_ONLY"
+    assert transitions["PROMOTE_SMALL_LIVE_TO_LIVE"]["implementation_status"] == "POLICY_ONLY"
+    assert transitions["SAFETY_PAUSE"]["implementation_status"] == "POLICY_ONLY"
     assert _item(
         policy["invariants"],
         "POLICY_DEFINITIONS_DO_NOT_CLAIM_RUNTIME_ENFORCEMENT",
     )
+
+
+@pytest.mark.parametrize(
+    ("transition_id", "unsafe_mode"),
+    [
+        ("APPROVE_MECHANICAL_INTERPRETATION", "PROPOSAL_ONLY"),
+        ("OPEN_LOCKED_ACCEPTANCE_OOS", "PROPOSAL_ONLY"),
+        ("APPROVE_HISTORICAL_CANDIDATE", "PROPOSAL_ONLY"),
+        ("ACCEPT_FORWARD_REVIEW", "PROPOSAL_ONLY"),
+        ("RECORD_PORTFOLIO_DISPOSITION", "ALLOWED_AFTER_HUMAN_SCOPE_APPROVAL"),
+        ("AUTHORIZE_DEPLOYMENT", "PROPOSAL_ONLY"),
+        ("PROMOTE_SHADOW_TO_SMALL_LIVE", "PROPOSAL_ONLY"),
+        ("PROMOTE_SMALL_LIVE_TO_LIVE", "PROPOSAL_ONLY"),
+    ],
+)
+def test_critical_codex_authority_mutations_are_rejected(
+    transition_id: str,
+    unsafe_mode: str,
+) -> None:
+    policy = _policy()
+    _item(policy["transitions"], transition_id)["codex"] = unsafe_mode
+
+    with pytest.raises(OperatingModelError, match="Codex cannot|Codex must"):
+        validate_operating_model(policy)
+
+
+def test_autonomous_permission_cannot_grant_mechanics_approval() -> None:
+    policy = _policy()
+    permission = _item(policy["codex_policy"]["autonomous_permissions"], "IMPLEMENT_APPROVED_MECHANICS")
+    permission["grants_approval"] = True
+
+    with pytest.raises(OperatingModelError, match="cannot grant approval"):
+        validate_operating_model(policy)
+
+
+def test_human_transition_cannot_become_alphaquest_automatic() -> None:
+    policy = _policy()
+    approval = _item(policy["transitions"], "APPROVE_HISTORICAL_CANDIDATE")
+    approval["alphaquest_automatic"] = True
+
+    with pytest.raises(OperatingModelError, match="human transition.*cannot be AlphaQuest-automatic"):
+        validate_operating_model(policy)
+
+
+def test_deterministic_verdict_cannot_become_discretionary_codex_authority() -> None:
+    policy = _policy()
+    verdict = _item(policy["transitions"], "RECORD_HISTORICAL_VERDICT")
+    verdict["initiator"] = "CODEX"
+    verdict["alphaquest_automatic"] = False
+
+    with pytest.raises(OperatingModelError, match="must remain owned by ALPHAQUEST"):
+        validate_operating_model(policy)
+
+
+def test_machine_semantic_prohibition_cannot_be_reversed_by_prose() -> None:
+    policy = _policy()
+    prose = _item(policy["codex_policy"]["prohibitions"], "SELF_APPROVE_MECHANICS")
+    prose["enforceable_rule"] = "Codex may approve mechanics."
+
+    validate_operating_model(policy)
+
+
+def test_machine_semantic_prohibition_effect_is_enforced() -> None:
+    policy = _policy()
+    prohibition = _item(policy["codex_policy"]["machine_prohibitions"], "NO_SELF_APPROVAL")
+    prohibition["effect"] = "ALLOWED"
+
+    with pytest.raises(OperatingModelError, match="must prohibit"):
+        validate_operating_model(policy)
+
+
+def test_ungoverned_recertification_prohibition_is_required() -> None:
+    policy = _policy()
+    policy["codex_policy"]["machine_prohibitions"] = [
+        item
+        for item in policy["codex_policy"]["machine_prohibitions"]
+        if item["id"] != "NO_UNGOVERNED_RECERTIFICATION"
+    ]
+
+    with pytest.raises(OperatingModelError, match="prohibitions are incomplete"):
+        validate_operating_model(policy)
+
+
+def test_unknown_implementation_status_is_rejected() -> None:
+    policy = _policy()
+    _item(policy["transitions"], "START_FORWARD_INCUBATION")["implementation_status"] = "mostly_done"
+
+    with pytest.raises(OperatingModelError, match="unknown implementation status"):
+        validate_operating_model(policy)
+
+
+def test_partial_implementation_requires_structured_runtime_gap() -> None:
+    policy = _policy()
+    transition = _item(policy["transitions"], "APPROVE_HISTORICAL_CANDIDATE")
+    del transition["runtime_conformance"]["known_gap"]
+
+    with pytest.raises(OperatingModelError, match="partial runtime conformance fields"):
+        validate_operating_model(policy)
+
+
+def test_policy_only_transition_cannot_claim_runtime_enforcement() -> None:
+    policy = _policy()
+    transition = _item(policy["transitions"], "PROMOTE_SHADOW_TO_SMALL_LIVE")
+    transition["runtime_enforcement_claimed"] = True
+
+    with pytest.raises(OperatingModelError, match="must disclaim runtime enforcement"):
+        validate_operating_model(policy)
+
+
+def test_known_runtime_gap_requires_existing_partial_status() -> None:
+    policy = _policy()
+    transition = _item(policy["transitions"], "APPROVE_HISTORICAL_CANDIDATE")
+    transition["implementation_status"] = "EXISTING"
+    del transition["runtime_conformance"]
+
+    with pytest.raises(OperatingModelError, match="known runtime gap must be EXISTING_PARTIAL"):
+        validate_operating_model(policy)
+
+
+def test_p1_cannot_embed_an_excess_numeric_variant_budget() -> None:
+    policy = _policy()
+    policy["attempt_and_search_governance"]["variant_budget"]["p1_numeric_limit"] = 50
+
+    with pytest.raises(OperatingModelError, match="without a P1 number"):
+        validate_operating_model(policy)
+
+
+def test_post_oos_tuning_same_lineage_is_prohibited() -> None:
+    policy = _policy()
+    policy["attempt_and_search_governance"]["post_oos_tuning_same_lineage"] = "ALLOWED"
+
+    with pytest.raises(OperatingModelError, match="post_oos_tuning_same_lineage"):
+        validate_operating_model(policy)
+
+
+def test_consumed_holdout_cannot_be_reopened() -> None:
+    policy = _policy()
+    policy["attempt_and_search_governance"]["consumed_holdout_reopen"] = "ALLOWED"
+
+    with pytest.raises(OperatingModelError, match="consumed_holdout_reopen"):
+        validate_operating_model(policy)
+
+
+def test_unbounded_rescue_attempts_are_rejected() -> None:
+    policy = _policy()
+    policy["attempt_and_search_governance"]["rescue_budget"]["explicit_and_predeclared"] = False
+
+    with pytest.raises(OperatingModelError, match="bounded predeclared budget"):
+        validate_operating_model(policy)
+
+
+def test_rescue_budget_exhaustion_must_prohibit_more_rescues() -> None:
+    policy = _policy()
+    policy["attempt_and_search_governance"]["rescue_budget"][
+        "budget_exhaustion_effect"
+    ] = "RESCUE_ALLOWED"
+
+    with pytest.raises(OperatingModelError, match="bounded predeclared budget"):
+        validate_operating_model(policy)
+
+
+def test_minor_threshold_tweak_cannot_become_a_valid_revisit() -> None:
+    policy = _policy()
+    policy["revisit_policy"]["valid_triggers"].append("minor_threshold_tweak")
+
+    with pytest.raises(OperatingModelError, match="material/invalid boundary"):
+        validate_operating_model(policy)
+
+
+def test_material_timestamp_repair_requires_human_review() -> None:
+    policy = _policy()
+    timestamps = _item(policy["change_governance"]["data"]["categories"], "FIX_TIMESTAMPS")
+    timestamps["human_review"] = "not_required"
+
+    with pytest.raises(OperatingModelError, match="timestamp repair requires governed human review"):
+        validate_operating_model(policy)
+
+
+def test_same_contract_append_cannot_automatically_rebind_frozen_research() -> None:
+    policy = _policy()
+    append = _item(
+        policy["change_governance"]["data"]["categories"],
+        "ADD_ROWS_SAME_CERTIFIED_DATASET",
+    )
+    append["campaign_rebind"] = "automatic"
+
+    with pytest.raises(OperatingModelError, match="rebinding must remain governed"):
+        validate_operating_model(policy)
+
+
+def test_same_contract_append_cannot_automatically_claim_research_evidence() -> None:
+    policy = _policy()
+    append_policy = policy["change_governance"]["data"]["same_contract_append_policy"]
+    append_policy["automatic_actions"].append("claim_new_research_evidence_from_expanded_sample")
+
+    with pytest.raises(OperatingModelError, match="automatic actions are incomplete or unsafe"):
+        validate_operating_model(policy)
+
+
+def test_forward_observation_requires_previous_event_hash() -> None:
+    policy = _policy()
+    append = _item(policy["transitions"], "APPEND_FORWARD_OBSERVATION")
+    append["evidence_required"].remove("previous_event_hash")
+
+    with pytest.raises(OperatingModelError, match="hash chain are incomplete"):
+        validate_operating_model(policy)
+
+
+def test_forward_observation_requires_hash_chain_validation() -> None:
+    policy = _policy()
+    append = _item(policy["transitions"], "APPEND_FORWARD_OBSERVATION")
+    append["deterministic_checks"].remove("previous_event_hash_chain_valid")
+
+    with pytest.raises(OperatingModelError, match="chronology, hashes, and source exclusions"):
+        validate_operating_model(policy)
+
+
+def test_candidate_strategy_cannot_be_mutable_after_review() -> None:
+    policy = _policy()
+    candidate = _item(policy["research_objects"], "CANDIDATE_STRATEGY")
+    candidate["mutability"] = "freely_mutable"
+
+    with pytest.raises(OperatingModelError, match="must be immutable after disposition"):
+        validate_operating_model(policy)
+
+
+def test_unknown_downstream_object_reference_is_rejected() -> None:
+    policy = _policy()
+    candidate = _item(policy["research_objects"], "CANDIDATE_STRATEGY")
+    candidate["downstream"].append("NEW_OBSERVATION_ONLY")
+
+    with pytest.raises(OperatingModelError, match="unknown downstream references"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    ("axis", "unsafe_state"),
+    [
+        ("ACCOUNT_SUITABILITY_STATE", "FAIL"),
+        ("PORTFOLIO_STATE", "REJECTED"),
+        ("FORWARD_STATE", "ELIGIBLE_FOR_REVIEW"),
+    ],
+)
+def test_deployment_review_requires_exact_positive_axis_states(
+    axis: str,
+    unsafe_state: str,
+) -> None:
+    policy = _policy()
+    transition = _item(policy["transitions"], "ENTER_DEPLOYMENT_REVIEW")
+    transition["required_axis_states"][axis] = unsafe_state
+
+    with pytest.raises(OperatingModelError, match="exact positive deployment axis states"):
+        validate_operating_model(policy)
+
+
+def test_deployment_authorization_requires_complete_controls() -> None:
+    policy = _policy()
+    transition = _item(policy["transitions"], "AUTHORIZE_DEPLOYMENT")
+    transition["required_deployment_controls"].remove("kill_rules")
+
+    with pytest.raises(OperatingModelError, match="complete limits, allocation, and kill rules"):
+        validate_operating_model(policy)
+
+
+def test_discovery_path_must_reach_hypothesis_review() -> None:
+    policy = _policy()
+    proposal = _item(policy["transitions"], "PROPOSE_HYPOTHESIS_FOR_REVIEW")
+    proposal["to_stage"] = "DISCOVERY"
+
+    with pytest.raises(OperatingModelError, match="must be DISCOVERY -> HYPOTHESIS_REVIEW"):
+        validate_operating_model(policy)
+
+
+def test_monitoring_must_remain_an_operational_side_axis() -> None:
+    policy = _policy()
+    policy["state_axes"]["RESEARCH_LIFECYCLE_STAGE"]["values"].append("MONITORING")
+
+    with pytest.raises(OperatingModelError, match="monitoring must be represented only"):
+        validate_operating_model(policy)
+
+
+def test_screening_failure_terminates_only_bound_path() -> None:
+    policy = _policy()
+    failure = _item(policy["transitions"], "RECORD_HISTORICAL_SCREENING_FAILURE")
+    failure["campaign_effect"] = "EXHAUSTED"
+
+    with pytest.raises(OperatingModelError, match="cannot automatically exhaust"):
+        validate_operating_model(policy)
+
+
+def test_rejected_forward_review_cannot_advance() -> None:
+    policy = _policy()
+    rejection = _item(policy["transitions"], "REJECT_FORWARD_REVIEW")
+    rejection["to_stage"] = "PORTFOLIO_REVIEW"
+
+    with pytest.raises(OperatingModelError, match="unsafe lifecycle target"):
+        validate_operating_model(policy)

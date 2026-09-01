@@ -1,5 +1,5 @@
 schema: alphaquest.research-operating-model/v1
-policy_version: "2026-09-01.3"
+policy_version: "2026-09-01.4"
 status: canonical
 objective: >-
   Maximize the probability that an apparent historical edge survives unseen live
@@ -97,7 +97,6 @@ research_objects:
       - lineage_tampering
     downstream:
       - CAMPAIGN
-      - REVISIT_DECISION
   - id: CAMPAIGN
     represents: One governed test program for one economic edge under frozen objectives.
     created_when: One accepted hypothesis is admitted for implementation with one initial variant.
@@ -213,8 +212,6 @@ research_objects:
     downstream:
       - CANDIDATE_STRATEGY
       - ACCOUNT_SUITABILITY_ASSESSMENT
-      - CAMPAIGN_DISPOSITION
-      - EDGE_FAMILY_DISPOSITION
   - id: CANDIDATE_STRATEGY
     represents: A historically supported candidate approved after separate red-team task review; never account suitability or deployment authorization.
     created_when: Scientific PASS and generic objective eligibility where applicable receive a separate red-team task and human candidate disposition.
@@ -261,10 +258,11 @@ research_objects:
     owner: ALPHAQUEST_DETERMINISTIC_ENGINE
     source_actor: EXTERNAL_SYSTEM
     evidence:
+      - source_identity
       - event_hash
       - previous_event_hash
       - occurred_at
-      - content_addressed_attachment
+      - attachment_hashes
       - trade_and_rule_reconciliation
     invalidated_by:
       - historical_backfill
@@ -343,8 +341,7 @@ research_objects:
       - safety_gate_breach
       - broker_or_data_identity_failure
       - authorization_withdrawal
-    downstream:
-      - NEW_OBSERVATION_ONLY
+    downstream: []
 
 state_axes:
   RESEARCH_LIFECYCLE_STAGE:
@@ -366,7 +363,6 @@ state_axes:
       - SHADOW
       - SMALL_LIVE
       - LIVE
-      - MONITORING
   LIFECYCLE_DISPOSITION:
     question: Is work active, blocked, objectively exhausted, paused, or terminal without changing other axes?
     values:
@@ -410,6 +406,7 @@ state_axes:
       - NOT_STARTED
       - ACTIVE
       - ELIGIBLE_FOR_REVIEW
+      - ACCEPTED
       - FAILED
       - RETIRED
       - NEEDS_MANUAL_REVIEW
@@ -576,6 +573,23 @@ independence_policy:
   codex_may_approve_own_work: false
   deterministic_results_overridable: false
 
+runtime_conformance:
+  automation_contract: canonical_policy_only
+  legacy_paths_may_satisfy_canonical_automation: false
+  known_gaps:
+    - id: CANDIDATE_REVIEW_DISTINCT_HUMAN_IDENTITY
+      transition_id: APPROVE_HISTORICAL_CANDIDATE
+      current_runtime_behavior: Candidate reviewer identity must differ from the mechanics reviewer identity.
+      canonical_policy_behavior: One human owner may perform both decisions when task, context, and provenance are separate.
+      automation_may_use_legacy_behavior: false
+      migration_required: true
+    - id: DESTINATION_SPECIFIC_CANDIDATE_CREATION
+      transition_id: APPROVE_HISTORICAL_CANDIDATE
+      current_runtime_behavior: A destination-specific account PASS may contribute to lifecycle candidate creation.
+      canonical_policy_behavior: Account suitability is a side axis and cannot manufacture Candidate Strategy status.
+      automation_may_use_legacy_behavior: false
+      migration_required: true
+
 transitions:
   - id: RECORD_RESEARCH_LEAD
     from_stage: DISCOVERY
@@ -588,7 +602,26 @@ transitions:
     alphaquest_automatic: false
     reversible: false
     invalidated_by: [source_identity_failure]
-    implementation_status: existing_partial
+    implementation_status: EXISTING_PARTIAL
+    runtime_conformance:
+      current_runtime_behavior: Research leads are captured through several bounded proposal surfaces.
+      target_policy_behavior: Every lead is source-bound and remains non-campaign proposal evidence.
+      known_gap: No single canonical lifecycle transition currently owns every lead-capture surface.
+      migration_required: true
+  - id: PROPOSE_HYPOTHESIS_FOR_REVIEW
+    from_stage: DISCOVERY
+    to_stage: HYPOTHESIS_REVIEW
+    initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
+    proposal_actors: [CODEX, HUMAN_OWNER_RESEARCHER]
+    evidence_required: [source_bound_observation, falsifiable_hypothesis_proposal, uncertainty]
+    deterministic_checks: [schema_valid, source_bindings_present, no_implementation_admission]
+    codex: ALLOWED_PROPOSAL_ONLY
+    human_approval_required: false
+    alphaquest_automatic: true
+    reversible: false
+    invalidated_by: [source_identity_failure, proposal_hash_drift]
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: ADMIT_HYPOTHESIS_FOR_IMPLEMENTATION
     from_stage: HYPOTHESIS_REVIEW
     to_stage: APPROVED_FOR_IMPLEMENTATION
@@ -600,7 +633,7 @@ transitions:
     alphaquest_automatic: false
     reversible: false
     invalidated_by: [source_retraction, hypothesis_hash_drift]
-    implementation_status: existing
+    implementation_status: EXISTING
   - id: START_IMPLEMENTATION
     from_stage: APPROVED_FOR_IMPLEMENTATION
     to_stage: IMPLEMENTATION
@@ -612,7 +645,12 @@ transitions:
     alphaquest_automatic: false
     reversible: true
     invalidated_by: [scope_change, hypothesis_hash_drift]
-    implementation_status: existing_partial
+    implementation_status: EXISTING_PARTIAL
+    runtime_conformance:
+      current_runtime_behavior: Bounded implementation begins through existing Studio and engineering-handoff paths.
+      target_policy_behavior: Implementation begins only from an admitted hypothesis and an approved bounded scope.
+      known_gap: Existing entry surfaces do not share one canonical lifecycle transition record.
+      migration_required: true
   - id: SUBMIT_MECHANICS_FOR_REVIEW
     from_stage: IMPLEMENTATION
     to_stage: MECHANICS_CAUSAL_REVIEW
@@ -624,7 +662,7 @@ transitions:
     alphaquest_automatic: false
     reversible: true
     invalidated_by: [source_change, config_change, validation_data_change]
-    implementation_status: existing
+    implementation_status: EXISTING
   - id: APPROVE_MECHANICAL_INTERPRETATION
     from_stage: MECHANICS_CAUSAL_REVIEW
     to_stage: HISTORICAL_SCREENING
@@ -636,19 +674,37 @@ transitions:
     alphaquest_automatic: false
     reversible: false
     invalidated_by: [semantic_implementation_change, config_change, data_change, certification_change, sampling_policy_change]
-    implementation_status: existing
+    implementation_status: EXISTING
   - id: RUN_HISTORICAL_SCREENING
     from_stage: HISTORICAL_SCREENING
     to_stage: FULL_HISTORICAL_VALIDATION
     initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
     evidence_required: [unused_attempt_id, current_mechanics_approval, current_config_data_methodology_bindings]
-    deterministic_checks: [preflight_pass, stage_gates_pass, one_run_per_attempt]
+    deterministic_checks: [preflight_pass, screening_stage_gates_pass, one_run_per_attempt]
     codex: ALLOWED_TO_REQUEST_AUTHORED_RUN_ONLY
     human_approval_required: false
     alphaquest_automatic: true
     reversible: false
     invalidated_by: [identity_drift, incomplete_run]
-    implementation_status: existing
+    implementation_status: EXISTING
+  - id: RECORD_HISTORICAL_SCREENING_FAILURE
+    from_stage: HISTORICAL_SCREENING
+    to_stage: HISTORICAL_SCREENING
+    initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
+    evidence_required: [immutable_failed_stage_result, bound_attempt_identity, complete_search_history]
+    deterministic_checks: [failed_stage_is_limited_core_or_monkey, artifact_integrity, one_run_per_attempt]
+    failure_stages: [limited_core_grid, limited_monkey]
+    scientific_state_effect: FAIL
+    lifecycle_effect: terminate_bound_attempt_or_variant_path_only
+    campaign_effect: no_automatic_exhaustion
+    candidate_effect: prohibited
+    codex: PROHIBITED_TO_DECIDE
+    human_approval_required: false
+    alphaquest_automatic: true
+    reversible: false
+    invalidated_by: [artifact_integrity_failure]
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: OPEN_LOCKED_ACCEPTANCE_OOS
     from_stage: FULL_HISTORICAL_VALIDATION
     to_stage: FULL_HISTORICAL_VALIDATION
@@ -660,7 +716,12 @@ transitions:
     alphaquest_automatic: false
     reversible: false
     invalidated_by: [holdout_prior_access, identity_drift]
-    implementation_status: policy_explicit_existing_gate_partial
+    implementation_status: EXISTING_PARTIAL
+    runtime_conformance:
+      current_runtime_behavior: Existing governed result flows require an explicit holdout-open approval gate.
+      target_policy_behavior: The human owner alone opens one current, previously unconsumed locked acceptance OOS identity.
+      known_gap: Existing approval records are not yet emitted as this canonical lifecycle transition.
+      migration_required: true
   - id: RECORD_HISTORICAL_VERDICT
     from_stage: FULL_HISTORICAL_VALIDATION
     to_stage: FULL_HISTORICAL_VALIDATION
@@ -668,13 +729,17 @@ transitions:
     evidence_required: [complete_finalized_result_bundle]
     deterministic_checks: [recompute_metrics, replay_criteria, artifact_integrity]
     terminal_scientific_outcomes: [PASS, FAIL, NEEDS_MANUAL_REVIEW]
+    deterministic_failure_stages: [walk_forward_analysis, monte_carlo, acceptance]
     lifecycle_effect: scientific_state_only_no_candidate_status
+    failure_lifecycle_effect: terminate_bound_attempt_or_variant_path_only
+    campaign_effect: no_automatic_exhaustion
+    candidate_effect: prohibited_unless_scientific_PASS
     codex: PROHIBITED_TO_DECIDE
     human_approval_required: false
     alphaquest_automatic: true
     reversible: false
     invalidated_by: [finalization_integrity_failure]
-    implementation_status: existing
+    implementation_status: EXISTING
   - id: ENTER_HISTORICAL_CANDIDATE_REVIEW
     from_stage: FULL_HISTORICAL_VALIDATION
     to_stage: HISTORICAL_CANDIDATE_REVIEW
@@ -688,19 +753,63 @@ transitions:
     alphaquest_automatic: true
     reversible: false
     invalidated_by: [verdict_integrity_failure, candidate_eligibility_failure, bound_evidence_drift]
-    implementation_status: policy_explicit_existing_gate_partial
+    implementation_status: EXISTING_PARTIAL
+    runtime_conformance:
+      current_runtime_behavior: Current services compute candidate eligibility from finalized historical results.
+      target_policy_behavior: Only an immutable scientific PASS with all candidate prerequisites enters candidate review.
+      known_gap: Existing services do not emit one canonical lifecycle-transition artifact.
+      migration_required: true
   - id: APPROVE_HISTORICAL_CANDIDATE
     from_stage: HISTORICAL_CANDIDATE_REVIEW
     to_stage: HISTORICAL_CANDIDATE_REVIEW
     initiator: HUMAN_OWNER_RESEARCHER
     evidence_required: [scientific_pass, generic_objective_eligibility_when_applicable, separate_red_team_task, current_mechanics_approval]
     deterministic_checks: [candidate_eligibility, task_and_provenance_separation, hash_currentness]
+    candidate_disposition_effect: APPROVED_CURRENT
+    lifecycle_disposition_effect: ACTIVE
     codex: PROHIBITED_TO_APPROVE
     human_approval_required: true
     alphaquest_automatic: false
     reversible: false
     invalidated_by: [bound_evidence_drift]
-    implementation_status: existing_except_red_team_artifact_policy_only
+    implementation_status: EXISTING_PARTIAL
+    runtime_conformance:
+      current_runtime_behavior: Candidate review requires a reviewer identity distinct from mechanics review and may accept destination-specific account PASS as candidate evidence.
+      target_policy_behavior: One human owner may approve through separate task/context/provenance, and account suitability cannot create Candidate Strategy status.
+      known_gap: Candidate runtime retains both distinct-human and destination-specific candidate-creation compatibility behavior.
+      migration_required: true
+  - id: REJECT_HISTORICAL_CANDIDATE
+    from_stage: HISTORICAL_CANDIDATE_REVIEW
+    to_stage: HISTORICAL_CANDIDATE_REVIEW
+    initiator: HUMAN_OWNER_RESEARCHER
+    evidence_required: [scientific_pass, separate_red_team_task, rejection_reason, current_bound_evidence]
+    deterministic_checks: [task_and_provenance_separation, hash_currentness]
+    candidate_disposition_effect: REJECTED
+    lifecycle_disposition_effect: ACTIVE
+    advances_normal_path: false
+    codex: PROHIBITED_TO_APPROVE
+    human_approval_required: true
+    alphaquest_automatic: false
+    reversible: false
+    invalidated_by: [bound_evidence_drift]
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
+  - id: BLOCK_HISTORICAL_CANDIDATE_FOR_MANUAL_REVIEW
+    from_stage: HISTORICAL_CANDIDATE_REVIEW
+    to_stage: HISTORICAL_CANDIDATE_REVIEW
+    initiator: HUMAN_OWNER_RESEARCHER
+    evidence_required: [unresolved_candidate_evidence, manual_review_reason, current_bound_evidence]
+    deterministic_checks: [hash_currentness, unresolved_evidence_present]
+    candidate_disposition_effect: NEEDS_MANUAL_REVIEW
+    lifecycle_disposition_effect: BLOCKED
+    advances_normal_path: false
+    codex: PROHIBITED_TO_APPROVE
+    human_approval_required: true
+    alphaquest_automatic: false
+    reversible: true
+    invalidated_by: [bound_evidence_drift]
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: START_FORWARD_INCUBATION
     from_stage: HISTORICAL_CANDIDATE_REVIEW
     to_stage: FORWARD_INCUBATION
@@ -712,20 +821,20 @@ transitions:
     alphaquest_automatic: false
     reversible: false
     invalidated_by: [candidate_drift, backdated_start]
-    implementation_status: existing
+    implementation_status: EXISTING
   - id: APPEND_FORWARD_OBSERVATION
     from_stage: FORWARD_INCUBATION
     to_stage: FORWARD_INCUBATION
     initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
     source_actor: EXTERNAL_SYSTEM
-    evidence_required: [source_identity, post_start_attachment, trade_reconciliation, timestamp, previous_event_hash]
-    deterministic_checks: [source_identity_valid, strict_chronology, hash_chain, attachment_hash, rule_fields_complete]
+    evidence_required: [source_identity, post_start_timestamp, event_hash, previous_event_hash, attachment_hashes, trade_reconciliation]
+    deterministic_checks: [source_identity_valid, strict_post_start_chronology, event_hash_valid, previous_event_hash_chain_valid, attachment_hashes_valid, rule_fields_complete, no_historical_backfill, no_reconstructed_pre_start_event, no_reused_historical_oos]
     codex: ALLOWED_TO_SUMMARIZE_ONLY
     human_approval_required: false
     alphaquest_automatic: true
     reversible: false
-    invalidated_by: [historical_backfill, chronology_failure, hash_drift]
-    implementation_status: existing
+    invalidated_by: [historical_backfill, reconstructed_pre_start_event, reused_historical_oos, chronology_failure, broken_hash_chain, attachment_hash_drift]
+    implementation_status: EXISTING
   - id: MARK_FORWARD_ELIGIBLE_FOR_REVIEW
     from_stage: FORWARD_INCUBATION
     to_stage: FORWARD_REVIEW
@@ -737,19 +846,52 @@ transitions:
     alphaquest_automatic: true
     reversible: false
     invalidated_by: [journal_drift, later_failure_event]
-    implementation_status: existing
+    implementation_status: EXISTING
   - id: ACCEPT_FORWARD_REVIEW
     from_stage: FORWARD_REVIEW
     to_stage: PORTFOLIO_REVIEW
     initiator: HUMAN_OWNER_RESEARCHER
     evidence_required: [eligible_forward_journal, forward_review_notes, red_team_update]
     deterministic_checks: [journal_current, thresholds_met, no_open_alert]
+    forward_state_effect: ACCEPTED
     codex: PROHIBITED_TO_APPROVE
     human_approval_required: true
     alphaquest_automatic: false
     reversible: false
     invalidated_by: [forward_evidence_drift]
-    implementation_status: policy_only
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
+  - id: REJECT_FORWARD_REVIEW
+    from_stage: FORWARD_REVIEW
+    to_stage: FORWARD_REVIEW
+    initiator: HUMAN_OWNER_RESEARCHER
+    evidence_required: [eligible_forward_journal, rejection_reason, current_bound_evidence]
+    deterministic_checks: [journal_current, evidence_current]
+    forward_state_effect: FAILED
+    advances_normal_path: false
+    codex: PROHIBITED_TO_APPROVE
+    human_approval_required: true
+    alphaquest_automatic: false
+    reversible: false
+    invalidated_by: [forward_evidence_drift]
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
+  - id: BLOCK_FORWARD_FOR_MANUAL_REVIEW
+    from_stage: FORWARD_REVIEW
+    to_stage: FORWARD_REVIEW
+    initiator: HUMAN_OWNER_RESEARCHER
+    evidence_required: [unresolved_forward_evidence, manual_review_reason, current_bound_evidence]
+    deterministic_checks: [journal_current, unresolved_evidence_present]
+    forward_state_effect: NEEDS_MANUAL_REVIEW
+    lifecycle_disposition_effect: BLOCKED
+    advances_normal_path: false
+    codex: PROHIBITED_TO_APPROVE
+    human_approval_required: true
+    alphaquest_automatic: false
+    reversible: true
+    invalidated_by: [forward_evidence_drift]
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: CREATE_PORTFOLIO_REVIEW
     from_stage: PORTFOLIO_REVIEW
     to_stage: PORTFOLIO_REVIEW
@@ -761,19 +903,52 @@ transitions:
     alphaquest_automatic: true
     reversible: false
     invalidated_by: [candidate_or_input_drift]
-    implementation_status: existing
+    implementation_status: EXISTING
   - id: RECORD_PORTFOLIO_DISPOSITION
     from_stage: PORTFOLIO_REVIEW
     to_stage: ACCOUNT_SUITABILITY_REVIEW
     initiator: HUMAN_OWNER_RESEARCHER
     evidence_required: [portfolio_review_or_single_candidate_rationale]
     deterministic_checks: [portfolio_inputs_current]
+    portfolio_state_effect: ACCEPTED
     codex: PROPOSAL_ONLY
     human_approval_required: true
     alphaquest_automatic: false
     reversible: false
     invalidated_by: [portfolio_input_drift]
-    implementation_status: policy_only
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
+  - id: REJECT_PORTFOLIO_DISPOSITION
+    from_stage: PORTFOLIO_REVIEW
+    to_stage: PORTFOLIO_REVIEW
+    initiator: HUMAN_OWNER_RESEARCHER
+    evidence_required: [portfolio_review_or_single_candidate_rationale, rejection_reason]
+    deterministic_checks: [portfolio_inputs_current]
+    portfolio_state_effect: REJECTED
+    advances_normal_path: false
+    codex: PROHIBITED_TO_APPROVE
+    human_approval_required: true
+    alphaquest_automatic: false
+    reversible: false
+    invalidated_by: [portfolio_input_drift]
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
+  - id: BLOCK_PORTFOLIO_FOR_MANUAL_REVIEW
+    from_stage: PORTFOLIO_REVIEW
+    to_stage: PORTFOLIO_REVIEW
+    initiator: HUMAN_OWNER_RESEARCHER
+    evidence_required: [unresolved_portfolio_evidence, manual_review_reason]
+    deterministic_checks: [portfolio_inputs_current, unresolved_evidence_present]
+    portfolio_state_effect: NEEDS_MANUAL_REVIEW
+    lifecycle_disposition_effect: BLOCKED
+    advances_normal_path: false
+    codex: PROHIBITED_TO_APPROVE
+    human_approval_required: true
+    alphaquest_automatic: false
+    reversible: true
+    invalidated_by: [portfolio_input_drift]
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: ASSESS_ACCOUNT_SUITABILITY
     from_stage: ACCOUNT_SUITABILITY_REVIEW
     to_stage: ACCOUNT_SUITABILITY_REVIEW
@@ -788,31 +963,54 @@ transitions:
     alphaquest_automatic: true
     reversible: false
     invalidated_by: [profile_or_trade_evidence_drift]
-    implementation_status: existing
+    implementation_status: EXISTING
   - id: ENTER_DEPLOYMENT_REVIEW
     from_stage: ACCOUNT_SUITABILITY_REVIEW
     to_stage: DEPLOYMENT_REVIEW
     initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
-    evidence_required: [accepted_forward_review, portfolio_disposition, current_account_suitability]
-    deterministic_checks: [all_normal_path_prerequisites_current]
+    evidence_required: [approved_current_candidate, accepted_forward_review, accepted_portfolio_disposition, exact_profile_account_suitability_pass, current_certification, current_evidence]
+    deterministic_checks: [exact_required_axis_states, candidate_approved_current, exact_profile_binding_current]
+    required_axis_states:
+      SCIENTIFIC_STATE: PASS
+      FORWARD_STATE: ACCEPTED
+      PORTFOLIO_STATE: ACCEPTED
+      ACCOUNT_SUITABILITY_STATE: PASS
+      IMPLEMENTATION_STATE: CERTIFIED_CURRENT
+      EVIDENCE_CURRENTNESS: CURRENT
+    required_candidate_status: APPROVED_CURRENT
     codex: PROHIBITED_TO_DECIDE
     human_approval_required: false
     alphaquest_automatic: true
     reversible: false
     invalidated_by: [candidate_forward_portfolio_or_account_drift]
-    implementation_status: policy_only
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: AUTHORIZE_DEPLOYMENT
     from_stage: DEPLOYMENT_REVIEW
     to_stage: SHADOW
     initiator: HUMAN_OWNER_RESEARCHER
-    evidence_required: [current_candidate, accepted_forward_review, suitability, portfolio_disposition, limits, allocation, kill_rules]
-    deterministic_checks: [all_prerequisites_current, allocation_within_limits, task_and_provenance_separation]
+    evidence_required: [approved_current_candidate, accepted_forward_review, accepted_portfolio_disposition, exact_profile_account_suitability_pass, current_certification, current_evidence, complete_limits, complete_allocation, complete_kill_rules]
+    deterministic_checks: [exact_required_axis_states, candidate_approved_current, exact_profile_binding_current, deployment_controls_complete_and_valid, allocation_within_limits, task_and_provenance_separation]
+    required_axis_states:
+      SCIENTIFIC_STATE: PASS
+      FORWARD_STATE: ACCEPTED
+      PORTFOLIO_STATE: ACCEPTED
+      ACCOUNT_SUITABILITY_STATE: PASS
+      IMPLEMENTATION_STATE: CERTIFIED_CURRENT
+      EVIDENCE_CURRENTNESS: CURRENT
+    required_candidate_status: APPROVED_CURRENT
+    required_deployment_controls: [limits, allocation, kill_rules]
     codex: PROHIBITED
     human_approval_required: true
     alphaquest_automatic: false
     reversible: true
     invalidated_by: [any_upstream_drift, account_rule_change, risk_change]
-    implementation_status: existing_decision_record_execution_future
+    implementation_status: EXISTING_PARTIAL
+    runtime_conformance:
+      current_runtime_behavior: Existing deployment review records a manual decision but has no execution capability.
+      target_policy_behavior: Human authorization requires every exact positive axis state and complete validated deployment controls.
+      known_gap: Current decision service does not yet consume the canonical multi-axis transition contract.
+      migration_required: true
   - id: PROMOTE_SHADOW_TO_SMALL_LIVE
     from_stage: SHADOW
     to_stage: SMALL_LIVE
@@ -824,7 +1022,8 @@ transitions:
     alphaquest_automatic: false
     reversible: true
     invalidated_by: [safety_alert, identity_drift]
-    implementation_status: policy_only
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: PROMOTE_SMALL_LIVE_TO_LIVE
     from_stage: SMALL_LIVE
     to_stage: LIVE
@@ -836,10 +1035,12 @@ transitions:
     alphaquest_automatic: false
     reversible: true
     invalidated_by: [safety_alert, identity_drift]
-    implementation_status: policy_only
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: APPEND_LIVE_MONITORING
-    from_stage: MONITORING
-    to_stage: MONITORING
+    from_stage: LIVE
+    to_stage: LIVE
+    applicable_stages: [SHADOW, SMALL_LIVE, LIVE]
     initiator: EXTERNAL_SYSTEM
     evidence_required: [chronological_trade_log, deployment_decision_hash]
     deterministic_checks: [source_hash, chronology, frozen_thresholds, alert_calculation]
@@ -848,10 +1049,18 @@ transitions:
     alphaquest_automatic: true
     reversible: false
     invalidated_by: [source_hash_drift, chronology_failure]
-    implementation_status: existing_observation_only
+    operational_state_effect: HEALTHY_or_ALERT
+    scientific_state_effect: none
+    implementation_status: EXISTING_PARTIAL
+    runtime_conformance:
+      current_runtime_behavior: Existing monitoring computes chronological health, alert, and retirement-review observations.
+      target_policy_behavior: Monitoring is an operational side-axis update applicable to shadow, small-live, and live stages only.
+      known_gap: Existing monitoring outputs are not yet emitted against this canonical side-axis transition contract.
+      migration_required: true
   - id: SAFETY_PAUSE
-    from_stage: MONITORING
-    to_stage: MONITORING
+    from_stage: LIVE
+    to_stage: LIVE
+    applicable_stages: [SHADOW, SMALL_LIVE, LIVE]
     initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
     evidence_required: [objective_safety_gate_breach]
     deterministic_checks: [predeclared_pause_or_kill_rule]
@@ -860,10 +1069,14 @@ transitions:
     alphaquest_automatic: true
     reversible: true
     invalidated_by: []
-    implementation_status: policy_only
+    operational_state_effect: PAUSED
+    scientific_state_effect: none
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: RETIRE_LIVE_INSTANCE
-    from_stage: MONITORING
-    to_stage: MONITORING
+    from_stage: LIVE
+    to_stage: LIVE
+    applicable_stages: [SHADOW, SMALL_LIVE, LIVE]
     initiator: HUMAN_OWNER_RESEARCHER
     evidence_required: [retirement_review, reason, monitoring_history]
     deterministic_checks: [instance_identity, evidence_currentness]
@@ -872,7 +1085,11 @@ transitions:
     alphaquest_automatic: false
     reversible: false
     invalidated_by: []
-    implementation_status: policy_only
+    operational_state_effect: STOPPED
+    lifecycle_disposition_effect: RETIRED
+    scientific_state_effect: none
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: STOP_CAMPAIGN_ON_PREDECLARED_RULE
     from_stage: HISTORICAL_SCREENING
     to_stage: HISTORICAL_SCREENING
@@ -887,7 +1104,8 @@ transitions:
     alphaquest_automatic: true
     reversible: false
     invalidated_by: []
-    implementation_status: policy_only
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: DISCRETIONARILY_ABANDON_CAMPAIGN
     from_stage: FULL_HISTORICAL_VALIDATION
     to_stage: FULL_HISTORICAL_VALIDATION
@@ -901,7 +1119,8 @@ transitions:
     alphaquest_automatic: false
     reversible: false
     invalidated_by: []
-    implementation_status: policy_only
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: ABANDON_EDGE_FAMILY
     from_stage: DISCOVERY
     to_stage: DISCOVERY
@@ -913,7 +1132,8 @@ transitions:
     alphaquest_automatic: false
     reversible: false
     invalidated_by: []
-    implementation_status: policy_only
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
   - id: REVISIT_FAILED_EDGE
     from_stage: DISCOVERY
     to_stage: HYPOTHESIS_REVIEW
@@ -925,36 +1145,122 @@ transitions:
     alphaquest_automatic: false
     reversible: false
     invalidated_by: [trigger_not_material]
-    implementation_status: policy_only
+    implementation_status: POLICY_ONLY
+    runtime_enforcement_claimed: false
 
 codex_policy:
   autonomous_permissions:
     - id: READ_AND_SEARCH_LITERATURE
+      capability_type: ADVISORY
+      grants_approval: false
+      grants_override: false
       conditions: Bounded public-source task; output remains unverified or partial until captured and human-reviewed.
     - id: PROPOSE_HYPOTHESIS
+      capability_type: PROPOSAL
+      grants_approval: false
+      grants_override: false
       conditions: Proposal only; no campaign creation, confirmation, parameter tuning, or holdout access.
     - id: CRITIQUE_HYPOTHESIS
+      capability_type: ADVISORY
+      grants_approval: false
+      grants_override: false
       conditions: Advisory falsification and feasibility analysis; cannot admit or reject the hypothesis.
     - id: ESTIMATE_IMPLEMENTATION_FEASIBILITY
+      capability_type: ADVISORY
+      grants_approval: false
+      grants_override: false
       conditions: Use certified catalog and declared data capabilities; unsupported mechanics require a handoff.
     - id: PREPARE_CAMPAIGN_DRAFT
+      capability_type: PROPOSAL
+      grants_approval: false
+      grants_override: false
       conditions: Unconfirmed draft only, pre-PnL, within frozen objectives and parameter budgets.
     - id: IMPLEMENT_APPROVED_MECHANICS
+      capability_type: AUTHORIZED_IMPLEMENTATION
+      grants_approval: false
+      grants_override: false
       conditions: Human has approved the bounded implementation scope; Codex may edit code and tests but cannot certify or approve fidelity.
     - id: RUN_AUTHORED_HISTORICAL_ATTEMPT
+      capability_type: AUTHORIZED_EXECUTION_REQUEST
+      grants_approval: false
+      grants_override: false
       conditions: Only an existing unused attempt with current approval and deterministic preflight; AlphaQuest owns the verdict.
     - id: RUN_PREDECLARED_ROBUSTNESS
+      capability_type: AUTHORIZED_EXECUTION_REQUEST
+      grants_approval: false
+      grants_override: false
       conditions: No gate, window, parameter-space, or methodology changes.
     - id: SUMMARIZE_EVIDENCE
+      capability_type: ADVISORY
+      grants_approval: false
+      grants_override: false
       conditions: Preserve failures, uncertainty, axes, and exact identities; no reclassification.
     - id: IDENTIFY_AND_DIAGNOSE_BUGS
+      capability_type: ADVISORY
+      grants_approval: false
+      grants_override: false
       conditions: Diagnosis is separate from authorization to change mechanics or evidence.
     - id: RED_TEAM_CANDIDATE
+      capability_type: ADVISORY
+      grants_approval: false
+      grants_override: false
       conditions: Separate task and ownership record from implementation; findings require human disposition.
     - id: PREPARE_FORWARD_OR_DEPLOYMENT_REVIEW_PACKAGE
+      capability_type: PROPOSAL
+      grants_approval: false
+      grants_override: false
       conditions: Assemble and explain current evidence only; cannot start incubation or authorize deployment.
     - id: ANALYZE_LIVE_DIAGNOSTICS
+      capability_type: ADVISORY
+      grants_approval: false
+      grants_override: false
       conditions: Advisory only; cannot change risk, pause rules, sizing, authorization, or research history.
+  machine_prohibitions:
+    - id: NO_SELF_APPROVAL
+      actor: CODEX
+      capability: APPROVAL
+      actions: [APPROVE_MECHANICAL_INTERPRETATION, APPROVE_HISTORICAL_CANDIDATE, ACCEPT_FORWARD_REVIEW, RECORD_PORTFOLIO_DISPOSITION]
+      effect: PROHIBITED
+    - id: NO_LOCKED_OOS_OPEN
+      actor: CODEX
+      capability: TRANSITION_INITIATION
+      actions: [OPEN_LOCKED_ACCEPTANCE_OOS]
+      effect: PROHIBITED
+    - id: NO_RESEARCH_VERDICT
+      actor: CODEX
+      capability: DECISION
+      actions: [RECORD_HISTORICAL_SCREENING_FAILURE, RECORD_HISTORICAL_VERDICT]
+      effect: PROHIBITED
+    - id: NO_DEPLOYMENT_AUTHORITY
+      actor: CODEX
+      capability: APPROVAL
+      actions: [AUTHORIZE_DEPLOYMENT, PROMOTE_SHADOW_TO_SMALL_LIVE, PROMOTE_SMALL_LIVE_TO_LIVE]
+      effect: PROHIBITED
+    - id: NO_GATE_OVERRIDE
+      actor: CODEX
+      capability: OVERRIDE
+      actions: [DETERMINISTIC_GATES, CAMPAIGN_STOP]
+      effect: PROHIBITED
+    - id: NO_EVIDENCE_REWRITE
+      actor: CODEX
+      capability: MUTATION
+      actions: [IMMUTABLE_RESEARCH_EVIDENCE]
+      effect: PROHIBITED
+    - id: NO_OOS_REDEFINITION
+      actor: CODEX
+      capability: MUTATION
+      actions: [CONSUMED_OOS_OR_HOLDOUT]
+      effect: PROHIBITED
+    - id: NO_RETRY_UNTIL_PASS
+      actor: CODEX
+      capability: EXECUTION
+      actions: [UNBUDGETED_RESCUE, ATTEMPT_ID_REUSE]
+      effect: PROHIBITED
+    - id: NO_UNGOVERNED_RECERTIFICATION
+      actor: CODEX
+      capability: CERTIFICATION
+      actions: [RECERTIFY_WITHOUT_GOVERNED_PROCESS]
+      effect: PROHIBITED
   human_gated_actions:
     - ADMIT_HYPOTHESIS_FOR_IMPLEMENTATION
     - APPROVE_MECHANICAL_INTERPRETATION
@@ -1081,11 +1387,32 @@ separation_of_duties:
 
 attempt_and_search_governance:
   hierarchy: [EDGE_FAMILY, HYPOTHESIS, CAMPAIGN, STRATEGY_VARIANT, ATTEMPT, RUN]
+  variant_budget:
+    source: GOVERNED_METHODOLOGY_OR_FROZEN_CAMPAIGN_PROTOCOL
+    explicit_identity_required: true
+    bounded: true
+    p1_numeric_limit: null
+    renaming_resets_budget: false
+  rescue_budget:
+    source: GOVERNED_METHODOLOGY_OR_FROZEN_CAMPAIGN_PROTOCOL
+    explicit_and_predeclared: true
+    frozen_before_relevant_results: true
+    missing_budget_effect: RESCUE_PROHIBITED
+    budget_exhaustion_effect: RESCUE_PROHIBITED
+    each_rescue_new_attempt_identity: true
+    history_immutable: true
+    renaming_resets_budget: false
+    post_oos_reopen_or_redefinition: PROHIBITED
+    hypothesis_change_same_lineage: PROHIBITED
+  post_oos_tuning_same_lineage: PROHIBITED
+  consumed_holdout_reopen: PROHIBITED
+  every_execution_new_attempt_identity: true
+  retry_until_pass: STRUCTURALLY_PROHIBITED
   new_variant_when:
     - Same accepted economic hypothesis, materially distinct value-independent mechanics.
     - Immediately prior variant has current manual mechanics approval and terminal scientific FAIL.
-    - Campaign is not EXHAUSTED or ABANDONED and an authorized variant slot remains.
-    - Maximum five variants and no post-OOS tuning inside the same research generation.
+    - Campaign is not EXHAUSTED or ABANDONED and the identified governed external variant budget remains.
+    - No post-OOS tuning is permitted inside the same research generation.
   new_attempt_when:
     - Any original execution, exact replication, data refresh, methodology rerun, pre-PnL protocol declaration, pre-PnL mechanics correction, pre-PnL parameter declaration, or authorized rescue.
   rerun_definition: A new attempt using the same frozen protocol; never a second run on the prior attempt.
@@ -1131,7 +1458,7 @@ campaign_termination_policy:
     rule_must_be_predeclared: true
     scope: campaign_level_only
     criteria:
-      - maximum_permitted_variants_consumed
+      - governed_variant_budget_exhausted
       - campaign_research_or_search_budget_exhausted
       - campaign_fresh_holdout_budget_exhausted
       - campaign_opportunity_frequency_structurally_infeasible_under_predeclared_requirement
@@ -1565,7 +1892,7 @@ invariants:
   - id: RESEARCH_OBJECT_DEPENDENCIES_ARE_ACYCLIC
     rule: Downstream research-object dependencies contain no cycle, including Candidate Strategy and Account Suitability.
   - id: HISTORICAL_CANDIDATE_CANNOT_IMPLY_LIVE_AUTHORIZATION
-    rule: No direct transition exists from HISTORICAL_CANDIDATE_REVIEW to SHADOW, SMALL_LIVE, LIVE, or MONITORING.
+    rule: No direct transition exists from HISTORICAL_CANDIDATE_REVIEW to SHADOW, SMALL_LIVE, or LIVE.
   - id: HISTORICAL_VERDICT_RECORDING_DOES_NOT_CREATE_CANDIDATE_STATUS
     rule: Recording PASS, FAIL, or NEEDS_MANUAL_REVIEW changes only SCIENTIFIC_STATE and remains in FULL_HISTORICAL_VALIDATION.
   - id: HISTORICAL_FAIL_CANNOT_ENTER_CANDIDATE_REVIEW
@@ -1613,4 +1940,4 @@ invariants:
   - id: ONE_ATTEMPT_HAS_AT_MOST_ONE_RUN
     rule: Every additional execution uses a new attempt identity and preserves the parent lineage.
   - id: POLICY_DEFINITIONS_DO_NOT_CLAIM_RUNTIME_ENFORCEMENT
-    rule: Entries marked policy_only are contracts for later phases and are not represented as implemented runtime capabilities.
+    rule: Entries marked POLICY_ONLY are contracts for later phases and explicitly claim no current runtime enforcement.

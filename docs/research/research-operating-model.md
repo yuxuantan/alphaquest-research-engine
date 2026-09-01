@@ -2,7 +2,7 @@
 
 Status: canonical P1 policy
 
-Operating-model policy: `2026-09-01.3`
+Operating-model policy: `2026-09-01.4`
 
 Introduced against: P0 tag `engine-v0.1.0-p0`, engine contract
 `2026.08.14.1`, methodology `2026-08-14.2`
@@ -21,9 +21,10 @@ and no later destination or live outcome rewrites an earlier scientific fact.
 
 P1 defines governance and contracts. It does not build an edge backlog,
 literature agents, portfolio optimizer, broker router, live executor, or new data
-lane. The policy labels each transition as `existing`, `existing_partial`, or
-`policy_only`. A policy-only transition is a future enforcement contract, not a
-claim that runtime orchestration exists today.
+lane. The policy labels each transition as exactly `EXISTING`,
+`EXISTING_PARTIAL`, or `POLICY_ONLY`. Every partial transition declares current
+runtime behavior, target behavior, its known gap, and required migration. Every
+policy-only transition explicitly disclaims current runtime enforcement.
 
 The policy's canonical identity is its schema, policy version, and policy-content
 SHA-256. The engine tag/contract and methodology above are immutable introduction
@@ -33,6 +34,22 @@ A semantic operating-model change does require a new policy version and content
 hash. Changing P1 definitions does not silently change historical gate thresholds
 or rebind old results; semantic methodology changes still follow the independently
 versioned methodology process.
+
+### Runtime conformance
+
+Canonical policy, not a legacy compatibility path, is the contract for future
+automation. The machine policy records two verified candidate-review gaps:
+
+- current runtime requires candidate reviewer identity to differ from mechanics
+  reviewer identity, while canonical P1 permits one human with separate tasks,
+  context, and provenance;
+- current runtime can let destination-specific account `PASS` contribute to
+  candidate creation, while canonical P1 treats account suitability strictly as
+  a side axis.
+
+`APPROVE_HISTORICAL_CANDIDATE` is therefore `EXISTING_PARTIAL`. P1 does not
+delete those compatibility paths or rewrite prior evidence. Both require future
+migration, and neither may satisfy canonical P2/P3 automation.
 
 ## Existing-state audit and terminology normalization
 
@@ -79,6 +96,13 @@ The inconsistencies are naming and scope, not missing historical evidence:
 8. Current portfolio output is deterministic and verdict-neutral. P1 defines a
    separate portfolio disposition for later orchestration rather than pretending
    `READY_FOR_HUMAN_REVIEW` is acceptance.
+9. Current candidate review requires a reviewer identity different from the
+   mechanics reviewer and retains a compatibility path where destination-specific
+   account `PASS` may contribute to candidate creation. Both are declared
+   `EXISTING_PARTIAL` gaps. Canonical P1 supports one human through separated
+   task/context/provenance and prohibits account suitability from manufacturing
+   Candidate Strategy status. Future automation may not treat either legacy path
+   as canonical; runtime migration is required before full-conformance claims.
 
 Compatibility values remain readable and unchanged. P1 normalizes their axis:
 
@@ -164,8 +188,12 @@ DISCOVERY
 -> ACCOUNT_SUITABILITY_REVIEW
 -> DEPLOYMENT_REVIEW
 -> SHADOW -> SMALL_LIVE -> LIVE
--> MONITORING
 ```
+
+Monitoring is not a research-lifecycle stage. It updates `OPERATIONAL_STATE`
+while the instance remains at `SHADOW`, `SMALL_LIVE`, or `LIVE`. Monitoring
+evidence can pause or retire an instance, but cannot create or rewrite scientific
+validity.
 
 `ACCOUNT_SUITABILITY_REVIEW` names where a current suitability result is required
 on the normal deployment path; it does not restrict when the calculation may
@@ -188,8 +216,8 @@ and `SUPERSEDED` preserves the old lineage while naming a newer one.
 - Implementation: `NOT_IMPLEMENTED`, `DEVELOPMENT`, `AWAITING_CERTIFICATION`,
   `CERTIFIED_CURRENT`, `CERTIFICATION_STALE`, `DEPRECATED`, `RETIRED`, or
   `QUARANTINED`.
-- Forward: `NOT_STARTED`, `ACTIVE`, `ELIGIBLE_FOR_REVIEW`, `FAILED`, `RETIRED`,
-  or `NEEDS_MANUAL_REVIEW`.
+- Forward: `NOT_STARTED`, `ACTIVE`, `ELIGIBLE_FOR_REVIEW`, `ACCEPTED`, `FAILED`,
+  `RETIRED`, or `NEEDS_MANUAL_REVIEW`.
 - Portfolio: `NOT_REVIEWED`, `READY_FOR_HUMAN_REVIEW`, `ACCEPTED`, `REJECTED`,
   or `NEEDS_MANUAL_REVIEW`.
 - Account suitability: `NOT_ASSESSED`, `PASS`, `FAIL`, or
@@ -217,6 +245,13 @@ successor variant, campaign exhaustion or abandonment analysis, and possible
 future revisit. `NEEDS MANUAL REVIEW` remains fail-closed; resolution produces
 distinct governed evidence and never rewrites the original verdict.
 
+Every human review has explicit non-success paths. Candidate review records
+`APPROVED_CURRENT`, `REJECTED`, or `NEEDS_MANUAL_REVIEW`; forward review records
+`ACCEPTED`, `FAILED`, or `NEEDS_MANUAL_REVIEW`; portfolio review records
+`ACCEPTED`, `REJECTED`, or `NEEDS_MANUAL_REVIEW`. Rejection stays at the current
+stage and cannot advance. Manual-review outcomes also set the lifecycle
+disposition to `BLOCKED` until governed resolution.
+
 ## Actors and authority
 
 The four actor classes are deliberately asymmetric:
@@ -242,26 +277,31 @@ means that Codex may invent inputs.
 | Transition | Initiator | AlphaQuest facts | Human gate | Codex authority | Reversible |
 | --- | --- | --- | --- | --- | --- |
 | Record research lead | Codex or human task | schema/no mutation | no | unverified proposal only | no; supersede instead |
+| Propose hypothesis for review | AlphaQuest from Codex/human proposal | schema, sources, no implementation admission | no | proposal only | no; supersede instead |
 | Admit hypothesis | human | fields, hashes, duplicate review | required | propose only | no |
 | Start bounded implementation | human-scoped task | catalog/handoff and information boundary | admission already required | implement approved scope | yes before freeze |
 | Submit mechanics | Codex or engineer | tests, certification, lane evidence | no | prepare only | yes |
 | Approve mechanics | human | all checks/sample/current hashes | required | prohibited | no; stale on change |
 | Run historical screening/stages | AlphaQuest | preflight, stages, one-run-per-attempt | no trivial click | request an authored run only | no |
+| Record screening failure | AlphaQuest | immutable limited-core/monkey `FAIL`, lineage, search history | no | cannot decide or override | no; bound path ends |
 | Open locked acceptance OOS | human | all prior gates, unopened holdout, frozen identities | required | prohibited | no |
 | Record historical verdict | AlphaQuest | recomputation and artifact integrity; `PASS`, `FAIL`, or `NEEDS MANUAL REVIEW` | no | cannot decide | no; remains in full validation |
 | Enter historical candidate review | AlphaQuest | immutable scientific `PASS`, no unresolved review, predeclared eligibility | no | cannot decide | no |
 | Approve historical candidate | human owner after separate red-team task | eligibility, hashes, task/provenance separation | required | cannot approve | no; may stale |
+| Reject/block historical candidate | human | current evidence and explicit rejection/manual-review reason | required | cannot approve | no; does not advance |
 | Start forward incubation | human | current candidate, plan, start time | required | prohibited | no |
 | Append forward observation | AlphaQuest from external source | source identity, chronology, hashes, reconciliation | no | summarize only | no |
 | Mark forward eligible | AlphaQuest | days, trades, no failure | no | cannot decide | no; later failure can block |
 | Accept forward review | human | current journal and thresholds | required | cannot approve | no |
+| Reject/block forward review | human | current journal and explicit rejection/manual-review reason | required | cannot approve | no; does not advance |
 | Create portfolio review | AlphaQuest | exact OOS inputs and statistics | no | interpret only | no |
 | Record portfolio disposition | human | current inputs | required | propose only | no |
+| Reject/block portfolio review | human | current inputs and explicit rejection/manual-review reason | required | cannot approve | no; does not advance |
 | Assess account suitability side axis | AlphaQuest | scientific `PASS`, unseen evidence, exact profile, rules | attestations only when external facts require them | request/summarize only | no; does not advance lifecycle |
-| Enter deployment review | AlphaQuest | forward, portfolio, and current account prerequisites | no new click | cannot decide facts | no |
-| Authorize deployment | human | all prerequisites, limits, separation | required | prohibited | authorization can be withdrawn |
+| Enter deployment review | AlphaQuest | scientific `PASS`; approved/current candidate; forward and portfolio `ACCEPTED`; exact-profile account `PASS`; current certification/evidence | no new click | cannot decide facts | no |
+| Authorize deployment | human | same exact positive states plus validated limits, allocation, and kill rules | required | prohibited | authorization can be withdrawn |
 | Shadow -> small live -> live | human | current monitoring, limits, authorization | required at each mode change | prohibited | can pause/roll back |
-| Append monitoring | external/AlphaQuest | chronology, thresholds, alerts | no per-period approval | analyze only | no |
+| Append monitoring side-axis state | external/AlphaQuest | chronology, thresholds, alerts in shadow/small-live/live | no per-period approval | analyze only | no |
 | Safety pause | AlphaQuest | predeclared hard rule | no | cannot override | yes after human review |
 | Retire/re-enable | human | instance and evidence identity | required | cannot decide | retirement terminal; re-enable uses new authorization |
 | Stop campaign on predeclared rule | AlphaQuest | objective rule, reason, evidence, complete lineage | no | cannot override/restart | terminal `EXHAUSTED`; revisit is new lineage |
@@ -367,8 +407,9 @@ variant -> attempt -> run`.
   same accepted edge. It requires the immediately prior variant's current
   mechanics approval and terminal scientific `FAIL`, an unconsumed authorized
   variant slot, and a campaign that is neither `EXHAUSTED` nor `ABANDONED`. It
-  remains within the five-variant maximum and cannot use post-OOS evidence for
-  tuning.
+  must remain within a bounded budget whose identity comes from the governed
+  methodology or frozen campaign protocol. P1 does not duplicate that numeric
+  limit. Post-OOS tuning in the same lineage is prohibited.
 - A new attempt is required for original execution, replication, data refresh,
   methodology rerun, pre-PnL protocol/mechanics/parameter declaration, or
   authorized rescue.
@@ -381,6 +422,14 @@ variant -> attempt -> run`.
   variant or research generation.
 - A new causal mechanism, counterparty, information timeline, or transfer
   mechanism is a new hypothesis. A new name is not.
+
+An `authorized_rescue` exists only when a bounded rescue budget was explicit and
+frozen before the relevant results were observed. Missing or exhausted budget
+prohibits rescue. Each rescue has a new attempt identity; rescue history is
+immutable; naming changes cannot reset budget or history; and rescue cannot
+reopen/redefine consumed OOS or change the economic hypothesis in the same
+lineage. These rules make retry-until-`PASS` structurally unavailable without P1
+hard-coding a methodology-specific count.
 
 Accepted hypotheses, published configs, attempts, runs, searched parameter
 spaces, approvals, verdicts, reviews, and abandonment/revisit decisions remain
@@ -401,8 +450,8 @@ Campaign termination has two paths:
 
 1. **Deterministic stop/exhaustion.** AlphaQuest automatically sets disposition
    `EXHAUSTED` and blocks further attempts only when a predeclared campaign-level
-   objective condition is satisfied. Conditions include consuming the maximum
-   permitted variants, campaign research/search budget, or fresh-holdout budget;
+   objective condition is satisfied. Conditions include exhausting the identified
+   governed variant, campaign research/search, or fresh-holdout budget;
    campaign-wide opportunity-frequency infeasibility; data/fidelity unavailable
    for the campaign; execution infeasibility applying to the hypothesis or
    mechanical family; or another explicit predeclared campaign-level termination

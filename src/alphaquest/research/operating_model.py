@@ -134,6 +134,133 @@ PROVEN_NONSEMANTIC_IMPLEMENTATION_CHANGES = {
     "BUG_FIX_BEHAVIOR_UNCHANGED",
     "PERFORMANCE_ONLY_OPTIMIZATION",
 }
+IMPLEMENTATION_STATUSES = {"EXISTING", "EXISTING_PARTIAL", "POLICY_ONLY"}
+PARTIAL_CONFORMANCE_FIELDS = {
+    "current_runtime_behavior",
+    "target_policy_behavior",
+    "known_gap",
+    "migration_required",
+}
+CODEX_TRANSITION_MODES = {
+    "ALLOWED_AFTER_HUMAN_SCOPE_APPROVAL",
+    "ALLOWED_PROPOSAL_ONLY",
+    "ALLOWED_TO_ANALYZE_ONLY",
+    "ALLOWED_TO_INTERPRET_ONLY",
+    "ALLOWED_TO_PREPARE_NOT_APPROVE",
+    "ALLOWED_TO_REQUEST_AND_SUMMARIZE_ONLY",
+    "ALLOWED_TO_REQUEST_AUTHORED_RUN_ONLY",
+    "ALLOWED_TO_SUMMARIZE_ONLY",
+    "PROHIBITED",
+    "PROHIBITED_TO_APPROVE",
+    "PROHIBITED_TO_DECIDE",
+    "PROHIBITED_TO_OVERRIDE",
+    "PROHIBITED_TO_OVERRIDE_OR_RESTART",
+    "PROHIBITED_TO_START",
+    "PROPOSAL_ONLY",
+}
+CRITICAL_HUMAN_TRANSITION_AUTHORITY = {
+    "APPROVE_MECHANICAL_INTERPRETATION": "PROHIBITED",
+    "OPEN_LOCKED_ACCEPTANCE_OOS": "PROHIBITED",
+    "APPROVE_HISTORICAL_CANDIDATE": "PROHIBITED_TO_APPROVE",
+    "ACCEPT_FORWARD_REVIEW": "PROHIBITED_TO_APPROVE",
+    "RECORD_PORTFOLIO_DISPOSITION": "PROPOSAL_ONLY",
+    "AUTHORIZE_DEPLOYMENT": "PROHIBITED",
+    "PROMOTE_SHADOW_TO_SMALL_LIVE": "PROHIBITED",
+    "PROMOTE_SMALL_LIVE_TO_LIVE": "PROHIBITED",
+}
+REQUIRED_AUTONOMOUS_PERMISSIONS = {
+    "READ_AND_SEARCH_LITERATURE": "ADVISORY",
+    "PROPOSE_HYPOTHESIS": "PROPOSAL",
+    "CRITIQUE_HYPOTHESIS": "ADVISORY",
+    "ESTIMATE_IMPLEMENTATION_FEASIBILITY": "ADVISORY",
+    "PREPARE_CAMPAIGN_DRAFT": "PROPOSAL",
+    "IMPLEMENT_APPROVED_MECHANICS": "AUTHORIZED_IMPLEMENTATION",
+    "RUN_AUTHORED_HISTORICAL_ATTEMPT": "AUTHORIZED_EXECUTION_REQUEST",
+    "RUN_PREDECLARED_ROBUSTNESS": "AUTHORIZED_EXECUTION_REQUEST",
+    "SUMMARIZE_EVIDENCE": "ADVISORY",
+    "IDENTIFY_AND_DIAGNOSE_BUGS": "ADVISORY",
+    "RED_TEAM_CANDIDATE": "ADVISORY",
+    "PREPARE_FORWARD_OR_DEPLOYMENT_REVIEW_PACKAGE": "PROPOSAL",
+    "ANALYZE_LIVE_DIAGNOSTICS": "ADVISORY",
+}
+REQUIRED_MACHINE_PROHIBITIONS = {
+    "NO_SELF_APPROVAL": (
+        "APPROVAL",
+        {
+            "APPROVE_MECHANICAL_INTERPRETATION",
+            "APPROVE_HISTORICAL_CANDIDATE",
+            "ACCEPT_FORWARD_REVIEW",
+            "RECORD_PORTFOLIO_DISPOSITION",
+        },
+    ),
+    "NO_LOCKED_OOS_OPEN": ("TRANSITION_INITIATION", {"OPEN_LOCKED_ACCEPTANCE_OOS"}),
+    "NO_RESEARCH_VERDICT": (
+        "DECISION",
+        {"RECORD_HISTORICAL_SCREENING_FAILURE", "RECORD_HISTORICAL_VERDICT"},
+    ),
+    "NO_DEPLOYMENT_AUTHORITY": (
+        "APPROVAL",
+        {
+            "AUTHORIZE_DEPLOYMENT",
+            "PROMOTE_SHADOW_TO_SMALL_LIVE",
+            "PROMOTE_SMALL_LIVE_TO_LIVE",
+        },
+    ),
+    "NO_GATE_OVERRIDE": ("OVERRIDE", {"DETERMINISTIC_GATES", "CAMPAIGN_STOP"}),
+    "NO_EVIDENCE_REWRITE": ("MUTATION", {"IMMUTABLE_RESEARCH_EVIDENCE"}),
+    "NO_OOS_REDEFINITION": ("MUTATION", {"CONSUMED_OOS_OR_HOLDOUT"}),
+    "NO_RETRY_UNTIL_PASS": ("EXECUTION", {"UNBUDGETED_RESCUE", "ATTEMPT_ID_REUSE"}),
+    "NO_UNGOVERNED_RECERTIFICATION": (
+        "CERTIFICATION",
+        {"RECERTIFY_WITHOUT_GOVERNED_PROCESS"},
+    ),
+}
+REQUIRED_DEPLOYMENT_AXIS_STATES = {
+    "SCIENTIFIC_STATE": "PASS",
+    "FORWARD_STATE": "ACCEPTED",
+    "PORTFOLIO_STATE": "ACCEPTED",
+    "ACCOUNT_SUITABILITY_STATE": "PASS",
+    "IMPLEMENTATION_STATE": "CERTIFIED_CURRENT",
+    "EVIDENCE_CURRENTNESS": "CURRENT",
+}
+EXPECTED_TRANSITION_INITIATORS = {
+    "RECORD_RESEARCH_LEAD": "CODEX",
+    "PROPOSE_HYPOTHESIS_FOR_REVIEW": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "ADMIT_HYPOTHESIS_FOR_IMPLEMENTATION": "HUMAN_OWNER_RESEARCHER",
+    "START_IMPLEMENTATION": "HUMAN_OWNER_RESEARCHER",
+    "SUBMIT_MECHANICS_FOR_REVIEW": "CODEX",
+    "APPROVE_MECHANICAL_INTERPRETATION": "HUMAN_OWNER_RESEARCHER",
+    "RUN_HISTORICAL_SCREENING": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "RECORD_HISTORICAL_SCREENING_FAILURE": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "OPEN_LOCKED_ACCEPTANCE_OOS": "HUMAN_OWNER_RESEARCHER",
+    "RECORD_HISTORICAL_VERDICT": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "ENTER_HISTORICAL_CANDIDATE_REVIEW": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "APPROVE_HISTORICAL_CANDIDATE": "HUMAN_OWNER_RESEARCHER",
+    "REJECT_HISTORICAL_CANDIDATE": "HUMAN_OWNER_RESEARCHER",
+    "BLOCK_HISTORICAL_CANDIDATE_FOR_MANUAL_REVIEW": "HUMAN_OWNER_RESEARCHER",
+    "START_FORWARD_INCUBATION": "HUMAN_OWNER_RESEARCHER",
+    "APPEND_FORWARD_OBSERVATION": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "MARK_FORWARD_ELIGIBLE_FOR_REVIEW": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "ACCEPT_FORWARD_REVIEW": "HUMAN_OWNER_RESEARCHER",
+    "REJECT_FORWARD_REVIEW": "HUMAN_OWNER_RESEARCHER",
+    "BLOCK_FORWARD_FOR_MANUAL_REVIEW": "HUMAN_OWNER_RESEARCHER",
+    "CREATE_PORTFOLIO_REVIEW": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "RECORD_PORTFOLIO_DISPOSITION": "HUMAN_OWNER_RESEARCHER",
+    "REJECT_PORTFOLIO_DISPOSITION": "HUMAN_OWNER_RESEARCHER",
+    "BLOCK_PORTFOLIO_FOR_MANUAL_REVIEW": "HUMAN_OWNER_RESEARCHER",
+    "ASSESS_ACCOUNT_SUITABILITY": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "ENTER_DEPLOYMENT_REVIEW": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "AUTHORIZE_DEPLOYMENT": "HUMAN_OWNER_RESEARCHER",
+    "PROMOTE_SHADOW_TO_SMALL_LIVE": "HUMAN_OWNER_RESEARCHER",
+    "PROMOTE_SMALL_LIVE_TO_LIVE": "HUMAN_OWNER_RESEARCHER",
+    "APPEND_LIVE_MONITORING": "EXTERNAL_SYSTEM",
+    "SAFETY_PAUSE": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "RETIRE_LIVE_INSTANCE": "HUMAN_OWNER_RESEARCHER",
+    "STOP_CAMPAIGN_ON_PREDECLARED_RULE": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+    "DISCRETIONARILY_ABANDON_CAMPAIGN": "HUMAN_OWNER_RESEARCHER",
+    "ABANDON_EDGE_FAMILY": "HUMAN_OWNER_RESEARCHER",
+    "REVISIT_FAILED_EDGE": "HUMAN_OWNER_RESEARCHER",
+}
 
 
 class OperatingModelError(ValueError):
@@ -241,6 +368,9 @@ def validate_operating_model(policy: Mapping[str, Any]) -> None:
             if field not in item:
                 raise OperatingModelError(f"research object {object_id} is missing {field}")
     _require_acyclic_object_dependencies(objects)
+    candidate_object = _mapping(objects.get("CANDIDATE_STRATEGY"), "CANDIDATE_STRATEGY")
+    if candidate_object.get("mutability") != "immutable_review_with_currentness_recomputed":
+        raise OperatingModelError("Candidate Strategy review must be immutable after disposition")
 
     axes = _mapping(document.get("state_axes"), "state_axes")
     if set(axes) != REQUIRED_STATE_AXES:
@@ -256,7 +386,12 @@ def validate_operating_model(policy: Mapping[str, Any]) -> None:
     transitions = _indexed(document.get("transitions"), "transitions")
     for transition_id, transition in transitions.items():
         _validate_transition(transition_id, transition, actors, lifecycle_stages)
+    _require_transition_authority(transitions)
+    _require_lifecycle_connectivity(transitions, lifecycle_stages)
+    _require_review_disposition_paths(transitions)
+    _require_scientific_failure_paths(transitions)
     _require_deployment_authority(transitions)
+    _require_exact_deployment_prerequisites(transitions, axes)
     _require_no_historical_candidate_shortcut(transitions)
     _require_historical_verdict_boundary(
         transitions,
@@ -271,11 +406,17 @@ def validate_operating_model(policy: Mapping[str, Any]) -> None:
         transitions,
         _mapping(document.get("campaign_termination_policy"), "campaign_termination_policy"),
     )
+    _validate_attempt_and_search_governance(
+        _mapping(document.get("attempt_and_search_governance"), "attempt_and_search_governance")
+    )
+    _validate_revisit_policy(_mapping(document.get("revisit_policy"), "revisit_policy"))
 
     codex_policy = _mapping(document.get("codex_policy"), "codex_policy")
     permissions = _indexed(codex_policy.get("autonomous_permissions"), "codex_policy.autonomous_permissions")
-    if "IMPLEMENT_APPROVED_MECHANICS" not in permissions:
-        raise OperatingModelError("Codex policy must classify bounded implementation authority")
+    _validate_codex_permissions(permissions)
+    _validate_machine_prohibitions(
+        _indexed(codex_policy.get("machine_prohibitions"), "codex_policy.machine_prohibitions")
+    )
     prohibitions = _indexed(codex_policy.get("prohibitions"), "codex_policy.prohibitions")
     if not REQUIRED_PROHIBITIONS.issubset(prohibitions):
         missing = sorted(REQUIRED_PROHIBITIONS - set(prohibitions))
@@ -309,6 +450,10 @@ def validate_operating_model(policy: Mapping[str, Any]) -> None:
         actors,
         separations,
         _mapping(document.get("independence_policy"), "independence_policy"),
+    )
+    _validate_runtime_conformance(
+        transitions,
+        _mapping(document.get("runtime_conformance"), "runtime_conformance"),
     )
 
     failed = _mapping(document.get("failed_research_policy"), "failed_research_policy")
@@ -357,28 +502,37 @@ def _require_state_axis_separation(axes: Mapping[str, Any]) -> None:
     scientific = set(axes["SCIENTIFIC_STATE"]["values"])
     account = set(axes["ACCOUNT_SUITABILITY_STATE"]["values"])
     deployment = set(axes["DEPLOYMENT_STATE"]["values"])
+    lifecycle = set(axes["RESEARCH_LIFECYCLE_STAGE"]["values"])
+    forward = set(axes["FORWARD_STATE"]["values"])
     if not {"PASS", "FAIL", "NEEDS_MANUAL_REVIEW"}.issubset(scientific):
         raise OperatingModelError("scientific state must retain PASS, FAIL, and NEEDS_MANUAL_REVIEW")
     if not {"PASS", "FAIL", "NEEDS_MANUAL_REVIEW"}.issubset(account):
         raise OperatingModelError("account suitability must be an exact-profile decision axis")
     if "PASS" in deployment or "FAIL" in deployment:
         raise OperatingModelError("deployment state must not collapse into scientific PASS/FAIL")
+    if "MONITORING" in lifecycle:
+        raise OperatingModelError("monitoring must be represented only by OPERATIONAL_STATE")
+    if "ACCEPTED" not in forward:
+        raise OperatingModelError("forward state must represent accepted human review explicitly")
 
 
 def _require_acyclic_object_dependencies(
     objects: Mapping[str, Mapping[str, Any]],
 ) -> None:
-    graph = {
-        object_id: [
-            dependency
-            for dependency in _string_sequence(
-                item.get("downstream"),
-                f"research_objects.{object_id}.downstream",
+    graph: dict[str, list[str]] = {}
+    for object_id, item in objects.items():
+        downstream = _string_sequence(
+            item.get("downstream"),
+            f"research_objects.{object_id}.downstream",
+            allow_empty=True,
+        )
+        unknown = sorted(set(downstream) - set(objects))
+        if unknown:
+            raise OperatingModelError(
+                f"research object {object_id} has unknown downstream references: "
+                + ", ".join(unknown)
             )
-            if dependency in objects
-        ]
-        for object_id, item in objects.items()
-    }
+        graph[object_id] = downstream
     active: list[str] = []
     visited: set[str] = set()
 
@@ -453,6 +607,255 @@ def _validate_transition(
             raise OperatingModelError(
                 f"transition {transition_id} has unknown applicable stages: {', '.join(unknown)}"
             )
+    codex_mode = transition.get("codex")
+    if codex_mode not in CODEX_TRANSITION_MODES:
+        raise OperatingModelError(f"transition {transition_id} has unknown Codex authority mode")
+    implementation_status = transition.get("implementation_status")
+    if implementation_status not in IMPLEMENTATION_STATUSES:
+        raise OperatingModelError(
+            f"transition {transition_id} has unknown implementation status {implementation_status!r}"
+        )
+    conformance = transition.get("runtime_conformance")
+    if implementation_status == "EXISTING_PARTIAL":
+        details = _mapping(conformance, f"transition {transition_id}.runtime_conformance")
+        if set(details) != PARTIAL_CONFORMANCE_FIELDS:
+            raise OperatingModelError(
+                f"transition {transition_id} partial runtime conformance fields are incomplete or unexpected"
+            )
+        for field in PARTIAL_CONFORMANCE_FIELDS - {"migration_required"}:
+            if not str(details.get(field) or "").strip():
+                raise OperatingModelError(f"transition {transition_id} requires non-empty {field}")
+        if details.get("migration_required") is not True:
+            raise OperatingModelError(f"transition {transition_id} partial status requires migration")
+        if transition.get("runtime_enforcement_claimed") is True:
+            raise OperatingModelError(f"transition {transition_id} cannot claim full runtime enforcement")
+    elif conformance is not None:
+        raise OperatingModelError(
+            f"transition {transition_id} may declare a runtime gap only as EXISTING_PARTIAL"
+        )
+    if implementation_status == "POLICY_ONLY":
+        if transition.get("runtime_enforcement_claimed") is not False:
+            raise OperatingModelError(
+                f"transition {transition_id} POLICY_ONLY must disclaim runtime enforcement"
+            )
+    elif "runtime_enforcement_claimed" in transition:
+        raise OperatingModelError(
+            f"transition {transition_id} may use runtime_enforcement_claimed only as POLICY_ONLY"
+        )
+
+
+def _require_transition_authority(
+    transitions: Mapping[str, Mapping[str, Any]],
+) -> None:
+    missing = sorted(set(EXPECTED_TRANSITION_INITIATORS) - set(transitions))
+    if missing:
+        raise OperatingModelError("canonical transitions are missing: " + ", ".join(missing))
+    for transition_id, transition in transitions.items():
+        initiator = transition.get("initiator")
+        expected_initiator = EXPECTED_TRANSITION_INITIATORS.get(transition_id)
+        if expected_initiator is not None and initiator != expected_initiator:
+            raise OperatingModelError(
+                f"transition {transition_id} must remain owned by "
+                f"{expected_initiator}"
+            )
+        automatic = transition.get("alphaquest_automatic")
+        human_gate = transition.get("human_approval_required")
+        if initiator == "HUMAN_OWNER_RESEARCHER" and automatic is not False:
+            raise OperatingModelError(f"human transition {transition_id} cannot be AlphaQuest-automatic")
+        if initiator in {"ALPHAQUEST_DETERMINISTIC_ENGINE", "EXTERNAL_SYSTEM"}:
+            if automatic is not True or human_gate is not False:
+                raise OperatingModelError(
+                    f"deterministic transition {transition_id} must be automatic without human approval"
+                )
+        if initiator == "CODEX" and (automatic is not False or human_gate is not False):
+            raise OperatingModelError(
+                f"Codex proposal transition {transition_id} cannot approve or execute automatically"
+            )
+
+    for transition_id, codex_mode in CRITICAL_HUMAN_TRANSITION_AUTHORITY.items():
+        transition = _mapping(transitions.get(transition_id), transition_id)
+        if transition.get("initiator") != "HUMAN_OWNER_RESEARCHER":
+            raise OperatingModelError(f"{transition_id} must be initiated by the human owner")
+        if transition.get("human_approval_required") is not True:
+            raise OperatingModelError(f"{transition_id} must require human approval")
+        if transition.get("alphaquest_automatic") is not False:
+            raise OperatingModelError(f"{transition_id} cannot be automatic")
+        if transition.get("codex") != codex_mode:
+            raise OperatingModelError(f"Codex cannot approve or initiate {transition_id}")
+
+    deterministic_decisions = {
+        "RUN_HISTORICAL_SCREENING",
+        "RECORD_HISTORICAL_SCREENING_FAILURE",
+        "RECORD_HISTORICAL_VERDICT",
+        "ENTER_HISTORICAL_CANDIDATE_REVIEW",
+        "APPEND_FORWARD_OBSERVATION",
+        "MARK_FORWARD_ELIGIBLE_FOR_REVIEW",
+        "CREATE_PORTFOLIO_REVIEW",
+        "ASSESS_ACCOUNT_SUITABILITY",
+        "ENTER_DEPLOYMENT_REVIEW",
+        "SAFETY_PAUSE",
+        "STOP_CAMPAIGN_ON_PREDECLARED_RULE",
+    }
+    for transition_id in deterministic_decisions:
+        transition = _mapping(transitions.get(transition_id), transition_id)
+        if transition.get("initiator") != "ALPHAQUEST_DETERMINISTIC_ENGINE":
+            raise OperatingModelError(f"deterministic transition {transition_id} must remain AlphaQuest-owned")
+        if str(transition.get("codex") or "").startswith("ALLOWED_AFTER"):
+            raise OperatingModelError(
+                f"deterministic transition {transition_id} cannot become discretionary Codex authority"
+            )
+
+
+def _require_lifecycle_connectivity(
+    transitions: Mapping[str, Mapping[str, Any]],
+    lifecycle_stages: set[str],
+) -> None:
+    required_edges = {
+        "PROPOSE_HYPOTHESIS_FOR_REVIEW": ("DISCOVERY", "HYPOTHESIS_REVIEW"),
+        "ADMIT_HYPOTHESIS_FOR_IMPLEMENTATION": (
+            "HYPOTHESIS_REVIEW",
+            "APPROVED_FOR_IMPLEMENTATION",
+        ),
+        "START_IMPLEMENTATION": ("APPROVED_FOR_IMPLEMENTATION", "IMPLEMENTATION"),
+        "SUBMIT_MECHANICS_FOR_REVIEW": ("IMPLEMENTATION", "MECHANICS_CAUSAL_REVIEW"),
+        "APPROVE_MECHANICAL_INTERPRETATION": (
+            "MECHANICS_CAUSAL_REVIEW",
+            "HISTORICAL_SCREENING",
+        ),
+        "RUN_HISTORICAL_SCREENING": (
+            "HISTORICAL_SCREENING",
+            "FULL_HISTORICAL_VALIDATION",
+        ),
+        "ENTER_HISTORICAL_CANDIDATE_REVIEW": (
+            "FULL_HISTORICAL_VALIDATION",
+            "HISTORICAL_CANDIDATE_REVIEW",
+        ),
+        "START_FORWARD_INCUBATION": ("HISTORICAL_CANDIDATE_REVIEW", "FORWARD_INCUBATION"),
+        "MARK_FORWARD_ELIGIBLE_FOR_REVIEW": ("FORWARD_INCUBATION", "FORWARD_REVIEW"),
+        "ACCEPT_FORWARD_REVIEW": ("FORWARD_REVIEW", "PORTFOLIO_REVIEW"),
+        "RECORD_PORTFOLIO_DISPOSITION": ("PORTFOLIO_REVIEW", "ACCOUNT_SUITABILITY_REVIEW"),
+        "ENTER_DEPLOYMENT_REVIEW": ("ACCOUNT_SUITABILITY_REVIEW", "DEPLOYMENT_REVIEW"),
+        "AUTHORIZE_DEPLOYMENT": ("DEPLOYMENT_REVIEW", "SHADOW"),
+        "PROMOTE_SHADOW_TO_SMALL_LIVE": ("SHADOW", "SMALL_LIVE"),
+        "PROMOTE_SMALL_LIVE_TO_LIVE": ("SMALL_LIVE", "LIVE"),
+    }
+    for transition_id, expected_edge in required_edges.items():
+        transition = _mapping(transitions.get(transition_id), transition_id)
+        actual_edge = (transition.get("from_stage"), transition.get("to_stage"))
+        if actual_edge != expected_edge:
+            raise OperatingModelError(
+                f"lifecycle transition {transition_id} must be {expected_edge[0]} -> {expected_edge[1]}"
+            )
+    forward_start = _mapping(transitions.get("START_FORWARD_INCUBATION"), "START_FORWARD_INCUBATION")
+    if "approved_candidate_review" not in set(forward_start.get("evidence_required") or []):
+        raise OperatingModelError("forward incubation requires an approved candidate review")
+    if "candidate_current" not in set(forward_start.get("deterministic_checks") or []):
+        raise OperatingModelError("forward incubation requires a current accepted candidate")
+    if "MONITORING" in lifecycle_stages:
+        raise OperatingModelError("MONITORING cannot remain a research lifecycle stage")
+    for transition_id in ("APPEND_LIVE_MONITORING", "SAFETY_PAUSE", "RETIRE_LIVE_INSTANCE"):
+        transition = _mapping(transitions.get(transition_id), transition_id)
+        if transition.get("from_stage") != "LIVE" or transition.get("to_stage") != "LIVE":
+            raise OperatingModelError(f"{transition_id} must update operational state without lifecycle advance")
+        if set(transition.get("applicable_stages") or []) != {"SHADOW", "SMALL_LIVE", "LIVE"}:
+            raise OperatingModelError(f"{transition_id} must cover shadow, small-live, and live monitoring")
+        if transition.get("scientific_state_effect") != "none":
+            raise OperatingModelError(f"{transition_id} cannot create scientific validity")
+
+
+def _require_review_disposition_paths(
+    transitions: Mapping[str, Mapping[str, Any]],
+) -> None:
+    expected = {
+        "APPROVE_HISTORICAL_CANDIDATE": (
+            "HISTORICAL_CANDIDATE_REVIEW",
+            "APPROVED_CURRENT",
+            True,
+        ),
+        "REJECT_HISTORICAL_CANDIDATE": ("HISTORICAL_CANDIDATE_REVIEW", "REJECTED", False),
+        "BLOCK_HISTORICAL_CANDIDATE_FOR_MANUAL_REVIEW": (
+            "HISTORICAL_CANDIDATE_REVIEW",
+            "NEEDS_MANUAL_REVIEW",
+            False,
+        ),
+        "ACCEPT_FORWARD_REVIEW": ("PORTFOLIO_REVIEW", "ACCEPTED", True),
+        "REJECT_FORWARD_REVIEW": ("FORWARD_REVIEW", "FAILED", False),
+        "BLOCK_FORWARD_FOR_MANUAL_REVIEW": ("FORWARD_REVIEW", "NEEDS_MANUAL_REVIEW", False),
+        "RECORD_PORTFOLIO_DISPOSITION": ("ACCOUNT_SUITABILITY_REVIEW", "ACCEPTED", True),
+        "REJECT_PORTFOLIO_DISPOSITION": ("PORTFOLIO_REVIEW", "REJECTED", False),
+        "BLOCK_PORTFOLIO_FOR_MANUAL_REVIEW": (
+            "PORTFOLIO_REVIEW",
+            "NEEDS_MANUAL_REVIEW",
+            False,
+        ),
+    }
+    effect_fields = {
+        "APPROVE_HISTORICAL_CANDIDATE": "candidate_disposition_effect",
+        "REJECT_HISTORICAL_CANDIDATE": "candidate_disposition_effect",
+        "BLOCK_HISTORICAL_CANDIDATE_FOR_MANUAL_REVIEW": "candidate_disposition_effect",
+        "ACCEPT_FORWARD_REVIEW": "forward_state_effect",
+        "REJECT_FORWARD_REVIEW": "forward_state_effect",
+        "BLOCK_FORWARD_FOR_MANUAL_REVIEW": "forward_state_effect",
+        "RECORD_PORTFOLIO_DISPOSITION": "portfolio_state_effect",
+        "REJECT_PORTFOLIO_DISPOSITION": "portfolio_state_effect",
+        "BLOCK_PORTFOLIO_FOR_MANUAL_REVIEW": "portfolio_state_effect",
+    }
+    for transition_id, (expected_target, expected_effect, advances) in expected.items():
+        transition = _mapping(transitions.get(transition_id), transition_id)
+        if transition.get("to_stage") != expected_target:
+            raise OperatingModelError(f"review disposition {transition_id} has an unsafe lifecycle target")
+        field = effect_fields[transition_id]
+        if transition.get(field) != expected_effect:
+            raise OperatingModelError(f"review disposition {transition_id} has the wrong state effect")
+        if advances:
+            continue
+        if transition.get("from_stage") != transition.get("to_stage"):
+            raise OperatingModelError(f"rejected or blocked disposition {transition_id} cannot advance")
+        if transition.get("advances_normal_path") is not False:
+            raise OperatingModelError(f"rejected or blocked disposition {transition_id} must block advance")
+        if expected_effect == "NEEDS_MANUAL_REVIEW" and transition.get(
+            "lifecycle_disposition_effect"
+        ) != "BLOCKED":
+            raise OperatingModelError(f"manual-review disposition {transition_id} must remain blocked")
+
+
+def _require_scientific_failure_paths(
+    transitions: Mapping[str, Mapping[str, Any]],
+) -> None:
+    screening = _mapping(
+        transitions.get("RECORD_HISTORICAL_SCREENING_FAILURE"),
+        "RECORD_HISTORICAL_SCREENING_FAILURE",
+    )
+    if set(screening.get("failure_stages") or []) != {"limited_core_grid", "limited_monkey"}:
+        raise OperatingModelError("screening failure path must cover limited core grid and monkey")
+    if set(screening.get("evidence_required") or []) != {
+        "immutable_failed_stage_result",
+        "bound_attempt_identity",
+        "complete_search_history",
+    }:
+        raise OperatingModelError("screening failure must preserve immutable evidence and search history")
+    if screening.get("scientific_state_effect") != "FAIL":
+        raise OperatingModelError("screening failure must record scientific FAIL")
+    if screening.get("lifecycle_effect") != "terminate_bound_attempt_or_variant_path_only":
+        raise OperatingModelError("screening failure must terminate only its bound path")
+    if screening.get("campaign_effect") != "no_automatic_exhaustion":
+        raise OperatingModelError("screening failure cannot automatically exhaust its campaign")
+    if screening.get("candidate_effect") != "prohibited":
+        raise OperatingModelError("screening failure cannot create candidate status")
+
+    full = _mapping(transitions.get("RECORD_HISTORICAL_VERDICT"), "RECORD_HISTORICAL_VERDICT")
+    if set(full.get("deterministic_failure_stages") or []) != {
+        "walk_forward_analysis",
+        "monte_carlo",
+        "acceptance",
+    }:
+        raise OperatingModelError("full-validation failure path must cover WFA, Monte Carlo, and acceptance")
+    if full.get("failure_lifecycle_effect") != "terminate_bound_attempt_or_variant_path_only":
+        raise OperatingModelError("full-validation FAIL must terminate only its bound path")
+    if full.get("campaign_effect") != "no_automatic_exhaustion":
+        raise OperatingModelError("full-validation FAIL cannot automatically exhaust its campaign")
+    if full.get("candidate_effect") != "prohibited_unless_scientific_PASS":
+        raise OperatingModelError("full-validation failure cannot create candidate status")
 
 
 def _require_deployment_authority(transitions: Mapping[str, Mapping[str, Any]]) -> None:
@@ -472,10 +875,47 @@ def _require_deployment_authority(transitions: Mapping[str, Mapping[str, Any]]) 
             raise OperatingModelError(f"{transition_id} cannot be automatic")
 
 
+def _require_exact_deployment_prerequisites(
+    transitions: Mapping[str, Mapping[str, Any]],
+    axes: Mapping[str, Any],
+) -> None:
+    for transition_id in ("ENTER_DEPLOYMENT_REVIEW", "AUTHORIZE_DEPLOYMENT"):
+        transition = _mapping(transitions.get(transition_id), transition_id)
+        required_states = _mapping(
+            transition.get("required_axis_states"),
+            f"{transition_id}.required_axis_states",
+        )
+        if required_states != REQUIRED_DEPLOYMENT_AXIS_STATES:
+            raise OperatingModelError(
+                f"{transition_id} must require exact positive deployment axis states"
+            )
+        for axis_name, state in required_states.items():
+            values = set(_mapping(axes.get(axis_name), axis_name).get("values") or [])
+            if state not in values:
+                raise OperatingModelError(
+                    f"{transition_id} requires unknown {axis_name} value {state!r}"
+                )
+        if transition.get("required_candidate_status") != "APPROVED_CURRENT":
+            raise OperatingModelError(f"{transition_id} must require an approved current candidate")
+    authorization = _mapping(transitions.get("AUTHORIZE_DEPLOYMENT"), "AUTHORIZE_DEPLOYMENT")
+    if set(authorization.get("required_deployment_controls") or []) != {
+        "limits",
+        "allocation",
+        "kill_rules",
+    }:
+        raise OperatingModelError(
+            "deployment authorization requires complete limits, allocation, and kill rules"
+        )
+    if "deployment_controls_complete_and_valid" not in set(
+        authorization.get("deterministic_checks") or []
+    ):
+        raise OperatingModelError("deployment controls must be deterministically validated")
+
+
 def _require_no_historical_candidate_shortcut(
     transitions: Mapping[str, Mapping[str, Any]],
 ) -> None:
-    forbidden_targets = {"SHADOW", "SMALL_LIVE", "LIVE", "MONITORING"}
+    forbidden_targets = {"SHADOW", "SMALL_LIVE", "LIVE"}
     for transition_id, transition in transitions.items():
         if (
             transition.get("from_stage") == "HISTORICAL_CANDIDATE_REVIEW"
@@ -666,7 +1106,7 @@ def _require_campaign_termination_authority(
         raise OperatingModelError("EXHAUSTED must be limited to campaign-level rules")
     criteria = set(deterministic.get("criteria") or [])
     required_criteria = {
-        "maximum_permitted_variants_consumed",
+        "governed_variant_budget_exhausted",
         "campaign_research_or_search_budget_exhausted",
         "campaign_fresh_holdout_budget_exhausted",
         "campaign_opportunity_frequency_structurally_infeasible_under_predeclared_requirement",
@@ -674,8 +1114,8 @@ def _require_campaign_termination_authority(
         "execution_infeasibility_applies_to_campaign_hypothesis_or_mechanical_family",
         "explicit_predeclared_campaign_level_termination_contract_satisfied",
     }
-    if not required_criteria.issubset(criteria):
-        raise OperatingModelError("campaign exhaustion criteria are incomplete")
+    if criteria != required_criteria:
+        raise OperatingModelError("campaign exhaustion criteria are incomplete or unexpected")
     forbidden_variant_stop_criteria = {
         "failed_predeclared_core_screening_gate",
         "deterministic_stage_gate_failure",
@@ -698,6 +1138,12 @@ def _require_campaign_termination_authority(
         "successor_mechanics_are_materially_distinct_and_same_hypothesis",
     }.issubset(successor_conditions):
         raise OperatingModelError("governed successor-variant conditions are incomplete")
+    if set(variant_failure.get("effects") or []) != {
+        "preserve_terminal_failure_and_search_history",
+        "stop_the_bound_attempt_or_variant_path",
+        "do_not_create_candidate_status",
+    }:
+        raise OperatingModelError("variant failure effects must preserve history and terminate only its path")
 
     for transition_id in (
         "DISCRETIONARILY_ABANDON_CAMPAIGN",
@@ -718,6 +1164,140 @@ def _require_campaign_termination_authority(
     )
     if discretionary.get("requires_human_approval") is not True:
         raise OperatingModelError("discretionary campaign abandonment must remain human-gated")
+
+
+def _validate_attempt_and_search_governance(policy: Mapping[str, Any]) -> None:
+    variant = _mapping(policy.get("variant_budget"), "attempt_and_search_governance.variant_budget")
+    if variant != {
+        "source": "GOVERNED_METHODOLOGY_OR_FROZEN_CAMPAIGN_PROTOCOL",
+        "explicit_identity_required": True,
+        "bounded": True,
+        "p1_numeric_limit": None,
+        "renaming_resets_budget": False,
+    }:
+        raise OperatingModelError(
+            "variant budget must be bounded by an identified external governed source without a P1 number"
+        )
+    rescue = _mapping(policy.get("rescue_budget"), "attempt_and_search_governance.rescue_budget")
+    required_rescue = {
+        "source": "GOVERNED_METHODOLOGY_OR_FROZEN_CAMPAIGN_PROTOCOL",
+        "explicit_and_predeclared": True,
+        "frozen_before_relevant_results": True,
+        "missing_budget_effect": "RESCUE_PROHIBITED",
+        "budget_exhaustion_effect": "RESCUE_PROHIBITED",
+        "each_rescue_new_attempt_identity": True,
+        "history_immutable": True,
+        "renaming_resets_budget": False,
+        "post_oos_reopen_or_redefinition": "PROHIBITED",
+        "hypothesis_change_same_lineage": "PROHIBITED",
+    }
+    if rescue != required_rescue:
+        raise OperatingModelError("authorized rescue requires an immutable bounded predeclared budget")
+    required_rules = {
+        "post_oos_tuning_same_lineage": "PROHIBITED",
+        "consumed_holdout_reopen": "PROHIBITED",
+        "every_execution_new_attempt_identity": True,
+        "retry_until_pass": "STRUCTURALLY_PROHIBITED",
+    }
+    for field, expected in required_rules.items():
+        if policy.get(field) != expected:
+            raise OperatingModelError(f"attempt/search anti-overfit rule {field} must be {expected}")
+    joined = " ".join(str(item) for item in policy.get("new_variant_when") or []).casefold()
+    if "governed external variant budget" not in joined:
+        raise OperatingModelError("successor variants require an identified governed external budget")
+    if any(token in joined for token in ("maximum five", "50 variants", "maximum 50")):
+        raise OperatingModelError("P1 cannot independently own a numeric variant limit")
+    anti_reset = str(policy.get("anti_reset_rule") or "").casefold()
+    if not all(token in anti_reset for token in ("renaming", "budgets", "consumed holdouts")):
+        raise OperatingModelError("renaming cannot reset budgets, history, or consumed holdouts")
+
+
+def _validate_revisit_policy(policy: Mapping[str, Any]) -> None:
+    valid = {
+        "materially_new_dataset",
+        "substantially_longer_sample",
+        "different_instrument_with_justified_transfer_mechanism",
+        "documented_market_structure_or_regime_change",
+        "newly_available_execution_data",
+        "corrected_engine_bug",
+        "new_independent_academic_or_exchange_evidence",
+        "materially_different_causal_mechanism",
+    }
+    invalid = {
+        "backtest_was_close",
+        "minor_threshold_tweak",
+        "campaign_or_edge_relabel",
+        "try_more_parameters",
+        "reopen_failed_oos",
+        "rerun_until_pass",
+    }
+    actual_valid = set(policy.get("valid_triggers") or [])
+    actual_invalid = set(policy.get("invalid_triggers") or [])
+    if actual_valid != valid or actual_invalid != invalid or actual_valid & actual_invalid:
+        raise OperatingModelError("revisit triggers must preserve the exact material/invalid boundary")
+    if policy.get("requires_human_approval") is not True:
+        raise OperatingModelError("revisit requires human approval")
+    if policy.get("requires_new_lineage_identity") is not True:
+        raise OperatingModelError("revisit requires a new lineage identity")
+
+
+def _validate_codex_permissions(permissions: Mapping[str, Mapping[str, Any]]) -> None:
+    if set(permissions) != set(REQUIRED_AUTONOMOUS_PERMISSIONS):
+        raise OperatingModelError("Codex autonomous permissions are incomplete or unexpected")
+    for permission_id, expected_type in REQUIRED_AUTONOMOUS_PERMISSIONS.items():
+        permission = _mapping(permissions.get(permission_id), permission_id)
+        if permission.get("capability_type") != expected_type:
+            raise OperatingModelError(f"Codex permission {permission_id} has unsafe capability type")
+        if permission.get("grants_approval") is not False:
+            raise OperatingModelError(f"Codex autonomous permission {permission_id} cannot grant approval")
+        if permission.get("grants_override") is not False:
+            raise OperatingModelError(f"Codex autonomous permission {permission_id} cannot grant override")
+
+
+def _validate_machine_prohibitions(prohibitions: Mapping[str, Mapping[str, Any]]) -> None:
+    if set(prohibitions) != set(REQUIRED_MACHINE_PROHIBITIONS):
+        raise OperatingModelError("machine-semantic Codex prohibitions are incomplete or unexpected")
+    for prohibition_id, (capability, actions) in REQUIRED_MACHINE_PROHIBITIONS.items():
+        prohibition = _mapping(prohibitions.get(prohibition_id), prohibition_id)
+        if prohibition.get("actor") != "CODEX":
+            raise OperatingModelError(f"machine prohibition {prohibition_id} must bind CODEX")
+        if prohibition.get("capability") != capability:
+            raise OperatingModelError(f"machine prohibition {prohibition_id} has wrong capability")
+        if set(prohibition.get("actions") or []) != actions:
+            raise OperatingModelError(f"machine prohibition {prohibition_id} has wrong actions")
+        if prohibition.get("effect") != "PROHIBITED":
+            raise OperatingModelError(f"machine prohibition {prohibition_id} must prohibit its effect")
+
+
+def _validate_runtime_conformance(
+    transitions: Mapping[str, Mapping[str, Any]],
+    conformance: Mapping[str, Any],
+) -> None:
+    if conformance.get("automation_contract") != "canonical_policy_only":
+        raise OperatingModelError("future automation must consume the canonical policy only")
+    if conformance.get("legacy_paths_may_satisfy_canonical_automation") is not False:
+        raise OperatingModelError("legacy runtime paths cannot satisfy canonical automation")
+    gaps = _indexed(conformance.get("known_gaps"), "runtime_conformance.known_gaps")
+    expected = {
+        "CANDIDATE_REVIEW_DISTINCT_HUMAN_IDENTITY": "APPROVE_HISTORICAL_CANDIDATE",
+        "DESTINATION_SPECIFIC_CANDIDATE_CREATION": "APPROVE_HISTORICAL_CANDIDATE",
+    }
+    if {gap_id: gap.get("transition_id") for gap_id, gap in gaps.items()} != expected:
+        raise OperatingModelError("candidate runtime conformance gaps are incomplete or unexpected")
+    for gap_id, gap in gaps.items():
+        if gap.get("automation_may_use_legacy_behavior") is not False:
+            raise OperatingModelError(f"runtime gap {gap_id} cannot be used by canonical automation")
+        if gap.get("migration_required") is not True:
+            raise OperatingModelError(f"runtime gap {gap_id} requires migration")
+        if not str(gap.get("current_runtime_behavior") or "").strip() or not str(
+            gap.get("canonical_policy_behavior") or ""
+        ).strip():
+            raise OperatingModelError(f"runtime gap {gap_id} requires current and canonical behavior")
+        transition = _mapping(transitions.get(gap["transition_id"]), gap["transition_id"])
+        if transition.get("implementation_status") != "EXISTING_PARTIAL":
+            raise OperatingModelError(
+                f"transition {gap['transition_id']} with a known runtime gap must be EXISTING_PARTIAL"
+            )
 
 
 def _require_single_human_independence(
@@ -766,6 +1346,22 @@ def _require_forward_evidence_custody(
         raise OperatingModelError("AlphaQuest must own canonical Forward Observation evidence")
     if observation.get("source_actor") != "EXTERNAL_SYSTEM":
         raise OperatingModelError("external systems must be forward event sources, not custodians")
+    if set(observation.get("evidence") or []) != {
+        "source_identity",
+        "event_hash",
+        "previous_event_hash",
+        "occurred_at",
+        "attachment_hashes",
+        "trade_and_rule_reconciliation",
+    }:
+        raise OperatingModelError("Forward Observation object evidence and hash chain are incomplete")
+    if set(observation.get("invalidated_by") or []) != {
+        "historical_backfill",
+        "non_increasing_time",
+        "broken_hash_chain",
+        "attachment_hash_drift",
+    }:
+        raise OperatingModelError("Forward Observation invalidation rules are incomplete")
 
     append = _mapping(transitions.get("APPEND_FORWARD_OBSERVATION"), "APPEND_FORWARD_OBSERVATION")
     if append.get("initiator") != "ALPHAQUEST_DETERMINISTIC_ENGINE":
@@ -774,6 +1370,27 @@ def _require_forward_evidence_custody(
         raise OperatingModelError("forward capture must identify the external source actor")
     if append.get("human_approval_required") is not False or append.get("alphaquest_automatic") is not True:
         raise OperatingModelError("valid forward evidence capture must be automatic without human approval")
+    if set(append.get("evidence_required") or []) != {
+        "source_identity",
+        "post_start_timestamp",
+        "event_hash",
+        "previous_event_hash",
+        "attachment_hashes",
+        "trade_reconciliation",
+    }:
+        raise OperatingModelError("forward append evidence identity and hash chain are incomplete")
+    if set(append.get("deterministic_checks") or []) != {
+        "source_identity_valid",
+        "strict_post_start_chronology",
+        "event_hash_valid",
+        "previous_event_hash_chain_valid",
+        "attachment_hashes_valid",
+        "rule_fields_complete",
+        "no_historical_backfill",
+        "no_reconstructed_pre_start_event",
+        "no_reused_historical_oos",
+    }:
+        raise OperatingModelError("forward append checks must validate chronology, hashes, and source exclusions")
 
     if policy.get("canonical_evidence_owner") != "ALPHAQUEST_DETERMINISTIC_ENGINE":
         raise OperatingModelError("forward evidence policy must assign AlphaQuest custody")
@@ -784,15 +1401,21 @@ def _require_forward_evidence_custody(
     if policy.get("invalid_missing_or_ambiguous_evidence") != "fail_closed_without_append":
         raise OperatingModelError("invalid or ambiguous forward evidence must fail closed")
     required = set(policy.get("required_capture_validation") or [])
-    if not {
+    if required != {
         "source_identity",
         "strict_post_start_chronology",
         "event_hash",
         "previous_event_hash",
         "attachment_hashes",
         "reconciliation_fields",
-    }.issubset(required):
+    }:
         raise OperatingModelError("forward evidence custody validation is incomplete")
+    if set(policy.get("prohibited_sources") or []) != {
+        "historical_backfill",
+        "reconstructed_pre_start_observation",
+        "reused_historical_oos",
+    }:
+        raise OperatingModelError("forward evidence prohibited sources are incomplete")
 
 
 def _validate_methodology_change_governance(changes: Mapping[str, Any]) -> None:
@@ -846,16 +1469,35 @@ def _validate_data_change_governance(changes: Mapping[str, Any]) -> None:
     if "cannot_change_or_leak" not in str(append.get("locked_window_effect") or ""):
         raise OperatingModelError("same-contract append cannot leak into frozen OOS or holdout windows")
 
+    timestamps = categories["FIX_TIMESTAMPS"]
+    if timestamps.get("human_review") != "required":
+        raise OperatingModelError("material timestamp repair requires governed human review")
+    if timestamps.get("rerun") != "required_for_current_claims":
+        raise OperatingModelError("material timestamp repair requires rerun for current claims")
+    if timestamps.get("recertification") != "required_if_signal_availability_or_entry_timing_changes":
+        raise OperatingModelError(
+            "material timestamp repair requires recertification when causal timing can change"
+        )
+
     append_policy = _mapping(
         data.get("same_contract_append_policy"),
         "change_governance.data.same_contract_append_policy",
     )
+    automatic = set(append_policy.get("automatic_actions") or [])
+    if automatic != {
+        "capture_rows",
+        "create_new_content_and_data_identity",
+        "validate_unchanged_contract",
+        "preserve_prior_dataset_and_evidence_identity",
+    }:
+        raise OperatingModelError("same-contract append automatic actions are incomplete or unsafe")
     governed = set(append_policy.get("governed_research_decisions") or [])
-    if not {
+    if governed != {
         "rebind_frozen_campaign_to_expanded_dataset",
         "change_locked_historical_or_holdout_boundary",
         "create_data_refresh_attempt",
-    }.issubset(governed):
+        "claim_new_research_evidence_from_expanded_sample",
+    }:
         raise OperatingModelError("same-contract append must preserve governed research boundaries")
     if "cannot silently enter" not in str(append_policy.get("frozen_boundary_rule") or ""):
         raise OperatingModelError("same-contract append needs an explicit no-leakage boundary rule")
