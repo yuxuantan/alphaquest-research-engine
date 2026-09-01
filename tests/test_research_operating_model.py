@@ -27,12 +27,33 @@ def test_canonical_operating_model_is_runnable_and_separate_from_methodology() -
     policy = load_operating_model()
 
     assert policy["schema"] == OPERATING_MODEL_SCHEMA
-    assert policy["policy_version"] == "2026-09-01.2"
-    assert policy["identity"]["current_engine_contract"] == "2026.08.14.1"
-    assert policy["identity"]["current_methodology_version"] == "2026-08-14.2"
-    assert policy["identity"]["methodology_changed_by_p1"] is False
+    assert policy["policy_version"] == "2026-09-01.3"
+    assert policy["identity"]["identity_fields"] == [
+        "schema",
+        "policy_version",
+        "policy_sha256",
+    ]
+    assert policy["identity"]["introduced_against"] == {
+        "p0_engine_tag": "engine-v0.1.0-p0",
+        "engine_contract": "2026.08.14.1",
+        "methodology": "2026-08-14.2",
+    }
+    assert policy["identity"]["introduction_metadata_is_non_normative"] is True
     assert len(operating_model_sha256()) == 64
     assert Path(DEFAULT_OPERATING_MODEL_PATH).is_file()
+
+
+def test_operating_model_validation_does_not_pin_current_engine_or_methodology() -> None:
+    policy = _policy()
+    policy["identity"]["introduced_against"].update(
+        {
+            "p0_engine_tag": "future-qualified-tag",
+            "engine_contract": "future-engine-contract",
+            "methodology": "future-methodology",
+        }
+    )
+
+    validate_operating_model(policy)
 
 
 def test_codex_cannot_authorize_or_promote_live_deployment() -> None:
@@ -85,6 +106,34 @@ def test_historical_candidate_cannot_directly_imply_live_authorization() -> None
     policy["transitions"].append(shortcut)
 
     with pytest.raises(OperatingModelError, match="shortcuts historical candidate"):
+        validate_operating_model(policy)
+
+
+def test_recording_historical_verdict_does_not_enter_candidate_review() -> None:
+    policy = _policy()
+    record = _item(policy["transitions"], "RECORD_HISTORICAL_VERDICT")
+    record["to_stage"] = "HISTORICAL_CANDIDATE_REVIEW"
+
+    with pytest.raises(OperatingModelError, match="must remain in full historical validation"):
+        validate_operating_model(policy)
+
+
+def test_historical_fail_cannot_enter_candidate_review() -> None:
+    policy = _policy()
+    enter = _item(policy["transitions"], "ENTER_HISTORICAL_CANDIDATE_REVIEW")
+    enter["eligible_scientific_states"].append("FAIL")
+
+    with pytest.raises(OperatingModelError, match="only scientific PASS"):
+        validate_operating_model(policy)
+
+
+def test_needs_manual_review_cannot_enter_without_governed_resolution() -> None:
+    policy = _policy()
+    policy["historical_verdict_policy"]["needs_manual_review_resolution"] = (
+        "human_click_without_new_evidence"
+    )
+
+    with pytest.raises(OperatingModelError, match="requires governed resolution"):
         validate_operating_model(policy)
 
 
@@ -222,6 +271,26 @@ def test_deterministic_campaign_stop_needs_no_human_approval() -> None:
     stop["alphaquest_automatic"] = False
 
     with pytest.raises(OperatingModelError, match="automatic without human approval"):
+        validate_operating_model(policy)
+
+
+def test_variant_stage_failure_does_not_automatically_exhaust_campaign() -> None:
+    policy = _policy()
+    variant_failure = policy["campaign_termination_policy"]["variant_failure"]
+    assert "core_grid" in variant_failure["limited_stage_failures"]
+    assert "authorized_variant_budget_remains" in variant_failure["successor_may_remain_when"]
+    variant_failure["automatically_exhausts_campaign"] = True
+
+    with pytest.raises(OperatingModelError, match="variant failure cannot automatically exhaust"):
+        validate_operating_model(policy)
+
+
+def test_campaign_exhaustion_requires_campaign_level_condition() -> None:
+    policy = _policy()
+    stop = policy["campaign_termination_policy"]["deterministic_stop"]
+    stop["criteria"].append("deterministic_stage_gate_failure")
+
+    with pytest.raises(OperatingModelError, match="single variant stage failure cannot exhaust"):
         validate_operating_model(policy)
 
 

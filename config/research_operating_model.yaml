@@ -1,5 +1,5 @@
 schema: alphaquest.research-operating-model/v1
-policy_version: "2026-09-01.2"
+policy_version: "2026-09-01.3"
 status: canonical
 objective: >-
   Maximize the probability that an apparent historical edge survives unseen live
@@ -9,15 +9,20 @@ explicit_non_target: historical_backtest_performance
 
 identity:
   identity_fields:
+    - schema
     - policy_version
     - policy_sha256
   semantic_change_requires_new_policy_version: true
   historical_records_keep_original_policy_identity: true
   retroactive_rebinding_prohibited: true
+  engine_identity_is_separate: true
   methodology_identity_is_separate: true
-  current_methodology_version: "2026-08-14.2"
-  methodology_changed_by_p1: false
-  current_engine_contract: "2026.08.14.1"
+  introduced_against:
+    p0_engine_tag: engine-v0.1.0-p0
+    engine_contract: "2026.08.14.1"
+    methodology: "2026-08-14.2"
+  introduction_metadata_is_non_normative: true
+  current_engine_or_methodology_version_is_not_a_validation_prerequisite: true
 
 actors:
   CODEX:
@@ -658,16 +663,32 @@ transitions:
     implementation_status: policy_explicit_existing_gate_partial
   - id: RECORD_HISTORICAL_VERDICT
     from_stage: FULL_HISTORICAL_VALIDATION
-    to_stage: HISTORICAL_CANDIDATE_REVIEW
+    to_stage: FULL_HISTORICAL_VALIDATION
     initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
     evidence_required: [complete_finalized_result_bundle]
     deterministic_checks: [recompute_metrics, replay_criteria, artifact_integrity]
+    terminal_scientific_outcomes: [PASS, FAIL, NEEDS_MANUAL_REVIEW]
+    lifecycle_effect: scientific_state_only_no_candidate_status
     codex: PROHIBITED_TO_DECIDE
     human_approval_required: false
     alphaquest_automatic: true
     reversible: false
     invalidated_by: [finalization_integrity_failure]
     implementation_status: existing
+  - id: ENTER_HISTORICAL_CANDIDATE_REVIEW
+    from_stage: FULL_HISTORICAL_VALIDATION
+    to_stage: HISTORICAL_CANDIDATE_REVIEW
+    initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
+    evidence_required: [immutable_historical_verdict, scientific_pass, predeclared_candidate_eligibility]
+    deterministic_checks: [verdict_is_scientific_pass, no_unresolved_manual_review, candidate_eligibility_prerequisites_pass]
+    eligible_scientific_states: [PASS]
+    ineligible_scientific_states: [FAIL, NEEDS_MANUAL_REVIEW]
+    codex: PROHIBITED_TO_DECIDE
+    human_approval_required: false
+    alphaquest_automatic: true
+    reversible: false
+    invalidated_by: [verdict_integrity_failure, candidate_eligibility_failure, bound_evidence_drift]
+    implementation_status: policy_explicit_existing_gate_partial
   - id: APPROVE_HISTORICAL_CANDIDATE
     from_stage: HISTORICAL_CANDIDATE_REVIEW
     to_stage: HISTORICAL_CANDIDATE_REVIEW
@@ -856,10 +877,11 @@ transitions:
     from_stage: HISTORICAL_SCREENING
     to_stage: HISTORICAL_SCREENING
     applicable_stages: [APPROVED_FOR_IMPLEMENTATION, IMPLEMENTATION, MECHANICS_CAUSAL_REVIEW, HISTORICAL_SCREENING, FULL_HISTORICAL_VALIDATION]
+    scope: campaign
     lifecycle_effect: set_disposition_EXHAUSTED_and_block_new_attempts
     initiator: ALPHAQUEST_DETERMINISTIC_ENGINE
-    evidence_required: [predeclared_termination_rule, immutable_attempt_lineage, exact_stop_reason, deterministic_stop_evidence]
-    deterministic_checks: [termination_rule_was_predeclared, objective_condition_satisfied, evidence_current, lineage_complete]
+    evidence_required: [predeclared_campaign_level_termination_rule, immutable_attempt_lineage, exact_stop_reason, deterministic_stop_evidence]
+    deterministic_checks: [termination_rule_was_predeclared, termination_rule_scope_is_campaign, campaign_level_condition_satisfied, evidence_current, lineage_complete]
     codex: PROHIBITED_TO_OVERRIDE_OR_RESTART
     human_approval_required: false
     alphaquest_automatic: true
@@ -993,6 +1015,8 @@ deterministic_authority:
     - DATA_AND_ROLL_BINDING
     - METHODOLOGY_VERSION_AND_HASH_BINDING
     - PREDECLARED_NUMERICAL_STAGE_GATES
+    - IMMUTABLE_SCIENTIFIC_VERDICT_RECORDING
+    - HISTORICAL_CANDIDATE_ELIGIBILITY
     - WFA_SELECTION_AND_STITCHED_OOS_CALCULATION
     - MONTE_CARLO_AND_ACCOUNT_RULE_CALCULATION
     - SAMPLE_SIZE_AND_CALENDAR_GATES
@@ -1060,6 +1084,7 @@ attempt_and_search_governance:
   new_variant_when:
     - Same accepted economic hypothesis, materially distinct value-independent mechanics.
     - Immediately prior variant has current manual mechanics approval and terminal scientific FAIL.
+    - Campaign is not EXHAUSTED or ABANDONED and an authorized variant slot remains.
     - Maximum five variants and no post-OOS tuning inside the same research generation.
   new_attempt_when:
     - Any original execution, exact replication, data refresh, methodology rerun, pre-PnL protocol declaration, pre-PnL mechanics correction, pre-PnL parameter declaration, or authorized rescue.
@@ -1079,6 +1104,20 @@ attempt_and_search_governance:
     - abandonment_and_revisit_decisions
   anti_reset_rule: Campaign, variant, or edge-family renaming cannot reset lineage, budgets, failures, or consumed holdouts.
 
+historical_verdict_policy:
+  terminal_scientific_outcomes: [PASS, FAIL, NEEDS_MANUAL_REVIEW]
+  recording_advances_lifecycle: false
+  recording_creates_candidate_status: false
+  candidate_review_required_scientific_state: PASS
+  candidate_review_prohibited_scientific_states: [FAIL, NEEDS_MANUAL_REVIEW]
+  needs_manual_review_resolution: governed_new_or_completed_evidence_with_distinct_identity_and_scientific_pass
+  original_verdict_is_immutable: true
+  fail_disposition_options:
+    - successor_variant_when_governed_and_budget_remains
+    - campaign_exhaustion_when_campaign_level_rule_is_satisfied
+    - discretionary_campaign_abandonment
+    - governed_revisit_in_new_lineage
+
 campaign_termination_policy:
   shared_effects:
     - no_more_attempts_without_revisit_decision
@@ -1090,15 +1129,33 @@ campaign_termination_policy:
     authority: ALPHAQUEST_DETERMINISTIC_ENGINE
     requires_human_approval: false
     rule_must_be_predeclared: true
+    scope: campaign_level_only
     criteria:
-      - insufficient_opportunity_frequency_under_predeclared_requirement
-      - required_data_or_fidelity_objectively_unavailable
-      - failed_predeclared_core_screening_gate
-      - inadequate_sample_under_predeclared_minimum
-      - exhausted_predeclared_search_budget
-      - exhausted_fresh_holdout_budget
-      - deterministic_stage_gate_failure
-      - execution_infeasibility_objectively_established
+      - maximum_permitted_variants_consumed
+      - campaign_research_or_search_budget_exhausted
+      - campaign_fresh_holdout_budget_exhausted
+      - campaign_opportunity_frequency_structurally_infeasible_under_predeclared_requirement
+      - required_data_or_fidelity_structurally_unavailable_for_campaign
+      - execution_infeasibility_applies_to_campaign_hypothesis_or_mechanical_family
+      - explicit_predeclared_campaign_level_termination_contract_satisfied
+  variant_failure:
+    outcome: terminal_scientific_FAIL_for_bound_attempt_or_variant_path
+    automatically_exhausts_campaign: false
+    limited_stage_failures:
+      - core_grid
+      - monkey
+      - walk_forward_analysis
+      - monte_carlo
+      - acceptance
+    successor_may_remain_when:
+      - terminal_predecessor_FAIL_is_current
+      - authorized_variant_budget_remains
+      - no_campaign_level_stop_rule_is_satisfied
+      - successor_mechanics_are_materially_distinct_and_same_hypothesis
+    effects:
+      - preserve_terminal_failure_and_search_history
+      - stop_the_bound_attempt_or_variant_path
+      - do_not_create_candidate_status
   discretionary_abandonment:
     outcome: ABANDONED
     authority: HUMAN_OWNER_RESEARCHER
@@ -1468,6 +1525,8 @@ human_intervention_map:
     - hashes_schema_and_identity_checks
     - certification_currentness
     - preflight_and_stage_gate_calculation
+    - immutable_historical_verdict_recording
+    - scientific_PASS_only_candidate_review_eligibility
     - WFA_OOS_and_Monte_Carlo_calculation
     - account_rule_and_portfolio_calculation
     - forward_chronology_and_threshold_eligibility
@@ -1507,6 +1566,12 @@ invariants:
     rule: Downstream research-object dependencies contain no cycle, including Candidate Strategy and Account Suitability.
   - id: HISTORICAL_CANDIDATE_CANNOT_IMPLY_LIVE_AUTHORIZATION
     rule: No direct transition exists from HISTORICAL_CANDIDATE_REVIEW to SHADOW, SMALL_LIVE, LIVE, or MONITORING.
+  - id: HISTORICAL_VERDICT_RECORDING_DOES_NOT_CREATE_CANDIDATE_STATUS
+    rule: Recording PASS, FAIL, or NEEDS_MANUAL_REVIEW changes only SCIENTIFIC_STATE and remains in FULL_HISTORICAL_VALIDATION.
+  - id: HISTORICAL_FAIL_CANNOT_ENTER_CANDIDATE_REVIEW
+    rule: ENTER_HISTORICAL_CANDIDATE_REVIEW accepts scientific PASS only; immutable FAIL remains failure evidence.
+  - id: NEEDS_MANUAL_REVIEW_REQUIRES_GOVERNED_RESOLUTION
+    rule: NEEDS_MANUAL_REVIEW remains fail-closed and cannot enter candidate review without governed distinct evidence resolving to scientific PASS.
   - id: FORWARD_INCUBATION_CANNOT_BE_HISTORICALLY_BACKFILLED
     rule: Forward observations must occur after plan start and historical_backfill is prohibited.
   - id: FORWARD_EVIDENCE_IS_ALPHAQUEST_CUSTODIED
@@ -1529,6 +1594,10 @@ invariants:
     rule: Independence requires separate context, task, provenance, and ownership, not a second human identity.
   - id: DETERMINISTIC_CAMPAIGN_STOP_REQUIRES_NO_HUMAN
     rule: AlphaQuest automatically marks EXHAUSTED and blocks attempts when a predeclared objective stop rule is satisfied.
+  - id: VARIANT_FAILURE_DOES_NOT_EXHAUST_CAMPAIGN_WITH_REMAINING_BUDGET
+    rule: A limited core, monkey, WFA, Monte Carlo, or acceptance FAIL ends its bound path but leaves a governed successor available when variant budget remains and no campaign-level stop applies.
+  - id: CAMPAIGN_EXHAUSTION_REQUIRES_CAMPAIGN_LEVEL_RULE
+    rule: EXHAUSTED requires a predeclared campaign-level condition such as consumed variant, research, search, or holdout budget, or campaign-wide opportunity, data, or execution infeasibility.
   - id: DISCRETIONARY_ABANDONMENT_AND_REVISIT_REQUIRE_HUMAN
     rule: Scientific campaign abandonment, edge-family abandonment, and revisit remain human-gated.
   - id: SAME_CONTRACT_DATA_APPEND_CANNOT_REBIND_FROZEN_RESEARCH
@@ -1537,6 +1606,8 @@ invariants:
     rule: Objective gate failures are owned by AlphaQuest and are not Codex-overridable.
   - id: HUMAN_CANNOT_OVERRIDE_MISSING_OBJECTIVE_EVIDENCE
     rule: Human judgment begins only after required objective evidence and checks pass.
+  - id: OPERATING_MODEL_IDENTITY_IS_ENGINE_AND_METHODOLOGY_INDEPENDENT
+    rule: Canonical identity is schema, policy version, and policy content hash; introduced-against engine and methodology values are non-normative provenance.
   - id: LIVE_PERFORMANCE_CANNOT_REWRITE_RESEARCH
     rule: Live evidence can create new research lineage only.
   - id: ONE_ATTEMPT_HAS_AT_MOST_ONE_RUN

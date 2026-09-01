@@ -2,11 +2,10 @@
 
 Status: canonical P1 policy
 
-Operating-model policy: `2026-09-01.2`
+Operating-model policy: `2026-09-01.3`
 
-Engine contract: `2026.08.14.1` (unchanged)
-
-Methodology: `2026-08-14.2` (unchanged)
+Introduced against: P0 tag `engine-v0.1.0-p0`, engine contract
+`2026.08.14.1`, methodology `2026-08-14.2`
 
 The machine-readable source is
 [`config/research_operating_model.yaml`](../../config/research_operating_model.yaml).
@@ -26,11 +25,14 @@ lane. The policy labels each transition as `existing`, `existing_partial`, or
 `policy_only`. A policy-only transition is a future enforcement contract, not a
 claim that runtime orchestration exists today.
 
-The policy has its own version and byte hash. It is separate from methodology.
-Changing P1 definitions does not silently change historical gate thresholds or
-rebind old results. A semantic operating-model change requires a new policy
-version. A semantic methodology change still follows the independently versioned
-methodology process.
+The policy's canonical identity is its schema, policy version, and policy-content
+SHA-256. The engine tag/contract and methodology above are immutable introduction
+provenance, not current-version requirements. A later engine or methodology
+version does not require a P1 change when operating-model semantics are unchanged.
+A semantic operating-model change does require a new policy version and content
+hash. Changing P1 definitions does not silently change historical gate thresholds
+or rebind old results; semantic methodology changes still follow the independently
+versioned methodology process.
 
 ## Existing-state audit and terminology normalization
 
@@ -153,6 +155,8 @@ DISCOVERY
 -> MECHANICS_CAUSAL_REVIEW
 -> HISTORICAL_SCREENING
 -> FULL_HISTORICAL_VALIDATION
+   [record immutable PASS / FAIL / NEEDS MANUAL REVIEW without advancing]
+   [PASS + predeclared candidate eligibility only]
 -> HISTORICAL_CANDIDATE_REVIEW
 -> FORWARD_INCUBATION
 -> FORWARD_REVIEW
@@ -204,6 +208,15 @@ it blocks downstream promotion and adds contradictory evidence. Operational
 `ALERT` does not itself establish scientific `FAIL`; it can force a safety pause
 and a human retirement or new-research decision.
 
+Historical verdict recording is not a lifecycle promotion. AlphaQuest records
+`PASS`, `FAIL`, or `NEEDS MANUAL REVIEW` immutably while the research remains at
+`FULL_HISTORICAL_VALIDATION`. A separate deterministic eligibility transition
+may enter `HISTORICAL_CANDIDATE_REVIEW` only for scientific `PASS` with all
+predeclared candidate prerequisites. `FAIL` remains evidence for a governed
+successor variant, campaign exhaustion or abandonment analysis, and possible
+future revisit. `NEEDS MANUAL REVIEW` remains fail-closed; resolution produces
+distinct governed evidence and never rewrites the original verdict.
+
 ## Actors and authority
 
 The four actor classes are deliberately asymmetric:
@@ -235,7 +248,8 @@ means that Codex may invent inputs.
 | Approve mechanics | human | all checks/sample/current hashes | required | prohibited | no; stale on change |
 | Run historical screening/stages | AlphaQuest | preflight, stages, one-run-per-attempt | no trivial click | request an authored run only | no |
 | Open locked acceptance OOS | human | all prior gates, unopened holdout, frozen identities | required | prohibited | no |
-| Record historical verdict | AlphaQuest | recomputation and artifact integrity | no | cannot decide | no |
+| Record historical verdict | AlphaQuest | recomputation and artifact integrity; `PASS`, `FAIL`, or `NEEDS MANUAL REVIEW` | no | cannot decide | no; remains in full validation |
+| Enter historical candidate review | AlphaQuest | immutable scientific `PASS`, no unresolved review, predeclared eligibility | no | cannot decide | no |
 | Approve historical candidate | human owner after separate red-team task | eligibility, hashes, task/provenance separation | required | cannot approve | no; may stale |
 | Start forward incubation | human | current candidate, plan, start time | required | prohibited | no |
 | Append forward observation | AlphaQuest from external source | source identity, chronology, hashes, reconciliation | no | summarize only | no |
@@ -300,7 +314,8 @@ Codex is explicitly prohibited from:
 
 AlphaQuest owns exact facts whenever software can decide them: byte hashes,
 certification currentness, data/roll/methodology binding, predeclared numerical
-gates and campaign stops, WFA selection, stitched OOS, Monte Carlo,
+gates and campaign stops, immutable scientific verdict recording, PASS-only
+historical-candidate eligibility, WFA selection, stitched OOS, Monte Carlo,
 sample/calendar sufficiency, one-run-per-attempt, legal prerequisites, artifact
 immutability, canonical forward-event capture, routine same-contract data
 append validation, stale approval invalidation, portfolio statistics, account
@@ -350,8 +365,10 @@ variant -> attempt -> run`.
 
 - A new variant is a materially distinct, value-independent expression of the
   same accepted edge. It requires the immediately prior variant's current
-  mechanics approval and terminal scientific `FAIL`, remains within the
-  five-variant maximum, and cannot use post-OOS evidence for tuning.
+  mechanics approval and terminal scientific `FAIL`, an unconsumed authorized
+  variant slot, and a campaign that is neither `EXHAUSTED` nor `ABANDONED`. It
+  remains within the five-variant maximum and cannot use post-OOS evidence for
+  tuning.
 - A new attempt is required for original execution, replication, data refresh,
   methodology rerun, pre-PnL protocol/mechanics/parameter declaration, or
   authorized rescue.
@@ -369,6 +386,13 @@ Accepted hypotheses, published configs, attempts, runs, searched parameter
 spaces, approvals, verdicts, reviews, and abandonment/revisit decisions remain
 immutable. Renaming cannot reset budgets, failures, or consumed holdouts.
 
+A limited core-grid, monkey, WFA, Monte Carlo, or acceptance `FAIL` terminates
+the bound attempt or variant path. It does not automatically set the campaign to
+`EXHAUSTED` while a governed, materially distinct successor remains authorized
+and no campaign-level stop rule applies. Conversely, when a predeclared
+campaign-level condition is satisfied, AlphaQuest stops the campaign even if an
+individual stage outcome alone would not have done so.
+
 ## Abandonment and revisit
 
 ### Individual campaign
@@ -376,12 +400,15 @@ immutable. Renaming cannot reset budgets, failures, or consumed holdouts.
 Campaign termination has two paths:
 
 1. **Deterministic stop/exhaustion.** AlphaQuest automatically sets disposition
-   `EXHAUSTED` and blocks further attempts when a predeclared objective condition
-   is satisfied. Conditions include insufficient opportunity frequency,
-   objectively unavailable fidelity, failed core screening, inadequate sample,
-   exhausted search or fresh-holdout budget, deterministic stage-gate failure,
-   or objectively established execution infeasibility. This requires no human
-   approval click.
+   `EXHAUSTED` and blocks further attempts only when a predeclared campaign-level
+   objective condition is satisfied. Conditions include consuming the maximum
+   permitted variants, campaign research/search budget, or fresh-holdout budget;
+   campaign-wide opportunity-frequency infeasibility; data/fidelity unavailable
+   for the campaign; execution infeasibility applying to the hypothesis or
+   mechanical family; or another explicit predeclared campaign-level termination
+   contract. A single limited core-grid, monkey, WFA, Monte Carlo, or acceptance
+   failure is not such a condition when authorized variant budget remains. A
+   valid campaign-level stop requires no human approval click.
 2. **Discretionary abandonment.** The human records `ABANDONED` when interpretation
    is required—for example, evaluating materially distinct expressions,
    contradictory causal evidence, unstable neighborhoods, or whether further

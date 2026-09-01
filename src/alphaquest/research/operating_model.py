@@ -63,6 +63,9 @@ REQUIRED_INVARIANTS = {
     "ACCOUNT_SUITABILITY_CANNOT_CREATE_CANDIDATE_STATUS",
     "RESEARCH_OBJECT_DEPENDENCIES_ARE_ACYCLIC",
     "HISTORICAL_CANDIDATE_CANNOT_IMPLY_LIVE_AUTHORIZATION",
+    "HISTORICAL_VERDICT_RECORDING_DOES_NOT_CREATE_CANDIDATE_STATUS",
+    "HISTORICAL_FAIL_CANNOT_ENTER_CANDIDATE_REVIEW",
+    "NEEDS_MANUAL_REVIEW_REQUIRES_GOVERNED_RESOLUTION",
     "FORWARD_INCUBATION_CANNOT_BE_HISTORICALLY_BACKFILLED",
     "FORWARD_EVIDENCE_IS_ALPHAQUEST_CUSTODIED",
     "FAILED_RESEARCH_CANNOT_BE_DELETED_OR_RELABELED_PASS",
@@ -74,10 +77,13 @@ REQUIRED_INVARIANTS = {
     "RED_TEAM_IS_SEPARATE_FROM_IMPLEMENTATION_OWNERSHIP",
     "SINGLE_HUMAN_INDEPENDENCE_IS_TASK_BASED",
     "DETERMINISTIC_CAMPAIGN_STOP_REQUIRES_NO_HUMAN",
+    "VARIANT_FAILURE_DOES_NOT_EXHAUST_CAMPAIGN_WITH_REMAINING_BUDGET",
+    "CAMPAIGN_EXHAUSTION_REQUIRES_CAMPAIGN_LEVEL_RULE",
     "DISCRETIONARY_ABANDONMENT_AND_REVISIT_REQUIRE_HUMAN",
     "SAME_CONTRACT_DATA_APPEND_CANNOT_REBIND_FROZEN_RESEARCH",
     "CODEX_CANNOT_OVERRIDE_DETERMINISTIC_GATE_FAILURE",
     "HUMAN_CANNOT_OVERRIDE_MISSING_OBJECTIVE_EVIDENCE",
+    "OPERATING_MODEL_IDENTITY_IS_ENGINE_AND_METHODOLOGY_INDEPENDENT",
 }
 REQUIRED_PROHIBITIONS = {
     "WEAKEN_GATE_AFTER_RESULTS",
@@ -177,8 +183,24 @@ def validate_operating_model(policy: Mapping[str, Any]) -> None:
         raise OperatingModelError("historical records must retain their original policy identity")
     if identity.get("retroactive_rebinding_prohibited") is not True:
         raise OperatingModelError("retroactive policy rebinding must be prohibited")
+    if identity.get("identity_fields") != ["schema", "policy_version", "policy_sha256"]:
+        raise OperatingModelError(
+            "operating-model identity must be schema, policy version, and policy content hash"
+        )
+    if identity.get("engine_identity_is_separate") is not True:
+        raise OperatingModelError("operating-model and engine identities must remain separate")
     if identity.get("methodology_identity_is_separate") is not True:
         raise OperatingModelError("operating-model and methodology identities must remain separate")
+    introduced = _mapping(identity.get("introduced_against"), "identity.introduced_against")
+    for field in ("p0_engine_tag", "engine_contract", "methodology"):
+        if not str(introduced.get(field) or "").strip():
+            raise OperatingModelError(f"introduced-against provenance requires {field}")
+    if identity.get("introduction_metadata_is_non_normative") is not True:
+        raise OperatingModelError("introduced-against metadata must be non-normative provenance")
+    if identity.get("current_engine_or_methodology_version_is_not_a_validation_prerequisite") is not True:
+        raise OperatingModelError(
+            "current engine or methodology versions cannot be operating-model validation prerequisites"
+        )
 
     actors = _mapping(document.get("actors"), "actors")
     if set(actors) != REQUIRED_ACTORS:
@@ -236,6 +258,10 @@ def validate_operating_model(policy: Mapping[str, Any]) -> None:
         _validate_transition(transition_id, transition, actors, lifecycle_stages)
     _require_deployment_authority(transitions)
     _require_no_historical_candidate_shortcut(transitions)
+    _require_historical_verdict_boundary(
+        transitions,
+        _mapping(document.get("historical_verdict_policy"), "historical_verdict_policy"),
+    )
     _require_account_scientific_separation(
         objects,
         transitions,
@@ -259,6 +285,8 @@ def validate_operating_model(policy: Mapping[str, Any]) -> None:
     decisions = set(_string_sequence(deterministic.get("decisions"), "deterministic_authority.decisions"))
     required_deterministic_decisions = {
         "PREDECLARED_NUMERICAL_STAGE_GATES",
+        "IMMUTABLE_SCIENTIFIC_VERDICT_RECORDING",
+        "HISTORICAL_CANDIDATE_ELIGIBILITY",
         "CANONICAL_FORWARD_EVENT_CAPTURE_AFTER_SOURCE_VALIDATION",
         "PREDECLARED_CAMPAIGN_STOP_AND_ATTEMPT_BLOCKING",
         "SAME_CONTRACT_DATA_APPEND_IDENTITY_AND_VALIDATION",
@@ -458,6 +486,88 @@ def _require_no_historical_candidate_shortcut(
             )
 
 
+def _require_historical_verdict_boundary(
+    transitions: Mapping[str, Mapping[str, Any]],
+    policy: Mapping[str, Any],
+) -> None:
+    terminal_outcomes = {"PASS", "FAIL", "NEEDS_MANUAL_REVIEW"}
+    record = _mapping(
+        transitions.get("RECORD_HISTORICAL_VERDICT"),
+        "RECORD_HISTORICAL_VERDICT",
+    )
+    if record.get("from_stage") != "FULL_HISTORICAL_VALIDATION" or record.get(
+        "to_stage"
+    ) != "FULL_HISTORICAL_VALIDATION":
+        raise OperatingModelError(
+            "historical verdict recording must remain in full historical validation"
+        )
+    if set(record.get("terminal_scientific_outcomes") or []) != terminal_outcomes:
+        raise OperatingModelError("historical verdict recording must preserve all terminal outcomes")
+    if record.get("lifecycle_effect") != "scientific_state_only_no_candidate_status":
+        raise OperatingModelError("historical verdict recording cannot create candidate status")
+
+    enter = _mapping(
+        transitions.get("ENTER_HISTORICAL_CANDIDATE_REVIEW"),
+        "ENTER_HISTORICAL_CANDIDATE_REVIEW",
+    )
+    if enter.get("from_stage") != "FULL_HISTORICAL_VALIDATION" or enter.get(
+        "to_stage"
+    ) != "HISTORICAL_CANDIDATE_REVIEW":
+        raise OperatingModelError("candidate review entry must be a distinct lifecycle transition")
+    if enter.get("initiator") != "ALPHAQUEST_DETERMINISTIC_ENGINE":
+        raise OperatingModelError("candidate review eligibility must be decided by AlphaQuest")
+    if enter.get("human_approval_required") is not False or enter.get(
+        "alphaquest_automatic"
+    ) is not True:
+        raise OperatingModelError("eligible candidate review entry must be deterministic")
+    if set(enter.get("eligible_scientific_states") or []) != {"PASS"}:
+        raise OperatingModelError("only scientific PASS may enter historical candidate review")
+    if set(enter.get("ineligible_scientific_states") or []) != {
+        "FAIL",
+        "NEEDS_MANUAL_REVIEW",
+    }:
+        raise OperatingModelError("FAIL and NEEDS_MANUAL_REVIEW must be ineligible for candidate review")
+    required_evidence = {"immutable_historical_verdict", "scientific_pass", "predeclared_candidate_eligibility"}
+    required_checks = {
+        "verdict_is_scientific_pass",
+        "no_unresolved_manual_review",
+        "candidate_eligibility_prerequisites_pass",
+    }
+    if not required_evidence.issubset(set(enter.get("evidence_required") or [])):
+        raise OperatingModelError("candidate review entry evidence is incomplete")
+    if not required_checks.issubset(set(enter.get("deterministic_checks") or [])):
+        raise OperatingModelError("candidate review entry checks are incomplete")
+    for transition_id, transition in transitions.items():
+        if (
+            transition.get("to_stage") == "HISTORICAL_CANDIDATE_REVIEW"
+            and transition.get("from_stage") != "HISTORICAL_CANDIDATE_REVIEW"
+            and transition_id != "ENTER_HISTORICAL_CANDIDATE_REVIEW"
+        ):
+            raise OperatingModelError(
+                f"transition {transition_id} bypasses governed candidate review entry"
+            )
+
+    if set(policy.get("terminal_scientific_outcomes") or []) != terminal_outcomes:
+        raise OperatingModelError("historical verdict policy must preserve all terminal outcomes")
+    if policy.get("recording_advances_lifecycle") is not False or policy.get(
+        "recording_creates_candidate_status"
+    ) is not False:
+        raise OperatingModelError("recording a historical verdict cannot advance lifecycle")
+    if policy.get("candidate_review_required_scientific_state") != "PASS":
+        raise OperatingModelError("candidate review policy must require scientific PASS")
+    if set(policy.get("candidate_review_prohibited_scientific_states") or []) != {
+        "FAIL",
+        "NEEDS_MANUAL_REVIEW",
+    }:
+        raise OperatingModelError("candidate review policy must prohibit FAIL and NEEDS_MANUAL_REVIEW")
+    if policy.get("needs_manual_review_resolution") != (
+        "governed_new_or_completed_evidence_with_distinct_identity_and_scientific_pass"
+    ):
+        raise OperatingModelError("NEEDS_MANUAL_REVIEW requires governed resolution")
+    if policy.get("original_verdict_is_immutable") is not True:
+        raise OperatingModelError("historical verdict resolution cannot rewrite the original verdict")
+
+
 def _require_account_scientific_separation(
     objects: Mapping[str, Mapping[str, Any]],
     transitions: Mapping[str, Mapping[str, Any]],
@@ -529,6 +639,16 @@ def _require_campaign_termination_authority(
         raise OperatingModelError("deterministic campaign stop must be initiated by AlphaQuest")
     if stop.get("human_approval_required") is not False or stop.get("alphaquest_automatic") is not True:
         raise OperatingModelError("deterministic campaign stop must be automatic without human approval")
+    if stop.get("scope") != "campaign":
+        raise OperatingModelError("deterministic campaign stop must have campaign scope")
+    stop_evidence = set(stop.get("evidence_required") or [])
+    stop_checks = set(stop.get("deterministic_checks") or [])
+    if "predeclared_campaign_level_termination_rule" not in stop_evidence:
+        raise OperatingModelError("campaign stop requires a campaign-level termination rule")
+    if not {"termination_rule_scope_is_campaign", "campaign_level_condition_satisfied"}.issubset(
+        stop_checks
+    ):
+        raise OperatingModelError("campaign stop must verify a campaign-level condition")
     stop_effect = str(stop.get("lifecycle_effect") or "")
     if "EXHAUSTED" not in stop_effect or "block_new_attempts" not in stop_effect:
         raise OperatingModelError(
@@ -542,6 +662,42 @@ def _require_campaign_termination_authority(
         raise OperatingModelError("deterministic stop policy cannot require human approval")
     if deterministic.get("rule_must_be_predeclared") is not True:
         raise OperatingModelError("deterministic campaign stop rules must be predeclared")
+    if deterministic.get("scope") != "campaign_level_only":
+        raise OperatingModelError("EXHAUSTED must be limited to campaign-level rules")
+    criteria = set(deterministic.get("criteria") or [])
+    required_criteria = {
+        "maximum_permitted_variants_consumed",
+        "campaign_research_or_search_budget_exhausted",
+        "campaign_fresh_holdout_budget_exhausted",
+        "campaign_opportunity_frequency_structurally_infeasible_under_predeclared_requirement",
+        "required_data_or_fidelity_structurally_unavailable_for_campaign",
+        "execution_infeasibility_applies_to_campaign_hypothesis_or_mechanical_family",
+        "explicit_predeclared_campaign_level_termination_contract_satisfied",
+    }
+    if not required_criteria.issubset(criteria):
+        raise OperatingModelError("campaign exhaustion criteria are incomplete")
+    forbidden_variant_stop_criteria = {
+        "failed_predeclared_core_screening_gate",
+        "deterministic_stage_gate_failure",
+    }
+    if criteria & forbidden_variant_stop_criteria:
+        raise OperatingModelError("a single variant stage failure cannot exhaust a campaign")
+
+    variant_failure = _mapping(policy.get("variant_failure"), "variant_failure")
+    if variant_failure.get("automatically_exhausts_campaign") is not False:
+        raise OperatingModelError("variant failure cannot automatically exhaust a campaign")
+    if not {"core_grid", "monkey", "walk_forward_analysis", "monte_carlo", "acceptance"}.issubset(
+        set(variant_failure.get("limited_stage_failures") or [])
+    ):
+        raise OperatingModelError("variant-local stage failure policy is incomplete")
+    successor_conditions = set(variant_failure.get("successor_may_remain_when") or [])
+    if not {
+        "terminal_predecessor_FAIL_is_current",
+        "authorized_variant_budget_remains",
+        "no_campaign_level_stop_rule_is_satisfied",
+        "successor_mechanics_are_materially_distinct_and_same_hypothesis",
+    }.issubset(successor_conditions):
+        raise OperatingModelError("governed successor-variant conditions are incomplete")
 
     for transition_id in (
         "DISCRETIONARILY_ABANDON_CAMPAIGN",
