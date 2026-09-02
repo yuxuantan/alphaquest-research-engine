@@ -8,3 +8,7 @@ The system has four strict ownership layers:
 4. **Indexes and views:** rebuildable registry, exports, and navigation.
 
 Detailed diagrams and contracts are in [docs/architecture](docs/architecture/system-overview.md). Architecture changes that alter causality, fill semantics, stage gates, data availability, or artifact lineage require an ADR under `docs/architecture/decisions/` and focused regression tests.
+
+The canonical separation of research objects, lifecycle axes, actor authority,
+human gates, and invalidation policy is the
+[research operating model](docs/research/research-operating-model.md).

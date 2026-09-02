@@ -17,6 +17,7 @@
 
 ## Research
 
+- [Canonical research operating model](research/research-operating-model.md)
 - [Campaign authoring](research/campaign-authoring.md)
 - [Davey methodology alignment](research/davey-methodology-alignment.md)
 - [Validation stages](research/validation-stages.md)
