@@ -66,6 +66,7 @@ REQUIRED_INVARIANTS = {
     "RESEARCH_OBJECT_MUTABILITY_IS_CANONICAL_AND_SEPARATE_FROM_CURRENTNESS",
     "CANONICAL_TRANSITION_GRAPH_FAILS_CLOSED",
     "CANONICAL_TRANSITION_EFFECT_CONTRACTS_FAIL_CLOSED",
+    "CANONICAL_TRANSITION_TOP_LEVEL_SCHEMAS_FAIL_CLOSED",
     "PROTECTED_DEPLOYMENT_INGRESS_FAILS_CLOSED",
     "HISTORICAL_CANDIDATE_CANNOT_IMPLY_LIVE_AUTHORIZATION",
     "HISTORICAL_VERDICT_RECORDING_DOES_NOT_CREATE_CANDIDATE_STATUS",
@@ -232,13 +233,36 @@ REQUIRED_DEPLOYMENT_AXIS_STATES = {
 
 @dataclass(frozen=True)
 class TransitionContract:
-    """Constitutional identity, edge, side-axis scope, and exact state effects."""
+    """Constitutional identity, schema, edge, scope, and exact state effects."""
 
     initiator: str
     from_stage: str
     to_stage: str
     applicable_stages: frozenset[str] | None = None
     effects: tuple[tuple[str, str], ...] = ()
+    required_fields: frozenset[str] = frozenset()
+    optional_fields: frozenset[str] = frozenset()
+    exact_fields: tuple[tuple[str, object], ...] = ()
+
+
+def _fields(*names: str) -> frozenset[str]:
+    return frozenset(names)
+
+
+COMMON_TRANSITION_REQUIRED_FIELDS = _fields(
+    "id",
+    "from_stage",
+    "to_stage",
+    "initiator",
+    "evidence_required",
+    "deterministic_checks",
+    "codex",
+    "human_approval_required",
+    "alphaquest_automatic",
+    "reversible",
+    "invalidated_by",
+    "implementation_status",
+)
 
 
 LIVE_OPERATIONAL_STAGES = frozenset({"SHADOW", "SMALL_LIVE", "LIVE"})
@@ -265,15 +289,29 @@ ACCOUNT_ASSESSMENT_STAGES = frozenset(
     }
 )
 CANONICAL_TRANSITION_CONTRACT = {
-    "RECORD_RESEARCH_LEAD": TransitionContract("CODEX", "DISCOVERY", "DISCOVERY"),
+    "RECORD_RESEARCH_LEAD": TransitionContract(
+        "CODEX",
+        "DISCOVERY",
+        "DISCOVERY",
+        required_fields=_fields("runtime_conformance"),
+    ),
     "PROPOSE_HYPOTHESIS_FOR_REVIEW": TransitionContract(
-        "ALPHAQUEST_DETERMINISTIC_ENGINE", "DISCOVERY", "HYPOTHESIS_REVIEW"
+        "ALPHAQUEST_DETERMINISTIC_ENGINE",
+        "DISCOVERY",
+        "HYPOTHESIS_REVIEW",
+        required_fields=_fields("runtime_enforcement_claimed"),
+        exact_fields=(
+            ("proposal_actors", ("CODEX", "HUMAN_OWNER_RESEARCHER")),
+        ),
     ),
     "ADMIT_HYPOTHESIS_FOR_IMPLEMENTATION": TransitionContract(
         "HUMAN_OWNER_RESEARCHER", "HYPOTHESIS_REVIEW", "APPROVED_FOR_IMPLEMENTATION"
     ),
     "START_IMPLEMENTATION": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "APPROVED_FOR_IMPLEMENTATION", "IMPLEMENTATION"
+        "HUMAN_OWNER_RESEARCHER",
+        "APPROVED_FOR_IMPLEMENTATION",
+        "IMPLEMENTATION",
+        required_fields=_fields("runtime_conformance"),
     ),
     "SUBMIT_MECHANICS_FOR_REVIEW": TransitionContract(
         "CODEX", "IMPLEMENTATION", "MECHANICS_CAUSAL_REVIEW"
@@ -294,9 +332,13 @@ CANONICAL_TRANSITION_CONTRACT = {
             ("campaign_effect", "no_automatic_exhaustion"),
             ("candidate_effect", "prohibited"),
         ),
+        required_fields=_fields("failure_stages", "runtime_enforcement_claimed"),
     ),
     "OPEN_LOCKED_ACCEPTANCE_OOS": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "FULL_HISTORICAL_VALIDATION", "FULL_HISTORICAL_VALIDATION"
+        "HUMAN_OWNER_RESEARCHER",
+        "FULL_HISTORICAL_VALIDATION",
+        "FULL_HISTORICAL_VALIDATION",
+        required_fields=_fields("runtime_conformance"),
     ),
     "RECORD_HISTORICAL_VERDICT": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE",
@@ -308,11 +350,17 @@ CANONICAL_TRANSITION_CONTRACT = {
             ("campaign_effect", "no_automatic_exhaustion"),
             ("candidate_effect", "prohibited_unless_scientific_PASS"),
         ),
+        required_fields=_fields("terminal_scientific_outcomes", "deterministic_failure_stages"),
     ),
     "ENTER_HISTORICAL_CANDIDATE_REVIEW": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE",
         "FULL_HISTORICAL_VALIDATION",
         "HISTORICAL_CANDIDATE_REVIEW",
+        required_fields=_fields(
+            "eligible_scientific_states",
+            "ineligible_scientific_states",
+            "runtime_conformance",
+        ),
     ),
     "APPROVE_HISTORICAL_CANDIDATE": TransitionContract(
         "HUMAN_OWNER_RESEARCHER",
@@ -322,6 +370,7 @@ CANONICAL_TRANSITION_CONTRACT = {
             ("candidate_disposition_effect", "APPROVED_CURRENT"),
             ("lifecycle_disposition_effect", "ACTIVE"),
         ),
+        required_fields=_fields("runtime_conformance"),
     ),
     "REJECT_HISTORICAL_CANDIDATE": TransitionContract(
         "HUMAN_OWNER_RESEARCHER",
@@ -331,6 +380,7 @@ CANONICAL_TRANSITION_CONTRACT = {
             ("candidate_disposition_effect", "REJECTED"),
             ("lifecycle_disposition_effect", "ACTIVE"),
         ),
+        required_fields=_fields("advances_normal_path", "runtime_enforcement_claimed"),
     ),
     "BLOCK_HISTORICAL_CANDIDATE_FOR_MANUAL_REVIEW": TransitionContract(
         "HUMAN_OWNER_RESEARCHER",
@@ -340,12 +390,16 @@ CANONICAL_TRANSITION_CONTRACT = {
             ("candidate_disposition_effect", "NEEDS_MANUAL_REVIEW"),
             ("lifecycle_disposition_effect", "BLOCKED"),
         ),
+        required_fields=_fields("advances_normal_path", "runtime_enforcement_claimed"),
     ),
     "START_FORWARD_INCUBATION": TransitionContract(
         "HUMAN_OWNER_RESEARCHER", "HISTORICAL_CANDIDATE_REVIEW", "FORWARD_INCUBATION"
     ),
     "APPEND_FORWARD_OBSERVATION": TransitionContract(
-        "ALPHAQUEST_DETERMINISTIC_ENGINE", "FORWARD_INCUBATION", "FORWARD_INCUBATION"
+        "ALPHAQUEST_DETERMINISTIC_ENGINE",
+        "FORWARD_INCUBATION",
+        "FORWARD_INCUBATION",
+        exact_fields=(("source_actor", "EXTERNAL_SYSTEM"),),
     ),
     "MARK_FORWARD_ELIGIBLE_FOR_REVIEW": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE", "FORWARD_INCUBATION", "FORWARD_REVIEW"
@@ -355,12 +409,14 @@ CANONICAL_TRANSITION_CONTRACT = {
         "FORWARD_REVIEW",
         "PORTFOLIO_REVIEW",
         effects=(("forward_state_effect", "ACCEPTED"),),
+        required_fields=_fields("runtime_enforcement_claimed"),
     ),
     "REJECT_FORWARD_REVIEW": TransitionContract(
         "HUMAN_OWNER_RESEARCHER",
         "FORWARD_REVIEW",
         "FORWARD_REVIEW",
         effects=(("forward_state_effect", "FAILED"),),
+        required_fields=_fields("advances_normal_path", "runtime_enforcement_claimed"),
     ),
     "BLOCK_FORWARD_FOR_MANUAL_REVIEW": TransitionContract(
         "HUMAN_OWNER_RESEARCHER",
@@ -370,6 +426,7 @@ CANONICAL_TRANSITION_CONTRACT = {
             ("forward_state_effect", "NEEDS_MANUAL_REVIEW"),
             ("lifecycle_disposition_effect", "BLOCKED"),
         ),
+        required_fields=_fields("advances_normal_path", "runtime_enforcement_claimed"),
     ),
     "CREATE_PORTFOLIO_REVIEW": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE", "PORTFOLIO_REVIEW", "PORTFOLIO_REVIEW"
@@ -379,12 +436,14 @@ CANONICAL_TRANSITION_CONTRACT = {
         "PORTFOLIO_REVIEW",
         "ACCOUNT_SUITABILITY_REVIEW",
         effects=(("portfolio_state_effect", "ACCEPTED"),),
+        required_fields=_fields("runtime_enforcement_claimed"),
     ),
     "REJECT_PORTFOLIO_DISPOSITION": TransitionContract(
         "HUMAN_OWNER_RESEARCHER",
         "PORTFOLIO_REVIEW",
         "PORTFOLIO_REVIEW",
         effects=(("portfolio_state_effect", "REJECTED"),),
+        required_fields=_fields("advances_normal_path", "runtime_enforcement_claimed"),
     ),
     "BLOCK_PORTFOLIO_FOR_MANUAL_REVIEW": TransitionContract(
         "HUMAN_OWNER_RESEARCHER",
@@ -394,24 +453,48 @@ CANONICAL_TRANSITION_CONTRACT = {
             ("portfolio_state_effect", "NEEDS_MANUAL_REVIEW"),
             ("lifecycle_disposition_effect", "BLOCKED"),
         ),
+        required_fields=_fields("advances_normal_path", "runtime_enforcement_claimed"),
     ),
     "ASSESS_ACCOUNT_SUITABILITY": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE",
         "ACCOUNT_SUITABILITY_REVIEW",
         "ACCOUNT_SUITABILITY_REVIEW",
         ACCOUNT_ASSESSMENT_STAGES,
+        required_fields=_fields("cannot_create"),
+        exact_fields=(("side_axis", "ACCOUNT_SUITABILITY_STATE"),),
     ),
     "ENTER_DEPLOYMENT_REVIEW": TransitionContract(
-        "ALPHAQUEST_DETERMINISTIC_ENGINE", "ACCOUNT_SUITABILITY_REVIEW", "DEPLOYMENT_REVIEW"
+        "ALPHAQUEST_DETERMINISTIC_ENGINE",
+        "ACCOUNT_SUITABILITY_REVIEW",
+        "DEPLOYMENT_REVIEW",
+        required_fields=_fields(
+            "required_axis_states",
+            "required_candidate_status",
+            "runtime_enforcement_claimed",
+        ),
     ),
     "AUTHORIZE_DEPLOYMENT": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "DEPLOYMENT_REVIEW", "SHADOW"
+        "HUMAN_OWNER_RESEARCHER",
+        "DEPLOYMENT_REVIEW",
+        "SHADOW",
+        required_fields=_fields(
+            "required_axis_states",
+            "required_candidate_status",
+            "required_deployment_controls",
+            "runtime_conformance",
+        ),
     ),
     "PROMOTE_SHADOW_TO_SMALL_LIVE": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "SHADOW", "SMALL_LIVE"
+        "HUMAN_OWNER_RESEARCHER",
+        "SHADOW",
+        "SMALL_LIVE",
+        required_fields=_fields("runtime_enforcement_claimed"),
     ),
     "PROMOTE_SMALL_LIVE_TO_LIVE": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "SMALL_LIVE", "LIVE"
+        "HUMAN_OWNER_RESEARCHER",
+        "SMALL_LIVE",
+        "LIVE",
+        required_fields=_fields("runtime_enforcement_claimed"),
     ),
     "APPEND_LIVE_MONITORING": TransitionContract(
         "EXTERNAL_SYSTEM",
@@ -422,6 +505,7 @@ CANONICAL_TRANSITION_CONTRACT = {
             ("operational_state_effect", "HEALTHY_or_ALERT"),
             ("scientific_state_effect", "none"),
         ),
+        required_fields=_fields("runtime_conformance"),
     ),
     "SAFETY_PAUSE": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE",
@@ -432,6 +516,7 @@ CANONICAL_TRANSITION_CONTRACT = {
             ("operational_state_effect", "PAUSED"),
             ("scientific_state_effect", "none"),
         ),
+        required_fields=_fields("runtime_enforcement_claimed"),
     ),
     "RETIRE_LIVE_INSTANCE": TransitionContract(
         "HUMAN_OWNER_RESEARCHER",
@@ -443,6 +528,7 @@ CANONICAL_TRANSITION_CONTRACT = {
             ("lifecycle_disposition_effect", "RETIRED"),
             ("scientific_state_effect", "none"),
         ),
+        required_fields=_fields("runtime_enforcement_claimed"),
     ),
     "STOP_CAMPAIGN_ON_PREDECLARED_RULE": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE",
@@ -450,6 +536,8 @@ CANONICAL_TRANSITION_CONTRACT = {
         "HISTORICAL_SCREENING",
         CAMPAIGN_RESEARCH_STAGES,
         effects=(("lifecycle_effect", "set_disposition_EXHAUSTED_and_block_new_attempts"),),
+        required_fields=_fields("runtime_enforcement_claimed"),
+        exact_fields=(("scope", "campaign"),),
     ),
     "DISCRETIONARILY_ABANDON_CAMPAIGN": TransitionContract(
         "HUMAN_OWNER_RESEARCHER",
@@ -457,12 +545,19 @@ CANONICAL_TRANSITION_CONTRACT = {
         "FULL_HISTORICAL_VALIDATION",
         CAMPAIGN_RESEARCH_STAGES,
         effects=(("lifecycle_effect", "set_disposition_ABANDONED_and_block_new_attempts"),),
+        required_fields=_fields("runtime_enforcement_claimed"),
     ),
     "ABANDON_EDGE_FAMILY": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "DISCOVERY", "DISCOVERY"
+        "HUMAN_OWNER_RESEARCHER",
+        "DISCOVERY",
+        "DISCOVERY",
+        required_fields=_fields("runtime_enforcement_claimed"),
     ),
     "REVISIT_FAILED_EDGE": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "DISCOVERY", "HYPOTHESIS_REVIEW"
+        "HUMAN_OWNER_RESEARCHER",
+        "DISCOVERY",
+        "HYPOTHESIS_REVIEW",
+        required_fields=_fields("runtime_enforcement_claimed"),
     ),
 }
 CANONICAL_TRANSITION_EFFECT_FIELDS = frozenset(
@@ -933,7 +1028,9 @@ def _require_canonical_transition_contract(
         unknown_effect_fields = sorted(
             field
             for field in transition
-            if field.endswith("_effect") and field not in CANONICAL_TRANSITION_EFFECT_FIELDS
+            if isinstance(field, str)
+            and field.endswith("_effect")
+            and field not in CANONICAL_TRANSITION_EFFECT_FIELDS
         )
         if unknown_effect_fields:
             raise OperatingModelError(
@@ -950,6 +1047,52 @@ def _require_canonical_transition_contract(
             raise OperatingModelError(
                 f"canonical transition {transition_id} effect contract must remain exact"
             )
+        exact_fields = dict(contract.exact_fields)
+        if len(exact_fields) != len(contract.exact_fields):
+            raise OperatingModelError(
+                f"canonical transition {transition_id} repeats an exact schema field"
+            )
+        required_fields = (
+            set(COMMON_TRANSITION_REQUIRED_FIELDS)
+            | contract.required_fields
+            | set(expected_effects)
+            | set(exact_fields)
+        )
+        if contract.applicable_stages is not None:
+            required_fields.add("applicable_stages")
+        overlap = required_fields & contract.optional_fields
+        if overlap:
+            raise OperatingModelError(
+                f"canonical transition {transition_id} schema fields cannot be both required "
+                "and optional: " + ", ".join(sorted(overlap))
+            )
+        allowed_fields = required_fields | contract.optional_fields
+        actual_fields = set(transition)
+        missing_fields = sorted(required_fields - actual_fields)
+        unknown_fields = sorted(str(field) for field in actual_fields - allowed_fields)
+        if missing_fields or unknown_fields:
+            details = []
+            if missing_fields:
+                details.append("missing=" + ",".join(missing_fields))
+            if unknown_fields:
+                details.append("unknown=" + ",".join(unknown_fields))
+            raise OperatingModelError(
+                f"canonical transition {transition_id} top-level schema mismatch: "
+                + "; ".join(details)
+            )
+        for field, expected_value in exact_fields.items():
+            actual_value = transition[field]
+            if isinstance(expected_value, tuple):
+                exact_value_matches = (
+                    isinstance(actual_value, list) and tuple(actual_value) == expected_value
+                )
+            else:
+                exact_value_matches = actual_value == expected_value
+            if not exact_value_matches:
+                raise OperatingModelError(
+                    f"canonical transition {transition_id}.{field} must remain "
+                    f"{expected_value!r}"
+                )
 
 
 def _require_transition_authority(

@@ -27,7 +27,7 @@ def test_canonical_operating_model_is_runnable_and_separate_from_methodology() -
     policy = load_operating_model()
 
     assert policy["schema"] == OPERATING_MODEL_SCHEMA
-    assert policy["policy_version"] == "2026-09-02.2"
+    assert policy["policy_version"] == "2026-09-02.3"
     assert policy["identity"]["identity_fields"] == [
         "schema",
         "policy_version",
@@ -344,6 +344,148 @@ def test_novel_cross_axis_effect_attacks_are_rejected(
     _item(policy["transitions"], transition_id)[effect_field] = effect_value
 
     with pytest.raises(OperatingModelError, match="effect"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    ("transition_id", "field", "value"),
+    [
+        (
+            "APPEND_FORWARD_OBSERVATION",
+            "state_effects",
+            {"SCIENTIFIC_STATE": "PASS"},
+        ),
+        (
+            "APPEND_FORWARD_OBSERVATION",
+            "writes_state",
+            {"SCIENTIFIC_STATE": "PASS"},
+        ),
+        ("APPEND_FORWARD_OBSERVATION", "scientific_state_change", "PASS"),
+        ("APPEND_FORWARD_OBSERVATION", "side_axis", "DEPLOYMENT_STATE"),
+        (
+            "RECORD_RESEARCH_LEAD",
+            "state_effects",
+            {"DEPLOYMENT_STATE": "APPROVED_FOR_MANUAL_DEPLOYMENT"},
+        ),
+        (
+            "ASSESS_ACCOUNT_SUITABILITY",
+            "state_effects",
+            {"FORWARD_STATE": "ACCEPTED"},
+        ),
+        (
+            "ASSESS_ACCOUNT_SUITABILITY",
+            "writes_state",
+            {"PORTFOLIO_STATE": "ACCEPTED"},
+        ),
+        ("SAFETY_PAUSE", "state_effects", {"CANDIDATE": "APPROVED_CURRENT"}),
+        ("AUTHORIZE_DEPLOYMENT", "state_effects", {"SCIENTIFIC_STATE": "PASS"}),
+        (
+            "APPEND_LIVE_MONITORING",
+            "state_effects",
+            {"DEPLOYMENT_STATE": "APPROVED_FOR_MANUAL_DEPLOYMENT"},
+        ),
+    ],
+)
+def test_latest_audit_alternate_semantic_fields_are_rejected(
+    transition_id: str,
+    field: str,
+    value: object,
+) -> None:
+    policy = _policy()
+    _item(policy["transitions"], transition_id)[field] = value
+
+    with pytest.raises(OperatingModelError, match="top-level schema mismatch"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    ("transition_id", "unknown_field"),
+    [
+        ("RECORD_RESEARCH_LEAD", "totally_unknown_field"),
+        ("RUN_HISTORICAL_SCREENING", "new_future_flag"),
+        ("ADMIT_HYPOTHESIS_FOR_IMPLEMENTATION", "foo"),
+        ("APPEND_LIVE_MONITORING", "totally_unknown_field"),
+        ("REVISIT_FAILED_EDGE", "new_future_flag"),
+        ("START_IMPLEMENTATION", "foo"),
+    ],
+)
+def test_transition_schemas_reject_generic_unknown_fields(
+    transition_id: str,
+    unknown_field: str,
+) -> None:
+    policy = _policy()
+    _item(policy["transitions"], transition_id)[unknown_field] = True
+
+    with pytest.raises(OperatingModelError, match="top-level schema mismatch"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    ("transition_id", "field", "wrong_value"),
+    [
+        (
+            "PROPOSE_HYPOTHESIS_FOR_REVIEW",
+            "proposal_actors",
+            ["CODEX", "EXTERNAL_SYSTEM"],
+        ),
+        ("APPEND_FORWARD_OBSERVATION", "source_actor", "CODEX"),
+        ("ASSESS_ACCOUNT_SUITABILITY", "side_axis", "DEPLOYMENT_STATE"),
+        ("STOP_CAMPAIGN_ON_PREDECLARED_RULE", "scope", "variant"),
+    ],
+)
+def test_transition_specific_semantic_values_are_exact(
+    transition_id: str,
+    field: str,
+    wrong_value: object,
+) -> None:
+    policy = _policy()
+    _item(policy["transitions"], transition_id)[field] = wrong_value
+
+    with pytest.raises(OperatingModelError, match=f"{transition_id}.{field} must remain"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    ("transition_id", "required_field"),
+    [
+        ("APPEND_FORWARD_OBSERVATION", "source_actor"),
+        ("SAFETY_PAUSE", "applicable_stages"),
+        ("RECORD_RESEARCH_LEAD", "runtime_conformance"),
+        ("ENTER_DEPLOYMENT_REVIEW", "required_axis_states"),
+        ("ASSESS_ACCOUNT_SUITABILITY", "side_axis"),
+    ],
+)
+def test_transition_specific_required_fields_cannot_be_removed(
+    transition_id: str,
+    required_field: str,
+) -> None:
+    policy = _policy()
+    del _item(policy["transitions"], transition_id)[required_field]
+
+    with pytest.raises(OperatingModelError):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    ("source_transition_id", "target_transition_id", "field"),
+    [
+        ("APPEND_FORWARD_OBSERVATION", "RUN_HISTORICAL_SCREENING", "source_actor"),
+        ("RECORD_RESEARCH_LEAD", "ADMIT_HYPOTHESIS_FOR_IMPLEMENTATION", "runtime_conformance"),
+        ("ENTER_DEPLOYMENT_REVIEW", "APPEND_FORWARD_OBSERVATION", "required_axis_states"),
+        ("AUTHORIZE_DEPLOYMENT", "RECORD_RESEARCH_LEAD", "required_deployment_controls"),
+    ],
+)
+def test_transition_specific_fields_cannot_be_misplaced(
+    source_transition_id: str,
+    target_transition_id: str,
+    field: str,
+) -> None:
+    policy = _policy()
+    source = _item(policy["transitions"], source_transition_id)
+    target = _item(policy["transitions"], target_transition_id)
+    target[field] = deepcopy(source[field])
+
+    with pytest.raises(OperatingModelError):
         validate_operating_model(policy)
 
 
@@ -685,7 +827,7 @@ def test_known_runtime_gap_requires_existing_partial_status() -> None:
     transition["implementation_status"] = "EXISTING"
     del transition["runtime_conformance"]
 
-    with pytest.raises(OperatingModelError, match="known runtime gap must be EXISTING_PARTIAL"):
+    with pytest.raises(OperatingModelError, match="top-level schema mismatch"):
         validate_operating_model(policy)
 
 

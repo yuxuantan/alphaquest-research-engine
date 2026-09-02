@@ -2,7 +2,7 @@
 
 Status: canonical P1 policy
 
-Operating-model policy: `2026-09-02.2`
+Operating-model policy: `2026-09-02.3`
 
 Introduced against: P0 tag `engine-v0.1.0-p0`, engine contract
 `2026.08.14.1`, methodology `2026-08-14.2`
@@ -59,8 +59,13 @@ present—exact `applicable_stages`. It also binds every transition to an exact
 state-effect map. Unknown, additional, missing, or alternate effect fields and
 values fail closed, so an otherwise valid transition cannot manufacture state
 on another scientific, candidate, forward, portfolio, deployment, or operational
-axis. An unknown transition, missing transition, or rewired auxiliary edge also
-requires an explicit policy-version, code, and test review.
+axis. Every transition also has an exact top-level schema composed of required
+fields and explicitly allowed optional fields; P1 currently declares no optional
+transition fields. Undeclared keys and missing required keys fail closed without
+interpreting their names. Transition-specific semantics bind `proposal_actors`,
+`source_actor`, `side_axis`, and campaign `scope` to their canonical values. An
+unknown transition, missing transition, or rewired auxiliary edge also requires
+an explicit policy-version, code, and test review.
 
 Ingress to `SHADOW`, `SMALL_LIVE`, and `LIVE` is independently protected:
 `AUTHORIZE_DEPLOYMENT`, `PROMOTE_SHADOW_TO_SMALL_LIVE`, and
