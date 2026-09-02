@@ -27,7 +27,7 @@ def test_canonical_operating_model_is_runnable_and_separate_from_methodology() -
     policy = load_operating_model()
 
     assert policy["schema"] == OPERATING_MODEL_SCHEMA
-    assert policy["policy_version"] == "2026-09-02.1"
+    assert policy["policy_version"] == "2026-09-02.2"
     assert policy["identity"]["identity_fields"] == [
         "schema",
         "policy_version",
@@ -212,6 +212,138 @@ def test_transition_without_side_axis_scope_cannot_add_applicable_stages() -> No
     _item(policy["transitions"], "RECORD_RESEARCH_LEAD")["applicable_stages"] = ["DISCOVERY"]
 
     with pytest.raises(OperatingModelError, match="cannot declare applicable_stages"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    ("transition_id", "effect_field", "effect_value"),
+    [
+        ("APPEND_FORWARD_OBSERVATION", "scientific_state_effect", "PASS"),
+        (
+            "APPEND_FORWARD_OBSERVATION",
+            "candidate_disposition_effect",
+            "APPROVED_CURRENT",
+        ),
+        (
+            "APPEND_FORWARD_OBSERVATION",
+            "deployment_state_effect",
+            "APPROVED_FOR_MANUAL_DEPLOYMENT",
+        ),
+        (
+            "ENTER_HISTORICAL_CANDIDATE_REVIEW",
+            "candidate_disposition_effect",
+            "APPROVED_CURRENT",
+        ),
+        ("MARK_FORWARD_ELIGIBLE_FOR_REVIEW", "forward_state_effect", "ACCEPTED"),
+        ("CREATE_PORTFOLIO_REVIEW", "portfolio_state_effect", "ACCEPTED"),
+        (
+            "ENTER_DEPLOYMENT_REVIEW",
+            "deployment_state_effect",
+            "APPROVED_FOR_MANUAL_DEPLOYMENT",
+        ),
+        (
+            "ASSESS_ACCOUNT_SUITABILITY",
+            "candidate_disposition_effect",
+            "APPROVED_CURRENT",
+        ),
+        ("ASSESS_ACCOUNT_SUITABILITY", "scientific_state_effect", "PASS"),
+        (
+            "RECORD_RESEARCH_LEAD",
+            "deployment_state_effect",
+            "APPROVED_FOR_MANUAL_DEPLOYMENT",
+        ),
+    ],
+)
+def test_latest_audit_cross_axis_effect_mutations_are_rejected(
+    transition_id: str,
+    effect_field: str,
+    effect_value: str,
+) -> None:
+    policy = _policy()
+    _item(policy["transitions"], transition_id)[effect_field] = effect_value
+
+    with pytest.raises(OperatingModelError, match="effect"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    ("transition_id", "effect_field", "wrong_value"),
+    [
+        ("ACCEPT_FORWARD_REVIEW", "forward_state_effect", "FAILED"),
+        ("REJECT_FORWARD_REVIEW", "forward_state_effect", "ACCEPTED"),
+        ("RECORD_PORTFOLIO_DISPOSITION", "portfolio_state_effect", "REJECTED"),
+        ("REJECT_PORTFOLIO_DISPOSITION", "portfolio_state_effect", "ACCEPTED"),
+        (
+            "APPROVE_HISTORICAL_CANDIDATE",
+            "candidate_disposition_effect",
+            "REJECTED",
+        ),
+        (
+            "REJECT_HISTORICAL_CANDIDATE",
+            "candidate_disposition_effect",
+            "APPROVED_CURRENT",
+        ),
+        ("SAFETY_PAUSE", "operational_state_effect", "HEALTHY"),
+        ("RETIRE_LIVE_INSTANCE", "operational_state_effect", "HEALTHY"),
+    ],
+)
+def test_canonical_effect_values_cannot_be_substituted(
+    transition_id: str,
+    effect_field: str,
+    wrong_value: str,
+) -> None:
+    policy = _policy()
+    _item(policy["transitions"], transition_id)[effect_field] = wrong_value
+
+    with pytest.raises(OperatingModelError, match="effect contract must remain exact"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    ("transition_id", "required_effect_field"),
+    [
+        ("ACCEPT_FORWARD_REVIEW", "forward_state_effect"),
+        ("RECORD_PORTFOLIO_DISPOSITION", "portfolio_state_effect"),
+        ("APPROVE_HISTORICAL_CANDIDATE", "candidate_disposition_effect"),
+        ("SAFETY_PAUSE", "operational_state_effect"),
+    ],
+)
+def test_required_canonical_effect_cannot_be_removed(
+    transition_id: str,
+    required_effect_field: str,
+) -> None:
+    policy = _policy()
+    del _item(policy["transitions"], transition_id)[required_effect_field]
+
+    with pytest.raises(OperatingModelError, match="effect contract must remain exact"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    ("transition_id", "effect_field", "effect_value"),
+    [
+        ("REJECT_HISTORICAL_CANDIDATE", "portfolio_state_effect", "ACCEPTED"),
+        (
+            "REJECT_PORTFOLIO_DISPOSITION",
+            "deployment_state_effect",
+            "APPROVED_FOR_MANUAL_DEPLOYMENT",
+        ),
+        ("DISCRETIONARILY_ABANDON_CAMPAIGN", "scientific_state_effect", "PASS"),
+        ("SAFETY_PAUSE", "candidate_disposition_effect", "APPROVED_CURRENT"),
+        ("RECORD_RESEARCH_LEAD", "forward_state_effect", "ACCEPTED"),
+        ("ASSESS_ACCOUNT_SUITABILITY", "portfolio_state_effect", "ACCEPTED"),
+        ("AUTHORIZE_DEPLOYMENT", "scientific_state_effect", "PASS"),
+    ],
+)
+def test_novel_cross_axis_effect_attacks_are_rejected(
+    transition_id: str,
+    effect_field: str,
+    effect_value: str,
+) -> None:
+    policy = _policy()
+    _item(policy["transitions"], transition_id)[effect_field] = effect_value
+
+    with pytest.raises(OperatingModelError, match="effect"):
         validate_operating_model(policy)
 
 
@@ -744,7 +876,7 @@ def test_screening_failure_terminates_only_bound_path() -> None:
     failure = _item(policy["transitions"], "RECORD_HISTORICAL_SCREENING_FAILURE")
     failure["campaign_effect"] = "EXHAUSTED"
 
-    with pytest.raises(OperatingModelError, match="cannot automatically exhaust"):
+    with pytest.raises(OperatingModelError, match="effect contract must remain exact"):
         validate_operating_model(policy)
 
 

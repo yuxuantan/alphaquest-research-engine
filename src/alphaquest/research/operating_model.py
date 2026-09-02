@@ -65,6 +65,7 @@ REQUIRED_INVARIANTS = {
     "RESEARCH_OBJECT_DEPENDENCIES_ARE_ACYCLIC",
     "RESEARCH_OBJECT_MUTABILITY_IS_CANONICAL_AND_SEPARATE_FROM_CURRENTNESS",
     "CANONICAL_TRANSITION_GRAPH_FAILS_CLOSED",
+    "CANONICAL_TRANSITION_EFFECT_CONTRACTS_FAIL_CLOSED",
     "PROTECTED_DEPLOYMENT_INGRESS_FAILS_CLOSED",
     "HISTORICAL_CANDIDATE_CANNOT_IMPLY_LIVE_AUTHORIZATION",
     "HISTORICAL_VERDICT_RECORDING_DOES_NOT_CREATE_CANDIDATE_STATUS",
@@ -231,12 +232,13 @@ REQUIRED_DEPLOYMENT_AXIS_STATES = {
 
 @dataclass(frozen=True)
 class TransitionContract:
-    """Constitutional identity, edge, and optional side-axis scope."""
+    """Constitutional identity, edge, side-axis scope, and exact state effects."""
 
     initiator: str
     from_stage: str
     to_stage: str
     applicable_stages: frozenset[str] | None = None
+    effects: tuple[tuple[str, str], ...] = ()
 
 
 LIVE_OPERATIONAL_STAGES = frozenset({"SHADOW", "SMALL_LIVE", "LIVE"})
@@ -283,13 +285,29 @@ CANONICAL_TRANSITION_CONTRACT = {
         "ALPHAQUEST_DETERMINISTIC_ENGINE", "HISTORICAL_SCREENING", "FULL_HISTORICAL_VALIDATION"
     ),
     "RECORD_HISTORICAL_SCREENING_FAILURE": TransitionContract(
-        "ALPHAQUEST_DETERMINISTIC_ENGINE", "HISTORICAL_SCREENING", "HISTORICAL_SCREENING"
+        "ALPHAQUEST_DETERMINISTIC_ENGINE",
+        "HISTORICAL_SCREENING",
+        "HISTORICAL_SCREENING",
+        effects=(
+            ("scientific_state_effect", "FAIL"),
+            ("lifecycle_effect", "terminate_bound_attempt_or_variant_path_only"),
+            ("campaign_effect", "no_automatic_exhaustion"),
+            ("candidate_effect", "prohibited"),
+        ),
     ),
     "OPEN_LOCKED_ACCEPTANCE_OOS": TransitionContract(
         "HUMAN_OWNER_RESEARCHER", "FULL_HISTORICAL_VALIDATION", "FULL_HISTORICAL_VALIDATION"
     ),
     "RECORD_HISTORICAL_VERDICT": TransitionContract(
-        "ALPHAQUEST_DETERMINISTIC_ENGINE", "FULL_HISTORICAL_VALIDATION", "FULL_HISTORICAL_VALIDATION"
+        "ALPHAQUEST_DETERMINISTIC_ENGINE",
+        "FULL_HISTORICAL_VALIDATION",
+        "FULL_HISTORICAL_VALIDATION",
+        effects=(
+            ("lifecycle_effect", "scientific_state_only_no_candidate_status"),
+            ("failure_lifecycle_effect", "terminate_bound_attempt_or_variant_path_only"),
+            ("campaign_effect", "no_automatic_exhaustion"),
+            ("candidate_effect", "prohibited_unless_scientific_PASS"),
+        ),
     ),
     "ENTER_HISTORICAL_CANDIDATE_REVIEW": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE",
@@ -297,13 +315,31 @@ CANONICAL_TRANSITION_CONTRACT = {
         "HISTORICAL_CANDIDATE_REVIEW",
     ),
     "APPROVE_HISTORICAL_CANDIDATE": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "HISTORICAL_CANDIDATE_REVIEW", "HISTORICAL_CANDIDATE_REVIEW"
+        "HUMAN_OWNER_RESEARCHER",
+        "HISTORICAL_CANDIDATE_REVIEW",
+        "HISTORICAL_CANDIDATE_REVIEW",
+        effects=(
+            ("candidate_disposition_effect", "APPROVED_CURRENT"),
+            ("lifecycle_disposition_effect", "ACTIVE"),
+        ),
     ),
     "REJECT_HISTORICAL_CANDIDATE": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "HISTORICAL_CANDIDATE_REVIEW", "HISTORICAL_CANDIDATE_REVIEW"
+        "HUMAN_OWNER_RESEARCHER",
+        "HISTORICAL_CANDIDATE_REVIEW",
+        "HISTORICAL_CANDIDATE_REVIEW",
+        effects=(
+            ("candidate_disposition_effect", "REJECTED"),
+            ("lifecycle_disposition_effect", "ACTIVE"),
+        ),
     ),
     "BLOCK_HISTORICAL_CANDIDATE_FOR_MANUAL_REVIEW": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "HISTORICAL_CANDIDATE_REVIEW", "HISTORICAL_CANDIDATE_REVIEW"
+        "HUMAN_OWNER_RESEARCHER",
+        "HISTORICAL_CANDIDATE_REVIEW",
+        "HISTORICAL_CANDIDATE_REVIEW",
+        effects=(
+            ("candidate_disposition_effect", "NEEDS_MANUAL_REVIEW"),
+            ("lifecycle_disposition_effect", "BLOCKED"),
+        ),
     ),
     "START_FORWARD_INCUBATION": TransitionContract(
         "HUMAN_OWNER_RESEARCHER", "HISTORICAL_CANDIDATE_REVIEW", "FORWARD_INCUBATION"
@@ -315,25 +351,49 @@ CANONICAL_TRANSITION_CONTRACT = {
         "ALPHAQUEST_DETERMINISTIC_ENGINE", "FORWARD_INCUBATION", "FORWARD_REVIEW"
     ),
     "ACCEPT_FORWARD_REVIEW": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "FORWARD_REVIEW", "PORTFOLIO_REVIEW"
+        "HUMAN_OWNER_RESEARCHER",
+        "FORWARD_REVIEW",
+        "PORTFOLIO_REVIEW",
+        effects=(("forward_state_effect", "ACCEPTED"),),
     ),
     "REJECT_FORWARD_REVIEW": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "FORWARD_REVIEW", "FORWARD_REVIEW"
+        "HUMAN_OWNER_RESEARCHER",
+        "FORWARD_REVIEW",
+        "FORWARD_REVIEW",
+        effects=(("forward_state_effect", "FAILED"),),
     ),
     "BLOCK_FORWARD_FOR_MANUAL_REVIEW": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "FORWARD_REVIEW", "FORWARD_REVIEW"
+        "HUMAN_OWNER_RESEARCHER",
+        "FORWARD_REVIEW",
+        "FORWARD_REVIEW",
+        effects=(
+            ("forward_state_effect", "NEEDS_MANUAL_REVIEW"),
+            ("lifecycle_disposition_effect", "BLOCKED"),
+        ),
     ),
     "CREATE_PORTFOLIO_REVIEW": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE", "PORTFOLIO_REVIEW", "PORTFOLIO_REVIEW"
     ),
     "RECORD_PORTFOLIO_DISPOSITION": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "PORTFOLIO_REVIEW", "ACCOUNT_SUITABILITY_REVIEW"
+        "HUMAN_OWNER_RESEARCHER",
+        "PORTFOLIO_REVIEW",
+        "ACCOUNT_SUITABILITY_REVIEW",
+        effects=(("portfolio_state_effect", "ACCEPTED"),),
     ),
     "REJECT_PORTFOLIO_DISPOSITION": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "PORTFOLIO_REVIEW", "PORTFOLIO_REVIEW"
+        "HUMAN_OWNER_RESEARCHER",
+        "PORTFOLIO_REVIEW",
+        "PORTFOLIO_REVIEW",
+        effects=(("portfolio_state_effect", "REJECTED"),),
     ),
     "BLOCK_PORTFOLIO_FOR_MANUAL_REVIEW": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "PORTFOLIO_REVIEW", "PORTFOLIO_REVIEW"
+        "HUMAN_OWNER_RESEARCHER",
+        "PORTFOLIO_REVIEW",
+        "PORTFOLIO_REVIEW",
+        effects=(
+            ("portfolio_state_effect", "NEEDS_MANUAL_REVIEW"),
+            ("lifecycle_disposition_effect", "BLOCKED"),
+        ),
     ),
     "ASSESS_ACCOUNT_SUITABILITY": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE",
@@ -354,25 +414,49 @@ CANONICAL_TRANSITION_CONTRACT = {
         "HUMAN_OWNER_RESEARCHER", "SMALL_LIVE", "LIVE"
     ),
     "APPEND_LIVE_MONITORING": TransitionContract(
-        "EXTERNAL_SYSTEM", "LIVE", "LIVE", LIVE_OPERATIONAL_STAGES
+        "EXTERNAL_SYSTEM",
+        "LIVE",
+        "LIVE",
+        LIVE_OPERATIONAL_STAGES,
+        effects=(
+            ("operational_state_effect", "HEALTHY_or_ALERT"),
+            ("scientific_state_effect", "none"),
+        ),
     ),
     "SAFETY_PAUSE": TransitionContract(
-        "ALPHAQUEST_DETERMINISTIC_ENGINE", "LIVE", "LIVE", LIVE_OPERATIONAL_STAGES
+        "ALPHAQUEST_DETERMINISTIC_ENGINE",
+        "LIVE",
+        "LIVE",
+        LIVE_OPERATIONAL_STAGES,
+        effects=(
+            ("operational_state_effect", "PAUSED"),
+            ("scientific_state_effect", "none"),
+        ),
     ),
     "RETIRE_LIVE_INSTANCE": TransitionContract(
-        "HUMAN_OWNER_RESEARCHER", "LIVE", "LIVE", LIVE_OPERATIONAL_STAGES
+        "HUMAN_OWNER_RESEARCHER",
+        "LIVE",
+        "LIVE",
+        LIVE_OPERATIONAL_STAGES,
+        effects=(
+            ("operational_state_effect", "STOPPED"),
+            ("lifecycle_disposition_effect", "RETIRED"),
+            ("scientific_state_effect", "none"),
+        ),
     ),
     "STOP_CAMPAIGN_ON_PREDECLARED_RULE": TransitionContract(
         "ALPHAQUEST_DETERMINISTIC_ENGINE",
         "HISTORICAL_SCREENING",
         "HISTORICAL_SCREENING",
         CAMPAIGN_RESEARCH_STAGES,
+        effects=(("lifecycle_effect", "set_disposition_EXHAUSTED_and_block_new_attempts"),),
     ),
     "DISCRETIONARILY_ABANDON_CAMPAIGN": TransitionContract(
         "HUMAN_OWNER_RESEARCHER",
         "FULL_HISTORICAL_VALIDATION",
         "FULL_HISTORICAL_VALIDATION",
         CAMPAIGN_RESEARCH_STAGES,
+        effects=(("lifecycle_effect", "set_disposition_ABANDONED_and_block_new_attempts"),),
     ),
     "ABANDON_EDGE_FAMILY": TransitionContract(
         "HUMAN_OWNER_RESEARCHER", "DISCOVERY", "DISCOVERY"
@@ -381,6 +465,11 @@ CANONICAL_TRANSITION_CONTRACT = {
         "HUMAN_OWNER_RESEARCHER", "DISCOVERY", "HYPOTHESIS_REVIEW"
     ),
 }
+CANONICAL_TRANSITION_EFFECT_FIELDS = frozenset(
+    field
+    for contract in CANONICAL_TRANSITION_CONTRACT.values()
+    for field, _value in contract.effects
+)
 EXPECTED_TRANSITION_INITIATORS = {
     transition_id: contract.initiator
     for transition_id, contract in CANONICAL_TRANSITION_CONTRACT.items()
@@ -840,6 +929,26 @@ def _require_canonical_transition_contract(
         elif set(transition.get("applicable_stages") or []) != contract.applicable_stages:
             raise OperatingModelError(
                 f"canonical transition {transition_id} applicable_stages must remain exact"
+            )
+        unknown_effect_fields = sorted(
+            field
+            for field in transition
+            if field.endswith("_effect") and field not in CANONICAL_TRANSITION_EFFECT_FIELDS
+        )
+        if unknown_effect_fields:
+            raise OperatingModelError(
+                f"canonical transition {transition_id} declares unknown state-effect fields: "
+                + ", ".join(unknown_effect_fields)
+            )
+        expected_effects = dict(contract.effects)
+        actual_effects = {
+            field: transition[field]
+            for field in CANONICAL_TRANSITION_EFFECT_FIELDS
+            if field in transition
+        }
+        if actual_effects != expected_effects:
+            raise OperatingModelError(
+                f"canonical transition {transition_id} effect contract must remain exact"
             )
 
 

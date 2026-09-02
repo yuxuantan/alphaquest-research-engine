@@ -2,7 +2,7 @@
 
 Status: canonical P1 policy
 
-Operating-model policy: `2026-09-02.1`
+Operating-model policy: `2026-09-02.2`
 
 Introduced against: P0 tag `engine-v0.1.0-p0`, engine contract
 `2026.08.14.1`, methodology `2026-08-14.2`
@@ -55,9 +55,12 @@ migration, and neither may satisfy canonical P2/P3 automation.
 
 For this policy version, the 36 transition IDs form an exact set. The validator
 binds every ID to its one canonical initiator, `from_stage`, `to_stage`, and—when
-present—exact `applicable_stages`. An unknown transition, missing transition, or
-rewired auxiliary edge fails closed and requires an explicit policy-version,
-code, and test review.
+present—exact `applicable_stages`. It also binds every transition to an exact
+state-effect map. Unknown, additional, missing, or alternate effect fields and
+values fail closed, so an otherwise valid transition cannot manufacture state
+on another scientific, candidate, forward, portfolio, deployment, or operational
+axis. An unknown transition, missing transition, or rewired auxiliary edge also
+requires an explicit policy-version, code, and test review.
 
 Ingress to `SHADOW`, `SMALL_LIVE`, and `LIVE` is independently protected:
 `AUTHORIZE_DEPLOYMENT`, `PROMOTE_SHADOW_TO_SMALL_LIVE`, and
