@@ -27,7 +27,7 @@ def test_canonical_operating_model_is_runnable_and_separate_from_methodology() -
     policy = load_operating_model()
 
     assert policy["schema"] == OPERATING_MODEL_SCHEMA
-    assert policy["policy_version"] == "2026-09-01.4"
+    assert policy["policy_version"] == "2026-09-02.1"
     assert policy["identity"]["identity_fields"] == [
         "schema",
         "policy_version",
@@ -105,7 +105,113 @@ def test_historical_candidate_cannot_directly_imply_live_authorization() -> None
     )
     policy["transitions"].append(shortcut)
 
-    with pytest.raises(OperatingModelError, match="shortcuts historical candidate"):
+    with pytest.raises(OperatingModelError, match="canonical transition set mismatch"):
+        validate_operating_model(policy)
+
+
+def test_unknown_codex_deployment_ingress_transition_is_rejected() -> None:
+    policy = _policy()
+    transition = deepcopy(_item(policy["transitions"], "RECORD_RESEARCH_LEAD"))
+    transition.update(
+        {
+            "id": "CODEX_DEPLOYMENT_REVIEW_TO_SHADOW",
+            "from_stage": "DEPLOYMENT_REVIEW",
+            "to_stage": "SHADOW",
+        }
+    )
+    policy["transitions"].append(transition)
+
+    with pytest.raises(OperatingModelError, match="canonical transition set mismatch"):
+        validate_operating_model(policy)
+
+
+def test_unknown_human_discovery_to_live_transition_is_rejected() -> None:
+    policy = _policy()
+    transition = deepcopy(_item(policy["transitions"], "ABANDON_EDGE_FAMILY"))
+    transition.update(
+        {
+            "id": "HUMAN_DISCOVERY_TO_LIVE",
+            "from_stage": "DISCOVERY",
+            "to_stage": "LIVE",
+        }
+    )
+    policy["transitions"].append(transition)
+
+    with pytest.raises(OperatingModelError, match="canonical transition set mismatch"):
+        validate_operating_model(policy)
+
+
+def test_unknown_codex_scientific_verdict_transition_is_rejected() -> None:
+    policy = _policy()
+    transition = deepcopy(_item(policy["transitions"], "RECORD_RESEARCH_LEAD"))
+    transition.update(
+        {
+            "id": "CODEX_RECORD_SCIENTIFIC_VERDICT",
+            "from_stage": "FULL_HISTORICAL_VALIDATION",
+            "to_stage": "FULL_HISTORICAL_VALIDATION",
+            "scientific_state_effect": "PASS",
+        }
+    )
+    policy["transitions"].append(transition)
+
+    with pytest.raises(OperatingModelError, match="canonical transition set mismatch"):
+        validate_operating_model(policy)
+
+
+def test_missing_canonical_transition_is_rejected() -> None:
+    policy = _policy()
+    policy["transitions"] = [
+        transition
+        for transition in policy["transitions"]
+        if transition["id"] != "RECORD_RESEARCH_LEAD"
+    ]
+
+    with pytest.raises(OperatingModelError, match="canonical transition set mismatch"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    "transition_id",
+    [
+        "RECORD_RESEARCH_LEAD",
+        "STOP_CAMPAIGN_ON_PREDECLARED_RULE",
+        "ABANDON_EDGE_FAMILY",
+        "REVISIT_FAILED_EDGE",
+        "APPEND_FORWARD_OBSERVATION",
+    ],
+)
+def test_second_audit_transition_rewires_are_rejected(transition_id: str) -> None:
+    policy = _policy()
+    _item(policy["transitions"], transition_id)["to_stage"] = "LIVE"
+
+    with pytest.raises(OperatingModelError, match=f"canonical transition {transition_id} must be"):
+        validate_operating_model(policy)
+
+
+@pytest.mark.parametrize(
+    "transition_id",
+    [
+        "ASSESS_ACCOUNT_SUITABILITY",
+        "APPEND_LIVE_MONITORING",
+        "SAFETY_PAUSE",
+        "RETIRE_LIVE_INSTANCE",
+        "STOP_CAMPAIGN_ON_PREDECLARED_RULE",
+        "DISCRETIONARILY_ABANDON_CAMPAIGN",
+    ],
+)
+def test_canonical_applicable_stage_scopes_are_exact(transition_id: str) -> None:
+    policy = _policy()
+    _item(policy["transitions"], transition_id)["applicable_stages"].pop()
+
+    with pytest.raises(OperatingModelError, match="applicable_stages must remain exact"):
+        validate_operating_model(policy)
+
+
+def test_transition_without_side_axis_scope_cannot_add_applicable_stages() -> None:
+    policy = _policy()
+    _item(policy["transitions"], "RECORD_RESEARCH_LEAD")["applicable_stages"] = ["DISCOVERY"]
+
+    with pytest.raises(OperatingModelError, match="cannot declare applicable_stages"):
         validate_operating_model(policy)
 
 
@@ -114,7 +220,7 @@ def test_recording_historical_verdict_does_not_enter_candidate_review() -> None:
     record = _item(policy["transitions"], "RECORD_HISTORICAL_VERDICT")
     record["to_stage"] = "HISTORICAL_CANDIDATE_REVIEW"
 
-    with pytest.raises(OperatingModelError, match="must remain in full historical validation"):
+    with pytest.raises(OperatingModelError, match="canonical transition RECORD_HISTORICAL_VERDICT"):
         validate_operating_model(policy)
 
 
@@ -549,12 +655,32 @@ def test_forward_observation_requires_hash_chain_validation() -> None:
         validate_operating_model(policy)
 
 
-def test_candidate_strategy_cannot_be_mutable_after_review() -> None:
+@pytest.mark.parametrize(
+    "object_id",
+    [
+        "OBSERVATION",
+        "HYPOTHESIS",
+        "EDGE_FAMILY",
+        "CAMPAIGN",
+        "STRATEGY_VARIANT",
+        "ATTEMPT",
+        "RUN",
+        "MECHANICS_APPROVAL",
+        "HISTORICAL_VALIDATION_RESULT",
+        "CANDIDATE_STRATEGY",
+        "FORWARD_INCUBATION_PLAN",
+        "FORWARD_OBSERVATION",
+        "PORTFOLIO_CANDIDATE",
+        "ACCOUNT_SUITABILITY_ASSESSMENT",
+        "DEPLOYMENT_PACKAGE",
+        "LIVE_STRATEGY_INSTANCE",
+    ],
+)
+def test_canonical_object_mutability_is_fail_closed(object_id: str) -> None:
     policy = _policy()
-    candidate = _item(policy["research_objects"], "CANDIDATE_STRATEGY")
-    candidate["mutability"] = "freely_mutable"
+    _item(policy["research_objects"], object_id)["mutability"] = "freely_mutable"
 
-    with pytest.raises(OperatingModelError, match="must be immutable after disposition"):
+    with pytest.raises(OperatingModelError, match=f"research object {object_id} mutability must remain"):
         validate_operating_model(policy)
 
 
@@ -627,5 +753,5 @@ def test_rejected_forward_review_cannot_advance() -> None:
     rejection = _item(policy["transitions"], "REJECT_FORWARD_REVIEW")
     rejection["to_stage"] = "PORTFOLIO_REVIEW"
 
-    with pytest.raises(OperatingModelError, match="unsafe lifecycle target"):
+    with pytest.raises(OperatingModelError, match="canonical transition REJECT_FORWARD_REVIEW"):
         validate_operating_model(policy)

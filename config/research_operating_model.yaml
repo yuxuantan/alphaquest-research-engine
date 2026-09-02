@@ -1,5 +1,5 @@
 schema: alphaquest.research-operating-model/v1
-policy_version: "2026-09-01.4"
+policy_version: "2026-09-02.1"
 status: canonical
 objective: >-
   Maximize the probability that an apparent historical edge survives unseen live
@@ -1891,6 +1891,12 @@ invariants:
     rule: Candidate creation has no account-suitability prerequisite and account assessment cannot create CANDIDATE_STRATEGY.
   - id: RESEARCH_OBJECT_DEPENDENCIES_ARE_ACYCLIC
     rule: Downstream research-object dependencies contain no cycle, including Candidate Strategy and Account Suitability.
+  - id: RESEARCH_OBJECT_MUTABILITY_IS_CANONICAL_AND_SEPARATE_FROM_CURRENTNESS
+    rule: Every canonical object has an exact mutability contract; staleness blocks current use without mutating immutable historical evidence.
+  - id: CANONICAL_TRANSITION_GRAPH_FAILS_CLOSED
+    rule: The transition ID set, every from/to edge, and every applicable-stage scope are exact for this policy version; additions require a new reviewed policy version.
+  - id: PROTECTED_DEPLOYMENT_INGRESS_FAILS_CLOSED
+    rule: Only AUTHORIZE_DEPLOYMENT, PROMOTE_SHADOW_TO_SMALL_LIVE, and PROMOTE_SMALL_LIVE_TO_LIVE may enter their respective protected stages; operational side-axis events are not ingress.
   - id: HISTORICAL_CANDIDATE_CANNOT_IMPLY_LIVE_AUTHORIZATION
     rule: No direct transition exists from HISTORICAL_CANDIDATE_REVIEW to SHADOW, SMALL_LIVE, or LIVE.
   - id: HISTORICAL_VERDICT_RECORDING_DOES_NOT_CREATE_CANDIDATE_STATUS

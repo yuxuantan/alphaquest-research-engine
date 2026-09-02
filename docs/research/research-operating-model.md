@@ -2,7 +2,7 @@
 
 Status: canonical P1 policy
 
-Operating-model policy: `2026-09-01.4`
+Operating-model policy: `2026-09-02.1`
 
 Introduced against: P0 tag `engine-v0.1.0-p0`, engine contract
 `2026.08.14.1`, methodology `2026-08-14.2`
@@ -50,6 +50,27 @@ automation. The machine policy records two verified candidate-review gaps:
 `APPROVE_HISTORICAL_CANDIDATE` is therefore `EXISTING_PARTIAL`. P1 does not
 delete those compatibility paths or rewrite prior evidence. Both require future
 migration, and neither may satisfy canonical P2/P3 automation.
+
+### Constitutional closure
+
+For this policy version, the 36 transition IDs form an exact set. The validator
+binds every ID to its one canonical initiator, `from_stage`, `to_stage`, and—when
+present—exact `applicable_stages`. An unknown transition, missing transition, or
+rewired auxiliary edge fails closed and requires an explicit policy-version,
+code, and test review.
+
+Ingress to `SHADOW`, `SMALL_LIVE`, and `LIVE` is independently protected:
+`AUTHORIZE_DEPLOYMENT`, `PROMOTE_SHADOW_TO_SMALL_LIVE`, and
+`PROMOTE_SMALL_LIVE_TO_LIVE` are the only lifecycle ingress transitions.
+Monitoring append, safety pause, and retirement remain operational side-axis
+events applicable while an instance is shadow, small-live, or live; their
+canonical `LIVE -> LIVE` representation never grants lifecycle promotion.
+
+All 16 research objects likewise have exact mutability contracts. An immutable
+approval, result, candidate review, assessment, or deployment decision remains
+immutable historical evidence when its binding later becomes stale. Currentness
+is recomputed on `EVIDENCE_CURRENTNESS` and related decision axes; it blocks
+current use or requires a new downstream object, never mutation of the old one.
 
 ## Existing-state audit and terminology normalization
 

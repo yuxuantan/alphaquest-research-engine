@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -62,6 +63,9 @@ REQUIRED_INVARIANTS = {
     "ACCOUNT_SUITABILITY_CANNOT_CREATE_SCIENTIFIC_VALIDITY",
     "ACCOUNT_SUITABILITY_CANNOT_CREATE_CANDIDATE_STATUS",
     "RESEARCH_OBJECT_DEPENDENCIES_ARE_ACYCLIC",
+    "RESEARCH_OBJECT_MUTABILITY_IS_CANONICAL_AND_SEPARATE_FROM_CURRENTNESS",
+    "CANONICAL_TRANSITION_GRAPH_FAILS_CLOSED",
+    "PROTECTED_DEPLOYMENT_INGRESS_FAILS_CLOSED",
     "HISTORICAL_CANDIDATE_CANNOT_IMPLY_LIVE_AUTHORIZATION",
     "HISTORICAL_VERDICT_RECORDING_DOES_NOT_CREATE_CANDIDATE_STATUS",
     "HISTORICAL_FAIL_CANNOT_ENTER_CANDIDATE_REVIEW",
@@ -223,43 +227,186 @@ REQUIRED_DEPLOYMENT_AXIS_STATES = {
     "IMPLEMENTATION_STATE": "CERTIFIED_CURRENT",
     "EVIDENCE_CURRENTNESS": "CURRENT",
 }
+
+
+@dataclass(frozen=True)
+class TransitionContract:
+    """Constitutional identity, edge, and optional side-axis scope."""
+
+    initiator: str
+    from_stage: str
+    to_stage: str
+    applicable_stages: frozenset[str] | None = None
+
+
+LIVE_OPERATIONAL_STAGES = frozenset({"SHADOW", "SMALL_LIVE", "LIVE"})
+OPERATIONAL_SIDE_AXIS_TRANSITIONS = frozenset(
+    {"APPEND_LIVE_MONITORING", "SAFETY_PAUSE", "RETIRE_LIVE_INSTANCE"}
+)
+CAMPAIGN_RESEARCH_STAGES = frozenset(
+    {
+        "APPROVED_FOR_IMPLEMENTATION",
+        "IMPLEMENTATION",
+        "MECHANICS_CAUSAL_REVIEW",
+        "HISTORICAL_SCREENING",
+        "FULL_HISTORICAL_VALIDATION",
+    }
+)
+ACCOUNT_ASSESSMENT_STAGES = frozenset(
+    {
+        "HISTORICAL_CANDIDATE_REVIEW",
+        "FORWARD_INCUBATION",
+        "FORWARD_REVIEW",
+        "PORTFOLIO_REVIEW",
+        "ACCOUNT_SUITABILITY_REVIEW",
+        "DEPLOYMENT_REVIEW",
+    }
+)
+CANONICAL_TRANSITION_CONTRACT = {
+    "RECORD_RESEARCH_LEAD": TransitionContract("CODEX", "DISCOVERY", "DISCOVERY"),
+    "PROPOSE_HYPOTHESIS_FOR_REVIEW": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE", "DISCOVERY", "HYPOTHESIS_REVIEW"
+    ),
+    "ADMIT_HYPOTHESIS_FOR_IMPLEMENTATION": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "HYPOTHESIS_REVIEW", "APPROVED_FOR_IMPLEMENTATION"
+    ),
+    "START_IMPLEMENTATION": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "APPROVED_FOR_IMPLEMENTATION", "IMPLEMENTATION"
+    ),
+    "SUBMIT_MECHANICS_FOR_REVIEW": TransitionContract(
+        "CODEX", "IMPLEMENTATION", "MECHANICS_CAUSAL_REVIEW"
+    ),
+    "APPROVE_MECHANICAL_INTERPRETATION": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "MECHANICS_CAUSAL_REVIEW", "HISTORICAL_SCREENING"
+    ),
+    "RUN_HISTORICAL_SCREENING": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE", "HISTORICAL_SCREENING", "FULL_HISTORICAL_VALIDATION"
+    ),
+    "RECORD_HISTORICAL_SCREENING_FAILURE": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE", "HISTORICAL_SCREENING", "HISTORICAL_SCREENING"
+    ),
+    "OPEN_LOCKED_ACCEPTANCE_OOS": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "FULL_HISTORICAL_VALIDATION", "FULL_HISTORICAL_VALIDATION"
+    ),
+    "RECORD_HISTORICAL_VERDICT": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE", "FULL_HISTORICAL_VALIDATION", "FULL_HISTORICAL_VALIDATION"
+    ),
+    "ENTER_HISTORICAL_CANDIDATE_REVIEW": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE",
+        "FULL_HISTORICAL_VALIDATION",
+        "HISTORICAL_CANDIDATE_REVIEW",
+    ),
+    "APPROVE_HISTORICAL_CANDIDATE": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "HISTORICAL_CANDIDATE_REVIEW", "HISTORICAL_CANDIDATE_REVIEW"
+    ),
+    "REJECT_HISTORICAL_CANDIDATE": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "HISTORICAL_CANDIDATE_REVIEW", "HISTORICAL_CANDIDATE_REVIEW"
+    ),
+    "BLOCK_HISTORICAL_CANDIDATE_FOR_MANUAL_REVIEW": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "HISTORICAL_CANDIDATE_REVIEW", "HISTORICAL_CANDIDATE_REVIEW"
+    ),
+    "START_FORWARD_INCUBATION": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "HISTORICAL_CANDIDATE_REVIEW", "FORWARD_INCUBATION"
+    ),
+    "APPEND_FORWARD_OBSERVATION": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE", "FORWARD_INCUBATION", "FORWARD_INCUBATION"
+    ),
+    "MARK_FORWARD_ELIGIBLE_FOR_REVIEW": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE", "FORWARD_INCUBATION", "FORWARD_REVIEW"
+    ),
+    "ACCEPT_FORWARD_REVIEW": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "FORWARD_REVIEW", "PORTFOLIO_REVIEW"
+    ),
+    "REJECT_FORWARD_REVIEW": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "FORWARD_REVIEW", "FORWARD_REVIEW"
+    ),
+    "BLOCK_FORWARD_FOR_MANUAL_REVIEW": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "FORWARD_REVIEW", "FORWARD_REVIEW"
+    ),
+    "CREATE_PORTFOLIO_REVIEW": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE", "PORTFOLIO_REVIEW", "PORTFOLIO_REVIEW"
+    ),
+    "RECORD_PORTFOLIO_DISPOSITION": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "PORTFOLIO_REVIEW", "ACCOUNT_SUITABILITY_REVIEW"
+    ),
+    "REJECT_PORTFOLIO_DISPOSITION": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "PORTFOLIO_REVIEW", "PORTFOLIO_REVIEW"
+    ),
+    "BLOCK_PORTFOLIO_FOR_MANUAL_REVIEW": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "PORTFOLIO_REVIEW", "PORTFOLIO_REVIEW"
+    ),
+    "ASSESS_ACCOUNT_SUITABILITY": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE",
+        "ACCOUNT_SUITABILITY_REVIEW",
+        "ACCOUNT_SUITABILITY_REVIEW",
+        ACCOUNT_ASSESSMENT_STAGES,
+    ),
+    "ENTER_DEPLOYMENT_REVIEW": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE", "ACCOUNT_SUITABILITY_REVIEW", "DEPLOYMENT_REVIEW"
+    ),
+    "AUTHORIZE_DEPLOYMENT": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "DEPLOYMENT_REVIEW", "SHADOW"
+    ),
+    "PROMOTE_SHADOW_TO_SMALL_LIVE": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "SHADOW", "SMALL_LIVE"
+    ),
+    "PROMOTE_SMALL_LIVE_TO_LIVE": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "SMALL_LIVE", "LIVE"
+    ),
+    "APPEND_LIVE_MONITORING": TransitionContract(
+        "EXTERNAL_SYSTEM", "LIVE", "LIVE", LIVE_OPERATIONAL_STAGES
+    ),
+    "SAFETY_PAUSE": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE", "LIVE", "LIVE", LIVE_OPERATIONAL_STAGES
+    ),
+    "RETIRE_LIVE_INSTANCE": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "LIVE", "LIVE", LIVE_OPERATIONAL_STAGES
+    ),
+    "STOP_CAMPAIGN_ON_PREDECLARED_RULE": TransitionContract(
+        "ALPHAQUEST_DETERMINISTIC_ENGINE",
+        "HISTORICAL_SCREENING",
+        "HISTORICAL_SCREENING",
+        CAMPAIGN_RESEARCH_STAGES,
+    ),
+    "DISCRETIONARILY_ABANDON_CAMPAIGN": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER",
+        "FULL_HISTORICAL_VALIDATION",
+        "FULL_HISTORICAL_VALIDATION",
+        CAMPAIGN_RESEARCH_STAGES,
+    ),
+    "ABANDON_EDGE_FAMILY": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "DISCOVERY", "DISCOVERY"
+    ),
+    "REVISIT_FAILED_EDGE": TransitionContract(
+        "HUMAN_OWNER_RESEARCHER", "DISCOVERY", "HYPOTHESIS_REVIEW"
+    ),
+}
 EXPECTED_TRANSITION_INITIATORS = {
-    "RECORD_RESEARCH_LEAD": "CODEX",
-    "PROPOSE_HYPOTHESIS_FOR_REVIEW": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "ADMIT_HYPOTHESIS_FOR_IMPLEMENTATION": "HUMAN_OWNER_RESEARCHER",
-    "START_IMPLEMENTATION": "HUMAN_OWNER_RESEARCHER",
-    "SUBMIT_MECHANICS_FOR_REVIEW": "CODEX",
-    "APPROVE_MECHANICAL_INTERPRETATION": "HUMAN_OWNER_RESEARCHER",
-    "RUN_HISTORICAL_SCREENING": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "RECORD_HISTORICAL_SCREENING_FAILURE": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "OPEN_LOCKED_ACCEPTANCE_OOS": "HUMAN_OWNER_RESEARCHER",
-    "RECORD_HISTORICAL_VERDICT": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "ENTER_HISTORICAL_CANDIDATE_REVIEW": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "APPROVE_HISTORICAL_CANDIDATE": "HUMAN_OWNER_RESEARCHER",
-    "REJECT_HISTORICAL_CANDIDATE": "HUMAN_OWNER_RESEARCHER",
-    "BLOCK_HISTORICAL_CANDIDATE_FOR_MANUAL_REVIEW": "HUMAN_OWNER_RESEARCHER",
-    "START_FORWARD_INCUBATION": "HUMAN_OWNER_RESEARCHER",
-    "APPEND_FORWARD_OBSERVATION": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "MARK_FORWARD_ELIGIBLE_FOR_REVIEW": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "ACCEPT_FORWARD_REVIEW": "HUMAN_OWNER_RESEARCHER",
-    "REJECT_FORWARD_REVIEW": "HUMAN_OWNER_RESEARCHER",
-    "BLOCK_FORWARD_FOR_MANUAL_REVIEW": "HUMAN_OWNER_RESEARCHER",
-    "CREATE_PORTFOLIO_REVIEW": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "RECORD_PORTFOLIO_DISPOSITION": "HUMAN_OWNER_RESEARCHER",
-    "REJECT_PORTFOLIO_DISPOSITION": "HUMAN_OWNER_RESEARCHER",
-    "BLOCK_PORTFOLIO_FOR_MANUAL_REVIEW": "HUMAN_OWNER_RESEARCHER",
-    "ASSESS_ACCOUNT_SUITABILITY": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "ENTER_DEPLOYMENT_REVIEW": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "AUTHORIZE_DEPLOYMENT": "HUMAN_OWNER_RESEARCHER",
-    "PROMOTE_SHADOW_TO_SMALL_LIVE": "HUMAN_OWNER_RESEARCHER",
-    "PROMOTE_SMALL_LIVE_TO_LIVE": "HUMAN_OWNER_RESEARCHER",
-    "APPEND_LIVE_MONITORING": "EXTERNAL_SYSTEM",
-    "SAFETY_PAUSE": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "RETIRE_LIVE_INSTANCE": "HUMAN_OWNER_RESEARCHER",
-    "STOP_CAMPAIGN_ON_PREDECLARED_RULE": "ALPHAQUEST_DETERMINISTIC_ENGINE",
-    "DISCRETIONARILY_ABANDON_CAMPAIGN": "HUMAN_OWNER_RESEARCHER",
-    "ABANDON_EDGE_FAMILY": "HUMAN_OWNER_RESEARCHER",
-    "REVISIT_FAILED_EDGE": "HUMAN_OWNER_RESEARCHER",
+    transition_id: contract.initiator
+    for transition_id, contract in CANONICAL_TRANSITION_CONTRACT.items()
+}
+CANONICAL_OBJECT_MUTABILITY = {
+    "OBSERVATION": "append_only_until_promoted_then_frozen",
+    "HYPOTHESIS": "proposal_mutable_accepted_artifact_immutable",
+    "EDGE_FAMILY": "append_only_lineage_and_disposition",
+    "CAMPAIGN": "append_only_variants_attempts_and_disposition",
+    "STRATEGY_VARIANT": "frozen_after_publication",
+    "ATTEMPT": "pending_until_execution_then_immutable",
+    "RUN": "immutable_after_completion",
+    "MECHANICS_APPROVAL": "immutable_and_hash_bound",
+    "HISTORICAL_VALIDATION_RESULT": "immutable",
+    "CANDIDATE_STRATEGY": "immutable_review_with_currentness_recomputed",
+    "FORWARD_INCUBATION_PLAN": "immutable_plan_append_only_events",
+    "FORWARD_OBSERVATION": "append_only",
+    "PORTFOLIO_CANDIDATE": "immutable_binding_to_current_candidate_and_forward_evidence",
+    "ACCOUNT_SUITABILITY_ASSESSMENT": "immutable",
+    "DEPLOYMENT_PACKAGE": "immutable_decision_new_package_for_change",
+    "LIVE_STRATEGY_INSTANCE": "append_only_operations_new_package_for_semantic_or_risk_change",
+}
+PROTECTED_DEPLOYMENT_INGRESS = {
+    "SHADOW": "AUTHORIZE_DEPLOYMENT",
+    "SMALL_LIVE": "PROMOTE_SHADOW_TO_SMALL_LIVE",
+    "LIVE": "PROMOTE_SMALL_LIVE_TO_LIVE",
 }
 
 
@@ -367,10 +514,8 @@ def validate_operating_model(policy: Mapping[str, Any]) -> None:
         ):
             if field not in item:
                 raise OperatingModelError(f"research object {object_id} is missing {field}")
+    _require_object_mutability_contract(objects)
     _require_acyclic_object_dependencies(objects)
-    candidate_object = _mapping(objects.get("CANDIDATE_STRATEGY"), "CANDIDATE_STRATEGY")
-    if candidate_object.get("mutability") != "immutable_review_with_currentness_recomputed":
-        raise OperatingModelError("Candidate Strategy review must be immutable after disposition")
 
     axes = _mapping(document.get("state_axes"), "state_axes")
     if set(axes) != REQUIRED_STATE_AXES:
@@ -386,11 +531,13 @@ def validate_operating_model(policy: Mapping[str, Any]) -> None:
     transitions = _indexed(document.get("transitions"), "transitions")
     for transition_id, transition in transitions.items():
         _validate_transition(transition_id, transition, actors, lifecycle_stages)
+    _require_canonical_transition_contract(transitions)
     _require_transition_authority(transitions)
     _require_lifecycle_connectivity(transitions, lifecycle_stages)
     _require_review_disposition_paths(transitions)
     _require_scientific_failure_paths(transitions)
     _require_deployment_authority(transitions)
+    _require_protected_deployment_ingress(transitions)
     _require_exact_deployment_prerequisites(transitions, axes)
     _require_no_historical_candidate_shortcut(transitions)
     _require_historical_verdict_boundary(
@@ -514,6 +661,20 @@ def _require_state_axis_separation(axes: Mapping[str, Any]) -> None:
         raise OperatingModelError("monitoring must be represented only by OPERATIONAL_STATE")
     if "ACCEPTED" not in forward:
         raise OperatingModelError("forward state must represent accepted human review explicitly")
+
+
+def _require_object_mutability_contract(
+    objects: Mapping[str, Mapping[str, Any]],
+) -> None:
+    if set(objects) != set(CANONICAL_OBJECT_MUTABILITY):
+        raise OperatingModelError("canonical research-object mutability set is incomplete")
+    for object_id, expected_mutability in CANONICAL_OBJECT_MUTABILITY.items():
+        actual_mutability = objects[object_id].get("mutability")
+        if actual_mutability != expected_mutability:
+            raise OperatingModelError(
+                f"research object {object_id} mutability must remain "
+                f"{expected_mutability!r}; immutable history and currentness are separate"
+            )
 
 
 def _require_acyclic_object_dependencies(
@@ -644,16 +805,51 @@ def _validate_transition(
         )
 
 
+def _require_canonical_transition_contract(
+    transitions: Mapping[str, Mapping[str, Any]],
+) -> None:
+    actual_ids = set(transitions)
+    canonical_ids = set(CANONICAL_TRANSITION_CONTRACT)
+    if actual_ids != canonical_ids:
+        missing = sorted(canonical_ids - actual_ids)
+        unknown = sorted(actual_ids - canonical_ids)
+        details = []
+        if missing:
+            details.append("missing=" + ",".join(missing))
+        if unknown:
+            details.append("unknown=" + ",".join(unknown))
+        raise OperatingModelError(
+            "canonical transition set mismatch: " + "; ".join(details)
+        )
+
+    for transition_id, contract in CANONICAL_TRANSITION_CONTRACT.items():
+        transition = transitions[transition_id]
+        actual_edge = (transition.get("from_stage"), transition.get("to_stage"))
+        expected_edge = (contract.from_stage, contract.to_stage)
+        if actual_edge != expected_edge:
+            raise OperatingModelError(
+                f"canonical transition {transition_id} must be "
+                f"{contract.from_stage} -> {contract.to_stage}"
+            )
+        has_applicable_stages = "applicable_stages" in transition
+        if contract.applicable_stages is None:
+            if has_applicable_stages:
+                raise OperatingModelError(
+                    f"canonical transition {transition_id} cannot declare applicable_stages"
+                )
+        elif set(transition.get("applicable_stages") or []) != contract.applicable_stages:
+            raise OperatingModelError(
+                f"canonical transition {transition_id} applicable_stages must remain exact"
+            )
+
+
 def _require_transition_authority(
     transitions: Mapping[str, Mapping[str, Any]],
 ) -> None:
-    missing = sorted(set(EXPECTED_TRANSITION_INITIATORS) - set(transitions))
-    if missing:
-        raise OperatingModelError("canonical transitions are missing: " + ", ".join(missing))
     for transition_id, transition in transitions.items():
         initiator = transition.get("initiator")
-        expected_initiator = EXPECTED_TRANSITION_INITIATORS.get(transition_id)
-        if expected_initiator is not None and initiator != expected_initiator:
+        expected_initiator = EXPECTED_TRANSITION_INITIATORS[transition_id]
+        if initiator != expected_initiator:
             raise OperatingModelError(
                 f"transition {transition_id} must remain owned by "
                 f"{expected_initiator}"
@@ -873,6 +1069,34 @@ def _require_deployment_authority(transitions: Mapping[str, Mapping[str, Any]]) 
             raise OperatingModelError(f"Codex must be prohibited from {transition_id}")
         if transition.get("alphaquest_automatic") is not False:
             raise OperatingModelError(f"{transition_id} cannot be automatic")
+
+
+def _require_protected_deployment_ingress(
+    transitions: Mapping[str, Mapping[str, Any]],
+) -> None:
+    for transition_id, transition in transitions.items():
+        destination = transition.get("to_stage")
+        if destination not in PROTECTED_DEPLOYMENT_INGRESS:
+            continue
+        if transition_id in OPERATIONAL_SIDE_AXIS_TRANSITIONS:
+            if (
+                transition.get("from_stage") != "LIVE"
+                or transition.get("to_stage") != "LIVE"
+                or set(transition.get("applicable_stages") or []) != LIVE_OPERATIONAL_STAGES
+            ):
+                raise OperatingModelError(
+                    f"operational side-axis transition {transition_id} cannot create live ingress"
+                )
+            continue
+        authorized_transition = PROTECTED_DEPLOYMENT_INGRESS[destination]
+        if transition_id != authorized_transition:
+            raise OperatingModelError(
+                f"only {authorized_transition} may enter protected stage {destination}"
+            )
+        if transition.get("initiator") != "HUMAN_OWNER_RESEARCHER":
+            raise OperatingModelError(
+                f"protected stage {destination} requires human-owned ingress"
+            )
 
 
 def _require_exact_deployment_prerequisites(
