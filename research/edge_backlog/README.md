@@ -10,7 +10,10 @@ research discovery records. Canonical JSON is stored under:
 
 Files are append-only and hash-bound. Do not hand-edit, replace, or delete them.
 Use `alphaquest edge-backlog` so closed schemas, actor classes, revision chains,
-references, and duplicate snapshots are validated before an exclusive write.
+references, duplicate snapshots, lifecycle intervals, and causal chronology are
+validated inside the cross-process backlog transaction before an exclusive
+write. The lock itself lives in derived runtime storage, not in this canonical
+directory.
 
 The backlog is not a strategy list and cannot create a scientific verdict,
 admit a hypothesis, create an edge family or campaign, promote a candidate, or

@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 from pathlib import Path
-import re
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal, Mapping
 
@@ -15,19 +14,20 @@ from pydantic import Field, model_validator
 import yaml
 
 from alphaquest.research.edge_backlog import (
+    HISTORY_INDEX_SCHEMA,
+    HistoricalEdgeIndexRecordV1,
     Sha256,
     StrictBacklogModel,
+    backlog_file_lock,
     canonical_json_bytes,
+    load_historical_edge_index_records,
     record_sha256,
 )
 from alphaquest.research.storage import StorageLayout, campaign_definition_paths, display_path, load_storage_layout
 
 
-HISTORY_INDEX_SCHEMA = "alphaquest.edge-backlog-history-index-record/v1"
-
-
-class HistoricalEdgeIndexRecordV1(StrictBacklogModel):
-    """One provenance-preserving projection from an existing historical source."""
+class HistoricalEdgeIndexPriorV1(StrictBacklogModel):
+    """Exact validator for the only released pre-remediation derived row format."""
 
     schema_name: Literal[HISTORY_INDEX_SCHEMA] = Field(
         default=HISTORY_INDEX_SCHEMA,
@@ -44,10 +44,8 @@ class HistoricalEdgeIndexRecordV1(StrictBacklogModel):
     source_path: str = Field(min_length=1)
     source_sha256: Sha256
     source_row_number: int | None = Field(default=None, ge=1)
-    source_generation: Literal["CURRENT", "CONFIGURED_ARCHIVE", "CLEAN_SLATE_ARCHIVE"]
     archive_generation: str = Field(min_length=1)
-    p1_evidence_eligibility: Literal["NOT_CURRENT_P1_EVIDENCE"]
-    derived_index_use: Literal["DUPLICATE_RECALL_ONLY"]
+    evidence_eligibility: Literal["CURRENT_SCOPE", "HISTORICAL_INELIGIBLE"]
     campaign_id: str | None = None
     variant_id: str | None = None
     attempt_id: str | None = None
@@ -68,13 +66,38 @@ class HistoricalEdgeIndexRecordV1(StrictBacklogModel):
     raw_disposition: str | None = None
     raw_failure_reason: str | None = None
     extraction_completeness: Literal["COMPLETE", "PARTIAL", "INSUFFICIENT"]
-    semantic_resolution: Literal["NEEDS_MANUAL_REVIEW"]
+    semantic_resolution: Literal["LEGACY_CANDIDATE", "NEEDS_MANUAL_REVIEW"]
     record_sha256: Sha256
 
     @model_validator(mode="after")
-    def validate_hash(self) -> "HistoricalEdgeIndexRecordV1":
+    def validate_provenance_and_hash(self) -> "HistoricalEdgeIndexPriorV1":
+        path = Path(self.source_path)
+        if path.is_absolute() or ".." in path.parts or not self.source_path.strip():
+            raise ValueError("prior historical source_path must be project-relative")
+        row_kinds = {"RESEARCH_LEDGER_ROW", "EXPERIMENT_REGISTRY_EVENT"}
+        if (self.source_kind in row_kinds) != (self.source_row_number is not None):
+            raise ValueError("prior historical source_row_number does not match source_kind")
+        expected_eligibility = (
+            "CURRENT_SCOPE" if self.archive_generation == "CURRENT" else "HISTORICAL_INELIGIBLE"
+        )
+        if self.evidence_eligibility != expected_eligibility:
+            raise ValueError("prior evidence_eligibility does not match archive provenance")
+        expected_resolution = (
+            "LEGACY_CANDIDATE" if self.extraction_completeness == "COMPLETE" else "NEEDS_MANUAL_REVIEW"
+        )
+        if self.semantic_resolution != expected_resolution:
+            raise ValueError("prior semantic_resolution does not match extraction completeness")
+        identity = {
+            "source_kind": self.source_kind,
+            "source_path": self.source_path,
+            "source_sha256": self.source_sha256,
+            "source_row_number": self.source_row_number,
+        }
+        expected_id = "history." + hashlib.sha256(canonical_json_bytes(identity)).hexdigest()[:24]
+        if self.record_id != expected_id:
+            raise ValueError("prior historical record_id does not match source provenance")
         if self.record_sha256 != record_sha256(self.model_dump(mode="json", by_alias=True)):
-            raise ValueError("historical index record_sha256 mismatch")
+            raise ValueError("prior historical index record_sha256 mismatch")
         return self
 
 
@@ -105,8 +128,6 @@ def build_historical_edge_index(
     source_paths = {*definitions, *ledger_paths, *experiment_paths, *reset_paths}
     if output.resolve() in {path.resolve() for path in source_paths}:
         raise ValueError("derived history index target cannot replace a bootstrap source file")
-    _assert_replaceable_derived_index(output)
-
     for path in sorted(definitions):
         record = _campaign_record(root, path, layout)
         if record is not None:
@@ -132,7 +153,10 @@ def build_historical_edge_index(
         )
     )
     data = b"".join(canonical_json_bytes(item) + b"\n" for item in records)
-    _atomic_replace(output, data)
+    lock_path = layout.studio_runtime_root / "edge-backlog.lock"
+    with backlog_file_lock(lock_path, exclusive=True):
+        _assert_replaceable_derived_index(output)
+        _atomic_replace(output, data)
     counts: dict[str, int] = {}
     for record in records:
         counts[record.source_kind] = counts.get(record.source_kind, 0) + 1
@@ -156,24 +180,7 @@ def build_historical_edge_index(
 
 def validate_historical_edge_index(path: str | Path) -> dict[str, Any]:
     source = Path(path)
-    if not source.is_file():
-        raise FileNotFoundError(f"historical edge index not found: {source}")
-    records = []
-    previous_key: tuple[str, int, str, str] | None = None
-    for line_number, line in enumerate(source.read_text(encoding="utf-8").splitlines(), start=1):
-        if not line.strip():
-            raise ValueError(f"blank historical index line at {line_number}")
-        record = HistoricalEdgeIndexRecordV1.model_validate_json(line)
-        key = (
-            record.source_path,
-            record.source_row_number or 0,
-            record.source_kind,
-            record.record_id,
-        )
-        if previous_key is not None and key < previous_key:
-            raise ValueError("historical edge index is not deterministically sorted")
-        records.append(record)
-        previous_key = key
+    records = load_historical_edge_index_records(source)
     return {
         "schema": "alphaquest.edge-backlog-history-index-validation/v1",
         "status": "PASS",
@@ -458,32 +465,43 @@ def _assert_replaceable_derived_index(path: Path) -> None:
     try:
         validate_historical_edge_index(path)
     except (OSError, ValueError) as exc:
-        if _is_hash_valid_prior_derived_index(path):
+        if _is_valid_prior_history_index_v1(path):
             return
         raise ValueError(
             "existing derived history index target is not a valid derived index and will not be replaced"
         ) from exc
 
 
-def _is_hash_valid_prior_derived_index(path: Path) -> bool:
+def _is_valid_prior_history_index_v1(path: Path) -> bool:
     try:
-        lines = path.read_text(encoding="utf-8").splitlines()
+        data = path.read_bytes()
     except OSError:
         return False
-    if not lines:
+    if not data or not data.endswith(b"\n"):
         return False
-    for line in lines:
+    seen_ids: set[str] = set()
+    previous_key: tuple[str, int, str, str] | None = None
+    for raw_line in data.splitlines():
+        if not raw_line:
+            return False
         try:
-            record = json.loads(line)
-        except json.JSONDecodeError:
+            record = HistoricalEdgeIndexPriorV1.model_validate_json(raw_line)
+        except ValueError:
             return False
-        if not isinstance(record, dict) or record.get("schema") != HISTORY_INDEX_SCHEMA:
+        if raw_line != canonical_json_bytes(record):
             return False
-        if not re.fullmatch(r"history\.[a-f0-9]{24}", str(record.get("record_id") or "")):
+        if record.record_id in seen_ids:
             return False
-        stored_hash = str(record.get("record_sha256") or "")
-        if len(stored_hash) != 64 or record_sha256(record) != stored_hash:
+        key = (
+            record.source_path,
+            record.source_row_number or 0,
+            record.source_kind,
+            record.record_id,
+        )
+        if previous_key is not None and key <= previous_key:
             return False
+        seen_ids.add(record.record_id)
+        previous_key = key
     return True
 
 

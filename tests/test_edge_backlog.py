@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timedelta, timezone
+import hashlib
 import inspect
 import json
+import multiprocessing
 from pathlib import Path
 
 import pytest
@@ -15,6 +17,7 @@ from alphaquest.research.edge_backlog import (
     EdgeBacklogDecisionV1,
     EdgeBacklogEntryRevisionV1,
     EdgeBacklogIntegrityError,
+    EdgeBacklogLinkV1,
     EdgeBacklogStore,
     EvidenceReferenceV1,
     ObservationRevisionV1,
@@ -159,6 +162,56 @@ def _forge_duplicate_decision(store: EdgeBacklogStore, source_id: str, target_id
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(canonical_json_bytes(record) + b"\n")
     return path
+
+
+def _locked_process_action(
+    project_root: str,
+    barrier,
+    results,
+    action: str,
+    arguments: dict,
+) -> None:
+    """Run one mutation only after holding the real cross-process lock."""
+
+    store = EdgeBacklogStore(project_root)
+    try:
+        with store._transaction(exclusive=True):
+            barrier.wait(timeout=20)
+            if action == "revise_entry":
+                record = store.revise_entry(**arguments)
+            elif action == "record_decision":
+                record = store.record_human_decision(**arguments)
+            elif action == "record_proposal_link":
+                record = store.record_hypothesis_proposal_link(**arguments)
+            else:  # pragma: no cover - fixture misuse guard
+                raise AssertionError(f"unsupported concurrent action: {action}")
+        results.put(("PASS", record.record_sha256))
+    except Exception as exc:  # pragma: no cover - surfaced in the parent assertion
+        results.put(("ERROR", f"{type(exc).__name__}: {exc}"))
+
+
+def _start_locked_process(tmp_path: Path, action: str, arguments: dict):
+    context = multiprocessing.get_context("fork")
+    barrier = context.Barrier(2)
+    results = context.Queue()
+    process = context.Process(
+        target=_locked_process_action,
+        args=(str(tmp_path), barrier, results, action, arguments),
+    )
+    process.start()
+    barrier.wait(timeout=20)
+    return process, results
+
+
+def _assert_process_passed(process, results) -> str:
+    process.join(timeout=20)
+    assert not process.is_alive()
+    assert process.exitcode == 0
+    status, detail = results.get(timeout=5)
+    assert status == "PASS", detail
+    results.close()
+    results.join_thread()
+    return detail
 
 
 def test_closed_models_timezone_and_explicit_source_integrity() -> None:
@@ -713,6 +766,198 @@ def test_snapshot_binds_candidate_disposition_and_link_chain(tmp_path: Path) -> 
     assert linked["candidate_link_chain_sha256"] != bound["candidate_link_chain_sha256"]
 
 
+def test_cross_process_candidate_revision_stales_snapshot_under_transaction(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    candidate_observation = _capture(store, "obs.concurrent.candidate-revision")
+    query_observation = _capture(store, "obs.concurrent.query-revision")
+    candidate = _create(store, "edge.concurrent.candidate-revision", candidate_observation)
+    query = _create(store, "edge.concurrent.query-revision", query_observation)
+    stale = store.duplicate_snapshot(query.entry_id)
+    process, results = _start_locked_process(
+        tmp_path,
+        "revise_entry",
+        {
+            "entry_id": candidate.entry_id,
+            "payload": _entry_payload(candidate.entry_id, candidate_observation, title="Concurrent revision"),
+            "actor_id": "concurrent-codex",
+            "recorded_at": NOW,
+        },
+    )
+
+    with pytest.raises(EdgeBacklogConflictError, match="snapshot is stale"):
+        store.record_human_decision(
+            query.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=stale["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="The concurrent candidate revision must invalidate this captured snapshot.",
+            reviewer_id="owner",
+            recorded_at=NOW,
+        )
+    _assert_process_passed(process, results)
+    assert store.latest_entry(candidate.entry_id).revision == 2
+    assert not (store.root / f"entries/{query.entry_id}/decisions/000001.json").exists()
+
+
+def test_cross_process_contradicting_evidence_stales_snapshot_under_transaction(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    candidate_observation = _capture(store, "obs.concurrent.candidate-contradiction")
+    contradiction = _capture(
+        store,
+        "obs.concurrent.contradiction",
+        statement="A later sample contradicts the persistence claim.",
+    )
+    query_observation = _capture(store, "obs.concurrent.query-contradiction")
+    candidate = _create(store, "edge.concurrent.candidate-contradiction", candidate_observation)
+    query = _create(store, "edge.concurrent.query-contradiction", query_observation)
+    stale = store.duplicate_snapshot(query.entry_id)
+    process, results = _start_locked_process(
+        tmp_path,
+        "revise_entry",
+        {
+            "entry_id": candidate.entry_id,
+            "payload": _entry_payload(
+                candidate.entry_id,
+                candidate_observation,
+                observation_refs=[
+                    {
+                        "observation_id": candidate_observation.observation_id,
+                        "observation_revision_sha256": candidate_observation.record_sha256,
+                        "role": "MOTIVATING",
+                    },
+                    {
+                        "observation_id": contradiction.observation_id,
+                        "observation_revision_sha256": contradiction.record_sha256,
+                        "role": "CONTRADICTING",
+                    },
+                ],
+            ),
+            "actor_id": "concurrent-codex",
+            "recorded_at": NOW,
+        },
+    )
+
+    with pytest.raises(EdgeBacklogConflictError, match="snapshot is stale"):
+        store.record_human_decision(
+            query.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=stale["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="Concurrent contradicting evidence invalidates this captured snapshot.",
+            reviewer_id="owner",
+            recorded_at=NOW,
+        )
+    _assert_process_passed(process, results)
+    assert not (store.root / f"entries/{query.entry_id}/decisions/000001.json").exists()
+
+
+def test_cross_process_candidate_decision_stales_snapshot_under_transaction(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    candidate_observation = _capture(store, "obs.concurrent.candidate-decision")
+    query_observation = _capture(store, "obs.concurrent.query-decision")
+    candidate = _create(store, "edge.concurrent.candidate-decision", candidate_observation)
+    query = _create(store, "edge.concurrent.query-decision", query_observation)
+    stale = store.duplicate_snapshot(query.entry_id)
+    candidate_snapshot = store.duplicate_snapshot(candidate.entry_id)
+    process, results = _start_locked_process(
+        tmp_path,
+        "record_decision",
+        {
+            "entry_id": candidate.entry_id,
+            "disposition": "REVIEWED_CONTINUE",
+            "duplicate_resolution": "DISTINCT_EDGE",
+            "candidate_snapshot_sha256": candidate_snapshot["snapshot_sha256"],
+            "reason_codes": ["OTHER"],
+            "rationale": "Concurrent human curation changes the candidate revision identity.",
+            "reviewer_id": "owner",
+            "recorded_at": NOW,
+        },
+    )
+
+    with pytest.raises(EdgeBacklogConflictError, match="snapshot is stale"):
+        store.record_human_decision(
+            query.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=stale["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="The concurrent candidate decision must invalidate this snapshot.",
+            reviewer_id="owner",
+            recorded_at=NOW,
+        )
+    _assert_process_passed(process, results)
+    assert len(store.decisions(candidate.entry_id)) == 1
+
+
+def test_cross_process_candidate_link_stales_snapshot_under_transaction(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    candidate_observation = _capture(store, "obs.concurrent.candidate-link")
+    query_observation = _capture(store, "obs.concurrent.query-link")
+    candidate = _create(store, "edge.concurrent.candidate-link", candidate_observation)
+    query = _create(store, "edge.concurrent.query-link", query_observation)
+    proposal = tmp_path / "research/proposals/hypothesis.concurrent-link.json"
+    proposal.parent.mkdir(parents=True)
+    proposal.write_text('{"schema":"alphaquest.hypothesis-proposal/v1"}\n', encoding="utf-8")
+    stale = store.duplicate_snapshot(query.entry_id)
+    process, results = _start_locked_process(
+        tmp_path,
+        "record_proposal_link",
+        {
+            "entry_id": candidate.entry_id,
+            "hypothesis_id": "hypothesis.concurrent-link",
+            "target_locator": proposal,
+            "actor_id": "concurrent-linker",
+            "recorded_at": NOW,
+        },
+    )
+
+    with pytest.raises(EdgeBacklogConflictError, match="snapshot is stale"):
+        store.record_human_decision(
+            query.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=stale["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="The concurrent candidate link must invalidate this snapshot.",
+            reviewer_id="owner",
+            recorded_at=NOW,
+        )
+    _assert_process_passed(process, results)
+    assert len(store.links(candidate.entry_id)) == 1
+
+
+def test_cross_process_competing_entry_appends_allocate_one_linear_chain(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation = _capture(store, "obs.concurrent.appends")
+    entry = _create(store, "edge.concurrent.appends", observation)
+    process, results = _start_locked_process(
+        tmp_path,
+        "revise_entry",
+        {
+            "entry_id": entry.entry_id,
+            "payload": _entry_payload(entry.entry_id, observation, title="Child append"),
+            "actor_id": "child-codex",
+            "recorded_at": NOW,
+        },
+    )
+
+    parent = store.revise_entry(
+        entry.entry_id,
+        _entry_payload(entry.entry_id, observation, title="Parent append"),
+        actor_id="parent-codex",
+        recorded_at=NOW,
+    )
+    child_sha256 = _assert_process_passed(process, results)
+    revisions = store._all_entry_revisions(entry.entry_id)
+    assert [item.revision for item in revisions] == [1, 2, 3]
+    assert revisions[1].record_sha256 == child_sha256
+    assert parent.revision == 3
+    assert parent.previous_revision_sha256 == child_sha256
+    assert store.validate()["status"] == "PASS"
+
+
 def test_suspend_resume_is_append_only_and_allows_later_revision(tmp_path: Path) -> None:
     store = EdgeBacklogStore(tmp_path)
     observation = _capture(store, "obs.suspend")
@@ -760,6 +1005,223 @@ def test_suspend_resume_is_append_only_and_allows_later_revision(tmp_path: Path)
     assert store.entry_state(entry.entry_id) == "UNREVIEWED"
     assert suspension_path.read_bytes() == suspension_bytes
     assert store.validate()["status"] == "PASS"
+
+
+@pytest.mark.parametrize("disposition", ["REJECTED", "DUPLICATE"])
+def test_terminal_source_entry_is_fully_sealed_against_links_and_forged_suffix(
+    tmp_path: Path,
+    disposition: str,
+) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    source_observation = _capture(store, f"obs.lifecycle.{disposition.lower()}.source")
+    target_observation = _capture(store, f"obs.lifecycle.{disposition.lower()}.target")
+    source = _create(store, f"edge.lifecycle.{disposition.lower()}.source", source_observation)
+    target = _create(store, f"edge.lifecycle.{disposition.lower()}.target", target_observation)
+    snapshot = store.duplicate_snapshot(source.entry_id)
+    decision = store.record_human_decision(
+        source.entry_id,
+        disposition=disposition,
+        duplicate_resolution="SAME_EDGE" if disposition == "DUPLICATE" else "DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        canonical_entry_id=target.entry_id if disposition == "DUPLICATE" else None,
+        reason_codes=["DUPLICATE_EDGE" if disposition == "DUPLICATE" else "CAUSAL_WEAKNESS"],
+        rationale="The terminal source entry must be completely immutable.",
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+    proposal = tmp_path / f"research/proposals/hypothesis.{disposition.lower()}.json"
+    proposal.parent.mkdir(parents=True, exist_ok=True)
+    proposal.write_text('{"schema":"alphaquest.hypothesis-proposal/v1"}\n', encoding="utf-8")
+
+    with pytest.raises(EdgeBacklogConflictError, match=f"while {disposition}"):
+        store.record_hypothesis_proposal_link(
+            source.entry_id,
+            hypothesis_id=f"hypothesis.{disposition.lower()}",
+            target_locator=proposal,
+            actor_id="linker",
+            recorded_at=NOW + timedelta(minutes=1),
+        )
+    with pytest.raises(EdgeBacklogConflictError, match="cannot append a link"):
+        store.record_revisit_link(
+            source.entry_id,
+            prior_entry_id=target.entry_id,
+            rationale="A terminal entry cannot acquire later revisit lineage.",
+            reviewer_id="owner",
+            recorded_at=NOW + timedelta(minutes=1),
+        )
+
+    target_bytes = proposal.read_bytes()
+    forged_payload = {
+        "schema": "alphaquest.edge-backlog-link/v1",
+        "record_id": f"link.forged.{disposition.lower()}",
+        "link_id": f"link.forged.{disposition.lower()}",
+        "entry_id": source.entry_id,
+        "entry_revision_sha256": source.record_sha256,
+        "sequence": 1,
+        "previous_link_sha256": None,
+        "relationship": "HYPOTHESIS_PROPOSAL",
+        "target_kind": "HYPOTHESIS",
+        "target_id": f"hypothesis.{disposition.lower()}",
+        "target_locator": str(proposal.relative_to(tmp_path)),
+        "target_payload_sha256": hashlib.sha256(target_bytes).hexdigest(),
+        "authorizing_decision_id": None,
+        "rationale": None,
+        "recorded_at": (NOW + timedelta(minutes=1)).isoformat().replace("+00:00", "Z"),
+        "actor": {
+            "actor_class": "ALPHAQUEST_DETERMINISTIC_ENGINE",
+            "actor_id": "forger",
+            "task_id": None,
+        },
+    }
+    forged_payload["record_sha256"] = record_sha256(forged_payload)
+    forged = EdgeBacklogLinkV1.model_validate(forged_payload)
+    forged_path = store.root / f"entries/{source.entry_id}/links/000001.json"
+    forged_path.parent.mkdir(parents=True)
+    forged_path.write_bytes(canonical_json_bytes(forged) + b"\n")
+
+    assert decision.entry_link_chain_sha256 != forged.record_sha256
+    with pytest.raises(EdgeBacklogIntegrityError, match="terminal decision does not seal the complete link history"):
+        store.validate()
+
+
+def test_suspended_source_accepts_only_resume_until_resume_is_persisted(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    source_observation = _capture(store, "obs.lifecycle.suspended.source")
+    prior_observation = _capture(store, "obs.lifecycle.suspended.prior")
+    source = _create(store, "edge.lifecycle.suspended.source", source_observation)
+    prior = _create(store, "edge.lifecycle.suspended.prior", prior_observation)
+    snapshot = store.duplicate_snapshot(source.entry_id)
+    suspension = store.record_human_decision(
+        source.entry_id,
+        disposition="SUSPENDED",
+        duplicate_resolution="UNRESOLVED",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["TEMPORARY_BLOCKER"],
+        rationale="The source entry is sealed until an explicit human resume.",
+        revisit_conditions=["The blocker is resolved."],
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+    suspension_path = store.root / f"entries/{source.entry_id}/decisions/000001.json"
+    suspension_bytes = suspension_path.read_bytes()
+    proposal = tmp_path / "research/proposals/hypothesis.suspended.json"
+    proposal.parent.mkdir(parents=True)
+    proposal.write_text('{"schema":"alphaquest.hypothesis-proposal/v1"}\n', encoding="utf-8")
+
+    with pytest.raises(EdgeBacklogConflictError, match="while SUSPENDED"):
+        store.record_hypothesis_proposal_link(
+            source.entry_id,
+            hypothesis_id="hypothesis.suspended",
+            target_locator=proposal,
+            actor_id="linker",
+            recorded_at=NOW,
+        )
+    with pytest.raises(EdgeBacklogConflictError, match="cannot append a link while SUSPENDED"):
+        store.record_revisit_link(
+            source.entry_id,
+            prior_entry_id=prior.entry_id,
+            rationale="Suspension prohibits this lineage append.",
+            reviewer_id="owner",
+            recorded_at=NOW,
+        )
+    with pytest.raises(EdgeBacklogConflictError, match="suspended; resume it"):
+        store.record_human_decision(
+            source.entry_id,
+            disposition="REJECTED",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="No decision except RESUMED may follow suspension.",
+            reviewer_id="owner",
+            recorded_at=NOW,
+        )
+
+    resumed = store.resume_entry(
+        source.entry_id,
+        reason_codes=["NEW_INFORMATION"],
+        rationale="The owner explicitly resumed the source entry.",
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+    assert resumed.previous_decision_sha256 == suspension.record_sha256
+    assert suspension_path.read_bytes() == suspension_bytes
+    assert store.validate()["status"] == "PASS"
+
+
+def test_full_validation_rejects_entry_and_link_changes_inside_suspended_interval(tmp_path: Path) -> None:
+    entry_store = EdgeBacklogStore(tmp_path / "entry")
+    observation = _capture(entry_store, "obs.lifecycle.interval.entry")
+    entry = _create(entry_store, "edge.lifecycle.interval.entry", observation)
+    snapshot = entry_store.duplicate_snapshot(entry.entry_id)
+    entry_store.record_human_decision(
+        entry.entry_id,
+        disposition="SUSPENDED",
+        duplicate_resolution="UNRESOLVED",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["TEMPORARY_BLOCKER"],
+        rationale="Suspend before the adversarial interval test.",
+        revisit_conditions=["The blocker is resolved."],
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+    entry_store.resume_entry(
+        entry.entry_id,
+        reason_codes=["NEW_INFORMATION"],
+        rationale="Resume before the legitimate later revision.",
+        reviewer_id="owner",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+    entry_store.revise_entry(
+        entry.entry_id,
+        _entry_payload(entry.entry_id, observation, title="Legitimate post-resume revision"),
+        actor_id="codex",
+        recorded_at=NOW + timedelta(minutes=3),
+    )
+    entry_path = entry_store.root / f"entries/{entry.entry_id}/revisions/000002.json"
+    entry_payload = json.loads(entry_path.read_text(encoding="utf-8"))
+    entry_payload["recorded_at"] = (NOW + timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
+    _rewrite_record(entry_path, entry_payload)
+    with pytest.raises(EdgeBacklogIntegrityError, match="later entry revision is backdated"):
+        entry_store.validate()
+
+    link_store = EdgeBacklogStore(tmp_path / "link")
+    link_observation = _capture(link_store, "obs.lifecycle.interval.link")
+    link_entry = _create(link_store, "edge.lifecycle.interval.link", link_observation)
+    link_snapshot = link_store.duplicate_snapshot(link_entry.entry_id)
+    link_store.record_human_decision(
+        link_entry.entry_id,
+        disposition="SUSPENDED",
+        duplicate_resolution="UNRESOLVED",
+        candidate_snapshot_sha256=link_snapshot["snapshot_sha256"],
+        reason_codes=["TEMPORARY_BLOCKER"],
+        rationale="Suspend before the adversarial link interval test.",
+        revisit_conditions=["The blocker is resolved."],
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+    link_store.resume_entry(
+        link_entry.entry_id,
+        reason_codes=["NEW_INFORMATION"],
+        rationale="Resume before the legitimate later link.",
+        reviewer_id="owner",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+    proposal = link_store.project_root / "research/proposals/hypothesis.interval.json"
+    proposal.parent.mkdir(parents=True)
+    proposal.write_text('{"schema":"alphaquest.hypothesis-proposal/v1"}\n', encoding="utf-8")
+    link_store.record_hypothesis_proposal_link(
+        link_entry.entry_id,
+        hypothesis_id="hypothesis.interval",
+        target_locator=proposal,
+        actor_id="linker",
+        recorded_at=NOW + timedelta(minutes=3),
+    )
+    link_path = link_store.root / f"entries/{link_entry.entry_id}/links/000001.json"
+    link_payload = json.loads(link_path.read_text(encoding="utf-8"))
+    link_payload["recorded_at"] = (NOW + timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
+    _rewrite_record(link_path, link_payload)
+    with pytest.raises(EdgeBacklogIntegrityError, match="later link is backdated"):
+        link_store.validate()
 
 
 def test_all_append_chains_reject_backdated_records_before_write(tmp_path: Path) -> None:
@@ -847,6 +1309,201 @@ def test_full_validation_rejects_backdated_chain_history(tmp_path: Path) -> None
     payload["recorded_at"] = (NOW - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
     _rewrite_record(path, payload)
     with pytest.raises(EdgeBacklogIntegrityError, match="chronology moved backward"):
+        store.validate()
+
+
+def test_decision_binds_an_exact_historical_link_chain_prefix(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation = _capture(store, "obs.link-prefix")
+    entry = _create(store, "edge.link-prefix", observation)
+    proposals = []
+    for suffix in ("before", "after"):
+        proposal = tmp_path / f"research/proposals/hypothesis.link-prefix.{suffix}.json"
+        proposal.parent.mkdir(parents=True, exist_ok=True)
+        proposal.write_text('{"schema":"alphaquest.hypothesis-proposal/v1"}\n', encoding="utf-8")
+        proposals.append(proposal)
+    first_link = store.record_hypothesis_proposal_link(
+        entry.entry_id,
+        hypothesis_id="hypothesis.link-prefix.before",
+        target_locator=proposals[0],
+        actor_id="linker",
+        recorded_at=NOW,
+    )
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    decision = store.record_human_decision(
+        entry.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="The decision binds exactly the link prefix visible at review time.",
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+    store.record_hypothesis_proposal_link(
+        entry.entry_id,
+        hypothesis_id="hypothesis.link-prefix.after",
+        target_locator=proposals[1],
+        actor_id="linker",
+        recorded_at=NOW,
+    )
+    assert decision.entry_link_chain_sha256 == hashlib.sha256(
+        canonical_json_bytes([first_link.record_sha256])
+    ).hexdigest()
+    assert store.validate()["status"] == "PASS"
+
+    decision_path = store.root / f"entries/{entry.entry_id}/decisions/000001.json"
+    forged = json.loads(decision_path.read_text(encoding="utf-8"))
+    forged["entry_link_chain_sha256"] = "f" * 64
+    snapshot_core = {
+        "schema": "alphaquest.edge-backlog-duplicate-snapshot/v1",
+        "entry_id": forged["entry_id"],
+        "entry_revision_sha256": forged["entry_revision_sha256"],
+        "entry_link_chain_sha256": forged["entry_link_chain_sha256"],
+        "candidates": forged["candidate_snapshot"],
+    }
+    forged["candidate_snapshot_sha256"] = hashlib.sha256(canonical_json_bytes(snapshot_core)).hexdigest()
+    _rewrite_record(decision_path, forged)
+    with pytest.raises(EdgeBacklogIntegrityError, match="not an exact historical prefix"):
+        store.validate()
+
+
+def test_cross_record_causal_chronology_rejects_backdating_before_write(tmp_path: Path) -> None:
+    observation_store = EdgeBacklogStore(tmp_path / "observation")
+    observation = observation_store.capture_observation(
+        _observation_payload("obs.causal.entry"),
+        actor_id="codex",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+    entry_path = observation_store.root / "entries/edge.causal.entry/revisions/000001.json"
+    with pytest.raises(EdgeBacklogIntegrityError, match="entry precedes referenced observation"):
+        observation_store.create_entry(
+            _entry_payload("edge.causal.entry", observation),
+            actor_id="codex",
+            recorded_at=NOW + timedelta(minutes=1),
+        )
+    assert not entry_path.exists()
+
+    decision_store = EdgeBacklogStore(tmp_path / "decision")
+    decision_observation = _capture(decision_store, "obs.causal.decision")
+    decision_entry = decision_store.create_entry(
+        _entry_payload("edge.causal.decision", decision_observation),
+        actor_id="codex",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+    decision_snapshot = decision_store.duplicate_snapshot(decision_entry.entry_id)
+    with pytest.raises(EdgeBacklogIntegrityError, match="decision precedes its bound entry revision"):
+        decision_store.record_human_decision(
+            decision_entry.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=decision_snapshot["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="A decision cannot be recorded before its bound entry revision.",
+            reviewer_id="owner",
+            recorded_at=NOW + timedelta(minutes=1),
+        )
+    assert not (decision_store.root / f"entries/{decision_entry.entry_id}/decisions/000001.json").exists()
+
+    link_store = EdgeBacklogStore(tmp_path / "link")
+    link_observation = _capture(link_store, "obs.causal.link")
+    link_entry = link_store.create_entry(
+        _entry_payload("edge.causal.link", link_observation),
+        actor_id="codex",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+    proposal = link_store.project_root / "research/proposals/hypothesis.causal-link.json"
+    proposal.parent.mkdir(parents=True)
+    proposal.write_text('{"schema":"alphaquest.hypothesis-proposal/v1"}\n', encoding="utf-8")
+    with pytest.raises(EdgeBacklogIntegrityError, match="link precedes its bound entry revision"):
+        link_store.record_hypothesis_proposal_link(
+            link_entry.entry_id,
+            hypothesis_id="hypothesis.causal-link",
+            target_locator=proposal,
+            actor_id="linker",
+            recorded_at=NOW + timedelta(minutes=1),
+        )
+    assert not (link_store.root / f"entries/{link_entry.entry_id}/links/000001.json").exists()
+
+
+def test_authorized_link_and_post_resume_change_cannot_precede_authority(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    prior_observation = _capture(store, "obs.causal.authority.prior")
+    source_observation = _capture(store, "obs.causal.authority.source")
+    prior = _create(store, "edge.causal.authority.prior", prior_observation)
+    source = _create(store, "edge.causal.authority.source", source_observation)
+    prior_snapshot = store.duplicate_snapshot(prior.entry_id)
+    authorization = store.record_human_decision(
+        prior.entry_id,
+        disposition="REJECTED",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=prior_snapshot["snapshot_sha256"],
+        reason_codes=["CAUSAL_WEAKNESS"],
+        rationale="The historical disposition authorizes only a later revisit record.",
+        reviewer_id="owner",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+    with pytest.raises(EdgeBacklogIntegrityError, match="link precedes its authorizing decision"):
+        store.record_revisit_link(
+            source.entry_id,
+            prior_entry_id=prior.entry_id,
+            authorizing_decision_id=authorization.decision_id,
+            rationale="This backdated authorized revisit must fail closed.",
+            reviewer_id="owner",
+            recorded_at=NOW + timedelta(minutes=1),
+        )
+    assert not (store.root / f"entries/{source.entry_id}/links/000001.json").exists()
+
+    resume_store = EdgeBacklogStore(tmp_path / "resume")
+    resume_observation = _capture(resume_store, "obs.causal.resume")
+    resume_entry = _create(resume_store, "edge.causal.resume", resume_observation)
+    resume_snapshot = resume_store.duplicate_snapshot(resume_entry.entry_id)
+    resume_store.record_human_decision(
+        resume_entry.entry_id,
+        disposition="SUSPENDED",
+        duplicate_resolution="UNRESOLVED",
+        candidate_snapshot_sha256=resume_snapshot["snapshot_sha256"],
+        reason_codes=["TEMPORARY_BLOCKER"],
+        rationale="Suspend before testing causal resume chronology.",
+        revisit_conditions=["The blocker is resolved."],
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+    resume_store.resume_entry(
+        resume_entry.entry_id,
+        reason_codes=["NEW_INFORMATION"],
+        rationale="Resume at the authoritative later timestamp.",
+        reviewer_id="owner",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+    with pytest.raises(EdgeBacklogConflictError, match="cannot precede the latest decision"):
+        resume_store.revise_entry(
+            resume_entry.entry_id,
+            _entry_payload(resume_entry.entry_id, resume_observation, title="Backdated after resume"),
+            actor_id="codex",
+            recorded_at=NOW + timedelta(minutes=1),
+        )
+    assert not (resume_store.root / f"entries/{resume_entry.entry_id}/revisions/000002.json").exists()
+
+
+def test_full_validation_rejects_entry_forged_before_referenced_observation(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation = store.capture_observation(
+        _observation_payload("obs.causal.forged-entry"),
+        actor_id="codex",
+        recorded_at=NOW + timedelta(minutes=1),
+    )
+    entry = store.create_entry(
+        _entry_payload("edge.causal.forged-entry", observation),
+        actor_id="codex",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+    path = store.root / f"entries/{entry.entry_id}/revisions/000001.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["recorded_at"] = NOW.isoformat().replace("+00:00", "Z")
+    _rewrite_record(path, payload)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="entry precedes referenced observation"):
         store.validate()
 
 
@@ -949,6 +1606,52 @@ def test_fingerprint_excludes_title_and_rejects_mechanical_fields(tmp_path: Path
     mechanical["entry_threshold"] = 2.5
     with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
         store.create_entry(mechanical, actor_id="codex-task-runner", recorded_at=NOW)
+
+
+@pytest.mark.parametrize(
+    "prohibited_content",
+    [
+        "Use RSI to define the opportunity.",
+        "Apply a parameter grid over the observation.",
+        "Require a threshold of 2.5 before acting.",
+        "Enter when the completed interval closes.",
+        "Attach a protective stop to the expression.",
+        "Set a profit target at 10 points.",
+    ],
+)
+def test_economic_edge_boundary_rejects_mechanics_hidden_in_accepted_free_text(
+    tmp_path: Path,
+    prohibited_content: str,
+) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation = _capture(store, "obs.semantic-boundary")
+    payload = _entry_payload("edge.semantic-boundary", observation, market_behavior=prohibited_content)
+
+    with pytest.raises(ValidationError, match="must remain economic-edge-only"):
+        store.create_entry(payload, actor_id="codex", recorded_at=NOW)
+    assert not (store.root / "entries/edge.semantic-boundary/revisions/000001.json").exists()
+
+
+def test_economic_edge_boundary_rejects_forged_mechanics_and_observation_instructions(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    with pytest.raises(ValidationError, match="must remain economic-edge-only"):
+        store.capture_observation(
+            _observation_payload(
+                "obs.semantic-instruction",
+                statement="The researcher should exit when price reaches the profit target.",
+            ),
+            actor_id="codex",
+            recorded_at=NOW,
+        )
+
+    observation = _capture(store, "obs.semantic-forgery")
+    entry = _create(store, "edge.semantic-forgery", observation)
+    path = store.root / f"entries/{entry.entry_id}/revisions/000001.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["open_questions"] = ["Should the entry use MACD with a trailing stop?"]
+    _rewrite_record(path, payload)
+    with pytest.raises(EdgeBacklogIntegrityError, match="must remain economic-edge-only"):
+        store.validate()
 
 
 def test_dedup_surfaces_synonyms_source_relationships_and_instrument_transfers(tmp_path: Path) -> None:

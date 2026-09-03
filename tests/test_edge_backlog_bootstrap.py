@@ -8,7 +8,13 @@ import pytest
 import yaml
 
 from alphaquest.cli import main
-from alphaquest.research.edge_backlog import EdgeBacklogStore, record_sha256
+from alphaquest.research.edge_backlog import (
+    DuplicateCandidateV1,
+    EdgeBacklogIntegrityError,
+    EdgeBacklogStore,
+    canonical_json_bytes,
+    record_sha256,
+)
 from alphaquest.research.edge_backlog_bootstrap import (
     HistoricalEdgeIndexRecordV1,
     build_historical_edge_index,
@@ -174,6 +180,18 @@ def _canonical_entry(store: EdgeBacklogStore) -> None:
     )
 
 
+def _index_rows(path: Path) -> list[dict]:
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+
+
+def _write_index_rows(path: Path, rows: list[dict]) -> None:
+    path.write_bytes(b"".join(canonical_json_bytes(row) + b"\n" for row in rows))
+
+
+def _reseal_index_row(row: dict) -> None:
+    row["record_sha256"] = record_sha256(row)
+
+
 def test_bootstrap_is_byte_stable_read_only_and_preserves_generation(tmp_path: Path) -> None:
     source_bytes = _fixture(tmp_path)
     store = EdgeBacklogStore(tmp_path)
@@ -266,6 +284,124 @@ def test_failed_and_abandoned_history_participates_in_duplicate_recall(tmp_path:
     )
 
 
+@pytest.mark.parametrize(
+    "defect",
+    [
+        "wrong_schema",
+        "unknown_field",
+        "invalid_record_hash",
+        "invalid_source_hash",
+        "duplicate_id",
+        "noncanonical_order",
+        "noncanonical_json",
+        "p1_evidence_value",
+        "derived_use_value",
+        "semantic_resolution_value",
+    ],
+)
+def test_shared_historical_index_contract_rejects_every_malformed_row(
+    tmp_path: Path,
+    defect: str,
+) -> None:
+    _fixture(tmp_path)
+    build_historical_edge_index(tmp_path)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    rows = _index_rows(index)
+
+    if defect == "wrong_schema":
+        rows[0]["schema"] = "alphaquest.edge-backlog-history-index-record/v999"
+        _reseal_index_row(rows[0])
+    elif defect == "unknown_field":
+        rows[0]["unreviewed_authority"] = True
+        _reseal_index_row(rows[0])
+    elif defect == "invalid_record_hash":
+        rows[0]["record_sha256"] = "f" * 64
+    elif defect == "invalid_source_hash":
+        rows[0]["source_sha256"] = "not-a-sha256"
+        _reseal_index_row(rows[0])
+    elif defect == "duplicate_id":
+        rows.append(dict(rows[0]))
+    elif defect == "noncanonical_order":
+        rows[0], rows[1] = rows[1], rows[0]
+    elif defect == "noncanonical_json":
+        index.write_text(json.dumps(rows[0], indent=2) + "\n", encoding="utf-8")
+    elif defect == "p1_evidence_value":
+        rows[0]["p1_evidence_eligibility"] = "CURRENT_P1_EVIDENCE"
+        _reseal_index_row(rows[0])
+    elif defect == "derived_use_value":
+        rows[0]["derived_index_use"] = "SCIENTIFIC_EVIDENCE"
+        _reseal_index_row(rows[0])
+    elif defect == "semantic_resolution_value":
+        rows[0]["semantic_resolution"] = "APPROVED"
+        _reseal_index_row(rows[0])
+    else:  # pragma: no cover - parametrization guard
+        raise AssertionError(defect)
+    if defect != "noncanonical_json":
+        _write_index_rows(index, rows)
+
+    with pytest.raises(ValueError):
+        validate_historical_edge_index(index)
+
+
+def test_configured_history_is_strictly_validated_before_every_store_consumer(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    _canonical_entry(store)
+    build_historical_edge_index(tmp_path)
+    snapshot = store.duplicate_snapshot("edge.bootstrap")
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    rows = _index_rows(index)
+    rows[0]["forged_semantic_promotion"] = "PASS"
+    _reseal_index_row(rows[0])
+    _write_index_rows(index, rows)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
+        store.search("auction")
+    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
+        store.duplicate_snapshot("edge.bootstrap")
+    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
+        store.validate()
+    with pytest.raises(EdgeBacklogIntegrityError, match="invalid configured historical"):
+        store.record_human_decision(
+            "edge.bootstrap",
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="A malformed configured history index must block decision persistence.",
+            reviewer_id="owner",
+        )
+    assert not (store.root / "entries/edge.bootstrap/decisions/000001.json").exists()
+
+
+def test_historical_duplicate_candidate_contract_is_literal_and_cross_field_bound(tmp_path: Path) -> None:
+    _fixture(tmp_path)
+    store = EdgeBacklogStore(tmp_path)
+    _canonical_entry(store)
+    build_historical_edge_index(tmp_path)
+    historical = next(
+        item
+        for item in store.duplicate_candidates("edge.bootstrap")
+        if item["candidate_kind"] == "DERIVED_HISTORICAL_RECORD"
+    )
+
+    for field, invalid in (
+        ("p1_evidence_eligibility", "CURRENT_P1_EVIDENCE"),
+        ("derived_index_use", "SCIENTIFIC_EVIDENCE"),
+        ("semantic_resolution", "APPROVED"),
+    ):
+        with pytest.raises(ValueError):
+            DuplicateCandidateV1.model_validate({**historical, field: invalid})
+    with pytest.raises(ValueError, match="complete record_sha256"):
+        DuplicateCandidateV1.model_validate(
+            {**historical, "candidate_id": f"history:{historical['candidate_record_sha256'][:24]}"}
+        )
+    with pytest.raises(ValueError, match="canonical backlog candidates cannot carry"):
+        DuplicateCandidateV1.model_validate(
+            {**historical, "candidate_kind": "CANONICAL_BACKLOG_ENTRY", "candidate_id": "edge.canonical"}
+        )
+
+
 def test_bootstrap_cli_writes_only_the_configured_derived_path(tmp_path: Path, capsys) -> None:
     source_bytes = _fixture(tmp_path)
 
@@ -298,8 +434,12 @@ def test_bootstrap_migrates_only_hash_valid_prior_derived_index(tmp_path: Path) 
     prior.pop("source_generation")
     prior.pop("p1_evidence_eligibility")
     prior.pop("derived_index_use")
-    prior["evidence_eligibility"] = "CURRENT_SCOPE"
-    prior["semantic_resolution"] = "LEGACY_CANDIDATE"
+    prior["evidence_eligibility"] = (
+        "CURRENT_SCOPE" if prior["archive_generation"] == "CURRENT" else "HISTORICAL_INELIGIBLE"
+    )
+    prior["semantic_resolution"] = (
+        "LEGACY_CANDIDATE" if prior["extraction_completeness"] == "COMPLETE" else "NEEDS_MANUAL_REVIEW"
+    )
     prior["record_sha256"] = record_sha256(prior)
     prior_bytes = json.dumps(prior, sort_keys=True, separators=(",", ":")).encode("utf-8") + b"\n"
     index.write_bytes(prior_bytes)
@@ -309,6 +449,37 @@ def test_bootstrap_migrates_only_hash_valid_prior_derived_index(tmp_path: Path) 
     assert result["status"] == "PASS"
     assert index.read_bytes() != prior_bytes
     assert validate_historical_edge_index(index)["status"] == "PASS"
+
+
+@pytest.mark.parametrize("defect", ["missing_provenance", "unknown_authority_field"])
+def test_bootstrap_rejects_arbitrary_self_hashed_prior_payload(
+    tmp_path: Path,
+    defect: str,
+) -> None:
+    _fixture(tmp_path)
+    build_historical_edge_index(tmp_path)
+    index = tmp_path / "catalogs/edge_backlog_history.jsonl"
+    row = _index_rows(index)[0]
+    row.pop("source_generation")
+    row.pop("p1_evidence_eligibility")
+    row.pop("derived_index_use")
+    row["evidence_eligibility"] = (
+        "CURRENT_SCOPE" if row["archive_generation"] == "CURRENT" else "HISTORICAL_INELIGIBLE"
+    )
+    row["semantic_resolution"] = (
+        "LEGACY_CANDIDATE" if row["extraction_completeness"] == "COMPLETE" else "NEEDS_MANUAL_REVIEW"
+    )
+    if defect == "missing_provenance":
+        row.pop("source_sha256")
+    else:
+        row["authority"] = "PROMOTE"
+    _reseal_index_row(row)
+    original = canonical_json_bytes(row) + b"\n"
+    index.write_bytes(original)
+
+    with pytest.raises(ValueError, match="not a valid derived index"):
+        build_historical_edge_index(tmp_path)
+    assert index.read_bytes() == original
 
 
 def test_bootstrap_cannot_replace_a_source_file_or_canonical_backlog_path(tmp_path: Path) -> None:

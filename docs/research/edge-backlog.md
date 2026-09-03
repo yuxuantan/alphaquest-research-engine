@@ -26,7 +26,11 @@ mechanism, counterparties, information inputs and availability, expected
 effect, horizon, context, and source-bound observations. It does not contain
 entry/stop/target rules, indicators, thresholds, parameter grids, modules,
 PnL, scientific verdicts, candidate status, or deployment status. Mechanical
-expressions remain downstream strategy variants.
+expressions remain downstream strategy variants. The closed model also scans
+accepted observation and entry text for explicit indicator, parameter,
+threshold, entry/exit, stop, and target instructions. Such content fails before
+write even when hidden in an otherwise valid economic field; unknown
+structured fields remain forbidden.
 
 The canonical files live under `research/edge_backlog/`. SQLite, CSV, Markdown,
 the bootstrap index, and future registry views are derived and rebuildable.
@@ -41,6 +45,19 @@ record. Cross-record semantics—including source-identity upgrades, chronology,
 hash chains, exact references, duplicate canonicalization, suspension state,
 and link targets—are enforced by the append API and `edge-backlog validate`;
 JSON Schema validation alone is not a complete backlog integrity check.
+Entry timestamps cannot precede referenced observations. Decision and link
+timestamps cannot precede their bound entry revisions, authorized links cannot
+precede their authorizing decisions, and changes after resume cannot be
+backdated before `RESUMED`. Equality remains valid inside ordinary revision,
+decision, and link chains; source-identity upgrades retain the stricter rule
+below.
+
+All validation, current-state reads, duplicate-snapshot construction and stale
+comparison, sequence allocation, and exclusive append run under one
+cross-process backlog lock in derived runtime storage. Mutations take the lock
+before their first validation and revalidate the complete persisted store and
+configured historical index again under that lock immediately before the
+exclusive file creation.
 
 ### Observation revisions
 
@@ -87,6 +104,12 @@ snapshot.
 - `SUSPENDED` is nonterminal and records explicit resume conditions.
 - `RESUMED` is a separate immutable human record. Only after it exists may
   Codex append another revision.
+
+Every decision binds an exact historical prefix of the source entry's link
+chain. Terminal decisions seal the complete entry-revision and link histories.
+While suspended, an entry accepts no revision, link, or review decision other
+than the immutable `RESUMED` record; validation rejects forged activity inside
+the suspended interval.
 
 `UNRESOLVED` never becomes `DISTINCT_EDGE` automatically.
 
@@ -190,9 +213,20 @@ raw edge/hypothesis/family/fingerprint, outcome, failure reason, and extraction
 completeness. Output is fixed to the configured history-index path beneath the
 derived catalog root; neither the CLI nor the builder may replace an arbitrary,
 canonical, policy, campaign, ledger, evidence, or input-source file.
+Every configured row is loaded through the same strict
+`HistoricalEdgeIndexRecordV1` contract before search, duplicate-snapshot
+construction, decision persistence, and full backlog validation. Rows reject
+wrong schemas, unknown fields, invalid source or record hashes, duplicate IDs
+or record hashes, noncanonical JSON/order, missing provenance, and any semantic
+promotion beyond `NOT_CURRENT_P1_EVIDENCE`, `DUPLICATE_RECALL_ONLY`, and
+`NEEDS_MANUAL_REVIEW`. Historical duplicate candidates repeat those values as
+literals and bind `history:<complete-record-sha256>`.
+
 An existing configured target is replaceable only when it validates as the
-current derived contract or as a prior hash-valid derived history index with
-the same schema identity; an arbitrary existing file fails closed.
+current derived contract or as the one explicit closed prior-v1 row contract,
+including source path/hash/row provenance, deterministic record ID, canonical
+ordering, and record hash. An arbitrary self-hashed payload or existing file
+fails closed.
 
 Legacy scientific verdict and lifecycle/disposition text are retained in
 separate fields when both exist; the derived index does not collapse those

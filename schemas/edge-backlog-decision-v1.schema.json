@@ -45,6 +45,7 @@
         "archive_generation": {
           "anyOf": [
             {
+              "minLength": 1,
               "type": "string"
             },
             {
@@ -93,6 +94,10 @@
         "derived_index_use": {
           "anyOf": [
             {
+              "const": "DUPLICATE_RECALL_ONLY",
+              "enum": [
+                "DUPLICATE_RECALL_ONLY"
+              ],
               "type": "string"
             },
             {
@@ -169,6 +174,10 @@
         "p1_evidence_eligibility": {
           "anyOf": [
             {
+              "const": "NOT_CURRENT_P1_EVIDENCE",
+              "enum": [
+                "NOT_CURRENT_P1_EVIDENCE"
+              ],
               "type": "string"
             },
             {
@@ -181,6 +190,10 @@
         "semantic_resolution": {
           "anyOf": [
             {
+              "const": "NEEDS_MANUAL_REVIEW",
+              "enum": [
+                "NEEDS_MANUAL_REVIEW"
+              ],
               "type": "string"
             },
             {
@@ -200,6 +213,11 @@
         "source_generation": {
           "anyOf": [
             {
+              "enum": [
+                "CURRENT",
+                "CONFIGURED_ARCHIVE",
+                "CLEAN_SLATE_ARCHIVE"
+              ],
               "type": "string"
             },
             {
@@ -219,6 +237,7 @@
         "source_path": {
           "anyOf": [
             {
+              "minLength": 1,
               "type": "string"
             },
             {
