@@ -299,3 +299,8 @@ def test_cli_has_no_actor_escalation_delete_or_admission_command(capsys) -> None
     error = capsys.readouterr().err
     assert "invalid choice" in error
     assert "admit" not in error
+
+    with pytest.raises(SystemExit) as exc:
+        main(["edge-backlog", "bootstrap-index", "--output", "research_ledger.csv"])
+    assert exc.value.code == 2
+    assert "unrecognized arguments: --output" in capsys.readouterr().err

@@ -54,6 +54,19 @@
           "default": null,
           "title": "Archive Generation"
         },
+        "candidate_decision_sha256": {
+          "anyOf": [
+            {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Candidate Decision Sha256"
+        },
         "candidate_id": {
           "minLength": 1,
           "title": "Candidate Id",
@@ -67,16 +80,17 @@
           "title": "Candidate Kind",
           "type": "string"
         },
-        "dimension_scores": {
-          "additionalProperties": {
-            "maximum": 1.0,
-            "minimum": 0.0,
-            "type": "number"
-          },
-          "title": "Dimension Scores",
-          "type": "object"
+        "candidate_link_chain_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Candidate Link Chain Sha256",
+          "type": "string"
         },
-        "evidence_eligibility": {
+        "candidate_record_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Candidate Record Sha256",
+          "type": "string"
+        },
+        "derived_index_use": {
           "anyOf": [
             {
               "type": "string"
@@ -86,7 +100,16 @@
             }
           ],
           "default": null,
-          "title": "Evidence Eligibility"
+          "title": "Derived Index Use"
+        },
+        "dimension_scores": {
+          "additionalProperties": {
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "type": "number"
+          },
+          "title": "Dimension Scores",
+          "type": "object"
         },
         "exact_fingerprint": {
           "title": "Exact Fingerprint",
@@ -143,6 +166,18 @@
           "title": "Matched Dimensions",
           "type": "array"
         },
+        "p1_evidence_eligibility": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "P1 Evidence Eligibility"
+        },
         "semantic_resolution": {
           "anyOf": [
             {
@@ -161,6 +196,18 @@
           },
           "title": "Shared Link Targets",
           "type": "array"
+        },
+        "source_generation": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Generation"
         },
         "source_overlap": {
           "items": {
@@ -208,6 +255,8 @@
       "required": [
         "candidate_id",
         "candidate_kind",
+        "candidate_record_sha256",
+        "candidate_link_chain_sha256",
         "title",
         "exact_fingerprint",
         "taxonomy_score",
@@ -298,6 +347,11 @@
     "entry_id": {
       "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
       "title": "Entry Id",
+      "type": "string"
+    },
+    "entry_link_chain_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Entry Link Chain Sha256",
       "type": "string"
     },
     "entry_revision_sha256": {
@@ -399,6 +453,7 @@
     "decision_id",
     "entry_id",
     "entry_revision_sha256",
+    "entry_link_chain_sha256",
     "sequence",
     "disposition",
     "reason_codes",

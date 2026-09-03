@@ -18,13 +18,8 @@ from typing import Annotated, Any, Literal, Mapping, Sequence, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
+from alphaquest.research import duplicate_matching as duplicate_core
 from alphaquest.research.storage import StorageLayout, display_path, load_storage_layout
-from alphaquest.research.duplicate_matching import (
-    economic_dimension_match,
-    economic_tokens,
-    match_band,
-    token_jaccard,
-)
 
 
 OBSERVATION_SCHEMA = "alphaquest.edge-backlog-observation-revision/v1"
@@ -279,6 +274,9 @@ class EdgeBacklogEntryRevisionV1(HashedRecord):
 class DuplicateCandidateV1(StrictBacklogModel):
     candidate_id: NonBlank
     candidate_kind: Literal["CANONICAL_BACKLOG_ENTRY", "DERIVED_HISTORICAL_RECORD"]
+    candidate_record_sha256: Sha256
+    candidate_decision_sha256: Sha256 | None = None
+    candidate_link_chain_sha256: Sha256
     title: NonBlank
     state: str | None = None
     exact_fingerprint: bool
@@ -297,7 +295,9 @@ class DuplicateCandidateV1(StrictBacklogModel):
     ]
     source_path: str | None = None
     archive_generation: str | None = None
-    evidence_eligibility: str | None = None
+    source_generation: str | None = None
+    p1_evidence_eligibility: str | None = None
+    derived_index_use: str | None = None
     semantic_resolution: str | None = None
     historical_scientific_verdict: str | None = None
     historical_disposition: str | None = None
@@ -312,6 +312,7 @@ class EdgeBacklogDecisionV1(HashedRecord):
     decision_id: Identifier
     entry_id: Identifier
     entry_revision_sha256: Sha256
+    entry_link_chain_sha256: Sha256
     sequence: Annotated[int, Field(ge=1)]
     previous_decision_sha256: Sha256 | None = None
     disposition: Disposition
@@ -368,6 +369,7 @@ class EdgeBacklogDecisionV1(HashedRecord):
             "schema": DUPLICATE_SNAPSHOT_SCHEMA,
             "entry_id": self.entry_id,
             "entry_revision_sha256": self.entry_revision_sha256,
+            "entry_link_chain_sha256": self.entry_link_chain_sha256,
             "candidates": [item.model_dump(mode="json") for item in self.candidate_snapshot],
         }
         actual_snapshot_sha256 = hashlib.sha256(canonical_json_bytes(candidate_core)).hexdigest()
@@ -383,6 +385,9 @@ class EdgeBacklogDecisionV1(HashedRecord):
                 raise ValueError("a duplicate cannot point to itself")
             if self.canonical_entry_id not in candidate_ids:
                 raise ValueError("canonical_entry_id must be in the reviewed candidate snapshot")
+            selected = next(item for item in self.candidate_snapshot if item.candidate_id == self.canonical_entry_id)
+            if selected.candidate_kind != "CANONICAL_BACKLOG_ENTRY":
+                raise ValueError("canonical_entry_id must identify a canonical backlog candidate")
         elif self.canonical_entry_id is not None:
             raise ValueError("canonical_entry_id is only valid for DUPLICATE")
         if self.duplicate_resolution == "SAME_EDGE" and self.disposition != "DUPLICATE":
@@ -609,6 +614,8 @@ class EdgeBacklogStore:
         snapshot = self.duplicate_snapshot(entry_id)
         if candidate_snapshot_sha256 != snapshot["snapshot_sha256"]:
             raise EdgeBacklogConflictError("duplicate candidate snapshot is stale or does not match")
+        if disposition == "DUPLICATE":
+            self._validate_duplicate_append(entry.entry_id, canonical_entry_id)
         return self._append_decision(
             entry,
             history,
@@ -814,7 +821,7 @@ class EdgeBacklogStore:
         }
 
     def search(self, query: str | None = None, *, state: str | None = None) -> list[dict[str, Any]]:
-        query_tokens = economic_tokens(query or "")
+        query_tokens = duplicate_core.economic_tokens(query or "")
         rows = []
         for summary in self.list_entries():
             if state and summary["state"] != state:
@@ -836,13 +843,14 @@ class EdgeBacklogStore:
                     entry.market_context,
                 )
             )
-            if query_tokens and not query_tokens.intersection(economic_tokens(haystack)):
+            if query_tokens and not query_tokens.intersection(duplicate_core.economic_tokens(haystack)):
                 continue
             rows.append(summary)
         return rows
 
     def duplicate_snapshot(self, entry_id: str) -> dict[str, Any]:
         entry = self.latest_entry(entry_id)
+        entry_link_chain_sha256 = _record_chain_sha256(self.links(entry.entry_id))
         candidates = [
             DuplicateCandidateV1.model_validate(item).model_dump(mode="json")
             for item in self.duplicate_candidates(entry_id)
@@ -851,6 +859,7 @@ class EdgeBacklogStore:
             "schema": DUPLICATE_SNAPSHOT_SCHEMA,
             "entry_id": entry.entry_id,
             "entry_revision_sha256": entry.record_sha256,
+            "entry_link_chain_sha256": entry_link_chain_sha256,
             "candidates": candidates,
         }
         return {**core, "snapshot_sha256": hashlib.sha256(canonical_json_bytes(core)).hexdigest()}
@@ -858,7 +867,7 @@ class EdgeBacklogStore:
     def duplicate_candidates(self, entry_id: str) -> list[dict[str, Any]]:
         query = self.latest_entry(entry_id)
         query_text = _entry_text(query)
-        query_tokens = economic_tokens(query_text)
+        query_tokens = duplicate_core.economic_tokens(query_text)
         query_sources = self._entry_source_ids(query)
         query_links = self.links(query.entry_id)
         rows: list[dict[str, Any]] = []
@@ -866,56 +875,50 @@ class EdgeBacklogStore:
             if summary["entry_id"] == entry_id:
                 continue
             candidate = self.latest_entry(summary["entry_id"])
-            comparison = economic_dimension_match(
-                _economic_payload(query),
-                _economic_payload(candidate),
-                fields=_IDENTITY_FIELDS,
-            )
-            lexical = token_jaccard(query_tokens, economic_tokens(_entry_text(candidate)))
-            source_overlap = sorted(query_sources & self._entry_source_ids(candidate))
             candidate_links = self.links(candidate.entry_id)
+            candidate_decisions = self.decisions(candidate.entry_id)
+            score = duplicate_core.deterministic_duplicate_score(
+                query_tokens=query_tokens,
+                candidate_tokens=duplicate_core.economic_tokens(_entry_text(candidate)),
+                query_fingerprint=query.fingerprint_sha256,
+                candidate_fingerprint=candidate.fingerprint_sha256,
+                query_dimensions=_economic_payload(query),
+                candidate_dimensions=_economic_payload(candidate),
+                dimension_fields=_IDENTITY_FIELDS,
+                dimension_tokenizer=_backlog_dimension_tokens,
+                taxonomy_schema="alphaquest.edge-backlog-duplicate-taxonomy/v1",
+            )
+            source_overlap = sorted(query_sources & self._entry_source_ids(candidate))
             related_targets = _shared_link_targets(query_links, candidate_links)
             lineage = _lineage_related(query.entry_id, candidate.entry_id, query_links, candidate_links)
-            exact = query.fingerprint_sha256 == candidate.fingerprint_sha256
-            if not (
-                exact
-                or comparison["taxonomy_score"] >= 0.3
-                or lexical >= 0.12
-                or source_overlap
-                or related_targets
-                or lineage
-            ):
-                continue
             rows.append(
                 {
                     "candidate_id": candidate.entry_id,
                     "candidate_kind": "CANONICAL_BACKLOG_ENTRY",
+                    "candidate_record_sha256": candidate.record_sha256,
+                    "candidate_decision_sha256": (
+                        candidate_decisions[-1].record_sha256 if candidate_decisions else None
+                    ),
+                    "candidate_link_chain_sha256": _record_chain_sha256(candidate_links),
                     "title": candidate.title,
                     "state": summary["state"],
-                    "exact_fingerprint": exact,
-                    "taxonomy_score": comparison["taxonomy_score"],
-                    "dimension_scores": comparison["dimension_scores"],
-                    "matched_dimensions": comparison["matched_dimensions"],
-                    "lexical_similarity": round(lexical, 4),
+                    "exact_fingerprint": score["exact_fingerprint"],
+                    "taxonomy_score": score["taxonomy_score"],
+                    "dimension_scores": score["dimension_scores"],
+                    "matched_dimensions": score["matched_dimensions"],
+                    "lexical_similarity": score["lexical_similarity"],
                     "source_overlap": source_overlap,
                     "shared_link_targets": related_targets,
                     "lineage_related": lineage,
-                    "match_band": match_band(
-                        exact=exact,
-                        structured=comparison["taxonomy_score"],
-                        lexical=lexical,
-                    ),
+                    "_force_recall": bool(source_overlap or related_targets or lineage),
                 }
             )
         rows.extend(self._historical_candidates(query, query_tokens))
-        return sorted(
+        return duplicate_core.rank_duplicate_candidates(
             rows,
-            key=lambda item: (
-                not bool(item["exact_fingerprint"]),
-                -float(item["taxonomy_score"]),
-                -float(item["lexical_similarity"]),
-                item["candidate_id"],
-            ),
+            identity_field="candidate_id",
+            lexical_field="lexical_similarity",
+            minimum_similarity=0.12,
         )
 
     def validate(self) -> dict[str, Any]:
@@ -932,6 +935,7 @@ class EdgeBacklogStore:
             link_count += len(links)
         self._validate_source_identities(observations)
         self._validate_revisit_cycles()
+        self._validate_duplicate_canonicalization()
         return {
             "schema": "alphaquest.edge-backlog-validation/v1",
             "status": "PASS",
@@ -967,6 +971,8 @@ class EdgeBacklogStore:
             }
         )
         record = _seal(ObservationRevisionV1, material)
+        if previous and record.recorded_at < previous.recorded_at:
+            raise EdgeBacklogConflictError("observation revision recorded_at cannot move backward")
         if previous:
             missing_conflicts = set(previous.known_conflicts) - set(record.known_conflicts)
             if missing_conflicts:
@@ -1011,6 +1017,8 @@ class EdgeBacklogStore:
         material = draft.model_dump(mode="json", by_alias=True, exclude={"record_sha256"})
         material["fingerprint_sha256"] = backlog_fingerprint(material)
         record = _seal(EdgeBacklogEntryRevisionV1, material)
+        if previous and record.recorded_at < previous.recorded_at:
+            raise EdgeBacklogConflictError("entry revision recorded_at cannot move backward")
         self._validate_observation_refs(record.observation_refs)
         if previous:
             previous_contradictions = {
@@ -1056,6 +1064,7 @@ class EdgeBacklogStore:
             "decision_id": identifier,
             "entry_id": entry.entry_id,
             "entry_revision_sha256": entry.record_sha256,
+            "entry_link_chain_sha256": _record_chain_sha256(self.links(entry.entry_id)),
             "sequence": sequence,
             "previous_decision_sha256": history[-1].record_sha256 if history else None,
             "disposition": disposition,
@@ -1075,6 +1084,8 @@ class EdgeBacklogStore:
             },
         }
         record = _seal(EdgeBacklogDecisionV1, material)
+        if history and record.recorded_at < history[-1].recorded_at:
+            raise EdgeBacklogConflictError("decision recorded_at cannot move backward")
         self._validate_decision_history(entry, [*history, record])
         path = self.root / "entries" / entry.entry_id / "decisions" / f"{sequence:06d}.json"
         self._exclusive_write(path, record)
@@ -1117,6 +1128,8 @@ class EdgeBacklogStore:
             "actor": actor.model_dump(mode="json"),
         }
         record = _seal(EdgeBacklogLinkV1, material)
+        if history and record.recorded_at < history[-1].recorded_at:
+            raise EdgeBacklogConflictError("link recorded_at cannot move backward")
         self._validate_link_history(entry, [*history, record])
         if relationship == "REVISIT_OF" and self._would_create_revisit_cycle(entry.entry_id, target_id):
             raise EdgeBacklogConflictError("REVISIT_OF would create a lineage cycle")
@@ -1142,6 +1155,8 @@ class EdgeBacklogStore:
                     raise EdgeBacklogIntegrityError(f"observation path identity mismatch: {path}")
                 if record.previous_revision_sha256 != (previous.record_sha256 if previous else None):
                     raise EdgeBacklogIntegrityError(f"broken observation revision chain: {path}")
+                if previous and record.recorded_at < previous.recorded_at:
+                    raise EdgeBacklogIntegrityError(f"observation revision chronology moved backward at {path}")
                 if previous and not set(previous.known_conflicts).issubset(record.known_conflicts):
                     raise EdgeBacklogIntegrityError(f"observation conflicts were removed at {path}")
                 previous = record
@@ -1167,6 +1182,8 @@ class EdgeBacklogStore:
                     raise EdgeBacklogIntegrityError(f"entry path identity mismatch: {path}")
                 if record.previous_revision_sha256 != (previous.record_sha256 if previous else None):
                     raise EdgeBacklogIntegrityError(f"broken entry revision chain: {path}")
+                if previous and record.recorded_at < previous.recorded_at:
+                    raise EdgeBacklogIntegrityError(f"entry revision chronology moved backward at {path}")
                 self._validate_observation_refs(record.observation_refs)
                 if previous:
                     old = {
@@ -1198,6 +1215,8 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError("decision path/sequence does not match entry")
             if decision.previous_decision_sha256 != (previous.record_sha256 if previous else None):
                 raise EdgeBacklogIntegrityError("broken decision hash chain")
+            if previous and decision.recorded_at < previous.recorded_at:
+                raise EdgeBacklogIntegrityError("decision chronology moved backward")
             if decision.entry_revision_sha256 not in revisions:
                 raise EdgeBacklogIntegrityError("decision references a missing entry revision")
             if previous:
@@ -1236,6 +1255,8 @@ class EdgeBacklogStore:
                 raise EdgeBacklogIntegrityError("link path/sequence does not match entry")
             if link.previous_link_sha256 != (previous.record_sha256 if previous else None):
                 raise EdgeBacklogIntegrityError("broken link hash chain")
+            if previous and link.recorded_at < previous.recorded_at:
+                raise EdgeBacklogIntegrityError("link chronology moved backward")
             if link.entry_revision_sha256 not in revisions:
                 raise EdgeBacklogIntegrityError("link references a missing entry revision")
             target = self._target_file(link.target_locator)
@@ -1257,44 +1278,43 @@ class EdgeBacklogStore:
             previous = link
 
     def _validate_source_identities(self, observations: Mapping[str, ObservationRevisionV1]) -> None:
-        identities: dict[str, tuple[str, str, str | None]] = {}
-        for observation_id in observations:
-            for revision in self._all_observation_revisions(observation_id):
-                for source in revision.evidence_refs:
-                    identity = (source.source_kind, source.locator, source.content_sha256)
-                    previous = identities.get(source.source_id)
-                    if previous is None:
-                        identities[source.source_id] = identity
-                        continue
-                    _assert_source_identity_compatible(source.source_id, previous, identity)
-                    if previous[2] is None and identity[2] is not None:
-                        identities[source.source_id] = identity
+        self._source_identity_state(tuple(observations))
 
     def _validate_new_source_identities(self, record: ObservationRevisionV1) -> None:
-        identities: dict[str, tuple[str, str, str | None]] = {}
-        for observation_dir in sorted((self.root / "observations").glob("*")):
-            if not observation_dir.is_dir():
-                continue
-            for revision in self._all_observation_revisions(observation_dir.name):
-                for source in revision.evidence_refs:
-                    identities.setdefault(
-                        source.source_id,
-                        (source.source_kind, source.locator, source.content_sha256),
-                    )
+        identities = self._source_identity_state()
         for source in record.evidence_refs:
+            identity = (source.source_kind, source.locator, source.content_sha256)
             previous = identities.get(source.source_id)
             if previous is not None:
-                _assert_source_identity_compatible(
-                    source.source_id,
-                    previous,
-                    (source.source_kind, source.locator, source.content_sha256),
+                _assert_source_identity_compatible(source.source_id, previous, identity)
+            _remember_source_identity(identities, source)
+
+    def _source_identity_state(
+        self,
+        observation_ids: Sequence[str] | None = None,
+    ) -> dict[str, tuple[str, str, str | None]]:
+        identities: dict[str, tuple[str, str, str | None]] = {}
+        events: list[tuple[datetime, EvidenceReferenceV1]] = []
+        identifiers = observation_ids
+        if identifiers is None:
+            identifiers = tuple(item.name for item in sorted((self.root / "observations").glob("*")) if item.is_dir())
+        for observation_id in identifiers:
+            for revision in self._all_observation_revisions(observation_id):
+                for source in revision.evidence_refs:
+                    _remember_source_identity(identities, source)
+                    events.append((revision.recorded_at, source))
+        hash_bound_at: dict[str, datetime] = {}
+        for recorded_at, source in events:
+            if source.content_sha256 is not None:
+                previous = hash_bound_at.get(source.source_id)
+                hash_bound_at[source.source_id] = min(previous, recorded_at) if previous else recorded_at
+        for recorded_at, source in events:
+            bound_at = hash_bound_at.get(source.source_id)
+            if bound_at is not None and source.content_sha256 is None and recorded_at > bound_at:
+                raise EdgeBacklogIntegrityError(
+                    f"source_id {source.source_id!r} was reused without its bound content hash"
                 )
-                if previous[2] is None and source.content_sha256 is not None:
-                    identities[source.source_id] = (
-                        source.source_kind,
-                        source.locator,
-                        source.content_sha256,
-                    )
+        return identities
 
     def _validate_observation_refs(self, refs: Sequence[ObservationReferenceV1]) -> None:
         for ref in refs:
@@ -1338,13 +1358,10 @@ class EdgeBacklogStore:
                 record = json.loads(line)
             except json.JSONDecodeError as exc:
                 raise EdgeBacklogIntegrityError(f"invalid historical backlog index: {exc}") from exc
+            historical_sha256 = str(record.get("record_sha256") or "")
+            if not re.fullmatch(SHA256_PATTERN, historical_sha256) or record_sha256(record) != historical_sha256:
+                raise EdgeBacklogIntegrityError("historical backlog candidate record_sha256 is invalid")
             raw = _historical_economic_payload(record)
-            comparison = economic_dimension_match(
-                _economic_payload(query),
-                raw,
-                fields=_IDENTITY_FIELDS,
-                available_only=True,
-            )
             history_text = " ".join(
                 str(record.get(key) or "")
                 for key in (
@@ -1356,35 +1373,42 @@ class EdgeBacklogStore:
                     "raw_failure_reason",
                 )
             )
-            lexical = token_jaccard(query_tokens, economic_tokens(history_text))
-            exact = False
             legacy = record.get("legacy_fingerprint")
-            if isinstance(legacy, dict):
-                exact = _legacy_matches_backlog(query, legacy)
-            if not (exact or comparison["taxonomy_score"] >= 0.3 or lexical >= 0.12):
-                continue
+            legacy_exact = isinstance(legacy, dict) and _legacy_matches_backlog(query, legacy)
+            score = duplicate_core.deterministic_duplicate_score(
+                query_tokens=query_tokens,
+                candidate_tokens=duplicate_core.economic_tokens(history_text),
+                query_fingerprint=query.fingerprint_sha256,
+                candidate_fingerprint=query.fingerprint_sha256 if legacy_exact else None,
+                query_dimensions=_economic_payload(query),
+                candidate_dimensions=raw,
+                dimension_fields=_IDENTITY_FIELDS,
+                dimension_tokenizer=_backlog_dimension_tokens,
+                taxonomy_schema="alphaquest.edge-backlog-duplicate-taxonomy/v1",
+                available_only=True,
+            )
             rows.append(
                 {
-                    "candidate_id": f"history:{str(record.get('record_sha256'))[:16]}",
+                    "candidate_id": f"history:{historical_sha256}",
                     "candidate_kind": "DERIVED_HISTORICAL_RECORD",
+                    "candidate_record_sha256": historical_sha256,
+                    "candidate_decision_sha256": None,
+                    "candidate_link_chain_sha256": _record_chain_sha256(()),
                     "title": record.get("raw_title") or record.get("campaign_id") or "historical record",
                     "state": record.get("raw_outcome") or record.get("semantic_resolution"),
-                    "exact_fingerprint": exact,
-                    "taxonomy_score": comparison["taxonomy_score"],
-                    "dimension_scores": comparison["dimension_scores"],
-                    "matched_dimensions": comparison["matched_dimensions"],
-                    "lexical_similarity": round(lexical, 4),
+                    "exact_fingerprint": score["exact_fingerprint"],
+                    "taxonomy_score": score["taxonomy_score"],
+                    "dimension_scores": score["dimension_scores"],
+                    "matched_dimensions": score["matched_dimensions"],
+                    "lexical_similarity": score["lexical_similarity"],
                     "source_overlap": [],
                     "shared_link_targets": [],
                     "lineage_related": False,
-                    "match_band": match_band(
-                        exact=exact,
-                        structured=comparison["taxonomy_score"],
-                        lexical=lexical,
-                    ),
                     "source_path": record.get("source_path"),
                     "archive_generation": record.get("archive_generation"),
-                    "evidence_eligibility": record.get("evidence_eligibility"),
+                    "source_generation": record.get("source_generation"),
+                    "p1_evidence_eligibility": record.get("p1_evidence_eligibility"),
+                    "derived_index_use": record.get("derived_index_use"),
                     "semantic_resolution": record.get("semantic_resolution"),
                     "historical_scientific_verdict": record.get("raw_scientific_verdict"),
                     "historical_disposition": record.get("raw_disposition"),
@@ -1456,6 +1480,57 @@ class EdgeBacklogStore:
     def _validate_revisit_cycles(self) -> None:
         if _graph_has_cycle(self._revisit_graph()):
             raise EdgeBacklogIntegrityError("REVISIT_OF lineage contains a cycle")
+
+    def _validate_duplicate_append(self, entry_id: str, canonical_entry_id: str | None) -> None:
+        if not canonical_entry_id:
+            raise EdgeBacklogConflictError("DUPLICATE requires canonical_entry_id")
+        try:
+            self.latest_entry(canonical_entry_id)
+        except FileNotFoundError as exc:
+            raise EdgeBacklogConflictError("DUPLICATE canonical entry does not exist") from exc
+        graph = self._duplicate_graph()
+        graph[entry_id] = canonical_entry_id
+        if _graph_has_cycle({source: {target} for source, target in graph.items()}):
+            raise EdgeBacklogConflictError("DUPLICATE would create a canonicalization cycle")
+        target_state = self.entry_state(canonical_entry_id)
+        if target_state == "REJECTED":
+            raise EdgeBacklogConflictError("DUPLICATE canonical target is terminally rejected")
+        if target_state == "DUPLICATE":
+            raise EdgeBacklogConflictError("DUPLICATE canonical target is already duplicate")
+        if set(graph).intersection(graph.values()):
+            raise EdgeBacklogConflictError("DUPLICATE canonicalization chains are not allowed")
+
+    def _validate_duplicate_canonicalization(self) -> None:
+        graph = self._duplicate_graph()
+        graph_sets = {source: {target} for source, target in graph.items()}
+        if _graph_has_cycle(graph_sets):
+            raise EdgeBacklogIntegrityError("DUPLICATE canonicalization contains a cycle")
+        for target in graph.values():
+            try:
+                self.latest_entry(target)
+            except FileNotFoundError as exc:
+                raise EdgeBacklogIntegrityError("DUPLICATE canonical entry does not exist") from exc
+            target_state = self.entry_state(target)
+            if target_state == "REJECTED":
+                raise EdgeBacklogIntegrityError("DUPLICATE canonical target is terminally rejected")
+            if target_state == "DUPLICATE":
+                raise EdgeBacklogIntegrityError("DUPLICATE canonical target is already duplicate")
+        if set(graph).intersection(graph.values()):
+            raise EdgeBacklogIntegrityError("DUPLICATE canonicalization contains a multi-hop chain")
+
+    def _duplicate_graph(self) -> dict[str, str]:
+        graph: dict[str, str] = {}
+        directory = self.root / "entries"
+        if not directory.is_dir():
+            return graph
+        for entry_dir in sorted(item for item in directory.iterdir() if item.is_dir()):
+            history = self.decisions(entry_dir.name)
+            if history and history[-1].disposition == "DUPLICATE":
+                target = history[-1].canonical_entry_id
+                if target is None:
+                    raise EdgeBacklogIntegrityError("DUPLICATE decision is missing canonical_entry_id")
+                graph[entry_dir.name] = target
+        return graph
 
     def _revisit_graph(self) -> dict[str, set[str]]:
         graph: dict[str, set[str]] = {}
@@ -1606,6 +1681,18 @@ def _entry_text(value: EdgeBacklogEntryRevisionV1) -> str:
     )
 
 
+def _backlog_dimension_tokens(_field: str, value: Any) -> set[str]:
+    if isinstance(value, (list, tuple, set)):
+        text = " ".join(str(item) for item in value)
+    else:
+        text = str(value or "")
+    return duplicate_core.economic_tokens(text)
+
+
+def _record_chain_sha256(records: Sequence[HashedRecord]) -> str:
+    return hashlib.sha256(canonical_json_bytes([item.record_sha256 for item in records])).hexdigest()
+
+
 def _shared_link_targets(left: Sequence[EdgeBacklogLinkV1], right: Sequence[EdgeBacklogLinkV1]) -> list[str]:
     left_targets = {(item.target_kind, item.target_id) for item in left}
     right_targets = {(item.target_kind, item.target_id) for item in right}
@@ -1651,8 +1738,10 @@ def _legacy_matches_backlog(query: EdgeBacklogEntryRevisionV1, legacy: Mapping[s
         historical = legacy.get(field)
         if historical is None:
             return False
-        left = economic_tokens(" ".join(current) if isinstance(current, list) else str(current))
-        right = economic_tokens(" ".join(historical) if isinstance(historical, list) else str(historical))
+        left = duplicate_core.economic_tokens(" ".join(current) if isinstance(current, list) else str(current))
+        right = duplicate_core.economic_tokens(
+            " ".join(historical) if isinstance(historical, list) else str(historical)
+        )
         if left != right:
             return False
     return True
@@ -1666,8 +1755,25 @@ def _assert_source_identity_compatible(
     if previous[:2] != current[:2]:
         raise EdgeBacklogIntegrityError(f"source_id {source_id!r} was reused with conflicting identity")
     previous_hash, current_hash = previous[2], current[2]
-    if previous_hash and current_hash and previous_hash != current_hash:
+    if previous_hash and current_hash != previous_hash:
         raise EdgeBacklogIntegrityError(f"source_id {source_id!r} was reused with conflicting content hash")
+
+
+def _remember_source_identity(
+    identities: dict[str, tuple[str, str, str | None]],
+    source: EvidenceReferenceV1,
+) -> None:
+    identity = (source.source_kind, source.locator, source.content_sha256)
+    previous = identities.get(source.source_id)
+    if previous is None:
+        identities[source.source_id] = identity
+        return
+    if previous[:2] != identity[:2]:
+        raise EdgeBacklogIntegrityError(f"source_id {source.source_id!r} was reused with conflicting identity")
+    if previous[2] is not None and identity[2] is not None and previous[2] != identity[2]:
+        raise EdgeBacklogIntegrityError(f"source_id {source.source_id!r} was reused with conflicting content hash")
+    if previous[2] is None and identity[2] is not None:
+        identities[source.source_id] = identity
 
 
 def _graph_has_cycle(graph: Mapping[str, set[str]]) -> bool:

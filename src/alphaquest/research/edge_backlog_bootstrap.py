@@ -7,6 +7,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 from tempfile import NamedTemporaryFile
 from typing import Any, Literal, Mapping
 
@@ -19,7 +20,7 @@ from alphaquest.research.edge_backlog import (
     canonical_json_bytes,
     record_sha256,
 )
-from alphaquest.research.storage import campaign_definition_paths, display_path, load_storage_layout
+from alphaquest.research.storage import StorageLayout, campaign_definition_paths, display_path, load_storage_layout
 
 
 HISTORY_INDEX_SCHEMA = "alphaquest.edge-backlog-history-index-record/v1"
@@ -43,8 +44,10 @@ class HistoricalEdgeIndexRecordV1(StrictBacklogModel):
     source_path: str = Field(min_length=1)
     source_sha256: Sha256
     source_row_number: int | None = Field(default=None, ge=1)
+    source_generation: Literal["CURRENT", "CONFIGURED_ARCHIVE", "CLEAN_SLATE_ARCHIVE"]
     archive_generation: str = Field(min_length=1)
-    evidence_eligibility: Literal["CURRENT_SCOPE", "HISTORICAL_INELIGIBLE"]
+    p1_evidence_eligibility: Literal["NOT_CURRENT_P1_EVIDENCE"]
+    derived_index_use: Literal["DUPLICATE_RECALL_ONLY"]
     campaign_id: str | None = None
     variant_id: str | None = None
     attempt_id: str | None = None
@@ -65,7 +68,7 @@ class HistoricalEdgeIndexRecordV1(StrictBacklogModel):
     raw_disposition: str | None = None
     raw_failure_reason: str | None = None
     extraction_completeness: Literal["COMPLETE", "PARTIAL", "INSUFFICIENT"]
-    semantic_resolution: Literal["LEGACY_CANDIDATE", "NEEDS_MANUAL_REVIEW"]
+    semantic_resolution: Literal["NEEDS_MANUAL_REVIEW"]
     record_sha256: Sha256
 
     @model_validator(mode="after")
@@ -84,30 +87,39 @@ def build_historical_edge_index(
 
     root = Path(project_root).resolve()
     layout = load_storage_layout(root)
-    output = Path(output_path) if output_path is not None else layout.edge_backlog_history_index
-    output = output if output.is_absolute() else root / output
+    output = _validated_output_path(root, layout, output_path)
 
     records: list[HistoricalEdgeIndexRecordV1] = []
     definitions = set(campaign_definition_paths(project_root=root, include_ledger=True))
     archived_root = root / "research" / "archived_generations"
     if archived_root.is_dir():
         definitions.update(path.resolve() for path in archived_root.glob("*/campaigns/*/*/campaign.yaml"))
+    ledger_paths = tuple(
+        path for path in sorted(root.glob("**/research_ledger.csv")) if path.is_file() and not _is_git_path(path, root)
+    )
+    experiment_path = layout.research_artifact_root / "governance" / "experiment_registry.jsonl"
+    experiment_paths = (experiment_path,) if experiment_path.is_file() else ()
+    reset_paths = tuple(
+        path for path in sorted((layout.research_artifact_root / "governance").glob("research_reset*.json"))
+    )
+    source_paths = {*definitions, *ledger_paths, *experiment_paths, *reset_paths}
+    if output.resolve() in {path.resolve() for path in source_paths}:
+        raise ValueError("derived history index target cannot replace a bootstrap source file")
+    _assert_replaceable_derived_index(output)
+
     for path in sorted(definitions):
-        record = _campaign_record(root, path)
+        record = _campaign_record(root, path, layout)
         if record is not None:
             records.append(record)
 
-    for path in sorted(root.glob("**/research_ledger.csv")):
-        if not path.is_file() or _is_generated_or_git(path, root, layout.catalog_root):
-            continue
-        records.extend(_ledger_records(root, path))
+    for path in ledger_paths:
+        records.extend(_ledger_records(root, path, layout))
 
-    experiment_path = layout.research_artifact_root / "governance" / "experiment_registry.jsonl"
-    if experiment_path.is_file():
-        records.extend(_experiment_records(root, experiment_path))
+    for path in experiment_paths:
+        records.extend(_experiment_records(root, path, layout))
 
-    for path in sorted((layout.research_artifact_root / "governance").glob("research_reset*.json")):
-        record = _reset_record(root, path)
+    for path in reset_paths:
+        record = _reset_record(root, path, layout)
         if record is not None:
             records.append(record)
 
@@ -131,7 +143,13 @@ def build_historical_edge_index(
         "output_sha256": hashlib.sha256(data).hexdigest(),
         "records": len(records),
         "source_counts": dict(sorted(counts.items())),
-        "historical_ineligible": sum(item.evidence_eligibility == "HISTORICAL_INELIGIBLE" for item in records),
+        "source_generation_counts": {
+            generation: sum(item.source_generation == generation for item in records)
+            for generation in ("CURRENT", "CONFIGURED_ARCHIVE", "CLEAN_SLATE_ARCHIVE")
+        },
+        "historical_ineligible": sum(item.source_generation != "CURRENT" for item in records),
+        "not_current_p1_evidence": sum(item.p1_evidence_eligibility == "NOT_CURRENT_P1_EVIDENCE" for item in records),
+        "duplicate_recall_only": sum(item.derived_index_use == "DUPLICATE_RECALL_ONLY" for item in records),
         "needs_manual_review": sum(item.semantic_resolution == "NEEDS_MANUAL_REVIEW" for item in records),
     }
 
@@ -164,7 +182,11 @@ def validate_historical_edge_index(path: str | Path) -> dict[str, Any]:
     }
 
 
-def _campaign_record(root: Path, path: Path) -> HistoricalEdgeIndexRecordV1 | None:
+def _campaign_record(
+    root: Path,
+    path: Path,
+    layout: StorageLayout,
+) -> HistoricalEdgeIndexRecordV1 | None:
     try:
         payload = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     except (OSError, yaml.YAMLError):
@@ -178,7 +200,7 @@ def _campaign_record(root: Path, path: Path) -> HistoricalEdgeIndexRecordV1 | No
         "source_path": display_path(path, root),
         "source_sha256": _file_sha256(path),
         "source_row_number": None,
-        **_generation(path, root),
+        **_generation(path, root, layout),
         "campaign_id": _optional(payload.get("campaign_id") or path.parent.name),
         "variant_id": None,
         "attempt_id": None,
@@ -208,7 +230,7 @@ def _campaign_record(root: Path, path: Path) -> HistoricalEdgeIndexRecordV1 | No
     return _seal_history(raw)
 
 
-def _ledger_records(root: Path, path: Path) -> list[HistoricalEdgeIndexRecordV1]:
+def _ledger_records(root: Path, path: Path, layout: StorageLayout) -> list[HistoricalEdgeIndexRecordV1]:
     output = []
     source_sha256 = _file_sha256(path)
     try:
@@ -219,7 +241,7 @@ def _ledger_records(root: Path, path: Path) -> list[HistoricalEdgeIndexRecordV1]
                     "source_path": display_path(path, root),
                     "source_sha256": source_sha256,
                     "source_row_number": row_number,
-                    **_generation(path, root),
+                    **_generation(path, root, layout),
                     "campaign_id": _optional(row.get("campaign_id") or row.get("strategy_id")),
                     "variant_id": _optional(row.get("variant_id")),
                     "attempt_id": _optional(row.get("attempt_id")),
@@ -248,7 +270,7 @@ def _ledger_records(root: Path, path: Path) -> list[HistoricalEdgeIndexRecordV1]
     return output
 
 
-def _experiment_records(root: Path, path: Path) -> list[HistoricalEdgeIndexRecordV1]:
+def _experiment_records(root: Path, path: Path, layout: StorageLayout) -> list[HistoricalEdgeIndexRecordV1]:
     output = []
     source_sha256 = _file_sha256(path)
     for row_number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -265,7 +287,7 @@ def _experiment_records(root: Path, path: Path) -> list[HistoricalEdgeIndexRecor
             "source_path": display_path(path, root),
             "source_sha256": source_sha256,
             "source_row_number": row_number,
-            **_generation(path, root),
+            **_generation(path, root, layout),
             "campaign_id": _optional(row.get("campaign_id")),
             "variant_id": _optional(row.get("variant_id")),
             "attempt_id": _optional(row.get("attempt_id")),
@@ -290,7 +312,7 @@ def _experiment_records(root: Path, path: Path) -> list[HistoricalEdgeIndexRecor
     return output
 
 
-def _reset_record(root: Path, path: Path) -> HistoricalEdgeIndexRecordV1 | None:
+def _reset_record(root: Path, path: Path, layout: StorageLayout) -> HistoricalEdgeIndexRecordV1 | None:
     try:
         payload = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
@@ -300,7 +322,7 @@ def _reset_record(root: Path, path: Path) -> HistoricalEdgeIndexRecordV1 | None:
         "source_path": display_path(path, root),
         "source_sha256": _file_sha256(path),
         "source_row_number": None,
-        **_generation(path, root),
+        **_generation(path, root, layout),
         "campaign_id": None,
         "variant_id": None,
         "attempt_id": None,
@@ -358,13 +380,21 @@ def _seal_history(raw: Mapping[str, Any]) -> HistoricalEdgeIndexRecordV1:
         "record_id": record_id,
         **dict(raw),
         "extraction_completeness": completeness,
-        "semantic_resolution": "LEGACY_CANDIDATE" if completeness == "COMPLETE" else "NEEDS_MANUAL_REVIEW",
+        "semantic_resolution": "NEEDS_MANUAL_REVIEW",
     }
     payload["record_sha256"] = record_sha256(payload)
     return HistoricalEdgeIndexRecordV1.model_validate(payload)
 
 
-def _generation(path: Path, root: Path) -> dict[str, str]:
+def _generation(path: Path, root: Path, layout: StorageLayout) -> dict[str, str]:
+    for archive_root in layout.archive_campaign_roots:
+        if _is_relative_to(path.resolve(), archive_root.resolve()):
+            return {
+                "source_generation": "CONFIGURED_ARCHIVE",
+                "archive_generation": display_path(archive_root, root),
+                "p1_evidence_eligibility": "NOT_CURRENT_P1_EVIDENCE",
+                "derived_index_use": "DUPLICATE_RECALL_ONLY",
+            }
     try:
         relative = path.resolve().relative_to(root)
     except ValueError:
@@ -373,12 +403,96 @@ def _generation(path: Path, root: Path) -> dict[str, str]:
     try:
         index = parts.index("archived_generations")
     except ValueError:
-        return {"archive_generation": "CURRENT", "evidence_eligibility": "CURRENT_SCOPE"}
+        return {
+            "source_generation": "CURRENT",
+            "archive_generation": "CURRENT",
+            "p1_evidence_eligibility": "NOT_CURRENT_P1_EVIDENCE",
+            "derived_index_use": "DUPLICATE_RECALL_ONLY",
+        }
     generation = parts[index + 1] if index + 1 < len(parts) else "UNKNOWN_ARCHIVE"
     return {
+        "source_generation": "CLEAN_SLATE_ARCHIVE",
         "archive_generation": generation,
-        "evidence_eligibility": "HISTORICAL_INELIGIBLE",
+        "p1_evidence_eligibility": "NOT_CURRENT_P1_EVIDENCE",
+        "derived_index_use": "DUPLICATE_RECALL_ONLY",
     }
+
+
+def _validated_output_path(
+    root: Path,
+    layout: StorageLayout,
+    output_path: str | Path | None,
+) -> Path:
+    configured = layout.edge_backlog_history_index.resolve()
+    requested = Path(output_path) if output_path is not None else configured
+    requested = requested.resolve() if requested.is_absolute() else (root / requested).resolve()
+    if requested != configured:
+        raise ValueError("derived history index output must equal the configured edge_backlog_history_index")
+    catalog_root = layout.catalog_root.resolve()
+    if requested == catalog_root or not _is_relative_to(requested, catalog_root):
+        raise ValueError("derived history index must be a file beneath the configured catalog_root")
+    protected_roots = (
+        layout.edge_backlog_root,
+        layout.active_campaign_root,
+        *layout.archive_campaign_roots,
+        *layout.evidence_roots,
+        *(root / name for name in ("config", "docs", "src", "tests", "tools", "apps", "execution_system")),
+    )
+    if any(_is_relative_to(requested, protected.resolve()) for protected in protected_roots):
+        raise ValueError("derived history index target overlaps protected canonical or research storage")
+    protected_files = (
+        root / "config/research_operating_model.yaml",
+        root / "docs/research/research-operating-model.md",
+        root / "src/alphaquest/research/operating_model.py",
+    )
+    if requested in {path.resolve() for path in protected_files}:
+        raise ValueError("derived history index target overlaps canonical P1 policy storage")
+    return requested
+
+
+def _assert_replaceable_derived_index(path: Path) -> None:
+    if not path.exists():
+        return
+    if not path.is_file():
+        raise ValueError("derived history index target is not a regular file")
+    try:
+        validate_historical_edge_index(path)
+    except (OSError, ValueError) as exc:
+        if _is_hash_valid_prior_derived_index(path):
+            return
+        raise ValueError(
+            "existing derived history index target is not a valid derived index and will not be replaced"
+        ) from exc
+
+
+def _is_hash_valid_prior_derived_index(path: Path) -> bool:
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return False
+    if not lines:
+        return False
+    for line in lines:
+        try:
+            record = json.loads(line)
+        except json.JSONDecodeError:
+            return False
+        if not isinstance(record, dict) or record.get("schema") != HISTORY_INDEX_SCHEMA:
+            return False
+        if not re.fullmatch(r"history\.[a-f0-9]{24}", str(record.get("record_id") or "")):
+            return False
+        stored_hash = str(record.get("record_sha256") or "")
+        if len(stored_hash) != 64 or record_sha256(record) != stored_hash:
+            return False
+    return True
+
+
+def _is_relative_to(path: Path, root: Path) -> bool:
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
 
 
 def _optional(value: Any) -> str | None:
@@ -406,15 +520,10 @@ def _file_sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
-def _is_generated_or_git(path: Path, root: Path, catalog_root: Path) -> bool:
+def _is_git_path(path: Path, root: Path) -> bool:
     resolved = path.resolve()
     try:
         resolved.relative_to((root / ".git").resolve())
-        return True
-    except ValueError:
-        pass
-    try:
-        resolved.relative_to(catalog_root.resolve())
         return True
     except ValueError:
         return False

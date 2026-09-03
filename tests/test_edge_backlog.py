@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import inspect
 import json
 from pathlib import Path
@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from alphaquest.research import duplicate_matching as duplicate_core
 from alphaquest.research.edge_backlog import (
     EdgeBacklogAuthorityError,
     EdgeBacklogConflictError,
@@ -107,6 +108,57 @@ def _create(store: EdgeBacklogStore, entry_id: str, observation: ObservationRevi
 def _rewrite_record(path: Path, payload: dict) -> None:
     payload["record_sha256"] = record_sha256(payload)
     path.write_bytes(canonical_json_bytes(payload) + b"\n")
+
+
+def _record_duplicate(store: EdgeBacklogStore, source_id: str, target_id: str):
+    snapshot = store.duplicate_snapshot(source_id)
+    return store.record_human_decision(
+        source_id,
+        disposition="DUPLICATE",
+        duplicate_resolution="SAME_EDGE",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        canonical_entry_id=target_id,
+        reason_codes=["DUPLICATE_EDGE"],
+        rationale="The exact economic edge is already represented by the canonical target.",
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+
+
+def _forge_duplicate_decision(store: EdgeBacklogStore, source_id: str, target_id: str) -> Path:
+    entry = store.latest_entry(source_id)
+    snapshot = store.duplicate_snapshot(source_id)
+    payload = {
+        "schema": "alphaquest.edge-backlog-decision/v1",
+        "record_id": f"decision.forged.{source_id}",
+        "decision_id": f"decision.forged.{source_id}",
+        "entry_id": source_id,
+        "entry_revision_sha256": entry.record_sha256,
+        "entry_link_chain_sha256": snapshot["entry_link_chain_sha256"],
+        "sequence": 1,
+        "previous_decision_sha256": None,
+        "disposition": "DUPLICATE",
+        "duplicate_resolution": "SAME_EDGE",
+        "candidate_snapshot": snapshot["candidates"],
+        "candidate_snapshot_sha256": snapshot["snapshot_sha256"],
+        "canonical_entry_id": target_id,
+        "related_edge_family_ids": [],
+        "reason_codes": ["DUPLICATE_EDGE"],
+        "rationale": "Adversarial fixture bypasses the append API to exercise full validation.",
+        "revisit_conditions": [],
+        "recorded_at": NOW.isoformat().replace("+00:00", "Z"),
+        "actor": {
+            "actor_class": "HUMAN_OWNER_RESEARCHER",
+            "actor_id": "owner",
+            "task_id": None,
+        },
+    }
+    payload["record_sha256"] = record_sha256(payload)
+    record = EdgeBacklogDecisionV1.model_validate(payload)
+    path = store.root / "entries" / source_id / "decisions/000001.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(canonical_json_bytes(record) + b"\n")
+    return path
 
 
 def test_closed_models_timezone_and_explicit_source_integrity() -> None:
@@ -211,6 +263,81 @@ def test_missing_observation_and_conflicting_source_identity_are_rejected(tmp_pa
         store.create_entry(payload, actor_id="codex-task-runner", recorded_at=NOW)
 
 
+def test_locator_only_hash_upgrade_is_retained_and_conflict_is_prewrite(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    locator = "doi:10/source-upgrade"
+    _capture(store, "obs.source.locator", source_id="source.upgrade", locator=locator)
+    _capture(
+        store,
+        "obs.source.hash-a",
+        source_id="source.upgrade",
+        locator=locator,
+        integrity="HASH_BOUND",
+        content_sha256="a" * 64,
+        claim_locator="table-hash-a",
+    )
+
+    rejected_path = store.root / "observations/obs.source.hash-b/revisions/000001.json"
+    with pytest.raises(EdgeBacklogIntegrityError, match="conflicting content hash"):
+        _capture(
+            store,
+            "obs.source.hash-b",
+            source_id="source.upgrade",
+            locator=locator,
+            integrity="HASH_BOUND",
+            content_sha256="b" * 64,
+            claim_locator="table-hash-b",
+        )
+    assert not rejected_path.exists()
+
+    downgrade_path = store.root / "observations/obs.source.downgrade/revisions/000001.json"
+    with pytest.raises(EdgeBacklogIntegrityError, match="conflicting content hash"):
+        _capture(
+            store,
+            "obs.source.downgrade",
+            source_id="source.upgrade",
+            locator=locator,
+            claim_locator="table-downgrade",
+        )
+    assert not downgrade_path.exists()
+    assert store.validate()["status"] == "PASS"
+
+
+def test_full_validation_rejects_forged_source_hash_downgrade(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    locator = "doi:10/source-downgrade"
+    store.capture_observation(
+        _observation_payload(
+            "obs.source.bound",
+            source_id="source.bound",
+            locator=locator,
+            integrity="HASH_BOUND",
+            content_sha256="a" * 64,
+        ),
+        actor_id="codex-task-runner",
+        recorded_at=NOW,
+    )
+    forged = store.capture_observation(
+        _observation_payload("obs.source.forged", source_id="source.other"),
+        actor_id="codex-task-runner",
+        recorded_at=NOW + timedelta(minutes=1),
+    )
+    path = store.root / f"observations/{forged.observation_id}/revisions/000001.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["evidence_refs"][0].update(
+        {
+            "source_id": "source.bound",
+            "locator": locator,
+            "integrity": "LOCATOR_ONLY",
+            "content_sha256": None,
+        }
+    )
+    _rewrite_record(path, payload)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="without its bound content hash"):
+        store.validate()
+
+
 def test_contradicting_evidence_cannot_silently_disappear(tmp_path: Path) -> None:
     store = EdgeBacklogStore(tmp_path)
     support = _capture(store, "obs.support")
@@ -273,6 +400,77 @@ def test_terminal_decision_seals_exact_revision_and_snapshot(tmp_path: Path) -> 
         )
 
 
+def test_duplicate_canonical_target_accepts_only_a_direct_live_entry(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observations = [_capture(store, f"obs.duplicate.direct.{index}") for index in range(3)]
+    canonical = _create(store, "edge.duplicate.direct.canonical", observations[0])
+    direct = _create(store, "edge.duplicate.direct.source", observations[1])
+    rejected = _create(store, "edge.duplicate.direct.rejected", observations[2])
+
+    decision = _record_duplicate(store, direct.entry_id, canonical.entry_id)
+    assert decision.canonical_entry_id == canonical.entry_id
+
+    rejected_snapshot = store.duplicate_snapshot(rejected.entry_id)
+    store.record_human_decision(
+        rejected.entry_id,
+        disposition="REJECTED",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=rejected_snapshot["snapshot_sha256"],
+        reason_codes=["CAUSAL_WEAKNESS"],
+        rationale="The owner rejected this edge without granting scientific validity.",
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+    new_observation = _capture(store, "obs.duplicate.direct.new")
+    new_source = _create(store, "edge.duplicate.direct.new", new_observation)
+    with pytest.raises(EdgeBacklogConflictError, match="terminally rejected"):
+        _record_duplicate(store, new_source.entry_id, rejected.entry_id)
+    assert not (store.root / f"entries/{new_source.entry_id}/decisions/000001.json").exists()
+    assert store.validate()["status"] == "PASS"
+
+
+def test_duplicate_canonicalization_rejects_multi_hop_and_cycle_appends(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observations = [_capture(store, f"obs.duplicate.graph.{index}") for index in range(4)]
+    first = _create(store, "edge.duplicate.graph.first", observations[0])
+    second = _create(store, "edge.duplicate.graph.second", observations[1])
+    third = _create(store, "edge.duplicate.graph.third", observations[2])
+    fourth = _create(store, "edge.duplicate.graph.fourth", observations[3])
+
+    _record_duplicate(store, first.entry_id, second.entry_id)
+    with pytest.raises(EdgeBacklogConflictError, match="chains are not allowed"):
+        _record_duplicate(store, second.entry_id, third.entry_id)
+    assert not (store.root / f"entries/{second.entry_id}/decisions/000001.json").exists()
+
+    _record_duplicate(store, third.entry_id, fourth.entry_id)
+    with pytest.raises(EdgeBacklogConflictError, match="already duplicate"):
+        _record_duplicate(store, second.entry_id, third.entry_id)
+    with pytest.raises(EdgeBacklogConflictError, match="canonicalization cycle"):
+        _record_duplicate(store, second.entry_id, first.entry_id)
+    assert store.validate()["status"] == "PASS"
+
+
+def test_full_validation_rejects_forged_duplicate_multi_hop_and_cycle(tmp_path: Path) -> None:
+    chain_store = EdgeBacklogStore(tmp_path / "chain")
+    chain_observations = [_capture(chain_store, f"obs.forged.chain.{index}") for index in range(3)]
+    chain_first = _create(chain_store, "edge.forged.chain.first", chain_observations[0])
+    chain_second = _create(chain_store, "edge.forged.chain.second", chain_observations[1])
+    chain_third = _create(chain_store, "edge.forged.chain.third", chain_observations[2])
+    _record_duplicate(chain_store, chain_first.entry_id, chain_second.entry_id)
+    _forge_duplicate_decision(chain_store, chain_second.entry_id, chain_third.entry_id)
+    with pytest.raises(EdgeBacklogIntegrityError, match="already duplicate|multi-hop"):
+        chain_store.validate()
+
+    cycle_store = EdgeBacklogStore(tmp_path / "cycle")
+    cycle_observations = [_capture(cycle_store, f"obs.forged.cycle.{index}") for index in range(2)]
+    cycle_first = _create(cycle_store, "edge.forged.cycle.first", cycle_observations[0])
+    cycle_second = _create(cycle_store, "edge.forged.cycle.second", cycle_observations[1])
+    _record_duplicate(cycle_store, cycle_first.entry_id, cycle_second.entry_id)
+    _forge_duplicate_decision(cycle_store, cycle_second.entry_id, cycle_first.entry_id)
+    with pytest.raises(EdgeBacklogIntegrityError, match="canonicalization contains a cycle"):
+        cycle_store.validate()
+
+
 def test_candidate_snapshot_staleness_and_unresolved_continue_fail_closed(tmp_path: Path) -> None:
     store = EdgeBacklogStore(tmp_path)
     first_obs = _capture(store, "obs.snapshot.first")
@@ -305,6 +503,101 @@ def test_candidate_snapshot_staleness_and_unresolved_continue_fail_closed(tmp_pa
             reviewer_id="owner",
             recorded_at=NOW,
         )
+
+
+def test_snapshot_rejects_candidate_contradicting_evidence_added_after_capture(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    candidate_observation = _capture(store, "obs.snapshot.candidate")
+    query_observation = _capture(store, "obs.snapshot.adversarial-query")
+    candidate = _create(store, "edge.snapshot.candidate", candidate_observation)
+    query = _create(store, "edge.snapshot.adversarial-query", query_observation)
+    stale = store.duplicate_snapshot(query.entry_id)
+    stale_candidate = next(item for item in stale["candidates"] if item["candidate_id"] == candidate.entry_id)
+    assert stale_candidate["candidate_record_sha256"] == candidate.record_sha256
+
+    contradiction = _capture(
+        store,
+        "obs.snapshot.contradiction",
+        statement="A later source contradicts persistence after the opening interval.",
+    )
+    revised = store.revise_entry(
+        candidate.entry_id,
+        _entry_payload(
+            candidate.entry_id,
+            candidate_observation,
+            observation_refs=[
+                {
+                    "observation_id": candidate_observation.observation_id,
+                    "observation_revision_sha256": candidate_observation.record_sha256,
+                    "role": "MOTIVATING",
+                },
+                {
+                    "observation_id": contradiction.observation_id,
+                    "observation_revision_sha256": contradiction.record_sha256,
+                    "role": "CONTRADICTING",
+                },
+            ],
+        ),
+        actor_id="codex-task-runner",
+        recorded_at=NOW,
+    )
+    current = store.duplicate_snapshot(query.entry_id)
+    current_candidate = next(item for item in current["candidates"] if item["candidate_id"] == candidate.entry_id)
+    assert current_candidate["candidate_record_sha256"] == revised.record_sha256
+    assert current_candidate["candidate_record_sha256"] != stale_candidate["candidate_record_sha256"]
+
+    with pytest.raises(EdgeBacklogConflictError, match="snapshot is stale"):
+        store.record_human_decision(
+            query.entry_id,
+            disposition="REVIEWED_CONTINUE",
+            duplicate_resolution="DISTINCT_EDGE",
+            candidate_snapshot_sha256=stale["snapshot_sha256"],
+            reason_codes=["OTHER"],
+            rationale="This stale review predates newly captured contradicting evidence.",
+            reviewer_id="owner",
+            recorded_at=NOW,
+        )
+    assert store.validate()["status"] == "PASS"
+
+
+def test_snapshot_binds_candidate_disposition_and_link_chain(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    candidate_observation = _capture(store, "obs.snapshot.binding-candidate")
+    query_observation = _capture(store, "obs.snapshot.binding-query")
+    candidate = _create(store, "edge.snapshot.binding-candidate", candidate_observation)
+    query = _create(store, "edge.snapshot.binding-query", query_observation)
+
+    before_decision = store.duplicate_snapshot(query.entry_id)
+    candidate_snapshot = store.duplicate_snapshot(candidate.entry_id)
+    decision = store.record_human_decision(
+        candidate.entry_id,
+        disposition="REVIEWED_CONTINUE",
+        duplicate_resolution="DISTINCT_EDGE",
+        candidate_snapshot_sha256=candidate_snapshot["snapshot_sha256"],
+        reason_codes=["OTHER"],
+        rationale="The owner recorded non-scientific curation for snapshot binding coverage.",
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+    after_decision = store.duplicate_snapshot(query.entry_id)
+    bound = next(item for item in after_decision["candidates"] if item["candidate_id"] == candidate.entry_id)
+    assert before_decision["snapshot_sha256"] != after_decision["snapshot_sha256"]
+    assert bound["candidate_decision_sha256"] == decision.record_sha256
+
+    proposal = tmp_path / "research/proposals/hypothesis.snapshot-binding.json"
+    proposal.parent.mkdir(parents=True)
+    proposal.write_text('{"schema":"alphaquest.hypothesis-proposal/v1"}\n', encoding="utf-8")
+    store.record_hypothesis_proposal_link(
+        candidate.entry_id,
+        hypothesis_id="hypothesis.snapshot-binding",
+        target_locator=proposal,
+        actor_id="edge-backlog-linker",
+        recorded_at=NOW,
+    )
+    after_link = store.duplicate_snapshot(query.entry_id)
+    linked = next(item for item in after_link["candidates"] if item["candidate_id"] == candidate.entry_id)
+    assert after_link["snapshot_sha256"] != after_decision["snapshot_sha256"]
+    assert linked["candidate_link_chain_sha256"] != bound["candidate_link_chain_sha256"]
 
 
 def test_suspend_resume_is_append_only_and_allows_later_revision(tmp_path: Path) -> None:
@@ -354,6 +647,94 @@ def test_suspend_resume_is_append_only_and_allows_later_revision(tmp_path: Path)
     assert store.entry_state(entry.entry_id) == "UNREVIEWED"
     assert suspension_path.read_bytes() == suspension_bytes
     assert store.validate()["status"] == "PASS"
+
+
+def test_all_append_chains_reject_backdated_records_before_write(tmp_path: Path) -> None:
+    earlier = NOW - timedelta(minutes=1)
+    store = EdgeBacklogStore(tmp_path)
+    observation = _capture(store, "obs.chronology")
+    entry = _create(store, "edge.chronology", observation)
+
+    with pytest.raises(EdgeBacklogConflictError, match="observation revision recorded_at"):
+        store.revise_observation(
+            observation.observation_id,
+            _observation_payload(observation.observation_id, statement="Backdated observation revision."),
+            actor_id="codex-task-runner",
+            recorded_at=earlier,
+        )
+    assert not (store.root / "observations/obs.chronology/revisions/000002.json").exists()
+
+    with pytest.raises(EdgeBacklogConflictError, match="entry revision recorded_at"):
+        store.revise_entry(
+            entry.entry_id,
+            _entry_payload(entry.entry_id, observation, title="Backdated entry revision"),
+            actor_id="codex-task-runner",
+            recorded_at=earlier,
+        )
+    assert not (store.root / "entries/edge.chronology/revisions/000002.json").exists()
+
+    snapshot = store.duplicate_snapshot(entry.entry_id)
+    store.record_human_decision(
+        entry.entry_id,
+        disposition="SUSPENDED",
+        duplicate_resolution="UNRESOLVED",
+        candidate_snapshot_sha256=snapshot["snapshot_sha256"],
+        reason_codes=["TEMPORARY_BLOCKER"],
+        rationale="A temporary blocker requires a later human resume.",
+        revisit_conditions=["The blocker is resolved."],
+        reviewer_id="owner",
+        recorded_at=NOW,
+    )
+    with pytest.raises(EdgeBacklogConflictError, match="decision recorded_at"):
+        store.resume_entry(
+            entry.entry_id,
+            reason_codes=["NEW_INFORMATION"],
+            rationale="This backdated resume must be rejected.",
+            reviewer_id="owner",
+            recorded_at=earlier,
+        )
+    assert not (store.root / "entries/edge.chronology/decisions/000002.json").exists()
+
+    link_store = EdgeBacklogStore(tmp_path / "links")
+    link_observation = _capture(link_store, "obs.chronology.links")
+    link_entry = _create(link_store, "edge.chronology.links", link_observation)
+    for suffix in ("one", "two"):
+        target = link_store.project_root / f"research/proposals/hypothesis.chronology.{suffix}.json"
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text('{"schema":"alphaquest.hypothesis-proposal/v1"}\n', encoding="utf-8")
+    link_store.record_hypothesis_proposal_link(
+        link_entry.entry_id,
+        hypothesis_id="hypothesis.chronology.one",
+        target_locator="research/proposals/hypothesis.chronology.one.json",
+        actor_id="edge-backlog-linker",
+        recorded_at=NOW,
+    )
+    with pytest.raises(EdgeBacklogConflictError, match="link recorded_at"):
+        link_store.record_hypothesis_proposal_link(
+            link_entry.entry_id,
+            hypothesis_id="hypothesis.chronology.two",
+            target_locator="research/proposals/hypothesis.chronology.two.json",
+            actor_id="edge-backlog-linker",
+            recorded_at=earlier,
+        )
+    assert not (link_store.root / "entries/edge.chronology.links/links/000002.json").exists()
+
+
+def test_full_validation_rejects_backdated_chain_history(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation = _capture(store, "obs.chronology.tamper")
+    store.revise_observation(
+        observation.observation_id,
+        _observation_payload(observation.observation_id, statement="A valid same-time revision."),
+        actor_id="codex-task-runner",
+        recorded_at=NOW,
+    )
+    path = store.root / "observations/obs.chronology.tamper/revisions/000002.json"
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["recorded_at"] = (NOW - timedelta(minutes=1)).isoformat().replace("+00:00", "Z")
+    _rewrite_record(path, payload)
+    with pytest.raises(EdgeBacklogIntegrityError, match="chronology moved backward"):
+        store.validate()
 
 
 def test_actor_authority_and_proposal_link_without_positive_disposition(tmp_path: Path) -> None:
@@ -558,6 +939,52 @@ def test_legacy_campaign_duplicate_behavior_has_golden_output(tmp_path: Path) ->
             "match_band": "POSSIBLE_RELATED_EDGE",
         }
     ]
+
+
+def test_campaign_and_backlog_adapters_use_the_same_matcher_core(tmp_path: Path, monkeypatch) -> None:
+    score_schemas: list[str] = []
+    rank_identities: list[str] = []
+    original_score = duplicate_core.deterministic_duplicate_score
+    original_rank = duplicate_core.rank_duplicate_candidates
+
+    def tracked_score(**kwargs):
+        score_schemas.append(str(kwargs["taxonomy_schema"]))
+        return original_score(**kwargs)
+
+    def tracked_rank(candidates, **kwargs):
+        rank_identities.append(str(kwargs["identity_field"]))
+        return original_rank(candidates, **kwargs)
+
+    monkeypatch.setattr(duplicate_core, "deterministic_duplicate_score", tracked_score)
+    monkeypatch.setattr(duplicate_core, "rank_duplicate_candidates", tracked_rank)
+
+    campaign = tmp_path / "research/campaigns/active/shared_core_prior"
+    campaign.mkdir(parents=True)
+    campaign.joinpath("campaign.yaml").write_text(
+        "campaign_id: shared_core_prior\n"
+        "title: Opening range continuation\n"
+        "hypothesis: Opening range breakouts persist\n"
+        "expected_mechanism: delayed inventory hedging\n",
+        encoding="utf-8",
+    )
+    assert duplicate_matches(
+        project_root=tmp_path,
+        campaign_id="shared_core_new",
+        title="Opening range continuation",
+        hypothesis="Opening range breakouts persist",
+        expected_mechanism="delayed inventory hedging",
+    )
+
+    store = EdgeBacklogStore(tmp_path)
+    first_observation = _capture(store, "obs.shared-core.first")
+    second_observation = _capture(store, "obs.shared-core.second")
+    _create(store, "edge.shared-core.first", first_observation)
+    second = _create(store, "edge.shared-core.second", second_observation)
+    assert store.duplicate_candidates(second.entry_id)
+
+    assert "alphaquest.duplicate-taxonomy/v1" in score_schemas
+    assert "alphaquest.edge-backlog-duplicate-taxonomy/v1" in score_schemas
+    assert rank_identities == ["campaign_id", "candidate_id"]
 
 
 def test_manual_record_tampering_and_unknown_entry_fields_fail_validation(tmp_path: Path) -> None:

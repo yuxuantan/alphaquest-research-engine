@@ -255,7 +255,6 @@ def _parser() -> argparse.ArgumentParser:
         "bootstrap-index", help="Rebuild the deterministic derived historical index."
     )
     edge_bootstrap.add_argument("--project-root", default=".")
-    edge_bootstrap.add_argument("--output")
     edge_bootstrap.set_defaults(handler=_edge_bootstrap)
 
     campaign = commands.add_parser("campaign", help="Expert YAML compatibility, validation, inspection, and execution.")
@@ -1324,12 +1323,7 @@ def _edge_validate(args: argparse.Namespace) -> int:
 def _edge_bootstrap(args: argparse.Namespace) -> int:
     from alphaquest.research.edge_backlog_bootstrap import build_historical_edge_index
 
-    _edge_json(
-        build_historical_edge_index(
-            args.project_root,
-            output_path=args.output,
-        )
-    )
+    _edge_json(build_historical_edge_index(args.project_root))
     return 0
 
 

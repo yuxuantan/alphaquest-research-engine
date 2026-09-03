@@ -36,6 +36,11 @@ the bootstrap index, and future registry views are derived and rebuildable.
 All contracts reject unknown fields, use canonical JSON serialization, and
 carry a stable SHA-256 over the complete record except its own hash field.
 Timezone-aware timestamps and exact referenced-record hashes are required.
+The committed JSON Schemas provide closed, structural validation for one
+record. Cross-record semantics—including source-identity upgrades, chronology,
+hash chains, exact references, duplicate canonicalization, suspension state,
+and link targets—are enforced by the append API and `edge-backlog validate`;
+JSON Schema validation alone is not a complete backlog integrity check.
 
 ### Observation revisions
 
@@ -47,7 +52,9 @@ reference declares `HASH_BOUND` or `LOCATOR_ONLY` integrity:
   and prohibits a content hash so it cannot masquerade as reviewed evidence.
 
 The same `source_id` may support several claims and observations only while its
-source kind, locator, and any captured content hash remain consistent.
+source kind, locator, and any captured content hash remain consistent. A
+`LOCATOR_ONLY` source may be upgraded once to `HASH_BOUND`; that hash then
+remains part of the source identity, and later reuse must supply the same hash.
 
 ### Edge-entry revisions
 
@@ -62,13 +69,18 @@ fields are not part of the closed schema.
 The human-only operation records `HUMAN_OWNER_RESEARCHER` by construction. The
 reviewer ID is provenance, not authentication, and there is no actor-type flag.
 Every review binds the exact entry revision and the complete deterministic
-duplicate candidate snapshot visible to the reviewer.
+duplicate candidate snapshot visible to the reviewer. Each candidate carries
+its complete immutable entry or historical-index record SHA-256, plus current
+canonical decision and link-chain identities where applicable. Candidate
+revision, evidence, disposition, or relevant-link changes stale an earlier
+snapshot.
 
 - `REVIEWED_CONTINUE` is optional curation. It is not scientific approval and
   is not required before a later P4 hypothesis proposal.
 - `REJECTED` is terminal.
 - `DUPLICATE` is terminal and must point to an existing canonical entry present
-  in the reviewed snapshot.
+  in the reviewed snapshot. A rejected or already-duplicate target is invalid;
+  canonicalization chains and cycles fail closed.
 - `SUSPENDED` is nonterminal and records explicit resume conditions.
 - `RESUMED` is a separate immutable human record. Only after it exists may
   Codex append another revision.
@@ -152,10 +164,11 @@ deployment command.
 
 ## Deterministic duplicate recall
 
-Backlog matching reuses the campaign matcher's deterministic token-overlap and
-match-band primitives without changing the legacy campaign behavior. The richer
-backlog comparison exposes each economic dimension, exact fingerprint equality,
-source overlap, downstream target overlap, revisit lineage, and lexical score.
+Campaign and backlog adapters use one deterministic scoring, recall-threshold,
+match-band, and ranking core without changing legacy campaign behavior. The
+richer backlog adapter exposes each economic dimension, exact fingerprint
+equality, source overlap, downstream target overlap, revisit lineage, and
+lexical score.
 Small deterministic economic-phrase aliases improve recall. No LLM or embedding
 is an authority. Candidate output remains advisory until human resolution, and
 uncertainty stays unresolved.
@@ -171,16 +184,24 @@ current campaign definitions, historical clean-slate definitions and ledgers,
 the experiment registry, and research-reset manifests. Every row retains its
 source path, source hash, generation, evidence eligibility, raw identifiers,
 raw edge/hypothesis/family/fingerprint, outcome, failure reason, and extraction
-completeness.
+completeness. Output is fixed to the configured history-index path beneath the
+derived catalog root; neither the CLI nor the builder may replace an arbitrary,
+canonical, policy, campaign, ledger, evidence, or input-source file.
+An existing configured target is replaceable only when it validates as the
+current derived contract or as a prior hash-valid derived history index with
+the same schema identity; an arbitrary existing file fails closed.
 
 Legacy scientific verdict and lifecycle/disposition text are retained in
 separate fields when both exist; the derived index does not collapse those
 axes.
 
-Historical generations remain `HISTORICAL_INELIGIBLE`. Incomplete semantics are
-`NEEDS_MANUAL_REVIEW`; the builder never invents P1 fields. It creates no
-canonical observation, hypothesis, family, or backlog entry and changes no
-historical file or verdict.
+`source_generation` distinguishes current, configured-archive, and clean-slate
+archive inputs independently from evidence status. Every row is explicitly
+`NOT_CURRENT_P1_EVIDENCE`, `DUPLICATE_RECALL_ONLY`, and
+`NEEDS_MANUAL_REVIEW`, even when extraction is complete. The builder never
+promotes legacy semantics or invents P1 fields. It creates no canonical
+observation, hypothesis, family, or backlog entry and changes no historical
+file or verdict.
 
 ## Temporary legacy compatibility
 

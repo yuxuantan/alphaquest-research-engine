@@ -11,9 +11,8 @@ from typing import Any
 
 import yaml
 
+from alphaquest.research import duplicate_matching as duplicate_core
 from alphaquest.research.storage import campaign_definition_paths, load_storage_layout
-from alphaquest.research.duplicate_matching import match_band as _shared_match_band
-from alphaquest.research.duplicate_matching import token_jaccard
 
 
 _WORDS = re.compile(r"[a-z0-9]+")
@@ -28,10 +27,7 @@ _FINGERPRINT_FIELDS = (
 
 def edge_fingerprint(value: dict[str, Any] | str) -> str:
     if isinstance(value, dict):
-        selected = {
-            key: _fingerprint_value(key, value.get(key))
-            for key in _FINGERPRINT_FIELDS
-        }
+        selected = {key: _fingerprint_value(key, value.get(key)) for key in _FINGERPRINT_FIELDS}
         text = json.dumps(selected, sort_keys=True, separators=(",", ":"), default=str)
     else:
         text = " ".join(sorted(_tokens(value)))
@@ -77,17 +73,29 @@ def duplicate_matches(
             )
         )
         stored_fp = payload.get("economic_edge_fingerprint")
-        exact = edge_fingerprint(stored_fp if isinstance(stored_fp, dict) else other_text) == query_fp
-        score = _jaccard(query_tokens, _tokens(other_text))
-        taxonomy = _taxonomy_match(fingerprint, stored_fp if isinstance(stored_fp, dict) else None)
+        score = duplicate_core.deterministic_duplicate_score(
+            query_tokens=query_tokens,
+            candidate_tokens=_tokens(other_text),
+            query_fingerprint=query_fp,
+            candidate_fingerprint=edge_fingerprint(stored_fp if isinstance(stored_fp, dict) else other_text),
+            query_dimensions=fingerprint if isinstance(fingerprint, dict) else None,
+            candidate_dimensions=stored_fp if isinstance(stored_fp, dict) else None,
+            dimension_fields=_FINGERPRINT_FIELDS,
+            dimension_tokenizer=_legacy_dimension_tokens,
+            taxonomy_schema="alphaquest.duplicate-taxonomy/v1",
+            sort_matched_dimensions=False,
+        )
         candidates[other_id] = {
             "campaign_id": other_id,
             "title": payload.get("title") or other_id,
             "source": "definition",
             "path": str(path.relative_to(root)) if path.is_relative_to(root) else str(path),
-            "exact_fingerprint": exact,
-            "similarity": round(score, 4),
-            **taxonomy,
+            "exact_fingerprint": score["exact_fingerprint"],
+            "similarity": score["lexical_similarity"],
+            "taxonomy_schema": score["taxonomy_schema"],
+            "taxonomy_score": score["taxonomy_score"],
+            "matched_dimensions": score["matched_dimensions"],
+            "dimension_scores": score["dimension_scores"],
             "verdict": payload.get("verdict"),
         }
 
@@ -120,7 +128,18 @@ def duplicate_matches(
                     "result",
                 )
             )
-            score = _jaccard(query_tokens, _tokens(other_text))
+            score = duplicate_core.deterministic_duplicate_score(
+                query_tokens=query_tokens,
+                candidate_tokens=_tokens(other_text),
+                query_fingerprint=query_fp,
+                candidate_fingerprint=None,
+                query_dimensions=None,
+                candidate_dimensions=None,
+                dimension_fields=(),
+                dimension_tokenizer=_legacy_dimension_tokens,
+                taxonomy_schema="alphaquest.duplicate-taxonomy/v1",
+                sort_matched_dimensions=False,
+            )
             current = candidates.get(other_id)
             ledger_row = {
                 "campaign_id": other_id,
@@ -128,40 +147,23 @@ def duplicate_matches(
                 "source": "ledger" if current is None else "definition_and_ledger",
                 "path": str(ledger.relative_to(root)) if ledger.is_relative_to(root) else str(ledger),
                 "exact_fingerprint": bool(current and current["exact_fingerprint"]),
-                "similarity": round(max(score, float(current["similarity"]) if current else 0.0), 4),
+                "similarity": round(
+                    max(float(score["lexical_similarity"]), float(current["similarity"]) if current else 0.0),
+                    4,
+                ),
                 "taxonomy_schema": "alphaquest.duplicate-taxonomy/v1",
                 "taxonomy_score": float((current or {}).get("taxonomy_score") or 0.0),
                 "matched_dimensions": list((current or {}).get("matched_dimensions") or []),
                 "verdict": row.get("verdict") or row.get("result") or row.get("status"),
             }
             candidates[other_id] = {**(current or {}), **ledger_row}
-    for item in candidates.values():
-        structured = float(item.get("taxonomy_score") or 0.0)
-        lexical = float(item.get("similarity") or 0.0)
-        item["match_band"] = _match_band(
-            exact=bool(item.get("exact_fingerprint")),
-            structured=structured,
-            lexical=lexical,
-        )
-    eligible = [
-        item
-        for item in candidates.values()
-        if item["exact_fingerprint"]
-        or float(item["similarity"]) >= float(minimum_similarity)
-        or float(item.get("taxonomy_score") or 0.0) >= 0.3
-    ]
-    ranked = sorted(
-        eligible,
-        key=lambda item: (
-            not bool(item["exact_fingerprint"]),
-            -float(item.get("taxonomy_score") or 0.0),
-            -float(item["similarity"]),
-            item["campaign_id"],
-        ),
+    return duplicate_core.rank_duplicate_candidates(
+        list(candidates.values()),
+        identity_field="campaign_id",
+        lexical_field="similarity",
+        minimum_similarity=minimum_similarity,
+        limit=limit,
     )
-    if limit is None:
-        return ranked
-    return ranked[: max(1, int(limit))]
 
 
 def _ledger_paths(root: Path, layout: Any) -> tuple[Path, ...]:
@@ -176,11 +178,7 @@ def _ledger_paths(root: Path, layout: Any) -> tuple[Path, ...]:
 
 
 def _tokens(value: str) -> set[str]:
-    return {word for word in _WORDS.findall(value.lower()) if len(word) > 2}
-
-
-def _jaccard(left: set[str], right: set[str]) -> float:
-    return token_jaccard(left, right)
+    return duplicate_core.legacy_tokens(value)
 
 
 def _fingerprint_value(key: str, value: Any) -> Any:
@@ -195,33 +193,8 @@ def _fingerprint_value(key: str, value: Any) -> Any:
     return " ".join(_WORDS.findall(str(value or "").casefold()))
 
 
-def _taxonomy_match(
-    query: dict[str, Any] | None,
-    candidate: dict[str, Any] | None,
-) -> dict[str, Any]:
-    if not isinstance(query, dict) or not isinstance(candidate, dict):
-        return {
-            "taxonomy_schema": "alphaquest.duplicate-taxonomy/v1",
-            "taxonomy_score": 0.0,
-            "matched_dimensions": [],
-            "dimension_scores": {},
-        }
-    scores: dict[str, float] = {}
-    for field in _FINGERPRINT_FIELDS:
-        left = _tokens(json.dumps(_fingerprint_value(field, query.get(field))))
-        right = _tokens(json.dumps(_fingerprint_value(field, candidate.get(field))))
-        scores[field] = round(_jaccard(left, right), 4)
-    matched = [field for field, score in scores.items() if score >= 0.6]
-    return {
-        "taxonomy_schema": "alphaquest.duplicate-taxonomy/v1",
-        "taxonomy_score": round(sum(scores.values()) / len(_FINGERPRINT_FIELDS), 4),
-        "matched_dimensions": matched,
-        "dimension_scores": scores,
-    }
-
-
-def _match_band(*, exact: bool, structured: float, lexical: float) -> str:
-    return _shared_match_band(exact=exact, structured=structured, lexical=lexical)
+def _legacy_dimension_tokens(field: str, value: Any) -> set[str]:
+    return _tokens(json.dumps(_fingerprint_value(field, value)))
 
 
 __all__ = ["duplicate_matches", "edge_fingerprint"]
