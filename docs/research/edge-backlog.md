@@ -55,6 +55,9 @@ The same `source_id` may support several claims and observations only while its
 source kind, locator, and any captured content hash remain consistent. A
 `LOCATOR_ONLY` source may be upgraded once to `HASH_BOUND`; that hash then
 remains part of the source identity, and later reuse must supply the same hash.
+Every locator-only occurrence must have a `recorded_at` strictly earlier than
+the first hash-bound occurrence for that source ID. Equal timestamps are
+ambiguous across objects and fail closed.
 
 ### Edge-entry revisions
 

@@ -266,38 +266,51 @@ def test_missing_observation_and_conflicting_source_identity_are_rejected(tmp_pa
 def test_locator_only_hash_upgrade_is_retained_and_conflict_is_prewrite(tmp_path: Path) -> None:
     store = EdgeBacklogStore(tmp_path)
     locator = "doi:10/source-upgrade"
-    _capture(store, "obs.source.locator", source_id="source.upgrade", locator=locator)
-    _capture(
-        store,
-        "obs.source.hash-a",
-        source_id="source.upgrade",
-        locator=locator,
-        integrity="HASH_BOUND",
-        content_sha256="a" * 64,
-        claim_locator="table-hash-a",
+    store.capture_observation(
+        _observation_payload("obs.source.locator", source_id="source.upgrade", locator=locator),
+        actor_id="codex-task-runner",
+        recorded_at=NOW,
+    )
+    store.capture_observation(
+        _observation_payload(
+            "obs.source.hash-a",
+            source_id="source.upgrade",
+            locator=locator,
+            integrity="HASH_BOUND",
+            content_sha256="a" * 64,
+            claim_locator="table-hash-a",
+        ),
+        actor_id="codex-task-runner",
+        recorded_at=NOW + timedelta(minutes=1),
     )
 
     rejected_path = store.root / "observations/obs.source.hash-b/revisions/000001.json"
     with pytest.raises(EdgeBacklogIntegrityError, match="conflicting content hash"):
-        _capture(
-            store,
-            "obs.source.hash-b",
-            source_id="source.upgrade",
-            locator=locator,
-            integrity="HASH_BOUND",
-            content_sha256="b" * 64,
-            claim_locator="table-hash-b",
+        store.capture_observation(
+            _observation_payload(
+                "obs.source.hash-b",
+                source_id="source.upgrade",
+                locator=locator,
+                integrity="HASH_BOUND",
+                content_sha256="b" * 64,
+                claim_locator="table-hash-b",
+            ),
+            actor_id="codex-task-runner",
+            recorded_at=NOW + timedelta(minutes=2),
         )
     assert not rejected_path.exists()
 
     downgrade_path = store.root / "observations/obs.source.downgrade/revisions/000001.json"
     with pytest.raises(EdgeBacklogIntegrityError, match="conflicting content hash"):
-        _capture(
-            store,
-            "obs.source.downgrade",
-            source_id="source.upgrade",
-            locator=locator,
-            claim_locator="table-downgrade",
+        store.capture_observation(
+            _observation_payload(
+                "obs.source.downgrade",
+                source_id="source.upgrade",
+                locator=locator,
+                claim_locator="table-downgrade",
+            ),
+            actor_id="codex-task-runner",
+            recorded_at=NOW + timedelta(minutes=2),
         )
     assert not downgrade_path.exists()
     assert store.validate()["status"] == "PASS"
@@ -334,7 +347,107 @@ def test_full_validation_rejects_forged_source_hash_downgrade(tmp_path: Path) ->
     )
     _rewrite_record(path, payload)
 
-    with pytest.raises(EdgeBacklogIntegrityError, match="without its bound content hash"):
+    with pytest.raises(EdgeBacklogIntegrityError, match="not strictly earlier"):
+        store.validate()
+
+
+def test_full_validation_rejects_same_timestamp_downgrade_in_one_observation_chain(
+    tmp_path: Path,
+) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    observation_id = "obs.source.same-chain"
+    source_id = "source.same-chain"
+    locator = "doi:10/source-same-chain"
+    store.capture_observation(
+        _observation_payload(observation_id, source_id=source_id, locator=locator),
+        actor_id="codex-task-runner",
+        recorded_at=NOW,
+    )
+    store.revise_observation(
+        observation_id,
+        _observation_payload(
+            observation_id,
+            source_id=source_id,
+            locator=locator,
+            integrity="HASH_BOUND",
+            content_sha256="a" * 64,
+        ),
+        actor_id="codex-task-runner",
+        recorded_at=NOW + timedelta(minutes=1),
+    )
+    store.revise_observation(
+        observation_id,
+        _observation_payload(
+            observation_id,
+            source_id=source_id,
+            locator=locator,
+            integrity="HASH_BOUND",
+            content_sha256="a" * 64,
+        ),
+        actor_id="codex-task-runner",
+        recorded_at=NOW + timedelta(minutes=2),
+    )
+
+    second_path = store.root / f"observations/{observation_id}/revisions/000002.json"
+    second = json.loads(second_path.read_text(encoding="utf-8"))
+    second["recorded_at"] = NOW.isoformat().replace("+00:00", "Z")
+    _rewrite_record(second_path, second)
+
+    third_path = store.root / f"observations/{observation_id}/revisions/000003.json"
+    third = json.loads(third_path.read_text(encoding="utf-8"))
+    third["previous_revision_sha256"] = json.loads(second_path.read_text(encoding="utf-8"))["record_sha256"]
+    third["recorded_at"] = NOW.isoformat().replace("+00:00", "Z")
+    third["evidence_refs"][0]["integrity"] = "LOCATOR_ONLY"
+    third["evidence_refs"][0]["content_sha256"] = None
+    _rewrite_record(third_path, third)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="not strictly earlier"):
+        store.validate()
+
+
+def test_equal_timestamp_source_upgrade_across_observations_fails_closed(tmp_path: Path) -> None:
+    store = EdgeBacklogStore(tmp_path)
+    source_id = "source.equal-time"
+    locator = "doi:10/source-equal-time"
+    store.capture_observation(
+        _observation_payload("obs.source.equal-locator", source_id=source_id, locator=locator),
+        actor_id="codex-task-runner",
+        recorded_at=NOW,
+    )
+
+    rejected_path = store.root / "observations/obs.source.equal-hash/revisions/000001.json"
+    with pytest.raises(EdgeBacklogIntegrityError, match="not strictly earlier"):
+        store.capture_observation(
+            _observation_payload(
+                "obs.source.equal-hash",
+                source_id=source_id,
+                locator=locator,
+                integrity="HASH_BOUND",
+                content_sha256="a" * 64,
+            ),
+            actor_id="codex-task-runner",
+            recorded_at=NOW,
+        )
+    assert not rejected_path.exists()
+    assert store.validate()["status"] == "PASS"
+
+    forged = store.capture_observation(
+        _observation_payload(
+            "obs.source.equal-forged",
+            source_id="source.other-equal-time",
+            integrity="HASH_BOUND",
+            content_sha256="a" * 64,
+        ),
+        actor_id="codex-task-runner",
+        recorded_at=NOW,
+    )
+    forged_path = store.root / f"observations/{forged.observation_id}/revisions/000001.json"
+    payload = json.loads(forged_path.read_text(encoding="utf-8"))
+    payload["evidence_refs"][0]["source_id"] = source_id
+    payload["evidence_refs"][0]["locator"] = locator
+    _rewrite_record(forged_path, payload)
+
+    with pytest.raises(EdgeBacklogIntegrityError, match="not strictly earlier"):
         store.validate()
 
 

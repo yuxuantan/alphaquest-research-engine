@@ -1288,10 +1288,13 @@ class EdgeBacklogStore:
             if previous is not None:
                 _assert_source_identity_compatible(source.source_id, previous, identity)
             _remember_source_identity(identities, source)
+        self._source_identity_state(additional_records=(record,))
 
     def _source_identity_state(
         self,
         observation_ids: Sequence[str] | None = None,
+        *,
+        additional_records: Sequence[ObservationRevisionV1] = (),
     ) -> dict[str, tuple[str, str, str | None]]:
         identities: dict[str, tuple[str, str, str | None]] = {}
         events: list[tuple[datetime, EvidenceReferenceV1]] = []
@@ -1303,6 +1306,10 @@ class EdgeBacklogStore:
                 for source in revision.evidence_refs:
                     _remember_source_identity(identities, source)
                     events.append((revision.recorded_at, source))
+        for revision in additional_records:
+            for source in revision.evidence_refs:
+                _remember_source_identity(identities, source)
+                events.append((revision.recorded_at, source))
         hash_bound_at: dict[str, datetime] = {}
         for recorded_at, source in events:
             if source.content_sha256 is not None:
@@ -1310,9 +1317,10 @@ class EdgeBacklogStore:
                 hash_bound_at[source.source_id] = min(previous, recorded_at) if previous else recorded_at
         for recorded_at, source in events:
             bound_at = hash_bound_at.get(source.source_id)
-            if bound_at is not None and source.content_sha256 is None and recorded_at > bound_at:
+            if bound_at is not None and source.content_sha256 is None and recorded_at >= bound_at:
                 raise EdgeBacklogIntegrityError(
-                    f"source_id {source.source_id!r} was reused without its bound content hash"
+                    f"source_id {source.source_id!r} has LOCATOR_ONLY evidence that is not strictly earlier "
+                    "than its first HASH_BOUND occurrence"
                 )
         return identities
 
