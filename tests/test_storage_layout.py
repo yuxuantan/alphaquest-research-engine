@@ -55,6 +55,8 @@ def test_storage_layout_is_configurable_and_resolves_legacy_prefixes(tmp_path: P
     assert layout.dataset_root == tmp_path / "research/datasets"
     assert layout.handoff_root == tmp_path / "research/handoffs"
     assert layout.studio_runtime_root == tmp_path / "run-store/studio-runtime"
+    assert layout.edge_backlog_root == tmp_path / "research/edge_backlog"
+    assert layout.edge_backlog_history_index == tmp_path / "catalogs/edge_backlog_history.jsonl"
     assert resolve_recorded_path(
         "backtest-campaigns/campaign/variant/ES/run1", project_root=tmp_path
     ) == target

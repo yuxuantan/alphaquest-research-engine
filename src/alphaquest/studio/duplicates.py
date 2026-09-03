@@ -12,6 +12,8 @@ from typing import Any
 import yaml
 
 from alphaquest.research.storage import campaign_definition_paths, load_storage_layout
+from alphaquest.research.duplicate_matching import match_band as _shared_match_band
+from alphaquest.research.duplicate_matching import token_jaccard
 
 
 _WORDS = re.compile(r"[a-z0-9]+")
@@ -178,9 +180,7 @@ def _tokens(value: str) -> set[str]:
 
 
 def _jaccard(left: set[str], right: set[str]) -> float:
-    if not left or not right:
-        return 0.0
-    return len(left & right) / len(left | right)
+    return token_jaccard(left, right)
 
 
 def _fingerprint_value(key: str, value: Any) -> Any:
@@ -221,13 +221,7 @@ def _taxonomy_match(
 
 
 def _match_band(*, exact: bool, structured: float, lexical: float) -> str:
-    if exact:
-        return "EXACT_FINGERPRINT"
-    if structured >= 0.6:
-        return "HIGH_STRUCTURED_SIMILARITY"
-    if structured >= 0.3 or lexical >= 0.3:
-        return "POSSIBLE_RELATED_EDGE"
-    return "LEXICAL_REVIEW"
+    return _shared_match_band(exact=exact, structured=structured, lexical=lexical)
 
 
 __all__ = ["duplicate_matches", "edge_fingerprint"]

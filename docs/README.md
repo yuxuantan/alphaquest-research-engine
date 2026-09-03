@@ -18,6 +18,7 @@
 ## Research
 
 - [Canonical research operating model](research/research-operating-model.md)
+- [Central Edge Backlog](research/edge-backlog.md)
 - [Campaign authoring](research/campaign-authoring.md)
 - [Davey methodology alignment](research/davey-methodology-alignment.md)
 - [Validation stages](research/validation-stages.md)

@@ -1,0 +1,237 @@
+{
+  "$defs": {
+    "ActorProvenanceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "actor_class": {
+          "enum": [
+            "CODEX",
+            "HUMAN_OWNER_RESEARCHER",
+            "ALPHAQUEST_DETERMINISTIC_ENGINE",
+            "EXTERNAL_SYSTEM"
+          ],
+          "title": "Actor Class",
+          "type": "string"
+        },
+        "actor_id": {
+          "minLength": 1,
+          "title": "Actor Id",
+          "type": "string"
+        },
+        "task_id": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Task Id"
+        }
+      },
+      "required": [
+        "actor_class",
+        "actor_id"
+      ],
+      "title": "ActorProvenanceV1",
+      "type": "object"
+    },
+    "ObservationReferenceV1": {
+      "additionalProperties": false,
+      "properties": {
+        "observation_id": {
+          "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+          "title": "Observation Id",
+          "type": "string"
+        },
+        "observation_revision_sha256": {
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Observation Revision Sha256",
+          "type": "string"
+        },
+        "role": {
+          "enum": [
+            "MOTIVATING",
+            "SUPPORTING",
+            "CONTRADICTING"
+          ],
+          "title": "Role",
+          "type": "string"
+        }
+      },
+      "required": [
+        "observation_id",
+        "observation_revision_sha256",
+        "role"
+      ],
+      "title": "ObservationReferenceV1",
+      "type": "object"
+    }
+  },
+  "additionalProperties": false,
+  "properties": {
+    "actor": {
+      "$ref": "#/$defs/ActorProvenanceV1"
+    },
+    "causal_mechanism": {
+      "minLength": 1,
+      "title": "Causal Mechanism",
+      "type": "string"
+    },
+    "counterparty_transfer_rationale": {
+      "minLength": 1,
+      "title": "Counterparty Transfer Rationale",
+      "type": "string"
+    },
+    "entry_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,127}$",
+      "title": "Entry Id",
+      "type": "string"
+    },
+    "expected_effect": {
+      "minLength": 1,
+      "title": "Expected Effect",
+      "type": "string"
+    },
+    "fingerprint_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Fingerprint Sha256",
+      "type": "string"
+    },
+    "fingerprint_version": {
+      "const": "alphaquest.edge-backlog-fingerprint/v1",
+      "default": "alphaquest.edge-backlog-fingerprint/v1",
+      "enum": [
+        "alphaquest.edge-backlog-fingerprint/v1"
+      ],
+      "title": "Fingerprint Version",
+      "type": "string"
+    },
+    "holding_horizon": {
+      "minLength": 1,
+      "title": "Holding Horizon",
+      "type": "string"
+    },
+    "information_availability": {
+      "minLength": 1,
+      "title": "Information Availability",
+      "type": "string"
+    },
+    "information_inputs": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Information Inputs",
+      "type": "array"
+    },
+    "instruments": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "minItems": 1,
+      "title": "Instruments",
+      "type": "array"
+    },
+    "market_behavior": {
+      "minLength": 1,
+      "title": "Market Behavior",
+      "type": "string"
+    },
+    "market_context": {
+      "minLength": 1,
+      "title": "Market Context",
+      "type": "string"
+    },
+    "observation_refs": {
+      "items": {
+        "$ref": "#/$defs/ObservationReferenceV1"
+      },
+      "minItems": 1,
+      "title": "Observation Refs",
+      "type": "array"
+    },
+    "open_questions": {
+      "items": {
+        "minLength": 1,
+        "type": "string"
+      },
+      "title": "Open Questions",
+      "type": "array"
+    },
+    "previous_revision_sha256": {
+      "anyOf": [
+        {
+          "pattern": "^[a-f0-9]{64}$",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Previous Revision Sha256"
+    },
+    "record_id": {
+      "pattern": "^[a-z0-9][a-z0-9_.-]{0,255}$",
+      "title": "Record Id",
+      "type": "string"
+    },
+    "record_sha256": {
+      "pattern": "^[a-f0-9]{64}$",
+      "title": "Record Sha256",
+      "type": "string"
+    },
+    "recorded_at": {
+      "format": "date-time",
+      "title": "Recorded At",
+      "type": "string"
+    },
+    "revision": {
+      "minimum": 1,
+      "title": "Revision",
+      "type": "integer"
+    },
+    "schema": {
+      "const": "alphaquest.edge-backlog-entry-revision/v1",
+      "default": "alphaquest.edge-backlog-entry-revision/v1",
+      "enum": [
+        "alphaquest.edge-backlog-entry-revision/v1"
+      ],
+      "title": "Schema",
+      "type": "string"
+    },
+    "title": {
+      "minLength": 1,
+      "title": "Title",
+      "type": "string"
+    }
+  },
+  "required": [
+    "record_id",
+    "recorded_at",
+    "actor",
+    "record_sha256",
+    "entry_id",
+    "revision",
+    "title",
+    "instruments",
+    "market_behavior",
+    "causal_mechanism",
+    "counterparty_transfer_rationale",
+    "information_inputs",
+    "information_availability",
+    "expected_effect",
+    "holding_horizon",
+    "market_context",
+    "observation_refs",
+    "fingerprint_sha256"
+  ],
+  "title": "EdgeBacklogEntryRevisionV1",
+  "type": "object"
+}

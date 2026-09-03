@@ -51,6 +51,12 @@ from alphaquest.studio.research_factory import (
 )
 from alphaquest.studio.results import ResultBundleV2, ResultBundleV3
 from alphaquest.accounts.models import AccountRuleProfileV1
+from alphaquest.research.edge_backlog import (
+    EdgeBacklogDecisionV1,
+    EdgeBacklogEntryRevisionV1,
+    EdgeBacklogLinkV1,
+    ObservationRevisionV1,
+)
 
 
 STUDIO_SCHEMA_MODELS = {
@@ -66,6 +72,10 @@ STUDIO_SCHEMA_MODELS = {
     "codex-task-v1.schema.json": CodexTaskV1,
     "deployment-decision-v1.schema.json": DeploymentDecisionV1,
     "deployment-monitoring-event-v1.schema.json": DeploymentMonitoringEventV1,
+    "edge-backlog-decision-v1.schema.json": EdgeBacklogDecisionV1,
+    "edge-backlog-entry-revision-v1.schema.json": EdgeBacklogEntryRevisionV1,
+    "edge-backlog-link-v1.schema.json": EdgeBacklogLinkV1,
+    "edge-backlog-observation-revision-v1.schema.json": ObservationRevisionV1,
     "engineering-handoff-proposal-v1.schema.json": EngineeringHandoffProposalV1,
     "failure-diagnosis-v1.schema.json": FailureDiagnosisV1,
     "forward-incubation-event-v1.schema.json": ForwardIncubationEventV1,

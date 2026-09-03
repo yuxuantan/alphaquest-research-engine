@@ -29,6 +29,8 @@ class StorageLayout:
     dataset_root: Path
     handoff_root: Path
     studio_runtime_root: Path
+    edge_backlog_root: Path
+    edge_backlog_history_index: Path
     migration_manifest: Path | None
     legacy_prefixes: tuple[tuple[str, str], ...]
 
@@ -122,6 +124,10 @@ def load_storage_layout(
         dataset_root=one("dataset_root", "research/datasets"),
         handoff_root=one("handoff_root", "research/handoffs"),
         studio_runtime_root=one("studio_runtime_root", "run-store/studio-runtime"),
+        edge_backlog_root=one("edge_backlog_root", "research/edge_backlog"),
+        edge_backlog_history_index=one(
+            "edge_backlog_history_index", "catalogs/edge_backlog_history.jsonl"
+        ),
         migration_manifest=_absolute(root, migration) if migration else None,
         legacy_prefixes=tuple(sorted(((str(k), str(v)) for k, v in prefixes.items()), key=lambda x: len(x[0]), reverse=True)),
     )
